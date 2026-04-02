@@ -17,6 +17,9 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
+# Add sibling module to path so we can import whisper-transcribe
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "whisper-transcribe"))
+
 import anthropic
 import objc
 import AppKit
@@ -420,12 +423,21 @@ class WisprAddonsApp(rumps.App):
             template=False,
             quit_button=None,
         )
+        self._icon_on = icon_path
+        self._icon_off = str(Path(__file__).parent / "icon_chat_off.png")
+        self._whisper_runner = None
+        self._transcribing = False
+
+        self._transcribe_item = rumps.MenuItem("💬 Transcribing", callback=self.toggle_transcribing)
         self.menu = [
+            self._transcribe_item,
+            None,  # separator
             rumps.MenuItem("Emotional 🥹 Paste — ⌘⌃V", callback=self.on_clean),
             rumps.MenuItem("Toggle Dark Mode — ⌘⌃⌥D", callback=None),
             rumps.MenuItem("Mute 🎶 — Mouse 5", callback=None),
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             None,  # separator
+            rumps.MenuItem("📋 IntelliJ Git → Clipboard", callback=self.copy_intellij_git),
             rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
             rumps.MenuItem("☠️ Kill port"),
             rumps.MenuItem("Show Log", callback=self.show_log),
@@ -459,22 +471,26 @@ class WisprAddonsApp(rumps.App):
         return cb
 
     def _kill_port_prompt(self, _):
-        from AppKit import NSAlert, NSTextField, NSAlertFirstButtonReturn, NSScreen
+        from AppKit import (NSAlert, NSTextField, NSAlertFirstButtonReturn,
+                            NSScreen, NSAlertStyleInformational)
         from Foundation import NSMakeRect
 
         alert = AppKit.NSAlert.alloc().init()
-        alert.setMessageText_("Port:")
+        alert.setAlertStyle_(NSAlertStyleInformational)
+        alert.setMessageText_("Kill port")
+        alert.setInformativeText_("")
         alert.addButtonWithTitle_("Kill")
         alert.addButtonWithTitle_("Cancel")
+        alert.window().setTitle_("")
 
-        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 80, 24))
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 60, 22))
         field.setPlaceholderString_("8080")
         alert.setAccessoryView_(field)
 
-        # Position window top-right
+        # Position near top-right (close to menu bar)
         window = alert.window()
         screen = NSScreen.mainScreen().frame()
-        window.setFrameTopLeftPoint_((screen.size.width - 250, screen.size.height - 30))
+        window.setFrameTopLeftPoint_((screen.size.width - 300, screen.size.height - 30))
 
         window.makeFirstResponder_(field)
         result = alert.runModal()
@@ -505,6 +521,102 @@ class WisprAddonsApp(rumps.App):
         self._kill_port_history = self._kill_port_history[:5]
         self._rebuild_kill_submenu()
 
+    def start_transcribing(self):
+        from whisper_runner import WhisperTranscriptionRunner
+        folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
+                                     str(Path.home() / "Documents" / "transcriptions")))
+        self._whisper_runner = WhisperTranscriptionRunner(folder)
+        self._whisper_runner.start()
+        self._transcribing = True
+        self._transcribe_item.title = "💬 Transcribing"
+        self.icon = self._icon_on
+        log("🎙️ Whisper transcription started")
+
+    def stop_transcribing(self):
+        if self._whisper_runner:
+            self._whisper_runner.stop()
+            self._whisper_runner = None
+        self._transcribing = False
+        self._transcribe_item.title = "💬 Not Transcribing"
+        self.icon = self._icon_off
+        log("🎙️ Whisper transcription stopped")
+
+    def toggle_transcribing(self, _):
+        if self._transcribing:
+            self.stop_transcribing()
+        else:
+            self.start_transcribing()
+
+    def copy_intellij_git(self, _):
+        try:
+            # Get IntelliJ window title
+            script = (
+                'tell application "System Events" to tell process "idea" to '
+                'return title of front window'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=2,
+            )
+            title = result.stdout.strip()
+            if not title:
+                log("📋 IntelliJ not open or no window")
+                return
+
+            # Extract project name from title: "kafka – File.java [module]" → "kafka"
+            project_name = title.split(" – ")[0].split("[")[0].strip()
+            if not project_name:
+                log(f"📋 Can't parse project from: {title}")
+                return
+
+            # Find project path via recentProjects.xml
+            import glob
+            import xml.etree.ElementTree as ET
+            pattern = os.path.expanduser(
+                "~/Library/Application Support/JetBrains/IntelliJIdea*/options/recentProjects.xml"
+            )
+            xml_files = sorted(glob.glob(pattern), reverse=True)
+            project_path = None
+            for xml_file in xml_files:
+                try:
+                    tree = ET.parse(xml_file)
+                    for entry in tree.findall(".//entry"):
+                        key = entry.get("key", "")
+                        folder = Path(key.replace("$USER_HOME$", str(Path.home()))).name
+                        if folder.lower() == project_name.lower():
+                            project_path = key.replace("$USER_HOME$", str(Path.home()))
+                            break
+                except Exception:
+                    continue
+                if project_path:
+                    break
+
+            if not project_path:
+                log(f"📋 Project '{project_name}' not found in recentProjects.xml")
+                return
+
+            # Get git remote URL and branch
+            def _git(cmd):
+                r = subprocess.run(
+                    ["git", "-C", project_path] + cmd,
+                    capture_output=True, text=True, timeout=2,
+                )
+                return r.stdout.strip() if r.returncode == 0 else ""
+
+            remote_url = _git(["remote", "get-url", "origin"])
+            branch = _git(["branch", "--show-current"])
+
+            if not remote_url:
+                log(f"📋 No git remote in {project_path}")
+                return
+
+            clipboard_text = f"{remote_url} ({branch})" if branch else remote_url
+            set_clipboard(clipboard_text)
+            log(f"📋 Copied: {clipboard_text}")
+
+        except Exception as e:
+            log(f"📋 IntelliJ git copy failed: {e}")
+
     def toggle_overlay_controls(self, sender):
         try:
             pid_str = Path("/tmp/desktop-overlay.pid").read_text().strip()
@@ -529,6 +641,8 @@ class WisprAddonsApp(rumps.App):
         rumps.alert(title="Wispr Addons Log", message=log_text)
 
     def quit_app(self, _):
+        if self._transcribing:
+            self.stop_transcribing()
         if _dictation_active:
             _restore_dictation_volume()
         if _tap_run_loop_ref:
@@ -566,6 +680,7 @@ def main():
 
     # Run menu bar app on main thread
     _app_ref = WisprAddonsApp()
+    _app_ref.start_transcribing()
     _app_ref.run()
 
 
