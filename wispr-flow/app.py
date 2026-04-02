@@ -426,7 +426,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
             rumps.MenuItem("Double-click wheel — Re-paste", callback=None),
             None,  # separator
-            rumps.MenuItem("🎬 Show Controls", callback=self.toggle_overlay_controls),
+            rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
             rumps.MenuItem("☠️ Kill port"),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,
@@ -499,10 +499,10 @@ class WisprAddonsApp(rumps.App):
             pid_str = Path("/tmp/desktop-overlay.pid").read_text().strip()
             pid = int(pid_str)
             os.kill(pid, signal.SIGUSR1)
-            if sender.title.startswith("🎬 Show"):
-                sender.title = "🎬 Hide Controls"
+            if sender.title == "🎬 Show":
+                sender.title = "🎬 Hide"
             else:
-                sender.title = "🎬 Show Controls"
+                sender.title = "🎬 Show"
         except FileNotFoundError:
             log("Overlay not running (no PID file)")
         except ProcessLookupError:
