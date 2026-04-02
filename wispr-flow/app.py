@@ -62,18 +62,8 @@ CLEANUP_PROMPT = (
     "Fix grammar, punctuation, and spelling errors.\n"
     "Remove filler words and false starts from speech-to-text output.\n"
     "Synthesize verbose text into concise form while preserving all meaning.\n"
-    "For emojis: use at most 1 emoji per 2 sentences, and only when clearly context-appropriate.\n"
-    "It is perfectly fine to use no emoji at all.\n"
-    "Detect the input language and respond in the same language.\n"
-    "Return ONLY the cleaned text, nothing else."
-)
-CLEANUP_PROMPT_EMOJI = (
-    "Fix grammar, punctuation, and spelling errors.\n"
-    "Remove filler words and false starts from speech-to-text output.\n"
-    "Synthesize verbose text into concise form while preserving all meaning.\n"
-    "Enrich with emojis more aggressively while keeping the message natural.\n"
-    "Target roughly 1 emoji per sentence (you may use slightly fewer or more where it fits).\n"
-    "Do not skip emojis unless the content is clearly formal/inappropriate for emoji.\n"
+    "Add at least 1 emoji to the output, placed where it naturally fits.\n"
+    "Use at most 1 emoji per 2 sentences.\n"
     "Detect the input language and respond in the same language.\n"
     "Return ONLY the cleaned text, nothing else."
 )
@@ -201,14 +191,13 @@ COST_PER_INPUT_TOKEN  = 0.80 / 1_000_000   # claude-haiku-4-5
 COST_PER_OUTPUT_TOKEN = 4.00 / 1_000_000
 
 
-def clean_text(text: str, with_emoji: bool = False) -> tuple[str, float] | tuple[None, None]:
+def clean_text(text: str) -> tuple[str, float] | tuple[None, None]:
     timeout = compute_timeout(text)
-    prompt = CLEANUP_PROMPT_EMOJI if with_emoji else CLEANUP_PROMPT
     try:
         response = _client.messages.create(
             model=MODEL, max_tokens=4096,
             messages=[{"role": "user", "content": text}],
-            system=prompt, timeout=timeout,
+            system=CLEANUP_PROMPT, timeout=timeout,
         )
         cost = (response.usage.input_tokens * COST_PER_INPUT_TOKEN
                 + response.usage.output_tokens * COST_PER_OUTPUT_TOKEN)
@@ -218,7 +207,7 @@ def clean_text(text: str, with_emoji: bool = False) -> tuple[str, float] | tuple
         return None, None
 
 
-def handle_clean_hotkey(with_emoji: bool = False) -> None:
+def handle_clean_hotkey() -> None:
     global _last_paste_text
     if not _clean_lock.acquire(blocking=False):
         return
@@ -234,9 +223,8 @@ def handle_clean_hotkey(with_emoji: bool = False) -> None:
             return
 
         start = time.time()
-        emoji_tag = " +emoji" if with_emoji else ""
-        log(f"Cleaning {len(text)} chars{emoji_tag}...")
-        cleaned, cost = clean_text(text, with_emoji=with_emoji)
+        log(f"Cleaning {len(text)} chars...")
+        cleaned, cost = clean_text(text)
         if cleaned is None:
             log("Failed: no response from API")
             return
@@ -248,8 +236,7 @@ def handle_clean_hotkey(with_emoji: bool = False) -> None:
         simulate_keystroke(VK_V, kCGEventFlagMaskCommand)
 
         elapsed_ms = int((time.time() - start) * 1000)
-        heart = "❤️" if with_emoji else ""
-        log(f"Done{heart} ({len(text)}\u2192{len(cleaned)} chars, {elapsed_ms}ms, ${cost:.4f}):\n  {cleaned[:200]}")
+        log(f"Done ({len(text)}\u2192{len(cleaned)} chars, {elapsed_ms}ms, ${cost:.4f}):\n  {cleaned[:200]}")
     except Exception as e:
         log(f"Failed: {e}")
     finally:
@@ -357,10 +344,9 @@ def event_tap_callback(proxy, event_type, event, refcon):
 
     has_cmd = bool(flags & kCGEventFlagMaskCommand)
     has_ctrl = bool(flags & kCGEventFlagMaskControl)
-    has_opt = bool(flags & kCGEventFlagMaskAlternate)
 
     if has_cmd and has_ctrl:
-        threading.Thread(target=handle_clean_hotkey, args=(has_opt,), daemon=True).start()
+        threading.Thread(target=handle_clean_hotkey, daemon=True).start()
         return None
 
     if has_cmd and not has_ctrl:
@@ -417,7 +403,6 @@ class WisprAddonsApp(rumps.App):
         )
         self.menu = [
             rumps.MenuItem("\u2318\u2303V — Clean paste", callback=self.on_clean),
-            rumps.MenuItem("\u2318\u2303\u2325V — Clean + emoji", callback=self.on_clean_emoji),
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
             rumps.MenuItem("Double-click wheel — Repaste last intercepted text", callback=None),
             None,  # separator
@@ -429,10 +414,7 @@ class WisprAddonsApp(rumps.App):
         self.menu["Double-click wheel — Repaste last intercepted text"].enabled = False
 
     def on_clean(self, _):
-        threading.Thread(target=handle_clean_hotkey, args=(False,), daemon=True).start()
-
-    def on_clean_emoji(self, _):
-        threading.Thread(target=handle_clean_hotkey, args=(True,), daemon=True).start()
+        threading.Thread(target=handle_clean_hotkey, daemon=True).start()
 
     def show_log(self, _):
         log_text = "\n".join(_log_buffer) if _log_buffer else "(no log entries yet)"
