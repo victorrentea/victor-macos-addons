@@ -475,16 +475,15 @@ class WisprAddonsApp(rumps.App):
 
         self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
         self._ppt_item = rumps.MenuItem("Stop Tracking PowerPoint", callback=self.toggle_ppt_tracking)
-        self._kill_8080_item = rumps.MenuItem("Kill :8080", callback=lambda _: self._kill_port(8080))
+        self._kill_8080_item = rumps.MenuItem("☠️ Kill :8080", callback=lambda _: self._kill_port(8080))
 
         self.menu = [
             self._transcribe_item,
             self._ppt_item,
             None,  # separator
             rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
-            rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
             self._kill_8080_item,
-            rumps.MenuItem("☠️ Kill port…"),
+            rumps.MenuItem("☠️ Kill…"),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,  # separator
             rumps.MenuItem("Emotional 🥹 Paste — ⌘⌃V", callback=self.on_clean),
@@ -500,7 +499,7 @@ class WisprAddonsApp(rumps.App):
 
         # Kill port submenu — persisted across sessions
         self._kill_port_history: list[int] = _load_port_history()
-        kill_menu = self.menu["☠️ Kill port…"]
+        kill_menu = self.menu["☠️ Kill…"]
         kill_menu.add(rumps.MenuItem("Port…", callback=self._kill_port_prompt))
         kill_menu.add(None)
         for port in self._kill_port_history:
@@ -542,23 +541,20 @@ class WisprAddonsApp(rumps.App):
                 return None
 
     def _refresh_port_status(self):
-        """Refresh 8080 and submenu port status dots."""
-        alive = _check_port_alive(8080)
-        dot = "🟢" if alive else "🔴"
-        self._kill_8080_item.title = f"{dot} Kill :8080"
+        """Refresh enabled/disabled state of kill entries based on port activity."""
+        self._kill_8080_item.set_callback(self._make_kill_callback(8080) if _check_port_alive(8080) else None)
         self._rebuild_kill_submenu()
 
     def _rebuild_kill_submenu(self):
-        kill_menu = self.menu["☠️ Kill port…"]
+        kill_menu = self.menu["☠️ Kill…"]
         for key in list(kill_menu.keys()):
-            if key.startswith("🟢") or key.startswith("🔴") or key.startswith(":"):
+            if key.startswith("☠️ :"):
                 del kill_menu[key]
         for port in self._kill_port_history:
             if port == 8080:
                 continue  # 8080 has its own top-level entry
             alive = _check_port_alive(port)
-            dot = "🟢" if alive else "🔴"
-            item = rumps.MenuItem(f"{dot} :{port}", callback=self._make_kill_callback(port))
+            item = rumps.MenuItem(f"☠️ :{port}", callback=self._make_kill_callback(port) if alive else None)
             kill_menu.add(item)
 
     def _make_kill_callback(self, port: int):
