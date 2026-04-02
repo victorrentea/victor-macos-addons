@@ -69,6 +69,7 @@ CLEANUP_PROMPT = (
     "Return ONLY the cleaned text, nothing else."
 )
 
+VK_D = 0x02
 VK_V = 0x09
 VK_Z = 0x06
 VK_ESCAPE = 0x35
@@ -284,6 +285,17 @@ def _on_mouse_wheel_click() -> None:
         threading.Thread(target=_paste_last_intercepted_text, daemon=True).start()
 
 
+def toggle_dark_mode() -> None:
+    try:
+        subprocess.run(
+            ["osascript", "-e", 'tell application "System Events" to tell appearance preferences to set dark mode to not dark mode'],
+            timeout=5,
+        )
+        log("🌗 Toggled dark mode")
+    except Exception as e:
+        log(f"🌗 Dark mode toggle failed: {e}")
+
+
 def handle_dictation_toggle() -> None:
     global _mute_device_original_volume, _dictation_active
     if _dictation_active:
@@ -340,11 +352,17 @@ def event_tap_callback(proxy, event_type, event, refcon):
         threading.Thread(target=_restore_dictation_volume, daemon=True).start()
         return event
 
-    if keycode != VK_V:
-        return event
-
     has_cmd = bool(flags & kCGEventFlagMaskCommand)
     has_ctrl = bool(flags & kCGEventFlagMaskControl)
+    has_opt = bool(flags & kCGEventFlagMaskAlternate)
+
+    # Cmd+Opt+Ctrl+D → toggle dark mode
+    if keycode == VK_D and has_cmd and has_ctrl and has_opt:
+        threading.Thread(target=toggle_dark_mode, daemon=True).start()
+        return None
+
+    if keycode != VK_V:
+        return event
 
     if has_cmd and has_ctrl:
         threading.Thread(target=handle_clean_hotkey, daemon=True).start()
@@ -404,6 +422,7 @@ class WisprAddonsApp(rumps.App):
         )
         self.menu = [
             rumps.MenuItem("\u2318\u2303V — Clean paste", callback=self.on_clean),
+            rumps.MenuItem("⌘⌃⌥D — Toggle dark mode", callback=None),
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
             rumps.MenuItem("Double-click wheel — Repaste last intercepted text", callback=None),
             None,  # separator
@@ -413,23 +432,26 @@ class WisprAddonsApp(rumps.App):
             None,
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
+        self.menu["⌘⌃⌥D — Toggle dark mode"].enabled = False
         self.menu["Mouse 5 — Dictation mute"].enabled = False
         self.menu["Double-click wheel — Repaste last intercepted text"].enabled = False
 
-        # Kill port submenu
+        # Kill port submenu — build initial items inline
         self._kill_port_history: list[int] = [8080]
-        self._kill_menu = self.menu["☠️ Kill port"]
-        self._rebuild_kill_submenu()
+        kill_menu = self.menu["☠️ Kill port"]
+        kill_menu.add(rumps.MenuItem("Port…", callback=self._kill_port_prompt))
+        kill_menu.add(None)
+        for port in self._kill_port_history:
+            kill_menu.add(rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port)))
 
     def _rebuild_kill_submenu(self):
-        self._kill_menu.clear()
-        prompt_item = rumps.MenuItem("Port…", callback=self._kill_port_prompt)
-        self._kill_menu.add(prompt_item)
-        if self._kill_port_history:
-            self._kill_menu.add(None)  # separator
+        kill_menu = self.menu["☠️ Kill port"]
+        # Remove all items after "Port…" and separator
+        for key in list(kill_menu.keys()):
+            if key.startswith(":"):
+                del kill_menu[key]
         for port in self._kill_port_history:
-            item = rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port))
-            self._kill_menu.add(item)
+            kill_menu.add(rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port)))
 
     def _make_kill_callback(self, port: int):
         def cb(_):
