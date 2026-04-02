@@ -1,3 +1,8 @@
 **/.build/
 *.png
 !**/Resources/*.png
+!wispr-flow/icon_mic.png
+__pycache__/
+*.pyc
+jmeter.log
+secrets.env
