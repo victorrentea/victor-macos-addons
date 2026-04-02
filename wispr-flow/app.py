@@ -406,6 +406,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
             rumps.MenuItem("Double-click wheel — Repaste last intercepted text", callback=None),
             None,  # separator
+            rumps.MenuItem("☠️ Kill :8080", callback=self.kill_8080),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,
             rumps.MenuItem("Quit", callback=self.quit_app),
@@ -415,6 +416,19 @@ class WisprAddonsApp(rumps.App):
 
     def on_clean(self, _):
         threading.Thread(target=handle_clean_hotkey, daemon=True).start()
+
+    def kill_8080(self, _):
+        try:
+            result = subprocess.run(["lsof", "-ti", ":8080"], capture_output=True, text=True, timeout=5)
+            pids = result.stdout.strip()
+            if not pids:
+                log("☠️ No process on :8080")
+                return
+            for pid in pids.splitlines():
+                subprocess.run(["kill", "-9", pid.strip()], timeout=5)
+            log(f"☠️ Killed :8080 (pid {pids.replace(chr(10), ', ')})")
+        except Exception as e:
+            log(f"☠️ Kill :8080 failed: {e}")
 
     def show_log(self, _):
         log_text = "\n".join(_log_buffer) if _log_buffer else "(no log entries yet)"
