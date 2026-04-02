@@ -474,12 +474,10 @@ class WisprAddonsApp(rumps.App):
         self._tracking_ppt = False
 
         self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
-        self._ppt_item = rumps.MenuItem("Stop Tracking PowerPoint", callback=self.toggle_ppt_tracking)
         self._kill_8080_item = rumps.MenuItem("☠️ Kill :8080", callback=lambda _: self._kill_port(8080))
 
         self.menu = [
             self._transcribe_item,
-            self._ppt_item,
             None,  # separator
             rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
             self._kill_8080_item,
@@ -651,22 +649,7 @@ class WisprAddonsApp(rumps.App):
         self._ppt_monitor = PowerPointMonitor(folder)
         self._ppt_monitor.start()
         self._tracking_ppt = True
-        self._ppt_item.title = "Stop Tracking PowerPoint"
         log("📊 PowerPoint tracking started")
-
-    def stop_ppt_tracking(self):
-        if self._ppt_monitor:
-            self._ppt_monitor.stop()
-            self._ppt_monitor = None
-        self._tracking_ppt = False
-        self._ppt_item.title = "Start Tracking PowerPoint"
-        log("📊 PowerPoint tracking stopped")
-
-    def toggle_ppt_tracking(self, _):
-        if self._tracking_ppt:
-            self.stop_ppt_tracking()
-        else:
-            self.start_ppt_tracking()
 
     def toggle_transcribing(self, _):
         if self._transcribing:
@@ -743,22 +726,6 @@ class WisprAddonsApp(rumps.App):
 
         except Exception as e:
             log(f"📋 IntelliJ git copy failed: {e}")
-
-    def toggle_overlay_controls(self, sender):
-        try:
-            pid_str = Path("/tmp/desktop-overlay.pid").read_text().strip()
-            pid = int(pid_str)
-            os.kill(pid, signal.SIGUSR1)
-            if sender.title == "🎬 Show":
-                sender.title = "🎬 Hide"
-            else:
-                sender.title = "🎬 Show"
-        except FileNotFoundError:
-            log("Overlay not running (no PID file)")
-        except ProcessLookupError:
-            log("Overlay process not found")
-        except Exception as e:
-            log(f"Toggle overlay failed: {e}")
 
     def on_clean(self, _):
         threading.Thread(target=handle_clean_hotkey, daemon=True).start()
