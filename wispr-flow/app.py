@@ -424,7 +424,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("⌘⌃V — 😊-repaste", callback=self.on_clean),
             rumps.MenuItem("⌘⌃⌥D — Toggle dark mode", callback=None),
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
-            rumps.MenuItem("Double-click wheel — Repaste last intercepted text", callback=None),
+            rumps.MenuItem("Double-click wheel — Re-paste", callback=None),
             None,  # separator
             rumps.MenuItem("🎬 Show Controls", callback=self.toggle_overlay_controls),
             rumps.MenuItem("☠️ Kill port"),
