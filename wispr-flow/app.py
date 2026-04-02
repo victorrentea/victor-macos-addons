@@ -413,7 +413,7 @@ def _run_event_tap():
 # --- Menu bar app ---
 class WisprAddonsApp(rumps.App):
     def __init__(self):
-        icon_path = str(Path(__file__).parent / "icon_mic.png")
+        icon_path = str(Path(__file__).parent / "icon_chat.png")
         super().__init__(
             "",
             icon=icon_path,
@@ -434,7 +434,7 @@ class WisprAddonsApp(rumps.App):
         ]
         self.menu["⌘⌃⌥D — Toggle dark mode"].enabled = False
         self.menu["Mouse 5 — Dictation mute"].enabled = False
-        self.menu["Double-click wheel — Repaste last intercepted text"].enabled = False
+        self.menu["Double-click wheel — Re-paste"].enabled = False
 
         # Kill port submenu — build initial items inline
         self._kill_port_history: list[int] = [8080]

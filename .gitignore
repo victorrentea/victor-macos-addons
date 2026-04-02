@@ -1,7 +1,8 @@
 **/.build/
 *.png
 !**/Resources/*.png
-!wispr-flow/icon_mic.png
+!wispr-flow/icon_chat.png
+!wispr-flow/icon_chat_off.png
 __pycache__/
 *.pyc
 jmeter.log
