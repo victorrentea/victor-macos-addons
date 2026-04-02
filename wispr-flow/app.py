@@ -413,6 +413,49 @@ def _run_event_tap():
     log("Event tap stopped")
 
 
+# --- Port history persistence ---
+_PORTS_FILE = Path.home() / ".victor-macos-addons-ports.json"
+
+
+def _load_port_history() -> list[int]:
+    try:
+        import json
+        return json.loads(_PORTS_FILE.read_text())
+    except Exception:
+        return [8080]
+
+
+def _save_port_history(ports: list[int]) -> None:
+    import json
+    _PORTS_FILE.write_text(json.dumps(ports))
+
+
+def _check_port_alive(port: int) -> bool:
+    """Check if any process is listening on the given port."""
+    try:
+        result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=2)
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
+def _get_process_info(pid: str) -> str:
+    """Get process name/command for a PID."""
+    try:
+        result = subprocess.run(["ps", "-p", pid.strip(), "-o", "comm="], capture_output=True, text=True, timeout=2)
+        return result.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _send_notification(title: str, message: str) -> None:
+    """Send a macOS notification."""
+    subprocess.Popen([
+        "osascript", "-e",
+        f'display notification "{message}" with title "{title}"'
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 # --- Menu bar app ---
 class WisprAddonsApp(rumps.App):
     def __init__(self):
@@ -427,43 +470,92 @@ class WisprAddonsApp(rumps.App):
         self._icon_off = str(Path(__file__).parent / "icon_chat_off.png")
         self._whisper_runner = None
         self._transcribing = False
+        self._ppt_monitor = None
+        self._tracking_ppt = False
 
-        self._transcribe_item = rumps.MenuItem("💬 Transcribing", callback=self.toggle_transcribing)
+        self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
+        self._ppt_item = rumps.MenuItem("Stop Tracking PowerPoint", callback=self.toggle_ppt_tracking)
+        self._kill_8080_item = rumps.MenuItem("Kill :8080", callback=lambda _: self._kill_port(8080))
+
         self.menu = [
             self._transcribe_item,
+            self._ppt_item,
+            None,  # separator
+            rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
+            rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
+            self._kill_8080_item,
+            rumps.MenuItem("☠️ Kill port…"),
+            rumps.MenuItem("Show Log", callback=self.show_log),
             None,  # separator
             rumps.MenuItem("Emotional 🥹 Paste — ⌘⌃V", callback=self.on_clean),
             rumps.MenuItem("Toggle Dark Mode — ⌘⌃⌥D", callback=None),
             rumps.MenuItem("Mute 🎶 — Mouse 5", callback=None),
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             None,  # separator
-            rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
-            rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
-            rumps.MenuItem("☠️ Kill port"),
-            rumps.MenuItem("Show Log", callback=self.show_log),
-            None,
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
         self.menu["Toggle Dark Mode — ⌘⌃⌥D"].enabled = False
         self.menu["Mute 🎶 — Mouse 5"].enabled = False
         self.menu["Re-paste — Wheel x 2"].enabled = False
 
-        # Kill port submenu — build initial items inline
-        self._kill_port_history: list[int] = [8080]
-        kill_menu = self.menu["☠️ Kill port"]
+        # Kill port submenu — persisted across sessions
+        self._kill_port_history: list[int] = _load_port_history()
+        kill_menu = self.menu["☠️ Kill port…"]
         kill_menu.add(rumps.MenuItem("Port…", callback=self._kill_port_prompt))
         kill_menu.add(None)
         for port in self._kill_port_history:
             kill_menu.add(rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port)))
 
+        # Refresh port status when kill submenu opens (NSMenu delegate)
+        self._setup_menu_delegate()
+
+    def _setup_menu_delegate(self):
+        """Set up NSMenu delegate to refresh port status on menu open."""
+        try:
+            from Foundation import NSObject
+            from objc import python_method
+
+            parent = self
+
+            class MenuDelegate(NSObject):
+                def menuNeedsUpdate_(self, menu):
+                    parent._refresh_port_status()
+
+            self._menu_delegate = MenuDelegate.alloc().init()
+            # Set delegate on the status bar menu
+            ns_menu = self._nsapp_statusbar_button_menu()
+            if ns_menu:
+                ns_menu.setDelegate_(self._menu_delegate)
+        except Exception:
+            pass  # fallback: ports refresh only after kill
+
+    def _nsapp_statusbar_button_menu(self):
+        """Get the underlying NSMenu from the rumps status bar."""
+        try:
+            return self._status_item._nsObject.menu()
+        except Exception:
+            try:
+                return self.menu._menu
+            except Exception:
+                return None
+
+    def _refresh_port_status(self):
+        """Refresh 8080 and submenu port status dots."""
+        alive = _check_port_alive(8080)
+        dot = "🟢" if alive else "🔴"
+        self._kill_8080_item.title = f"{dot} Kill :8080"
+        self._rebuild_kill_submenu()
+
     def _rebuild_kill_submenu(self):
-        kill_menu = self.menu["☠️ Kill port"]
-        # Remove all items after "Port…" and separator
+        kill_menu = self.menu["☠️ Kill port…"]
         for key in list(kill_menu.keys()):
             if key.startswith(":"):
                 del kill_menu[key]
         for port in self._kill_port_history:
-            kill_menu.add(rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port)))
+            alive = _check_port_alive(port)
+            dot = "🟢" if alive else "🔴"
+            item = rumps.MenuItem(f"{dot} :{port}", callback=self._make_kill_callback(port))
+            kill_menu.add(item)
 
     def _make_kill_callback(self, port: int):
         def cb(_):
@@ -487,7 +579,6 @@ class WisprAddonsApp(rumps.App):
         field.setPlaceholderString_("8080")
         alert.setAccessoryView_(field)
 
-        # Position near top-right (close to menu bar)
         window = alert.window()
         screen = NSScreen.mainScreen().frame()
         window.setFrameTopLeftPoint_((screen.size.width - 300, screen.size.height - 30))
@@ -508,10 +599,16 @@ class WisprAddonsApp(rumps.App):
             pids = result.stdout.strip()
             if not pids:
                 log(f"☠️ No process on :{port}")
+                _send_notification("Kill port", f"No process on :{port}")
                 return
+            killed_procs = []
             for pid in pids.splitlines():
+                proc_name = _get_process_info(pid)
                 subprocess.run(["kill", "-9", pid.strip()], timeout=5)
-            log(f"☠️ Killed :{port} (pid {pids.replace(chr(10), ', ')})")
+                killed_procs.append(f"{proc_name} (pid {pid.strip()})")
+            summary = ", ".join(killed_procs)
+            log(f"☠️ Killed :{port} — {summary}")
+            _send_notification(f"Killed :{port}", summary)
         except Exception as e:
             log(f"☠️ Kill :{port} failed: {e}")
         # Update history: move to top, keep unique, max 5
@@ -519,7 +616,10 @@ class WisprAddonsApp(rumps.App):
             self._kill_port_history.remove(port)
         self._kill_port_history.insert(0, port)
         self._kill_port_history = self._kill_port_history[:5]
+        _save_port_history(self._kill_port_history)
         self._rebuild_kill_submenu()
+
+    # ── Transcribing ──
 
     def start_transcribing(self):
         from whisper_runner import WhisperTranscriptionRunner
@@ -528,7 +628,7 @@ class WisprAddonsApp(rumps.App):
         self._whisper_runner = WhisperTranscriptionRunner(folder)
         self._whisper_runner.start()
         self._transcribing = True
-        self._transcribe_item.title = "💬 Transcribing"
+        self._transcribe_item.title = "Stop Transcribing"
         self.icon = self._icon_on
         log("🎙️ Whisper transcription started")
 
@@ -537,9 +637,36 @@ class WisprAddonsApp(rumps.App):
             self._whisper_runner.stop()
             self._whisper_runner = None
         self._transcribing = False
-        self._transcribe_item.title = "💬 Not Transcribing"
+        self._transcribe_item.title = "Start Transcribing"
         self.icon = self._icon_off
         log("🎙️ Whisper transcription stopped")
+
+    # ── PowerPoint tracking ──
+
+    def start_ppt_tracking(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "powerpoint-monitor"))
+        from ppt_probe import PowerPointMonitor
+        folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
+                                     str(Path.home() / "Documents" / "transcriptions")))
+        self._ppt_monitor = PowerPointMonitor(folder)
+        self._ppt_monitor.start()
+        self._tracking_ppt = True
+        self._ppt_item.title = "Stop Tracking PowerPoint"
+        log("📊 PowerPoint tracking started")
+
+    def stop_ppt_tracking(self):
+        if self._ppt_monitor:
+            self._ppt_monitor.stop()
+            self._ppt_monitor = None
+        self._tracking_ppt = False
+        self._ppt_item.title = "Start Tracking PowerPoint"
+        log("📊 PowerPoint tracking stopped")
+
+    def toggle_ppt_tracking(self, _):
+        if self._tracking_ppt:
+            self.stop_ppt_tracking()
+        else:
+            self.start_ppt_tracking()
 
     def toggle_transcribing(self, _):
         if self._transcribing:
@@ -643,6 +770,8 @@ class WisprAddonsApp(rumps.App):
     def quit_app(self, _):
         if self._transcribing:
             self.stop_transcribing()
+        if self._tracking_ppt:
+            self.stop_ppt_tracking()
         if _dictation_active:
             _restore_dictation_volume()
         if _tap_run_loop_ref:
@@ -681,6 +810,7 @@ def main():
     # Run menu bar app on main thread
     _app_ref = WisprAddonsApp()
     _app_ref.start_transcribing()
+    _app_ref.start_ppt_tracking()
     _app_ref.run()
 
 
