@@ -504,6 +504,8 @@ class WisprAddonsApp(rumps.App):
         kill_menu.add(rumps.MenuItem("Port…", callback=self._kill_port_prompt))
         kill_menu.add(None)
         for port in self._kill_port_history:
+            if port == 8080:
+                continue
             kill_menu.add(rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port)))
 
         # Refresh port status when kill submenu opens (NSMenu delegate)
@@ -549,9 +551,11 @@ class WisprAddonsApp(rumps.App):
     def _rebuild_kill_submenu(self):
         kill_menu = self.menu["☠️ Kill port…"]
         for key in list(kill_menu.keys()):
-            if key.startswith(":"):
+            if key.startswith("🟢") or key.startswith("🔴") or key.startswith(":"):
                 del kill_menu[key]
         for port in self._kill_port_history:
+            if port == 8080:
+                continue  # 8080 has its own top-level entry
             alive = _check_port_alive(port)
             dot = "🟢" if alive else "🔴"
             item = rumps.MenuItem(f"{dot} :{port}", callback=self._make_kill_callback(port))
