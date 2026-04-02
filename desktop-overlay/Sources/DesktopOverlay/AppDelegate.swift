@@ -15,9 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private let pidFilePath: String
     private let myPID: Int32
     private var pidCheckTimer: Timer?
-    private var statusItem: NSStatusItem!
-    private var toggleMenuItem: NSMenuItem!
-    private var overlayHidden = false
+    private var controlsVisible = false
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -44,7 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
         connectWebSocket()
         setupButtonBar(screen: builtInScreen)
-        setupStatusBarMenu()
+        setupSignalHandler()
 
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
@@ -52,67 +50,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
     }
 
-    // MARK: - Status bar menu
+    // MARK: - Signal-based toggle (SIGUSR1 from wispr-flow menu)
 
-    private func setupStatusBarMenu() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = statusItem.button {
-            button.title = "🎬"
+    private func setupSignalHandler() {
+        let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        source.setEventHandler { [weak self] in
+            self?.toggleControls()
         }
-
-        let menu = NSMenu()
-        toggleMenuItem = NSMenuItem(title: "Show Effects Panel", action: #selector(toggleButtonBar), keyEquivalent: "e")
-        toggleMenuItem.keyEquivalentModifierMask = [.command, .shift]
-        toggleMenuItem.target = self
-        menu.addItem(toggleMenuItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let hideOverlay = NSMenuItem(title: "Close Overlay", action: #selector(hideOverlay), keyEquivalent: "w")
-        hideOverlay.keyEquivalentModifierMask = [.command]
-        hideOverlay.target = self
-        menu.addItem(hideOverlay)
-
-        let showOverlay = NSMenuItem(title: "Relaunch Overlay", action: #selector(showOverlay), keyEquivalent: "o")
-        showOverlay.keyEquivalentModifierMask = [.command, .option]
-        showOverlay.target = self
-        menu.addItem(showOverlay)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let quitItem = NSMenuItem(title: "Quit (terminate process)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quitItem)
-
-        statusItem.menu = menu
+        source.resume()
+        signal(SIGUSR1, SIG_IGN) // let GCD handle it
     }
 
-    @objc private func hideOverlay() {
-        overlayHidden = true
-        overlayPanel.orderOut(nil)
-        buttonBar.hideAndUnpin()
-        buttonBar.orderOut(nil)
-        if let button = statusItem.button {
-            button.title = "💤"
-        }
-    }
-
-    @objc private func showOverlay() {
-        overlayHidden = false
-        overlayPanel.orderFrontRegardless()
-        buttonBar.orderFrontRegardless()
-        if let button = statusItem.button {
-            button.title = "🎬"
-        }
-    }
-
-    @objc private func toggleButtonBar() {
-        if overlayHidden { showOverlay() }
-        if buttonBar.isPinned {
-            buttonBar.hideAndUnpin()
-            toggleMenuItem.title = "Show Effects Panel"
-        } else {
+    private func toggleControls() {
+        controlsVisible = !controlsVisible
+        if controlsVisible {
             buttonBar.slideInAndStay()
-            toggleMenuItem.title = "Hide Effects Panel"
+        } else {
+            buttonBar.hideAndUnpin()
         }
     }
 

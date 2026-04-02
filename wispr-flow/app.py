@@ -8,6 +8,7 @@ The event tap runs on a background thread; the main thread runs the menu bar UI.
 import ctypes
 import ctypes.util
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -406,6 +407,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
             rumps.MenuItem("Double-click wheel — Repaste last intercepted text", callback=None),
             None,  # separator
+            rumps.MenuItem("🎬 Show Controls", callback=self.toggle_overlay_controls),
             rumps.MenuItem("☠️ Kill port"),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,
@@ -469,6 +471,22 @@ class WisprAddonsApp(rumps.App):
         self._kill_port_history.insert(0, port)
         self._kill_port_history = self._kill_port_history[:5]
         self._rebuild_kill_submenu()
+
+    def toggle_overlay_controls(self, sender):
+        try:
+            pid_str = Path("/tmp/desktop-overlay.pid").read_text().strip()
+            pid = int(pid_str)
+            os.kill(pid, signal.SIGUSR1)
+            if sender.title.startswith("🎬 Show"):
+                sender.title = "🎬 Hide Controls"
+            else:
+                sender.title = "🎬 Show Controls"
+        except FileNotFoundError:
+            log("Overlay not running (no PID file)")
+        except ProcessLookupError:
+            log("Overlay process not found")
+        except Exception as e:
+            log(f"Toggle overlay failed: {e}")
 
     def on_clean(self, _):
         threading.Thread(target=handle_clean_hotkey, daemon=True).start()
