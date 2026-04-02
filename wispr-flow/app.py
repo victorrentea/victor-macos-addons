@@ -406,7 +406,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
             rumps.MenuItem("Double-click wheel — Repaste last intercepted text", callback=None),
             None,  # separator
-            rumps.MenuItem("☠️ Kill :8080", callback=self.kill_8080),
+            rumps.MenuItem("☠️ Kill port"),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,
             rumps.MenuItem("Quit", callback=self.quit_app),
@@ -414,21 +414,64 @@ class WisprAddonsApp(rumps.App):
         self.menu["Mouse 5 — Dictation mute"].enabled = False
         self.menu["Double-click wheel — Repaste last intercepted text"].enabled = False
 
-    def on_clean(self, _):
-        threading.Thread(target=handle_clean_hotkey, daemon=True).start()
+        # Kill port submenu
+        self._kill_port_history: list[int] = [8080]
+        self._kill_menu = self.menu["☠️ Kill port"]
+        self._rebuild_kill_submenu()
 
-    def kill_8080(self, _):
+    def _rebuild_kill_submenu(self):
+        self._kill_menu.clear()
+        prompt_item = rumps.MenuItem("Port…", callback=self._kill_port_prompt)
+        self._kill_menu.add(prompt_item)
+        if self._kill_port_history:
+            self._kill_menu.add(None)  # separator
+        for port in self._kill_port_history:
+            item = rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port))
+            self._kill_menu.add(item)
+
+    def _make_kill_callback(self, port: int):
+        def cb(_):
+            self._kill_port(port)
+        return cb
+
+    def _kill_port_prompt(self, _):
+        response = rumps.Window(
+            message="Enter port number to kill:",
+            title="☠️ Kill port",
+            default_text="",
+            ok="Kill",
+            cancel="Cancel",
+            dimensions=(120, 24),
+        ).run()
+        if not response.clicked:
+            return
+        text = response.text.strip()
+        if not text.isdigit():
+            log(f"☠️ Invalid port: {text}")
+            return
+        self._kill_port(int(text))
+
+    def _kill_port(self, port: int):
         try:
-            result = subprocess.run(["lsof", "-ti", ":8080"], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=5)
             pids = result.stdout.strip()
             if not pids:
-                log("☠️ No process on :8080")
+                log(f"☠️ No process on :{port}")
                 return
             for pid in pids.splitlines():
                 subprocess.run(["kill", "-9", pid.strip()], timeout=5)
-            log(f"☠️ Killed :8080 (pid {pids.replace(chr(10), ', ')})")
+            log(f"☠️ Killed :{port} (pid {pids.replace(chr(10), ', ')})")
         except Exception as e:
-            log(f"☠️ Kill :8080 failed: {e}")
+            log(f"☠️ Kill :{port} failed: {e}")
+        # Update history: move to top, keep unique, max 5
+        if port in self._kill_port_history:
+            self._kill_port_history.remove(port)
+        self._kill_port_history.insert(0, port)
+        self._kill_port_history = self._kill_port_history[:5]
+        self._rebuild_kill_submenu()
+
+    def on_clean(self, _):
+        threading.Thread(target=handle_clean_hotkey, daemon=True).start()
 
     def show_log(self, _):
         log_text = "\n".join(_log_buffer) if _log_buffer else "(no log entries yet)"
