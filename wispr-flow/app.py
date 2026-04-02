@@ -437,7 +437,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Mute 🎶 — Mouse 5", callback=None),
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             None,  # separator
-            rumps.MenuItem("📋 IntelliJ Git → Clipboard", callback=self.copy_intellij_git),
+            rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
             rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
             rumps.MenuItem("☠️ Kill port"),
             rumps.MenuItem("Show Log", callback=self.show_log),
