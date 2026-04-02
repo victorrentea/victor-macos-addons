@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var pidCheckTimer: Timer?
     private var statusItem: NSStatusItem!
     private var toggleMenuItem: NSMenuItem!
+    private var overlayHidden = false
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -64,13 +65,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         toggleMenuItem.keyEquivalentModifierMask = [.command, .shift]
         toggleMenuItem.target = self
         menu.addItem(toggleMenuItem)
+
         menu.addItem(NSMenuItem.separator())
-        let quitItem = NSMenuItem(title: "Quit Overlay", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        let hideOverlay = NSMenuItem(title: "Close Overlay", action: #selector(hideOverlay), keyEquivalent: "w")
+        hideOverlay.keyEquivalentModifierMask = [.command]
+        hideOverlay.target = self
+        menu.addItem(hideOverlay)
+
+        let showOverlay = NSMenuItem(title: "Relaunch Overlay", action: #selector(showOverlay), keyEquivalent: "o")
+        showOverlay.keyEquivalentModifierMask = [.command, .option]
+        showOverlay.target = self
+        menu.addItem(showOverlay)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let quitItem = NSMenuItem(title: "Quit (terminate process)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
+
         statusItem.menu = menu
     }
 
+    @objc private func hideOverlay() {
+        overlayHidden = true
+        overlayPanel.orderOut(nil)
+        buttonBar.hideAndUnpin()
+        buttonBar.orderOut(nil)
+        if let button = statusItem.button {
+            button.title = "💤"
+        }
+    }
+
+    @objc private func showOverlay() {
+        overlayHidden = false
+        overlayPanel.orderFrontRegardless()
+        buttonBar.orderFrontRegardless()
+        if let button = statusItem.button {
+            button.title = "🎬"
+        }
+    }
+
     @objc private func toggleButtonBar() {
+        if overlayHidden { showOverlay() }
         if buttonBar.isPinned {
             buttonBar.hideAndUnpin()
             toggleMenuItem.title = "Show Effects Panel"
