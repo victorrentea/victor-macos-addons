@@ -421,10 +421,10 @@ class WisprAddonsApp(rumps.App):
             quit_button=None,
         )
         self.menu = [
-            rumps.MenuItem("⌘⌃V — 😊-repaste", callback=self.on_clean),
-            rumps.MenuItem("⌘⌃⌥D — Toggle dark mode", callback=None),
-            rumps.MenuItem("Mouse 5 — Dictation mute", callback=None),
-            rumps.MenuItem("Double-click wheel — Re-paste", callback=None),
+            rumps.MenuItem("Emotional 🥹 Paste — ⌘⌃V", callback=self.on_clean),
+            rumps.MenuItem("Toggle Dark Mode — ⌘⌃⌥D", callback=None),
+            rumps.MenuItem("Mute 🎶 — Mouse 5", callback=None),
+            rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             None,  # separator
             rumps.MenuItem("🎬 Show", callback=self.toggle_overlay_controls),
             rumps.MenuItem("☠️ Kill port"),
@@ -432,9 +432,9 @@ class WisprAddonsApp(rumps.App):
             None,
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
-        self.menu["⌘⌃⌥D — Toggle dark mode"].enabled = False
-        self.menu["Mouse 5 — Dictation mute"].enabled = False
-        self.menu["Double-click wheel — Re-paste"].enabled = False
+        self.menu["Toggle Dark Mode — ⌘⌃⌥D"].enabled = False
+        self.menu["Mute 🎶 — Mouse 5"].enabled = False
+        self.menu["Re-paste — Wheel x 2"].enabled = False
 
         # Kill port submenu — build initial items inline
         self._kill_port_history: list[int] = [8080]
@@ -459,17 +459,28 @@ class WisprAddonsApp(rumps.App):
         return cb
 
     def _kill_port_prompt(self, _):
-        response = rumps.Window(
-            message="Enter port number to kill:",
-            title="☠️ Kill port",
-            default_text="",
-            ok="Kill",
-            cancel="Cancel",
-            dimensions=(120, 24),
-        ).run()
-        if not response.clicked:
+        from AppKit import NSAlert, NSTextField, NSAlertFirstButtonReturn, NSScreen
+        from Foundation import NSMakeRect
+
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_("Port:")
+        alert.addButtonWithTitle_("Kill")
+        alert.addButtonWithTitle_("Cancel")
+
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 80, 24))
+        field.setPlaceholderString_("8080")
+        alert.setAccessoryView_(field)
+
+        # Position window top-right
+        window = alert.window()
+        screen = NSScreen.mainScreen().frame()
+        window.setFrameTopLeftPoint_((screen.size.width - 250, screen.size.height - 30))
+
+        window.makeFirstResponder_(field)
+        result = alert.runModal()
+        if result != NSAlertFirstButtonReturn:
             return
-        text = response.text.strip()
+        text = str(field.stringValue()).strip()
         if not text.isdigit():
             log(f"☠️ Invalid port: {text}")
             return
