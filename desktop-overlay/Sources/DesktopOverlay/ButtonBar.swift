@@ -36,6 +36,7 @@ class ButtonBar: NSPanel {
     private var hiddenFrame: NSRect = .zero
     private var shownFrame: NSRect = .zero
     private var isSlideIn: Bool = false
+    private(set) var isPinned: Bool = false
 
     init(buttons: [ButtonDef], screen: NSScreen) {
         let buttonSize: CGFloat = 32
@@ -114,7 +115,30 @@ class ButtonBar: NSPanel {
         }
     }
 
+    /// Show the bar and keep it visible until explicitly hidden.
+    func slideInAndStay() {
+        isPinned = true
+        slideTimer?.invalidate()
+        slideTimer = nil
+        orderFrontRegardless()
+        if !isSlideIn {
+            isSlideIn = true
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.1
+                self.animator().setFrame(shownFrame, display: true)
+                self.animator().alphaValue = hoverOpacity
+            }
+        }
+    }
+
+    /// Hide the bar and return to hover-triggered mode.
+    func hideAndUnpin() {
+        isPinned = false
+        slideOut()
+    }
+
     private func checkMouseForEdge() {
+        guard !isPinned else { return }
         let mouse = NSEvent.mouseLocation
         let logic = SingleScreenHoverLogic(shownFrame: shownFrame)
         if logic.shouldSlideIn(mouse: mouse) {

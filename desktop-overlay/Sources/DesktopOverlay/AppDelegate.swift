@@ -15,6 +15,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private let pidFilePath: String
     private let myPID: Int32
     private var pidCheckTimer: Timer?
+    private var statusItem: NSStatusItem!
+    private var toggleMenuItem: NSMenuItem!
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -41,10 +43,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
         connectWebSocket()
         setupButtonBar(screen: builtInScreen)
+        setupStatusBarMenu()
 
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.checkPIDFile()
+        }
+    }
+
+    // MARK: - Status bar menu
+
+    private func setupStatusBarMenu() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = statusItem.button {
+            button.title = "🎬"
+        }
+
+        let menu = NSMenu()
+        toggleMenuItem = NSMenuItem(title: "Show Effects Panel", action: #selector(toggleButtonBar), keyEquivalent: "e")
+        toggleMenuItem.keyEquivalentModifierMask = [.command, .shift]
+        toggleMenuItem.target = self
+        menu.addItem(toggleMenuItem)
+        menu.addItem(NSMenuItem.separator())
+        let quitItem = NSMenuItem(title: "Quit Overlay", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quitItem)
+        statusItem.menu = menu
+    }
+
+    @objc private func toggleButtonBar() {
+        if buttonBar.isPinned {
+            buttonBar.hideAndUnpin()
+            toggleMenuItem.title = "Show Effects Panel"
+        } else {
+            buttonBar.slideInAndStay()
+            toggleMenuItem.title = "Hide Effects Panel"
         }
     }
 
