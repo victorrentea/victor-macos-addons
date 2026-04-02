@@ -472,6 +472,7 @@ class WisprAddonsApp(rumps.App):
         self._transcribing = False
         self._ppt_monitor = None
         self._tracking_ppt = False
+        self._ij_monitor = None
 
         self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
         self._kill_8080_item = rumps.MenuItem("☠️ Kill :8080", callback=lambda _: self._kill_port(8080))
@@ -651,6 +652,17 @@ class WisprAddonsApp(rumps.App):
         self._tracking_ppt = True
         log("📊 PowerPoint tracking started")
 
+    # ── IntelliJ tracking ──
+
+    def start_ij_tracking(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "intellij-monitor"))
+        from ij_probe import IntelliJMonitor
+        folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
+                                     str(Path.home() / "Documents" / "transcriptions")))
+        self._ij_monitor = IntelliJMonitor(folder)
+        self._ij_monitor.start()
+        log("📋 IntelliJ tracking started")
+
     def toggle_transcribing(self, _):
         if self._transcribing:
             self.stop_transcribing()
@@ -659,71 +671,17 @@ class WisprAddonsApp(rumps.App):
 
     def copy_intellij_git(self, _):
         try:
-            # Get IntelliJ window title
-            script = (
-                'tell application "System Events" to tell process "idea" to '
-                'return title of front window'
-            )
-            result = subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True, text=True, timeout=2,
-            )
-            title = result.stdout.strip()
-            if not title:
-                log("📋 IntelliJ not open or no window")
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "intellij-monitor"))
+            from ij_probe import probe_intellij
+            state = probe_intellij()
+            if not state or not state.get("url"):
+                log("📋 IntelliJ not open or no git remote")
                 return
-
-            # Extract project name from title: "kafka – File.java [module]" → "kafka"
-            project_name = title.split(" – ")[0].split("[")[0].strip()
-            if not project_name:
-                log(f"📋 Can't parse project from: {title}")
-                return
-
-            # Find project path via recentProjects.xml
-            import glob
-            import xml.etree.ElementTree as ET
-            pattern = os.path.expanduser(
-                "~/Library/Application Support/JetBrains/IntelliJIdea*/options/recentProjects.xml"
-            )
-            xml_files = sorted(glob.glob(pattern), reverse=True)
-            project_path = None
-            for xml_file in xml_files:
-                try:
-                    tree = ET.parse(xml_file)
-                    for entry in tree.findall(".//entry"):
-                        key = entry.get("key", "")
-                        folder = Path(key.replace("$USER_HOME$", str(Path.home()))).name
-                        if folder.lower() == project_name.lower():
-                            project_path = key.replace("$USER_HOME$", str(Path.home()))
-                            break
-                except Exception:
-                    continue
-                if project_path:
-                    break
-
-            if not project_path:
-                log(f"📋 Project '{project_name}' not found in recentProjects.xml")
-                return
-
-            # Get git remote URL and branch
-            def _git(cmd):
-                r = subprocess.run(
-                    ["git", "-C", project_path] + cmd,
-                    capture_output=True, text=True, timeout=2,
-                )
-                return r.stdout.strip() if r.returncode == 0 else ""
-
-            remote_url = _git(["remote", "get-url", "origin"])
-            branch = _git(["branch", "--show-current"])
-
-            if not remote_url:
-                log(f"📋 No git remote in {project_path}")
-                return
-
-            clipboard_text = f"{remote_url} ({branch})" if branch else remote_url
+            url = state["url"]
+            branch = state.get("branch", "")
+            clipboard_text = f"{url} ({branch})" if branch else url
             set_clipboard(clipboard_text)
             log(f"📋 Copied: {clipboard_text}")
-
         except Exception as e:
             log(f"📋 IntelliJ git copy failed: {e}")
 
@@ -778,6 +736,7 @@ def main():
     _app_ref = WisprAddonsApp()
     _app_ref.start_transcribing()
     _app_ref.start_ppt_tracking()
+    _app_ref.start_ij_tracking()
     _app_ref.run()
 
 
