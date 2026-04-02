@@ -439,6 +439,18 @@ def _check_port_alive(port: int) -> bool:
         return False
 
 
+def _get_port_process_name(port: int) -> str | None:
+    """Get the executable name bound to a port, or None."""
+    try:
+        result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True, timeout=2)
+        pid = result.stdout.strip().splitlines()[0] if result.stdout.strip() else None
+        if pid:
+            return _get_process_info(pid)
+    except Exception:
+        pass
+    return None
+
+
 def _get_process_info(pid: str) -> str:
     """Get process name/command for a PID."""
     try:
@@ -478,11 +490,11 @@ class WisprAddonsApp(rumps.App):
         self._kill_8080_item = rumps.MenuItem("☠️ Kill :8080", callback=lambda _: self._kill_port(8080))
 
         self.menu = [
+            self._kill_8080_item,
+            rumps.MenuItem("☠️ Kill…"),
             self._transcribe_item,
             None,  # separator
             rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
-            self._kill_8080_item,
-            rumps.MenuItem("☠️ Kill…"),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,  # separator
             rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=self.on_clean),
@@ -540,8 +552,14 @@ class WisprAddonsApp(rumps.App):
                 return None
 
     def _refresh_port_status(self):
-        """Refresh enabled/disabled state of kill entries based on port activity."""
-        self._kill_8080_item.set_callback(self._make_kill_callback(8080) if _check_port_alive(8080) else None)
+        """Refresh enabled/disabled state and process names of kill entries."""
+        proc = _get_port_process_name(8080)
+        if proc:
+            self._kill_8080_item.title = f"☠️ Kill :8080 {proc}"
+            self._kill_8080_item.set_callback(self._make_kill_callback(8080))
+        else:
+            self._kill_8080_item.title = "☠️ Kill :8080"
+            self._kill_8080_item.set_callback(None)
         self._rebuild_kill_submenu()
 
     def _rebuild_kill_submenu(self):
@@ -551,9 +569,12 @@ class WisprAddonsApp(rumps.App):
                 del kill_menu[key]
         for port in self._kill_port_history:
             if port == 8080:
-                continue  # 8080 has its own top-level entry
-            alive = _check_port_alive(port)
-            item = rumps.MenuItem(f"☠️ :{port}", callback=self._make_kill_callback(port) if alive else None)
+                continue
+            proc = _get_port_process_name(port)
+            if proc:
+                item = rumps.MenuItem(f"☠️ :{port} {proc}", callback=self._make_kill_callback(port))
+            else:
+                item = rumps.MenuItem(f"☠️ :{port}", callback=None)
             kill_menu.add(item)
 
     def _make_kill_callback(self, port: int):
