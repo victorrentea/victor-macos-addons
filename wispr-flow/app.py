@@ -485,15 +485,15 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("☠️ Kill…"),
             rumps.MenuItem("Show Log", callback=self.show_log),
             None,  # separator
-            rumps.MenuItem("Emotional 🥹 Paste — ⌘⌃V", callback=self.on_clean),
-            rumps.MenuItem("Toggle Dark Mode — ⌘⌃⌥D", callback=None),
-            rumps.MenuItem("Mute 🎶 — Mouse 5", callback=None),
+            rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=self.on_clean),
+            rumps.MenuItem("Dark Mode — ⌘⌃⌥D", callback=None),
+            rumps.MenuItem("Mute Music — Mouse 5", callback=None),
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             None,  # separator
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
-        self.menu["Toggle Dark Mode — ⌘⌃⌥D"].enabled = False
-        self.menu["Mute 🎶 — Mouse 5"].enabled = False
+        self.menu["Dark Mode — ⌘⌃⌥D"].enabled = False
+        self.menu["Mute Music — Mouse 5"].enabled = False
         self.menu["Re-paste — Wheel x 2"].enabled = False
 
         # Kill port submenu — persisted across sessions
