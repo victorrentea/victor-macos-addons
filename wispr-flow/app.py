@@ -609,31 +609,38 @@ class WisprAddonsApp(rumps.App):
         toggle_dark_mode()
         self._refresh_dark_mode_label()
 
-    def _refresh_dark_mode_label(self):
-        label = "Exit Dark Mode" if _is_dark_mode() else "Enter Dark Mode"
+    def _refresh_dark_mode_label(self, dark=None):
+        if dark is None:
+            dark = _is_dark_mode()
+        label = "Exit Dark Mode" if dark else "Enter Dark Mode"
         self._dark_mode_item.title = label + " — ⌘⌃⌥D"
 
     def _refresh_port_status(self):
         """Refresh enabled/disabled state and process names of kill entries."""
-        self._refresh_dark_mode_label()
-        proc = _get_port_process_name(8080)
-        if proc:
-            self._kill_8080_item.title = f"Kill :8080 {proc}"
+        from concurrent.futures import ThreadPoolExecutor
+        all_ports = [8080] + [p for p in self._kill_port_history if p != 8080]
+        with ThreadPoolExecutor() as ex:
+            dark_future = ex.submit(_is_dark_mode)
+            port_futures = {port: ex.submit(_get_port_process_name, port) for port in all_ports}
+
+        self._refresh_dark_mode_label(dark_future.result())
+
+        proc_8080 = port_futures[8080].result()
+        if proc_8080:
+            self._kill_8080_item.title = f"Kill :8080 {proc_8080}"
             self._kill_8080_item.set_callback(self._make_kill_callback(8080))
         else:
             self._kill_8080_item.title = "Kill :8080"
             self._kill_8080_item.set_callback(None)
-        self._rebuild_kill_submenu()
 
-    def _rebuild_kill_submenu(self):
+        self._rebuild_kill_submenu({p: port_futures[p].result() for p in all_ports if p != 8080})
+
+    def _rebuild_kill_submenu(self, port_procs: dict):
         kill_menu = self.menu["Kill…"]
         for key in list(kill_menu.keys()):
             if key.startswith(":"):
                 del kill_menu[key]
-        for port in self._kill_port_history:
-            if port == 8080:
-                continue
-            proc = _get_port_process_name(port)
+        for port, proc in port_procs.items():
             if proc:
                 item = rumps.MenuItem(f":{port} {proc}", callback=self._make_kill_callback(port))
             else:
