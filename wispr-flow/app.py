@@ -742,7 +742,7 @@ class WisprAddonsApp(rumps.App):
         subprocess.Popen([
             "osascript",
             "-e", 'tell application "Terminal"',
-            "-e", f"do script \"tput setaf 8 && tail -f '{today_file}'\"",
+            "-e", f"do script \"tput setaf 8 && python3 -u '{Path(__file__).parent / 'tail_rolling.py'}' '{today_file}'\"",
             "-e", "activate",
             "-e", "end tell",
         ])
