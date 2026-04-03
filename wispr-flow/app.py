@@ -865,8 +865,28 @@ class WisprAddonsApp(rumps.App):
         os._exit(0)
 
 
+PID_FILE = Path.home() / ".wispr-addons.pid"
+
+
+def _kill_previous_instance():
+    if PID_FILE.exists():
+        try:
+            old_pid = int(PID_FILE.read_text().strip())
+            os.kill(old_pid, signal.SIGTERM)
+            log(f"Killed previous instance (PID {old_pid})")
+            time.sleep(0.5)
+        except (ValueError, ProcessLookupError):
+            pass
+    PID_FILE.write_text(str(os.getpid()))
+
+
 def main():
     global _client, _app_ref
+
+    _kill_previous_instance()
+
+    import atexit
+    atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
 
     # Load API key
     secrets_path = Path.home() / ".training-assistants-secrets.env"
