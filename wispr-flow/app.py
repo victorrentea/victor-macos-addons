@@ -804,8 +804,9 @@ class WisprAddonsApp(rumps.App):
         from AppKit import (NSPanel, NSScrollView, NSTextView, NSScreen, NSFont,
                             NSBackingStoreBuffered, NSWindowStyleMaskTitled,
                             NSWindowStyleMaskClosable, NSWindowStyleMaskResizable,
-                            NSBezelBorder, NSApplication)
+                            NSBezelBorder, NSApplication, NSPasteboard, NSStringPboardType)
         from Foundation import NSMakeRect
+        import objc
 
         log_text = "\n".join(_log_buffer) if _log_buffer else "(no log entries yet)"
 
@@ -828,7 +829,14 @@ class WisprAddonsApp(rumps.App):
         scroll.setBorderType_(NSBezelBorder)
         scroll.setAutoresizingMask_(0x12)  # flexible width + height
 
-        text_view = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
+        class _ClickToCopyTextView(NSTextView):
+            def mouseDown_(self, event):
+                text = self.string()
+                pb = NSPasteboard.generalPasteboard()
+                pb.declareTypes_owner_([NSStringPboardType], None)
+                pb.setString_forType_(text, NSStringPboardType)
+
+        text_view = _ClickToCopyTextView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
         text_view.setFont_(NSFont.monospacedSystemFontOfSize_weight_(12, 0))
         text_view.setEditable_(False)
         text_view.setString_(log_text)
