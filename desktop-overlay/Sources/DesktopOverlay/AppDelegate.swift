@@ -92,7 +92,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             .init(label: "z", tooltip: "Zorro") { [weak self] in
                 self?.animator.showZorro()
             },
-            .init(label: "🎆", tooltip: "Fireworks") { [weak self] in
+            .init(label: "🎆", imageName: "fireworks-button.png", tooltip: "Fireworks") { [weak self] in
                 self?.animator.showFireworks()
             },
             .init(label: "📽️", tooltip: "Sepia") { [weak self] in

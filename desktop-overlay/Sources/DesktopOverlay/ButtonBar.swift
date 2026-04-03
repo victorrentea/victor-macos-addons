@@ -16,12 +16,14 @@ class ButtonBar: NSPanel {
 
     struct ButtonDef {
         let label: String
+        let imageName: String?
         let tooltip: String
         let labelColor: CGColor?
         let action: () -> Void
 
-        init(label: String, tooltip: String, labelColor: CGColor? = nil, action: @escaping () -> Void) {
+        init(label: String, imageName: String? = nil, tooltip: String, labelColor: CGColor? = nil, action: @escaping () -> Void) {
             self.label = label
+            self.imageName = imageName
             self.tooltip = tooltip
             self.labelColor = labelColor
             self.action = action
@@ -88,6 +90,7 @@ class ButtonBar: NSPanel {
             let btn = RoundEmojiButton(
                 frame: NSRect(x: bx, y: by, width: buttonSize, height: buttonSize),
                 label: def.label,
+                imageName: def.imageName,
                 tooltip: def.tooltip,
                 labelColor: def.labelColor,
                 onDragEnded: onDragEnded,
@@ -252,7 +255,7 @@ private class RoundEmojiButton: NSView {
     private let hoverBgColor = NSColor(white: 0.75, alpha: 0.45).cgColor
     private let pressBgColor = NSColor(white: 0.75, alpha: 0.75).cgColor
 
-    init(frame: NSRect, label: String, tooltip: String, labelColor: CGColor? = nil,
+    init(frame: NSRect, label: String, imageName: String? = nil, tooltip: String, labelColor: CGColor? = nil,
          onDragEnded: @escaping (NSPoint) -> Void, action: @escaping () -> Void) {
         self.action = action
         self.onDragEnded = onDragEnded
@@ -267,23 +270,34 @@ private class RoundEmojiButton: NSView {
         bgLayer.opacity = 0
         layer?.addSublayer(bgLayer)
 
-        let fontSize = bounds.width * 0.55
-        let textHeight = bounds.width * 0.70
-        let textLayer = CATextLayer()
-        if let color = labelColor {
-            let attr = NSAttributedString(string: label, attributes: [
-                .foregroundColor: NSColor(cgColor: color) ?? .white,
-                .font: NSFont.systemFont(ofSize: fontSize)
-            ])
-            textLayer.string = attr
+        if let imageName = imageName,
+           let url = Bundle.module.url(forResource: imageName, withExtension: nil),
+           let image = NSImage(contentsOf: url) {
+            let inset: CGFloat = bounds.width * 0.1
+            let imgLayer = CALayer()
+            imgLayer.frame = bounds.insetBy(dx: inset, dy: inset)
+            imgLayer.contents = image
+            imgLayer.contentsGravity = .resizeAspect
+            layer?.addSublayer(imgLayer)
         } else {
-            textLayer.string = label
-            textLayer.fontSize = fontSize
+            let fontSize = bounds.width * 0.55
+            let textHeight = bounds.width * 0.70
+            let textLayer = CATextLayer()
+            if let color = labelColor {
+                let attr = NSAttributedString(string: label, attributes: [
+                    .foregroundColor: NSColor(cgColor: color) ?? .white,
+                    .font: NSFont.systemFont(ofSize: fontSize)
+                ])
+                textLayer.string = attr
+            } else {
+                textLayer.string = label
+                textLayer.fontSize = fontSize
+            }
+            textLayer.alignmentMode = .center
+            textLayer.frame = CGRect(x: 0, y: (bounds.height - textHeight) / 2, width: bounds.width, height: textHeight)
+            textLayer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+            layer?.addSublayer(textLayer)
         }
-        textLayer.alignmentMode = .center
-        textLayer.frame = CGRect(x: 0, y: (bounds.height - textHeight) / 2, width: bounds.width, height: textHeight)
-        textLayer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        layer?.addSublayer(textLayer)
 
         let ta = NSTrackingArea(rect: bounds,
                                 options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
