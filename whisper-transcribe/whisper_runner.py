@@ -174,9 +174,11 @@ class _ChannelCapture:
         return s
 
     def _loop(self):
+        _consecutive_errors = 0
         while self._running:
             try:
                 s = self._open()
+                _consecutive_errors = 0
                 log.info("transcript", f"🎙️ [{self.label}] capturing from {self.device_name!r}")
                 while self._running and s.active:
                     time.sleep(0.5)
@@ -189,7 +191,10 @@ class _ChannelCapture:
                     self._buf = np.zeros(0, dtype=np.float32)
                     time.sleep(0.5)
             except Exception as exc:
-                log.error("transcript", f"🎙️ [{self.label}] stream error: {exc}")
+                _consecutive_errors += 1
+                # Log first error, then every 30th (once per minute at 2s retry)
+                if _consecutive_errors == 1 or _consecutive_errors % 30 == 0:
+                    log.error("transcript", f"🎙️ [{self.label}] stream error (x{_consecutive_errors}): {exc}")
                 time.sleep(2)
                 # Force PortAudio to reinitialize — recovers from CoreAudio invalid state after reconnect
                 try:
