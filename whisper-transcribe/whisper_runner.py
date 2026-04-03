@@ -274,13 +274,22 @@ class WhisperTranscriptionRunner:
     def __init__(self, output_dir: Path, on_device_change=None):
         self.output_dir = output_dir
         self.enabled    = False
+        self._running   = False
         self._channels: list[_ChannelCapture] = []
         self._on_device_change = on_device_change
         self._me_channel: _ChannelCapture | None = None
         self._unregister_listener = None
         self._recent_victor: list[tuple[float, str]] = []  # (timestamp, text) for dedup
 
+    def _poll_device_loop(self):
+        """Poll every 5s for Bluetooth device alive-state changes (not caught by CoreAudio dev# events)."""
+        while self._running:
+            time.sleep(5)
+            if self._running:
+                self._on_device_list_changed()
+
     def start(self):
+        self._running = True
         tx_queue: queue.Queue = queue.Queue()
 
         # Victor channel
@@ -318,9 +327,12 @@ class WhisperTranscriptionRunner:
 
         self.enabled = True
 
-        # Register CoreAudio device change listener
+        # Register CoreAudio device change listener (fires for USB/new devices)
         self._unregister_listener = register_device_change_callback(self._on_device_list_changed)
         log.info("transcript", "🎙️ CoreAudio device change listener registered")
+
+        # Bluetooth devices toggle 'alive' without a dev# event — poll every 5s
+        threading.Thread(target=self._poll_device_loop, daemon=True).start()
 
     def _on_device_list_changed(self):
         """Called by CoreAudio when devices are added/removed."""
@@ -343,6 +355,7 @@ class WhisperTranscriptionRunner:
             log.error("transcript", f"🎙️ Device change handler error: {exc}")
 
     def stop(self):
+        self._running = False
         if self._unregister_listener:
             self._unregister_listener()
         for ch in self._channels:
