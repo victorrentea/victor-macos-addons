@@ -306,6 +306,17 @@ def _on_mouse_wheel_click() -> None:
         threading.Thread(target=_paste_last_intercepted_text, daemon=True).start()
 
 
+def _is_dark_mode() -> bool:
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", 'tell application "System Events" to tell appearance preferences to get dark mode'],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip().lower() == "true"
+    except Exception:
+        return False
+
+
 def toggle_dark_mode() -> None:
     try:
         subprocess.run(
@@ -526,6 +537,8 @@ class WisprAddonsApp(rumps.App):
 
         self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
         self._kill_8080_item = rumps.MenuItem("Kill :8080", callback=lambda _: self._kill_port(8080))
+        _dark_label = "Exit Dark Mode" if _is_dark_mode() else "Enter Dark Mode"
+        self._dark_mode_item = rumps.MenuItem(_dark_label + " — ⌘⌃⌥D", callback=self._toggle_dark_mode)
 
         self.menu = [
             self._kill_8080_item,
@@ -538,7 +551,7 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Log", callback=self.show_log),
             None,  # separator
             rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=None),
-            rumps.MenuItem("Dark Mode — ⌘⌃⌥D", callback=None),
+            self._dark_mode_item,
 
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             rumps.MenuItem("Screenshot — ⌃P", callback=None),
@@ -546,7 +559,6 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
         self.menu["Paste Emotions — ⌘⌃V"].enabled = False
-        self.menu["Dark Mode — ⌘⌃⌥D"].enabled = False
 
         self.menu["Re-paste — Wheel x 2"].enabled = False
         self.menu["Screenshot — ⌃P"].enabled = False
@@ -590,8 +602,20 @@ class WisprAddonsApp(rumps.App):
             except Exception:
                 return None
 
+    def _toggle_dark_mode(self, _):
+        threading.Thread(target=self._toggle_dark_mode_bg, daemon=True).start()
+
+    def _toggle_dark_mode_bg(self):
+        toggle_dark_mode()
+        self._refresh_dark_mode_label()
+
+    def _refresh_dark_mode_label(self):
+        label = "Exit Dark Mode" if _is_dark_mode() else "Enter Dark Mode"
+        self._dark_mode_item.title = label + " — ⌘⌃⌥D"
+
     def _refresh_port_status(self):
         """Refresh enabled/disabled state and process names of kill entries."""
+        self._refresh_dark_mode_label()
         proc = _get_port_process_name(8080)
         if proc:
             self._kill_8080_item.title = f"Kill :8080 {proc}"
