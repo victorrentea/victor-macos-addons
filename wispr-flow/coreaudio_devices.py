@@ -239,6 +239,41 @@ def get_device_by_uid(uid: str) -> dict | None:
 _active_listeners: list[tuple] = []
 
 
+def register_device_alive_callbacks(callback) -> callable:
+    """
+    Register a callback that fires when any input device's alive status changes.
+    This catches Bluetooth connect/disconnect events that don't trigger a dev# event.
+
+    Returns an unregister function.
+    """
+    entries = []
+    prop = AudioObjectPropertyAddress(_fourcc('livn'), _fourcc('glob'), 0)
+
+    def _c_callback(obj_id, num_addresses, addresses, client_data):
+        try:
+            callback()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        return 0
+
+    for dev_id in _get_device_ids():
+        if _get_input_channel_count(dev_id) == 0:
+            continue
+        c_ref = _ListenerProc(_c_callback)
+        status = _AddPropertyListener(dev_id, byref(prop), c_ref, None)
+        if status == 0:
+            entries.append((dev_id, prop, c_ref))
+
+    _active_listeners.extend(e[1:] for e in entries)
+
+    def unregister():
+        for dev_id, p, c_ref in entries:
+            _RemovePropertyListener(dev_id, byref(p), c_ref, None)
+
+    return unregister
+
+
 def register_device_change_callback(callback) -> callable:
     """
     Register a Python callable to be notified when the audio device list changes.

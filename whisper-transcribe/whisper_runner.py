@@ -20,7 +20,7 @@ import numpy as np
 
 # Add parent dir so we can import coreaudio_devices from wispr-flow
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "wispr-flow"))
-from coreaudio_devices import list_input_devices, register_device_change_callback
+from coreaudio_devices import list_input_devices, register_device_change_callback, register_device_alive_callbacks
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
@@ -279,6 +279,7 @@ class WhisperTranscriptionRunner:
         self._on_device_change = on_device_change
         self._me_channel: _ChannelCapture | None = None
         self._unregister_listener = None
+        self._unregister_alive_listener = None
         self._recent_victor: list[tuple[float, str]] = []  # (timestamp, text) for dedup
 
     def _poll_device_loop(self):
@@ -329,9 +330,11 @@ class WhisperTranscriptionRunner:
 
         # Register CoreAudio device change listener (fires for USB/new devices)
         self._unregister_listener = register_device_change_callback(self._on_device_list_changed)
-        log.info("transcript", "🎙️ CoreAudio device change listener registered")
+        # Register per-device alive listeners (fires for Bluetooth connect/disconnect)
+        self._unregister_alive_listener = register_device_alive_callbacks(self._on_device_list_changed)
+        log.info("transcript", "🎙️ CoreAudio device listeners registered")
 
-        # Bluetooth devices toggle 'alive' without a dev# event — poll every 5s
+        # Fallback poll every 5s (belt-and-suspenders)
         threading.Thread(target=self._poll_device_loop, daemon=True).start()
 
     def _on_device_list_changed(self):
@@ -362,6 +365,8 @@ class WhisperTranscriptionRunner:
         self._running = False
         if self._unregister_listener:
             self._unregister_listener()
+        if self._unregister_alive_listener:
+            self._unregister_alive_listener()
         for ch in self._channels:
             ch.stop()
 
