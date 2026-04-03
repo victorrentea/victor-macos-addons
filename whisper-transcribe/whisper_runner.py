@@ -286,7 +286,7 @@ class WhisperTranscriptionRunner:
         while self._running:
             time.sleep(5)
             if self._running:
-                self._on_device_list_changed()
+                self._check_best_device(delay=0)
 
     def start(self):
         self._running = True
@@ -336,15 +336,19 @@ class WhisperTranscriptionRunner:
 
     def _on_device_list_changed(self):
         """Called by CoreAudio when devices are added/removed."""
+        self._check_best_device(delay=2)  # delay for Bluetooth stabilization
+
+    def _check_best_device(self, delay: float = 0):
         if not self._me_channel:
             return
-        # Small delay for Bluetooth stabilization
-        time.sleep(2)
+        if delay:
+            time.sleep(delay)
         try:
             resolved = _resolve_device_coreaudio(_ME_PATTERNS)
+            best_idx, best_name = resolved if resolved else (None, None)
+            log.info("transcript", f"🎙️ device check: best={best_name!r} current={self._me_channel.device_name!r}")
             if not resolved:
                 return
-            best_idx, best_name = resolved
             if best_name != self._me_channel.device_name or best_idx != self._me_channel.device:
                 short = _short_device_name(best_name)
                 self._me_channel.switch_device(best_idx, best_name)
