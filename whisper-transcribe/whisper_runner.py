@@ -303,7 +303,7 @@ class WhisperTranscriptionRunner:
             if not resolved:
                 return
             best_idx, best_name = resolved
-            if best_name != self._me_channel.device_name:
+            if best_name != self._me_channel.device_name or best_idx != self._me_channel.device:
                 short = _short_device_name(best_name)
                 self._me_channel.switch_device(best_idx, best_name)
                 self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
