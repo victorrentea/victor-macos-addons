@@ -222,9 +222,13 @@ class _ChannelCapture:
             chunk = self._buf[: self._chunk].copy()
             self._buf = self._buf[self._chunk - self._overlap :]
             rms = float(np.sqrt(np.mean(chunk ** 2)))
-            if rms >= self._current_threshold():
+            threshold = self._current_threshold()
+            if rms >= threshold:
                 tag = _short_device_name(self.device_name)
                 self._queue.put((self.label, chunk, tag))
+            elif rms > 0.001:  # non-silent but below threshold — log for debugging
+                ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
+                print(f"{ts} [transcript  ] 🎙️ [{self.label}] below threshold: rms={rms:.4f} < {threshold:.4f}")
 
 
 # ── Transcription thread ────────────────────────────────────────────────────
