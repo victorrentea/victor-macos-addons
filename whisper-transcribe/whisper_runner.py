@@ -24,12 +24,12 @@ from coreaudio_devices import list_input_devices, register_device_change_callbac
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
-_error_callback = None  # optional callable(str) — set by app to surface errors in menu log
+_log_callback = None  # optional callable(str) — forwards all transcription logs to the menu
 
 
 def set_error_callback(cb):
-    global _error_callback
-    _error_callback = cb
+    global _log_callback
+    _log_callback = cb
 
 
 class _Log:
@@ -37,15 +37,19 @@ class _Log:
     def info(component: str, msg: str):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
         print(f"{ts} [{component:<12}] {msg}")
+        if _log_callback:
+            try:
+                _log_callback(f"🎙️ {msg}")
+            except Exception:
+                pass
 
     @staticmethod
     def error(component: str, msg: str):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
-        line = f"{ts} [{component:<12}] ERROR {msg}"
-        print(line)
-        if _error_callback:
+        print(f"{ts} [{component:<12}] ERROR {msg}")
+        if _log_callback:
             try:
-                _error_callback(f"🎙️ {msg}")
+                _log_callback(f"🎙️ ERROR {msg}")
             except Exception:
                 pass
 
@@ -384,4 +388,5 @@ class WhisperTranscriptionRunner:
         words = len(parts)
         preview = " ".join(parts[:9])
         dots = " ..." if words > 9 else ""
-        log.info("transcript", f"🎙️{words} words: {preview}{dots}")
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
+        print(f"{ts} [transcript  ] 🎙️{words} words: {preview}{dots}")
