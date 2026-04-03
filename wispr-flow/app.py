@@ -711,7 +711,9 @@ class WisprAddonsApp(rumps.App):
             self._transcribe_item.title = "Start Transcribing"
 
     def start_transcribing(self):
+        import whisper_runner as _wr
         from whisper_runner import WhisperTranscriptionRunner
+        _wr.set_error_callback(log)
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
                                      str(Path.home() / "Documents" / "transcriptions")))
         self._whisper_runner = WhisperTranscriptionRunner(folder, on_device_change=self._update_transcribe_title)

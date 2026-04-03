@@ -24,6 +24,14 @@ from coreaudio_devices import list_input_devices, register_device_change_callbac
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
+_error_callback = None  # optional callable(str) — set by app to surface errors in menu log
+
+
+def set_error_callback(cb):
+    global _error_callback
+    _error_callback = cb
+
+
 class _Log:
     @staticmethod
     def info(component: str, msg: str):
@@ -33,7 +41,13 @@ class _Log:
     @staticmethod
     def error(component: str, msg: str):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
-        print(f"{ts} [{component:<12}] ERROR {msg}")
+        line = f"{ts} [{component:<12}] ERROR {msg}"
+        print(line)
+        if _error_callback:
+            try:
+                _error_callback(f"🎙️ {msg}")
+            except Exception:
+                pass
 
 log = _Log()
 
