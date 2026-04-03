@@ -191,6 +191,13 @@ class _ChannelCapture:
             except Exception as exc:
                 log.error("transcript", f"🎙️ [{self.label}] stream error: {exc}")
                 time.sleep(2)
+                # Force PortAudio to reinitialize — recovers from CoreAudio invalid state after reconnect
+                try:
+                    import sounddevice as sd
+                    sd._terminate()
+                    sd._initialize()
+                except Exception:
+                    pass
                 if self._resolve_fn:
                     resolved = self._resolve_fn()
                     if resolved:
