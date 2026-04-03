@@ -72,10 +72,12 @@ CLEANUP_PROMPT = (
     "Return ONLY the cleaned text, nothing else."
 )
 
+VK_P = 0x23
 VK_D = 0x02
 VK_V = 0x09
 VK_Z = 0x06
 VK_ESCAPE = 0x35
+SCREENSHOT_DIR = Path.home() / "Documents" / "screenshots"
 MOUSE_BUTTON_5 = 4
 MOUSE_BUTTON_3 = 2
 DICTATION_MUTE_DEVICE = "\U0001f50aOS Output"
@@ -104,6 +106,20 @@ _kVolume = 1986885219
 _NX_KEYTYPE_PLAY = 16
 
 
+_cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
+_cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+_cf.CFStringGetCString.restype = ctypes.c_bool
+_cf.CFRelease.argtypes = [ctypes.c_void_p]
+_cf.CFRelease.restype = None
+
+
+def _cfstring_to_str(cfstr: ctypes.c_void_p) -> str | None:
+    buf = ctypes.create_string_buffer(256)
+    if _cf.CFStringGetCString(cfstr, buf, 256, 0x08000100):  # kCFStringEncodingUTF8
+        return buf.value.decode("utf-8")
+    return None
+
+
 def _find_audio_device_id(name: str) -> int | None:
     addr = _AudioPropAddr(_kDevices, _kScopeGlobal, _kElementMain)
     size = ctypes.c_uint32(0)
@@ -118,7 +134,9 @@ def _find_audio_device_id(name: str) -> int | None:
         ns = ctypes.c_uint32(ctypes.sizeof(ctypes.c_void_p))
         if _ca.AudioObjectGetPropertyData(dev_id, ctypes.byref(na), 0, None, ctypes.byref(ns), ctypes.byref(ref)) != 0:
             continue
-        if str(objc.objc_object(c_void_p=ref)) == name:
+        dev_name = _cfstring_to_str(ref.value)
+        _cf.CFRelease(ref.value)
+        if dev_name == name:
             return dev_id
     return None
 
@@ -330,6 +348,19 @@ def _restore_dictation_volume() -> None:
     log(f"\U0001f534 Dictation: \U0001f50a OS Output ({_mute_device_original_volume:.0%})")
 
 
+# --- Screenshot ---
+def take_screenshot():
+    from datetime import datetime
+    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filepath = SCREENSHOT_DIR / f"screenshot_{ts}.png"
+    subprocess.run(["screencapture", "-x", "-m", str(filepath)], timeout=5)
+    log(f"📷 Screenshot saved: {filepath.name}")
+    # Flash camera icon
+    if _app_ref:
+        _app_ref._flash_screenshot_icon()
+
+
 # --- Event tap callback ---
 def event_tap_callback(proxy, event_type, event, refcon):
     global _last_paste_text
@@ -358,6 +389,11 @@ def event_tap_callback(proxy, event_type, event, refcon):
     has_cmd = bool(flags & kCGEventFlagMaskCommand)
     has_ctrl = bool(flags & kCGEventFlagMaskControl)
     has_opt = bool(flags & kCGEventFlagMaskAlternate)
+
+    # Ctrl+P → screenshot
+    if keycode == VK_P and has_ctrl and not has_cmd and not has_opt:
+        threading.Thread(target=take_screenshot, daemon=True).start()
+        return None
 
     # Cmd+Opt+Ctrl+D → toggle dark mode
     if keycode == VK_D and has_cmd and has_ctrl and has_opt:
@@ -404,7 +440,7 @@ def _run_event_tap():
 
     device_id = _find_audio_device_id(DICTATION_MUTE_DEVICE)
     if device_id:
-        log(f"Dictation device: {DICTATION_MUTE_DEVICE} (ID {device_id})")
+        log(f"🔇 Mute device (Mouse 5): {DICTATION_MUTE_DEVICE}")
     else:
         log(f"WARNING: '{DICTATION_MUTE_DEVICE}' not found")
 
@@ -455,7 +491,8 @@ def _get_process_info(pid: str) -> str:
     """Get process name/command for a PID."""
     try:
         result = subprocess.run(["ps", "-p", pid.strip(), "-o", "comm="], capture_output=True, text=True, timeout=2)
-        return result.stdout.strip() or "unknown"
+        comm = result.stdout.strip()
+        return os.path.basename(comm) if comm else "unknown"
     except Exception:
         return "unknown"
 
@@ -480,6 +517,7 @@ class WisprAddonsApp(rumps.App):
         )
         self._icon_on = icon_path
         self._icon_off = str(Path(__file__).parent / "icon_chat_off.png")
+        self._icon_camera = str(Path(__file__).parent / "icon_camera.png")
         self._whisper_runner = None
         self._transcribing = False
         self._ppt_monitor = None
@@ -487,36 +525,37 @@ class WisprAddonsApp(rumps.App):
         self._ij_monitor = None
 
         self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
-        self._kill_8080_item = rumps.MenuItem("☠️ Kill :8080", callback=lambda _: self._kill_port(8080))
+        self._kill_8080_item = rumps.MenuItem("Kill :8080", callback=lambda _: self._kill_port(8080))
 
         self.menu = [
             self._kill_8080_item,
-            rumps.MenuItem("☠️ Kill…"),
+            rumps.MenuItem("Kill…"),
+            None,  # separator
             self._transcribe_item,
+            rumps.MenuItem("Monitor", callback=self.monitor_transcription),
             None,  # separator
-            rumps.MenuItem("📋 Copy Git URL", callback=self.copy_intellij_git),
-            rumps.MenuItem("Show Log", callback=self.show_log),
+            rumps.MenuItem("Copy Git", callback=self.copy_intellij_git),
+            rumps.MenuItem("Log", callback=self.show_log),
             None,  # separator
-            rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=self.on_clean),
+            rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=None),
             rumps.MenuItem("Dark Mode — ⌘⌃⌥D", callback=None),
-            rumps.MenuItem("Mute Music — Mouse 5", callback=None),
+
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
+            rumps.MenuItem("Screenshot — ⌃P", callback=None),
             None,  # separator
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
+        self.menu["Paste Emotions — ⌘⌃V"].enabled = False
         self.menu["Dark Mode — ⌘⌃⌥D"].enabled = False
-        self.menu["Mute Music — Mouse 5"].enabled = False
+
         self.menu["Re-paste — Wheel x 2"].enabled = False
+        self.menu["Screenshot — ⌃P"].enabled = False
 
         # Kill port submenu — persisted across sessions
         self._kill_port_history: list[int] = _load_port_history()
-        kill_menu = self.menu["☠️ Kill…"]
+        kill_menu = self.menu["Kill…"]
         kill_menu.add(rumps.MenuItem("Port…", callback=self._kill_port_prompt))
         kill_menu.add(None)
-        for port in self._kill_port_history:
-            if port == 8080:
-                continue
-            kill_menu.add(rumps.MenuItem(f":{port}", callback=self._make_kill_callback(port)))
 
         # Refresh port status when kill submenu opens (NSMenu delegate)
         self._setup_menu_delegate()
@@ -555,26 +594,26 @@ class WisprAddonsApp(rumps.App):
         """Refresh enabled/disabled state and process names of kill entries."""
         proc = _get_port_process_name(8080)
         if proc:
-            self._kill_8080_item.title = f"☠️ Kill :8080 {proc}"
+            self._kill_8080_item.title = f"Kill :8080 {proc}"
             self._kill_8080_item.set_callback(self._make_kill_callback(8080))
         else:
-            self._kill_8080_item.title = "☠️ Kill :8080"
+            self._kill_8080_item.title = "Kill :8080"
             self._kill_8080_item.set_callback(None)
         self._rebuild_kill_submenu()
 
     def _rebuild_kill_submenu(self):
-        kill_menu = self.menu["☠️ Kill…"]
+        kill_menu = self.menu["Kill…"]
         for key in list(kill_menu.keys()):
-            if key.startswith("☠️ :"):
+            if key.startswith(":"):
                 del kill_menu[key]
         for port in self._kill_port_history:
             if port == 8080:
                 continue
             proc = _get_port_process_name(port)
             if proc:
-                item = rumps.MenuItem(f"☠️ :{port} {proc}", callback=self._make_kill_callback(port))
+                item = rumps.MenuItem(f":{port} {proc}", callback=self._make_kill_callback(port))
             else:
-                item = rumps.MenuItem(f"☠️ :{port}", callback=None)
+                item = rumps.MenuItem(f":{port}", callback=None)
             kill_menu.add(item)
 
     def _make_kill_callback(self, port: int):
@@ -583,29 +622,41 @@ class WisprAddonsApp(rumps.App):
         return cb
 
     def _kill_port_prompt(self, _):
-        from AppKit import (NSAlert, NSTextField, NSAlertFirstButtonReturn,
-                            NSScreen, NSAlertStyleInformational)
+        from AppKit import (NSPanel, NSTextField, NSButton, NSScreen,
+                            NSBezelStyleRounded, NSBackingStoreBuffered,
+                            NSWindowStyleMaskTitled, NSWindowStyleMaskClosable,
+                            NSApplication, NSFont, NSModalResponseOK)
         from Foundation import NSMakeRect
 
-        alert = AppKit.NSAlert.alloc().init()
-        alert.setAlertStyle_(NSAlertStyleInformational)
-        alert.setMessageText_("Kill port")
-        alert.setInformativeText_("")
-        alert.addButtonWithTitle_("Kill")
-        alert.addButtonWithTitle_("Cancel")
-        alert.window().setTitle_("")
-
-        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 60, 22))
-        field.setPlaceholderString_("8080")
-        alert.setAccessoryView_(field)
-
-        window = alert.window()
+        W, H = 190, 36
         screen = NSScreen.mainScreen().frame()
-        window.setFrameTopLeftPoint_((screen.size.width - 300, screen.size.height - 30))
+        x = screen.size.width * 3 / 4 - W / 2
+        y = screen.size.height - H - 50
+        panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, W, H),
+            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable,
+            NSBackingStoreBuffered, False)
+        panel.setTitle_("")
+        panel.setLevel_(25)  # floating
 
-        window.makeFirstResponder_(field)
-        result = alert.runModal()
-        if result != NSAlertFirstButtonReturn:
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(4, 4, 130, 28))
+        field.setPlaceholderString_("8080")
+        field.setFont_(NSFont.systemFontOfSize_(16))
+        panel.contentView().addSubview_(field)
+
+        btn = NSButton.alloc().initWithFrame_(NSMakeRect(140, 2, 44, 32))
+        btn.setTitle_("Kill")
+        btn.setBezelStyle_(NSBezelStyleRounded)
+        btn.setFont_(NSFont.systemFontOfSize_(18))
+        btn.setTarget_(NSApplication.sharedApplication())
+        btn.setAction_("stopModalWithCode:")
+        btn.setTag_(NSModalResponseOK)
+        panel.contentView().addSubview_(btn)
+
+        panel.makeFirstResponder_(field)
+        result = NSApplication.sharedApplication().runModalForWindow_(panel)
+        panel.orderOut_(None)
+        if result != NSModalResponseOK:
             return
         text = str(field.stringValue()).strip()
         if not text.isdigit():
@@ -641,25 +692,58 @@ class WisprAddonsApp(rumps.App):
 
     # ── Transcribing ──
 
+    def _get_victor_source_emoji(self):
+        """Get the short device emoji for Victor's current capture device."""
+        from whisper_runner import _short_device_name, _ME_SPEAKER
+        if not self._whisper_runner:
+            return ""
+        for ch in self._whisper_runner._channels:
+            if ch.label == _ME_SPEAKER:
+                return _short_device_name(ch._device_name())
+        return ""
+
+    def _update_transcribe_title(self):
+        emoji = self._get_victor_source_emoji()
+        suffix = f" {emoji}" if emoji else ""
+        if self._transcribing:
+            self._transcribe_item.title = f"Stop Transcribing{suffix}"
+        else:
+            self._transcribe_item.title = "Start Transcribing"
+
     def start_transcribing(self):
         from whisper_runner import WhisperTranscriptionRunner
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
                                      str(Path.home() / "Documents" / "transcriptions")))
-        self._whisper_runner = WhisperTranscriptionRunner(folder)
+        self._whisper_runner = WhisperTranscriptionRunner(folder, on_device_change=self._update_transcribe_title)
         self._whisper_runner.start()
         self._transcribing = True
-        self._transcribe_item.title = "Stop Transcribing"
+        self._update_transcribe_title()
         self.icon = self._icon_on
-        log("🎙️ Whisper transcription started")
+        devices = [f"{ch.label}: {ch._device_name()}" for ch in self._whisper_runner._channels]
+        log(f"🎙️ Whisper transcription started — {', '.join(devices)}")
 
     def stop_transcribing(self):
         if self._whisper_runner:
             self._whisper_runner.stop()
             self._whisper_runner = None
         self._transcribing = False
-        self._transcribe_item.title = "Start Transcribing"
+        self._update_transcribe_title()
         self.icon = self._icon_off
         log("🎙️ Whisper transcription stopped")
+
+    def monitor_transcription(self, _):
+        from datetime import date
+        folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
+                                     str(Path.home() / "Documents" / "transcriptions")))
+        today_file = folder / f"{date.today()} transcription.txt"
+        today_file.touch()
+        subprocess.Popen([
+            "osascript",
+            "-e", 'tell application "Terminal"',
+            "-e", f"do script \"tput setaf 8 && tail -f '{today_file}'\"",
+            "-e", "activate",
+            "-e", "end tell",
+        ])
 
     # ── PowerPoint tracking ──
 
@@ -690,6 +774,11 @@ class WisprAddonsApp(rumps.App):
         else:
             self.start_transcribing()
 
+    def _flash_screenshot_icon(self):
+        current = self._icon_on if self._transcribing else self._icon_off
+        self.icon = self._icon_camera
+        threading.Timer(1.0, lambda: setattr(self, 'icon', current)).start()
+
     def copy_intellij_git(self, _):
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "intellij-monitor"))
@@ -710,19 +799,60 @@ class WisprAddonsApp(rumps.App):
         threading.Thread(target=handle_clean_hotkey, daemon=True).start()
 
     def show_log(self, _):
+        from AppKit import (NSPanel, NSScrollView, NSTextView, NSScreen, NSFont,
+                            NSBackingStoreBuffered, NSWindowStyleMaskTitled,
+                            NSWindowStyleMaskClosable, NSWindowStyleMaskResizable,
+                            NSBezelBorder, NSApplication)
+        from Foundation import NSMakeRect
+
         log_text = "\n".join(_log_buffer) if _log_buffer else "(no log entries yet)"
-        rumps.alert(title="Wispr Addons Log", message=log_text)
+
+        screen = NSScreen.mainScreen().frame()
+        w = int(screen.size.width * 0.7)
+        h = int(screen.size.height * 0.7)
+        x = int((screen.size.width - w) / 2)
+        y = int((screen.size.height - h) / 2)
+
+        panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, w, h),
+            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable,
+            NSBackingStoreBuffered, False)
+        panel.setTitle_("Log")
+        panel.setLevel_(25)  # floating above other windows
+
+        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
+        scroll.setHasVerticalScroller_(True)
+        scroll.setHasHorizontalScroller_(True)
+        scroll.setBorderType_(NSBezelBorder)
+        scroll.setAutoresizingMask_(0x12)  # flexible width + height
+
+        text_view = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, w, h))
+        text_view.setFont_(NSFont.monospacedSystemFontOfSize_weight_(12, 0))
+        text_view.setEditable_(False)
+        text_view.setString_(log_text)
+        text_view.setAutoresizingMask_(0x12)
+
+        scroll.setDocumentView_(text_view)
+        panel.contentView().addSubview_(scroll)
+        self._log_panel = panel  # prevent garbage collection
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        panel.makeKeyAndOrderFront_(None)
 
     def quit_app(self, _):
-        if self._transcribing:
-            self.stop_transcribing()
-        if self._tracking_ppt:
-            self.stop_ppt_tracking()
+        if self._whisper_runner:
+            self._whisper_runner.stop()
+        if self._ppt_monitor:
+            self._ppt_monitor.stop()
+        if self._ij_monitor:
+            self._ij_monitor.stop()
         if _dictation_active:
             _restore_dictation_volume()
         if _tap_run_loop_ref:
             CFRunLoopStop(_tap_run_loop_ref)
+        # Kill desktop-overlay (launched by start.sh as a sibling process)
+        subprocess.run(["pkill", "-f", "DesktopOverlay"], stderr=subprocess.DEVNULL)
         rumps.quit_application()
+        os._exit(0)
 
 
 def main():
@@ -744,11 +874,22 @@ def main():
 
     _client = anthropic.Anthropic(max_retries=0)
 
+    log("Wispr Addons started")
+
+    # Warm up Whisper model BEFORE event tap or GUI (Metal needs clean main thread)
+    import numpy as np
+    import mlx_whisper
+    _whisper_model = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+    log("🎙️ Warming up Whisper model...")
+    mlx_whisper.transcribe(
+        np.zeros(16000, dtype=np.float32),
+        path_or_hf_repo=_whisper_model, verbose=False,
+    )
+    log("🎙️ Whisper model ready")
+
     # Start event tap on background thread
     tap_thread = threading.Thread(target=_run_event_tap, daemon=True)
     tap_thread.start()
-
-    log("Wispr Addons started")
 
     # Hide from Cmd+Tab (menu bar only, no dock icon)
     AppKit.NSApplication.sharedApplication().setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
