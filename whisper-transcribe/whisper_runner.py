@@ -113,10 +113,11 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
 # ── Audio capture ────────────────────────────────────────────────────────────
 class _ChannelCapture:
     def __init__(self, device: int, label: str, tx_queue: queue.Queue,
-                 device_name: str = ""):
+                 device_name: str = "", resolve_fn=None):
         self.device = device
         self.label = label
         self.device_name = device_name
+        self._resolve_fn = resolve_fn  # callable() -> (idx, name) | None
         self._queue = tx_queue
         self._buf = np.zeros(0, dtype=np.float32)
         self._chunk = int(_SAMPLE_RATE * _CHUNK_SEC)
@@ -190,6 +191,14 @@ class _ChannelCapture:
             except Exception as exc:
                 log.error("transcript", f"🎙️ [{self.label}] stream error: {exc}")
                 time.sleep(2)
+                if self._resolve_fn:
+                    resolved = self._resolve_fn()
+                    if resolved:
+                        new_idx, new_name = resolved
+                        if new_idx != self.device or new_name != self.device_name:
+                            log.info("transcript", f"🎙️ [{self.label}] re-resolved: {new_name!r} (idx {new_idx})")
+                        self.device = new_idx
+                        self.device_name = new_name
 
     def _cb(self, indata, frames, time_info, status):
         self._buf = np.concatenate([self._buf, indata[:, 0]])
@@ -259,7 +268,8 @@ class WhisperTranscriptionRunner:
         if resolved:
             me_idx, me_name = resolved
             log.info("transcript", f"🎙️ Resolved Victor: {me_name!r}")
-            self._me_channel = _ChannelCapture(me_idx, _ME_SPEAKER, tx_queue, me_name)
+            self._me_channel = _ChannelCapture(me_idx, _ME_SPEAKER, tx_queue, me_name,
+                                               resolve_fn=lambda: _resolve_device_coreaudio(_ME_PATTERNS))
             self._channels.append(self._me_channel)
         else:
             log.error("transcript", f"🎙️ No Victor device found matching {_ME_PATTERNS}")
