@@ -171,14 +171,15 @@ class IntelliJMonitor:
 
         # Build line
         now = datetime.now()
-        line = f"{now.strftime('%H:%M:%S')} {url} branch:{branch}"
+        content = f"{url} branch:{branch}"
         if filename:
-            line += f" file:{filename}"
+            content += f" file:{filename}"
 
-        # Skip if identical to last written line
-        if line == self._last_line:
+        # Skip if same repo/branch/file as last written line
+        if content == self._last_line:
             return
-        self._last_line = line
+        self._last_line = content
+        line = f"{now.strftime('%H:%M:%S')} {content}"
 
         # Append to daily file
         filepath = self.output_dir / f"activity-git-{now.strftime('%Y-%m-%d')}.md"

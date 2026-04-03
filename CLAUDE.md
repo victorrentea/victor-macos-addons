@@ -71,10 +71,13 @@ Connects to the training-assistant backend via WebSocket at `/ws/__overlay__`.
 **Tech**: Swift, AppKit, AVFoundation, Swift Package Manager
 **Build**: `cd desktop-overlay && swift build && swift test`
 
-## Installation
-```bash
-./install-startup.sh   # symlinks plist, loads LaunchAgent, removes old wispr-addons agent
-```
+## Deployment
+- **App bundle**: `./build-app.sh` creates `/Applications/Victor Addons.app` (Spotlight-searchable)
+- **LaunchAgent**: `./install-startup.sh` symlinks plist, loads LaunchAgent for login auto-start
+- Re-run `build-app.sh` after changes to `start.sh`, icons, or app identity
+
+## AI Instructions
+- After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.
 
 ## Related
 - Backend repo: `training-assistant` (FastAPI, provides WebSocket server)

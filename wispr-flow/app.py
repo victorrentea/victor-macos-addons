@@ -699,7 +699,7 @@ class WisprAddonsApp(rumps.App):
             return ""
         for ch in self._whisper_runner._channels:
             if ch.label == _ME_SPEAKER:
-                return _short_device_name(ch._device_name())
+                return _short_device_name(ch.device_name)
         return ""
 
     def _update_transcribe_title(self):
@@ -719,7 +719,7 @@ class WisprAddonsApp(rumps.App):
         self._transcribing = True
         self._update_transcribe_title()
         self.icon = self._icon_on
-        devices = [f"{ch.label}: {ch._device_name()}" for ch in self._whisper_runner._channels]
+        devices = [f"{ch.label}: {ch.device_name}" for ch in self._whisper_runner._channels]
         log(f"🎙️ Whisper transcription started — {', '.join(devices)}")
 
     def stop_transcribing(self):
