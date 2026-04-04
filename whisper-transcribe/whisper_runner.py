@@ -9,6 +9,7 @@ Uses CoreAudio for device detection (no stale devices) and sounddevice for captu
 import contextlib
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -98,19 +99,66 @@ def _short_device_name(device_name: str) -> str:
 
 
 # ── Device resolution via CoreAudio ──────────────────────────────────────────
+def _normalize_device_name(name: str) -> str:
+    # Normalize cross-API naming differences (e.g. "Built-in Microphone (MacBook Pro)")
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def _names_equivalent(a: str, b: str) -> bool:
+    na = _normalize_device_name(a)
+    nb = _normalize_device_name(b)
+    return bool(na and nb and (na == nb or na in nb or nb in na))
+
+
+def _parse_pattern_env(var_name: str) -> list[str]:
+    raw = os.environ.get(var_name, "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
 def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
     """Find the best input device by pattern priority using CoreAudio (no stale devices).
     Returns (sounddevice_index, device_name) or None."""
     import sounddevice as sd
-    ca_devices = list_input_devices()
-    ca_names = {d["name"] for d in ca_devices if d["alive"]}
+    ca_devices = [d for d in list_input_devices() if d["alive"]]
+    if not ca_devices:
+        return None
+
+    # Allow hard overrides for deterministic routing.
+    # Examples:
+    #   WHISPER_ME_DEVICE_HINT="scarlett"
+    #   WHISPER_AUDIENCE_DEVICE_HINT="from zoom"
+    hint_patterns = []
+    if patterns is _ME_PATTERNS:
+        hint_patterns = _parse_pattern_env("WHISPER_ME_DEVICE_HINT")
+    elif patterns is _AUD_PATTERNS:
+        hint_patterns = _parse_pattern_env("WHISPER_AUDIENCE_DEVICE_HINT")
+    if hint_patterns:
+        patterns = hint_patterns + patterns
+
+    alive_ca_names = [d["name"] for d in ca_devices]
 
     for pattern in patterns:
+        plower = pattern.lower()
         for i, d in enumerate(sd.query_devices()):
-            if (pattern.lower() in d["name"].lower()
-                    and d["max_input_channels"] > 0
-                    and d["name"] in ca_names):
+            if d["max_input_channels"] <= 0:
+                continue
+            sd_name = d["name"]
+            if plower not in sd_name.lower():
+                continue
+            if any(_names_equivalent(sd_name, ca_name) for ca_name in alive_ca_names):
                 return i, d["name"]
+
+        # Fallback: match against CoreAudio names first, then map back to sounddevice.
+        for ca_name in alive_ca_names:
+            if plower not in ca_name.lower():
+                continue
+            for i, d in enumerate(sd.query_devices()):
+                if d["max_input_channels"] <= 0:
+                    continue
+                if _names_equivalent(d["name"], ca_name):
+                    return i, ca_name
     return None
 
 
