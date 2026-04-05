@@ -548,8 +548,10 @@ class WisprAddonsApp(rumps.App):
         self._ppt_monitor = None
         self._tracking_ppt = False
         self._ij_monitor = None
+        self._ws_status_item = rumps.MenuItem("WS 🔴", callback=None)
+        self._ws_status_item.enabled = False
         from ws_server import WsServer
-        self._ws_server = WsServer()
+        self._ws_server = WsServer(on_clients_changed=self._on_ws_clients_changed)
         self._ws_server.start()
         log(f"WS server started on ws://127.0.0.1:{WsServer.PORT}")
 
@@ -567,6 +569,7 @@ class WisprAddonsApp(rumps.App):
             None,  # separator
             rumps.MenuItem("Copy Git", callback=self.copy_intellij_git),
             rumps.MenuItem("Log", callback=self.show_log),
+            self._ws_status_item,
             None,  # separator
             rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=None),
             self._dark_mode_item,
@@ -896,6 +899,9 @@ class WisprAddonsApp(rumps.App):
         self._log_panel = panel  # prevent garbage collection
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
         panel.makeKeyAndOrderFront_(None)
+
+    def _on_ws_clients_changed(self, count: int) -> None:
+        self._ws_status_item.title = f"WS {'🟢' if count > 0 else '🔴'}"
 
     def quit_app(self, _):
         if self._whisper_runner:

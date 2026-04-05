@@ -27,12 +27,13 @@ def _log(msg: str) -> None:
 class WsServer:
     PORT = int(os.environ.get("WS_SERVER_PORT", "8765"))
 
-    def __init__(self):
+    def __init__(self, on_clients_changed=None):
         self._clients: set = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._server = None
         self._thread: threading.Thread | None = None
         self._last_slide: dict | None = None  # last known slide state for welcome msg
+        self._on_clients_changed = on_clients_changed  # called with client count on connect/disconnect
 
     # ── Public API (callable from any thread) ────────────────────────────────
 
@@ -84,6 +85,7 @@ class WsServer:
     async def _handler(self, websocket) -> None:
         self._clients.add(websocket)
         _log(f"Client connected ({len(self._clients)} total)")
+        self._fire_clients_changed()
         try:
             if self._last_slide:
                 await websocket.send(json.dumps(self._last_slide))
@@ -94,6 +96,7 @@ class WsServer:
         finally:
             self._clients.discard(websocket)
             _log(f"Client disconnected ({len(self._clients)} remaining)")
+            self._fire_clients_changed()
 
     async def _dispatch(self, raw: str, sender) -> None:
         try:
@@ -116,6 +119,13 @@ class WsServer:
         for ws in set(self._clients):
             try:
                 await ws.send(text)
+            except Exception:
+                pass
+
+    def _fire_clients_changed(self) -> None:
+        if self._on_clients_changed:
+            try:
+                self._on_clients_changed(len(self._clients))
             except Exception:
                 pass
 
