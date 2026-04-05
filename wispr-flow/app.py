@@ -569,13 +569,13 @@ class WisprAddonsApp(rumps.App):
             None,  # separator
             rumps.MenuItem("Copy Git", callback=self.copy_intellij_git),
             rumps.MenuItem("Log", callback=self.show_log),
-            self._ws_status_item,
             None,  # separator
             rumps.MenuItem("Paste Emotions — ⌘⌃V", callback=None),
             self._dark_mode_item,
 
             rumps.MenuItem("Re-paste — Wheel x 2", callback=None),
             rumps.MenuItem("Screenshot — ⌃P", callback=None),
+            self._ws_status_item,
             None,  # separator
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
