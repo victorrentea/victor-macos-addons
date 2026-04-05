@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private let myPID: Int32
     private var pidCheckTimer: Timer?
     private var controlsVisible = false
+    private var localWsClient: LocalWsClient?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -39,6 +40,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
 
+        localWsClient = LocalWsClient { [weak self] emoji, count in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                for _ in 0..<max(1, count) {
+                    self.animator.spawnEmoji(emoji)
+                }
+            }
+        }
+        localWsClient?.connect()
+
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
         connectWebSocket()
         setupButtonBar(screen: builtInScreen)
@@ -48,6 +59,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.checkPIDFile()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        localWsClient?.disconnect()
     }
 
     // MARK: - Signal-based toggle (SIGUSR1 from wispr-flow menu)
