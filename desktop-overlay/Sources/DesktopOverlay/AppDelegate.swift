@@ -9,7 +9,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private let serverURL: String
     private var wsTask: URLSessionWebSocketTask?
     private var session: URLSession!
-    private var localWsClient: LocalWsClient!
     private var reconnecting = false
     private var pendingDisconnectError: DispatchWorkItem?
     private let disconnectErrorDelay: TimeInterval = 3.0
@@ -42,15 +41,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
 
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
         connectWebSocket()
-        localWsClient = LocalWsClient { [weak self] emoji, count in
-            guard let animator = self?.animator else { return }
-            for i in 0..<max(1, count) {
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.15) {
-                    animator.spawnEmoji(emoji)
-                }
-            }
-        }
-        localWsClient.connect()
         setupButtonBar(screen: builtInScreen)
         setupSignalHandler()
 
