@@ -60,8 +60,8 @@ log = _Log()
 _ME_SPEAKER   = os.environ.get("WHISPER_ME_SPEAKER",       "Victor")
 _AUD_SPEAKER  = os.environ.get("WHISPER_AUDIENCE_SPEAKER", "Audience")
 _MODEL        = os.environ.get("WHISPER_MODEL",            "mlx-community/whisper-large-v3-turbo")
-_CHUNK_SEC    = float(os.environ.get("WHISPER_CHUNK_SECONDS",      "4"))
-_OVERLAP_SEC  = float(os.environ.get("WHISPER_OVERLAP_SECONDS",    "0.5"))
+_CHUNK_SEC    = float(os.environ.get("WHISPER_CHUNK_SECONDS",      "6"))
+_OVERLAP_SEC  = float(os.environ.get("WHISPER_OVERLAP_SECONDS",    "1"))
 _SAMPLE_RATE  = 16000
 
 _THRESHOLDS = {
@@ -280,7 +280,7 @@ class _ChannelCapture:
 
 
 # ── Transcription thread ────────────────────────────────────────────────────
-def _transcribe(audio, language=None):
+def _transcribe(audio, language=None, initial_prompt=None):
     import mlx_whisper
     with open(os.devnull, "w") as dev, \
          contextlib.redirect_stdout(dev), \
@@ -288,12 +288,15 @@ def _transcribe(audio, language=None):
         return mlx_whisper.transcribe(
             audio, path_or_hf_repo=_MODEL,
             language=language, verbose=False,
-            condition_on_previous_text=False,
+            condition_on_previous_text=True,
+            initial_prompt=initial_prompt,
         )
 
 
 def _transcriber_loop(tx_queue: queue.Queue, on_segment):
     log.info("transcript", "🎙️ Transcription loop started")
+    # Track last transcribed text per channel for context
+    prev_text: dict[str, str] = {}
 
     while True:
         try:
@@ -301,15 +304,18 @@ def _transcriber_loop(tx_queue: queue.Queue, on_segment):
         except queue.Empty:
             continue
         try:
-            result = _transcribe(audio)
+            prompt = prev_text.get(label)
+            result = _transcribe(audio, initial_prompt=prompt)
             text = result.get("text", "").strip()
             lang = result.get("language", "?")
             if lang not in ("ro", "en"):
-                result = _transcribe(audio, language="ro")
+                result = _transcribe(audio, language="ro", initial_prompt=prompt)
                 text   = result.get("text", "").strip()
                 lang   = "ro"
             if not text or text.lower() in _HALLUCINATIONS:
                 continue
+            # Keep last ~200 chars as context for next chunk
+            prev_text[label] = text[-200:]
             on_segment(label, lang, text, device_tag)
         except Exception as exc:
             log.error("transcript", f"🎙️ Whisper error: {exc}")

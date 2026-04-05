@@ -360,13 +360,27 @@ def _restore_dictation_volume() -> None:
 
 
 # --- Screenshot ---
+def _active_display_number() -> int:
+    """Return the screencapture -D display number for the screen with the frontmost window."""
+    try:
+        front_screen = AppKit.NSScreen.mainScreen()  # screen with key window / menu bar focus
+        screens = AppKit.NSScreen.screens()
+        for i, scr in enumerate(screens):
+            if scr == front_screen:
+                return i + 1  # screencapture -D is 1-indexed
+    except Exception:
+        pass
+    return 1
+
+
 def take_screenshot():
     from datetime import datetime
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filepath = SCREENSHOT_DIR / f"screenshot_{ts}.png"
-    subprocess.run(["screencapture", "-x", "-m", str(filepath)], timeout=5)
-    log(f"📷 Screenshot saved: {filepath.name}")
+    display = _active_display_number()
+    subprocess.run(["screencapture", "-x", "-D", str(display), str(filepath)], timeout=5)
+    log(f"📷 Screenshot saved: {filepath.name} (display {display})")
     # Flash camera icon
     if _app_ref:
         _app_ref._flash_screenshot_icon()
