@@ -107,13 +107,15 @@ def probe_powerpoint(timeout: float = 5.0) -> dict | None:
 class PowerPointMonitor:
     """Polls PowerPoint every 3s, writes activity-slides file."""
 
-    def __init__(self, output_dir: Path):
+    def __init__(self, output_dir: Path, slide_callback=None):
         self.output_dir = output_dir
+        self._slide_callback = slide_callback
         self._running = False
         self._thread = None
         # In-memory state
         self._current_deck: str | None = None
         self._current_slide: int = 1
+        self._current_presenting: bool = False
         self._slide_durations: dict[int, float] = {}  # slide_num -> seconds (insertion-ordered)
         self._last_probe_time: float = 0
         self._line_start_time: str = ""  # HH:MM:SS when this deck line started
@@ -158,12 +160,31 @@ class PowerPointMonitor:
             # Start new deck
             self._current_deck = deck
             self._current_slide = slide
+            self._current_presenting = state["presenting"]
             self._slide_durations = {}
             self._line_start_time = datetime.now().strftime("%H:%M:%S")
+            self._notify_slide_change()
+        elif slide != self._current_slide or state["presenting"] != self._current_presenting:
+            self._current_slide = slide
+            self._current_presenting = state["presenting"]
+            self._notify_slide_change()
 
         self._current_slide = slide
+        self._current_presenting = state["presenting"]
         self._last_probe_time = now
         self._write_file()
+
+    def _notify_slide_change(self) -> None:
+        if self._slide_callback and self._current_deck:
+            try:
+                self._slide_callback({
+                    "type": "slide",
+                    "deck": self._current_deck,
+                    "slide": self._current_slide,
+                    "presenting": self._current_presenting,
+                })
+            except Exception as e:
+                print(f"[ppt-monitor] slide_callback error: {e}")
 
     def _write_file(self):
         if not self._current_deck:
@@ -177,15 +198,9 @@ class PowerPointMonitor:
         if filepath.exists():
             lines = filepath.read_text(encoding="utf-8").splitlines()
 
-        # Strip our current tracking lines (last 2 if pointer matches our deck)
-        if len(lines) >= 2 and ":" in lines[-1]:
-            pointer_deck = lines[-1].rsplit(":", 1)[0]
-            if pointer_deck == self._current_deck:
-                lines = lines[:-2]
-        elif len(lines) >= 1 and ":" in lines[-1]:
-            pointer_deck = lines[-1].rsplit(":", 1)[0]
-            if pointer_deck == self._current_deck:
-                lines = lines[:-1]
+        # Strip our current activity line (last line if it matches our deck)
+        if lines and lines[-1].startswith(self._line_start_time):
+            lines = lines[:-1]
 
         # Build activity line
         timings = []
@@ -197,9 +212,6 @@ class PowerPointMonitor:
         if timings:
             activity_line += " - " + ", ".join(timings)
 
-        pointer_line = f"{self._current_deck}:{self._current_slide}"
-
         lines.append(activity_line)
-        lines.append(pointer_line)
 
         filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")

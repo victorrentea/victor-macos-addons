@@ -548,6 +548,10 @@ class WisprAddonsApp(rumps.App):
         self._ppt_monitor = None
         self._tracking_ppt = False
         self._ij_monitor = None
+        from ws_server import WsServer
+        self._ws_server = WsServer()
+        self._ws_server.start()
+        log(f"WS server started on ws://127.0.0.1:{WsServer.PORT}")
 
         self._transcribe_item = rumps.MenuItem("Stop Transcribing", callback=self.toggle_transcribing)
         self._kill_8080_item = rumps.MenuItem("Kill :8080", callback=lambda _: self._kill_port(8080))
@@ -799,7 +803,7 @@ class WisprAddonsApp(rumps.App):
         from ppt_probe import PowerPointMonitor
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
                                      str(Path.home() / "Documents" / "transcriptions")))
-        self._ppt_monitor = PowerPointMonitor(folder)
+        self._ppt_monitor = PowerPointMonitor(folder, slide_callback=self._ws_server.push_slide)
         self._ppt_monitor.start()
         self._tracking_ppt = True
         log("📊 PowerPoint tracking started")
@@ -904,6 +908,8 @@ class WisprAddonsApp(rumps.App):
             _restore_dictation_volume()
         if _tap_run_loop_ref:
             CFRunLoopStop(_tap_run_loop_ref)
+        self._ws_server.stop()
+        log(f"WS server stopped")
         # Kill desktop-overlay (launched by start.sh as a sibling process)
         subprocess.run(["pkill", "-f", "DesktopOverlay"], stderr=subprocess.DEVNULL)
         rumps.quit_application()
