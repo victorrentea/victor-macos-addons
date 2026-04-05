@@ -83,6 +83,10 @@ class WsServer:
         self._loop.stop()
 
     async def _handler(self, websocket) -> None:
+        # Close any existing connection before accepting the new one
+        for old in set(self._clients):
+            _log("Closing previous connection — replaced by new client")
+            await old.close()
         self._clients.add(websocket)
         _log(f"Client connected ({len(self._clients)} total)")
         self._fire_clients_changed()
