@@ -77,7 +77,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager = MenuBarManager()
         menuBarManager.onQuit = { [weak self] in
             self?.whisperManager?.stop()
-            Foundation.exit(0)
         }
         let whisperManager = WhisperProcessManager()
         self.whisperManager = whisperManager
