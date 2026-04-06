@@ -26,6 +26,7 @@ private func _overlayLog(_ level: String, _ msg: String) {
     // "info    " and "error   " both = 8 display cols → message column always aligned
     let lvl = level == "error" ? "error   " : "info    "
     let line = "\(ts) \(String(format: "%5d", _pid))  [\(_name)] \(lvl)\(msg)"
+    LogBuffer.shared.append(line)
     if level == "error" {
         let stderr = FileHandle.standardError
         stderr.write((line + "\n").data(using: .utf8)!)

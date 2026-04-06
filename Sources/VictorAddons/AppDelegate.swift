@@ -22,6 +22,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var wsServer: LocalWebSocketServer?
     private var pptMonitor: PowerPointMonitor?
     private var ijMonitor: IntelliJMonitor?
+    private var logWindow: LogWindow?
+    private var portKiller: PortKiller?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -67,11 +69,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             Foundation.exit(0)
         }
         menuBarManager.onToggleTranscribe = { overlayInfo("TODO: toggle transcribe") }
-        menuBarManager.onCopyGit = { overlayInfo("TODO: copy git") }
-        menuBarManager.onShowLog = { overlayInfo("TODO: show log") }
-        menuBarManager.onToggleDarkMode = { overlayInfo("TODO: dark mode") }
+        menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
+        let logWin = LogWindow()
+        self.logWindow = logWin
+        menuBarManager.onShowLog = { DispatchQueue.main.async { logWin.show() } }
+        menuBarManager.onToggleDarkMode = {
+            DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
+        }
         menuBarManager.onMonitor = { overlayInfo("TODO: monitor") }
-        menuBarManager.onKillPortPrompt = { overlayInfo("TODO: kill port prompt") }
+        let portKiller = PortKiller()
+        self.portKiller = portKiller
+        menuBarManager.onKillPort = { port in
+            DispatchQueue.global(qos: .userInitiated).async { portKiller.kill(port: port) }
+        }
+        menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
         menuBarManager.setup()
 
         let secrets = SecretsLoader.load()
@@ -87,8 +98,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             pasteHandler?.captureText(text)
         }
         eventTap.onEmotionalPaste = { [weak pasteHandler] in pasteHandler?.handleCleanHotkey() }
-        eventTap.onScreenshot = { overlayInfo("TODO: screenshot") }
-        eventTap.onToggleDarkMode = { overlayInfo("TODO: dark mode") }
+        eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
+        eventTap.onToggleDarkMode = {
+            DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
+        }
         eventTap.onDictationMute = { [weak audioManager] in
             DispatchQueue.global(qos: .userInteractive).async {
                 audioManager?.toggleDictationMute()
