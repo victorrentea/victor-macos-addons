@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 22:19"
+    static let BUILD_TIME = "Apr 6, 22:49"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -11,9 +11,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var transcribeItem: NSMenuItem!
     private(set) var darkModeItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
+    private(set) var joinLinkItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
     private var portItems: [Int: NSMenuItem] = [:]  // submenu items tracked for async update
+    private var isBannerVisible: Bool = false
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
@@ -25,6 +27,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
+    var onDisplayJoinLink: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -85,6 +88,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // Screenshot
         addItem("Take Screenshot", action: #selector(takeScreenshotAction))
+
+        menu.addItem(.separator())
+
+        // Display join link
+        joinLinkItem = addItem("Display join link", action: #selector(displayJoinLinkAction))
+        joinLinkItem.isEnabled = false
 
         menu.addItem(.separator())
 
@@ -240,6 +249,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onTakeScreenshot?()
     }
 
+    @objc private func displayJoinLinkAction() {
+        onDisplayJoinLink?()
+        isBannerVisible.toggle()
+    }
+
     @objc private func killPort8080() {
         killPort(8080)
     }
@@ -296,6 +310,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             image.size = NSSize(width: 18, height: 18)
             button.image = image
         }
+    }
+
+    func setJoinLinkEnabled(_ enabled: Bool) {
+        joinLinkItem.isEnabled = enabled
+    }
+
+    func setBannerVisible(_ visible: Bool) {
+        isBannerVisible = visible
     }
 
     func addToPortHistory(_ port: Int) {

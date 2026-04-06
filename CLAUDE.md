@@ -1,33 +1,32 @@
 # Victor macOS Addons
 
-Multi-module macOS utilities for live training workshops, running on the trainer's Mac.
+macOS utilities for live training workshops, running on the trainer's Mac.
 Single menu bar app (💬 icon) provides all functionality.
 
 ## Architecture
 
-- **Single process**: `wispr-flow/app.py` is the main menu bar app (rumps)
+- **Single Swift process**: `VictorAddons` is the main application combining menu bar UI and overlay functionality
 - **LaunchAgent**: `ro.victorrentea.macos-addons.plist` — starts on login, no KeepAlive
-- **Startup**: `start.sh` launches desktop-overlay (background) + wispr-flow (foreground)
-- **Inter-module communication**: wispr-flow sends SIGUSR1 to desktop-overlay PID to toggle controls
+- **Components**: All features run in same process with direct method calls (no IPC needed)
 
-## Modules
+## Features
 
-### wispr-flow
-Python menu bar app (💬 icon) — the main entry point. All features are menu entries:
+### Menu Bar (MenuBarManager)
+Menu bar app (💬 icon) with the following features:
 
 **Active features:**
 - **💬 Transcribing** — starts/stops Whisper live transcription; toggles icon to 💬-crossed when stopped
 - **Emotional 🥹 Paste (⌘⌃V)** — AI-powered text cleanup via Claude Haiku; intercepts Cmd+V to capture clipboard, Cmd+Ctrl+V cleans and re-pastes
-- **Toggle Dark Mode (⌘⌃⌥D)** — toggles macOS dark/light mode via osascript
+- **Toggle Dark Mode (⌘⌃⌥D)** — toggles macOS dark/light mode via AppleScript
 - **Mute 🎶 (Mouse 5)** — pauses media, lowers loopback device volume during dictation
 - **Re-paste (Wheel x 2)** — double-click mouse wheel re-pastes last intercepted text
-- **🎬 Show/Hide** — toggles desktop-overlay effects panel via SIGUSR1
 - **📋 IntelliJ Git → Clipboard** — copies git remote URL + branch from frontmost IntelliJ project
+- **Take Screenshot (⌃P)** — captures screenshot to timestamped file
+- **Display join link** — shows participant join URL banner at top of screen (enabled when session active); banner auto-hides after 20s with fade-out animation
 - **☠️ Kill port** — submenu with recent ports + custom port dialog
 
-**Tech**: Python 3.12, rumps, pyobjc, Anthropic API (Haiku)
+**Tech**: Swift, AppKit, Anthropic API (Haiku)
 **Secrets**: `WISPR_CLEANUP_ANTHROPIC_API_KEY` in `~/.training-assistants-secrets.env`
-**Run**: `cd wispr-flow && python3 app.py`
 
 ### whisper-transcribe
 Live dual-channel Whisper transcription engine (extracted from training-assistant daemon):
@@ -59,17 +58,19 @@ Polls IntelliJ via osascript every 10s (only when frontmost), writes `activity-g
 **Tech**: Python 3.12, osascript, git CLI
 **Output**: `TRANSCRIPTION_FOLDER/activity-git-YYYY-MM-DD.md`
 
-### desktop-overlay
-Swift/AppKit overlay app for live sessions (no separate menu bar icon):
+### Overlay Components (AppDelegate)
+Fullscreen overlay and WebSocket integration for live sessions:
 - **EmojiAnimator**: receives emoji reactions via WebSocket, animates sprites flying up the screen
 - **ButtonBar**: floating button bar for host controls (sound effects, overlay toggle)
 - **SoundManager**: plays sound effects (applause, drum roll, etc.) triggered by host
 - **OverlayPanel**: transparent always-on-top NSPanel covering full screen
+- **JoinLinkBanner**: displays participant join URL at top of screen; auto-hides after 20s with 3s fade-out
 
 Connects to the training-assistant backend via WebSocket at `/ws/__overlay__`.
+Receives session lifecycle events (`session_started`, `session_ended`) to enable/disable join link menu item.
 
 **Tech**: Swift, AppKit, AVFoundation, Swift Package Manager
-**Build**: `cd desktop-overlay && swift build && swift test`
+**Build**: `swift build && swift test`
 
 ## Deployment
 - **App bundle**: `./build-app.sh` creates `/Applications/Victor Addons.app` (Spotlight-searchable)

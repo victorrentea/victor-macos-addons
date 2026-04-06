@@ -26,6 +26,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
+    private var joinLinkBanner: JoinLinkBanner?
+
+    // Session state for join link feature
+    private var isSessionActive: Bool = false
+    private var participantUrl: String?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -114,6 +119,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onTakeScreenshot = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() }
         }
+
+        // Initialize join link banner
+        joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
+        menuBarManager.onDisplayJoinLink = { [weak self] in
+            self?.toggleJoinLinkBanner()
+        }
+
         let portKiller = PortKiller()
         self.portKiller = portKiller
         menuBarManager.onKillPort = { port in
@@ -353,6 +365,59 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             DispatchQueue.main.async { [weak self] in
                 self?.animator.spawnConfetti()
             }
+        } else if type == "session_started" {
+            // WebSocket message format: {"type": "session_started", "participant_url": "https://interact.victorrentea.ro/abc123"}
+            if let url = json["participant_url"] as? String {
+                DispatchQueue.main.async { [weak self] in
+                    self?.handleSessionStarted(participantUrl: url)
+                }
+            }
+        } else if type == "session_ended" {
+            // WebSocket message format: {"type": "session_ended"}
+            DispatchQueue.main.async { [weak self] in
+                self?.handleSessionEnded()
+            }
+        }
+    }
+
+    private func handleSessionStarted(participantUrl: String) {
+        isSessionActive = true
+        self.participantUrl = stripProtocolPrefix(from: participantUrl)
+        menuBarManager.setJoinLinkEnabled(true)
+    }
+
+    private func handleSessionEnded() {
+        isSessionActive = false
+        participantUrl = nil
+        menuBarManager.setJoinLinkEnabled(false)
+        // Auto-hide banner if currently visible
+        if joinLinkBanner?.bannerIsVisible == true {
+            joinLinkBanner?.hide()
+            menuBarManager.setBannerVisible(false)
+        }
+    }
+
+    private func stripProtocolPrefix(from url: String) -> String {
+        if url.hasPrefix("https://") {
+            return String(url.dropFirst(8))
+        } else if url.hasPrefix("http://") {
+            return String(url.dropFirst(7))
+        }
+        return url
+    }
+
+    private func toggleJoinLinkBanner() {
+        guard let banner = joinLinkBanner else { return }
+
+        // If banner is visible, hide it
+        if banner.bannerIsVisible {
+            banner.hide()
+            menuBarManager.setBannerVisible(false)
+        } else {
+            // Only show if session is active and we have a URL
+            guard isSessionActive, let url = participantUrl else { return }
+            banner.show(url: url)
+            menuBarManager.setBannerVisible(true)
         }
     }
 
