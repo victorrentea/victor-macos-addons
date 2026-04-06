@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var controlsVisible = false
     private var eventTapManager: EventTapManager?
     private var emotionalPasteHandler: EmotionalPasteHandler?
+    private var coreAudioManager: CoreAudioManager?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -63,6 +64,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         let pasteHandler = EmotionalPasteHandler(apiKey: apiKey)
         self.emotionalPasteHandler = pasteHandler
 
+        let audioManager = CoreAudioManager()
+        self.coreAudioManager = audioManager
+
         let eventTap = EventTapManager()
         eventTap.onCaptureClipboard = { [weak pasteHandler] text in
             pasteHandler?.captureText(text)
@@ -70,7 +74,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         eventTap.onEmotionalPaste = { [weak pasteHandler] in pasteHandler?.handleCleanHotkey() }
         eventTap.onScreenshot = { overlayInfo("TODO: screenshot") }
         eventTap.onToggleDarkMode = { overlayInfo("TODO: dark mode") }
-        eventTap.onDictationMute = { overlayInfo("TODO: dictation mute") }
+        eventTap.onDictationMute = { [weak audioManager] in
+            DispatchQueue.global(qos: .userInteractive).async {
+                audioManager?.toggleDictationMute()
+            }
+        }
         eventTap.onRepaste = { [weak pasteHandler] in pasteHandler?.repasteLast() }
         eventTap.start()
         self.eventTapManager = eventTap
