@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// Banner that displays participant join URL at top of screen
-/// Auto-hides after 20 seconds with 3 second fade-out animation
+/// Auto-hides after 30 seconds with 3 second fade-out animation
 class JoinLinkBanner: NSPanel {
     private let urlLabel: NSTextField
     private var fadeTimer: Timer?
@@ -19,11 +19,11 @@ class JoinLinkBanner: NSPanel {
             height: bannerHeight
         )
 
-        // Create label with monospaced font before super.init
+        // Create label with monospaced font before super.init - centered with full width
         urlLabel = NSTextField(frame: NSRect(
-            x: 20,
+            x: 0,
             y: 0,
-            width: bannerFrame.width - 40,
+            width: bannerFrame.width,
             height: bannerHeight
         ))
 
@@ -41,7 +41,7 @@ class JoinLinkBanner: NSPanel {
         self.hasShadow = false
         self.ignoresMouseEvents = true
 
-        // Configure label (3x larger font: 28 * 3 = 84)
+        // Configure label (84pt - 10% = 75.6pt ≈ 76pt)
         urlLabel.isBordered = false
         urlLabel.isEditable = false
         urlLabel.isSelectable = false
@@ -60,33 +60,33 @@ class JoinLinkBanner: NSPanel {
         let attributedString = NSMutableAttributedString()
 
         if parts.count > 1 {
-            // Domain part in white
+            // Domain part in white (76pt font)
             let domainPart = parts.dropLast().joined(separator: "/")
             let domain = NSAttributedString(
                 string: domainPart + "/",
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 84, weight: .medium),
+                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
                     .foregroundColor: NSColor.white
                 ]
             )
             attributedString.append(domain)
 
-            // Session code in yellow and bold
+            // Session code in yellow and bold (76pt font)
             let sessionCode = String(parts.last!)
             let code = NSAttributedString(
                 string: sessionCode,
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 84, weight: .bold),
+                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .bold),
                     .foregroundColor: NSColor.yellow
                 ]
             )
             attributedString.append(code)
         } else {
-            // Fallback if no "/" found
+            // Fallback if no "/" found (76pt font)
             let fallback = NSAttributedString(
                 string: url,
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 84, weight: .medium),
+                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
                     .foregroundColor: NSColor.white
                 ]
             )
@@ -101,8 +101,8 @@ class JoinLinkBanner: NSPanel {
         // Cancel any existing timer
         fadeTimer?.invalidate()
 
-        // Schedule fade-out to start at 17 seconds
-        fadeTimer = Timer.scheduledTimer(withTimeInterval: 17.0, repeats: false) { [weak self] _ in
+        // Schedule fade-out to start at 27 seconds (30 total - 3 seconds fade)
+        fadeTimer = Timer.scheduledTimer(withTimeInterval: 27.0, repeats: false) { [weak self] _ in
             self?.startFadeOut()
         }
     }
