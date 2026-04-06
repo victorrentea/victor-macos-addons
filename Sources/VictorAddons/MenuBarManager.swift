@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 20:06"
+    static let BUILD_TIME = "Apr 6, 20:07"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -25,10 +25,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
 
-    private var portHistoryURL: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".victor-macos-addons-ports.json")
-    }
 
     func setup() {
         loadPortHistory()
@@ -252,10 +248,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private func killPort(_ port: Int) {
         onKillPort?(port)
-        if !portHistory.contains(port) {
-            portHistory.insert(port, at: 0)
-            savePortHistory()
-        }
+        addToPortHistory(port)
     }
 
     // MARK: - Public API
@@ -268,18 +261,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeItem.title = active ? "Stop Transcribing" : "Start Transcribing"
     }
 
+    func addToPortHistory(_ port: Int) {
+        portHistory.removeAll { $0 == port }
+        portHistory.insert(port, at: 0)
+        if portHistory.count > 5 { portHistory = Array(portHistory.prefix(5)) }
+        let text = portHistory.map { String($0) }.joined(separator: "\n")
+        try? text.write(toFile: "/Users/victorrentea/workspace/victor-macos-addons/ports-to-kill.txt",
+                        atomically: true, encoding: .utf8)
+    }
+
     // MARK: - Port History Persistence
 
     private func loadPortHistory() {
-        guard let data = try? Data(contentsOf: portHistoryURL),
-              let ports = try? JSONDecoder().decode([Int].self, from: data) else {
-            return
-        }
-        portHistory = ports
-    }
-
-    private func savePortHistory() {
-        guard let data = try? JSONEncoder().encode(portHistory) else { return }
-        try? data.write(to: portHistoryURL)
+        portHistory = PortKiller.loadHistory()
     }
 }

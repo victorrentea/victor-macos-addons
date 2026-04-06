@@ -1,14 +1,14 @@
 import AppKit
 import Foundation
 
+private let portsFilePath = "/Users/victorrentea/workspace/victor-macos-addons/ports-to-kill.txt"
+
 class PortKiller: NSObject {
-    private let portHistoryURL: URL
     private(set) var history: [Int]
+    var onKillComplete: ((Int) -> Void)?
 
     override init() {
-        portHistoryURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".victor-macos-addons-ports.json")
-        history = PortKiller.loadHistory(from: portHistoryURL)
+        history = PortKiller.loadHistory()
         super.init()
     }
 
@@ -39,6 +39,7 @@ class PortKiller: NSObject {
         history.insert(port, at: 0)
         if history.count > 5 { history = Array(history.prefix(5)) }
         saveHistory()
+        DispatchQueue.main.async { self.onKillComplete?(port) }
     }
 
     func showPortPrompt() {
@@ -132,15 +133,15 @@ class PortKiller: NSObject {
     }
 
     private func saveHistory() {
-        guard let data = try? JSONEncoder().encode(history) else { return }
-        try? data.write(to: portHistoryURL)
+        let text = history.map { String($0) }.joined(separator: "\n")
+        try? text.write(toFile: portsFilePath, atomically: true, encoding: .utf8)
     }
 
-    private static func loadHistory(from url: URL) -> [Int] {
-        guard let data = try? Data(contentsOf: url),
-              let ports = try? JSONDecoder().decode([Int].self, from: data) else {
+    static func loadHistory() -> [Int] {
+        guard let text = try? String(contentsOfFile: portsFilePath, encoding: .utf8) else {
             return [8080]
         }
-        return ports
+        let ports = text.split(separator: "\n").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        return ports.isEmpty ? [8080] : ports
     }
 }
