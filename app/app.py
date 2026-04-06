@@ -590,6 +590,7 @@ class WisprAddonsApp(rumps.App):
 
         # Kill port submenu — persisted across sessions
         self._kill_port_history: list[int] = _load_port_history()
+        self._kill_submenu_items: dict = {}  # port -> MenuItem, rebuilt on each menu open
         kill_menu = self.menu["Kill…"]
         kill_menu.add(rumps.MenuItem("Port…", callback=self._kill_port_prompt))
         kill_menu.add(None)
@@ -609,7 +610,12 @@ class WisprAddonsApp(rumps.App):
                 def menuNeedsUpdate_(self, menu):
                     parent._refresh_port_status()
 
+            class MainThreadCaller(NSObject):
+                def call_(self, fn):
+                    fn()
+
             self._menu_delegate = MenuDelegate.alloc().init()
+            self._main_thread_caller = MainThreadCaller.alloc().init()
             # Set delegate on the status bar menu
             ns_menu = self._nsapp_statusbar_button_menu()
             if ns_menu:
@@ -650,37 +656,71 @@ class WisprAddonsApp(rumps.App):
         label = "Exit Dark Mode" if dark else "Enter Dark Mode"
         self._dark_mode_item.title = label + " — ⌘⌃⌥D"
 
+    def _dispatch_main(self, fn):
+        """Run fn on the main thread (safe to call from any thread)."""
+        try:
+            self._main_thread_caller.performSelectorOnMainThread_withObject_waitUntilDone_('call:', fn, False)
+        except Exception:
+            fn()
+
     def _refresh_port_status(self):
-        """Refresh enabled/disabled state and process names of kill entries."""
-        from concurrent.futures import ThreadPoolExecutor
+        """Show '?' placeholders immediately, then update each port in background."""
         all_ports = [8080] + [p for p in self._kill_port_history if p != 8080]
-        with ThreadPoolExecutor() as ex:
-            dark_future = ex.submit(_is_dark_mode)
-            port_futures = {port: ex.submit(_get_port_process_name, port) for port in all_ports}
 
-        self._refresh_dark_mode_label(dark_future.result())
+        # Immediately show placeholders so the menu opens fast
+        self._kill_8080_item.title = "Kill :8080 ?"
+        self._kill_8080_item._menuitem.setEnabled_(False)
+        self._kill_8080_item.set_callback(None)
+        self._rebuild_kill_submenu_placeholders([p for p in all_ports if p != 8080])
 
-        proc_8080 = port_futures[8080].result()
-        if proc_8080:
-            self._kill_8080_item.title = f"Kill :8080 {proc_8080}"
-            self._kill_8080_item.set_callback(self._make_kill_callback(8080))
-        else:
-            self._kill_8080_item.title = "Kill :8080"
-            self._kill_8080_item.set_callback(None)
+        # Dark mode refresh in background
+        def bg_dark():
+            dark = _is_dark_mode()
+            self._dispatch_main(lambda: self._refresh_dark_mode_label(dark))
+        threading.Thread(target=bg_dark, daemon=True).start()
 
-        self._rebuild_kill_submenu({p: port_futures[p].result() for p in all_ports if p != 8080})
+        # Check each port in background and update when done
+        def check_port(port):
+            proc = _get_port_process_name(port)
+            if port == 8080:
+                def update():
+                    if proc:
+                        self._kill_8080_item.title = f"Kill :8080 {proc}"
+                        self._kill_8080_item._menuitem.setEnabled_(True)
+                        self._kill_8080_item.set_callback(self._make_kill_callback(8080))
+                    else:
+                        self._kill_8080_item.title = "Kill :8080"
+                        self._kill_8080_item._menuitem.setEnabled_(False)
+                self._dispatch_main(update)
+            else:
+                def update():
+                    item = self._kill_submenu_items.get(port)
+                    if item is None:
+                        return
+                    if proc:
+                        item.title = f":{port} {proc}"
+                        item._menuitem.setEnabled_(True)
+                        item.set_callback(self._make_kill_callback(port))
+                    else:
+                        item.title = f":{port}"
+                        item._menuitem.setEnabled_(False)
+                self._dispatch_main(update)
 
-    def _rebuild_kill_submenu(self, port_procs: dict):
+        for port in all_ports:
+            threading.Thread(target=check_port, args=(port,), daemon=True).start()
+
+    def _rebuild_kill_submenu_placeholders(self, ports: list[int]):
+        """Replace submenu port items with '?' placeholders; track items for async update."""
         kill_menu = self.menu["Kill…"]
         for key in list(kill_menu.keys()):
             if key.startswith(":"):
                 del kill_menu[key]
-        for port, proc in port_procs.items():
-            if proc:
-                item = rumps.MenuItem(f":{port} {proc}", callback=self._make_kill_callback(port))
-            else:
-                item = rumps.MenuItem(f":{port}", callback=None)
+        self._kill_submenu_items = {}
+        for port in ports:
+            item = rumps.MenuItem(f":{port} ?")
+            item._menuitem.setEnabled_(False)
             kill_menu.add(item)
+            self._kill_submenu_items[port] = item
 
     def _make_kill_callback(self, port: int):
         def cb(_):
