@@ -616,6 +616,10 @@ class WisprAddonsApp(rumps.App):
                 for title in ["Paste Emotions — ⌘⌃V", "Re-paste — Wheel x 2", "Screenshot — ⌃P"]:
                     self.menu[title]._menuitem.setEnabled_(False)
                 self._ws_status_item._menuitem.setEnabled_(False)
+                # Also disable autoenablesItems on the Kill… submenu so Port… isn't grayed out
+                kill_ns_menu = self.menu["Kill…"]._menuitem.submenu()
+                if kill_ns_menu:
+                    kill_ns_menu.setAutoenablesItems_(False)
         except Exception:
             pass  # fallback: ports refresh only after kill
 
