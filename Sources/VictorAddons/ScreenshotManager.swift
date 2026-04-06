@@ -25,7 +25,34 @@ enum ScreenshotManager {
     }
 
     private static func activeDisplayNumber() -> Int {
-        // Returns 1-indexed display number for the screen with the menu bar focus
+        // Returns 1-indexed display number for the screen with the frontmost window
+        // Get the frontmost window's screen
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return 1
+        }
+
+        // Find the frontmost window
+        for window in windows {
+            guard let ownerPID = window[kCGWindowOwnerPID as String] as? pid_t,
+                  ownerPID == frontmostApp.processIdentifier,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let x = bounds["X"],
+                  let y = bounds["Y"] else {
+                continue
+            }
+
+            // Find which screen contains this window
+            let screens = NSScreen.screens
+            for (index, screen) in screens.enumerated() {
+                let frame = screen.frame
+                if x >= frame.minX && x < frame.maxX && y >= frame.minY && y < frame.maxY {
+                    return index + 1
+                }
+            }
+        }
+
+        // Fallback to main screen
         guard let mainScreen = NSScreen.main else { return 1 }
         let screens = NSScreen.screens
         for (index, screen) in screens.enumerated() {

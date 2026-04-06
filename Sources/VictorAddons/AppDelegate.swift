@@ -378,8 +378,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         let accessEnabled = AXIsProcessTrustedWithOptions(options)
 
-        if !accessEnabled {
-            overlayInfo("Please grant Accessibility permissions in System Settings")
+        if accessEnabled {
+            overlayInfo("✓ Accessibility permissions granted")
+        } else {
+            overlayInfo("⚠️ Please grant Accessibility permissions in System Settings")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
             }
