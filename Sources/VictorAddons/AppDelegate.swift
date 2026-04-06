@@ -122,6 +122,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
         portKiller.onKillComplete = { [weak menuBarManager] port in menuBarManager?.addToPortHistory(port) }
         menuBarManager.setup()
+        ScreenshotManager.onScreenshotTaken = { [weak menuBarManager] in
+            DispatchQueue.main.async {
+                menuBarManager?.flashScreenshotIcon()
+            }
+        }
         startTranscription()
 
         let secrets = SecretsLoader.load()

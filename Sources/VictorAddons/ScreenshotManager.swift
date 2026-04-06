@@ -3,6 +3,7 @@ import Foundation
 
 enum ScreenshotManager {
     private static let screenshotDir = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
+    static var onScreenshotTaken: (() -> Void)?
 
     static func takeScreenshot() {
         // Create dir if needed
@@ -25,6 +26,7 @@ enum ScreenshotManager {
         process.waitUntilExit()
 
         overlayInfo("Screenshot saved: \(filename) (display \(display))")
+        onScreenshotTaken?()
     }
 
     private static func activeDisplayNumber() -> Int {

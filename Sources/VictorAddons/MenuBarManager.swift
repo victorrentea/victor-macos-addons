@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 22:07"
+    static let BUILD_TIME = "Apr 6, 22:16"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -267,6 +267,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     func updateWsStatus(_ connected: Bool) {
         wsStatusItem.title = connected ? "🟢 WS: connected" : "🔴 WS: not connected"
+    }
+
+    func flashScreenshotIcon() {
+        guard let button = statusItem.button else { return }
+        let originalImage = button.image
+
+        // Change to camera emoji for 1 second
+        button.image = nil
+        button.title = "📷"
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            button.title = ""
+            button.image = originalImage
+        }
     }
 
     func setTranscribing(_ active: Bool) {
