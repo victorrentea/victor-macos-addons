@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 
 class PortKiller: NSObject {
+    static let portsFileURL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/ports-to-kill.txt")
     private let portHistoryURL: URL
     private(set) var history: [Int]
 
     override init() {
-        portHistoryURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".victor-macos-addons-ports.json")
+        portHistoryURL = Self.portsFileURL
         history = PortKiller.loadHistory(from: portHistoryURL)
         super.init()
     }
@@ -21,6 +21,7 @@ class PortKiller: NSObject {
         guard !pids.isEmpty else {
             overlayInfo("No process on :\(port)")
             sendNotification(title: "Kill port", message: "No process on :\(port)")
+            remember(port: port)
             return
         }
 
@@ -34,11 +35,7 @@ class PortKiller: NSObject {
         overlayInfo("Killed :\(port) — \(summary)")
         sendNotification(title: "Killed :\(port)", message: summary)
 
-        // Update history: move to top, unique, max 5
-        history.removeAll { $0 == port }
-        history.insert(port, at: 0)
-        if history.count > 5 { history = Array(history.prefix(5)) }
-        saveHistory()
+        remember(port: port)
     }
 
     func showPortPrompt() {
@@ -89,6 +86,8 @@ class PortKiller: NSObject {
             overlayInfo("Invalid port: \(text)")
             return
         }
+        // Persist immediately when user confirms the dialog, even if kill later fails.
+        remember(port: port)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.kill(port: port)
         }
@@ -131,16 +130,34 @@ class PortKiller: NSObject {
         AppleScriptRunner.run("display notification \"\(message)\" with title \"\(title)\"")
     }
 
+    private func remember(port: Int) {
+        // Merge with latest on-disk list to avoid overwriting newer entries.
+        history = Self.loadHistory(from: portHistoryURL)
+        history.removeAll { $0 == port }
+        history.insert(port, at: 0)
+        if history.count > 20 { history = Array(history.prefix(20)) }
+        saveHistory()
+    }
+
     private func saveHistory() {
-        guard let data = try? JSONEncoder().encode(history) else { return }
-        try? data.write(to: portHistoryURL)
+        let content = history.map(String.init).joined(separator: "\n")
+        do {
+            let dir = portHistoryURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try content.write(to: portHistoryURL, atomically: true, encoding: .utf8)
+        } catch {
+            overlayError("Failed saving ports file: \(error.localizedDescription)")
+        }
     }
 
     private static func loadHistory(from url: URL) -> [Int] {
-        guard let data = try? Data(contentsOf: url),
-              let ports = try? JSONDecoder().decode([Int].self, from: data) else {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             return [8080]
         }
-        return ports
+        let ports = text
+            .split(separator: "\n")
+            .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .filter { $0 > 0 }
+        return ports.isEmpty ? [8080] : ports
     }
 }

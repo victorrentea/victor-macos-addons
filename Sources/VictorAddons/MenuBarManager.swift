@@ -25,8 +25,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPortPrompt: (() -> Void)?
 
     private var portHistoryURL: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".victor-macos-addons-ports.json")
+        PortKiller.portsFileURL
     }
 
     func setup() {
@@ -133,6 +132,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func refreshDynamicItems() {
+        loadPortHistory()
         // Refresh kill submenu port history (remove dynamic items after separator)
         while killSubmenu.items.count > 2 {
             killSubmenu.removeItem(at: killSubmenu.items.count - 1)
@@ -213,15 +213,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     // MARK: - Port History Persistence
 
     private func loadPortHistory() {
-        guard let data = try? Data(contentsOf: portHistoryURL),
-              let ports = try? JSONDecoder().decode([Int].self, from: data) else {
+        guard let text = try? String(contentsOf: portHistoryURL, encoding: .utf8) else {
             return
         }
-        portHistory = ports
+        portHistory = text
+            .split(separator: "\n")
+            .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .filter { $0 > 0 }
     }
 
     private func savePortHistory() {
-        guard let data = try? JSONEncoder().encode(portHistory) else { return }
-        try? data.write(to: portHistoryURL)
+        let unique = Array(NSOrderedSet(array: portHistory).compactMap { $0 as? Int })
+        let trimmed = Array(unique.prefix(20))
+        portHistory = trimmed
+        let content = trimmed.map(String.init).joined(separator: "\n")
+        try? content.write(to: portHistoryURL, atomically: true, encoding: .utf8)
     }
 }
