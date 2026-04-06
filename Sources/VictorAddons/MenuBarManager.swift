@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 7, 00:59"
+    static let BUILD_TIME = "Apr 7, 01:11"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -16,6 +16,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var portItems: [Int: NSMenuItem] = [:]
 
     private var isTranscribing: Bool = false
+    private var isTranscriptionStale: Bool = false
     private var transcribeSource: String = ""
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
@@ -287,15 +288,48 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func setTranscribing(_ active: Bool) {
         isTranscribing = active
         updateTranscribeTitle()
+        refreshMenuIcon()
+    }
 
+    func setTranscriptionStale(_ stale: Bool) {
+        isTranscriptionStale = stale
+        refreshMenuIcon()
+    }
+
+    private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
-        let iconName = active ? "icon_chat" : "icon_chat_off"
-        if let url = Bundle.module.url(forResource: iconName, withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            image.isTemplate = active
-            image.size = NSSize(width: 18, height: 18)
-            button.image = image
+        if !isTranscribing {
+            if let url = Bundle.module.url(forResource: "icon_chat_off", withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                image.isTemplate = false
+                image.size = NSSize(width: 18, height: 18)
+                button.image = image
+            }
+        } else if isTranscriptionStale {
+            button.image = makeWarnIcon()
+        } else {
+            if let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+               let image = NSImage(contentsOf: url) {
+                image.isTemplate = true
+                image.size = NSSize(width: 18, height: 18)
+                button.image = image
+            }
         }
+    }
+
+    private func makeWarnIcon() -> NSImage? {
+        guard let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+              let base = NSImage(contentsOf: url) else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let composite = NSImage(size: size)
+        composite.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: size))
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9)]
+        let emoji = "⚠️" as NSString
+        let strSize = emoji.size(withAttributes: attrs)
+        emoji.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
+        composite.unlockFocus()
+        return composite
     }
 
     func setTranscribeSource(_ emoji: String) {

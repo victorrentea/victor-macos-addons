@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var ijMonitor: IntelliJMonitor?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
+    private var transcriptionWatcher: TranscriptionWatcher?
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     private var joinLinkBanner: JoinLinkBanner?
 
@@ -94,8 +95,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         let whisperManager = WhisperProcessManager()
         self.whisperManager = whisperManager
+        let watcher = TranscriptionWatcher(transcriptionFolder: transcriptionFolder)
+        watcher.onStaleChanged = { [weak self] stale in
+            self?.menuBarManager.setTranscriptionStale(stale)
+        }
+        self.transcriptionWatcher = watcher
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
+            if running { self?.transcriptionWatcher?.startWatching() }
+            else { self?.transcriptionWatcher?.stopWatching() }
         }
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
