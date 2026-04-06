@@ -692,8 +692,8 @@ class WisprAddonsApp(rumps.App):
 
         W, H = 200, 36
         screen = NSScreen.mainScreen().frame()
-        x = screen.size.width * 0.7 - W / 2
-        y = screen.size.height - H - 24  # just below menu bar
+        x = 1100
+        y = screen.size.height - 80 - H  # top-left corner at (1100, 80)
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, W, H),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable,
