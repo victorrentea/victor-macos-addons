@@ -15,13 +15,13 @@ echo "Building $APP_NAME.app..."
 ICONSET=$(mktemp -d)/icon.iconset
 mkdir -p "$ICONSET"
 for SIZE in 16 32 64 128 256 512; do
-    sips -z $SIZE $SIZE "$DIR/wispr-flow/icon_chat.png" --out "$ICONSET/icon_${SIZE}x${SIZE}.png" >/dev/null 2>&1
+    sips -z $SIZE $SIZE "$DIR/app/icon_chat.png" --out "$ICONSET/icon_${SIZE}x${SIZE}.png" >/dev/null 2>&1
     DOUBLE=$((SIZE * 2))
     if [ $DOUBLE -le 1024 ]; then
-        sips -z $DOUBLE $DOUBLE "$DIR/wispr-flow/icon_chat.png" --out "$ICONSET/icon_${SIZE}x${SIZE}@2x.png" >/dev/null 2>&1
+        sips -z $DOUBLE $DOUBLE "$DIR/app/icon_chat.png" --out "$ICONSET/icon_${SIZE}x${SIZE}@2x.png" >/dev/null 2>&1
     fi
 done
-ICNS_FILE="$DIR/wispr-flow/AppIcon.icns"
+ICNS_FILE="$DIR/app/AppIcon.icns"
 iconutil -c icns "$ICONSET" -o "$ICNS_FILE"
 rm -rf "$(dirname "$ICONSET")"
 

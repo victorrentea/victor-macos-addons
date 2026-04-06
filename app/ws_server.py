@@ -1,4 +1,4 @@
-"""Embedded WebSocket server for wispr-flow.
+"""Embedded WebSocket server for app.
 
 Runs on a dedicated asyncio event loop in a background daemon thread.
 Clients (training-assistant daemon, desktop-overlay) connect here to:

@@ -16,7 +16,7 @@ else
     echo "$(date '+%H:%M:%S') desktop-overlay not built — skipping (run: cd desktop-overlay && swift build)" >> "$LOG"
 fi
 
-# --- wispr-flow (Python menu bar app, foreground — needs main thread for GUI) ---
-cd "$DIR/wispr-flow"
-echo "$(date '+%H:%M:%S') wispr-flow starting..." >> "$LOG"
+# --- app (Python menu bar app, foreground — needs main thread for GUI) ---
+cd "$DIR/app"
+echo "$(date '+%H:%M:%S') app starting..." >> "$LOG"
 exec /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 -u app.py >> "$LOG" 2>&1

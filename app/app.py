@@ -577,14 +577,14 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Screenshot — ⌃P", callback=None),
             self._ws_status_item,
             None,  # separator
-            rumps.MenuItem("Apr 6, 18:37", callback=None),
+            rumps.MenuItem("Apr 6, 18:39", callback=None),
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
         self.menu["Paste Emotions — ⌘⌃V"].enabled = False
 
         self.menu["Re-paste — Wheel x 2"].enabled = False
         self.menu["Screenshot — ⌃P"].enabled = False
-        self.menu["Apr 6, 18:37"].enabled = False
+        self.menu["Apr 6, 18:39"].enabled = False
 
         # Kill port submenu — persisted across sessions
         self._kill_port_history: list[int] = _load_port_history()
