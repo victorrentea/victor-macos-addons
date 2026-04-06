@@ -735,15 +735,18 @@ class WisprAddonsApp(rumps.App):
         from Foundation import NSMakeRect
 
         W, H = 200, 36
-        screen = NSScreen.mainScreen().frame()
+        screen = NSScreen.mainScreen()
+        visible = screen.visibleFrame()
         x = 1100
-        y = screen.size.height - 80 - H  # top-left corner at (1100, 80)
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, W, H),
+            NSMakeRect(x, 0, W, H),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable,
             NSBackingStoreBuffered, False)
         panel.setTitle_("")
         panel.setLevel_(25)  # floating
+        # Pin top of window frame to bottom of menu bar
+        top_y = visible.origin.y + visible.size.height
+        panel.setFrameTopLeftPoint_((x, top_y))
 
         field = NSTextField.alloc().initWithFrame_(NSMakeRect(4, 4, 152, 28))
         field.setPlaceholderString_("8080")
