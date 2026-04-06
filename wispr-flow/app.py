@@ -681,10 +681,10 @@ class WisprAddonsApp(rumps.App):
                             NSApplication, NSFont, NSModalResponseOK)
         from Foundation import NSMakeRect
 
-        W, H = 190, 36
+        W, H = 200, 36
         screen = NSScreen.mainScreen().frame()
-        x = screen.size.width * 3 / 4 - W / 2
-        y = screen.size.height - H - 50
+        x = screen.size.width * 0.7 - W / 2
+        y = screen.size.height - H - 24  # just below menu bar
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, W, H),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable,
@@ -692,15 +692,16 @@ class WisprAddonsApp(rumps.App):
         panel.setTitle_("")
         panel.setLevel_(25)  # floating
 
-        field = NSTextField.alloc().initWithFrame_(NSMakeRect(4, 4, 130, 28))
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(4, 4, 152, 28))
         field.setPlaceholderString_("8080")
         field.setFont_(NSFont.systemFontOfSize_(16))
         panel.contentView().addSubview_(field)
 
-        btn = NSButton.alloc().initWithFrame_(NSMakeRect(140, 2, 44, 32))
-        btn.setTitle_("Kill")
+        btn = NSButton.alloc().initWithFrame_(NSMakeRect(160, 4, 36, 28))
+        btn.setTitle_("☠️")
         btn.setBezelStyle_(NSBezelStyleRounded)
-        btn.setFont_(NSFont.systemFontOfSize_(18))
+        btn.setFont_(NSFont.systemFontOfSize_(16))
+        btn.setKeyEquivalent_("\r")  # Enter triggers kill
         btn.setTarget_(NSApplication.sharedApplication())
         btn.setAction_("stopModalWithCode:")
         btn.setTag_(NSModalResponseOK)
@@ -741,7 +742,7 @@ class WisprAddonsApp(rumps.App):
         self._kill_port_history.insert(0, port)
         self._kill_port_history = self._kill_port_history[:5]
         _save_port_history(self._kill_port_history)
-        self._rebuild_kill_submenu()
+        self._refresh_port_status()
 
     # ── Transcribing ──
 
