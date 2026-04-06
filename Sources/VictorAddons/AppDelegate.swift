@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private let myPID: Int32
     private var pidCheckTimer: Timer?
     private var controlsVisible = false
+    private var eventTapManager: EventTapManager?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -55,6 +56,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onMonitor = { overlayInfo("TODO: monitor") }
         menuBarManager.onKillPortPrompt = { overlayInfo("TODO: kill port prompt") }
         menuBarManager.setup()
+
+        let eventTap = EventTapManager()
+        eventTap.onCaptureClipboard = { text in
+            overlayInfo("Captured paste: \(text.prefix(50))")
+        }
+        eventTap.onEmotionalPaste = { overlayInfo("TODO: emotional paste") }
+        eventTap.onScreenshot = { overlayInfo("TODO: screenshot") }
+        eventTap.onToggleDarkMode = { overlayInfo("TODO: dark mode") }
+        eventTap.onDictationMute = { overlayInfo("TODO: dictation mute") }
+        eventTap.onRepaste = { overlayInfo("TODO: repaste") }
+        eventTap.start()
+        self.eventTapManager = eventTap
 
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
