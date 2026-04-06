@@ -13,7 +13,7 @@ class TranscriptionWatcher {
     private var lastIsStale: Bool = false
 
     init(transcriptionFolder: URL,
-         staleThreshold: TimeInterval = 600,
+         staleThreshold: TimeInterval = 180,
          checkInterval: TimeInterval = 10) {
         self.transcriptionFolder = transcriptionFolder
         self.staleThreshold = staleThreshold
