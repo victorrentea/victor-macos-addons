@@ -5,7 +5,7 @@ Wraps the clipboard cleanup daemon (CGEventTap) in a menu bar app using rumps.
 The event tap runs on a background thread; the main thread runs the menu bar UI.
 """
 
-BUILD_TIME = "Apr 6, 19:58"
+BUILD_TIME = "Apr 6, 20:42"
 
 import ctypes
 import ctypes.util
