@@ -2,8 +2,7 @@ import AppKit
 import Foundation
 
 enum ScreenshotManager {
-    private static let screenshotDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Documents/screenshots")
+    private static let screenshotDir = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
 
     static func takeScreenshot() {
         // Create dir if needed

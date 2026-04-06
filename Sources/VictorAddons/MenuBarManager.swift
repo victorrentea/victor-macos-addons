@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 21:33"
+    static let BUILD_TIME = "Apr 6, 21:34"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!

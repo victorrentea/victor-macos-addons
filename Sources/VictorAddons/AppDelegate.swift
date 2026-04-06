@@ -35,6 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Request Accessibility permissions if not already granted
+        requestAccessibilityPermissions()
+
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = NSScreen.screens.first { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
@@ -367,5 +370,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private func cancelPendingDisconnectError() {
         pendingDisconnectError?.cancel()
         pendingDisconnectError = nil
+    }
+
+    // MARK: - Permissions
+
+    private func requestAccessibilityPermissions() {
+        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+
+        if !accessEnabled {
+            overlayInfo("Please grant Accessibility permissions in System Settings")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
+        }
     }
 }
