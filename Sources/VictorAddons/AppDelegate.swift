@@ -5,6 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var overlayPanel: OverlayPanel!
     private var animator: EmojiAnimator!
     private var buttonBar: ButtonBar!
+    private var menuBarManager: MenuBarManager!
     private let serverURL: String
     private var wsTask: URLSessionWebSocketTask?
     private var session: URLSession!
@@ -42,6 +43,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         connectWebSocket()
         setupButtonBar(screen: builtInScreen)
         setupSignalHandler()
+
+        menuBarManager = MenuBarManager()
+        menuBarManager.onQuit = {
+            Foundation.exit(0)
+        }
+        menuBarManager.onToggleTranscribe = { overlayInfo("TODO: toggle transcribe") }
+        menuBarManager.onCopyGit = { overlayInfo("TODO: copy git") }
+        menuBarManager.onShowLog = { overlayInfo("TODO: show log") }
+        menuBarManager.onToggleDarkMode = { overlayInfo("TODO: dark mode") }
+        menuBarManager.onMonitor = { overlayInfo("TODO: monitor") }
+        menuBarManager.onKillPortPrompt = { overlayInfo("TODO: kill port prompt") }
+        menuBarManager.setup()
 
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
