@@ -110,6 +110,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
         }
+        menuBarManager.onTakeScreenshot = {
+            DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() }
+        }
         let portKiller = PortKiller()
         self.portKiller = portKiller
         menuBarManager.onKillPort = { port in

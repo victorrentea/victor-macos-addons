@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 21:38"
+    static let BUILD_TIME = "Apr 6, 21:47"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -24,6 +24,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onMonitor: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
+    var onTakeScreenshot: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -82,6 +83,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Log
         addItem("Log", action: #selector(showLogAction))
 
+        // Screenshot
+        addItem("Take Screenshot", action: #selector(takeScreenshotAction))
+
         menu.addItem(.separator())
 
         // Shortcut reminders (disabled)
@@ -97,7 +101,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         screenshotItem.isEnabled = false
 
         // WS status
-        wsStatusItem = addItem("WS 🔴", action: nil)
+        wsStatusItem = addItem("🔴 WS: not connected", action: nil)
         wsStatusItem.isEnabled = false
 
         menu.addItem(.separator())
@@ -232,6 +236,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onToggleDarkMode?()
     }
 
+    @objc private func takeScreenshotAction() {
+        onTakeScreenshot?()
+    }
+
     @objc private func killPort8080() {
         killPort(8080)
     }
@@ -258,7 +266,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     // MARK: - Public API
 
     func updateWsStatus(_ connected: Bool) {
-        wsStatusItem.title = connected ? "WS 🟢" : "WS 🔴"
+        wsStatusItem.title = connected ? "🟢 WS: connected" : "🔴 WS: not connected"
     }
 
     func setTranscribing(_ active: Bool) {
