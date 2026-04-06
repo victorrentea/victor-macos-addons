@@ -457,3 +457,17 @@ class WhisperTranscriptionRunner:
         dots = " ..." if words > 9 else ""
         ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
         print(f"{ts} [transcript  ] 🎙️{words} words: {preview}{dots}")
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
+                                  str(Path.home() / "Documents" / "transcriptions")))
+    runner = WhisperTranscriptionRunner(folder)
+    runner.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        runner.stop()

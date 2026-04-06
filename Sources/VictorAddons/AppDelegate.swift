@@ -24,6 +24,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var ijMonitor: IntelliJMonitor?
     private var logWindow: LogWindow?
     private var portKiller: PortKiller?
+    private var whisperManager: WhisperProcessManager?
+    private var transcriptionFolder: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Documents/transcriptions")
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -65,10 +68,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         self.wsServer = wsServer
 
         menuBarManager = MenuBarManager()
-        menuBarManager.onQuit = {
+        menuBarManager.onQuit = { [weak self] in
+            self?.whisperManager?.stop()
             Foundation.exit(0)
         }
-        menuBarManager.onToggleTranscribe = { overlayInfo("TODO: toggle transcribe") }
+        let whisperManager = WhisperProcessManager()
+        self.whisperManager = whisperManager
+        whisperManager.onStateChanged = { [weak self] running in
+            self?.menuBarManager.setTranscribing(running)
+        }
+        menuBarManager.onToggleTranscribe = { [weak whisperManager, weak self] in
+            if whisperManager?.isRunning == true {
+                whisperManager?.stop()
+            } else {
+                var env: [String: String] = [:]
+                if let folder = self?.transcriptionFolder {
+                    env["TRANSCRIPTION_FOLDER"] = folder.path
+                }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    whisperManager?.start(env: env)
+                }
+            }
+        }
         menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
         let logWin = LogWindow()
         self.logWindow = logWin
@@ -111,7 +132,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         eventTap.start()
         self.eventTapManager = eventTap
 
-        let transcriptionFolder: URL = {
+        transcriptionFolder = {
             if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
                 return URL(fileURLWithPath: env)
             }
