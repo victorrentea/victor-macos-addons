@@ -17,7 +17,7 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
 BUILD_TIMESTAMP=$(date "+%b %-d, %H:%M")
-sed -i '' "s/^BUILD_TIME = .*/BUILD_TIME = \"$BUILD_TIMESTAMP\"/" "$DIR/app/app.py"
+sed -i '' "s/static let BUILD_TIME = .*/static let BUILD_TIME = \"$BUILD_TIMESTAMP\"/" "$DIR/Sources/VictorAddons/MenuBarManager.swift"
 echo "Build timestamp: $BUILD_TIMESTAMP"
 
 echo "Building $APP_NAME.app..."
