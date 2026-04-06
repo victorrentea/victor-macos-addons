@@ -97,7 +97,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
-        menuBarManager.onMonitor = { overlayInfo("TODO: monitor") }
+        menuBarManager.onMonitor = { [weak self] in
+            self?.openTranscriptionMonitor()
+        }
         let portKiller = PortKiller()
         self.portKiller = portKiller
         menuBarManager.onKillPort = { port in
@@ -227,6 +229,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             pidCheckTimer?.invalidate()
             wsTask?.cancel(with: .goingAway, reason: nil)
             NSApplication.shared.terminate(nil)
+        }
+    }
+
+    private func openTranscriptionMonitor() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let filename = "\(formatter.string(from: Date())) transcription.txt"
+        let todayFile = transcriptionFolder.appendingPathComponent(filename)
+
+        do {
+            try FileManager.default.createDirectory(at: transcriptionFolder, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: todayFile.path) {
+                FileManager.default.createFile(atPath: todayFile.path, contents: nil)
+            }
+
+            let escapedPath = todayFile.path.replacingOccurrences(of: "'", with: "'\\''")
+            let cmd = "tput setaf 8 && tail -n 0 -F '\(escapedPath)'"
+            let script = """
+            tell application "Terminal"
+                do script "\(cmd)"
+                activate
+            end tell
+            """
+
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            p.arguments = ["-e", script]
+            try p.run()
+            overlayInfo("Monitoring transcription: \(filename)")
+        } catch {
+            overlayError("Failed to open monitor: \(error)")
         }
     }
 
