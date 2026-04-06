@@ -20,6 +20,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var emotionalPasteHandler: EmotionalPasteHandler?
     private var coreAudioManager: CoreAudioManager?
     private var wsServer: LocalWebSocketServer?
+    private var pptMonitor: PowerPointMonitor?
+    private var ijMonitor: IntelliJMonitor?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -95,6 +97,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         eventTap.onRepaste = { [weak pasteHandler] in pasteHandler?.repasteLast() }
         eventTap.start()
         self.eventTapManager = eventTap
+
+        let transcriptionFolder: URL = {
+            if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
+                return URL(fileURLWithPath: env)
+            }
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Documents/transcriptions")
+        }()
+
+        let pptMonitor = PowerPointMonitor(outputDir: transcriptionFolder)
+        pptMonitor.onSlideChange = { [weak self] event in
+            self?.wsServer?.pushSlide(event)
+        }
+        pptMonitor.start()
+        self.pptMonitor = pptMonitor
+
+        let ijMonitor = IntelliJMonitor(outputDir: transcriptionFolder)
+        ijMonitor.start()
+        self.ijMonitor = ijMonitor
 
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
