@@ -610,6 +610,7 @@ class WisprAddonsApp(rumps.App):
             ns_menu = self._nsapp_statusbar_button_menu()
             if ns_menu:
                 ns_menu.setDelegate_(self._menu_delegate)
+                ns_menu.setAutoenablesItems_(False)
         except Exception:
             pass  # fallback: ports refresh only after kill
 
