@@ -72,8 +72,41 @@ class WhisperProcessManager {
     }
 
     private func findPython3() -> String {
-        let candidates = ["/usr/bin/python3", "/usr/local/bin/python3", "/opt/homebrew/bin/python3"]
-        return candidates.first { FileManager.default.fileExists(atPath: $0) } ?? "/usr/bin/python3"
+        // Prefer interpreters that actually have Whisper runtime deps installed.
+        let candidates = [
+            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+            "/usr/local/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/bin/python3",
+        ]
+
+        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate) {
+            if hasWhisperDependencies(python: candidate) {
+                return candidate
+            }
+        }
+
+        // Fallback to first available interpreter (startup may still fail with missing deps).
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? "/usr/bin/python3"
+    }
+
+    private func hasWhisperDependencies(python: String) -> Bool {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: python)
+        probe.arguments = [
+            "-c",
+            "import importlib.util as u;mods=['numpy','sounddevice','mlx_whisper'];raise SystemExit(0 if all(u.find_spec(m) for m in mods) else 1)",
+        ]
+        probe.standardOutput = Pipe()
+        probe.standardError = Pipe()
+
+        do {
+            try probe.run()
+            probe.waitUntilExit()
+            return probe.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     private func findWhisperScript() -> String {

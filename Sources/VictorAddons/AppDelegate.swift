@@ -54,6 +54,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         connectWebSocket()
         setupButtonBar(screen: builtInScreen)
         setupSignalHandler()
+        transcriptionFolder = {
+            if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
+                return URL(fileURLWithPath: env)
+            }
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Documents/transcriptions")
+        }()
 
         let wsServer = LocalWebSocketServer()
         wsServer.onEmoji = { [weak self] emoji, count in
@@ -77,17 +84,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
         }
+        let startTranscription: () -> Void = { [weak whisperManager, weak self] in
+            var env: [String: String] = [:]
+            if let folder = self?.transcriptionFolder {
+                env["TRANSCRIPTION_FOLDER"] = folder.path
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                whisperManager?.start(env: env)
+            }
+        }
         menuBarManager.onToggleTranscribe = { [weak whisperManager, weak self] in
             if whisperManager?.isRunning == true {
                 whisperManager?.stop()
             } else {
-                var env: [String: String] = [:]
-                if let folder = self?.transcriptionFolder {
-                    env["TRANSCRIPTION_FOLDER"] = folder.path
-                }
-                DispatchQueue.global(qos: .userInitiated).async {
-                    whisperManager?.start(env: env)
-                }
+                startTranscription()
             }
         }
         menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
@@ -107,6 +117,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
         menuBarManager.setup()
+        startTranscription()
 
         let secrets = SecretsLoader.load()
         let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
@@ -133,14 +144,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         eventTap.onRepaste = { [weak pasteHandler] in pasteHandler?.repasteLast() }
         eventTap.start()
         self.eventTapManager = eventTap
-
-        transcriptionFolder = {
-            if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
-                return URL(fileURLWithPath: env)
-            }
-            return FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Documents/transcriptions")
-        }()
 
         let pptMonitor = PowerPointMonitor(outputDir: transcriptionFolder)
         pptMonitor.onSlideChange = { [weak self] event in

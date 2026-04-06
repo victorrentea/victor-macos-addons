@@ -19,8 +19,16 @@ from pathlib import Path
 
 import numpy as np
 
-# Add parent dir so we can import coreaudio_devices from wispr-flow
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "wispr-flow"))
+# Resolve coreaudio_devices module from local checkout layouts.
+_ROOT = Path(__file__).resolve().parent.parent
+for _candidate in (
+    _ROOT / "app",
+    _ROOT / "wispr-flow",  # legacy location
+    _ROOT,                 # fallback if module is vendored at repo root
+):
+    if (_candidate / "coreaudio_devices.py").exists():
+        sys.path.insert(0, str(_candidate))
+        break
 from coreaudio_devices import list_input_devices, register_device_change_callback, register_device_alive_callbacks
 
 
