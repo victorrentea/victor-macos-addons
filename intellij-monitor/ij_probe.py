@@ -62,6 +62,59 @@ def _lookup_project_path(project_name: str) -> str | None:
     return None
 
 
+def get_last_used_intellij_project() -> dict | None:
+    """Return {url, branch, project, path} for the most recently used IntelliJ project."""
+    pattern = os.path.expanduser(
+        "~/Library/Application Support/JetBrains/IntelliJIdea*/options/recentProjects.xml"
+    )
+    candidates = sorted(glob.glob(pattern), reverse=True)
+
+    best_ts = -1
+    best_path = None
+    for xml_path in candidates:
+        try:
+            tree = ET.parse(xml_path)
+            for entry in tree.findall(".//entry"):
+                key = entry.get("key", "")
+                if not key:
+                    continue
+                meta = entry.find(".//RecentProjectMetaInfo")
+                if meta is None:
+                    continue
+                ts_elem = meta.find('option[@name="activationTimestamp"]')
+                ts = int(ts_elem.get("value", 0)) if ts_elem is not None else 0
+                if ts > best_ts:
+                    best_ts = ts
+                    best_path = key.replace("$USER_HOME$", str(Path.home()))
+        except Exception:
+            continue
+
+    if not best_path:
+        return None
+
+    project_name = Path(best_path).name
+
+    def _git(cmd):
+        try:
+            r = subprocess.run(
+                ["git", "-C", best_path] + cmd,
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    remote_url = _git(["remote", "get-url", "origin"])
+    branch = _git(["branch", "--show-current"])
+
+    return {
+        "project": project_name,
+        "path": best_path,
+        "url": remote_url,
+        "branch": branch or "unknown",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Probe function
 # ---------------------------------------------------------------------------

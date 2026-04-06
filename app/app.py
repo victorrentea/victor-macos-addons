@@ -851,10 +851,12 @@ class WisprAddonsApp(rumps.App):
     def copy_intellij_git(self, _):
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "intellij-monitor"))
-            from ij_probe import probe_intellij
+            from ij_probe import probe_intellij, get_last_used_intellij_project
             state = probe_intellij()
             if not state or not state.get("url"):
-                log("📋 IntelliJ not open or no git remote")
+                state = get_last_used_intellij_project()
+            if not state or not state.get("url"):
+                log("📋 No IntelliJ project with git remote found")
                 return
             url = state["url"]
             branch = state.get("branch", "")
