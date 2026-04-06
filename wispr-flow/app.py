@@ -611,6 +611,11 @@ class WisprAddonsApp(rumps.App):
             if ns_menu:
                 ns_menu.setDelegate_(self._menu_delegate)
                 ns_menu.setAutoenablesItems_(False)
+                # rumps item.enabled=False only sets a Python attribute, not the NSMenuItem.
+                # With autoenablesItems=False we must set isEnabled directly.
+                for title in ["Paste Emotions — ⌘⌃V", "Re-paste — Wheel x 2", "Screenshot — ⌃P"]:
+                    self.menu[title]._menuitem.setEnabled_(False)
+                self._ws_status_item._menuitem.setEnabled_(False)
         except Exception:
             pass  # fallback: ports refresh only after kill
 
