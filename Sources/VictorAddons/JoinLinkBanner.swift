@@ -6,9 +6,7 @@ import Foundation
 class JoinLinkBanner: NSPanel {
     private let urlLabel: NSTextField
     private var fadeTimer: Timer?
-    private var shimmerTimer: Timer?
     private var bannerShowing: Bool = false
-    private var shimmerOffset: CGFloat = 0
 
     init(screen: NSScreen) {
         // Position at top of screen, just below menu bar (larger height for bigger text)
@@ -100,12 +98,8 @@ class JoinLinkBanner: NSPanel {
         self.orderFrontRegardless()
         bannerShowing = true
 
-        // Cancel any existing timers
+        // Cancel any existing timer
         fadeTimer?.invalidate()
-        shimmerTimer?.invalidate()
-
-        // Start shimmer animation
-        startShimmerAnimation()
 
         // Schedule fade-out to start at 17 seconds
         fadeTimer = Timer.scheduledTimer(withTimeInterval: 17.0, repeats: false) { [weak self] _ in
@@ -113,47 +107,8 @@ class JoinLinkBanner: NSPanel {
         }
     }
 
-    /// Shimmer animation effect - creates a subtle shine sweep
-    private func startShimmerAnimation() {
-        shimmerOffset = 0
-        shimmerTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self = self, self.bannerShowing else { return }
-
-            self.shimmerOffset += 0.03
-            if self.shimmerOffset > 1.0 {
-                self.shimmerOffset = -0.5
-            }
-
-            self.updateShimmer()
-        }
-    }
-
-    /// Update shimmer effect by adjusting text alpha
-    private func updateShimmer() {
-        guard let currentString = urlLabel.attributedStringValue.mutableCopy() as? NSMutableAttributedString else { return }
-
-        let fullRange = NSRange(location: 0, length: currentString.length)
-        let shimmerPosition = shimmerOffset * CGFloat(currentString.length)
-
-        currentString.enumerateAttributes(in: fullRange) { attrs, range, _ in
-            let distance = abs(CGFloat(range.location) - shimmerPosition)
-            let maxDistance: CGFloat = 10
-            let brightness = max(0, 1.0 - (distance / maxDistance))
-
-            if let baseColor = attrs[.foregroundColor] as? NSColor {
-                let shimmerColor = baseColor.blended(withFraction: brightness * 0.4, of: .white) ?? baseColor
-                currentString.addAttribute(.foregroundColor, value: shimmerColor, range: range)
-            }
-        }
-
-        urlLabel.attributedStringValue = currentString
-    }
-
     /// Start fade-out animation (3 seconds)
     private func startFadeOut() {
-        shimmerTimer?.invalidate()
-        shimmerTimer = nil
-
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 3.0
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -166,11 +121,9 @@ class JoinLinkBanner: NSPanel {
 
     /// Hide banner immediately without animation
     func hide() {
-        // Cancel timers
+        // Cancel timer
         fadeTimer?.invalidate()
         fadeTimer = nil
-        shimmerTimer?.invalidate()
-        shimmerTimer = nil
 
         // Stop any running animations
         NSAnimationContext.current.duration = 0
