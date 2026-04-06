@@ -78,6 +78,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         wsServer.onClientCountChanged = { [weak self] count in
             self?.menuBarManager.updateWsStatus(count > 0)
         }
+        wsServer.onSessionMessage = { [weak self] json in
+            guard let type = json["type"] as? String else { return }
+            if type == "session_started", let url = json["participant_url"] as? String {
+                self?.handleSessionStarted(participantUrl: url)
+            } else if type == "session_ended" {
+                self?.handleSessionEnded()
+            }
+        }
         wsServer.start()
         self.wsServer = wsServer
 
@@ -303,6 +311,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             overlayError("Invalid server URL: \(serverURL)")
             return
         }
+        overlayInfo("Connecting to \(url.absoluteString)...")
         wsTask = session.webSocketTask(with: url)
         wsTask?.resume()
     }
@@ -310,10 +319,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didOpenWithProtocol protocol: String?) {
         cancelPendingDisconnectError()
+        overlayInfo("WebSocket connected to daemon")
         let msg = "{\"type\":\"set_name\",\"name\":\"Overlay\"}"
         wsTask?.send(.string(msg)) { error in
             if let error = error {
-                overlayError("Handshake failed, retrying...")
+                overlayError("Handshake failed: \(error.localizedDescription)")
+            } else {
+                overlayInfo("Handshake sent (set_name: Overlay)")
             }
         }
         receiveMessage()
@@ -326,7 +338,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let _ = error {
+        if let error = error {
+            overlayError("WebSocket connection failed: \(error.localizedDescription)")
             scheduleDisconnectError()
             scheduleReconnect()
         }

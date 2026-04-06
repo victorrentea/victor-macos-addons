@@ -8,6 +8,8 @@ class LocalWebSocketServer {
     var onEmoji: ((String, Int) -> Void)?
     // Called when client count changes (dispatch to main by caller)
     var onClientCountChanged: ((Int) -> Void)?
+    // Called when session_started or session_ended message received
+    var onSessionMessage: (([String: Any]) -> Void)?
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
@@ -127,10 +129,16 @@ class LocalWebSocketServer {
             }
             // Also relay to other clients
             broadcast(text, except: senderID)
+        case "session_started", "session_ended":
+            overlayInfo("WS server received: \(type)")
+            // Forward session lifecycle events to AppDelegate
+            DispatchQueue.main.async { [weak self] in
+                self?.onSessionMessage?(json)
+            }
         case "ping":
             break  // ignore keep-alive
         default:
-            break  // ignore unknown types
+            overlayInfo("WS server ignored unknown message type: \(type)")
         }
     }
 
