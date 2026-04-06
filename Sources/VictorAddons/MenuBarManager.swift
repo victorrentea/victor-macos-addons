@@ -2,26 +2,27 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 23:42"
+    static let BUILD_TIME = "Apr 7, 00:59"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
 
     private(set) var kill8080Item: NSMenuItem!
-    private(set) var transcribeItem: NSMenuItem!
     private(set) var darkModeItem: NSMenuItem!
+    private(set) var transcribeItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
-    private(set) var joinLinkItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
-    private var portItems: [Int: NSMenuItem] = [:]  // submenu items tracked for async update
-    private var isBannerVisible: Bool = false
+    private var portItems: [Int: NSMenuItem] = [:]
+
+    private var isTranscribing: Bool = false
+    private var transcribeSource: String = ""
+    private var wsConnected: Bool = false
+    private var sessionActive: Bool = false
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
     var onToggleTranscribe: (() -> Void)?
-    var onCopyGit: (() -> Void)?
-    var onShowLog: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
@@ -60,60 +61,40 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // Kill :8080
         kill8080Item = addItem("Kill :8080", action: #selector(killPort8080))
-        kill8080Item.isEnabled = false // refreshed in menuNeedsUpdate
+        kill8080Item.isEnabled = false
 
         // Kill… submenu
         let killItem = NSMenuItem(title: "Kill…", action: nil, keyEquivalent: "")
         killItem.isEnabled = true
         killSubmenu = NSMenu()
-        // Port history items and "Port..." will be added in refreshDynamicItems
         killItem.submenu = killSubmenu
         menu.addItem(killItem)
+
+        // Dark mode (moved up)
+        darkModeItem = addItem("Enter Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
 
         menu.addItem(.separator())
 
         // Transcribe toggle
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
 
-        // Monitor
-        addItem("Monitor", action: #selector(monitorAction))
+        // Tail (was Monitor)
+        addItem("Tail", action: #selector(monitorAction))
+
+        // Screenshot — clickable
+        addItem("Screenshot — ⌃P", action: #selector(takeScreenshotAction))
 
         menu.addItem(.separator())
 
-        // Copy Git
-        addItem("Copy Git", action: #selector(copyGitAction))
-
-        // Log
-        addItem("Log", action: #selector(showLogAction))
-
-        // Screenshot
-        addItem("Take Screenshot", action: #selector(takeScreenshotAction))
-
-        menu.addItem(.separator())
-
-        // Display join link
-        joinLinkItem = addItem("Display join link", action: #selector(displayJoinLinkAction))
-        joinLinkItem.isEnabled = false
+        // WS status / join link — single unified item
+        wsStatusItem = addItem("🔴 WS disconnected", action: nil)
+        wsStatusItem.isEnabled = false
 
         menu.addItem(.separator())
 
         // Shortcut reminders (disabled)
         let pasteItem = addItem("Paste Emotions — ⌘⌃V", action: nil)
         pasteItem.isEnabled = false
-
-        darkModeItem = addItem("Enter Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
-
-        let rePasteItem = addItem("Re-paste — Wheel x 2", action: nil)
-        rePasteItem.isEnabled = false
-
-        let screenshotItem = addItem("Screenshot — ⌃P", action: nil)
-        screenshotItem.isEnabled = false
-
-        // WS status
-        wsStatusItem = addItem("🔴 WS: not connected", action: nil)
-        wsStatusItem.isEnabled = false
-
-        menu.addItem(.separator())
 
         // Build timestamp
         let buildItem = addItem("Built at " + MenuBarManager.BUILD_TIME, action: nil)
@@ -142,11 +123,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private func refreshDynamicItems() {
         loadPortHistory()
-        // Rebuild submenu with "?" placeholders (fast, on main thread)
         killSubmenu.removeAllItems()
         portItems = [:]
 
-        // Add port history items first
         for port in portHistory {
             let item = NSMenuItem(title: ":\(port) ?", action: nil, keyEquivalent: "")
             item.isEnabled = false
@@ -154,7 +133,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             portItems[port] = item
         }
 
-        // Add "Port..." at the end
         let portItem = NSMenuItem(title: "Port…", action: #selector(killPortPrompt), keyEquivalent: "")
         portItem.target = self
         killSubmenu.addItem(portItem)
@@ -163,11 +141,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         kill8080Item.isEnabled = false
         kill8080Item.action = nil
 
-        // Dark mode (cheap — no lsof)
         let isDark = DarkModeToggle.isDark()
         darkModeItem.title = (isDark ? "Exit Dark Mode" : "Enter Dark Mode") + " — ⌘⌃⌥D"
 
-        // Check each port in background, update item when done
         let allPorts = ([8080] + portHistory).reduce(into: [Int]()) { if !$0.contains($1) { $0.append($1) } }
         for port in allPorts {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -233,14 +209,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onMonitor?()
     }
 
-    @objc private func copyGitAction() {
-        onCopyGit?()
-    }
-
-    @objc private func showLogAction() {
-        onShowLog?()
-    }
-
     @objc private func toggleDarkModeAction() {
         onToggleDarkMode?()
     }
@@ -251,7 +219,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func displayJoinLinkAction() {
         onDisplayJoinLink?()
-        isBannerVisible.toggle()
     }
 
     @objc private func killPort8080() {
@@ -280,17 +247,37 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     // MARK: - Public API
 
     func updateWsStatus(_ connected: Bool) {
-        wsStatusItem.title = connected ? "🟢 WS: connected" : "🔴 WS: not connected"
+        wsConnected = connected
+        refreshWsItem()
+    }
+
+    func setJoinLinkEnabled(_ enabled: Bool) {
+        sessionActive = enabled
+        refreshWsItem()
+    }
+
+    private func refreshWsItem() {
+        if sessionActive {
+            wsStatusItem.title = "🟢 Display Join Link"
+            wsStatusItem.isEnabled = true
+            wsStatusItem.action = #selector(displayJoinLinkAction)
+            wsStatusItem.target = self
+        } else if wsConnected {
+            wsStatusItem.title = "🟢 WS connected"
+            wsStatusItem.isEnabled = false
+            wsStatusItem.action = nil
+        } else {
+            wsStatusItem.title = "🔴 WS disconnected"
+            wsStatusItem.isEnabled = false
+            wsStatusItem.action = nil
+        }
     }
 
     func flashScreenshotIcon() {
         guard let button = statusItem.button else { return }
         let originalImage = button.image
-
-        // Change to camera emoji for 1 second
         button.image = nil
         button.title = "📷"
-
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             button.title = ""
             button.image = originalImage
@@ -298,26 +285,27 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     func setTranscribing(_ active: Bool) {
-        transcribeItem.title = active ? "Stop Transcribing" : "Start Transcribing"
+        isTranscribing = active
+        updateTranscribeTitle()
 
-        // Update menu bar icon
         guard let button = statusItem.button else { return }
         let iconName = active ? "icon_chat" : "icon_chat_off"
         if let url = Bundle.module.url(forResource: iconName, withExtension: "png"),
            let image = NSImage(contentsOf: url) {
-            // Use template mode for active icon (monochrome), but not for stopped icon (preserve red line)
             image.isTemplate = active
             image.size = NSSize(width: 18, height: 18)
             button.image = image
         }
     }
 
-    func setJoinLinkEnabled(_ enabled: Bool) {
-        joinLinkItem.isEnabled = enabled
+    func setTranscribeSource(_ emoji: String) {
+        transcribeSource = emoji
+        updateTranscribeTitle()
     }
 
-    func setBannerVisible(_ visible: Bool) {
-        isBannerVisible = visible
+    private func updateTranscribeTitle() {
+        let suffix = transcribeSource.isEmpty ? "" : " \(transcribeSource)"
+        transcribeItem.title = isTranscribing ? "Stop Transcribing\(suffix)" : "Start Transcribing"
     }
 
     func addToPortHistory(_ port: Int) {

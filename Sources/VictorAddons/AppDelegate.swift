@@ -22,7 +22,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var wsServer: LocalWebSocketServer?
     private var pptMonitor: PowerPointMonitor?
     private var ijMonitor: IntelliJMonitor?
-    private var logWindow: LogWindow?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
@@ -98,6 +97,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
         }
+        whisperManager.onDeviceChanged = { [weak self] emoji in
+            self?.menuBarManager.setTranscribeSource(emoji)
+        }
         let startTranscription: () -> Void = { [weak whisperManager, weak self] in
             var env: [String: String] = [:]
             if let folder = self?.transcriptionFolder {
@@ -114,10 +116,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 startTranscription()
             }
         }
-        menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
-        let logWin = LogWindow()
-        self.logWindow = logWin
-        menuBarManager.onShowLog = { DispatchQueue.main.async { logWin.show() } }
         menuBarManager.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
@@ -406,7 +404,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         // Auto-hide banner if currently visible
         if joinLinkBanner?.bannerIsVisible == true {
             joinLinkBanner?.hide()
-            menuBarManager.setBannerVisible(false)
         }
     }
 
@@ -425,12 +422,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         // If banner is visible, hide it
         if banner.bannerIsVisible {
             banner.hide()
-            menuBarManager.setBannerVisible(false)
         } else {
-            // Only show if session is active and we have a URL
             guard isSessionActive, let url = participantUrl else { return }
             banner.show(url: url)
-            menuBarManager.setBannerVisible(true)
         }
     }
 

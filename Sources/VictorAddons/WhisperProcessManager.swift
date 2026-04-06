@@ -4,8 +4,8 @@ class WhisperProcessManager {
     private var process: Process?
     private(set) var isRunning: Bool = false
 
-    // Called when transcribing state changes (for menu title update)
     var onStateChanged: ((Bool) -> Void)?
+    var onDeviceChanged: ((String) -> Void)?
 
     func start(env: [String: String]) {
         guard !isRunning else { return }
@@ -36,9 +36,16 @@ class WhisperProcessManager {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if data.isEmpty { return }
-            if let line = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !line.isEmpty {
-                overlayInfo("Whisper: \(line)")
+            guard let text = String(data: data, encoding: .utf8) else { return }
+            for line in text.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty { continue }
+                if trimmed.hasPrefix("VICTOR_SOURCE:") {
+                    let emoji = String(trimmed.dropFirst("VICTOR_SOURCE:".count))
+                    DispatchQueue.main.async { self?.onDeviceChanged?(emoji) }
+                } else {
+                    overlayInfo("Whisper: \(trimmed)")
+                }
             }
         }
 

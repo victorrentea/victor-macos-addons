@@ -19,16 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-# Resolve coreaudio_devices module from local checkout layouts.
-_ROOT = Path(__file__).resolve().parent.parent
-for _candidate in (
-    _ROOT / "app",
-    _ROOT / "wispr-flow",  # legacy location
-    _ROOT,                 # fallback if module is vendored at repo root
-):
-    if (_candidate / "coreaudio_devices.py").exists():
-        sys.path.insert(0, str(_candidate))
-        break
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from coreaudio_devices import list_input_devices, register_device_change_callback, register_device_alive_callbacks
 
 
@@ -351,6 +342,7 @@ class WhisperTranscriptionRunner:
         if resolved:
             me_idx, me_name = resolved
             log.info("transcript", f"🎙️ Resolved Victor: {me_name!r}")
+            print(f"VICTOR_SOURCE:{_short_device_name(me_name)}", flush=True)
             self._me_channel = _ChannelCapture(me_idx, _ME_SPEAKER, tx_queue, me_name,
                                                resolve_fn=lambda: _resolve_device_coreaudio(_ME_PATTERNS))
             self._channels.append(self._me_channel)
@@ -406,6 +398,7 @@ class WhisperTranscriptionRunner:
                 short = _short_device_name(best_name)
                 self._me_channel.switch_device(best_idx, best_name)
                 self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
+                print(f"VICTOR_SOURCE:{short}", flush=True)
                 if self._on_device_change:
                     self._on_device_change()
         except Exception as exc:
