@@ -5,7 +5,7 @@ Wraps the clipboard cleanup daemon (CGEventTap) in a menu bar app using rumps.
 The event tap runs on a background thread; the main thread runs the menu bar UI.
 """
 
-BUILD_TIME = "Apr 6, 19:54"
+BUILD_TIME = "Apr 6, 19:57"
 
 import ctypes
 import ctypes.util
@@ -732,7 +732,7 @@ class WisprAddonsApp(rumps.App):
                             NSBezelStyleRounded, NSBackingStoreBuffered,
                             NSWindowStyleMaskTitled, NSWindowStyleMaskClosable,
                             NSApplication, NSFont, NSModalResponseOK)
-        from Foundation import NSMakeRect
+        from Foundation import NSMakeRect, NSNumberFormatter, NSNumberFormatterNoStyle
 
         W, H = 200, 36
         screen = NSScreen.mainScreen()
@@ -751,6 +751,12 @@ class WisprAddonsApp(rumps.App):
         field = NSTextField.alloc().initWithFrame_(NSMakeRect(4, 4, 152, 28))
         field.setPlaceholderString_("8080")
         field.setFont_(NSFont.systemFontOfSize_(16))
+        fmt = NSNumberFormatter.alloc().init()
+        fmt.setNumberStyle_(NSNumberFormatterNoStyle)  # integers only, no separators
+        fmt.setAllowsFloats_(False)
+        fmt.setMinimum_(1)
+        fmt.setMaximum_(65535)
+        field.setFormatter_(fmt)
         panel.contentView().addSubview_(field)
 
         btn = NSButton.alloc().initWithFrame_(NSMakeRect(160, 4, 36, 28))
