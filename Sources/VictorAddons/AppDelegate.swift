@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var pidCheckTimer: Timer?
     private var controlsVisible = false
     private var eventTapManager: EventTapManager?
+    private var emotionalPasteHandler: EmotionalPasteHandler?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -57,15 +58,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onKillPortPrompt = { overlayInfo("TODO: kill port prompt") }
         menuBarManager.setup()
 
+        let secrets = SecretsLoader.load()
+        let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
+        let pasteHandler = EmotionalPasteHandler(apiKey: apiKey)
+        self.emotionalPasteHandler = pasteHandler
+
         let eventTap = EventTapManager()
-        eventTap.onCaptureClipboard = { text in
-            overlayInfo("Captured paste: \(text.prefix(50))")
+        eventTap.onCaptureClipboard = { [weak pasteHandler] text in
+            pasteHandler?.captureText(text)
         }
-        eventTap.onEmotionalPaste = { overlayInfo("TODO: emotional paste") }
+        eventTap.onEmotionalPaste = { [weak pasteHandler] in pasteHandler?.handleCleanHotkey() }
         eventTap.onScreenshot = { overlayInfo("TODO: screenshot") }
         eventTap.onToggleDarkMode = { overlayInfo("TODO: dark mode") }
         eventTap.onDictationMute = { overlayInfo("TODO: dictation mute") }
-        eventTap.onRepaste = { overlayInfo("TODO: repaste") }
+        eventTap.onRepaste = { [weak pasteHandler] in pasteHandler?.repasteLast() }
         eventTap.start()
         self.eventTapManager = eventTap
 
