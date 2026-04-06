@@ -26,14 +26,23 @@ class PortKiller: NSObject {
         }
 
         var killed: [String] = []
+        var failed: [String] = []
         for pid in pids {
             let name = processName(pid: pid)
-            runCommandVoid("/bin/kill", args: ["-9", pid])
-            killed.append("\(name) (pid \(pid))")
+            if runCommandStatus("/bin/kill", args: ["-9", pid]) == 0 {
+                killed.append("\(name) (pid \(pid))")
+            } else {
+                failed.append("\(name) (pid \(pid))")
+            }
         }
-        let summary = killed.joined(separator: ", ")
-        overlayInfo("Killed :\(port) — \(summary)")
-        sendNotification(title: "Killed :\(port)", message: summary)
+        if !killed.isEmpty {
+            let summary = killed.joined(separator: ", ")
+            overlayInfo("Killed :\(port) — \(summary)")
+            sendNotification(title: "Killed :\(port)", message: summary)
+        } else {
+            let summary = failed.joined(separator: ", ")
+            overlayInfo("Kill :\(port) failed — \(summary)")
+        }
 
         remember(port: port)
     }
@@ -112,12 +121,17 @@ class PortKiller: NSObject {
         return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     }
 
-    private func runCommandVoid(_ path: String, args: [String]) {
+    private func runCommandStatus(_ path: String, args: [String]) -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
-        try? p.run()
+        do {
+            try p.run()
+        } catch {
+            return -1
+        }
         p.waitUntilExit()
+        return p.terminationStatus
     }
 
     private func processName(pid: String) -> String {
