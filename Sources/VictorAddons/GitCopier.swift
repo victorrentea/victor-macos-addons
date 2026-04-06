@@ -2,26 +2,29 @@ import Foundation
 
 enum GitCopier {
     static func copyIntelliJGit() {
+        // Try live IntelliJ first (frontmost window)
+        var projectPath: String? = nil
         let script = "tell application \"System Events\" to tell process \"idea\" to return (frontmost as string) & tab & (title of front window)"
-        guard let output = AppleScriptRunner.run(script) else {
-            overlayInfo("IntelliJ not open")
+        if let output = AppleScriptRunner.run(script) {
+            let parts = output.components(separatedBy: "\t")
+            if parts.count >= 2 {
+                let title = parts[1...].joined(separator: "\t")
+                let projectName = parseProjectName(from: title)
+                projectPath = findProjectPath(name: projectName)
+            }
+        }
+        // Fall back to last used project from recentProjects.xml
+        if projectPath == nil {
+            projectPath = findLastUsedProjectPath()
+        }
+        guard let path = projectPath else {
+            overlayInfo("No IntelliJ project found")
             return
         }
-        let parts = output.components(separatedBy: "\t")
-        guard parts.count >= 2 else {
-            overlayInfo("Could not parse IntelliJ window")
-            return
-        }
-        let title = parts[1...].joined(separator: "\t")
-        let projectName = parseProjectName(from: title)
-        guard let projectPath = findProjectPath(name: projectName) else {
-            overlayInfo("Could not find project: \(projectName)")
-            return
-        }
-        let url = git(["-C", projectPath, "remote", "get-url", "origin"])
-        let branch = git(["-C", projectPath, "branch", "--show-current"])
+        let url = git(["-C", path, "remote", "get-url", "origin"])
+        let branch = git(["-C", path, "branch", "--show-current"])
         guard !url.isEmpty else {
-            overlayInfo("No git remote for \(projectName)")
+            overlayInfo("No git remote found")
             return
         }
         let text = branch.isEmpty ? url : "\(url) (\(branch))"
@@ -42,6 +45,35 @@ enum GitCopier {
         }
         return title.components(separatedBy: "[").first?
             .trimmingCharacters(in: .whitespaces) ?? title
+    }
+
+    private static func findLastUsedProjectPath() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let jetBrainsBase = home.appendingPathComponent("Library/Application Support/JetBrains").path
+        guard let dirs = try? FileManager.default.contentsOfDirectory(atPath: jetBrainsBase) else { return nil }
+        let ideaDirs = dirs.filter { $0.hasPrefix("IntelliJIdea") }.sorted().reversed()
+        var bestTs: Int64 = -1
+        var bestPath: String? = nil
+        for dir in ideaDirs {
+            let xmlPath = "\(jetBrainsBase)/\(dir)/options/recentProjects.xml"
+            guard let data = FileManager.default.contents(atPath: xmlPath),
+                  let doc = try? XMLDocument(data: data, options: []) else { continue }
+            let entries = (try? doc.nodes(forXPath: "//entry")) ?? []
+            for entry in entries {
+                guard let element = entry as? XMLElement,
+                      let key = element.attribute(forName: "key")?.stringValue,
+                      !key.isEmpty else { continue }
+                let tsNodes = (try? element.nodes(forXPath: ".//option[@name='activationTimestamp']")) ?? []
+                guard let tsNode = tsNodes.first as? XMLElement,
+                      let tsStr = tsNode.attribute(forName: "value")?.stringValue,
+                      let ts = Int64(tsStr) else { continue }
+                if ts > bestTs {
+                    bestTs = ts
+                    bestPath = key.replacingOccurrences(of: "$USER_HOME$", with: home.path)
+                }
+            }
+        }
+        return bestPath
     }
 
     private static func findProjectPath(name: String) -> String? {
