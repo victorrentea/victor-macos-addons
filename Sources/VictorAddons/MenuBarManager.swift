@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 21:21"
+    static let BUILD_TIME = "Apr 6, 21:27"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -103,7 +103,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // Build timestamp
-        let buildItem = addItem(MenuBarManager.BUILD_TIME, action: nil)
+        let buildItem = addItem("Built at " + MenuBarManager.BUILD_TIME, action: nil)
         buildItem.isEnabled = false
 
         // Quit
@@ -263,6 +263,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     func setTranscribing(_ active: Bool) {
         transcribeItem.title = active ? "Stop Transcribing" : "Start Transcribing"
+
+        // Update menu bar icon
+        guard let button = statusItem.button else { return }
+        let iconName = active ? "icon_chat" : "icon_chat_off"
+        if let url = Bundle.module.url(forResource: iconName, withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.isTemplate = true
+            image.size = NSSize(width: 18, height: 18)
+            button.image = image
+        }
     }
 
     func addToPortHistory(_ port: Int) {
