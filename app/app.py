@@ -5,6 +5,8 @@ Wraps the clipboard cleanup daemon (CGEventTap) in a menu bar app using rumps.
 The event tap runs on a background thread; the main thread runs the menu bar UI.
 """
 
+BUILD_TIME = "Apr 6, 18:40"
+
 import ctypes
 import ctypes.util
 import os
@@ -577,14 +579,14 @@ class WisprAddonsApp(rumps.App):
             rumps.MenuItem("Screenshot — ⌃P", callback=None),
             self._ws_status_item,
             None,  # separator
-            rumps.MenuItem("Apr 6, 18:39", callback=None),
+            rumps.MenuItem(BUILD_TIME, callback=None),
             rumps.MenuItem("Quit", callback=self.quit_app),
         ]
         self.menu["Paste Emotions — ⌘⌃V"].enabled = False
 
         self.menu["Re-paste — Wheel x 2"].enabled = False
         self.menu["Screenshot — ⌃P"].enabled = False
-        self.menu["Apr 6, 18:39"].enabled = False
+        self.menu[BUILD_TIME].enabled = False
 
         # Kill port submenu — persisted across sessions
         self._kill_port_history: list[int] = _load_port_history()
@@ -615,7 +617,7 @@ class WisprAddonsApp(rumps.App):
                 ns_menu.setAutoenablesItems_(False)
                 # rumps item.enabled=False only sets a Python attribute, not the NSMenuItem.
                 # With autoenablesItems=False we must set isEnabled directly.
-                for title in ["Paste Emotions — ⌘⌃V", "Re-paste — Wheel x 2", "Screenshot — ⌃P"]:
+                for title in ["Paste Emotions — ⌘⌃V", "Re-paste — Wheel x 2", "Screenshot — ⌃P", BUILD_TIME]:
                     self.menu[title]._menuitem.setEnabled_(False)
                 self._ws_status_item._menuitem.setEnabled_(False)
                 # Also disable autoenablesItems on the Kill… submenu so Port… isn't grayed out
