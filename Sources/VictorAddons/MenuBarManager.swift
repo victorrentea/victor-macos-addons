@@ -149,7 +149,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         kill8080Item.isEnabled = portHistory.contains(8080)
 
         // Update dark mode item title
-        let isDark = NSApplication.shared.effectiveAppearance.name == .darkAqua
+        let isDark = DarkModeToggle.isDark()
         darkModeItem.title = (isDark ? "Exit Dark Mode" : "Enter Dark Mode") + " — ⌘⌃⌥D"
     }
 
