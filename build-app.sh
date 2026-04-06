@@ -3,6 +3,13 @@
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Build the Swift app
+echo "Building VictorAddons Swift app..."
+cd "$DIR"
+swift build
+echo "VictorAddons built."
+
 APP_NAME="Victor Addons"
 APP_DIR="/Applications/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
