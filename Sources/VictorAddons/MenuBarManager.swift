@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "built"
+    static let BUILD_TIME = "Apr 6, 20:06"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -13,6 +13,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var wsStatusItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
+    private var portItems: [Int: NSMenuItem] = [:]  // submenu items tracked for async update
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
@@ -133,24 +134,80 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func refreshDynamicItems() {
-        // Refresh kill submenu port history (remove dynamic items after separator)
+        // Rebuild submenu with "?" placeholders (fast, on main thread)
         while killSubmenu.items.count > 2 {
             killSubmenu.removeItem(at: killSubmenu.items.count - 1)
         }
+        portItems = [:]
         for port in portHistory {
-            let item = NSMenuItem(title: ":\(port)", action: #selector(killHistoricalPort(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = port
-            item.isEnabled = true
+            let item = NSMenuItem(title: ":\(port) ?", action: nil, keyEquivalent: "")
+            item.isEnabled = false
             killSubmenu.addItem(item)
+            portItems[port] = item
         }
 
-        // Update kill8080 enabled state (simple check without live lsof)
-        kill8080Item.isEnabled = portHistory.contains(8080)
+        kill8080Item.title = "Kill :8080 ?"
+        kill8080Item.isEnabled = false
+        kill8080Item.action = nil
 
-        // Update dark mode item title
+        // Dark mode (cheap — no lsof)
         let isDark = NSApplication.shared.effectiveAppearance.name == .darkAqua
         darkModeItem.title = (isDark ? "Exit Dark Mode" : "Enter Dark Mode") + " — ⌘⌃⌥D"
+
+        // Check each port in background, update item when done
+        let allPorts = ([8080] + portHistory).reduce(into: [Int]()) { if !$0.contains($1) { $0.append($1) } }
+        for port in allPorts {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let proc = MenuBarManager.processName(forPort: port)
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if port == 8080 {
+                        if let proc = proc {
+                            self.kill8080Item.title = "Kill :8080 \(proc)"
+                            self.kill8080Item.isEnabled = true
+                            self.kill8080Item.action = #selector(self.killPort8080)
+                        } else {
+                            self.kill8080Item.title = "Kill :8080"
+                            self.kill8080Item.isEnabled = false
+                        }
+                    } else {
+                        guard let item = self.portItems[port] else { return }
+                        if let proc = proc {
+                            item.title = ":\(port) \(proc)"
+                            item.isEnabled = true
+                            item.action = #selector(self.killHistoricalPort(_:))
+                            item.tag = port
+                            item.target = self
+                        } else {
+                            item.title = ":\(port)"
+                            item.isEnabled = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static func processName(forPort port: Int) -> String? {
+        let pidOut = runShell("/usr/sbin/lsof", args: ["-ti", ":\(port)"])
+        guard let pid = pidOut.split(separator: "\n")
+            .map({ String($0).trimmingCharacters(in: .whitespaces) })
+            .first(where: { !$0.isEmpty }) else { return nil }
+        let comm = runShell("/bin/ps", args: ["-p", pid, "-o", "comm="]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = URL(fileURLWithPath: comm).lastPathComponent
+        return name.isEmpty ? nil : name
+    }
+
+    private static func runShell(_ path: String, args: [String]) -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        try? p.run()
+        p.waitUntilExit()
+        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     }
 
     // MARK: - Actions
