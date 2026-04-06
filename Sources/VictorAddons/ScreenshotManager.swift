@@ -8,9 +8,12 @@ enum ScreenshotManager {
         // Create dir if needed
         try? FileManager.default.createDirectory(at: screenshotDir, withIntermediateDirectories: true)
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-        let filename = "\(formatter.string(from: Date()))-screen.jpg"
+        let date = Date()
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH-mm-ss"
+        let filename = "\(dateFormatter.string(from: date))-screen-\(timeFormatter.string(from: date)).jpg"
         let filepath = screenshotDir.appendingPathComponent(filename)
 
         let display = activeDisplayNumber()
