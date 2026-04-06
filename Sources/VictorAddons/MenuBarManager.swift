@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 21:27"
+    static let BUILD_TIME = "Apr 6, 21:33"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -269,7 +269,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let iconName = active ? "icon_chat" : "icon_chat_off"
         if let url = Bundle.module.url(forResource: iconName, withExtension: "png"),
            let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
+            // Use template mode for active icon (monochrome), but not for stopped icon (preserve red line)
+            image.isTemplate = active
             image.size = NSSize(width: 18, height: 18)
             button.image = image
         }
