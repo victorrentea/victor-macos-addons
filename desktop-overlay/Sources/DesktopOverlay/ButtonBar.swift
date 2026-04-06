@@ -2,9 +2,12 @@ import AppKit
 
 struct SingleScreenHoverLogic {
     let shownFrame: NSRect
+    let screenMaxX: CGFloat
 
     func shouldSlideIn(mouse: NSPoint) -> Bool {
-        return shownFrame.contains(mouse)
+        let inYRange = mouse.y >= shownFrame.minY && mouse.y <= shownFrame.maxY
+        let inXRange = mouse.x >= shownFrame.minX && mouse.x <= screenMaxX
+        return inYRange && inXRange
     }
 }
 
@@ -37,6 +40,7 @@ class ButtonBar: NSPanel {
     private var localMouseMonitor: Any?
     private var hiddenFrame: NSRect = .zero
     private var shownFrame: NSRect = .zero
+    private var screenMaxX: CGFloat = 0
     private var isSlideIn: Bool = false
     private(set) var isPinned: Bool = false
 
@@ -71,6 +75,7 @@ class ButtonBar: NSPanel {
 
         hiddenFrame = NSRect(x: sf.maxX, y: barY, width: barWidth, height: barHeight)
         shownFrame  = NSRect(x: sf.maxX - barWidth - 12, y: barY, width: barWidth, height: barHeight)
+        screenMaxX  = sf.maxX
 
         let onDragEnded: (NSPoint) -> Void = { [weak self] origin in
             guard let self = self else { return }
@@ -143,7 +148,7 @@ class ButtonBar: NSPanel {
     private func checkMouseForEdge() {
         guard !isPinned else { return }
         let mouse = NSEvent.mouseLocation
-        let logic = SingleScreenHoverLogic(shownFrame: shownFrame)
+        let logic = SingleScreenHoverLogic(shownFrame: shownFrame, screenMaxX: screenMaxX)
         if logic.shouldSlideIn(mouse: mouse) {
             slideIn()
             slideTimer?.invalidate()
