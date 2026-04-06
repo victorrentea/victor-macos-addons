@@ -8,3 +8,4 @@ __pycache__/
 jmeter.log
 secrets.env
 ports-to-kill.txt
+addons-output/

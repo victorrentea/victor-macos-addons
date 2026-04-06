@@ -831,7 +831,7 @@ class WisprAddonsApp(rumps.App):
         from whisper_runner import WhisperTranscriptionRunner
         _wr.set_error_callback(log)
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
-                                     str(Path.home() / "Documents" / "transcriptions")))
+                                     "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
         self._whisper_runner = WhisperTranscriptionRunner(folder, on_device_change=self._update_transcribe_title)
         self._whisper_runner.start()
         self._transcribing = True
@@ -852,8 +852,8 @@ class WisprAddonsApp(rumps.App):
     def monitor_transcription(self, _):
         from datetime import date
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
-                                     str(Path.home() / "Documents" / "transcriptions")))
-        today_file = folder / f"{date.today()} transcription.txt"
+                                     "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
+        today_file = folder / f"{date.today()}-transcription.txt"
         today_file.touch()
         subprocess.Popen([
             "osascript",
@@ -869,7 +869,7 @@ class WisprAddonsApp(rumps.App):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "powerpoint-monitor"))
         from ppt_probe import PowerPointMonitor
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
-                                     str(Path.home() / "Documents" / "transcriptions")))
+                                     "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
         self._ppt_monitor = PowerPointMonitor(folder, slide_callback=self._ws_server.push_slide)
         self._ppt_monitor.start()
         self._tracking_ppt = True
@@ -881,7 +881,7 @@ class WisprAddonsApp(rumps.App):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "intellij-monitor"))
         from ij_probe import IntelliJMonitor
         folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
-                                     str(Path.home() / "Documents" / "transcriptions")))
+                                     "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
         self._ij_monitor = IntelliJMonitor(folder)
         self._ij_monitor.start()
         log("📋 IntelliJ tracking started")

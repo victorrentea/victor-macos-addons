@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 6, 20:07"
+    static let BUILD_TIME = "Apr 6, 21:21"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -62,10 +62,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let killItem = NSMenuItem(title: "Kill…", action: nil, keyEquivalent: "")
         killItem.isEnabled = true
         killSubmenu = NSMenu()
-        let portItem = NSMenuItem(title: "Port…", action: #selector(killPortPrompt), keyEquivalent: "")
-        portItem.target = self
-        killSubmenu.addItem(portItem)
-        killSubmenu.addItem(.separator())
+        // Port history items and "Port..." will be added in refreshDynamicItems
         killItem.submenu = killSubmenu
         menu.addItem(killItem)
 
@@ -133,16 +130,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshDynamicItems() {
         loadPortHistory()
         // Rebuild submenu with "?" placeholders (fast, on main thread)
-        while killSubmenu.items.count > 2 {
-            killSubmenu.removeItem(at: killSubmenu.items.count - 1)
-        }
+        killSubmenu.removeAllItems()
         portItems = [:]
+
+        // Add port history items first
         for port in portHistory {
             let item = NSMenuItem(title: ":\(port) ?", action: nil, keyEquivalent: "")
             item.isEnabled = false
             killSubmenu.addItem(item)
             portItems[port] = item
         }
+
+        // Add "Port..." at the end
+        let portItem = NSMenuItem(title: "Port…", action: #selector(killPortPrompt), keyEquivalent: "")
+        portItem.target = self
+        killSubmenu.addItem(portItem)
 
         kill8080Item.title = "Kill :8080 ?"
         kill8080Item.isEnabled = false

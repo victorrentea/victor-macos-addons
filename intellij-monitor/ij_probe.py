@@ -235,7 +235,7 @@ class IntelliJMonitor:
         line = f"{now.strftime('%H:%M:%S')} {content}"
 
         # Append to daily file
-        filepath = self.output_dir / f"activity-git-{now.strftime('%Y-%m-%d')}.md"
+        filepath = self.output_dir / f"{now.strftime('%Y-%m-%d')}-git.txt"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with filepath.open("a", encoding="utf-8") as f:
             f.write(line + "\n")

@@ -103,7 +103,7 @@ class IntelliJMonitor {
         dateFmt.dateFormat = "yyyy-MM-dd"
         let dateStr = dateFmt.string(from: Date())
 
-        let filepath = outputDir.appendingPathComponent("activity-git-\(dateStr).md")
+        let filepath = outputDir.appendingPathComponent("\(dateStr)-git.txt")
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
         if let fileHandle = try? FileHandle(forWritingTo: filepath) {

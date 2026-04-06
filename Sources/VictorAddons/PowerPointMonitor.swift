@@ -144,7 +144,7 @@ class PowerPointMonitor {
         formatter.dateFormat = "yyyy-MM-dd"
         let dateStr = formatter.string(from: Date())
 
-        let filepath = outputDir.appendingPathComponent("activity-slides-\(dateStr).md")
+        let filepath = outputDir.appendingPathComponent("\(dateStr)-slides.txt")
 
         // Ensure output directory exists
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)

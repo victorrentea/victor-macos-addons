@@ -190,7 +190,7 @@ class PowerPointMonitor:
         if not self._current_deck:
             return
 
-        filepath = self.output_dir / f"activity-slides-{datetime.now().strftime('%Y-%m-%d')}.md"
+        filepath = self.output_dir / f"{datetime.now().strftime('%Y-%m-%d')}-slides.txt"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Read existing lines

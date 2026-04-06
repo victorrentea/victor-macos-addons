@@ -422,7 +422,7 @@ class WhisperTranscriptionRunner:
     def _write_to_transcript(self, text: str):
         now = datetime.now()
         day_str = now.strftime("%Y-%m-%d")
-        out_file = self.output_dir / f"{day_str} transcription.txt"
+        out_file = self.output_dir / f"{day_str}-transcription.txt"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with out_file.open("a", encoding="utf-8") as f:
             f.write(text + "\n")
@@ -471,7 +471,7 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
     folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
-                                  str(Path.home() / "Documents" / "transcriptions")))
+                                  "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
     runner = WhisperTranscriptionRunner(folder)
     runner.start()
     try:

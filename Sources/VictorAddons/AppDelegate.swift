@@ -25,8 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var logWindow: LogWindow?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
-    private var transcriptionFolder: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Documents/transcriptions")
+    private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -58,8 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
                 return URL(fileURLWithPath: env)
             }
-            return FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Documents/transcriptions")
+            return URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
         }()
 
         let wsServer = LocalWebSocketServer()
