@@ -188,8 +188,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     @objc private func quitApp() {
+        overlayInfo("Quit")
         onQuit?()
-        NSApplication.shared.terminate(nil)
+        exit(0)
     }
 
     private func killPort(_ port: Int) {
