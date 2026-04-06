@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var eventTapManager: EventTapManager?
     private var emotionalPasteHandler: EmotionalPasteHandler?
     private var coreAudioManager: CoreAudioManager?
+    private var wsServer: LocalWebSocketServer?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -46,6 +47,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         connectWebSocket()
         setupButtonBar(screen: builtInScreen)
         setupSignalHandler()
+
+        let wsServer = LocalWebSocketServer()
+        wsServer.onEmoji = { [weak self] emoji, count in
+            for _ in 0..<max(1, count) {
+                self?.animator.spawnEmoji(emoji)
+            }
+        }
+        wsServer.onClientCountChanged = { [weak self] count in
+            self?.menuBarManager.updateWsStatus(count > 0)
+        }
+        wsServer.start()
+        self.wsServer = wsServer
 
         menuBarManager = MenuBarManager()
         menuBarManager.onQuit = {
