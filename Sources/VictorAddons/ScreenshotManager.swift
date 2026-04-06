@@ -9,15 +9,15 @@ enum ScreenshotManager {
         try? FileManager.default.createDirectory(at: screenshotDir, withIntermediateDirectories: true)
 
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let filename = "screenshot_\(formatter.string(from: Date())).png"
+        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        let filename = "\(formatter.string(from: Date()))-screen.jpg"
         let filepath = screenshotDir.appendingPathComponent(filename)
 
         let display = activeDisplayNumber()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-x", "-D", String(display), filepath.path]
+        process.arguments = ["-x", "-t", "jpg", "-D", String(display), filepath.path]
         try? process.run()
         process.waitUntilExit()
 
