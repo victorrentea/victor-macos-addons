@@ -35,8 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Request Accessibility permissions if not already granted
+        // Request permissions if not already granted
         requestAccessibilityPermissions()
+        requestScreenRecordingPermissions()
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = NSScreen.screens.first { screen in
@@ -387,6 +388,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             overlayInfo("⚠️ Please grant Accessibility permissions in System Settings")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
+        }
+    }
+
+    private func requestScreenRecordingPermissions() {
+        // Request Screen Recording permissions by attempting to capture
+        // This will trigger the system permission dialog if not already granted
+        DispatchQueue.global(qos: .utility).async {
+            let displayID = CGMainDisplayID()
+            if let image = CGDisplayCreateImage(displayID) {
+                // Permission granted - we can capture
+                DispatchQueue.main.async {
+                    overlayInfo("✓ Screen Recording permissions granted")
+                }
+            } else {
+                // Permission not granted or error
+                DispatchQueue.main.async {
+                    overlayInfo("⚠️ Please grant Screen Recording permissions for screenshots")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                }
             }
         }
     }
