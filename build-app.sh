@@ -16,6 +16,10 @@ CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
+BUILD_TIMESTAMP=$(date "+%b %-d, %H:%M")
+sed -i '' "s/^BUILD_TIME = .*/BUILD_TIME = \"$BUILD_TIMESTAMP\"/" "$DIR/app/app.py"
+echo "Build timestamp: $BUILD_TIMESTAMP"
+
 echo "Building $APP_NAME.app..."
 
 # Convert PNG to ICNS
