@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 7, 01:19"
+    static let BUILD_TIME = "Apr 7, 10:30"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -15,6 +15,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var portHistory: [Int] = []
     private var portItems: [Int: NSMenuItem] = [:]
 
+    private var portRefreshTimer: Timer?
     private var isTranscribing: Bool = false
     private var isTranscriptionStale: Bool = false
     private var transcribeSource: String = ""
@@ -118,6 +119,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // MARK: - NSMenuDelegate
 
+    func menuWillOpen(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
+        portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.refreshPortItems()
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
+        portRefreshTimer?.invalidate()
+        portRefreshTimer = nil
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         refreshDynamicItems()
     }
@@ -128,7 +142,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         portItems = [:]
 
         for port in portHistory {
-            let item = NSMenuItem(title: ":\(port) ?", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: ":\(port)", action: nil, keyEquivalent: "")
             item.isEnabled = false
             killSubmenu.addItem(item)
             portItems[port] = item
@@ -139,13 +153,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         portItem.target = self
         killSubmenu.addItem(portItem)
 
-        kill8080Item.title = "Kill :8080 ?"
+        kill8080Item.title = "Kill :8080"
         kill8080Item.isEnabled = false
         kill8080Item.action = nil
 
         let isDark = DarkModeToggle.isDark()
         darkModeItem.title = (isDark ? "Exit Dark Mode" : "Enter Dark Mode") + " — ⌘⌃⌥D"
 
+        refreshPortItems()
+    }
+
+    private func refreshPortItems() {
         let allPorts = ([8080] + portHistory).reduce(into: [Int]()) { if !$0.contains($1) { $0.append($1) } }
         for port in allPorts {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
