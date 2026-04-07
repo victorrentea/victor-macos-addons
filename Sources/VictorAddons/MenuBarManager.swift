@@ -134,6 +134,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             portItems[port] = item
         }
 
+        killSubmenu.addItem(.separator())
         let portItem = NSMenuItem(title: "Port…", action: #selector(killPortPrompt), keyEquivalent: "")
         portItem.target = self
         killSubmenu.addItem(portItem)
