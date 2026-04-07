@@ -1,35 +1,27 @@
 import AppKit
 import Foundation
 
-/// Banner that displays participant join URL at top of screen
-/// Auto-hides after 30 seconds with 3 second fade-out animation
+/// Banner that displays participant join URL at top of screen.
+/// Stays visible while mouse hovers; starts 30s countdown on mouse-out, then 3s fade.
 class JoinLinkBanner: NSPanel {
     private let urlLabel: NSTextField
     private var fadeTimer: Timer?
+    private var mouseCheckTimer: Timer?
+    private var mouseWasInside = false
     private var bannerShowing: Bool = false
 
+    private let targetScreen: NSScreen
+    private let bannerHeight: CGFloat = 120
+    private let menuBarHeight: CGFloat = 25
+    private let horizontalPadding: CGFloat = 48
+
     init(screen: NSScreen) {
-        // Position at top of screen, just below menu bar (larger height for bigger text)
-        let menuBarHeight: CGFloat = 25
-        let bannerHeight: CGFloat = 120
-        let bannerFrame = NSRect(
-            x: screen.frame.origin.x,
-            y: screen.frame.origin.y + screen.frame.height - menuBarHeight - bannerHeight,
-            width: screen.frame.width,
-            height: bannerHeight
-        )
+        self.targetScreen = screen
 
-        // Create label with monospaced font before super.init - centered with full width
-        urlLabel = NSTextField(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: bannerFrame.width,
-            height: bannerHeight
-        ))
+        urlLabel = NSTextField(frame: .zero)
 
-        // Create panel with semi-transparent background
         super.init(
-            contentRect: bannerFrame,
+            contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -39,9 +31,8 @@ class JoinLinkBanner: NSPanel {
         self.backgroundColor = NSColor.black.withAlphaComponent(0.7)
         self.isOpaque = false
         self.hasShadow = false
-        self.ignoresMouseEvents = true
+        self.ignoresMouseEvents = true  // clicks pass through; we poll for hover
 
-        // Configure label (84pt - 10% = 75.6pt ≈ 76pt)
         urlLabel.isBordered = false
         urlLabel.isEditable = false
         urlLabel.isSelectable = false
@@ -53,62 +44,86 @@ class JoinLinkBanner: NSPanel {
         self.contentView?.addSubview(urlLabel)
     }
 
-    /// Show banner with URL and start auto-hide timer
+    // MARK: - Public API
+
     func show(url: String) {
-        // Split URL at last "/" to highlight session code
-        let parts = url.split(separator: "/")
-        let attributedString = NSMutableAttributedString()
+        let attributed = buildAttributedString(url: url)
+        urlLabel.attributedStringValue = attributed
 
-        if parts.count > 1 {
-            // Domain part in white (76pt font)
-            let domainPart = parts.dropLast().joined(separator: "/")
-            let domain = NSAttributedString(
-                string: domainPart + "/",
-                attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
-                    .foregroundColor: NSColor.white
-                ]
-            )
-            attributedString.append(domain)
+        // Measure text to size banner
+        let maxSize = NSSize(width: targetScreen.frame.width - horizontalPadding * 2, height: bannerHeight)
+        let textBounds = attributed.boundingRect(with: maxSize, options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let bannerWidth = min(ceil(textBounds.width) + horizontalPadding * 2, targetScreen.frame.width)
+        let bannerX = targetScreen.frame.origin.x + (targetScreen.frame.width - bannerWidth) / 2
+        let bannerY = targetScreen.frame.origin.y + targetScreen.frame.height - menuBarHeight - bannerHeight
 
-            // Session code in yellow and bold (76pt font)
-            let sessionCode = String(parts.last!)
-            let code = NSAttributedString(
-                string: sessionCode,
-                attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .bold),
-                    .foregroundColor: NSColor.yellow
-                ]
-            )
-            attributedString.append(code)
-        } else {
-            // Fallback if no "/" found (76pt font)
-            let fallback = NSAttributedString(
-                string: url,
-                attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
-                    .foregroundColor: NSColor.white
-                ]
-            )
-            attributedString.append(fallback)
-        }
+        let frame = NSRect(x: bannerX, y: bannerY, width: bannerWidth, height: bannerHeight)
+        self.setFrame(frame, display: false)
+        urlLabel.frame = NSRect(x: 0, y: 0, width: bannerWidth, height: bannerHeight)
 
-        urlLabel.attributedStringValue = attributedString
         self.alphaValue = 1.0
         self.orderFrontRegardless()
         bannerShowing = true
+        mouseWasInside = false
 
-        // Cancel any existing timer
         fadeTimer?.invalidate()
+        fadeTimer = nil
 
-        // Schedule fade-out to start at 27 seconds (30 total - 3 seconds fade)
+        startMousePolling()
+
+        // If mouse is already outside, begin countdown immediately
+        if !frame.contains(NSEvent.mouseLocation) {
+            scheduleHide()
+        }
+    }
+
+    func hide() {
+        stopAll()
+        self.alphaValue = 0.0
+        bannerShowing = false
+        self.orderOut(nil)
+    }
+
+    var bannerIsVisible: Bool { bannerShowing }
+
+    // MARK: - Mouse polling (banner keeps ignoresMouseEvents = true so clicks pass through)
+
+    private func startMousePolling() {
+        mouseCheckTimer?.invalidate()
+        mouseCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            self?.checkMouse()
+        }
+    }
+
+    private func checkMouse() {
+        guard bannerShowing else { return }
+        let inside = self.frame.contains(NSEvent.mouseLocation)
+
+        if inside && !mouseWasInside {
+            // Mouse entered — cancel any countdown and restore opacity
+            mouseWasInside = true
+            fadeTimer?.invalidate()
+            fadeTimer = nil
+            self.alphaValue = 1.0
+        } else if !inside && mouseWasInside {
+            // Mouse exited — start 30s countdown
+            mouseWasInside = false
+            scheduleHide()
+        }
+    }
+
+    // MARK: - Hide sequence
+
+    private func scheduleHide() {
+        fadeTimer?.invalidate()
+        // 30s visible, then 3s fade = schedule fade at 27s
         fadeTimer = Timer.scheduledTimer(withTimeInterval: 27.0, repeats: false) { [weak self] _ in
             self?.startFadeOut()
         }
     }
 
-    /// Start fade-out animation (3 seconds)
     private func startFadeOut() {
+        stopMousePolling()
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 3.0
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -119,23 +134,47 @@ class JoinLinkBanner: NSPanel {
         })
     }
 
-    /// Hide banner immediately without animation
-    func hide() {
-        // Cancel timer
+    private func stopAll() {
         fadeTimer?.invalidate()
         fadeTimer = nil
-
-        // Stop any running animations
-        NSAnimationContext.current.duration = 0
-        self.alphaValue = 0.0
-
-        // Remove from screen
-        bannerShowing = false
-        self.orderOut(nil)
+        stopMousePolling()
     }
 
-    /// Check if banner is currently visible
-    var bannerIsVisible: Bool {
-        return bannerShowing
+    private func stopMousePolling() {
+        mouseCheckTimer?.invalidate()
+        mouseCheckTimer = nil
+    }
+
+    // MARK: - Attributed string
+
+    private func buildAttributedString(url: String) -> NSAttributedString {
+        let parts = url.split(separator: "/")
+        let result = NSMutableAttributedString()
+        if parts.count > 1 {
+            let domainPart = parts.dropLast().joined(separator: "/")
+            result.append(NSAttributedString(
+                string: domainPart + "/",
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
+                    .foregroundColor: NSColor.white
+                ]
+            ))
+            result.append(NSAttributedString(
+                string: String(parts.last!),
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .bold),
+                    .foregroundColor: NSColor.yellow
+                ]
+            ))
+        } else {
+            result.append(NSAttributedString(
+                string: url,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
+                    .foregroundColor: NSColor.white
+                ]
+            ))
+        }
+        return result
     }
 }

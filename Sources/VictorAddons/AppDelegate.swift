@@ -284,7 +284,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             }
 
             let escapedPath = todayFile.path.replacingOccurrences(of: "'", with: "'\\''")
-            let cmd = "tput setaf 8 && tail -n 0 -F '\(escapedPath)'"
+            let cmd = "tail -n 20 -F '\(escapedPath)'"
             let script = """
             tell application "Terminal"
                 do script "\(cmd)"
