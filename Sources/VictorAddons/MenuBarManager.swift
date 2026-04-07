@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 7, 10:30"
+    static let BUILD_TIME = "Apr 7, 13:46"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -25,6 +25,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
     var onToggleTranscribe: (() -> Void)?
+    var onCopyGit: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
@@ -71,6 +72,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu
         menu.addItem(killItem)
+
+        // Copy Git
+        addItem("Copy Git", action: #selector(copyGitAction))
 
         // Dark mode (moved up)
         darkModeItem = addItem("Enter Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
@@ -220,6 +224,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Actions
+
+    @objc private func copyGitAction() {
+        onCopyGit?()
+    }
 
     @objc private func toggleTranscribe() {
         onToggleTranscribe?()

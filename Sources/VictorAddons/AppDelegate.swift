@@ -124,6 +124,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 startTranscription()
             }
         }
+        menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
         menuBarManager.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
