@@ -1,5 +1,4 @@
 import Foundation
-import UserNotifications
 
 enum GitCopier {
     static func copyIntelliJGit() {
@@ -21,15 +20,14 @@ enum GitCopier {
     }
 
     private static func notify(body: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = "Copied to clipboard"
-            content.body = body
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request)
-        }
+        let escaped = body.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "display notification \"\(escaped)\" with title \"Copied to clipboard\""
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", script]
+        p.standardOutput = Pipe()
+        p.standardError = Pipe()
+        try? p.run()
     }
 
     private static func findLastUsedProjectPath() -> String? {
