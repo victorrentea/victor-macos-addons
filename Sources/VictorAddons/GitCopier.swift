@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 enum GitCopier {
     static func copyIntelliJGit() {
@@ -15,8 +16,20 @@ enum GitCopier {
         let text = branch.isEmpty ? url : "\(url) (\(branch))"
         DispatchQueue.main.async {
             ClipboardManager.write(text)
+            notify(body: text)
         }
-        overlayInfo("Copied: \(text)")
+    }
+
+    private static func notify(body: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Copied to clipboard"
+            content.body = body
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            center.add(request)
+        }
     }
 
     private static func findLastUsedProjectPath() -> String? {
