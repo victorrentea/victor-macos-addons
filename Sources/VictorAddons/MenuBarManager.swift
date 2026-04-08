@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 9, 01:24"
+    static let BUILD_TIME = "Apr 9, 01:42"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -23,7 +23,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var sessionActive: Bool = false
 
     private(set) var resumeItem: NSMenuItem!
+    private(set) var pollDebugItem: NSMenuItem!
     var breakEndedAt: Date?
+    var lastPollTime: Date?
+    var lastPollFound: Bool = false
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
@@ -87,6 +90,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Resume item
         resumeItem = addItem("Resumed -", action: nil)
         resumeItem.isEnabled = false
+        pollDebugItem = addItem("Last poll: never", action: nil)
+        pollDebugItem.isEnabled = false
 
         // Transcribe toggle
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
@@ -178,6 +183,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             resumeItem.title = elapsed < 3 * 3600 ? RHTimerMonitor.formatElapsed(elapsed) : "Resumed -"
         } else {
             resumeItem.title = "Resumed -"
+        }
+
+        if let t = lastPollTime {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "HH:mm:ss"
+            pollDebugItem.title = "Last poll: \(fmt.string(from: t)) found \(lastPollFound ? "Y" : "N")"
         }
     }
 

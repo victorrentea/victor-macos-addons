@@ -3,6 +3,7 @@ import CoreGraphics
 
 class RHTimerMonitor {
     var onBreakEnded: (() -> Void)?
+    var onPollResult: ((_ found: Bool) -> Void)?
 
     private let windowChecker: () -> Bool
     private var wasVisible: Bool = false
@@ -33,6 +34,7 @@ class RHTimerMonitor {
     /// Exposed for testing; called by timer in production
     func checkOnce() {
         let isVisible = windowChecker()
+        onPollResult?(isVisible)
         if wasVisible && !isVisible {
             onBreakEnded?()
         }

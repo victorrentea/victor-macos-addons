@@ -158,6 +158,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 self?.menuBarManager.breakEndedAt = Date()
             }
         }
+        rhMonitor.onPollResult = { [weak self] found in
+            DispatchQueue.main.async {
+                self?.menuBarManager.lastPollTime = Date()
+                self?.menuBarManager.lastPollFound = found
+            }
+        }
         rhMonitor.start()
         self.rhTimerMonitor = rhMonitor
         ScreenshotManager.onScreenshotTaken = { [weak menuBarManager] in
