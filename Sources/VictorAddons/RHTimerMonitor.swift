@@ -20,7 +20,7 @@ class RHTimerMonitor {
     }
 
     func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkOnce()
         }
     }
@@ -54,7 +54,7 @@ class RHTimerMonitor {
     private(set) static var lastTimerRHCount: Int = 0
 
     private static func isTimerWindowVisible() -> Bool {
-        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+        guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
             lastWindowCount = -1
             lastTimerRHCount = -1
             return false
