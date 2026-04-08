@@ -51,13 +51,12 @@ class RHTimerMonitor {
     }
 
     private static func isTimerWindowVisible() -> Bool {
-        guard let windows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
         return windows.contains { w in
             (w[kCGWindowOwnerName as String] as? String) == "Timer RH" &&
-            (w[kCGWindowName as String] as? String) == "Timers" &&
-            (w[kCGWindowIsOnscreen as String] as? Bool) == true
+            (w[kCGWindowName as String] as? String) == "Timers"
         }
     }
 }
