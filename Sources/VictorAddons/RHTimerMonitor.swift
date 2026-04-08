@@ -50,13 +50,18 @@ class RHTimerMonitor {
         return m > 0 ? "Resumed \(h)h \(m)m ago" : "Resumed \(h)h ago"
     }
 
+    private(set) static var lastWindowCount: Int = 0
+    private(set) static var lastTimerRHCount: Int = 0
+
     private static func isTimerWindowVisible() -> Bool {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            lastWindowCount = -1
+            lastTimerRHCount = -1
             return false
         }
-        return windows.contains { w in
-            (w[kCGWindowOwnerName as String] as? String) == "Timer RH" &&
-            (w[kCGWindowName as String] as? String) == "Timers"
-        }
+        lastWindowCount = windows.count
+        let timerWindows = windows.filter { ($0[kCGWindowOwnerName as String] as? String) == "Timer RH" }
+        lastTimerRHCount = timerWindows.count
+        return timerWindows.contains { ($0[kCGWindowName as String] as? String) == "Timers" }
     }
 }
