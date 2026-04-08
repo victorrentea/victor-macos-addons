@@ -62,4 +62,17 @@ final class RHTimerMonitorTests: XCTestCase {
         monitor.checkOnce()   // fires (2)
         XCTAssertEqual(callCount, 2)
     }
+
+    func testFormatElapsedMinutesOnly() {
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(300), "Resumed 5m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(59), "Resumed 0m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(3540), "Resumed 59m ago")
+    }
+
+    func testFormatElapsedHoursAndMinutes() {
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(3600), "Resumed 1h ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(3660), "Resumed 1h 1m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(5400), "Resumed 1h 30m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(7320), "Resumed 2h 2m ago")
+    }
 }

@@ -39,6 +39,15 @@ class RHTimerMonitor {
         wasVisible = isVisible
     }
 
+    static func formatElapsed(_ seconds: Int) -> String {
+        if seconds < 3600 {
+            return "Resumed \(seconds / 60)m ago"
+        }
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        return m > 0 ? "Resumed \(h)h \(m)m ago" : "Resumed \(h)h ago"
+    }
+
     private static func isTimerWindowVisible() -> Bool {
         guard let windows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
             return false
