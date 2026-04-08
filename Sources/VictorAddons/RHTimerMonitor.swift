@@ -52,6 +52,7 @@ class RHTimerMonitor {
 
     private(set) static var lastWindowCount: Int = 0
     private(set) static var lastTimerRHCount: Int = 0
+    private(set) static var lastTimerNames: [String] = []
 
     private static func isTimerWindowVisible() -> Bool {
         guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
@@ -62,6 +63,8 @@ class RHTimerMonitor {
         lastWindowCount = windows.count
         let timerWindows = windows.filter { ($0[kCGWindowOwnerName as String] as? String) == "Timer RH" }
         lastTimerRHCount = timerWindows.count
-        return timerWindows.contains { ($0[kCGWindowName as String] as? String) == "Timers" }
+        lastTimerNames = timerWindows.compactMap { ($0[kCGWindowLayer as String] as? NSNumber).map { "L\($0)" } }
+        // The "Timers" countdown panel sits at layer 2147483631 — only onscreen when visible
+        return timerWindows.contains { ($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0 > 1_000_000 }
     }
 }

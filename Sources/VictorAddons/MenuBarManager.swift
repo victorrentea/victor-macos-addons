@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 9, 01:56"
+    static let BUILD_TIME = "Apr 9, 02:34"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -190,7 +190,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             fmt.dateFormat = "HH:mm:ss"
             let wins = RHTimerMonitor.lastWindowCount
             let timerWins = RHTimerMonitor.lastTimerRHCount
-            pollDebugItem.title = "Poll: \(fmt.string(from: t)) \(lastPollFound ? "Y" : "N") [\(timerWins)/\(wins)]"
+            let names = RHTimerMonitor.lastTimerNames.joined(separator: ",")
+            pollDebugItem.title = "Poll \(lastPollFound ? "Y" : "N") [\(timerWins)/\(wins)] \(names)"
         }
     }
 
