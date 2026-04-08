@@ -1,0 +1,51 @@
+import Foundation
+import CoreGraphics
+
+class RHTimerMonitor {
+    var onBreakEnded: (() -> Void)?
+
+    private let windowChecker: () -> Bool
+    private var wasVisible: Bool = false
+    private var timer: Timer?
+
+    /// Production init — uses real CGWindowList
+    convenience init() {
+        self.init(windowChecker: RHTimerMonitor.isTimerWindowVisible)
+    }
+
+    /// Testable init — inject custom window checker
+    init(windowChecker: @escaping () -> Bool) {
+        self.windowChecker = windowChecker
+    }
+
+    func start() {
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.checkOnce()
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    /// Exposed for testing; called by timer in production
+    func checkOnce() {
+        let isVisible = windowChecker()
+        if wasVisible && !isVisible {
+            onBreakEnded?()
+        }
+        wasVisible = isVisible
+    }
+
+    private static func isTimerWindowVisible() -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        return windows.contains { w in
+            (w[kCGWindowOwnerName as String] as? String) == "Timer RH" &&
+            (w[kCGWindowName as String] as? String) == "Timers" &&
+            (w[kCGWindowIsOnscreen as String] as? Bool) == true
+        }
+    }
+}
