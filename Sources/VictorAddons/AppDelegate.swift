@@ -150,6 +150,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
         portKiller.onKillComplete = { [weak menuBarManager] port in menuBarManager?.addToPortHistory(port) }
 
+        menuBarManager.setup()
+
         let rhMonitor = RHTimerMonitor()
         rhMonitor.onBreakEnded = { [weak self] in
             DispatchQueue.main.async {
@@ -158,8 +160,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         rhMonitor.start()
         self.rhTimerMonitor = rhMonitor
-
-        menuBarManager.setup()
         ScreenshotManager.onScreenshotTaken = { [weak menuBarManager] in
             DispatchQueue.main.async {
                 menuBarManager?.flashScreenshotIcon()
