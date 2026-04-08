@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 7, 21:46"
+    static let BUILD_TIME = "Apr 7, 21:52"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -21,6 +21,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var transcribeSource: String = ""
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
+
+    private(set) var resumeItem: NSMenuItem!
+    var breakEndedAt: Date?
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
@@ -80,6 +83,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem = addItem("Enter Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
 
         menu.addItem(.separator())
+
+        // Resume item
+        resumeItem = addItem("Resumed …", action: nil)
+        resumeItem.isEnabled = false
+        resumeItem.isHidden = true
 
         // Transcribe toggle
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
@@ -165,6 +173,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.title = (isDark ? "Exit Dark Mode" : "Enter Dark Mode") + " — ⌘⌃⌥D"
 
         refreshPortItems()
+
+        if let endedAt = breakEndedAt {
+            let elapsed = Int(Date().timeIntervalSince(endedAt))
+            if elapsed < 3 * 3600 {
+                resumeItem.title = RHTimerMonitor.formatElapsed(elapsed)
+                resumeItem.isHidden = false
+            } else {
+                resumeItem.isHidden = true
+            }
+        } else {
+            resumeItem.isHidden = true
+        }
     }
 
     private func refreshPortItems() {
