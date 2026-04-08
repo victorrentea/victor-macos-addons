@@ -22,6 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var wsServer: LocalWebSocketServer?
     private var pptMonitor: PowerPointMonitor?
     private var ijMonitor: IntelliJMonitor?
+    private var rhTimerMonitor: RHTimerMonitor?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
     private var transcriptionWatcher: TranscriptionWatcher?
@@ -148,6 +149,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
         portKiller.onKillComplete = { [weak menuBarManager] port in menuBarManager?.addToPortHistory(port) }
+
+        let rhMonitor = RHTimerMonitor()
+        rhMonitor.onBreakEnded = { [weak self] in
+            DispatchQueue.main.async {
+                self?.menuBarManager.breakEndedAt = Date()
+            }
+        }
+        rhMonitor.start()
+        self.rhTimerMonitor = rhMonitor
+
         menuBarManager.setup()
         ScreenshotManager.onScreenshotTaken = { [weak menuBarManager] in
             DispatchQueue.main.async {
