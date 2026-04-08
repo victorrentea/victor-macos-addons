@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 9, 01:11"
+    static let BUILD_TIME = "Apr 9, 01:24"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -85,9 +85,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // Resume item
-        resumeItem = addItem("Resumed …", action: nil)
+        resumeItem = addItem("Resumed -", action: nil)
         resumeItem.isEnabled = false
-        resumeItem.isHidden = true
 
         // Transcribe toggle
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
@@ -176,14 +175,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         if let endedAt = breakEndedAt {
             let elapsed = Int(Date().timeIntervalSince(endedAt))
-            if elapsed < 3 * 3600 {
-                resumeItem.title = RHTimerMonitor.formatElapsed(elapsed)
-                resumeItem.isHidden = false
-            } else {
-                resumeItem.isHidden = true
-            }
+            resumeItem.title = elapsed < 3 * 3600 ? RHTimerMonitor.formatElapsed(elapsed) : "Resumed -"
         } else {
-            resumeItem.isHidden = true
+            resumeItem.title = "Resumed -"
         }
     }
 
