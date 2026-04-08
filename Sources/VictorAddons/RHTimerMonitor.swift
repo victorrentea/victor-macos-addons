@@ -27,6 +27,7 @@ class RHTimerMonitor {
     func stop() {
         timer?.invalidate()
         timer = nil
+        wasVisible = false
     }
 
     /// Exposed for testing; called by timer in production
