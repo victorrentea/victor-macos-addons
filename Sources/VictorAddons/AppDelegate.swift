@@ -490,20 +490,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     }
 
     private func requestScreenRecordingPermissions() {
-        // Request Screen Recording permissions by attempting to capture
-        // This will trigger the system permission dialog if not already granted
-        DispatchQueue.global(qos: .utility).async {
-            let displayID = CGMainDisplayID()
-            if let image = CGDisplayCreateImage(displayID) {
-                // Permission granted - we can capture
-                DispatchQueue.main.async {
-                    overlayInfo("✓ Screen Recording permissions granted")
-                }
-            } else {
-                // Permission not granted or error
-                DispatchQueue.main.async {
-                    overlayInfo("⚠️ Please grant Screen Recording permissions for screenshots")
-                }
+        // CGPreflightScreenCaptureAccess correctly returns false when permission is not granted.
+        // (CGDisplayCreateImage always succeeds but only captures desktop wallpaper when denied.)
+        if CGPreflightScreenCaptureAccess() {
+            return
+        }
+        // Trigger the system permission dialog
+        CGRequestScreenCaptureAccess()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if !CGPreflightScreenCaptureAccess() {
+                overlayInfo("⚠️ Please grant Screen Recording permissions for screenshots")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                 }
