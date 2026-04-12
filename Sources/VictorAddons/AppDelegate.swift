@@ -193,7 +193,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         eventTap.start()
         self.eventTapManager = eventTap
 
-        let pptMonitor = PowerPointMonitor(outputDir: transcriptionFolder)
+        let pptMonitor = PowerPointMonitor()
         pptMonitor.onSlideChange = { [weak self] event in
             self?.wsServer?.pushSlide(event)
         }
