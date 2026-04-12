@@ -197,6 +197,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         pptMonitor.onSlideChange = { [weak self] event in
             self?.wsServer?.pushSlide(event)
         }
+        pptMonitor.onSlidesViewed = { [weak self] slides in
+            self?.wsServer?.pushSlidesViewed(slides)
+        }
         pptMonitor.start()
         self.pptMonitor = pptMonitor
 
