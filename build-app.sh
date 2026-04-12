@@ -7,9 +7,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # Build the Swift app
 echo "Building VictorAddons Swift app..."
 cd "$DIR"
-swift build
-echo "VictorAddons built."
-
 APP_NAME="Victor Addons"
 APP_DIR="/Applications/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
@@ -19,6 +16,9 @@ RESOURCES="$CONTENTS/Resources"
 BUILD_TIMESTAMP=$(date "+%b %-d, %H:%M")
 sed -i '' "s/static let BUILD_TIME = .*/static let BUILD_TIME = \"$BUILD_TIMESTAMP\"/" "$DIR/Sources/VictorAddons/MenuBarManager.swift"
 echo "Build timestamp: $BUILD_TIMESTAMP"
+
+swift build
+echo "VictorAddons built."
 
 echo "Building $APP_NAME.app..."
 
