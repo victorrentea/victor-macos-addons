@@ -129,7 +129,7 @@ class LocalWebSocketServer {
               let type = json["type"] as? String else { return }
 
         switch type {
-        case "emoji":
+        case "display_emoji":
             let emoji = json["emoji"] as? String ?? ""
             let count = json["count"] as? Int ?? 1
             // In-process: directly trigger animation
