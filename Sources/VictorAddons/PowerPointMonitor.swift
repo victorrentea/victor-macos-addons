@@ -45,6 +45,7 @@ private func formatDuration(_ seconds: TimeInterval) -> String {
 
 class PowerPointMonitor {
     var onSlideChange: (([String: Any]) -> Void)?
+    var onSlidesViewed: (([[String: Any]]) -> Void)?
 
     private let outputDir: URL
     private var timer: Timer?
@@ -58,6 +59,10 @@ class PowerPointMonitor {
     private var lastProbeTime: Date?
     private var lineStartTime: String = ""  // HH:MM:SS
 
+    private var allDurations: [String: [Int: TimeInterval]] = [:]  // deck → slide → cumulative secs
+    private var lastSentDurations: [String: [Int: TimeInterval]] = [:]  // deck → slide → secs already sent
+    private var sendTimer: Timer?
+
     init(outputDir: URL) {
         self.outputDir = outputDir
     }
@@ -67,12 +72,17 @@ class PowerPointMonitor {
             self?.timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
                 DispatchQueue.global(qos: .utility).async { self?.tick() }
             }
+            self?.sendTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+                DispatchQueue.global(qos: .utility).async { self?.sendDelta() }
+            }
         }
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+        sendTimer?.invalidate()
+        sendTimer = nil
     }
 
     private func tick() {
@@ -108,6 +118,13 @@ class PowerPointMonitor {
                 slideDurations[currentSlide] = 0
             }
             slideDurations[currentSlide]! += elapsed
+            // Also accumulate into cross-deck tracker
+            if var deckMap = allDurations[currentDeck!] {
+                deckMap[currentSlide, default: 0] += elapsed
+                allDurations[currentDeck!] = deckMap
+            } else {
+                allDurations[currentDeck!] = [currentSlide: elapsed]
+            }
         }
 
         // Deck changed?
@@ -191,5 +208,30 @@ class PowerPointMonitor {
             "slide": currentSlide,
             "presenting": currentPresenting
         ])
+    }
+
+    private func sendDelta() {
+        var entries: [[String: Any]] = []
+        for (deck, slides) in allDurations {
+            let sentSlides = lastSentDurations[deck] ?? [:]
+            for (slideNum, totalSecs) in slides {
+                let alreadySent = sentSlides[slideNum] ?? 0
+                let delta = totalSecs - alreadySent
+                if delta >= 0.5 {
+                    entries.append([
+                        "fileName": deck,
+                        "page": slideNum,
+                        "seconds": Int(delta.rounded()),
+                    ])
+                }
+            }
+        }
+        if !entries.isEmpty {
+            onSlidesViewed?(entries)
+            // Update lastSent to current
+            lastSentDurations = allDurations.mapValues { slideMap in
+                slideMap.mapValues { $0 }
+            }
+        }
     }
 }
