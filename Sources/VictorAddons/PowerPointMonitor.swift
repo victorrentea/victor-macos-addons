@@ -125,7 +125,7 @@ class PowerPointMonitor {
     }
 
     private func notifySlideChange() {
-        guard let deck = currentDeck, currentPresenting else { return }
+        guard let deck = currentDeck else { return }
         onSlideChange?([
             "type": "slide_presenting_now",
             "deck": deck,
