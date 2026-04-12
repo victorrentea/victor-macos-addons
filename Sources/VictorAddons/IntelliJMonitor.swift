@@ -9,6 +9,8 @@ class IntelliJMonitor {
     private var timer: Timer?
     private var lastLine: String?
 
+    var onGitFileOpened: ((String, String, String) -> Void)?
+
     init(outputDir: URL) {
         self.outputDir = outputDir
     }
@@ -93,28 +95,8 @@ class IntelliJMonitor {
         if content == lastLine { return }
         lastLine = content
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        let timeStr = formatter.string(from: Date())
-        let line = "\(timeStr) \(content)"
-
-        // Append to daily file
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-        let dateStr = dateFmt.string(from: Date())
-
-        let filepath = outputDir.appendingPathComponent("\(dateStr)-git.txt")
-        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
-
-        if let fileHandle = try? FileHandle(forWritingTo: filepath) {
-            fileHandle.seekToEndOfFile()
-            if let data = (line + "\n").data(using: .utf8) {
-                fileHandle.write(data)
-            }
-            fileHandle.closeFile()
-        } else {
-            try? (line + "\n").write(to: filepath, atomically: true, encoding: .utf8)
-        }
+        // Send via addon WS bridge instead of writing to file
+        onGitFileOpened?(remoteURL, branch.isEmpty ? "unknown" : branch, filename.isEmpty ? "(none)" : filename)
     }
 
     private func git(_ args: [String], at path: String) -> String {

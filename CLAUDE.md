@@ -49,14 +49,13 @@ Polls PowerPoint via osascript every 3s, writes `activity-slides-YYYY-MM-DD.md`:
 **Output**: `TRANSCRIPTION_FOLDER/activity-slides-YYYY-MM-DD.md`
 
 ### intellij-monitor
-Polls IntelliJ via osascript every 10s (only when frontmost), writes `activity-git-YYYY-MM-DD.md`:
-- One line per state change: `10:51:00 https://github.com/.../repo.git branch:main file:A.java`
+Polls IntelliJ via osascript every 10s (only when frontmost), sends `git_file_opened` WS message to daemon when the open file changes (deduplicates against last sent value):
 - Skips duplicate consecutive lines
 - Training-assistant daemon reads this to provide git repos list to session participants
 - Always runs (no toggle)
 
 **Tech**: Python 3.12, osascript, git CLI
-**Output**: `TRANSCRIPTION_FOLDER/activity-git-YYYY-MM-DD.md`
+**Output**: WS message `{"type": "git_file_opened", "url": "...", "branch": "...", "file": "..."}`
 
 ### Overlay Components (AppDelegate)
 Fullscreen overlay and WebSocket integration for live sessions:

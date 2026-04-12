@@ -204,6 +204,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         self.pptMonitor = pptMonitor
 
         let ijMonitor = IntelliJMonitor(outputDir: transcriptionFolder)
+        ijMonitor.onGitFileOpened = { [weak self] url, branch, file in
+            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file)
+        }
         ijMonitor.start()
         self.ijMonitor = ijMonitor
 

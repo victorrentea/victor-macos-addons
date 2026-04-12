@@ -71,6 +71,15 @@ class LocalWebSocketServer {
         }
     }
 
+    func pushGitFileOpened(url: String, branch: String, file: String) {
+        let msg: [String: Any] = ["type": "git_file_opened", "url": url, "branch": branch, "file": file]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let text = String(data: data, encoding: .utf8) else { return }
+        queue.async { [weak self] in
+            self?.broadcast(text)
+        }
+    }
+
     private func handleNewConnection(_ conn: NWConnection) {
         let id = UUID()
         connections[id] = conn
