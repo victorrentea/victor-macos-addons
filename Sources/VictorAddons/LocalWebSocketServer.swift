@@ -62,6 +62,15 @@ class LocalWebSocketServer {
         }
     }
 
+    func pushSlidesViewed(_ slides: [[String: Any]]) {
+        let msg: [String: Any] = ["type": "slides_viewed", "slides": slides]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let text = String(data: data, encoding: .utf8) else { return }
+        queue.async { [weak self] in
+            self?.broadcast(text)
+        }
+    }
+
     private func handleNewConnection(_ conn: NWConnection) {
         let id = UUID()
         connections[id] = conn
