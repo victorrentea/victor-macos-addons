@@ -460,9 +460,32 @@ class WhisperTranscriptionRunner:
         print(f"{ts} [transcript  ] 🎙️{words} words: {preview}{dots}")
 
 
+def _watch_sentinel(fd: int) -> None:
+    """Block on the sentinel pipe read end.
+
+    The Swift parent holds the write end open. When the parent exits for any
+    reason (clean quit, crash, SIGKILL) the write end is closed by the OS and
+    this read returns EOF, causing the process to exit immediately.
+    """
+    try:
+        os.read(fd, 1)  # blocks until write end closes (EOF) or error
+    except OSError:
+        pass
+    print(f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
+          f"[sentinel    ] Parent gone — exiting", flush=True)
+    os._exit(0)
+
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path
+
+    sentinel_fd = os.environ.get("WHISPER_SENTINEL_FD")
+    if sentinel_fd:
+        import threading
+        threading.Thread(target=_watch_sentinel, args=(int(sentinel_fd),),
+                         daemon=True, name="sentinel").start()
+
     folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
                                   "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
     runner = WhisperTranscriptionRunner(folder)

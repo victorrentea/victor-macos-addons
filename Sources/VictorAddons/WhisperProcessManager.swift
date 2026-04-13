@@ -2,6 +2,7 @@ import Foundation
 
 class WhisperProcessManager {
     private var process: Process?
+    private var sentinelWriteHandle: FileHandle?
     private(set) var isRunning: Bool = false
 
     var onStateChanged: ((Bool) -> Void)?
@@ -23,9 +24,16 @@ class WhisperProcessManager {
         p.executableURL = URL(fileURLWithPath: python3)
         p.arguments = ["-u", whisperScript]  // -u = unbuffered
 
+        // Sentinel pipe: child watches read end; when this process dies the write
+        // end closes automatically and the child sees EOF → exits cleanly.
+        let sentinel = Pipe()
+        let readFd = sentinel.fileHandleForReading.fileDescriptor
+        fcntl(readFd, F_SETFD, 0)  // clear FD_CLOEXEC so child inherits it
+
         // Pass current env + custom vars
         var environment = ProcessInfo.processInfo.environment
         for (key, value) in env { environment[key] = value }
+        environment["WHISPER_SENTINEL_FD"] = "\(readFd)"
         p.environment = environment
 
         // Pipe stdout/stderr to our log
@@ -60,17 +68,26 @@ class WhisperProcessManager {
 
         do {
             try p.run()
+            // Close read end in parent; child has its own inherited copy.
+            sentinel.fileHandleForReading.closeFile()
+            // Keep write end alive — closing it (on exit or stop) signals child.
+            sentinelWriteHandle = sentinel.fileHandleForWriting
             process = p
             isRunning = true
             overlayInfo("Whisper transcription started (pid \(p.processIdentifier))")
             DispatchQueue.main.async { self.onStateChanged?(true) }
         } catch {
+            sentinel.fileHandleForReading.closeFile()
+            sentinel.fileHandleForWriting.closeFile()
             overlayInfo("Failed to start whisper: \(error)")
         }
     }
 
     func stop() {
         isRunning = false
+        // Closing the write end signals the child's sentinel thread to exit.
+        sentinelWriteHandle?.closeFile()
+        sentinelWriteHandle = nil
         guard let p = process, p.isRunning else { return }
         p.terminate()
         process = nil
