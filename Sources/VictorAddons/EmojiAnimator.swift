@@ -501,143 +501,79 @@ class EmojiAnimator {
         }
     }
 
-    // MARK: - Zorro Z slash (fiery sword marks)
+    // MARK: - Zorro Z (fire image overlay with flicker)
 
     func showZorro() {
         if cancelIfRunning("zorro") { return }
         let bounds = hostLayer.bounds
         let totalDuration = 3.5
 
+        guard let url = Bundle.module.url(forResource: "zorro_fire", withExtension: "png", subdirectory: "Resources"),
+              let nsImage = NSImage(contentsOf: url),
+              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
         let container = CALayer()
         container.frame = bounds
-        // Tilt the whole Z ~8 degrees
-        container.setAffineTransform(CGAffineTransform(rotationAngle: 0.14))
         hostLayer.addSublayer(container)
 
-        let cx = bounds.midX
-        let cy = bounds.midY
-        let halfW: CGFloat = bounds.width * 0.22
-        let halfH: CGFloat = bounds.height * 0.20
+        // Image at 70% screen width, centered, maintain aspect ratio
+        let imgW = bounds.width * 0.70
+        let aspectRatio = CGFloat(cgImage.height) / CGFloat(cgImage.width)
+        let imgH = imgW * aspectRatio
+        let imgX = (bounds.width - imgW) / 2
+        let imgY = (bounds.height - imgH) / 2
 
-        // Organic Z path with bezier curves — sword slash marks, not straight lines
-        let zPath = CGMutablePath()
+        let imgLayer = CALayer()
+        imgLayer.contents = cgImage
+        imgLayer.contentsGravity = .resizeAspect
+        imgLayer.frame = CGRect(x: imgX, y: imgY, width: imgW, height: imgH)
+        imgLayer.opacity = 0
+        container.addSublayer(imgLayer)
 
-        // Stroke 1: top slash (left to right, slight upward arc)
-        let t1Start = CGPoint(x: cx - halfW - 30, y: cy + halfH + 15)
-        let t1End   = CGPoint(x: cx + halfW + 20, y: cy + halfH - 10)
-        let t1CP1   = CGPoint(x: cx - halfW * 0.3, y: cy + halfH + 40)
-        let t1CP2   = CGPoint(x: cx + halfW * 0.4, y: cy + halfH + 25)
-        zPath.move(to: t1Start)
-        zPath.addCurve(to: t1End, control1: t1CP1, control2: t1CP2)
+        // Fade in
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0
+        fadeIn.toValue = 1
+        fadeIn.duration = 0.3
+        fadeIn.fillMode = .forwards
+        fadeIn.isRemovedOnCompletion = false
+        imgLayer.add(fadeIn, forKey: "fadeIn")
 
-        // Stroke 2: diagonal slash (top-right to bottom-left, aggressive curve)
-        let d1CP1 = CGPoint(x: cx + halfW * 0.5, y: cy + halfH * 0.3)
-        let d1CP2 = CGPoint(x: cx - halfW * 0.4, y: cy - halfH * 0.2)
-        let dEnd  = CGPoint(x: cx - halfW - 15, y: cy - halfH + 8)
-        zPath.addCurve(to: dEnd, control1: d1CP1, control2: d1CP2)
+        // Fire flicker: rapid subtle brightness/scale oscillation
+        let flicker = CAKeyframeAnimation(keyPath: "opacity")
+        flicker.values = [1.0, 0.85, 1.0, 0.9, 1.0, 0.88, 0.95, 1.0]
+        flicker.duration = 0.3
+        flicker.repeatCount = .infinity
+        flicker.beginTime = CACurrentMediaTime() + 0.3
+        imgLayer.add(flicker, forKey: "flicker")
 
-        // Stroke 3: bottom slash (left to right, slight downward arc)
-        let b1CP1 = CGPoint(x: cx - halfW * 0.2, y: cy - halfH - 30)
-        let b1CP2 = CGPoint(x: cx + halfW * 0.3, y: cy - halfH - 20)
-        let bEnd  = CGPoint(x: cx + halfW + 25, y: cy - halfH + 12)
-        zPath.addCurve(to: bEnd, control1: b1CP1, control2: b1CP2)
+        // Subtle scale pulse to simulate fire movement
+        let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
+        pulse.values = [1.0, 1.012, 0.995, 1.008, 1.0, 1.015, 0.998, 1.0]
+        pulse.duration = 0.4
+        pulse.repeatCount = .infinity
+        pulse.beginTime = CACurrentMediaTime() + 0.3
+        imgLayer.add(pulse, forKey: "pulse")
 
-        // Fire glow layer (wide, orange-red)
-        let fireGlow = CAShapeLayer()
-        fireGlow.path = zPath
-        fireGlow.strokeColor = NSColor(red: 1.0, green: 0.3, blue: 0.0, alpha: 0.7).cgColor
-        fireGlow.lineWidth = 35
-        fireGlow.fillColor = nil
-        fireGlow.lineCap = .round
-        fireGlow.lineJoin = .round
-        fireGlow.strokeEnd = 0
-        fireGlow.shadowColor = NSColor(red: 1.0, green: 0.2, blue: 0.0, alpha: 1.0).cgColor
-        fireGlow.shadowOffset = .zero
-        fireGlow.shadowRadius = 40
-        fireGlow.shadowOpacity = 1.0
-        container.addSublayer(fireGlow)
+        // Orange glow shadow
+        imgLayer.shadowColor = NSColor(red: 1.0, green: 0.4, blue: 0.0, alpha: 1.0).cgColor
+        imgLayer.shadowOffset = .zero
+        imgLayer.shadowRadius = 30
+        imgLayer.shadowOpacity = 0.8
 
-        // Inner fire layer (bright orange-yellow)
-        let innerFire = CAShapeLayer()
-        innerFire.path = zPath
-        innerFire.strokeColor = NSColor(red: 1.0, green: 0.6, blue: 0.1, alpha: 0.9).cgColor
-        innerFire.lineWidth = 14
-        innerFire.fillColor = nil
-        innerFire.lineCap = .round
-        innerFire.lineJoin = .round
-        innerFire.strokeEnd = 0
-        innerFire.shadowColor = NSColor(red: 1.0, green: 0.8, blue: 0.2, alpha: 1.0).cgColor
-        innerFire.shadowOffset = .zero
-        innerFire.shadowRadius = 15
-        innerFire.shadowOpacity = 1.0
-        container.addSublayer(innerFire)
-
-        // White-hot core
-        let coreLayer = CAShapeLayer()
-        coreLayer.path = zPath
-        coreLayer.strokeColor = NSColor(red: 1.0, green: 0.95, blue: 0.8, alpha: 1.0).cgColor
-        coreLayer.lineWidth = 4
-        coreLayer.fillColor = nil
-        coreLayer.lineCap = .round
-        coreLayer.lineJoin = .round
-        coreLayer.strokeEnd = 0
-        coreLayer.shadowColor = NSColor.white.cgColor
-        coreLayer.shadowOffset = .zero
-        coreLayer.shadowRadius = 6
-        coreLayer.shadowOpacity = 0.8
-        container.addSublayer(coreLayer)
-
-        // Animate all three layers being drawn
-        let drawDuration = 1.4
-        for slashLayer in [fireGlow, innerFire, coreLayer] {
-            let draw = CABasicAnimation(keyPath: "strokeEnd")
-            draw.fromValue = 0
-            draw.toValue = 1
-            draw.duration = drawDuration
-            draw.timingFunction = CAMediaTimingFunction(controlPoints: 0.1, 0.0, 0.3, 1.0)
-            draw.fillMode = .forwards
-            draw.isRemovedOnCompletion = false
-            slashLayer.add(draw, forKey: "draw")
-        }
-
-        // Flicker the fire glow width for realism
-        let glowFlicker = CAKeyframeAnimation(keyPath: "lineWidth")
-        glowFlicker.values = [35, 45, 30, 50, 32, 42, 38]
-        glowFlicker.duration = 0.2
+        // Flicker the glow radius
+        let glowFlicker = CAKeyframeAnimation(keyPath: "shadowRadius")
+        glowFlicker.values = [30, 40, 25, 45, 30, 35, 28]
+        glowFlicker.duration = 0.25
         glowFlicker.repeatCount = .infinity
-        fireGlow.add(glowFlicker, forKey: "flicker")
+        imgLayer.add(glowFlicker, forKey: "glowFlicker")
 
-        // Sparks along the slash — burst at each stroke transition
-        let sparkPoints = [t1Start, t1End, dEnd, bEnd]
-        let sparkDelays = [0.0, 0.4, 0.85, 1.3]
-        for (point, delay) in zip(sparkPoints, sparkDelays) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.spawnFireSparks(at: point, in: container, count: 18)
-            }
-        }
-
-        // Brief red-orange flash when Z completes
-        let flash = CALayer()
-        flash.frame = bounds
-        flash.backgroundColor = NSColor(red: 1.0, green: 0.3, blue: 0.0, alpha: 1.0).cgColor
-        flash.opacity = 0
-        container.addSublayer(flash)
-
-        let flashAnim = CAKeyframeAnimation(keyPath: "opacity")
-        flashAnim.values = [0.0, 0.0, 0.2, 0.0]
-        flashAnim.keyTimes = [0.0, NSNumber(value: drawDuration / totalDuration),
-                              NSNumber(value: (drawDuration + 0.1) / totalDuration), 1.0]
-        flashAnim.duration = totalDuration
-        flashAnim.fillMode = .forwards
-        flashAnim.isRemovedOnCompletion = false
-        flash.add(flashAnim, forKey: "flash")
-
-        // Fade out after the Z burns
+        // Fade out the whole container
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = CACurrentMediaTime() + drawDuration + 0.8
-        fadeOut.duration = totalDuration - drawDuration - 0.8
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.8
+        fadeOut.duration = 0.8
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
         container.add(fadeOut, forKey: "fadeAll")
