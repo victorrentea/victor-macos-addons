@@ -389,10 +389,20 @@ class EmojiAnimator {
         // Max radius needed to cover the screen from any point
         let maxRadius = sqrt(bounds.width * bounds.width + bounds.height * bounds.height)
 
+        // One circle per quadrant: TL, TR, BL, BR (random position within each quadrant)
+        let halfW = bounds.width / 2
+        let halfH = bounds.height / 2
+        let quadrants: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            (0, halfW, halfH, bounds.height),  // top-left
+            (halfW, bounds.width, halfH, bounds.height),  // top-right
+            (0, halfW, 0, halfH),              // bottom-left
+            (halfW, bounds.width, 0, halfH),   // bottom-right
+        ]
+
         for i in 0..<4 {
-            // Random center point on screen
-            let cx = CGFloat.random(in: bounds.width * 0.1...bounds.width * 0.9)
-            let cy = CGFloat.random(in: bounds.height * 0.1...bounds.height * 0.9)
+            let q = quadrants[i]
+            let cx = CGFloat.random(in: q.0 + 20...q.1 - 20)
+            let cy = CGFloat.random(in: q.2 + 20...q.3 - 20)
             let center = CGPoint(x: cx, y: cy)
 
             // Each circle appears within the first 1 second, staggered
