@@ -376,6 +376,152 @@ class EmojiAnimator {
         }
     }
 
+    // MARK: - Screen crash (screenshot shatters into glass shards falling down)
+
+    func showCrash() {
+        let bounds = hostLayer.bounds
+        let totalDuration = 4.0
+
+        // Capture screenshot of the built-in display
+        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+              let screenshot = CGWindowListCreateImage(
+                  screen.frame,
+                  .optionOnScreenBelowWindow,
+                  kCGNullWindowID,
+                  [.bestResolution]
+              ) else { return }
+
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+
+        // Black background (revealed as shards fall away)
+        let blackBg = CALayer()
+        blackBg.frame = bounds
+        blackBg.backgroundColor = NSColor.black.cgColor
+        container.addSublayer(blackBg)
+
+        // Break into irregular glass shards using a Voronoi-like approach
+        // Generate random seed points, then create polygonal regions
+        let shardCount = 25
+        var seeds: [CGPoint] = []
+        for _ in 0..<shardCount {
+            seeds.append(CGPoint(
+                x: CGFloat.random(in: 0...bounds.width),
+                y: CGFloat.random(in: 0...bounds.height)
+            ))
+        }
+
+        // For each seed, create a shard by clipping the screenshot to a polygon
+        // approximated by the Voronoi cell (use rect-based subdivision for simplicity)
+        let cols = 5
+        let rows = 5
+        let cellW = bounds.width / CGFloat(cols)
+        let cellH = bounds.height / CGFloat(rows)
+
+        for row in 0..<rows {
+            for col in 0..<cols {
+                // Jitter the cell boundaries for irregular shapes
+                let jx = CGFloat.random(in: -cellW * 0.15...cellW * 0.15)
+                let jy = CGFloat.random(in: -cellH * 0.15...cellH * 0.15)
+                let x = CGFloat(col) * cellW + jx
+                let y = CGFloat(row) * cellH + jy
+                let w = cellW + CGFloat.random(in: -cellW * 0.1...cellW * 0.1)
+                let h = cellH + CGFloat.random(in: -cellH * 0.1...cellH * 0.1)
+
+                let cellRect = CGRect(x: x, y: y, width: w, height: h)
+
+                // Create an irregular polygon path (4-6 sided shard)
+                let shardPath = CGMutablePath()
+                let sides = Int.random(in: 4...6)
+                var points: [CGPoint] = []
+                for s in 0..<sides {
+                    let angle = (CGFloat(s) / CGFloat(sides)) * 2 * .pi + CGFloat.random(in: -0.3...0.3)
+                    let rx = w / 2 * CGFloat.random(in: 0.7...1.0)
+                    let ry = h / 2 * CGFloat.random(in: 0.7...1.0)
+                    points.append(CGPoint(
+                        x: cellRect.midX + cos(angle) * rx,
+                        y: cellRect.midY + sin(angle) * ry
+                    ))
+                }
+                shardPath.move(to: points[0])
+                for p in points.dropFirst() { shardPath.addLine(to: p) }
+                shardPath.closeSubpath()
+
+                // Shard layer with screenshot content, masked to polygon
+                let shardLayer = CALayer()
+                shardLayer.frame = bounds
+                shardLayer.contents = screenshot
+                shardLayer.contentsGravity = .resize
+
+                let mask = CAShapeLayer()
+                mask.path = shardPath
+                shardLayer.mask = mask
+
+                // Thin white crack edge
+                let edgeLayer = CAShapeLayer()
+                edgeLayer.path = shardPath
+                edgeLayer.fillColor = nil
+                edgeLayer.strokeColor = NSColor(white: 1.0, alpha: 0.6).cgColor
+                edgeLayer.lineWidth = 1.5
+
+                let group = CALayer()
+                group.frame = bounds
+                group.addSublayer(shardLayer)
+                group.addSublayer(edgeLayer)
+                container.addSublayer(group)
+
+                // Animation: brief hold, then fall with gravity + rotation
+                let holdDelay = 0.5 + Double.random(in: 0...0.8)
+                let fallDuration = Double.random(in: 0.8...1.5)
+
+                // Fall down off screen
+                let fallDist = bounds.height + 200
+                let fall = CABasicAnimation(keyPath: "position.y")
+                fall.byValue = -fallDist
+                fall.beginTime = CACurrentMediaTime() + holdDelay
+                fall.duration = fallDuration
+                fall.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                fall.fillMode = .forwards
+                fall.isRemovedOnCompletion = false
+
+                // Rotate while falling
+                let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+                rotation.byValue = Double.random(in: -1.5...1.5)
+                rotation.beginTime = CACurrentMediaTime() + holdDelay
+                rotation.duration = fallDuration
+                rotation.fillMode = .forwards
+                rotation.isRemovedOnCompletion = false
+
+                // Slight horizontal drift
+                let drift = CABasicAnimation(keyPath: "position.x")
+                drift.byValue = CGFloat.random(in: -80...80)
+                drift.beginTime = CACurrentMediaTime() + holdDelay
+                drift.duration = fallDuration
+                drift.fillMode = .forwards
+                drift.isRemovedOnCompletion = false
+
+                group.add(fall, forKey: "fall")
+                group.add(rotation, forKey: "rotate")
+                group.add(drift, forKey: "drift")
+            }
+        }
+
+        // Black screen holds for a moment, then fades out
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.5
+        fadeOut.duration = 0.5
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        container.add(fadeOut, forKey: "fadeOut")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration + 0.2) { [weak container] in
+            container?.removeFromSuperlayer()
+        }
+    }
+
     // MARK: - Film burn (4 black circles expanding from random positions)
 
     func showFilmBurn() {
