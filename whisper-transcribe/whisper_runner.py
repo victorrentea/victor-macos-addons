@@ -460,30 +460,30 @@ class WhisperTranscriptionRunner:
         print(f"{ts} [transcript  ] 🎙️{words} words: {preview}{dots}")
 
 
-def _watch_sentinel(fd: int) -> None:
-    """Block on the sentinel pipe read end.
+def _watch_parent(ppid: int) -> None:
+    """Poll until the parent process (the Swift addon) is gone.
 
-    The Swift parent holds the write end open. When the parent exits for any
-    reason (clean quit, crash, SIGKILL) the write end is closed by the OS and
-    this read returns EOF, causing the process to exit immediately.
+    When the parent dies for any reason (clean quit, crash, SIGKILL) the OS
+    re-parents this process to launchd (PID 1), so os.getppid() changes.
+    We then exit immediately to avoid accumulating orphan Whisper processes.
     """
-    try:
-        os.read(fd, 1)  # blocks until write end closes (EOF) or error
-    except OSError:
-        pass
-    print(f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
-          f"[sentinel    ] Parent gone — exiting", flush=True)
-    os._exit(0)
+    import time as _time
+    while True:
+        _time.sleep(2)
+        if os.getppid() != ppid:
+            print(f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
+                  f"[sentinel    ] Parent {ppid} gone — exiting", flush=True)
+            os._exit(0)
 
 
 if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    sentinel_fd = os.environ.get("WHISPER_SENTINEL_FD")
-    if sentinel_fd:
+    parent_pid = os.environ.get("WHISPER_PARENT_PID")
+    if parent_pid:
         import threading
-        threading.Thread(target=_watch_sentinel, args=(int(sentinel_fd),),
+        threading.Thread(target=_watch_parent, args=(int(parent_pid),),
                          daemon=True, name="sentinel").start()
 
     folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
