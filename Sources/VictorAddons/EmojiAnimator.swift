@@ -248,13 +248,13 @@ class EmojiAnimator {
         showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3, soundToStop: "alarm.mp3")
     }
 
-    // MARK: - Screen crash (screenshot shatters into falling shards)
+    // MARK: - Screen crash (screenshot shatters into broken glass shards)
 
     func showEarthquake() {
         let bounds = hostLayer.bounds
         let totalDuration = 4.5
 
-        // Capture screenshot of the built-in display
+        // Capture screenshot
         guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
               let screenshot = CGWindowListCreateImage(
                   screen.frame,
@@ -267,96 +267,123 @@ class EmojiAnimator {
         container.frame = bounds
         hostLayer.addSublayer(container)
 
-        // Black background at bottom — revealed as shards fall away
+        // Black background revealed as shards fall
         let blackBg = CALayer()
         blackBg.frame = bounds
         blackBg.backgroundColor = NSColor.black.cgColor
         container.addSublayer(blackBg)
 
-        // Generate random crack lines that slice across the full screen
-        // Each line is defined by a point and angle, extending edge-to-edge
-        let crackCount = Int.random(in: 8...12)
-        var lines: [(CGPoint, CGFloat)] = []  // (point on line, angle)
-        for _ in 0..<crackCount {
-            let pt = CGPoint(
-                x: CGFloat.random(in: bounds.width * 0.1...bounds.width * 0.9),
-                y: CGFloat.random(in: bounds.height * 0.1...bounds.height * 0.9)
-            )
-            let angle = CGFloat.random(in: 0...CGFloat.pi)
-            lines.append((pt, angle))
+        // Impact point — slightly off-center for realism
+        let impact = CGPoint(
+            x: bounds.width * CGFloat.random(in: 0.3...0.7),
+            y: bounds.height * CGFloat.random(in: 0.3...0.7)
+        )
+
+        // Generate radial crack lines from impact to beyond screen edges
+        let radialCount = Int.random(in: 14...20)
+        let maxDist = sqrt(bounds.width * bounds.width + bounds.height * bounds.height)
+        var radialAngles: [CGFloat] = []
+        for i in 0..<radialCount {
+            let baseAngle = (CGFloat(i) / CGFloat(radialCount)) * 2 * .pi
+            radialAngles.append(baseAngle + CGFloat.random(in: -0.15...0.15))
+        }
+        radialAngles.sort()
+
+        // For each radial line, generate points at concentric ring distances with jitter
+        let ringDistances: [CGFloat] = [60, 150, 300, 500, maxDist]
+        var radialPoints: [[CGPoint]] = []  // [radialIndex][ringIndex] -> point on that ray at that ring
+
+        for angle in radialAngles {
+            var points: [CGPoint] = [impact]
+            for dist in ringDistances {
+                let jitteredAngle = angle + CGFloat.random(in: -0.12...0.12)
+                let jitteredDist = dist + CGFloat.random(in: -dist * 0.15...dist * 0.15)
+                points.append(CGPoint(
+                    x: impact.x + cos(jitteredAngle) * jitteredDist,
+                    y: impact.y + sin(jitteredAngle) * jitteredDist
+                ))
+            }
+            radialPoints.append(points)
         }
 
-        // Use the lines to define polygon regions via point-in-half-plane tests
-        // For each cell in a fine grid, determine which "side" of each line it falls on
-        // Group adjacent cells with same signature into shard regions
-        // Simpler approach: use random lines to cut rectangular strips
+        // Build shard polygons: each shard is bounded by two adjacent radial lines
+        // and two adjacent concentric rings
+        var shardPolygons: [(path: CGPath, center: CGPoint, distFromImpact: CGFloat)] = []
 
-        // Build shard polygons by intersecting random lines with screen bounds
-        // Use a grid-based approach: subdivide into cells, each cell is a shard piece
-        let cols = 7
-        let rows = 5
-        let cellW = bounds.width / CGFloat(cols)
-        let cellH = bounds.height / CGFloat(rows)
+        for ri in 0..<radialCount {
+            let nextRi = (ri + 1) % radialCount
+            for di in 0..<ringDistances.count {
+                // Four corners of this shard (between ring di and di+1, between radial ri and nextRi)
+                let innerDi = di
+                let outerDi = di + 1
+                guard outerDi < radialPoints[ri].count else { continue }
 
-        // Group cells into shards based on which side of each crack they're on
-        // For simplicity, assign each cell a signature based on the crack lines
-        struct CellInfo {
-            let col: Int
-            let row: Int
-            let center: CGPoint
-            var signature: [Bool]  // which side of each line
-        }
+                let p1 = radialPoints[ri][innerDi]
+                let p2 = radialPoints[ri][outerDi]
+                let p3 = radialPoints[nextRi][outerDi]
+                let p4 = radialPoints[nextRi][innerDi]
 
-        var cells: [CellInfo] = []
-        for row in 0..<rows {
-            for col in 0..<cols {
-                let cx = (CGFloat(col) + 0.5) * cellW
-                let cy = (CGFloat(row) + 0.5) * cellH
-                var sig: [Bool] = []
-                for (pt, angle) in lines {
-                    // Which side of the line is this cell center on?
-                    let dx = cx - pt.x
-                    let dy = cy - pt.y
-                    let side = dx * sin(angle) - dy * cos(angle) > 0
-                    sig.append(side)
-                }
-                cells.append(CellInfo(col: col, row: row, center: CGPoint(x: cx, y: cy), signature: sig))
+                // Add extra jagged points along the edges for irregular glass look
+                let path = CGMutablePath()
+                path.move(to: p1)
+
+                // Jagged edge from p1 to p2 (along radial ri)
+                let mid12 = CGPoint(
+                    x: (p1.x + p2.x) / 2 + CGFloat.random(in: -15...15),
+                    y: (p1.y + p2.y) / 2 + CGFloat.random(in: -15...15)
+                )
+                path.addLine(to: mid12)
+                path.addLine(to: p2)
+
+                // Jagged edge from p2 to p3 (along outer ring)
+                let mid23 = CGPoint(
+                    x: (p2.x + p3.x) / 2 + CGFloat.random(in: -12...12),
+                    y: (p2.y + p3.y) / 2 + CGFloat.random(in: -12...12)
+                )
+                path.addLine(to: mid23)
+                path.addLine(to: p3)
+
+                // Jagged edge from p3 to p4 (along radial nextRi)
+                let mid34 = CGPoint(
+                    x: (p3.x + p4.x) / 2 + CGFloat.random(in: -15...15),
+                    y: (p3.y + p4.y) / 2 + CGFloat.random(in: -15...15)
+                )
+                path.addLine(to: mid34)
+                path.addLine(to: p4)
+
+                // Jagged edge from p4 back to p1 (along inner ring)
+                let mid41 = CGPoint(
+                    x: (p4.x + p1.x) / 2 + CGFloat.random(in: -12...12),
+                    y: (p4.y + p1.y) / 2 + CGFloat.random(in: -12...12)
+                )
+                path.addLine(to: mid41)
+                path.closeSubpath()
+
+                let cx = (p1.x + p2.x + p3.x + p4.x) / 4
+                let cy = (p1.y + p2.y + p3.y + p4.y) / 4
+                let dist = sqrt((cx - impact.x) * (cx - impact.x) + (cy - impact.y) * (cy - impact.y))
+
+                shardPolygons.append((path: path, center: CGPoint(x: cx, y: cy), distFromImpact: dist))
             }
         }
 
-        // Group cells by signature
-        var groups: [String: [CellInfo]] = [:]
-        for cell in cells {
-            let key = cell.signature.map { $0 ? "1" : "0" }.joined()
-            groups[key, default: []].append(cell)
-        }
-
-        // For each group, build a polygon from the union of cell rects and create a shard
-        for (_, groupCells) in groups {
-            // Build the combined path from all cell rects in this group
-            let shardPath = CGMutablePath()
-            for cell in groupCells {
-                let rect = CGRect(x: CGFloat(cell.col) * cellW, y: CGFloat(cell.row) * cellH,
-                                  width: cellW, height: cellH)
-                shardPath.addRect(rect)
-            }
-
-            // Shard layer with screenshot, masked to this region
+        // Create shard layers and animate
+        for shard in shardPolygons {
             let shardLayer = CALayer()
             shardLayer.frame = bounds
             shardLayer.contents = screenshot
             shardLayer.contentsGravity = .resize
 
             let mask = CAShapeLayer()
-            mask.path = shardPath
+            mask.path = shard.path
             shardLayer.mask = mask
 
-            // White crack edges
+            // Subtle white crack edges
             let edgeLayer = CAShapeLayer()
-            edgeLayer.path = shardPath
+            edgeLayer.path = shard.path
             edgeLayer.fillColor = nil
-            edgeLayer.strokeColor = NSColor(white: 1.0, alpha: 0.5).cgColor
-            edgeLayer.lineWidth = 1.5
+            edgeLayer.strokeColor = NSColor(white: 1.0, alpha: 0.4).cgColor
+            edgeLayer.lineWidth = 1.0
 
             let group = CALayer()
             group.frame = bounds
@@ -364,13 +391,12 @@ class EmojiAnimator {
             group.addSublayer(edgeLayer)
             container.addSublayer(group)
 
-            // Stagger fall: higher pieces (larger y in screen coords) fall first
-            let avgY = groupCells.map { $0.center.y }.reduce(0, +) / CGFloat(groupCells.count)
-            // In CALayer coords, y=0 is bottom. Lower avgY = lower on screen = falls first
-            let normalizedY = avgY / bounds.height  // 0=bottom, 1=top
-            let holdDelay = 0.3 + Double(1.0 - normalizedY) * 1.2 + Double.random(in: 0...0.3)
-            let fallDuration = Double.random(in: 0.8...1.5)
+            // Shards near impact fall first; outer shards follow
+            let normalizedDist = min(shard.distFromImpact / maxDist, 1.0)
+            let holdDelay = 0.2 + Double(normalizedDist) * 1.0 + Double.random(in: 0...0.3)
+            let fallDuration = Double.random(in: 0.7...1.4)
 
+            // Fall down
             let fall = CABasicAnimation(keyPath: "position.y")
             fall.byValue = -(bounds.height + 300)
             fall.beginTime = CACurrentMediaTime() + holdDelay
@@ -379,15 +405,18 @@ class EmojiAnimator {
             fall.fillMode = .forwards
             fall.isRemovedOnCompletion = false
 
+            // Rotate while falling
             let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-            rotation.byValue = Double.random(in: -0.8...0.8)
+            rotation.byValue = Double.random(in: -1.2...1.2)
             rotation.beginTime = CACurrentMediaTime() + holdDelay
             rotation.duration = fallDuration
             rotation.fillMode = .forwards
             rotation.isRemovedOnCompletion = false
 
+            // Drift away from impact point horizontally
+            let driftDir = shard.center.x > impact.x ? 1.0 : -1.0
             let drift = CABasicAnimation(keyPath: "position.x")
-            drift.byValue = CGFloat.random(in: -60...60)
+            drift.byValue = CGFloat(driftDir) * CGFloat.random(in: 20...80)
             drift.beginTime = CACurrentMediaTime() + holdDelay
             drift.duration = fallDuration
             drift.fillMode = .forwards
@@ -398,7 +427,7 @@ class EmojiAnimator {
             group.add(drift, forKey: "drift")
         }
 
-        // Black screen holds briefly, then fades out
+        // Black screen holds, then fades out
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
