@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 private let pptScript = """
@@ -48,6 +49,7 @@ class PowerPointMonitor {
     private var allDurations: [String: [Int: TimeInterval]] = [:]  // deck → slide → cumulative secs
     private var lastSentDurations: [String: [Int: TimeInterval]] = [:]  // deck → slide → secs already sent
     private var sendTimer: Timer?
+    private var lastWasFrontmost: Bool = false
 
     init() {
     }
@@ -95,8 +97,11 @@ class PowerPointMonitor {
             slide = max(1, Int(slideRaw) ?? 1)
         }
 
+        // Only count time when PowerPoint was frontmost at the previous probe
+        let isFrontmostNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased().contains("powerpoint") == true
+
         // Accumulate time on previous slide
-        if let lastTime = lastProbeTime, currentDeck != nil {
+        if let lastTime = lastProbeTime, currentDeck != nil, lastWasFrontmost {
             let elapsed = now.timeIntervalSince(lastTime)
             if var deckMap = allDurations[currentDeck!] {
                 deckMap[currentSlide, default: 0] += elapsed
@@ -105,6 +110,7 @@ class PowerPointMonitor {
                 allDurations[currentDeck!] = [currentSlide: elapsed]
             }
         }
+        lastWasFrontmost = isFrontmostNow
 
         // Deck changed?
         if deck != currentDeck {
