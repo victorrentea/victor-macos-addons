@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import Foundation
 
 /// Banner that displays participant join URL at top of screen.
@@ -14,6 +15,10 @@ class JoinLinkBanner: NSPanel {
     private let bannerHeight: CGFloat = 120
     private let menuBarHeight: CGFloat = 25
     private let horizontalPadding: CGFloat = 48
+
+    // QR code panel
+    private var qrPanel: NSPanel?
+    private var qrImageView: NSImageView?
 
     init(screen: NSScreen) {
         self.targetScreen = screen
@@ -42,12 +47,45 @@ class JoinLinkBanner: NSPanel {
         urlLabel.allowsEditingTextAttributes = true
 
         self.contentView?.addSubview(urlLabel)
+
+        setupQRPanel()
+    }
+
+    // MARK: - QR Panel setup
+
+    private func setupQRPanel() {
+        let qrSize = targetScreen.frame.height * 0.30
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.alphaValue = 0.5
+
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: qrSize, height: qrSize))
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        panel.contentView?.addSubview(imageView)
+
+        // Position: bottom-right of screen
+        let x = targetScreen.frame.origin.x + targetScreen.frame.width - qrSize - 20
+        let y = targetScreen.frame.origin.y + 20
+        panel.setFrame(NSRect(x: x, y: y, width: qrSize, height: qrSize), display: false)
+
+        self.qrPanel = panel
+        self.qrImageView = imageView
     }
 
     // MARK: - Public API
 
     func show(url: String) {
-        let attributed = buildAttributedString(url: url)
+        let trimmedUrl = url.trimmingCharacters(in: .whitespaces)
+        let attributed = buildAttributedString(url: trimmedUrl)
         urlLabel.attributedStringValue = attributed
 
         // Measure text to size banner
@@ -59,7 +97,11 @@ class JoinLinkBanner: NSPanel {
 
         let frame = NSRect(x: bannerX, y: bannerY, width: bannerWidth, height: bannerHeight)
         self.setFrame(frame, display: false)
-        urlLabel.frame = NSRect(x: 0, y: 0, width: bannerWidth, height: bannerHeight)
+
+        // Center label vertically within banner
+        let textHeight = ceil(textBounds.height)
+        let labelY = (bannerHeight - textHeight) / 2
+        urlLabel.frame = NSRect(x: 0, y: labelY, width: bannerWidth, height: textHeight)
 
         self.alphaValue = 1.0
         self.orderFrontRegardless()
@@ -68,6 +110,9 @@ class JoinLinkBanner: NSPanel {
 
         fadeTimer?.invalidate()
         fadeTimer = nil
+
+        // Show QR code
+        showQR(for: trimmedUrl)
 
         startMousePolling()
 
@@ -82,9 +127,49 @@ class JoinLinkBanner: NSPanel {
         self.alphaValue = 0.0
         bannerShowing = false
         self.orderOut(nil)
+        hideQR()
     }
 
     var bannerIsVisible: Bool { bannerShowing }
+
+    // MARK: - QR code generation and display
+
+    private func showQR(for url: String) {
+        guard let qrPanel = qrPanel, let qrImageView = qrImageView else { return }
+
+        // Prepend https:// for the QR code so phones can open it directly
+        let fullUrl = url.hasPrefix("http") ? url : "https://\(url)"
+        if let qrImage = generateQRCode(from: fullUrl) {
+            qrImageView.image = qrImage
+        }
+        qrPanel.alphaValue = 0.5
+        qrPanel.orderFrontRegardless()
+    }
+
+    private func hideQR() {
+        qrPanel?.alphaValue = 0.0
+        qrPanel?.orderOut(nil)
+    }
+
+    private func generateQRCode(from string: String) -> NSImage? {
+        guard let data = string.data(using: .utf8),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("H", forKey: "inputCorrectionLevel")
+
+        guard let ciImage = filter.outputImage else { return nil }
+
+        // Scale up the QR code (it's tiny by default)
+        let scale = 20.0
+        let transform = CGAffineTransform(scaleX: scale, y: scale)
+        let scaledImage = ciImage.transformed(by: transform)
+
+        let rep = NSCIImageRep(ciImage: scaledImage)
+        let nsImage = NSImage(size: rep.size)
+        nsImage.addRepresentation(rep)
+        return nsImage
+    }
 
     // MARK: - Mouse polling (banner keeps ignoresMouseEvents = true so clicks pass through)
 
@@ -131,6 +216,7 @@ class JoinLinkBanner: NSPanel {
         }, completionHandler: { [weak self] in
             self?.bannerShowing = false
             self?.orderOut(nil)
+            self?.hideQR()
         })
     }
 
