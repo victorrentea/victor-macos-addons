@@ -517,7 +517,7 @@ class EmojiAnimator {
         hostLayer.addSublayer(container)
 
         // Image at 70% screen width, centered, maintain aspect ratio
-        let imgW = bounds.width * 0.70
+        let imgW = bounds.width * 0.85
         let aspectRatio = CGFloat(cgImage.height) / CGFloat(cgImage.width)
         let imgH = imgW * aspectRatio
         let imgX = (bounds.width - imgW) / 2
