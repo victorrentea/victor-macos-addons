@@ -248,139 +248,11 @@ class EmojiAnimator {
         showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3, soundToStop: "alarm.mp3")
     }
 
-    // MARK: - Earthquake (screen shake + cracks + blackout)
+    // MARK: - Screen crash (screenshot shatters into falling shards)
 
     func showEarthquake() {
         let bounds = hostLayer.bounds
-        let totalDuration = 3.5
-
-        // Container for all earthquake layers
-        let container = CALayer()
-        container.frame = bounds
-        hostLayer.addSublayer(container)
-
-        // 1. Screen shake — rapid position oscillation on the host layer
-        let shakeAnim = CAKeyframeAnimation(keyPath: "position")
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        var shakePoints: [NSValue] = []
-        let shakeSteps = 30
-        for i in 0..<shakeSteps {
-            let t = Double(i) / Double(shakeSteps)
-            let intensity: CGFloat = CGFloat(1.0 - t * 0.7) * 12 // decay
-            let dx = CGFloat.random(in: -intensity...intensity)
-            let dy = CGFloat.random(in: -intensity...intensity)
-            shakePoints.append(NSValue(point: CGPoint(x: center.x + dx, y: center.y + dy)))
-        }
-        shakePoints.append(NSValue(point: center)) // return to center
-        shakeAnim.values = shakePoints
-        shakeAnim.duration = 1.5
-        hostLayer.add(shakeAnim, forKey: "shake")
-
-        // 2. Crack lines — draw branching cracks from impact point
-        let impactPoint = CGPoint(
-            x: bounds.width * CGFloat.random(in: 0.3...0.7),
-            y: bounds.height * CGFloat.random(in: 0.3...0.7)
-        )
-
-        for _ in 0..<8 {
-            let crackPath = CGMutablePath()
-            crackPath.move(to: impactPoint)
-
-            var currentPoint = impactPoint
-            let segments = Int.random(in: 5...10)
-            let angle = CGFloat.random(in: 0...(2 * .pi))
-
-            for j in 0..<segments {
-                let segLen = CGFloat.random(in: 40...120)
-                let jitter = CGFloat.random(in: -0.5...0.5)
-                let dir = angle + jitter
-                let nextPoint = CGPoint(
-                    x: currentPoint.x + cos(dir) * segLen,
-                    y: currentPoint.y + sin(dir) * segLen
-                )
-                crackPath.addLine(to: nextPoint)
-                currentPoint = nextPoint
-
-                // Branch occasionally
-                if Bool.random() && j > 1 {
-                    let branchPath = CGMutablePath()
-                    branchPath.move(to: currentPoint)
-                    let branchAngle = dir + CGFloat.random(in: -1.0...1.0)
-                    let branchLen = CGFloat.random(in: 30...80)
-                    branchPath.addLine(to: CGPoint(
-                        x: currentPoint.x + cos(branchAngle) * branchLen,
-                        y: currentPoint.y + sin(branchAngle) * branchLen
-                    ))
-                    let branchLayer = CAShapeLayer()
-                    branchLayer.path = branchPath
-                    branchLayer.strokeColor = NSColor.white.cgColor
-                    branchLayer.lineWidth = CGFloat.random(in: 1...2)
-                    branchLayer.fillColor = nil
-                    branchLayer.strokeEnd = 0
-                    container.addSublayer(branchLayer)
-
-                    let draw = CABasicAnimation(keyPath: "strokeEnd")
-                    draw.fromValue = 0
-                    draw.toValue = 1
-                    draw.beginTime = CACurrentMediaTime() + 0.3 + Double(j) * 0.08
-                    draw.duration = 0.15
-                    draw.fillMode = .forwards
-                    draw.isRemovedOnCompletion = false
-                    branchLayer.add(draw, forKey: "draw")
-                }
-            }
-
-            let crackLayer = CAShapeLayer()
-            crackLayer.path = crackPath
-            crackLayer.strokeColor = NSColor.white.cgColor
-            crackLayer.lineWidth = CGFloat.random(in: 2...4)
-            crackLayer.fillColor = nil
-            crackLayer.lineCap = .round
-            crackLayer.lineJoin = .round
-            crackLayer.strokeEnd = 0
-            crackLayer.shadowColor = NSColor.white.cgColor
-            crackLayer.shadowOffset = .zero
-            crackLayer.shadowRadius = 3
-            crackLayer.shadowOpacity = 0.8
-            container.addSublayer(crackLayer)
-
-            // Animate crack drawing
-            let drawCrack = CABasicAnimation(keyPath: "strokeEnd")
-            drawCrack.fromValue = 0
-            drawCrack.toValue = 1
-            drawCrack.beginTime = CACurrentMediaTime() + Double.random(in: 0.1...0.5)
-            drawCrack.duration = Double.random(in: 0.3...0.8)
-            drawCrack.fillMode = .forwards
-            drawCrack.isRemovedOnCompletion = false
-            crackLayer.add(drawCrack, forKey: "draw")
-        }
-
-        // 3. Brief blackout flash then recovery
-        let blackout = CALayer()
-        blackout.frame = bounds
-        blackout.backgroundColor = NSColor.black.cgColor
-        blackout.opacity = 0
-        container.addSublayer(blackout)
-
-        let flash = CAKeyframeAnimation(keyPath: "opacity")
-        flash.values = [0, 0, 0.8, 0.9, 0.6, 0.85, 0]
-        flash.keyTimes = [0, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0]
-        flash.duration = totalDuration
-        flash.fillMode = .forwards
-        flash.isRemovedOnCompletion = false
-        blackout.add(flash, forKey: "blackout")
-
-        // 4. Cleanup
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration + 0.2) { [weak container] in
-            container?.removeFromSuperlayer()
-        }
-    }
-
-    // MARK: - Screen crash (screenshot shatters into glass shards falling down)
-
-    func showCrash() {
-        let bounds = hostLayer.bounds
-        let totalDuration = 4.0
+        let totalDuration = 4.5
 
         // Capture screenshot of the built-in display
         guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
@@ -395,124 +267,143 @@ class EmojiAnimator {
         container.frame = bounds
         hostLayer.addSublayer(container)
 
-        // Black background (revealed as shards fall away)
+        // Black background at bottom — revealed as shards fall away
         let blackBg = CALayer()
         blackBg.frame = bounds
         blackBg.backgroundColor = NSColor.black.cgColor
         container.addSublayer(blackBg)
 
-        // Break into irregular glass shards using a Voronoi-like approach
-        // Generate random seed points, then create polygonal regions
-        let shardCount = 25
-        var seeds: [CGPoint] = []
-        for _ in 0..<shardCount {
-            seeds.append(CGPoint(
-                x: CGFloat.random(in: 0...bounds.width),
-                y: CGFloat.random(in: 0...bounds.height)
-            ))
+        // Generate random crack lines that slice across the full screen
+        // Each line is defined by a point and angle, extending edge-to-edge
+        let crackCount = Int.random(in: 8...12)
+        var lines: [(CGPoint, CGFloat)] = []  // (point on line, angle)
+        for _ in 0..<crackCount {
+            let pt = CGPoint(
+                x: CGFloat.random(in: bounds.width * 0.1...bounds.width * 0.9),
+                y: CGFloat.random(in: bounds.height * 0.1...bounds.height * 0.9)
+            )
+            let angle = CGFloat.random(in: 0...CGFloat.pi)
+            lines.append((pt, angle))
         }
 
-        // For each seed, create a shard by clipping the screenshot to a polygon
-        // approximated by the Voronoi cell (use rect-based subdivision for simplicity)
-        let cols = 5
+        // Use the lines to define polygon regions via point-in-half-plane tests
+        // For each cell in a fine grid, determine which "side" of each line it falls on
+        // Group adjacent cells with same signature into shard regions
+        // Simpler approach: use random lines to cut rectangular strips
+
+        // Build shard polygons by intersecting random lines with screen bounds
+        // Use a grid-based approach: subdivide into cells, each cell is a shard piece
+        let cols = 7
         let rows = 5
         let cellW = bounds.width / CGFloat(cols)
         let cellH = bounds.height / CGFloat(rows)
 
+        // Group cells into shards based on which side of each crack they're on
+        // For simplicity, assign each cell a signature based on the crack lines
+        struct CellInfo {
+            let col: Int
+            let row: Int
+            let center: CGPoint
+            var signature: [Bool]  // which side of each line
+        }
+
+        var cells: [CellInfo] = []
         for row in 0..<rows {
             for col in 0..<cols {
-                // Jitter the cell boundaries for irregular shapes
-                let jx = CGFloat.random(in: -cellW * 0.15...cellW * 0.15)
-                let jy = CGFloat.random(in: -cellH * 0.15...cellH * 0.15)
-                let x = CGFloat(col) * cellW + jx
-                let y = CGFloat(row) * cellH + jy
-                let w = cellW + CGFloat.random(in: -cellW * 0.1...cellW * 0.1)
-                let h = cellH + CGFloat.random(in: -cellH * 0.1...cellH * 0.1)
-
-                let cellRect = CGRect(x: x, y: y, width: w, height: h)
-
-                // Create an irregular polygon path (4-6 sided shard)
-                let shardPath = CGMutablePath()
-                let sides = Int.random(in: 4...6)
-                var points: [CGPoint] = []
-                for s in 0..<sides {
-                    let angle = (CGFloat(s) / CGFloat(sides)) * 2 * .pi + CGFloat.random(in: -0.3...0.3)
-                    let rx = w / 2 * CGFloat.random(in: 0.7...1.0)
-                    let ry = h / 2 * CGFloat.random(in: 0.7...1.0)
-                    points.append(CGPoint(
-                        x: cellRect.midX + cos(angle) * rx,
-                        y: cellRect.midY + sin(angle) * ry
-                    ))
+                let cx = (CGFloat(col) + 0.5) * cellW
+                let cy = (CGFloat(row) + 0.5) * cellH
+                var sig: [Bool] = []
+                for (pt, angle) in lines {
+                    // Which side of the line is this cell center on?
+                    let dx = cx - pt.x
+                    let dy = cy - pt.y
+                    let side = dx * sin(angle) - dy * cos(angle) > 0
+                    sig.append(side)
                 }
-                shardPath.move(to: points[0])
-                for p in points.dropFirst() { shardPath.addLine(to: p) }
-                shardPath.closeSubpath()
-
-                // Shard layer with screenshot content, masked to polygon
-                let shardLayer = CALayer()
-                shardLayer.frame = bounds
-                shardLayer.contents = screenshot
-                shardLayer.contentsGravity = .resize
-
-                let mask = CAShapeLayer()
-                mask.path = shardPath
-                shardLayer.mask = mask
-
-                // Thin white crack edge
-                let edgeLayer = CAShapeLayer()
-                edgeLayer.path = shardPath
-                edgeLayer.fillColor = nil
-                edgeLayer.strokeColor = NSColor(white: 1.0, alpha: 0.6).cgColor
-                edgeLayer.lineWidth = 1.5
-
-                let group = CALayer()
-                group.frame = bounds
-                group.addSublayer(shardLayer)
-                group.addSublayer(edgeLayer)
-                container.addSublayer(group)
-
-                // Animation: brief hold, then fall with gravity + rotation
-                let holdDelay = 0.5 + Double.random(in: 0...0.8)
-                let fallDuration = Double.random(in: 0.8...1.5)
-
-                // Fall down off screen
-                let fallDist = bounds.height + 200
-                let fall = CABasicAnimation(keyPath: "position.y")
-                fall.byValue = -fallDist
-                fall.beginTime = CACurrentMediaTime() + holdDelay
-                fall.duration = fallDuration
-                fall.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                fall.fillMode = .forwards
-                fall.isRemovedOnCompletion = false
-
-                // Rotate while falling
-                let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-                rotation.byValue = Double.random(in: -1.5...1.5)
-                rotation.beginTime = CACurrentMediaTime() + holdDelay
-                rotation.duration = fallDuration
-                rotation.fillMode = .forwards
-                rotation.isRemovedOnCompletion = false
-
-                // Slight horizontal drift
-                let drift = CABasicAnimation(keyPath: "position.x")
-                drift.byValue = CGFloat.random(in: -80...80)
-                drift.beginTime = CACurrentMediaTime() + holdDelay
-                drift.duration = fallDuration
-                drift.fillMode = .forwards
-                drift.isRemovedOnCompletion = false
-
-                group.add(fall, forKey: "fall")
-                group.add(rotation, forKey: "rotate")
-                group.add(drift, forKey: "drift")
+                cells.append(CellInfo(col: col, row: row, center: CGPoint(x: cx, y: cy), signature: sig))
             }
         }
 
-        // Black screen holds for a moment, then fades out
+        // Group cells by signature
+        var groups: [String: [CellInfo]] = [:]
+        for cell in cells {
+            let key = cell.signature.map { $0 ? "1" : "0" }.joined()
+            groups[key, default: []].append(cell)
+        }
+
+        // For each group, build a polygon from the union of cell rects and create a shard
+        for (_, groupCells) in groups {
+            // Build the combined path from all cell rects in this group
+            let shardPath = CGMutablePath()
+            for cell in groupCells {
+                let rect = CGRect(x: CGFloat(cell.col) * cellW, y: CGFloat(cell.row) * cellH,
+                                  width: cellW, height: cellH)
+                shardPath.addRect(rect)
+            }
+
+            // Shard layer with screenshot, masked to this region
+            let shardLayer = CALayer()
+            shardLayer.frame = bounds
+            shardLayer.contents = screenshot
+            shardLayer.contentsGravity = .resize
+
+            let mask = CAShapeLayer()
+            mask.path = shardPath
+            shardLayer.mask = mask
+
+            // White crack edges
+            let edgeLayer = CAShapeLayer()
+            edgeLayer.path = shardPath
+            edgeLayer.fillColor = nil
+            edgeLayer.strokeColor = NSColor(white: 1.0, alpha: 0.5).cgColor
+            edgeLayer.lineWidth = 1.5
+
+            let group = CALayer()
+            group.frame = bounds
+            group.addSublayer(shardLayer)
+            group.addSublayer(edgeLayer)
+            container.addSublayer(group)
+
+            // Stagger fall: higher pieces (larger y in screen coords) fall first
+            let avgY = groupCells.map { $0.center.y }.reduce(0, +) / CGFloat(groupCells.count)
+            // In CALayer coords, y=0 is bottom. Lower avgY = lower on screen = falls first
+            let normalizedY = avgY / bounds.height  // 0=bottom, 1=top
+            let holdDelay = 0.3 + Double(1.0 - normalizedY) * 1.2 + Double.random(in: 0...0.3)
+            let fallDuration = Double.random(in: 0.8...1.5)
+
+            let fall = CABasicAnimation(keyPath: "position.y")
+            fall.byValue = -(bounds.height + 300)
+            fall.beginTime = CACurrentMediaTime() + holdDelay
+            fall.duration = fallDuration
+            fall.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            fall.fillMode = .forwards
+            fall.isRemovedOnCompletion = false
+
+            let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+            rotation.byValue = Double.random(in: -0.8...0.8)
+            rotation.beginTime = CACurrentMediaTime() + holdDelay
+            rotation.duration = fallDuration
+            rotation.fillMode = .forwards
+            rotation.isRemovedOnCompletion = false
+
+            let drift = CABasicAnimation(keyPath: "position.x")
+            drift.byValue = CGFloat.random(in: -60...60)
+            drift.beginTime = CACurrentMediaTime() + holdDelay
+            drift.duration = fallDuration
+            drift.fillMode = .forwards
+            drift.isRemovedOnCompletion = false
+
+            group.add(fall, forKey: "fall")
+            group.add(rotation, forKey: "rotate")
+            group.add(drift, forKey: "drift")
+        }
+
+        // Black screen holds briefly, then fades out
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.5
-        fadeOut.duration = 0.5
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.8
+        fadeOut.duration = 0.8
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
         container.add(fadeOut, forKey: "fadeOut")
