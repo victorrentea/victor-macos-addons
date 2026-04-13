@@ -42,7 +42,7 @@ class ButtonBar: NSPanel {
 
     init(buttons: [ButtonDef], screen: NSScreen) {
         let buttonSize: CGFloat = 38
-        let padding: CGFloat = 6
+        let padding: CGFloat = 3
 
         let count = CGFloat(buttons.count)
         let barWidth = buttonSize + padding * 2
