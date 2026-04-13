@@ -88,10 +88,10 @@ class JoinLinkBanner: NSPanel {
         let attributed = buildAttributedString(url: trimmedUrl)
         urlLabel.attributedStringValue = attributed
 
-        // Measure text to size banner
-        let maxSize = NSSize(width: targetScreen.frame.width - horizontalPadding * 2, height: bannerHeight)
-        let textBounds = attributed.boundingRect(with: maxSize, options: [.usesLineFragmentOrigin, .usesFontLeading])
-        let bannerWidth = min(ceil(textBounds.width) + horizontalPadding * 2, targetScreen.frame.width)
+        // Measure text to size banner — use sizeToFit for accurate width
+        urlLabel.sizeToFit()
+        let fittedWidth = ceil(urlLabel.frame.width)
+        let bannerWidth = min(fittedWidth + horizontalPadding * 2, targetScreen.frame.width)
         let bannerX = targetScreen.frame.origin.x + (targetScreen.frame.width - bannerWidth) / 2
         let bannerY = targetScreen.frame.origin.y + targetScreen.frame.height - menuBarHeight - bannerHeight
 
@@ -99,9 +99,9 @@ class JoinLinkBanner: NSPanel {
         self.setFrame(frame, display: false)
 
         // Center label vertically within banner
-        let textHeight = ceil(textBounds.height)
+        let textHeight = ceil(urlLabel.frame.height)
         let labelY = (bannerHeight - textHeight) / 2
-        urlLabel.frame = NSRect(x: 0, y: labelY, width: bannerWidth, height: textHeight)
+        urlLabel.frame = NSRect(x: horizontalPadding, y: labelY, width: fittedWidth, height: textHeight)
 
         self.alphaValue = 1.0
         self.orderFrontRegardless()
@@ -160,13 +160,10 @@ class JoinLinkBanner: NSPanel {
 
         guard let ciImage = filter.outputImage else { return nil }
 
-        // Crop the quiet zone (white border) — inset by 1 module on each side
-        let cropped = ciImage.cropped(to: ciImage.extent.insetBy(dx: 7, dy: 7))
-
         // Scale up the QR code (it's tiny by default)
         let scale = 20.0
         let transform = CGAffineTransform(scaleX: scale, y: scale)
-        let scaledImage = cropped.transformed(by: transform)
+        let scaledImage = ciImage.transformed(by: transform)
 
         let rep = NSCIImageRep(ciImage: scaledImage)
         let nsImage = NSImage(size: rep.size)
