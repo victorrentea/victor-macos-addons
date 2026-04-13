@@ -41,8 +41,8 @@ class ButtonBar: NSPanel {
     private(set) var isPinned: Bool = false
 
     init(buttons: [ButtonDef], screen: NSScreen) {
-        let buttonSize: CGFloat = 32
-        let padding: CGFloat = 5
+        let buttonSize: CGFloat = 38
+        let padding: CGFloat = 6
 
         let count = CGFloat(buttons.count)
         let barWidth = buttonSize + padding * 2
