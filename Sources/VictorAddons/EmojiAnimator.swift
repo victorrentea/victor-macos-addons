@@ -376,7 +376,7 @@ class EmojiAnimator {
         }
     }
 
-    // MARK: - Film burn (burning edges spreading across screen)
+    // MARK: - Film burn (4 black circles expanding from random positions)
 
     func showFilmBurn() {
         let bounds = hostLayer.bounds
@@ -386,101 +386,63 @@ class EmojiAnimator {
         container.frame = bounds
         hostLayer.addSublayer(container)
 
-        // Burn starts from edges/corners — like a real film melting
-        // Use non-overlapping rectangular burn zones that tile the screen
-        let cols = 3
-        let rows = 2
-        let cellW = bounds.width / CGFloat(cols)
-        let cellH = bounds.height / CGFloat(rows)
+        // Max radius needed to cover the screen from any point
+        let maxRadius = sqrt(bounds.width * bounds.width + bounds.height * bounds.height)
 
-        // Stagger order: corners first, then edges, then center
-        let order: [(Int, Int)] = [(0,0), (2,1), (2,0), (0,1), (1,0), (1,1)]
+        for i in 0..<4 {
+            // Random center point on screen
+            let cx = CGFloat.random(in: bounds.width * 0.1...bounds.width * 0.9)
+            let cy = CGFloat.random(in: bounds.height * 0.1...bounds.height * 0.9)
+            let center = CGPoint(x: cx, y: cy)
 
-        for (idx, (col, row)) in order.enumerated() {
-            let startDelay = Double(idx) * 0.45
-            let cellRect = CGRect(x: CGFloat(col) * cellW, y: CGFloat(row) * cellH,
-                                  width: cellW, height: cellH)
-            let center = CGPoint(x: cellRect.midX, y: cellRect.midY)
+            // Each circle appears within the first 1 second, staggered
+            let startDelay = Double(i) * 0.25 + Double.random(in: 0...0.15)
 
-            // Burn edge — glowing ring that appears and flickers
-            let edgePath = CGPath(ellipseIn: cellRect.insetBy(dx: -20, dy: -20), transform: nil)
-            let ringLayer = CAShapeLayer()
-            ringLayer.path = edgePath
-            ringLayer.fillColor = nil
-            ringLayer.strokeColor = NSColor(red: 1.0, green: 0.35, blue: 0.0, alpha: 0.9).cgColor
-            ringLayer.lineWidth = 30
-            ringLayer.shadowColor = NSColor(red: 1.0, green: 0.6, blue: 0.0, alpha: 1.0).cgColor
-            ringLayer.shadowOffset = .zero
-            ringLayer.shadowRadius = 20
-            ringLayer.shadowOpacity = 1.0
-            ringLayer.opacity = 0
-            container.addSublayer(ringLayer)
+            // Initial radius 20–100px
+            let initialRadius = CGFloat.random(in: 20...100)
 
-            // Ring appears, flickers, shrinks to nothing
-            let ringAppear = CABasicAnimation(keyPath: "opacity")
-            ringAppear.fromValue = 0
-            ringAppear.toValue = 1
-            ringAppear.beginTime = startDelay
-            ringAppear.duration = 0.15
-            ringAppear.fillMode = .both
-            ringAppear.isRemovedOnCompletion = false
+            // Different expansion speeds: each takes a different duration to reach max
+            let expandDuration = Double.random(in: 2.5...4.0)
 
-            let smallPath = CGPath(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5,
-                                                      width: 10, height: 10), transform: nil)
-            let ringShrink = CABasicAnimation(keyPath: "path")
-            ringShrink.fromValue = edgePath
-            ringShrink.toValue = smallPath
-            ringShrink.beginTime = startDelay + 0.1
-            ringShrink.duration = 1.5
-            ringShrink.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            ringShrink.fillMode = .both
-            ringShrink.isRemovedOnCompletion = false
+            let circle = CAShapeLayer()
+            let initialPath = CGPath(ellipseIn: CGRect(x: center.x - initialRadius,
+                                                        y: center.y - initialRadius,
+                                                        width: initialRadius * 2,
+                                                        height: initialRadius * 2), transform: nil)
+            let finalPath = CGPath(ellipseIn: CGRect(x: center.x - maxRadius,
+                                                      y: center.y - maxRadius,
+                                                      width: maxRadius * 2,
+                                                      height: maxRadius * 2), transform: nil)
+            circle.path = initialPath
+            circle.fillColor = NSColor.black.cgColor
+            circle.opacity = 0
+            container.addSublayer(circle)
 
-            let flicker = CAKeyframeAnimation(keyPath: "lineWidth")
-            flicker.values = [30, 40, 20, 45, 25, 35, 28]
-            flicker.duration = 0.25
-            flicker.repeatCount = .infinity
+            // Appear
+            let appear = CABasicAnimation(keyPath: "opacity")
+            appear.fromValue = 0
+            appear.toValue = 1
+            appear.beginTime = startDelay
+            appear.duration = 0.15
+            appear.fillMode = .both
+            appear.isRemovedOnCompletion = false
 
-            let ringFade = CABasicAnimation(keyPath: "opacity")
-            ringFade.fromValue = 1
-            ringFade.toValue = 0
-            ringFade.beginTime = startDelay + 1.2
-            ringFade.duration = 0.5
-            ringFade.fillMode = .both
-            ringFade.isRemovedOnCompletion = false
+            // Expand
+            let expand = CABasicAnimation(keyPath: "path")
+            expand.fromValue = initialPath
+            expand.toValue = finalPath
+            expand.beginTime = startDelay
+            expand.duration = expandDuration
+            expand.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            expand.fillMode = .both
+            expand.isRemovedOnCompletion = false
 
-            let ringGroup = CAAnimationGroup()
-            ringGroup.animations = [ringAppear, ringShrink, flicker, ringFade]
-            ringGroup.duration = totalDuration
-            ringGroup.fillMode = .forwards
-            ringGroup.isRemovedOnCompletion = false
-            ringLayer.add(ringGroup, forKey: "ring")
-
-            // Darkening layer — semi-transparent brown/dark that intensifies
-            let darkLayer = CALayer()
-            darkLayer.frame = cellRect
-            darkLayer.backgroundColor = NSColor(red: 0.15, green: 0.05, blue: 0.0, alpha: 0.85).cgColor
-            darkLayer.opacity = 0
-            container.addSublayer(darkLayer)
-
-            let darkAppear = CAKeyframeAnimation(keyPath: "opacity")
-            darkAppear.values = [0, 0, 0.4, 0.7, 0.85, 0.85, 0]
-            darkAppear.keyTimes = [0,
-                                   NSNumber(value: startDelay / totalDuration),
-                                   NSNumber(value: (startDelay + 0.5) / totalDuration),
-                                   NSNumber(value: (startDelay + 1.0) / totalDuration),
-                                   NSNumber(value: (startDelay + 1.5) / totalDuration),
-                                   NSNumber(value: (totalDuration - 1.0) / totalDuration),
-                                   1.0]
-            darkAppear.duration = totalDuration
-            darkAppear.fillMode = .forwards
-            darkAppear.isRemovedOnCompletion = false
-            darkLayer.add(darkAppear, forKey: "dark")
-
-            // Fire sparks at ignition point
-            DispatchQueue.main.asyncAfter(deadline: .now() + startDelay) { [weak self] in
-                self?.spawnFireSparks(at: center, in: container)
-            }
+            let group = CAAnimationGroup()
+            group.animations = [appear, expand]
+            group.duration = totalDuration
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+            circle.add(group, forKey: "burn")
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration + 0.2) { [weak container] in
@@ -1355,7 +1317,12 @@ class EmojiAnimator {
         _pulseEcgLayer = ecgLayer
         ecgLayer.contents = cgImage
         ecgLayer.contentsGravity = .resize   // stretch to fill frame completely
-        ecgLayer.frame = bounds               // full screen — guaranteed to reach right edge
+        // Half width, centered horizontally; taller amplitude (60% of screen height)
+        let ecgW = bounds.width * 0.5
+        let ecgH = bounds.height * 0.6
+        ecgLayer.frame = CGRect(x: (bounds.width - ecgW) / 2,
+                                y: (bounds.height - ecgH) / 2,
+                                width: ecgW, height: ecgH)
         ecgLayer.opacity = 0
         hostLayer.addSublayer(ecgLayer)
 
