@@ -647,59 +647,62 @@ class EmojiAnimator {
         }
     }
 
-    // MARK: - Zorro Z (fire image overlay with flicker)
+    // MARK: - Zorro Z (animated fire GIF overlay)
 
     func showZorro() {
         if cancelIfRunning("zorro") { return }
         let bounds = hostLayer.bounds
-        let totalDuration = 3.5
 
-        guard let url = Bundle.module.url(forResource: "zorro_fire", withExtension: "png", subdirectory: "Resources"),
-              let nsImage = NSImage(contentsOf: url),
-              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        guard let url = Bundle.module.url(forResource: "zorro_fire", withExtension: "gif", subdirectory: "Resources"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
+
+        let frameCount = CGImageSourceGetCount(source)
+        guard frameCount > 0 else { return }
+
+        // Extract all frames and durations
+        var frames: [CGImage] = []
+        var totalGifDuration: Double = 0
+        for i in 0..<frameCount {
+            guard let cgImage = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            frames.append(cgImage)
+            if let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any],
+               let gifProps = props[kCGImagePropertyGIFDictionary as String] as? [String: Any],
+               let delay = gifProps[kCGImagePropertyGIFUnclampedDelayTime as String] as? Double ??
+                           gifProps[kCGImagePropertyGIFDelayTime as String] as? Double {
+                totalGifDuration += delay
+            } else {
+                totalGifDuration += 0.05
+            }
+        }
+
+        let totalDuration = totalGifDuration + 1.0
 
         let container = CALayer()
         container.frame = bounds
         hostLayer.addSublayer(container)
 
-        // Image at 70% screen width, centered, maintain aspect ratio
+        // 85% screen width, centered, maintain aspect ratio
         let imgW = bounds.width * 0.85
-        let aspectRatio = CGFloat(cgImage.height) / CGFloat(cgImage.width)
+        let aspectRatio = CGFloat(frames[0].height) / CGFloat(frames[0].width)
         let imgH = imgW * aspectRatio
         let imgX = (bounds.width - imgW) / 2
         let imgY = (bounds.height - imgH) / 2
 
         let imgLayer = CALayer()
-        imgLayer.contents = cgImage
-        imgLayer.contentsGravity = .resizeAspect
         imgLayer.frame = CGRect(x: imgX, y: imgY, width: imgW, height: imgH)
-        imgLayer.opacity = 0
+        imgLayer.contentsGravity = .resizeAspect
+        imgLayer.contents = frames[0]
         container.addSublayer(imgLayer)
 
-        // Fade in
-        let fadeIn = CABasicAnimation(keyPath: "opacity")
-        fadeIn.fromValue = 0
-        fadeIn.toValue = 1
-        fadeIn.duration = 0.3
-        fadeIn.fillMode = .forwards
-        fadeIn.isRemovedOnCompletion = false
-        imgLayer.add(fadeIn, forKey: "fadeIn")
-
-        // Fire flicker: rapid subtle brightness/scale oscillation
-        let flicker = CAKeyframeAnimation(keyPath: "opacity")
-        flicker.values = [1.0, 0.85, 1.0, 0.9, 1.0, 0.88, 0.95, 1.0]
-        flicker.duration = 0.3
-        flicker.repeatCount = .infinity
-        flicker.beginTime = CACurrentMediaTime() + 0.3
-        imgLayer.add(flicker, forKey: "flicker")
-
-        // Subtle scale pulse to simulate fire movement
-        let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-        pulse.values = [1.0, 1.012, 0.995, 1.008, 1.0, 1.015, 0.998, 1.0]
-        pulse.duration = 0.4
-        pulse.repeatCount = .infinity
-        pulse.beginTime = CACurrentMediaTime() + 0.3
-        imgLayer.add(pulse, forKey: "pulse")
+        // Animate through GIF frames
+        let frameAnim = CAKeyframeAnimation(keyPath: "contents")
+        frameAnim.values = frames
+        frameAnim.duration = totalGifDuration
+        frameAnim.calculationMode = .discrete
+        frameAnim.repeatCount = 1
+        frameAnim.fillMode = .forwards
+        frameAnim.isRemovedOnCompletion = false
+        imgLayer.add(frameAnim, forKey: "gifFrames")
 
         // Orange glow shadow
         imgLayer.shadowColor = NSColor(red: 1.0, green: 0.4, blue: 0.0, alpha: 1.0).cgColor
@@ -707,14 +710,13 @@ class EmojiAnimator {
         imgLayer.shadowRadius = 30
         imgLayer.shadowOpacity = 0.8
 
-        // Flicker the glow radius
         let glowFlicker = CAKeyframeAnimation(keyPath: "shadowRadius")
         glowFlicker.values = [30, 40, 25, 45, 30, 35, 28]
         glowFlicker.duration = 0.25
         glowFlicker.repeatCount = .infinity
         imgLayer.add(glowFlicker, forKey: "glowFlicker")
 
-        // Fade out the whole container
+        // Fade out
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0

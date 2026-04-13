@@ -66,7 +66,7 @@ class JoinLinkBanner: NSPanel {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
-        panel.alphaValue = 0.5
+        panel.alphaValue = 1.0
 
         let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: qrSize, height: qrSize))
         imageView.imageScaling = .scaleProportionallyUpOrDown
@@ -142,7 +142,7 @@ class JoinLinkBanner: NSPanel {
         if let qrImage = generateQRCode(from: fullUrl) {
             qrImageView.image = qrImage
         }
-        qrPanel.alphaValue = 0.5
+        qrPanel.alphaValue = 1.0
         qrPanel.orderFrontRegardless()
     }
 
@@ -160,10 +160,13 @@ class JoinLinkBanner: NSPanel {
 
         guard let ciImage = filter.outputImage else { return nil }
 
+        // Crop the quiet zone (white border) — inset by 1 module on each side
+        let cropped = ciImage.cropped(to: ciImage.extent.insetBy(dx: 7, dy: 7))
+
         // Scale up the QR code (it's tiny by default)
         let scale = 20.0
         let transform = CGAffineTransform(scaleX: scale, y: scale)
-        let scaledImage = ciImage.transformed(by: transform)
+        let scaledImage = cropped.transformed(by: transform)
 
         let rep = NSCIImageRep(ciImage: scaledImage)
         let nsImage = NSImage(size: rep.size)
@@ -213,10 +216,11 @@ class JoinLinkBanner: NSPanel {
             context.duration = 3.0
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.animator().alphaValue = 0.0
+            self.qrPanel?.animator().alphaValue = 0.0
         }, completionHandler: { [weak self] in
             self?.bannerShowing = false
             self?.orderOut(nil)
-            self?.hideQR()
+            self?.qrPanel?.orderOut(nil)
         })
     }
 
