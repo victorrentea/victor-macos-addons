@@ -378,17 +378,9 @@ class EmojiAnimator {
             mask.path = shard.path
             shardLayer.mask = mask
 
-            // Subtle white crack edges
-            let edgeLayer = CAShapeLayer()
-            edgeLayer.path = shard.path
-            edgeLayer.fillColor = nil
-            edgeLayer.strokeColor = NSColor(white: 1.0, alpha: 0.4).cgColor
-            edgeLayer.lineWidth = 1.0
-
             let group = CALayer()
             group.frame = bounds
             group.addSublayer(shardLayer)
-            group.addSublayer(edgeLayer)
             container.addSublayer(group)
 
             // Shards near impact fall first; outer shards follow
