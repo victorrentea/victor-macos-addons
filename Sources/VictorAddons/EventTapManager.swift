@@ -23,11 +23,13 @@ class EventTapManager {
     var onToggleDarkMode: (() -> Void)?
     var onDictationMute: (() -> Void)?
     var onRepaste: (() -> Void)?
+    var onOpenCatalog: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
     private let VK_P: CGKeyCode = 0x23
     private let VK_D: CGKeyCode = 0x02
+    private let VK_C: CGKeyCode = 0x08
 
     // MARK: Mouse button numbers
     private let MOUSE_BUTTON_5: Int64 = 4
@@ -116,6 +118,12 @@ class EventTapManager {
         // Cmd+Opt+Ctrl+D → toggle dark mode (suppress)
         if keyCode == VK_D && hasCmd && hasCtrl && hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onToggleDarkMode?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+C → open catalog (suppress)
+        if keyCode == VK_C && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onOpenCatalog?() }
             return nil
         }
 

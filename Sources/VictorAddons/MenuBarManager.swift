@@ -36,6 +36,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onConnectTablet: (() -> Void)?
+    var onOpenCatalog: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -79,6 +80,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // Copy Git
         addItem("Copy Git", action: #selector(copyGitAction))
+
+        // Open Catalog
+        addItem("Catalog — ⌘⌃C", action: #selector(openCatalogAction))
 
         // Dark mode (moved up)
         darkModeItem = addItem("Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
@@ -244,6 +248,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func copyGitAction() {
         onCopyGit?()
+    }
+
+    @objc private func openCatalogAction() {
+        onOpenCatalog?()
     }
 
     @objc private func toggleTranscribe() {

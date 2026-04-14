@@ -20,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var emotionalPasteHandler: EmotionalPasteHandler?
     private var coreAudioManager: CoreAudioManager?
     private var wsServer: LocalWebSocketServer?
+    private var tabletServer: TabletHttpServer?
     private var pptMonitor: PowerPointMonitor?
     private var ijMonitor: IntelliJMonitor?
     private var rhTimerMonitor: RHTimerMonitor?
@@ -90,6 +91,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         wsServer.start()
         self.wsServer = wsServer
 
+        overlayInfo("Starting TabletHttpServer...")
+        tabletServer = TabletHttpServer()
+        tabletServer?.onAlarmStart = { [weak self] in self?.animator.startAlarmOverlay() }
+        tabletServer?.onAlarmStop  = { [weak self] in self?.animator.stopAlarmOverlay() }
+        tabletServer?.onEffect = { [weak self] name in
+            switch name {
+            case "earthquake":    self?.animator.showEarthquake()
+            case "pulse":         self?.animator.startPulseOverlay()
+            case "pulse/stop":    self?.animator.stopPulseOverlay()
+            case "applause":      self?.animator.showApplause()
+            case "applause/stop": self?.animator.stopApplause()
+            case "fireworks":     self?.animator.showFireworks()
+            default: break
+            }
+        }
+        tabletServer?.start()
+        overlayInfo("TabletHttpServer.start() called")
+
         menuBarManager = MenuBarManager()
         menuBarManager.onQuit = { [weak self] in
             self?.whisperManager?.stop()
@@ -125,7 +144,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 startTranscription()
             }
         }
+        menuBarManager.onConnectTablet = {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let adb = "\(NSHomeDirectory())/Library/Android/sdk/platform-tools/adb"
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: adb)
+                p.arguments = ["reverse", "tcp:55123", "tcp:55123"]
+                p.standardOutput = FileHandle.nullDevice
+                p.standardError = FileHandle.nullDevice
+                try? p.run(); p.waitUntilExit()
+                let msg = p.terminationStatus == 0 ? "Tablet connected via USB-C ✓" : "Tablet not found — plug in USB-C first"
+                DispatchQueue.main.async { overlayInfo(msg) }
+            }
+        }
         menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
+        menuBarManager.onOpenCatalog = {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let path = NSHomeDirectory() + "/clients/catalog.docx"
+                let url = URL(fileURLWithPath: path)
+                NSWorkspace.shared.open([url], withApplicationAt: URL(fileURLWithPath: "/Applications/Microsoft Word.app"),
+                                        configuration: NSWorkspace.OpenConfiguration())
+            }
+        }
         menuBarManager.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
@@ -184,12 +224,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
+        eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onDictationMute = { [weak audioManager] in
             DispatchQueue.global(qos: .userInteractive).async {
                 audioManager?.toggleDictationMute()
             }
         }
-        eventTap.onRepaste = { [weak pasteHandler] in pasteHandler?.repasteLast() }
+        eventTap.onRepaste = {
+            let src = CGEventSource(stateID: .hidSystemState)
+            let flags: CGEventFlags = [.maskControl, .maskAlternate]
+            let down = CGEvent(keyboardEventSource: src, virtualKey: 0x31, keyDown: true)
+            let up   = CGEvent(keyboardEventSource: src, virtualKey: 0x31, keyDown: false)
+            down?.flags = flags
+            up?.flags   = flags
+            down?.post(tap: .cgSessionEventTap)
+            up?.post(tap: .cgSessionEventTap)
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 
@@ -251,9 +301,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             },
             .init(label: "💥", tooltip: "Screen crash") { [weak self] in
                 self?.animator.showEarthquake()
-            },
-            .init(label: "🎞️", tooltip: "Film burn") { [weak self] in
-                self?.animator.showFilmBurn()
             },
             .init(label: "", imageName: "zorro_icon.png", tooltip: "Zorro") { [weak self] in
                 self?.animator.showZorro()
