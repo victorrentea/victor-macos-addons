@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 13, 01:41"
+    static let BUILD_TIME = "Apr 14, 00:06"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -35,6 +35,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
+    var onConnectTablet: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -80,7 +81,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         addItem("Copy Git", action: #selector(copyGitAction))
 
         // Dark mode (moved up)
-        darkModeItem = addItem("Enter Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
+        darkModeItem = addItem("Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
 
         menu.addItem(.separator())
 
@@ -101,6 +102,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // WS status / join link — single unified item
         wsStatusItem = addItem("🔴 WS disconnected", action: nil)
         wsStatusItem.isEnabled = false
+
+        addItem("🔌 Tablet via USB-C", action: #selector(connectTabletAction))
 
         menu.addItem(.separator())
 
@@ -168,7 +171,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         kill8080Item.action = nil
 
         let isDark = DarkModeToggle.isDark()
-        darkModeItem.title = (isDark ? "Exit Dark Mode" : "Enter Dark Mode") + " — ⌘⌃⌥D"
+        darkModeItem.title = "Dark Mode — ⌘⌃⌥D"
 
         refreshPortItems()
 
@@ -261,6 +264,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func displayJoinLinkAction() {
         onDisplayJoinLink?()
+    }
+
+    @objc private func connectTabletAction() {
+        onConnectTablet?()
     }
 
     @objc private func killPort8080() {
