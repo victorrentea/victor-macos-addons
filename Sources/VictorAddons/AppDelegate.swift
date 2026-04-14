@@ -160,7 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
         menuBarManager.onOpenCatalog = {
             DispatchQueue.global(qos: .userInitiated).async {
-                let path = NSHomeDirectory() + "/clients/catalog.docx"
+                let path = NSHomeDirectory() + "/My Drive/Clients/Catalog.docx"
                 let url = URL(fileURLWithPath: path)
                 NSWorkspace.shared.open([url], withApplicationAt: URL(fileURLWithPath: "/Applications/Microsoft Word.app"),
                                         configuration: NSWorkspace.OpenConfiguration())
