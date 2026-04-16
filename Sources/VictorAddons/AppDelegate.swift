@@ -111,6 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "fireworks":     self?.animator.showFireworks()
             case "fear":          self?.animator.showFear()
             case "fail":          self?.animator.showFail()
+            case "sepia":         self?.animator.showSepia(playSound: false)
             default: break
             }
         }

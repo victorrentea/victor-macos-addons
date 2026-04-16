@@ -973,12 +973,15 @@ class EmojiAnimator {
 
     // MARK: - Sepia / old film overlay
 
-    func showSepia() {
-        if cancelIfRunning("sepia", sound: "projector.mp3") { return }
+    func showSepia(playSound: Bool = true) {
+        let soundKey: String? = playSound ? "projector.mp3" : nil
+        if cancelIfRunning("sepia", sound: soundKey) { return }
         let bounds = hostLayer.bounds
         let totalDuration = 7.0
 
-        SoundManager.shared.play("projector.mp3")
+        if playSound {
+            SoundManager.shared.play("projector.mp3")
+        }
 
         let container = CALayer()
         container.frame = bounds
@@ -1085,7 +1088,7 @@ class EmojiAnimator {
         jitter.duration = totalDuration
         container.add(jitter, forKey: "jitter")
 
-        trackEffect("sepia", layer: container, duration: totalDuration + 0.2, sound: "projector.mp3")
+        trackEffect("sepia", layer: container, duration: totalDuration + 0.2, sound: soundKey)
     }
 
     // MARK: - Confetti burst
@@ -1680,7 +1683,7 @@ class EmojiAnimator {
             return
         }
 
-        let imgH = bounds.height * 0.5
+        let imgH = bounds.height * 1.0
         let imgW = imgH * (img.size.width / img.size.height)
         let imgLayer = CALayer()
         imgLayer.frame = CGRect(x: (bounds.width - imgW) / 2,
