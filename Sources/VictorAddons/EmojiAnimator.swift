@@ -1783,7 +1783,7 @@ class EmojiAnimator {
 
         let bounds = hostLayer.bounds
         // Size: 20% of screen width, square
-        let size = bounds.width * 0.20
+        let size = bounds.width * 0.26
         // Bottom-left corner with small margin
         let margin: CGFloat = 20
         let x = margin
@@ -1804,7 +1804,7 @@ class EmojiAnimator {
         gifLayer.add(anim, forKey: "fireAlarmFrames")
         CATransaction.commit()
 
-        trackEffect("fire-alarm", layer: gifLayer, duration: 9.22)  // matches school_bell.mp3
+        trackEffect("fire-alarm", layer: gifLayer, duration: 5.22)  // school_bell.mp3 minus 4s
     }
 
     // MARK: - Bullet holes (minigun)
@@ -1813,7 +1813,7 @@ class EmojiAnimator {
         if cancelIfRunning("bullet-holes") { return }
 
         let bounds = hostLayer.bounds
-        let totalDuration = 6.87
+        let totalDuration = 6.37
         let count = 60
         let spawnStart = 0.25
         let spawnEnd = totalDuration - 0.25
