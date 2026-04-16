@@ -1873,7 +1873,7 @@ class EmojiAnimator {
         if cancelIfRunning("phone-ring", sound: "red_phone.mp3") { return }
 
         let bounds = hostLayer.bounds
-        let totalDuration = 3.29
+        let totalDuration = 2.29
 
         guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
               let screenshot = CGDisplayCreateImage(
