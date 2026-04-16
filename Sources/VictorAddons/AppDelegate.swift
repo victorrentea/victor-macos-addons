@@ -110,6 +110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "applause/stop": self?.animator.stopApplause()
             case "fireworks":     self?.animator.showFireworks()
             case "fear":          self?.animator.showFear()
+            case "fail":          self?.animator.showFail()
             default: break
             }
         }

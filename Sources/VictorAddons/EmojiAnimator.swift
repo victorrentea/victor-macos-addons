@@ -1664,6 +1664,63 @@ class EmojiAnimator {
         // Overlay disappears abruptly via trackEffect after duration — no fade
     }
 
+    // MARK: - Fail overlay (latest PNG from ~/Downloads, centered, 50% screen height)
+
+    func showFail() {
+        guard activeEffects["fail"] == nil else { return }
+        let bounds = hostLayer.bounds
+        let duration: Double = 3.2  // matches fail.mp3 (~3.21s on tablet)
+
+        guard let url = EmojiAnimator.latestDownloadsPNG() else {
+            overlayInfo("showFail: no PNG in ~/Downloads")
+            return
+        }
+        guard let img = NSImage(contentsOf: url), img.size.width > 0, img.size.height > 0 else {
+            overlayInfo("showFail: failed to load \(url.lastPathComponent)")
+            return
+        }
+
+        let imgH = bounds.height * 0.5
+        let imgW = imgH * (img.size.width / img.size.height)
+        let imgLayer = CALayer()
+        imgLayer.frame = CGRect(x: (bounds.width - imgW) / 2,
+                                y: (bounds.height - imgH) / 2,
+                                width: imgW, height: imgH)
+        imgLayer.contents = img
+        imgLayer.contentsGravity = .resizeAspect
+        hostLayer.addSublayer(imgLayer)
+        trackEffect("fail", layer: imgLayer, duration: duration)
+
+        // Fade out over the last 0.3s
+        let fadeStart = max(0, duration - 0.3)
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.beginTime = CACurrentMediaTime() + fadeStart
+        fadeOut.duration = 0.3
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        imgLayer.add(fadeOut, forKey: "failFade")
+    }
+
+    private static func latestDownloadsPNG() -> URL? {
+        let fm = FileManager.default
+        let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
+        guard let items = try? fm.contentsOfDirectory(
+            at: downloads,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        let pngs = items.filter { $0.pathExtension.lowercased() == "png" }
+        return pngs.max { a, b in
+            let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return da < db
+        }
+    }
+
     func startPulseOverlay() {
         if !pulseRunning { showPulse() }
     }
