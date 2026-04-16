@@ -206,6 +206,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 case "sepia":        self?.animator.showSepia()
                 case "fireworks":    self?.animator.showFireworks()
                 case "applause":     self?.animator.showApplause()
+                case "explosion":    self?.animator.showExplosionGif()
                 case "broken-glass": self?.animator.showBrokenGlass()
                 case "game-over":    self?.animator.showGameOver()
                 case "pulse":        self?.animator.startPulseOverlay()
