@@ -1671,12 +1671,11 @@ class EmojiAnimator {
         let bounds = hostLayer.bounds
         let duration: Double = 3.2  // matches fail.mp3 (~3.21s on tablet)
 
-        guard let url = EmojiAnimator.latestDownloadsPNG() else {
-            overlayInfo("showFail: no PNG in ~/Downloads")
-            return
-        }
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
+        let url = downloadsURL.appendingPathComponent("pngtree-fail-stamp-cleaned.png")
         guard let img = NSImage(contentsOf: url), img.size.width > 0, img.size.height > 0 else {
-            overlayInfo("showFail: failed to load \(url.lastPathComponent)")
+            overlayInfo("showFail: failed to load pngtree-fail-stamp-cleaned.png")
             return
         }
 
@@ -1804,7 +1803,7 @@ class EmojiAnimator {
         gifLayer.add(anim, forKey: "fireAlarmFrames")
         CATransaction.commit()
 
-        trackEffect("fire-alarm", layer: gifLayer, duration: 5.22)  // school_bell.mp3 minus 4s
+        trackEffect("fire-alarm", layer: gifLayer, duration: 4.72)  // school_bell.mp3 minus 4.5s
     }
 
     // MARK: - Bullet holes (minigun)
