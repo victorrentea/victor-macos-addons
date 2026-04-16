@@ -1648,8 +1648,8 @@ class EmojiAnimator {
         blackLayer.backgroundColor = NSColor.black.withAlphaComponent(0.7).cgColor
         container.addSublayer(blackLayer)
 
-        // Game Over image centered — screen blend removes the black background from the JPG
-        if let url = Bundle.module.url(forResource: "game-over", withExtension: "jpg"),
+        // Game Over image centered — PNG with transparent background
+        if let url = Bundle.module.url(forResource: "game-over", withExtension: "png"),
            let img = NSImage(contentsOf: url) {
             let imgW = bounds.width * 0.7
             let imgH = imgW * (img.size.height / img.size.width)
@@ -1659,7 +1659,6 @@ class EmojiAnimator {
                                     width: imgW, height: imgH)
             imgLayer.contents = img
             imgLayer.contentsGravity = .resizeAspect
-            imgLayer.compositingFilter = "screenBlendMode"
             container.addSublayer(imgLayer)
         }
         // Overlay disappears abruptly via trackEffect after duration — no fade
