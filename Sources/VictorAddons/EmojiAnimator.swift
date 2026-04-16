@@ -275,11 +275,8 @@ class EmojiAnimator {
 
         // Capture screenshot
         guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-              let screenshot = CGWindowListCreateImage(
-                  screen.frame,
-                  .optionOnScreenBelowWindow,
-                  kCGNullWindowID,
-                  [.bestResolution]
+              let screenshot = CGDisplayCreateImage(
+                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
               ) else { return }
 
         let container = CALayer()
@@ -1759,6 +1756,57 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
+    // MARK: - Fire alarm GIF (bottom-left corner)
+
+    func showFireAlarm() {
+        if cancelIfRunning("fire-alarm") { return }
+
+        guard let url = Bundle.module.url(forResource: "fire-alarm", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("fire-alarm.gif not found")
+            return
+        }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+            totalDuration += delay
+        }
+
+        let bounds = hostLayer.bounds
+        // Size: 20% of screen width, square
+        let size = bounds.width * 0.20
+        // Bottom-left corner with small margin
+        let margin: CGFloat = 20
+        let x = margin
+        let y = margin  // y=0 is bottom in flipped coordinates
+
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
+        gifLayer.contentsGravity = .resizeAspect
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = totalDuration
+        anim.repeatCount = .infinity  // loop until cancelled
+
+        CATransaction.begin()
+        gifLayer.add(anim, forKey: "fireAlarmFrames")
+        CATransaction.commit()
+
+        trackEffect("fire-alarm", layer: gifLayer, duration: totalDuration * 10)  // ~10 loops default
+    }
+
     // MARK: - Bullet holes (minigun)
 
     func showBulletHoles() {
@@ -1766,7 +1814,9 @@ class EmojiAnimator {
 
         let bounds = hostLayer.bounds
         let totalDuration = 6.87
-        let count = 20
+        let count = 60
+        let spawnStart = 0.25
+        let spawnEnd = totalDuration - 0.25
 
         guard let url = Bundle.module.url(forResource: "bullet_hole", withExtension: "png"),
               let image = NSImage(contentsOf: url) else {
@@ -1780,13 +1830,13 @@ class EmojiAnimator {
         container.frame = bounds
         hostLayer.addSublayer(container)
 
-        let interval = totalDuration / Double(count)
+        let interval = (spawnEnd - spawnStart) / Double(count - 1)
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         let holeW: CGFloat = image.size.width
         let holeH: CGFloat = image.size.height
 
         for i in 0..<count {
-            let delay = Double(i) * interval
+            let delay = spawnStart + Double(i) * interval
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak container] in
                 guard let container = container else { return }
                 let x = CGFloat.random(in: 0...(bounds.width - holeW))
@@ -1826,11 +1876,8 @@ class EmojiAnimator {
         let totalDuration = 8.36
 
         guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-              let screenshot = CGWindowListCreateImage(
-                  screen.frame,
-                  .optionOnScreenBelowWindow,
-                  kCGNullWindowID,
-                  [.bestResolution]
+              let screenshot = CGDisplayCreateImage(
+                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
               ) else { return }
 
         SoundManager.shared.play("animated_phone.mp3")

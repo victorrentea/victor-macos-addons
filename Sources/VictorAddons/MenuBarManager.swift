@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 16, 23:45"
+    static let BUILD_TIME = "Apr 16, 23:47"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -144,6 +144,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Broken Glass 💥", "broken-glass"),
             ("Game Over",       "game-over"),
             ("Pulse",           "pulse"),
+            ("Fire Alarm 🚨",    "fire-alarm"),
             ("Bullet Holes 🎯",  "bullet-holes"),
             ("Phone Ring 📱",   "phone-ring"),
         ]
