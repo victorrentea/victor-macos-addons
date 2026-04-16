@@ -1759,6 +1759,64 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
+    // MARK: - Bullet holes (minigun)
+
+    func showBulletHoles() {
+        if cancelIfRunning("bullet-holes") { return }
+
+        let bounds = hostLayer.bounds
+        let totalDuration = 6.87
+        let count = 20
+
+        guard let url = Bundle.module.url(forResource: "bullet_hole", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else {
+            overlayError("bullet_hole.png not found")
+            return
+        }
+
+        SoundManager.shared.play("minigun.mp3")
+
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+
+        let interval = totalDuration / Double(count)
+        let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        let holeW: CGFloat = image.size.width
+        let holeH: CGFloat = image.size.height
+
+        for i in 0..<count {
+            let delay = Double(i) * interval
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak container] in
+                guard let container = container else { return }
+                let x = CGFloat.random(in: 0...(bounds.width - holeW))
+                let y = CGFloat.random(in: 0...(bounds.height - holeH))
+                let hole = CALayer()
+                hole.frame = CGRect(x: x, y: y, width: holeW, height: holeH)
+                hole.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                hole.contentsScale = scale
+                hole.opacity = 0
+                container.addSublayer(hole)
+                // Pop in
+                let fadeIn = CABasicAnimation(keyPath: "opacity")
+                fadeIn.fromValue = 0.0; fadeIn.toValue = 1.0
+                fadeIn.duration = 0.08
+                fadeIn.fillMode = .forwards; fadeIn.isRemovedOnCompletion = false
+                hole.add(fadeIn, forKey: "fadeIn")
+            }
+        }
+
+        // Fade out entire container at the tail
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.4
+        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
+        fadeOut.duration = 0.4
+        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
+        container.add(fadeOut, forKey: "fadeOut")
+
+        trackEffect("bullet-holes", layer: container, duration: totalDuration + 0.1, sound: "minigun.mp3")
+    }
+
     // MARK: - Phone ring (screenshot shake)
 
     func showPhoneRing() {

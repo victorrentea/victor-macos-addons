@@ -112,6 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "fear":          self?.animator.showFear()
             case "fail":          self?.animator.showFail()
             case "sepia":         self?.animator.showSepia(playSound: false)
+            case "bullet-holes":  self?.animator.showBulletHoles()
             case "phone-ring":    self?.animator.showPhoneRing()
             default: break
             }
@@ -207,6 +208,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 case "broken-glass": self?.animator.showBrokenGlass()
                 case "game-over":    self?.animator.showGameOver()
                 case "pulse":        self?.animator.startPulseOverlay()
+                case "bullet-holes": self?.animator.showBulletHoles()
                 case "phone-ring":   self?.animator.showPhoneRing()
                 default: break
                 }
