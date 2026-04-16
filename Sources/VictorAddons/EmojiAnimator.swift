@@ -1804,7 +1804,7 @@ class EmojiAnimator {
         gifLayer.add(anim, forKey: "fireAlarmFrames")
         CATransaction.commit()
 
-        trackEffect("fire-alarm", layer: gifLayer, duration: totalDuration * 10)  // ~10 loops default
+        trackEffect("fire-alarm", layer: gifLayer, duration: 9.22)  // matches school_bell.mp3
     }
 
     // MARK: - Bullet holes (minigun)
@@ -1870,17 +1870,17 @@ class EmojiAnimator {
     // MARK: - Phone ring (screenshot shake)
 
     func showPhoneRing() {
-        if cancelIfRunning("phone-ring", sound: "animated_phone.mp3") { return }
+        if cancelIfRunning("phone-ring", sound: "red_phone.mp3") { return }
 
         let bounds = hostLayer.bounds
-        let totalDuration = 8.36
+        let totalDuration = 3.29
 
         guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
               let screenshot = CGDisplayCreateImage(
                   (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
               ) else { return }
 
-        SoundManager.shared.play("animated_phone.mp3")
+        SoundManager.shared.play("red_phone.mp3")
 
         let imgLayer = CALayer()
         imgLayer.frame = bounds
@@ -1912,6 +1912,6 @@ class EmojiAnimator {
         fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
         imgLayer.add(fadeOut, forKey: "fadeOut")
 
-        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: "animated_phone.mp3")
+        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: "red_phone.mp3")
     }
 }

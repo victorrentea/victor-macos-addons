@@ -46,7 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         // Request permissions if not already granted
         requestMicrophonePermissions()
         requestAccessibilityPermissions(promptUser: false)
-        requestScreenRecordingPermissions(promptUser: false)
+        requestScreenRecordingPermissions(promptUser: true)
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = NSScreen.screens.first { screen in
