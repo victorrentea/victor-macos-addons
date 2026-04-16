@@ -111,29 +111,62 @@ class WhisperProcessManager {
 
     private func reapExistingWhisperRunners(scriptPath: String) {
         guard !scriptPath.isEmpty else { return }
-
-        let term = Process()
-        term.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        term.arguments = ["-TERM", "-f", scriptPath]
-        term.standardOutput = Pipe()
-        term.standardError = Pipe()
-        do {
-            try term.run()
-            term.waitUntilExit()
-            if term.terminationStatus == 0 {
-                overlayInfo("Cleaned up previous whisper_runner processes")
-                Thread.sleep(forTimeInterval: 0.3)
-                let killProc = Process()
-                killProc.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-                killProc.arguments = ["-KILL", "-f", scriptPath]
-                killProc.standardOutput = Pipe()
-                killProc.standardError = Pipe()
-                try? killProc.run()
-                killProc.waitUntilExit()
-            }
-        } catch {
-            overlayInfo("Whisper cleanup failed: \(error)")
+        let staleBefore = whisperRunnerPIDs(scriptPath: scriptPath)
+        if staleBefore.isEmpty {
+            overlayInfo("Whisper cleanup: stale runners=0")
+            return
         }
+
+        let termSent = send(signal: SIGTERM, to: staleBefore)
+        Thread.sleep(forTimeInterval: 0.3)
+        let remainingAfterTerm = whisperRunnerPIDs(scriptPath: scriptPath)
+        let killSent = send(signal: SIGKILL, to: remainingAfterTerm)
+        if killSent > 0 {
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        let remainingAfterKill = whisperRunnerPIDs(scriptPath: scriptPath)
+        overlayInfo("Whisper cleanup: stale=\(staleBefore.count), term=\(termSent), kill=\(killSent), remaining=\(remainingAfterKill.count)")
+    }
+
+    private func whisperRunnerPIDs(scriptPath: String) -> [Int32] {
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-f", scriptPath]
+        let stdout = Pipe()
+        pgrep.standardOutput = stdout
+        pgrep.standardError = Pipe()
+
+        do {
+            try pgrep.run()
+            pgrep.waitUntilExit()
+            let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: outputData, encoding: .utf8) ?? ""
+            if pgrep.terminationStatus == 1 {
+                return []
+            }
+            return Self.parsePIDs(from: output)
+        } catch {
+            overlayInfo("Whisper cleanup listing failed: \(error)")
+            return []
+        }
+    }
+
+    private func send(signal: Int32, to pids: [Int32]) -> Int {
+        var sent = 0
+        for pid in pids {
+            if kill(pid, signal) == 0 {
+                sent += 1
+            }
+        }
+        return sent
+    }
+
+    static func parsePIDs(from output: String) -> [Int32] {
+        output
+            .split(whereSeparator: { $0.isNewline })
+            .compactMap { line in
+                Int32(line.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
     }
 
     private func findPython3() -> String {

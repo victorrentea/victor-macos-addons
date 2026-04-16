@@ -24,4 +24,14 @@ final class WhisperProcessManagerTests: XCTestCase {
 
         XCTAssertEqual(candidates.last, "/work/whisper-transcribe/whisper_runner.py")
     }
+
+    func testParsePIDsParsesWhitespaceSeparatedRows() {
+        let output = "123\n  456\n\n789\n"
+        XCTAssertEqual(WhisperProcessManager.parsePIDs(from: output), [123, 456, 789])
+    }
+
+    func testParsePIDsIgnoresInvalidRows() {
+        let output = "abc\n42x\n17\n"
+        XCTAssertEqual(WhisperProcessManager.parsePIDs(from: output), [17])
+    }
 }
