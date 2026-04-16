@@ -471,8 +471,11 @@ def _watch_parent(ppid: int) -> None:
     while True:
         _time.sleep(2)
         if os.getppid() != ppid:
-            print(f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
-                  f"[sentinel    ] Parent {ppid} gone — exiting", flush=True)
+            try:
+                print(f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
+                      f"[sentinel    ] Parent {ppid} gone — exiting", flush=True)
+            except Exception:
+                pass
             os._exit(0)
 
 
