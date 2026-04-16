@@ -248,9 +248,27 @@ class EmojiAnimator {
         showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3, soundToStop: "alarm.mp3")
     }
 
+    // MARK: - Tablet-triggered alarm overlay (sound plays on tablet, not here)
+    private var alarmOverlayTimer: Timer?
+
+    func startAlarmOverlay() {
+        stopAlarmOverlay()
+        showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3)
+        // Fire 200ms before cycle ends so layers overlap and avoid flicker at the seam
+        alarmOverlayTimer = Timer.scheduledTimer(withTimeInterval: 2.8, repeats: true) { [weak self] _ in
+            self?.showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3)
+        }
+    }
+
+    func stopAlarmOverlay() {
+        alarmOverlayTimer?.invalidate()
+        alarmOverlayTimer = nil
+        _ = cancelIfRunning("danger")
+    }
+
     // MARK: - Screen crash (screenshot shatters into broken glass shards)
 
-    func showEarthquake() {
+    func showBrokenGlass() {  // formerly showEarthquake
         let bounds = hostLayer.bounds
         let totalDuration = 4.5
 
@@ -388,9 +406,9 @@ class EmojiAnimator {
             let holdDelay = 0.2 + Double(normalizedDist) * 1.0 + Double.random(in: 0...0.3)
             let fallDuration = Double.random(in: 0.7...1.4)
 
-            // Fall down
+            // Fall down — use screen diagonal to account for rotation expanding shard footprint
             let fall = CABasicAnimation(keyPath: "position.y")
-            fall.byValue = -(bounds.height + 300)
+            fall.byValue = -(maxDist + 300)
             fall.beginTime = CACurrentMediaTime() + holdDelay
             fall.duration = fallDuration
             fall.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -665,7 +683,6 @@ class EmojiAnimator {
         guard activeEffects["fireworks"] == nil else { return }
         let sentinel = CALayer()
         trackEffect("fireworks", layer: sentinel, duration: 8.0)
-        SoundManager.shared.play("fireworks.mp3")
 
         let bounds = hostLayer.bounds
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
@@ -704,10 +721,6 @@ class EmojiAnimator {
             }
         }
 
-        // Fade starts at 6.4s so sound ends completely at 6.7s — 300ms before animation ends (~7s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.4) {
-            SoundManager.shared.stop("fireworks.mp3")
-        }
     }
 
     private func launchRocket(from start: CGPoint, to burst: CGPoint,
@@ -1159,7 +1172,6 @@ class EmojiAnimator {
         guard applauseTimer == nil else { return }   // already running — ignore
 
         let duration = 6.0
-        SoundManager.shared.playLooping("applause.mp3")
 
         // Initial burst, then steady stream
         for i in 0..<10 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.05) { [weak self] in self?.spawnApplauseClap() } }
@@ -1171,8 +1183,12 @@ class EmojiAnimator {
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             self?.applauseTimer?.invalidate()
             self?.applauseTimer = nil
-            SoundManager.shared.stop("applause.mp3")
         }
+    }
+
+    func stopApplause() {
+        applauseTimer?.invalidate()
+        applauseTimer = nil
     }
 
     private func spawnApplauseClap() {
@@ -1323,12 +1339,7 @@ class EmojiAnimator {
         _pulseEcgLayer = ecgLayer
         ecgLayer.contents = cgImage
         ecgLayer.contentsGravity = .resize   // stretch to fill frame completely
-        // Half width, centered horizontally; taller amplitude (60% of screen height)
-        let ecgW = bounds.width * 0.5
-        let ecgH = bounds.height * 0.6
-        ecgLayer.frame = CGRect(x: (bounds.width - ecgW) / 2,
-                                y: (bounds.height - ecgH) / 2,
-                                width: ecgW, height: ecgH)
+        ecgLayer.frame = bounds
         ecgLayer.opacity = 0
         hostLayer.addSublayer(ecgLayer)
 
@@ -1383,10 +1394,6 @@ class EmojiAnimator {
         maskLayer.add(reveal, forKey: "reveal")
         CATransaction.commit()
 
-        // Sound: delayed so visual R-spike (at 0.3465*0.8=0.277s) coincides with audio R-spike (0.172+0.105=0.277s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + soundDelay) {
-            SoundManager.shared.play("dying.mp3")
-        }
     }
 
     // MARK: - Sketched Heart (crayon pencil style, right half first then left half)
@@ -1511,12 +1518,169 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
+    // MARK: - Fear
+
+    func showFear() {
+        let bounds = hostLayer.bounds
+        let duration: Double = 1.75
+        let fontSize: CGFloat = 100
+        let size: CGFloat = 120
+
+        // Spawn at 20% from left, 20% from bottom; rise to marked target (63%, 63%)
+        let startX = bounds.width * 0.20
+        let startY = bounds.height * 0.20
+        let endX = bounds.width * 0.63
+        let endY = bounds.height * 0.63
+
+        let layer = CATextLayer()
+        layer.string = "😱"
+        layer.fontSize = fontSize
+        layer.alignmentMode = .center
+        layer.frame = CGRect(x: startX - size / 2, y: startY - size / 2, width: size, height: size)
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        hostLayer.addSublayer(layer)
+
+        // Position: linear drift from spawn to screen center
+        let pathAnim = CAKeyframeAnimation(keyPath: "position")
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: startX, y: startY))
+        path.addLine(to: CGPoint(x: endX, y: endY))
+        pathAnim.path = path
+        pathAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+
+        // Scale: linear, reaching 300% of screen height at end
+        let finalScale = 3.0 * bounds.height / size
+        let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
+        scaleAnim.fromValue = 1.0
+        scaleAnim.toValue = finalScale
+        scaleAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+
+        // Fade to 20% opacity across full duration
+        let fadeAnim = CABasicAnimation(keyPath: "opacity")
+        fadeAnim.fromValue = 1.0
+        fadeAnim.toValue = 0.0
+        fadeAnim.timingFunction = CAMediaTimingFunction(name: .easeIn)
+
+        let group = CAAnimationGroup()
+        group.animations = [pathAnim, scaleAnim, fadeAnim]
+        group.duration = duration
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
+        layer.add(group, forKey: "fear")
+        CATransaction.commit()
+    }
+
+    // MARK: - Explosion GIF overlay
+
+    func showExplosionGif() {
+        guard activeEffects["explosion"] == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?._showExplosionGif() }
+    }
+
+    private func _showExplosionGif() {
+        guard activeEffects["explosion"] == nil else { return }
+        guard let url = Bundle.module.url(forResource: "explosion", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
+            totalDuration += delay
+        }
+
+        let size = min(hostLayer.bounds.width, hostLayer.bounds.height) * 1.2
+        let x = (hostLayer.bounds.width - size) / 2
+        let y = (hostLayer.bounds.height - size) / 2 + hostLayer.bounds.height / 6 - hostLayer.bounds.height * 0.1
+
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
+        gifLayer.contentsGravity = .resizeAspect
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+        trackEffect("explosion", layer: gifLayer, duration: totalDuration)
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = totalDuration
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak gifLayer] in gifLayer?.removeFromSuperlayer() }
+        gifLayer.add(anim, forKey: "explosionFrames")
+        CATransaction.commit()
+    }
+
+    // MARK: - Game Over overlay
+
+    func showGameOver() {
+        guard activeEffects["game-over"] == nil else { return }
+        let bounds = hostLayer.bounds
+        let duration: Double = 8.0
+
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+        trackEffect("game-over", layer: container, duration: duration)
+
+        // 50% black backdrop
+        let blackLayer = CALayer()
+        blackLayer.frame = bounds
+        blackLayer.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
+        container.addSublayer(blackLayer)
+
+        // Game Over image centered
+        if let url = Bundle.module.url(forResource: "game-over", withExtension: "jpg"),
+           let img = NSImage(contentsOf: url) {
+            let imgW = bounds.width * 0.7
+            let imgH = imgW * (img.size.height / img.size.width)
+            let imgLayer = CALayer()
+            imgLayer.frame = CGRect(x: (bounds.width - imgW) / 2,
+                                    y: (bounds.height - imgH) / 2,
+                                    width: imgW, height: imgH)
+            imgLayer.contents = img
+            imgLayer.contentsGravity = .resizeAspect
+            container.addSublayer(imgLayer)
+        }
+
+        // Fade out last second
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.beginTime = CACurrentMediaTime() + duration - 1.0
+        fade.duration = 1.0
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak container] in container?.removeFromSuperlayer() }
+        container.add(fade, forKey: "fadeOut")
+        CATransaction.commit()
+    }
+
+    func startPulseOverlay() {
+        if !pulseRunning { showPulse() }
+    }
+
+    func stopPulseOverlay() {
+        if pulseRunning { _stopPulse() }
+    }
+
     // MARK: - Pulse stop (called when button pressed while running)
 
     private func _stopPulse() {
         guard pulseRunning else { return }
         pulseRunning = false
-        SoundManager.shared.stop("dying.mp3")
         let dim = _pulseDimLayer
         let grid = _pulseGridLayer
         let ecg = _pulseEcgLayer
