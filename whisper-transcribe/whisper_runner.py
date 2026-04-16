@@ -654,17 +654,35 @@ def _watch_parent(ppid: int) -> None:
             os._exit(0)
 
 
+def _required_parent_pid(env: dict[str, str]) -> int:
+    raw = env.get("WHISPER_PARENT_PID", "").strip()
+    if not raw:
+        raise ValueError("WHISPER_PARENT_PID is required")
+    try:
+        pid = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"WHISPER_PARENT_PID must be an integer, got {raw!r}") from exc
+    if pid <= 1:
+        raise ValueError(f"WHISPER_PARENT_PID must be > 1, got {pid}")
+    return pid
+
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    parent_pid = os.environ.get("WHISPER_PARENT_PID")
-    if parent_pid:
-        import threading
+    try:
+        parent_pid = _required_parent_pid(os.environ)
+    except ValueError as exc:
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
+        print(f"{ts} [sentinel    ] ERROR {exc}", flush=True)
+        raise SystemExit(2)
 
-        threading.Thread(
-            target=_watch_parent, args=(int(parent_pid),), daemon=True, name="sentinel"
-        ).start()
+    import threading
+
+    threading.Thread(
+        target=_watch_parent, args=(parent_pid,), daemon=True, name="sentinel"
+    ).start()
 
     folder = Path(
         os.environ.get(

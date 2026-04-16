@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 class WhisperProcessManager {
     private var process: Process?
@@ -18,6 +19,8 @@ class WhisperProcessManager {
             overlayInfo("Whisper runner not found")
             return
         }
+
+        reapExistingWhisperRunners(scriptPath: whisperScript)
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: python3)
@@ -73,12 +76,64 @@ class WhisperProcessManager {
     }
 
     func stop() {
+        guard let p = process else {
+            isRunning = false
+            DispatchQueue.main.async { self.onStateChanged?(false) }
+            return
+        }
+
         isRunning = false
-        guard let p = process, p.isRunning else { return }
-        p.terminate()
-        process = nil
-        overlayInfo("Whisper transcription stopped")
+        overlayInfo("Whisper transcription stopping...")
         DispatchQueue.main.async { self.onStateChanged?(false) }
+
+        if p.isRunning {
+            p.terminate()
+            if !waitForExit(of: p, timeoutSeconds: 3.0) {
+                overlayInfo("Whisper did not stop after SIGTERM, sending SIGKILL")
+                _ = kill(p.processIdentifier, SIGKILL)
+                _ = waitForExit(of: p, timeoutSeconds: 2.0)
+            }
+        }
+
+        if process?.processIdentifier == p.processIdentifier {
+            process = nil
+        }
+        overlayInfo("Whisper transcription stopped")
+    }
+
+    private func waitForExit(of process: Process, timeoutSeconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        return !process.isRunning
+    }
+
+    private func reapExistingWhisperRunners(scriptPath: String) {
+        guard !scriptPath.isEmpty else { return }
+
+        let term = Process()
+        term.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        term.arguments = ["-TERM", "-f", scriptPath]
+        term.standardOutput = Pipe()
+        term.standardError = Pipe()
+        do {
+            try term.run()
+            term.waitUntilExit()
+            if term.terminationStatus == 0 {
+                overlayInfo("Cleaned up previous whisper_runner processes")
+                Thread.sleep(forTimeInterval: 0.3)
+                let killProc = Process()
+                killProc.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+                killProc.arguments = ["-KILL", "-f", scriptPath]
+                killProc.standardOutput = Pipe()
+                killProc.standardError = Pipe()
+                try? killProc.run()
+                killProc.waitUntilExit()
+            }
+        } catch {
+            overlayInfo("Whisper cleanup failed: \(error)")
+        }
     }
 
     private func findPython3() -> String {
