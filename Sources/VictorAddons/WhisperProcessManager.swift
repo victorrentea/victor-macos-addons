@@ -51,11 +51,12 @@ class WhisperProcessManager {
             }
         }
 
-        p.terminationHandler = { [weak self] _ in
+        p.terminationHandler = { [weak self, weak p] _ in
             DispatchQueue.main.async {
-                self?.isRunning = false
-                self?.process = nil
-                self?.onStateChanged?(false)
+                guard let self, let p, self.process?.processIdentifier == p.processIdentifier else { return }
+                self.isRunning = false
+                self.process = nil
+                self.onStateChanged?(false)
                 overlayInfo("Whisper process ended")
             }
         }

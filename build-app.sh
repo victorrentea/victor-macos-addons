@@ -42,17 +42,11 @@ mkdir -p "$MACOS" "$RESOURCES"
 
 cp "$ICNS_FILE" "$RESOURCES/AppIcon.icns"
 
-# Compile native launcher (requests mic permission, then runs start.sh)
-swiftc -O -o "$MACOS/$APP_NAME" "$DIR/launcher.swift" \
-    -framework AVFoundation -framework Foundation
+# Use VictorAddons binary directly as the app bundle executable
+# (so macOS TCC permissions are tied to the bundle identity, not the raw binary hash)
+cp "$DIR/.build/arm64-apple-macosx/debug/VictorAddons" "$MACOS/$APP_NAME"
 
-# Store repo path for the launcher to read
-echo -n "$DIR" > "$RESOURCES/repo_path"
-
-# Ad-hoc code sign so macOS recognizes it for microphone TCC prompt
-codesign --force --sign - "$APP_DIR"
-
-# Info.plist
+# Info.plist (must be written before signing)
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -74,9 +68,14 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Victor Addons needs microphone access for live transcription.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Victor Addons needs accessibility access for keyboard shortcuts and clipboard monitoring.</string>
 </dict>
 </plist>
 PLIST
+
+# Ad-hoc code sign the whole bundle so macOS TCC uses the bundle identity
+codesign --force --sign - "$APP_DIR"
 
 echo "✅ Installed $APP_DIR"
 echo "   Launch via Spotlight (Cmd+Space) → 'Victor Addons'"

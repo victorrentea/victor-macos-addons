@@ -24,6 +24,7 @@ class EventTapManager {
     var onDictationMute: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
+    var onWheelLongPress: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -35,9 +36,11 @@ class EventTapManager {
     private let MOUSE_BUTTON_5: Int64 = 4
     private let MOUSE_BUTTON_3: Int64 = 2
 
-    // MARK: Wheel double-click tracking
+    // MARK: Wheel click tracking
     private var wheelPendingWork: DispatchWorkItem?
     private let wheelDoubleClickWindow: TimeInterval = 0.35
+    private var wheelLongPressWork: DispatchWorkItem?
+    private let wheelLongPressThreshold: TimeInterval = 0.6
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
@@ -47,7 +50,8 @@ class EventTapManager {
     func start() {
         let eventsOfInterest: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
-            CGEventMask(1 << CGEventType.otherMouseDown.rawValue)
+            CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
+            CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
 
         let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -93,7 +97,15 @@ class EventTapManager {
             if button == MOUSE_BUTTON_5 {
                 onDictationMute?()
             } else if button == MOUSE_BUTTON_3 {
-                handleWheelClick()
+                handleWheelDown()
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        if type == .otherMouseUp {
+            let button = event.getIntegerValueField(.mouseEventButtonNumber)
+            if button == MOUSE_BUTTON_3 {
+                handleWheelUp()
             }
             return Unmanaged.passUnretained(event)
         }
@@ -149,24 +161,44 @@ class EventTapManager {
         return Unmanaged.passUnretained(event)
     }
 
-    // MARK: - Wheel double-click
+    // MARK: - Wheel long-press and double-click
 
-    private func handleWheelClick() {
+    private func handleWheelDown() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if self.wheelPendingWork != nil {
-                // Second click within window = double click
-                self.wheelPendingWork?.cancel()
-                self.wheelPendingWork = nil
-                DispatchQueue.global().async { self.onRepaste?() }
-            } else {
-                // First click — start timer
-                let work = DispatchWorkItem { [weak self] in
-                    self?.wheelPendingWork = nil
-                }
-                self.wheelPendingWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + self.wheelDoubleClickWindow, execute: work)
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.wheelLongPressWork = nil
+                DispatchQueue.global().async { self.onWheelLongPress?() }
             }
+            self.wheelLongPressWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.wheelLongPressThreshold, execute: work)
+        }
+    }
+
+    private func handleWheelUp() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard let work = self.wheelLongPressWork else { return }  // long press already fired
+            work.cancel()
+            self.wheelLongPressWork = nil
+            self.handleShortWheelClick()
+        }
+    }
+
+    private func handleShortWheelClick() {
+        if wheelPendingWork != nil {
+            // Second short click within window = double click
+            wheelPendingWork?.cancel()
+            wheelPendingWork = nil
+            DispatchQueue.global().async { [weak self] in self?.onRepaste?() }
+        } else {
+            // First short click — start window
+            let work = DispatchWorkItem { [weak self] in
+                self?.wheelPendingWork = nil
+            }
+            wheelPendingWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + wheelDoubleClickWindow, execute: work)
         }
     }
 

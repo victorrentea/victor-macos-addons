@@ -51,7 +51,7 @@ let serverURL: String
 if CommandLine.arguments.count > 1 {
     serverURL = CommandLine.arguments[1]
 } else {
-    serverURL = "ws://localhost:8000"
+    serverURL = "wss://interact.victorrentea.ro"
 }
 overlayInfo("Starting VictorAddons, connecting to \(serverURL) (parent pid: \(originalParentPID))")
 

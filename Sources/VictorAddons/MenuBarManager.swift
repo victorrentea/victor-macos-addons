@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 14, 00:06"
+    static let BUILD_TIME = "Apr 16, 20:00"
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -35,6 +35,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
+    var onDisplayClipboardLink: (() -> Void)?
     var onConnectTablet: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
 
@@ -82,10 +83,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         addItem("Copy Git", action: #selector(copyGitAction))
 
         // Open Catalog
-        addItem("Catalog — ⌘⌃C", action: #selector(openCatalogAction))
+        let catalogItem = addItem("Catalog", action: #selector(openCatalogAction))
+        catalogItem.keyEquivalent = "c"
+        catalogItem.keyEquivalentModifierMask = [.command, .control]
 
         // Dark mode (moved up)
-        darkModeItem = addItem("Dark Mode — ⌘⌃⌥D", action: #selector(toggleDarkModeAction))
+        darkModeItem = addItem("Dark Mode", action: #selector(toggleDarkModeAction))
+        darkModeItem.keyEquivalent = "d"
+        darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]
 
         menu.addItem(.separator())
 
@@ -99,28 +104,36 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         addItem("Tail", action: #selector(monitorAction))
 
         // Screenshot — clickable
-        addItem("Screenshot — ⌃P", action: #selector(takeScreenshotAction))
+        let screenshotItem = addItem("Screenshot", action: #selector(takeScreenshotAction))
+        screenshotItem.keyEquivalent = "p"
+        screenshotItem.keyEquivalentModifierMask = .control
 
         menu.addItem(.separator())
 
-        // WS status / join link — single unified item
-        wsStatusItem = addItem("🔴 WS disconnected", action: nil)
-        wsStatusItem.isEnabled = false
+        // WS status / join link — single unified item (state applied by refreshWsItem below)
+        wsStatusItem = addItem("", action: nil)
+        addItem("Display clipboard link", action: #selector(displayClipboardLinkAction))
+
+        menu.addItem(.separator())
 
         addItem("🔌 Tablet via USB-C", action: #selector(connectTabletAction))
 
-        menu.addItem(.separator())
-
         // Shortcut reminders (disabled)
-        let pasteItem = addItem("Paste Emotions — ⌘⌃V", action: nil)
+        let pasteItem = addItem("Paste Emotions", action: nil)
         pasteItem.isEnabled = false
+        pasteItem.keyEquivalent = "v"
+        pasteItem.keyEquivalentModifierMask = [.command, .control]
 
         // Build timestamp
         let buildItem = addItem("Built at " + MenuBarManager.BUILD_TIME, action: nil)
         buildItem.isEnabled = false
 
         // Quit
-        addItem("Quit", action: #selector(quitApp))
+        let quitItem = addItem("Quit", action: #selector(quitApp))
+        quitItem.keyEquivalent = "q"
+        quitItem.keyEquivalentModifierMask = .command
+
+        refreshWsItem()
     }
 
     @discardableResult
@@ -174,8 +187,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         kill8080Item.isEnabled = false
         kill8080Item.action = nil
 
-        let isDark = DarkModeToggle.isDark()
-        darkModeItem.title = "Dark Mode — ⌘⌃⌥D"
+        darkModeItem.title = "Dark Mode"
 
         refreshPortItems()
 
@@ -290,6 +302,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onKillPortPrompt?()
     }
 
+    @objc private func displayClipboardLinkAction() {
+        onDisplayClipboardLink?()
+    }
+
+    @objc private func startTrainingAssistantAction() {
+        let script = """
+        tell application "Terminal"
+            do script "cd ~/workspace/training-assistant && ./start.sh"
+            activate
+        end tell
+        """
+        DispatchQueue.global().async { AppleScriptRunner.run(script) }
+    }
+
     @objc private func quitApp() {
         overlayInfo("Quit")
         onQuit?()
@@ -324,9 +350,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             wsStatusItem.isEnabled = false
             wsStatusItem.action = nil
         } else {
-            wsStatusItem.title = "🔴 WS disconnected"
-            wsStatusItem.isEnabled = false
-            wsStatusItem.action = nil
+            wsStatusItem.title = "🔴 Start training assistant"
+            wsStatusItem.isEnabled = true
+            wsStatusItem.action = #selector(startTrainingAssistantAction)
+            wsStatusItem.target = self
         }
     }
 

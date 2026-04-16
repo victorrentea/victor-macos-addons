@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 
 class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate {
@@ -43,6 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Request permissions if not already granted
+        requestMicrophonePermissions()
         requestAccessibilityPermissions()
         requestScreenRecordingPermissions()
 
@@ -79,6 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         wsServer.onClientCountChanged = { [weak self] count in
             self?.menuBarManager.updateWsStatus(count > 0)
+            if count == 0 { self?.handleSessionEnded() }
         }
         wsServer.onSessionMessage = { [weak self] json in
             guard let type = json["type"] as? String else { return }
@@ -97,12 +100,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         tabletServer?.onAlarmStop  = { [weak self] in self?.animator.stopAlarmOverlay() }
         tabletServer?.onEffect = { [weak self] name in
             switch name {
-            case "earthquake":    self?.animator.showEarthquake()
+            case "earthquake":    self?.animator.showBrokenGlass()
+            case "explosion":     self?.animator.showExplosionGif()
+            case "game-over":     self?.animator.showGameOver()
+            case "broken-glass":  self?.animator.showBrokenGlass()
             case "pulse":         self?.animator.startPulseOverlay()
             case "pulse/stop":    self?.animator.stopPulseOverlay()
             case "applause":      self?.animator.showApplause()
             case "applause/stop": self?.animator.stopApplause()
             case "fireworks":     self?.animator.showFireworks()
+            case "fear":          self?.animator.showFear()
             default: break
             }
         }
@@ -139,8 +146,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
         menuBarManager.onToggleTranscribe = { [weak whisperManager, weak self] in
             if whisperManager?.isRunning == true {
+                UserDefaults.standard.set(false, forKey: "transcribingEnabled")
                 whisperManager?.stop()
             } else {
+                UserDefaults.standard.set(true, forKey: "transcribingEnabled")
                 startTranscription()
             }
         }
@@ -181,6 +190,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
         }
+        menuBarManager.onDisplayClipboardLink = { [weak self] in
+            self?.displayClipboardLinkBanner()
+        }
 
         let portKiller = PortKiller()
         self.portKiller = portKiller
@@ -191,6 +203,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         portKiller.onKillComplete = { [weak menuBarManager] port in menuBarManager?.addToPortHistory(port) }
 
         menuBarManager.setup()
+        let wasTranscribingInitial = UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true
+        menuBarManager.setTranscribing(wasTranscribingInitial)
 
         let rhMonitor = RHTimerMonitor()
         rhMonitor.onBreakEnded = { [weak self] in
@@ -205,7 +219,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 menuBarManager?.flashScreenshotIcon()
             }
         }
-        startTranscription()
+        let wasTranscribing = UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true
+        if wasTranscribing { startTranscription() }
 
         let secrets = SecretsLoader.load()
         let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
@@ -229,6 +244,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             DispatchQueue.global(qos: .userInteractive).async {
                 audioManager?.toggleDictationMute()
             }
+        }
+        eventTap.onWheelLongPress = {
+            AppleScriptRunner.run("""
+                tell application "Terminal"
+                    do script "cd ~/workspace && claude"
+                    activate
+                end tell
+            """)
         }
         eventTap.onRepaste = {
             let src = CGEventSource(stateID: .hidSystemState)
@@ -296,26 +319,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             .init(label: "🎊", tooltip: "Confetti") { [weak self] in
                 self?.animator.spawnConfetti()
             },
-            .init(label: "🚨", tooltip: "Danger") { [weak self] in
-                self?.animator.showDanger()
-            },
-            .init(label: "💥", tooltip: "Screen crash") { [weak self] in
-                self?.animator.showEarthquake()
-            },
+            // tablet-triggered: // .init(label: "🚨", tooltip: "Danger") { [weak self] in self?.animator.showDanger() },
+            // tablet-triggered — kept for reference:
+            // .init(label: "💥", tooltip: "Screen crash") { [weak self] in self?.animator.showBrokenGlass() },
+            // .init(label: "🎆", imageName: "fireworks-button.png", tooltip: "Fireworks") { [weak self] in self?.animator.showFireworks() },
+            // .init(label: "😱", tooltip: "Fear") { [weak self] in self?.animator.showFear() },
+            // .init(label: "👏", tooltip: "Applause (toggle)") { [weak self] in self?.animator.showApplause() },
+            // .init(label: "", imageName: "ecg_icon.png", tooltip: "Pulse") { [weak self] in self?.animator.showPulse() },
             .init(label: "", imageName: "zorro_icon.png", tooltip: "Zorro") { [weak self] in
                 self?.animator.showZorro()
             },
-            .init(label: "🎆", imageName: "fireworks-button.png", tooltip: "Fireworks") { [weak self] in
-                self?.animator.showFireworks()
-            },
             .init(label: "📽️", tooltip: "Sepia") { [weak self] in
                 self?.animator.showSepia()
-            },
-            .init(label: "👏", tooltip: "Applause (toggle)") { [weak self] in
-                self?.animator.showApplause()
-            },
-            .init(label: "", imageName: "ecg_icon.png", tooltip: "Pulse") { [weak self] in
-                self?.animator.showPulse()
             },
         ]
 
@@ -501,6 +516,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
     }
 
+    private func displayClipboardLinkBanner() {
+        guard let banner = joinLinkBanner else { return }
+        if banner.bannerIsVisible {
+            banner.hide()
+            return
+        }
+        guard let raw = NSPasteboard.general.string(forType: .string),
+              let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme == "https" || url.scheme == "http" else {
+            overlayError("No URL in clipboard")
+            return
+        }
+        banner.show(url: stripProtocolPrefix(from: url.absoluteString))
+    }
+
     private func scheduleReconnect() {
         guard !reconnecting else { return }
         reconnecting = true
@@ -527,6 +557,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     }
 
     // MARK: - Permissions
+
+    private func requestMicrophonePermissions() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            break
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { _ in }
+        case .denied, .restricted:
+            overlayInfo("⚠️ Microphone access denied — enable in System Settings → Privacy → Microphone")
+        @unknown default:
+            break
+        }
+    }
 
     private func requestAccessibilityPermissions() {
         let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]

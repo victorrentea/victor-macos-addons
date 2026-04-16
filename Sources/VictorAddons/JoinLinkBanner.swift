@@ -85,11 +85,18 @@ class JoinLinkBanner: NSPanel {
 
     func show(url: String) {
         let trimmedUrl = url.trimmingCharacters(in: .whitespaces)
-        let attributed = buildAttributedString(url: trimmedUrl)
-        urlLabel.attributedStringValue = attributed
+        let maxWidth = targetScreen.frame.width - horizontalPadding * 2
 
-        // Measure text to size banner — use sizeToFit for accurate width
+        // Start at default font size; shrink if URL is too wide to fit
+        var fontSize: CGFloat = 76
+        urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize)
         urlLabel.sizeToFit()
+        if urlLabel.frame.width > maxWidth {
+            fontSize = max(24, floor(fontSize * maxWidth / urlLabel.frame.width))
+            urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize)
+            urlLabel.sizeToFit()
+        }
+
         let fittedWidth = ceil(urlLabel.frame.width)
         let bannerWidth = min(fittedWidth + horizontalPadding * 2, targetScreen.frame.width)
         let bannerX = targetScreen.frame.origin.x + (targetScreen.frame.width - bannerWidth) / 2
@@ -234,7 +241,7 @@ class JoinLinkBanner: NSPanel {
 
     // MARK: - Attributed string
 
-    private func buildAttributedString(url: String) -> NSAttributedString {
+    private func buildAttributedString(url: String, fontSize: CGFloat = 76) -> NSAttributedString {
         let parts = url.split(separator: "/")
         let result = NSMutableAttributedString()
         if parts.count > 1 {
@@ -242,14 +249,14 @@ class JoinLinkBanner: NSPanel {
             result.append(NSAttributedString(
                 string: domainPart + "/",
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
+                    .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium),
                     .foregroundColor: NSColor.white
                 ]
             ))
             result.append(NSAttributedString(
                 string: String(parts.last!),
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .bold),
+                    .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
                     .foregroundColor: NSColor.yellow
                 ]
             ))
@@ -257,7 +264,7 @@ class JoinLinkBanner: NSPanel {
             result.append(NSAttributedString(
                 string: url,
                 attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 76, weight: .medium),
+                    .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium),
                     .foregroundColor: NSColor.white
                 ]
             ))

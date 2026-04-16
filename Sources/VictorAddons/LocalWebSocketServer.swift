@@ -115,10 +115,17 @@ class LocalWebSocketServer {
             }
             guard let context = context,
                   let metadata = context.protocolMetadata.first as? NWProtocolWebSocket.Metadata else {
-                // Continue receiving even without metadata
-                if self?.connections[id] != nil {
+                // No WebSocket frame yet — if stream ended, it's a disconnect
+                if isComplete {
+                    self?.removeConnection(id: id)
+                } else if self?.connections[id] != nil {
                     self?.receiveMessages(from: conn, id: id)
                 }
+                return
+            }
+            // WebSocket close frame = clean disconnect
+            if metadata.opcode == .close {
+                self?.removeConnection(id: id)
                 return
             }
             if metadata.opcode == .text, let data = data,
