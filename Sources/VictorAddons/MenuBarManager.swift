@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 16, 22:01"
+    static let BUILD_TIME = "Apr 16, 22:22"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool

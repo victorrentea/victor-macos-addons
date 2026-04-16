@@ -12,12 +12,13 @@ APP_DIR="/Applications/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
+BUILD_CONFIG="release"
 
 BUILD_TIMESTAMP=$(date "+%b %-d, %H:%M")
 sed -i '' "s/static let BUILD_TIME = .*/static let BUILD_TIME = \"$BUILD_TIMESTAMP\"/" "$DIR/Sources/VictorAddons/MenuBarManager.swift"
 echo "Build timestamp: $BUILD_TIMESTAMP"
 
-swift build
+swift build -c "$BUILD_CONFIG"
 echo "VictorAddons built."
 
 echo "Building $APP_NAME.app..."
@@ -42,9 +43,9 @@ mkdir -p "$MACOS" "$RESOURCES"
 
 cp "$ICNS_FILE" "$RESOURCES/AppIcon.icns"
 
-# Use VictorAddons binary directly as the app bundle executable
-# (so macOS TCC permissions are tied to the bundle identity, not the raw binary hash)
-cp "$DIR/.build/arm64-apple-macosx/debug/VictorAddons" "$MACOS/$APP_NAME"
+# Use release binary as the app bundle executable.
+# Avoids relying on debug-run artifacts that can create separate TCC entries.
+cp "$DIR/.build/arm64-apple-macosx/$BUILD_CONFIG/VictorAddons" "$MACOS/$APP_NAME"
 
 # Info.plist (must be written before signing)
 cat > "$CONTENTS/Info.plist" <<PLIST
@@ -74,8 +75,21 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc code sign the whole bundle so macOS TCC uses the bundle identity
-codesign --force --sign - "$APP_DIR"
+# Sign with a stable identity when provided.
+# Example: export CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
+SIGNING_IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$SIGNING_IDENTITY" ]; then
+    if security find-identity -v -p codesigning "$HOME/Library/Keychains/login.keychain-db" | rg -Fq "Victor Addons Local Code Signing"; then
+        SIGNING_IDENTITY="Victor Addons Local Code Signing"
+    fi
+fi
+
+if [ -n "$SIGNING_IDENTITY" ]; then
+    codesign --force --sign "$SIGNING_IDENTITY" "$APP_DIR"
+else
+    echo "⚠️  CODESIGN_IDENTITY not set; using ad-hoc signature (Accessibility may re-prompt after updates)."
+    codesign --force --sign - "$APP_DIR"
+fi
 
 echo "✅ Installed $APP_DIR"
 echo "   Launch via Spotlight (Cmd+Space) → 'Victor Addons'"

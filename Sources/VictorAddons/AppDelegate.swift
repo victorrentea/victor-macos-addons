@@ -45,8 +45,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Request permissions if not already granted
         requestMicrophonePermissions()
-        requestAccessibilityPermissions()
-        requestScreenRecordingPermissions()
+        requestAccessibilityPermissions(promptUser: false)
+        requestScreenRecordingPermissions(promptUser: false)
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = NSScreen.screens.first { screen in
@@ -608,26 +608,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         }
     }
 
-    private func requestAccessibilityPermissions() {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+    private func requestAccessibilityPermissions(promptUser: Bool) {
+        let accessEnabled: Bool
+        if promptUser {
+            let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            accessEnabled = AXIsProcessTrustedWithOptions(options)
+        } else {
+            accessEnabled = AXIsProcessTrusted()
+        }
 
         if accessEnabled {
             overlayInfo("✓ Accessibility permissions granted")
         } else {
-            overlayInfo("⚠️ Please grant Accessibility permissions in System Settings")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            overlayInfo("⚠️ Accessibility permission not granted (System Settings → Privacy & Security → Accessibility)")
+            if promptUser {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
             }
         }
     }
 
-    private func requestScreenRecordingPermissions() {
+    private func requestScreenRecordingPermissions(promptUser: Bool) {
         // CGPreflightScreenCaptureAccess correctly returns false when permission is not granted.
         // (CGDisplayCreateImage always succeeds but only captures desktop wallpaper when denied.)
         if CGPreflightScreenCaptureAccess() {
             return
         }
+        overlayInfo("⚠️ Screen Recording permission not granted (System Settings → Privacy & Security → Screen Recording)")
+        guard promptUser else { return }
+
         // Trigger the system permission dialog
         CGRequestScreenCaptureAccess()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

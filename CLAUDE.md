@@ -97,6 +97,10 @@ For local E2E checks without stealing focus:
 - Re-run `build-app.sh` after changes to `start.sh`, icons, or app identity
 - `start.sh` exports `VICTOR_ADDONS_ROOT` so the app can resolve `whisper-transcribe/whisper_runner.py` reliably when launched from `/Applications` bundle.
 
+**Operational note (2026-04):** To avoid repeated Accessibility re-prompts across deploys, app builds should be signed with a stable identity. `build-app.sh` auto-detects and uses `Victor Addons Local Code Signing` from `login.keychain-db` when available (or `CODESIGN_IDENTITY` if set), otherwise falls back to ad-hoc signing.
+
+**Operational note (2026-04):** On app launch, Accessibility is checked without forcing a system prompt (`AXIsProcessTrusted()`). Missing permission is reported in-app; prompting/opening System Settings should be user-initiated.
+
 ## AI Instructions
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.
 
