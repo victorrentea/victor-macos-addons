@@ -46,6 +46,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDisplayClipboardLink: (() -> Void)?
     var onConnectTablet: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
+    var onDesktopEffect: ((String) -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -125,6 +126,34 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         addItem("🔌 Tablet via USB-C", action: #selector(connectTabletAction))
+
+        // Desktop Effects submenu
+        let effectsItem = NSMenuItem(title: "Desktop Effects", action: nil, keyEquivalent: "")
+        effectsItem.isEnabled = true
+        let effectsSubmenu = NSMenu()
+        effectsItem.submenu = effectsSubmenu
+        let effectPairs: [(String, String)] = [
+            ("Heart ❤️",        "heart"),
+            ("Confetti 🎊",     "confetti"),
+            ("Zorro",           "zorro"),
+            ("Fear 😱",         "fear"),
+            ("Old Film 📽️",    "sepia"),
+            ("Fail Stamp",      "fail"),
+            ("Fireworks 🎆",    "fireworks"),
+            ("Applause 👏",     "applause"),
+            ("Broken Glass 💥", "broken-glass"),
+            ("Game Over",       "game-over"),
+            ("Pulse",           "pulse"),
+            ("Phone Ring 📱",   "phone-ring"),
+        ]
+        for (title, name) in effectPairs {
+            let item = NSMenuItem(title: title, action: #selector(desktopEffectAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = true
+            item.representedObject = name
+            effectsSubmenu.addItem(item)
+        }
+        menu.addItem(effectsItem)
 
         // Shortcut reminders (disabled)
         let pasteItem = addItem("Paste Emotions", action: nil)
@@ -296,6 +325,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func connectTabletAction() {
         onConnectTablet?()
+    }
+
+    @objc private func desktopEffectAction(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        onDesktopEffect?(name)
     }
 
     @objc private func killPort8080() {

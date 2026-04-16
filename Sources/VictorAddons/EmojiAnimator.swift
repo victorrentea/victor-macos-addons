@@ -1758,4 +1758,55 @@ class EmojiAnimator {
         }
         CATransaction.commit()
     }
+
+    // MARK: - Phone ring (screenshot shake)
+
+    func showPhoneRing() {
+        if cancelIfRunning("phone-ring", sound: "animated_phone.mp3") { return }
+
+        let bounds = hostLayer.bounds
+        let totalDuration = 8.36
+
+        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+              let screenshot = CGWindowListCreateImage(
+                  screen.frame,
+                  .optionOnScreenBelowWindow,
+                  kCGNullWindowID,
+                  [.bestResolution]
+              ) else { return }
+
+        SoundManager.shared.play("animated_phone.mp3")
+
+        let imgLayer = CALayer()
+        imgLayer.frame = bounds
+        imgLayer.contents = screenshot
+        imgLayer.contentsGravity = .resizeAspectFill
+        hostLayer.addSublayer(imgLayer)
+
+        // Shake: rapid random offsets ±20px horizontal, ±7px vertical
+        let shake = CAKeyframeAnimation(keyPath: "position")
+        shake.duration = totalDuration
+        shake.calculationMode = .discrete
+        let cx = bounds.midX, cy = bounds.midY
+        var positions: [NSValue] = []
+        let count = Int(totalDuration / 0.04) // ~25Hz
+        for _ in 0..<count {
+            let dx = CGFloat.random(in: -20...20)
+            let dy = CGFloat.random(in: -7...7)
+            positions.append(NSValue(point: CGPoint(x: cx + dx, y: cy + dy)))
+        }
+        positions.append(NSValue(point: CGPoint(x: cx, y: cy)))
+        shake.values = positions
+        imgLayer.add(shake, forKey: "shake")
+
+        // Fade out over last 0.3s
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.3
+        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
+        fadeOut.duration = 0.3
+        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
+        imgLayer.add(fadeOut, forKey: "fadeOut")
+
+        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: "animated_phone.mp3")
+    }
 }

@@ -5,7 +5,7 @@ import Foundation
 class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate {
     private var overlayPanel: OverlayPanel!
     private var animator: EmojiAnimator!
-    private var buttonBar: ButtonBar!
+    // buttonBar removed
     private var menuBarManager: MenuBarManager!
     private let serverURL: String
     private var wsTask: URLSessionWebSocketTask?
@@ -64,7 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
 
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
         connectWebSocket()
-        setupButtonBar(screen: builtInScreen)
+        // buttonBar removed — effects are now in the menu bar under Desktop Effects
         setupSignalHandler()
         transcriptionFolder = {
             if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
@@ -112,6 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "fear":          self?.animator.showFear()
             case "fail":          self?.animator.showFail()
             case "sepia":         self?.animator.showSepia(playSound: false)
+            case "phone-ring":    self?.animator.showPhoneRing()
             default: break
             }
         }
@@ -191,6 +192,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 return "{\"error\":\"failed to encode state\"}"
             }
             return json
+        }
+        menuBarManager.onDesktopEffect = { [weak self] name in
+            DispatchQueue.main.async {
+                switch name {
+                case "heart":        self?.animator.spawnEmoji("❤️")
+                case "confetti":     self?.animator.spawnConfetti()
+                case "zorro":        self?.animator.showZorro()
+                case "fear":         self?.animator.showFear()
+                case "fail":         self?.animator.showFail()
+                case "sepia":        self?.animator.showSepia()
+                case "fireworks":    self?.animator.showFireworks()
+                case "applause":     self?.animator.showApplause()
+                case "broken-glass": self?.animator.showBrokenGlass()
+                case "game-over":    self?.animator.showGameOver()
+                case "pulse":        self?.animator.startPulseOverlay()
+                case "phone-ring":   self?.animator.showPhoneRing()
+                default: break
+                }
+            }
         }
         menuBarManager.onConnectTablet = {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -340,41 +360,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     }
 
     private func toggleControls() {
-        controlsVisible = !controlsVisible
-        if controlsVisible {
-            buttonBar.slideInAndStay()
-        } else {
-            buttonBar.hideAndUnpin()
-        }
-    }
-
-    // MARK: - Button bar
-
-    private func setupButtonBar(screen: NSScreen) {
-        let buttons: [ButtonBar.ButtonDef] = [
-            .init(label: "❤️", tooltip: "Floating Heart") { [weak self] in
-                self?.animator.spawnEmoji("❤️")
-            },
-            .init(label: "🎊", tooltip: "Confetti") { [weak self] in
-                self?.animator.spawnConfetti()
-            },
-            // tablet-triggered: // .init(label: "🚨", tooltip: "Danger") { [weak self] in self?.animator.showDanger() },
-            // tablet-triggered — kept for reference:
-            // .init(label: "💥", tooltip: "Screen crash") { [weak self] in self?.animator.showBrokenGlass() },
-            // .init(label: "🎆", imageName: "fireworks-button.png", tooltip: "Fireworks") { [weak self] in self?.animator.showFireworks() },
-            // .init(label: "😱", tooltip: "Fear") { [weak self] in self?.animator.showFear() },
-            // .init(label: "👏", tooltip: "Applause (toggle)") { [weak self] in self?.animator.showApplause() },
-            // .init(label: "", imageName: "ecg_icon.png", tooltip: "Pulse") { [weak self] in self?.animator.showPulse() },
-            .init(label: "", imageName: "zorro_icon.png", tooltip: "Zorro") { [weak self] in
-                self?.animator.showZorro()
-            },
-            .init(label: "📽️", tooltip: "Sepia") { [weak self] in
-                self?.animator.showSepia()
-            },
-        ]
-
-        buttonBar = ButtonBar(buttons: buttons, screen: screen)
-        buttonBar.orderFrontRegardless()
+        // buttonBar removed — no-op
     }
 
     private func checkPIDFile() {
