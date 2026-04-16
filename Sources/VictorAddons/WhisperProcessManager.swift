@@ -123,22 +123,32 @@ class WhisperProcessManager {
         // The script is relative to the app bundle or the source tree
         // Try: next to the binary, then relative paths
         let binaryDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
-        let candidates = [
-            "\(binaryDir)/../../../whisper-transcribe/whisper_runner.py",
-            "\(binaryDir)/whisper_runner.py",
-        ]
+        let envRoot = ProcessInfo.processInfo.environment["VICTOR_ADDONS_ROOT"] ?? ""
+        let candidates = Self.whisperScriptCandidates(
+            binaryDir: binaryDir,
+            envRoot: envRoot,
+            homeDirectory: NSHomeDirectory(),
+            cwd: FileManager.default.currentDirectoryPath
+        )
         for candidate in candidates {
             let resolved = URL(fileURLWithPath: candidate).standardized.path
             if FileManager.default.fileExists(atPath: resolved) {
                 return resolved
             }
         }
-        // Try finding relative to CWD
-        let cwd = FileManager.default.currentDirectoryPath
-        let cwdScript = "\(cwd)/whisper-transcribe/whisper_runner.py"
-        if FileManager.default.fileExists(atPath: cwdScript) {
-            return cwdScript
-        }
         return ""
+    }
+
+    static func whisperScriptCandidates(binaryDir: String, envRoot: String, homeDirectory: String, cwd: String) -> [String] {
+        var candidates = [
+            "\(binaryDir)/../../../whisper-transcribe/whisper_runner.py",
+            "\(binaryDir)/whisper_runner.py",
+        ]
+        if !envRoot.isEmpty {
+            candidates.append("\(envRoot)/whisper-transcribe/whisper_runner.py")
+        }
+        candidates.append("\(homeDirectory)/workspace/victor-macos-addons/whisper-transcribe/whisper_runner.py")
+        candidates.append("\(cwd)/whisper-transcribe/whisper_runner.py")
+        return candidates
     }
 }

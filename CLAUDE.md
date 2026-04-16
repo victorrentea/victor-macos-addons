@@ -28,15 +28,19 @@ Menu bar app (💬 icon) with the following features:
 **Tech**: Swift, AppKit, Anthropic API (Haiku)
 **Secrets**: `WISPR_CLEANUP_ANTHROPIC_API_KEY` in `~/.training-assistants-secrets.env`
 
+**Operational note (2026-04):** On app launch, transcribing UI state is derived from actual Whisper process state (not just persisted defaults) to avoid stale "Stop Transcribing" menu state when the process failed to start.
+
 ### whisper-transcribe
 Live dual-channel Whisper transcription engine (extracted from training-assistant daemon):
 - **WhisperTranscriptionRunner** — captures audio from 2 sources, transcribes via mlx-whisper on Apple Silicon GPU
 - Writes `[HH:MM] Speaker: text` lines to per-day files in `TRANSCRIPTION_FOLDER`
 - Default devices: XLR mic (device 5) + Zoom loopback (device 17)
 - Auto-detects Romanian/English, filters hallucinations, RMS-based silence skipping
+- Queue-aware batching merges adjacent same-speaker chunks before inference; default wait budget is tuned for non-live subtitle use
+- Adaptive quality can switch to a faster Whisper model when transcription backlog grows, then return to balanced quality when queue drains
 
 **Tech**: Python 3.12, mlx-whisper, sounddevice, numpy
-**Config env vars**: `WHISPER_ME_DEVICE`, `WHISPER_AUDIENCE_DEVICE`, `WHISPER_MODEL`, `WHISPER_CHUNK_SECONDS`, `WHISPER_SILENCE_THRESHOLD`, `TRANSCRIPTION_FOLDER`
+**Config env vars**: `WHISPER_ME_DEVICE`, `WHISPER_AUDIENCE_DEVICE`, `WHISPER_MODEL`, `WHISPER_MODEL_FAST`, `WHISPER_CHUNK_SECONDS`, `WHISPER_SILENCE_THRESHOLD`, `WHISPER_BATCH_MAX_WAIT_SECONDS`, `WHISPER_BATCH_MAX_ITEMS`, `WHISPER_BATCH_MAX_AUDIO_SECONDS`, `WHISPER_ADAPTIVE_QUALITY`, `WHISPER_ADAPTIVE_BACKLOG_HIGH`, `WHISPER_ADAPTIVE_BACKLOG_LOW`, `TRANSCRIPTION_FOLDER`
 
 ### powerpoint-monitor
 Polls PowerPoint via osascript every 3s, writes `activity-slides-YYYY-MM-DD.md`:
@@ -71,10 +75,25 @@ Receives session lifecycle events (`session_started`, `session_ended`) to enable
 **Tech**: Swift, AppKit, AVFoundation, Swift Package Manager
 **Build**: `swift build && swift test`
 
+## Testing & Diagnostics
+
+Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:55123` so tests do not need UI focus or menu clicking:
+
+- `GET /test/state` — JSON snapshot of transcription state (`running`, preference flag, UI/menu/icon state)
+- `GET /test/transcription/start`
+- `GET /test/transcription/stop`
+- `GET /test/transcription/toggle`
+
+For local E2E checks without stealing focus:
+
+- `./test-transcription-control.sh [start|stop|toggle]`
+- Uses only local HTTP control endpoints and validates runtime state transitions.
+
 ## Deployment
 - **App bundle**: `./build-app.sh` creates `/Applications/Victor Addons.app` (Spotlight-searchable)
 - **LaunchAgent**: `./install-startup.sh` symlinks plist, loads LaunchAgent for login auto-start
 - Re-run `build-app.sh` after changes to `start.sh`, icons, or app identity
+- `start.sh` exports `VICTOR_ADDONS_ROOT` so the app can resolve `whisper-transcribe/whisper_runner.py` reliably when launched from `/Applications` bundle.
 
 ## AI Instructions
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.

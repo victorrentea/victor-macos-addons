@@ -2,7 +2,15 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 16, 20:00"
+    static let BUILD_TIME = "Apr 16, 21:32"
+
+    struct TranscriptionDebugState {
+        let isTranscribing: Bool
+        let isStale: Bool
+        let source: String
+        let menuTitle: String
+        let iconMode: String
+    }
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
@@ -423,6 +431,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func updateTranscribeTitle() {
         let suffix = transcribeSource.isEmpty ? "" : " \(transcribeSource)"
         transcribeItem.title = isTranscribing ? "Stop Transcribing\(suffix)" : "Start Transcribing"
+    }
+
+    func transcriptionDebugState() -> TranscriptionDebugState {
+        let iconMode: String
+        if !isTranscribing {
+            iconMode = "off"
+        } else if isTranscriptionStale {
+            iconMode = "stale"
+        } else {
+            iconMode = "on"
+        }
+        return TranscriptionDebugState(
+            isTranscribing: isTranscribing,
+            isStale: isTranscriptionStale,
+            source: transcribeSource,
+            menuTitle: transcribeItem.title,
+            iconMode: iconMode
+        )
     }
 
     func addToPortHistory(_ port: Int) {

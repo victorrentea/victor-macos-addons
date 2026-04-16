@@ -144,14 +144,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 whisperManager?.start(env: env)
             }
         }
-        menuBarManager.onToggleTranscribe = { [weak whisperManager, weak self] in
+        let stopTranscription: () -> Void = { [weak whisperManager] in
+            whisperManager?.stop()
+        }
+        let toggleTranscription: () -> Void = { [weak whisperManager] in
             if whisperManager?.isRunning == true {
                 UserDefaults.standard.set(false, forKey: "transcribingEnabled")
-                whisperManager?.stop()
+                stopTranscription()
             } else {
                 UserDefaults.standard.set(true, forKey: "transcribingEnabled")
                 startTranscription()
             }
+        }
+        menuBarManager.onToggleTranscribe = {
+            toggleTranscription()
+        }
+        tabletServer?.onTestTranscriptionStart = {
+            UserDefaults.standard.set(true, forKey: "transcribingEnabled")
+            startTranscription()
+        }
+        tabletServer?.onTestTranscriptionStop = {
+            UserDefaults.standard.set(false, forKey: "transcribingEnabled")
+            stopTranscription()
+        }
+        tabletServer?.onTestTranscriptionToggle = {
+            toggleTranscription()
+        }
+        tabletServer?.onTestState = { [weak self, weak whisperManager] in
+            guard let self, let menuBarManager = self.menuBarManager else {
+                return "{\"error\":\"app state unavailable\"}"
+            }
+            let ui = menuBarManager.transcriptionDebugState()
+            let payload: [String: Any] = [
+                "running": whisperManager?.isRunning == true,
+                "enabled_preference": UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true,
+                "ui_transcribing": ui.isTranscribing,
+                "ui_stale": ui.isStale,
+                "menu_title": ui.menuTitle,
+                "icon_mode": ui.iconMode,
+                "source": ui.source,
+            ]
+            guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+                  let json = String(data: data, encoding: .utf8) else {
+                return "{\"error\":\"failed to encode state\"}"
+            }
+            return json
         }
         menuBarManager.onConnectTablet = {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -203,8 +240,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         portKiller.onKillComplete = { [weak menuBarManager] port in menuBarManager?.addToPortHistory(port) }
 
         menuBarManager.setup()
-        let wasTranscribingInitial = UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true
-        menuBarManager.setTranscribing(wasTranscribingInitial)
+        // Reflect real process state on startup to avoid stale "Stop Transcribing" UI.
+        menuBarManager.setTranscribing(false)
 
         let rhMonitor = RHTimerMonitor()
         rhMonitor.onBreakEnded = { [weak self] in

@@ -16,4 +16,6 @@ fi
 ADB="$HOME/Library/Android/sdk/platform-tools/adb"
 [ -x "$ADB" ] && "$ADB" reverse tcp:55123 tcp:55123 >> "$LOG" 2>&1 || true
 
+export VICTOR_ADDONS_ROOT="$DIR"
+
 exec "$BUNDLE_BIN" "wss://interact.victorrentea.ro" >> "$LOG" 2>&1

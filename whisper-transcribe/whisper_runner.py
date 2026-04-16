@@ -20,11 +20,17 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from coreaudio_devices import list_input_devices, register_device_change_callback, register_device_alive_callbacks
+from coreaudio_devices import (
+    list_input_devices,
+    register_device_change_callback,
+    register_device_alive_callbacks,
+)
 
 
 # ── Logging ──────────────────────────────────────────────────────────────────
-_log_callback = None  # optional callable(str) — forwards all transcription logs to the menu
+_log_callback = (
+    None  # optional callable(str) — forwards all transcription logs to the menu
+)
 
 
 def set_error_callback(cb):
@@ -53,31 +59,56 @@ class _Log:
             except Exception:
                 pass
 
+
 log = _Log()
 
 # ── Config ───────────────────────────────────────────────────────────────────
-_ME_SPEAKER   = os.environ.get("WHISPER_ME_SPEAKER",       "Victor")
-_AUD_SPEAKER  = os.environ.get("WHISPER_AUDIENCE_SPEAKER", "Audience")
-_MODEL        = os.environ.get("WHISPER_MODEL",            "mlx-community/whisper-large-v3-turbo")
-_CHUNK_SEC    = float(os.environ.get("WHISPER_CHUNK_SECONDS",      "6"))
-_OVERLAP_SEC  = float(os.environ.get("WHISPER_OVERLAP_SECONDS",    "1"))
-_SAMPLE_RATE  = 16000
+_ME_SPEAKER = os.environ.get("WHISPER_ME_SPEAKER", "Victor")
+_AUD_SPEAKER = os.environ.get("WHISPER_AUDIENCE_SPEAKER", "Audience")
+_MODEL_BALANCED = os.environ.get(
+    "WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo"
+)
+_MODEL_FAST = os.environ.get("WHISPER_MODEL_FAST", _MODEL_BALANCED)
+_CHUNK_SEC = float(os.environ.get("WHISPER_CHUNK_SECONDS", "6"))
+_OVERLAP_SEC = float(os.environ.get("WHISPER_OVERLAP_SECONDS", "1"))
+_SAMPLE_RATE = 16000
+
+_BATCH_MAX_WAIT_SEC = float(os.environ.get("WHISPER_BATCH_MAX_WAIT_SECONDS", "5"))
+_BATCH_MAX_ITEMS = int(os.environ.get("WHISPER_BATCH_MAX_ITEMS", "4"))
+_BATCH_MAX_AUDIO_SEC = float(os.environ.get("WHISPER_BATCH_MAX_AUDIO_SECONDS", "24"))
+
+_ADAPTIVE_QUALITY = os.environ.get("WHISPER_ADAPTIVE_QUALITY", "1").lower() not in {
+    "0",
+    "false",
+    "no",
+}
+_ADAPTIVE_BACKLOG_HIGH = int(os.environ.get("WHISPER_ADAPTIVE_BACKLOG_HIGH", "6"))
+_ADAPTIVE_BACKLOG_LOW = int(os.environ.get("WHISPER_ADAPTIVE_BACKLOG_LOW", "2"))
 
 _THRESHOLDS = {
-    "xlr":      0.018,
-    "bose":     0.015,
-    "macbook":  0.008,
+    "xlr": 0.018,
+    "bose": 0.015,
+    "macbook": 0.008,
     "audience": 0.025,
 }
 _DEFAULT_THRESHOLD = 0.018
 
-_ME_PATTERNS  = ["XLR", "Bose", "MacBook"]
+_ME_PATTERNS = ["XLR", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
-    "thank you.", "thanks for watching.", "thanks.", "you", ".",
-    "subtitles by the amara.org community", "www.mooji.org",
-    "[music]", "[ music ]", "(music)", "♪", "...",
+    "thank you.",
+    "thanks for watching.",
+    "thanks.",
+    "you",
+    ".",
+    "subtitles by the amara.org community",
+    "www.mooji.org",
+    "[music]",
+    "[ music ]",
+    "(music)",
+    "♪",
+    "...",
 }
 
 # Short display names for known devices
@@ -120,6 +151,7 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
     """Find the best input device by pattern priority using CoreAudio (no stale devices).
     Returns (sounddevice_index, device_name) or None."""
     import sounddevice as sd
+
     ca_devices = [d for d in list_input_devices() if d["alive"]]
     if not ca_devices:
         return None
@@ -163,8 +195,14 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
 
 # ── Audio capture ────────────────────────────────────────────────────────────
 class _ChannelCapture:
-    def __init__(self, device: int, label: str, tx_queue: queue.Queue,
-                 device_name: str = "", resolve_fn=None):
+    def __init__(
+        self,
+        device: int,
+        label: str,
+        tx_queue: queue.Queue,
+        device_name: str = "",
+        resolve_fn=None,
+    ):
         self.device = device
         self.label = label
         self.device_name = device_name
@@ -214,9 +252,12 @@ class _ChannelCapture:
 
     def _open(self):
         import sounddevice as sd
+
         s = sd.InputStream(
-            device=self.device, channels=1,
-            samplerate=_SAMPLE_RATE, dtype="float32",
+            device=self.device,
+            channels=1,
+            samplerate=_SAMPLE_RATE,
+            dtype="float32",
             blocksize=int(_SAMPLE_RATE * 0.1),
             callback=self._cb,
         )
@@ -230,12 +271,16 @@ class _ChannelCapture:
             try:
                 s = self._open()
                 _consecutive_errors = 0
-                log.info("transcript", f"🎙️ [{self.label}] capturing from {self.device_name!r}")
+                log.info(
+                    "transcript",
+                    f"🎙️ [{self.label}] capturing from {self.device_name!r}",
+                )
                 while self._running and s.active:
                     time.sleep(0.5)
                 # Stream ended (device switched or disconnected)
                 try:
-                    s.stop(); s.close()
+                    s.stop()
+                    s.close()
                 except Exception:
                     pass
                 if self._running:
@@ -245,11 +290,15 @@ class _ChannelCapture:
                 _consecutive_errors += 1
                 # Log first error, then every 30th (once per minute at 2s retry)
                 if _consecutive_errors == 1 or _consecutive_errors % 30 == 0:
-                    log.error("transcript", f"🎙️ [{self.label}] stream error (x{_consecutive_errors}): {exc}")
+                    log.error(
+                        "transcript",
+                        f"🎙️ [{self.label}] stream error (x{_consecutive_errors}): {exc}",
+                    )
                 time.sleep(2)
                 # Force PortAudio to reinitialize — recovers from CoreAudio invalid state after reconnect
                 try:
                     import sounddevice as sd
+
                     sd._terminate()
                     sd._initialize()
                 except Exception:
@@ -259,7 +308,10 @@ class _ChannelCapture:
                     if resolved:
                         new_idx, new_name = resolved
                         if new_idx != self.device or new_name != self.device_name:
-                            log.info("transcript", f"🎙️ [{self.label}] re-resolved: {new_name!r} (idx {new_idx})")
+                            log.info(
+                                "transcript",
+                                f"🎙️ [{self.label}] re-resolved: {new_name!r} (idx {new_idx})",
+                            )
                         self.device = new_idx
                         self.device_name = new_name
 
@@ -268,54 +320,152 @@ class _ChannelCapture:
         while len(self._buf) >= self._chunk:
             chunk = self._buf[: self._chunk].copy()
             self._buf = self._buf[self._chunk - self._overlap :]
-            rms = float(np.sqrt(np.mean(chunk ** 2)))
+            rms = float(np.sqrt(np.mean(chunk**2)))
             threshold = self._current_threshold()
             if rms >= threshold:
                 tag = _short_device_name(self.device_name)
                 self._queue.put((self.label, chunk, tag))
             elif rms > 0.001:  # non-silent but below threshold — log for debugging
                 ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
-                print(f"{ts} [transcript  ] 🎙️ [{self.label}] below threshold: rms={rms:.4f} < {threshold:.4f}")
+                print(
+                    f"{ts} [transcript  ] 🎙️ [{self.label}] below threshold: rms={rms:.4f} < {threshold:.4f}"
+                )
 
 
 # ── Transcription thread ────────────────────────────────────────────────────
-def _transcribe(audio, language=None, initial_prompt=None):
+def _transcribe(audio, language=None, initial_prompt=None, model=None):
     import mlx_whisper
-    with open(os.devnull, "w") as dev, \
-         contextlib.redirect_stdout(dev), \
-         contextlib.redirect_stderr(dev):
+
+    model = model or _MODEL_BALANCED
+    with (
+        open(os.devnull, "w") as dev,
+        contextlib.redirect_stdout(dev),
+        contextlib.redirect_stderr(dev),
+    ):
         return mlx_whisper.transcribe(
-            audio, path_or_hf_repo=_MODEL,
-            language=language, verbose=False,
+            audio,
+            path_or_hf_repo=model,
+            language=language,
+            verbose=False,
             condition_on_previous_text=True,
             initial_prompt=initial_prompt,
         )
+
+
+def _effective_model(mode: str) -> str:
+    if mode == "fast" and _MODEL_FAST:
+        return _MODEL_FAST
+    return _MODEL_BALANCED
+
+
+def _select_model_mode(current_mode: str, backlog_size: int) -> str:
+    if not _ADAPTIVE_QUALITY or _MODEL_FAST == _MODEL_BALANCED:
+        return "balanced"
+
+    if current_mode == "fast":
+        # Hysteresis: stay fast until we drain close to idle.
+        return "fast" if backlog_size > _ADAPTIVE_BACKLOG_LOW else "balanced"
+
+    return "fast" if backlog_size >= _ADAPTIVE_BACKLOG_HIGH else "balanced"
+
+
+def _merge_adjacent_chunks(batch_items):
+    if not batch_items:
+        return []
+
+    merged = []
+    cur_label, cur_audio, cur_tag = batch_items[0]
+    for label, audio, tag in batch_items[1:]:
+        if label == cur_label:
+            cur_audio = np.concatenate([cur_audio, audio])
+            cur_tag = tag
+        else:
+            merged.append((cur_label, cur_audio, cur_tag))
+            cur_label, cur_audio, cur_tag = label, audio, tag
+    merged.append((cur_label, cur_audio, cur_tag))
+    return merged
+
+
+def _collect_batch(first_item, tx_queue: queue.Queue):
+    items = [first_item]
+    total_samples = len(first_item[1])
+    overflow = None
+
+    deadline = time.monotonic() + max(0.0, _BATCH_MAX_WAIT_SEC)
+    while len(items) < max(1, _BATCH_MAX_ITEMS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            candidate = tx_queue.get(timeout=remaining)
+        except queue.Empty:
+            break
+
+        candidate_samples = len(candidate[1])
+        if (total_samples + candidate_samples) / _SAMPLE_RATE > _BATCH_MAX_AUDIO_SEC:
+            overflow = candidate
+            break
+
+        items.append(candidate)
+        total_samples += candidate_samples
+
+    return items, overflow
 
 
 def _transcriber_loop(tx_queue: queue.Queue, on_segment):
     log.info("transcript", "🎙️ Transcription loop started")
     # Track last transcribed text per channel for context
     prev_text: dict[str, str] = {}
+    model_mode = "balanced"
+    carry_item = None
 
     while True:
-        try:
-            label, audio, device_tag = tx_queue.get(timeout=1)
-        except queue.Empty:
-            continue
-        try:
-            prompt = prev_text.get(label)
-            result = _transcribe(audio, initial_prompt=prompt)
-            text = result.get("text", "").strip()
-            lang = result.get("language", "?")
-            if lang not in ("ro", "en"):
-                result = _transcribe(audio, language="ro", initial_prompt=prompt)
-                text   = result.get("text", "").strip()
-                lang   = "ro"
-            if not text or text.lower() in _HALLUCINATIONS:
+        if carry_item is None:
+            try:
+                first_item = tx_queue.get(timeout=1)
+            except queue.Empty:
                 continue
-            # Keep last ~200 chars as context for next chunk
-            prev_text[label] = text[-200:]
-            on_segment(label, lang, text, device_tag)
+        else:
+            first_item = carry_item
+            carry_item = None
+
+        batch_items, carry_item = _collect_batch(first_item, tx_queue)
+        backlog_size = tx_queue.qsize() + (1 if carry_item is not None else 0)
+
+        next_mode = _select_model_mode(model_mode, backlog_size)
+        if next_mode != model_mode:
+            model_mode = next_mode
+            log.info(
+                "transcript",
+                f"🎙️ adaptive model -> {model_mode} (backlog={backlog_size})",
+            )
+        model_name = _effective_model(model_mode)
+
+        merged_items = _merge_adjacent_chunks(batch_items)
+        if len(batch_items) > 1:
+            total_sec = sum(len(audio) for _, audio, _ in batch_items) / _SAMPLE_RATE
+            log.info(
+                "transcript",
+                f"🎙️ batch={len(batch_items)} merged={len(merged_items)} audio={total_sec:.1f}s backlog={backlog_size}",
+            )
+
+        try:
+            for label, audio, device_tag in merged_items:
+                prompt = prev_text.get(label)
+                result = _transcribe(audio, initial_prompt=prompt, model=model_name)
+                text = result.get("text", "").strip()
+                lang = result.get("language", "?")
+                if lang not in ("ro", "en"):
+                    result = _transcribe(
+                        audio, language="ro", initial_prompt=prompt, model=model_name
+                    )
+                    text = result.get("text", "").strip()
+                    lang = "ro"
+                if not text or text.lower() in _HALLUCINATIONS:
+                    continue
+                # Keep last ~200 chars as context for next chunk
+                prev_text[label] = text[-200:]
+                on_segment(label, lang, text, device_tag)
         except Exception as exc:
             log.error("transcript", f"🎙️ Whisper error: {exc}")
 
@@ -326,7 +476,7 @@ class WhisperTranscriptionRunner:
 
     def __init__(self, output_dir: Path, on_device_change=None):
         self.output_dir = output_dir
-        self.enabled    = False
+        self.enabled = False
         self._channels: list[_ChannelCapture] = []
         self._on_device_change = on_device_change
         self._me_channel: _ChannelCapture | None = None
@@ -343,8 +493,13 @@ class WhisperTranscriptionRunner:
             me_idx, me_name = resolved
             log.info("transcript", f"🎙️ Resolved Victor: {me_name!r}")
             print(f"VICTOR_SOURCE:{_short_device_name(me_name)}", flush=True)
-            self._me_channel = _ChannelCapture(me_idx, _ME_SPEAKER, tx_queue, me_name,
-                                               resolve_fn=lambda: _resolve_device_coreaudio(_ME_PATTERNS))
+            self._me_channel = _ChannelCapture(
+                me_idx,
+                _ME_SPEAKER,
+                tx_queue,
+                me_name,
+                resolve_fn=lambda: _resolve_device_coreaudio(_ME_PATTERNS),
+            )
             self._channels.append(self._me_channel)
         else:
             log.error("transcript", f"🎙️ No Victor device found matching {_ME_PATTERNS}")
@@ -354,9 +509,13 @@ class WhisperTranscriptionRunner:
         if resolved:
             aud_idx, aud_name = resolved
             log.info("transcript", f"🎙️ Resolved Audience: {aud_name!r}")
-            self._channels.append(_ChannelCapture(aud_idx, _AUD_SPEAKER, tx_queue, aud_name))
+            self._channels.append(
+                _ChannelCapture(aud_idx, _AUD_SPEAKER, tx_queue, aud_name)
+            )
         else:
-            log.error("transcript", f"🎙️ No Audience device found matching {_AUD_PATTERNS}")
+            log.error(
+                "transcript", f"🎙️ No Audience device found matching {_AUD_PATTERNS}"
+            )
 
         if not self._channels:
             log.error("transcript", "🎙️ Whisper disabled — no usable audio devices")
@@ -374,9 +533,13 @@ class WhisperTranscriptionRunner:
         self.enabled = True
 
         # Register CoreAudio device change listener (fires for USB/new devices)
-        self._unregister_listener = register_device_change_callback(self._on_device_list_changed)
+        self._unregister_listener = register_device_change_callback(
+            self._on_device_list_changed
+        )
         # Register per-device alive listeners (fires for Bluetooth connect/disconnect)
-        self._unregister_alive_listener = register_device_alive_callbacks(self._on_device_list_changed)
+        self._unregister_alive_listener = register_device_alive_callbacks(
+            self._on_device_list_changed
+        )
         log.info("transcript", "🎙️ CoreAudio device listeners registered")
 
     def _on_device_list_changed(self):
@@ -391,10 +554,16 @@ class WhisperTranscriptionRunner:
         try:
             resolved = _resolve_device_coreaudio(_ME_PATTERNS)
             best_idx, best_name = resolved if resolved else (None, None)
-            log.info("transcript", f"🎙️ device check: best={best_name!r} current={self._me_channel.device_name!r}")
+            log.info(
+                "transcript",
+                f"🎙️ device check: best={best_name!r} current={self._me_channel.device_name!r}",
+            )
             if not resolved:
                 return
-            if best_name != self._me_channel.device_name or best_idx != self._me_channel.device:
+            if (
+                best_name != self._me_channel.device_name
+                or best_idx != self._me_channel.device
+            ):
                 short = _short_device_name(best_name)
                 self._me_channel.switch_device(best_idx, best_name)
                 self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
@@ -428,13 +597,15 @@ class WhisperTranscriptionRunner:
         # Check similarity with recent Victor segments
         text_lower = text.lower().strip()
         for _, victor_text in self._recent_victor:
-            ratio = SequenceMatcher(None, text_lower, victor_text.lower().strip()).ratio()
+            ratio = SequenceMatcher(
+                None, text_lower, victor_text.lower().strip()
+            ).ratio()
             if ratio > 0.5:
                 return True
         return False
 
     def _on_segment(self, label: str, lang: str, text: str, device_tag: str = ""):
-        now  = datetime.now()
+        now = datetime.now()
         hhmm = now.strftime("%H:%M")
 
         if label == _ME_SPEAKER:
@@ -468,12 +639,16 @@ def _watch_parent(ppid: int) -> None:
     We then exit immediately to avoid accumulating orphan Whisper processes.
     """
     import time as _time
+
     while True:
         _time.sleep(2)
         if os.getppid() != ppid:
             try:
-                print(f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
-                      f"[sentinel    ] Parent {ppid} gone — exiting", flush=True)
+                print(
+                    f"{__import__('datetime').datetime.now().strftime('%H:%M:%S.%f')[:10]} "
+                    f"[sentinel    ] Parent {ppid} gone — exiting",
+                    flush=True,
+                )
             except Exception:
                 pass
             os._exit(0)
@@ -486,11 +661,17 @@ if __name__ == "__main__":
     parent_pid = os.environ.get("WHISPER_PARENT_PID")
     if parent_pid:
         import threading
-        threading.Thread(target=_watch_parent, args=(int(parent_pid),),
-                         daemon=True, name="sentinel").start()
 
-    folder = Path(os.environ.get("TRANSCRIPTION_FOLDER",
-                                  "/Users/victorrentea/workspace/victor-macos-addons/addons-output"))
+        threading.Thread(
+            target=_watch_parent, args=(int(parent_pid),), daemon=True, name="sentinel"
+        ).start()
+
+    folder = Path(
+        os.environ.get(
+            "TRANSCRIPTION_FOLDER",
+            "/Users/victorrentea/workspace/victor-macos-addons/addons-output",
+        )
+    )
     runner = WhisperTranscriptionRunner(folder)
     runner.start()
     try:
