@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import QuartzCore
 
 class EmojiAnimator {
@@ -1627,20 +1628,27 @@ class EmojiAnimator {
     func showGameOver() {
         guard activeEffects["game-over"] == nil else { return }
         let bounds = hostLayer.bounds
-        let duration: Double = 8.0
+
+        // Match tablet sound duration
+        var duration: Double = 8.0
+        if let soundURL = Bundle.module.url(forResource: "dying", withExtension: "mp3") {
+            let asset = AVURLAsset(url: soundURL)
+            let d = asset.duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
 
         let container = CALayer()
         container.frame = bounds
         hostLayer.addSublayer(container)
         trackEffect("game-over", layer: container, duration: duration)
 
-        // 50% black backdrop
+        // 70% black backdrop
         let blackLayer = CALayer()
         blackLayer.frame = bounds
-        blackLayer.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
+        blackLayer.backgroundColor = NSColor.black.withAlphaComponent(0.7).cgColor
         container.addSublayer(blackLayer)
 
-        // Game Over image centered
+        // Game Over image centered — screen blend removes the black background from the JPG
         if let url = Bundle.module.url(forResource: "game-over", withExtension: "jpg"),
            let img = NSImage(contentsOf: url) {
             let imgW = bounds.width * 0.7
@@ -1651,21 +1659,10 @@ class EmojiAnimator {
                                     width: imgW, height: imgH)
             imgLayer.contents = img
             imgLayer.contentsGravity = .resizeAspect
+            imgLayer.compositingFilter = "screenBlendMode"
             container.addSublayer(imgLayer)
         }
-
-        // Fade out last second
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1.0
-        fade.toValue = 0.0
-        fade.beginTime = CACurrentMediaTime() + duration - 1.0
-        fade.duration = 1.0
-        fade.fillMode = .forwards
-        fade.isRemovedOnCompletion = false
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak container] in container?.removeFromSuperlayer() }
-        container.add(fade, forKey: "fadeOut")
-        CATransaction.commit()
+        // Overlay disappears abruptly via trackEffect after duration — no fade
     }
 
     func startPulseOverlay() {
