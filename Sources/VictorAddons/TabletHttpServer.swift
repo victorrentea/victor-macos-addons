@@ -13,6 +13,7 @@ class TabletHttpServer {
         case testTranscriptionStop
         case testTranscriptionToggle
         case testState
+        case testMute
         case unknown
     }
 
@@ -24,6 +25,7 @@ class TabletHttpServer {
     var onTestTranscriptionStop: (() -> Void)?
     var onTestTranscriptionToggle: (() -> Void)?
     var onTestState: (() -> String)?
+    var onTestMute: (() -> Void)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -77,6 +79,8 @@ class TabletHttpServer {
                     if self?.onTestState == nil {
                         statusCode = 503
                     }
+                case .testMute:
+                    self?.onTestMute?()
                 case .unknown:
                     statusCode = 404
                     body = "not found"
@@ -107,6 +111,8 @@ class TabletHttpServer {
             return .testTranscriptionToggle
         case "/test/state":
             return .testState
+        case "/test/mute":
+            return .testMute
         default:
             if path.hasPrefix("/effect/") {
                 return .effect(String(path.dropFirst("/effect/".count)))
