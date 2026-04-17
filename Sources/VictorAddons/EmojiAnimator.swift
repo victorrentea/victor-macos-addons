@@ -2014,14 +2014,9 @@ class EmojiAnimator {
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.duration = totalDuration
-        anim.fillMode = .forwards
-        anim.isRemovedOnCompletion = false
+        anim.repeatCount = .infinity
 
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak gifLayer, weak self] in
-            gifLayer?.removeFromSuperlayer()
-            self?.activeEffects.removeValue(forKey: "brother")
-        }
         gifLayer.add(anim, forKey: "brotherFrames")
         CATransaction.commit()
     }
