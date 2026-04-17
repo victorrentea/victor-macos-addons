@@ -1895,7 +1895,7 @@ class EmojiAnimator {
                 CATransaction.begin()
                 CATransaction.setAnimationDuration(0.08)
                 CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-                imgLayer.transform = CATransform3DMakeScale(1.1, 1.1, 1.0)
+                imgLayer.transform = CATransform3DMakeScale(1.07, 1.07, 1.0)
                 CATransaction.commit()
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + knockTime + 0.12) { [weak imgLayer] in
