@@ -1887,8 +1887,8 @@ class EmojiAnimator {
         imgLayer.contentsGravity = .resizeAspectFill
         hostLayer.addSublayer(imgLayer)
 
-        // Knock times detected from fbi.mp3: 0.412s, 0.825s, 1.125s — each: zoom in 10%, zoom back out
-        let knockTimes = [0.412, 0.825, 1.125]
+        // Knock times detected from fbi.mp3: 0.406s, 0.615s, 0.813s — equal interval ~0.21s
+        let knockTimes = [0.406, 0.615, 0.813]
         for knockTime in knockTimes {
             DispatchQueue.main.asyncAfter(deadline: .now() + knockTime) { [weak imgLayer] in
                 guard let imgLayer = imgLayer else { return }
