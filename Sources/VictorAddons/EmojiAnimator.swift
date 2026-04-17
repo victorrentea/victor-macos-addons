@@ -1978,10 +1978,10 @@ class EmojiAnimator {
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
-        let gifURL = downloadsURL.appendingPathComponent("brother_rvm_960.gif")
+        let gifURL = downloadsURL.appendingPathComponent("brother_full.gif")
 
         guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else {
-            overlayError("brother_rvm_960.gif not found in Downloads")
+            overlayError("brother_full.gif not found in Downloads")
             return
         }
 
