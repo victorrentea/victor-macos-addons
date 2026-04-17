@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 18, 01:42"
+    static let BUILD_TIME = "Apr 18, 01:44"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -400,10 +400,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter)
         let script = """
         tell application "Terminal"
-            set newWin to (make new window)
-            do script "cd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'" in newWin
             activate
-            set bounds of newWin to {\(l), \(t), \(r), \(b)}
+            tell application "System Events" to keystroke "n" using command down
+            delay 0.3
+            do script "cd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'" in front window
+            set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
         """
         DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
