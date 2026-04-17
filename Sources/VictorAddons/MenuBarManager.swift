@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 17, 23:37"
+    static let BUILD_TIME = "Apr 18, 01:15"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -400,7 +400,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter)
         let script = """
         tell application "Terminal"
-            do script "printf '\\x1b]0;\(sessionName)\\x07'; cd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'"
+            do script "cd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'"
             activate
             delay 0.3
             set bounds of front window to {\(l), \(t), \(r), \(b)}
