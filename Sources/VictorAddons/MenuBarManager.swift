@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 18, 01:15"
+    static let BUILD_TIME = "Apr 18, 01:26"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -410,7 +410,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func appleScriptBounds(screen: NSScreen, quarter: ScreenQuarter) -> (Int, Int, Int, Int) {
-        let totalMaxY = NSScreen.screens.reduce(0.0) { max($0, $1.frame.maxY) }
+        let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
+            ?? NSScreen.screens[0].frame.height
         let f = screen.visibleFrame
         let halfW = f.width / 2
         let halfH = f.height / 2
@@ -423,9 +424,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         case .bottomRight: nsX = f.minX + halfW;  nsY = f.minY
         }
         let asLeft = Int(nsX)
-        let asTop = Int(totalMaxY - nsY - halfH)
+        let asTop = Int(primaryHeight - nsY - halfH)
         let asRight = Int(nsX + halfW)
-        let asBottom = Int(totalMaxY - nsY)
+        let asBottom = Int(primaryHeight - nsY)
         return (asLeft, asTop, asRight, asBottom)
     }
 
