@@ -2001,8 +2001,8 @@ class EmojiAnimator {
 
         let bounds = hostLayer.bounds
         let size = bounds.width * 0.32         // ~1/3 of screen width
-        let x = bounds.width * 0.25            // left edge at 25% from left
-        let y: CGFloat = 0                     // flush to bottom
+        let x: CGFloat = 0                     // flush to left edge
+        let y: CGFloat = -40                   // 40px below bottom
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
