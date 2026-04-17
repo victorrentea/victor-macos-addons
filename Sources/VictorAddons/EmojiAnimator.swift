@@ -2000,13 +2000,15 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let size = bounds.width * 0.2          // 1/5 of screen width
+        let size = bounds.width * 0.32         // ~1/3 of screen width
         let x = bounds.width * 0.25            // left edge at 25% from left
         let y: CGFloat = 0                     // flush to bottom
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
         gifLayer.contentsGravity = .resizeAspect
+        gifLayer.borderColor = NSColor.black.cgColor
+        gifLayer.borderWidth = 1
         if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
