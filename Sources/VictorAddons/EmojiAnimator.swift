@@ -679,8 +679,10 @@ class EmojiAnimator {
 
     func showFireworks() {
         guard activeEffects["fireworks"] == nil else { return }
-        let sentinel = CALayer()
-        trackEffect("fireworks", layer: sentinel, duration: 8.0)
+        let container = CALayer()
+        container.frame = hostLayer.bounds
+        hostLayer.addSublayer(container)
+        trackEffect("fireworks", layer: container, duration: 8.0)
 
         let bounds = hostLayer.bounds
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
@@ -691,9 +693,10 @@ class EmojiAnimator {
             let x = bounds.width * (0.2 + CGFloat(r) * 0.3) + CGFloat.random(in: -60...60)
             let y = CGFloat.random(in: bounds.height * 0.50...bounds.height * 0.80)
             let palette = EmojiAnimator.fireworkPalettes.randomElement()!
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
+                guard let container = container, container.superlayer != nil else { return }
                 self?.launchRocket(from: CGPoint(x: x, y: -10), to: CGPoint(x: x + CGFloat.random(in: -30...30), y: y),
-                                   palette: palette, scale: scale, big: true)
+                                   palette: palette, scale: scale, big: true, container: container)
             }
         }
         // Wave 2: 3-4 more, staggered
@@ -702,9 +705,10 @@ class EmojiAnimator {
             let x = CGFloat.random(in: bounds.width * 0.1...bounds.width * 0.9)
             let y = CGFloat.random(in: bounds.height * 0.40...bounds.height * 0.75)
             let palette = EmojiAnimator.fireworkPalettes.randomElement()!
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
+                guard let container = container, container.superlayer != nil else { return }
                 self?.launchRocket(from: CGPoint(x: x, y: -10), to: CGPoint(x: x + CGFloat.random(in: -20...20), y: y),
-                                   palette: palette, scale: scale, big: Bool.random())
+                                   palette: palette, scale: scale, big: Bool.random(), container: container)
             }
         }
         // Wave 3: grand finale — rapid burst of 4
@@ -713,16 +717,16 @@ class EmojiAnimator {
             let x = CGFloat.random(in: bounds.width * 0.15...bounds.width * 0.85)
             let y = CGFloat.random(in: bounds.height * 0.45...bounds.height * 0.80)
             let palette = EmojiAnimator.fireworkPalettes.randomElement()!
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
+                guard let container = container, container.superlayer != nil else { return }
                 self?.launchRocket(from: CGPoint(x: x, y: -10), to: CGPoint(x: x, y: y),
-                                   palette: palette, scale: scale, big: true)
+                                   palette: palette, scale: scale, big: true, container: container)
             }
         }
-
     }
 
     private func launchRocket(from start: CGPoint, to burst: CGPoint,
-                              palette: [NSColor], scale: CGFloat, big: Bool) {
+                              palette: [NSColor], scale: CGFloat, big: Bool, container: CALayer) {
         let riseDuration = Double.random(in: 0.4...0.7)
 
         // Rocket — bright streak rising up
@@ -739,7 +743,7 @@ class EmojiAnimator {
         rocket.shadowOffset = .zero
         rocket.shadowRadius = 12
         rocket.shadowOpacity = 1.0
-        hostLayer.addSublayer(rocket)
+        container.addSublayer(rocket)
 
         // Rise animation
         let risePath = CGMutablePath()
@@ -757,15 +761,16 @@ class EmojiAnimator {
         riseAnim.isRemovedOnCompletion = false
 
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self, weak rocket] in
+        CATransaction.setCompletionBlock { [weak self, weak rocket, weak container] in
             rocket?.removeFromSuperlayer()
-            self?.explodeFirework(at: burst, palette: palette, scale: scale, big: big)
+            guard let container = container, container.superlayer != nil else { return }
+            self?.explodeFirework(at: burst, palette: palette, scale: scale, big: big, container: container)
         }
         rocket.add(riseAnim, forKey: "rise")
         CATransaction.commit()
     }
 
-    private func explodeFirework(at center: CGPoint, palette: [NSColor], scale: CGFloat, big: Bool) {
+    private func explodeFirework(at center: CGPoint, palette: [NSColor], scale: CGFloat, big: Bool, container: CALayer) {
         let streakCount = big ? Int.random(in: 40...55) : Int.random(in: 24...32)
         let burstRadius = big ? CGFloat.random(in: 250...400) : CGFloat.random(in: 140...220)
         let duration = big ? Double.random(in: 1.8...2.5) : Double.random(in: 1.2...1.8)
@@ -782,7 +787,7 @@ class EmojiAnimator {
         flash.shadowRadius = big ? 80 : 40
         flash.shadowOpacity = 1.0
         flash.contentsScale = scale
-        hostLayer.addSublayer(flash)
+        container.addSublayer(flash)
 
         let flashScale = CABasicAnimation(keyPath: "transform.scale")
         flashScale.fromValue = 0.5
@@ -833,7 +838,7 @@ class EmojiAnimator {
             streak.shadowRadius = big ? 8 : 4
             streak.shadowOpacity = 1.0
             streak.strokeEnd = 0
-            hostLayer.addSublayer(streak)
+            container.addSublayer(streak)
 
             // Draw the streak outward rapidly
             let drawDuration = duration * 0.35
@@ -888,7 +893,7 @@ class EmojiAnimator {
                 dot.shadowRadius = 6
                 dot.shadowOpacity = 1.0
                 dot.contentsScale = scale
-                hostLayer.addSublayer(dot)
+                container.addSublayer(dot)
 
                 let dotPath = CGMutablePath()
                 dotPath.move(to: center)
@@ -931,8 +936,8 @@ class EmojiAnimator {
                     x: center.x + CGFloat.random(in: -burstRadius * 0.5...burstRadius * 0.5),
                     y: center.y + CGFloat.random(in: -burstRadius * 0.3...burstRadius * 0.5)
                 )
-                DispatchQueue.main.asyncAfter(deadline: .now() + sparkDelay) { [weak self] in
-                    guard let self = self else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + sparkDelay) { [weak container] in
+                    guard let container = container, container.superlayer != nil else { return }
                     let color = palette.randomElement()!
                     for _ in 0..<6 {
                         let spark = CALayer()
@@ -941,7 +946,7 @@ class EmojiAnimator {
                         spark.cornerRadius = sz / 2
                         spark.backgroundColor = color.cgColor
                         spark.contentsScale = scale
-                        self.hostLayer.addSublayer(spark)
+                        container.addSublayer(spark)
 
                         let ang = CGFloat.random(in: 0...(2 * .pi))
                         let d = CGFloat.random(in: 20...50)
@@ -1973,10 +1978,10 @@ class EmojiAnimator {
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
-        let gifURL = downloadsURL.appendingPathComponent("brother_cropped.gif")
+        let gifURL = downloadsURL.appendingPathComponent("brother_rvm_960.gif")
 
         guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else {
-            overlayError("brother_cropped.gif not found in Downloads")
+            overlayError("brother_rvm_960.gif not found in Downloads")
             return
         }
 
