@@ -1965,4 +1965,58 @@ class EmojiAnimator {
 
         trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: "red_phone.mp3")
     }
+
+    // MARK: - Brother (looping GIF, bottom-left area, toggled by tablet sound)
+
+    func showBrother() {
+        if cancelIfRunning("brother") { return }
+
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
+        let gifURL = downloadsURL.appendingPathComponent("brother_full.gif")
+
+        guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else {
+            overlayError("brother_full.gif not found in Downloads")
+            return
+        }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+            totalDuration += delay
+        }
+
+        let bounds = hostLayer.bounds
+        let size = bounds.width * 0.2          // 1/5 of screen width
+        let x = bounds.width * 0.25            // left edge at 25% from left
+        let y: CGFloat = 0                     // flush to bottom
+
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
+        gifLayer.contentsGravity = .resizeAspect
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+        activeEffects["brother"] = gifLayer
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = totalDuration
+        anim.repeatCount = .infinity
+
+        CATransaction.begin()
+        gifLayer.add(anim, forKey: "brotherFrames")
+        CATransaction.commit()
+    }
+
+    func stopBrother() {
+        _ = cancelIfRunning("brother")
+    }
 }

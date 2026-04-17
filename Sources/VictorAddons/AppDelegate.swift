@@ -116,6 +116,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "bullet-holes":    self?.animator.showBulletHoles()
             case "phone-ring":      self?.animator.showPhoneRing()
             case "fbi-knock":       self?.animator.showFbiKnock(playSound: false)
+            case "brother":         self?.animator.showBrother()
+            case "brother/stop":    self?.animator.stopBrother()
             default: break
             }
         }
@@ -221,6 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 case "bullet-holes":    self?.animator.showBulletHoles()
                 case "phone-ring":      self?.animator.showPhoneRing()
                 case "fbi-knock":       self?.animator.showFbiKnock()
+                case "brother":         self?.animator.showBrother()
                 default: break
                 }
             }
