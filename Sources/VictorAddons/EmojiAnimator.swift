@@ -2007,9 +2007,7 @@ class EmojiAnimator {
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
         gifLayer.contentsGravity = .resizeAspect
-        gifLayer.borderColor = NSColor.black.cgColor
-        gifLayer.borderWidth = 1
-        if let first = images.first { gifLayer.contents = first }
+if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
 
