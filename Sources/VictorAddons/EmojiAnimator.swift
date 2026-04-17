@@ -2024,4 +2024,17 @@ class EmojiAnimator {
     func stopBrother() {
         _ = cancelIfRunning("brother")
     }
+
+    // MARK: - Stop all active effects (called when tablet stops any sound)
+
+    func stopAllActiveEffects() {
+        for (_, layer) in activeEffects {
+            layer.removeAllAnimations()
+            layer.removeFromSuperlayer()
+        }
+        activeEffects.removeAll()
+        stopApplause()
+        if pulseRunning { _stopPulse() }
+        stopAlarmOverlay()
+    }
 }

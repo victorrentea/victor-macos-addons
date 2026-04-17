@@ -118,6 +118,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "fbi-knock":       self?.animator.showFbiKnock(playSound: false)
             case "brother":         self?.animator.showBrother()
             case "brother/stop":    self?.animator.stopBrother()
+            case "stop-all":        self?.animator.stopAllActiveEffects()
             default: break
             }
         }
