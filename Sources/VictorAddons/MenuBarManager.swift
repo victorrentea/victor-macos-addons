@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 18, 01:44"
+    static let BUILD_TIME = "Apr 18, 01:47"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -398,12 +398,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func openDreamClaude(directory: String, sessionName: String, quarter: ScreenQuarter) {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter)
+
+        let tmpPath = "/tmp/dream_\(sessionName).sh"
+        let shContent = "#!/bin/bash\ncd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'\n"
+        try? shContent.write(toFile: tmpPath, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
+
         let script = """
+        do shell script "open -a Terminal \(tmpPath)"
+        delay 0.5
         tell application "Terminal"
             activate
-            tell application "System Events" to keystroke "n" using command down
-            delay 0.3
-            do script "cd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'" in front window
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
         """
