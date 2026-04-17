@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 17, 00:01"
+    static let BUILD_TIME = "Apr 17, 18:28"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -148,6 +148,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Fire Alarm 🚨",    "fire-alarm"),
             ("Bullet Holes 🎯",  "bullet-holes"),
             ("Phone Ring 📱",   "phone-ring"),
+            ("FBI Knock 🚪",    "fbi-knock"),
+            ("School Bell Zoom", "school-bell-zoom"),
         ]
         for (title, name) in effectPairs {
             let item = NSMenuItem(title: title, action: #selector(desktopEffectAction(_:)), keyEquivalent: "")
@@ -157,6 +159,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             effectsSubmenu.addItem(item)
         }
         menu.addItem(effectsItem)
+
+        // Dream submenu
+        let dreamItem = NSMenuItem(title: "Dream", action: nil, keyEquivalent: "")
+        dreamItem.isEnabled = true
+        let dreamSubmenu = NSMenu()
+        dreamItem.submenu = dreamSubmenu
+        let dreamEntries: [(String, Selector)] = [
+            ("Training assistant", #selector(openDreamTrainingAssistant)),
+            ("Mac OS Add-ons",     #selector(openDreamMacOSAddons)),
+            ("Workspace",          #selector(openDreamWorkspace)),
+        ]
+        for (title, sel) in dreamEntries {
+            let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = true
+            dreamSubmenu.addItem(item)
+        }
+        menu.addItem(dreamItem)
 
         // Shortcut reminders (disabled)
         let pasteItem = addItem("Paste Emotions", action: nil)
@@ -359,6 +379,54 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         end tell
         """
         DispatchQueue.global().async { AppleScriptRunner.run(script) }
+    }
+
+    @objc private func openDreamTrainingAssistant() {
+        openDreamClaude(directory: "~/workspace/training-assistant", sessionName: "training-assistant", quarter: .topRight)
+    }
+
+    @objc private func openDreamMacOSAddons() {
+        openDreamClaude(directory: "~/workspace/victor-macos-addons", sessionName: "macos-addons", quarter: .bottomRight)
+    }
+
+    @objc private func openDreamWorkspace() {
+        openDreamClaude(directory: "~/workspace/ai", sessionName: "workspace", quarter: .topLeft)
+    }
+
+    private enum ScreenQuarter { case topLeft, topRight, bottomLeft, bottomRight }
+
+    private func openDreamClaude(directory: String, sessionName: String, quarter: ScreenQuarter) {
+        let screen = statusItem.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter)
+        let script = """
+        tell application "Terminal"
+            do script "printf '\\x1b]0;\(sessionName)\\x07'; cd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'"
+            activate
+            delay 0.3
+            set bounds of front window to {\(l), \(t), \(r), \(b)}
+        end tell
+        """
+        DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
+    }
+
+    private func appleScriptBounds(screen: NSScreen, quarter: ScreenQuarter) -> (Int, Int, Int, Int) {
+        let totalMaxY = NSScreen.screens.reduce(0.0) { max($0, $1.frame.maxY) }
+        let f = screen.visibleFrame
+        let halfW = f.width / 2
+        let halfH = f.height / 2
+        let nsX: CGFloat
+        let nsY: CGFloat
+        switch quarter {
+        case .topLeft:     nsX = f.minX;         nsY = f.minY + halfH
+        case .topRight:    nsX = f.minX + halfW;  nsY = f.minY + halfH
+        case .bottomLeft:  nsX = f.minX;         nsY = f.minY
+        case .bottomRight: nsX = f.minX + halfW;  nsY = f.minY
+        }
+        let asLeft = Int(nsX)
+        let asTop = Int(totalMaxY - nsY - halfH)
+        let asRight = Int(nsX + halfW)
+        let asBottom = Int(totalMaxY - nsY)
+        return (asLeft, asTop, asRight, asBottom)
     }
 
     @objc private func quitApp() {

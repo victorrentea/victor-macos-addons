@@ -112,9 +112,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
             case "fear":          self?.animator.showFear()
             case "fail":          self?.animator.showFail()
             case "sepia":         self?.animator.showSepia(playSound: false)
-            case "fire-alarm":    self?.animator.showFireAlarm()
-            case "bullet-holes":  self?.animator.showBulletHoles()
-            case "phone-ring":    self?.animator.showPhoneRing()
+            case "fire-alarm":      self?.animator.showFireAlarm()
+            case "bullet-holes":    self?.animator.showBulletHoles()
+            case "phone-ring":      self?.animator.showPhoneRing()
+            case "fbi-knock":       self?.animator.showFbiKnock(playSound: false)
+            case "school-bell-zoom": self?.animator.showSchoolBellZoom(playSound: false)
             default: break
             }
         }
@@ -193,6 +195,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 "menu_title": ui.menuTitle,
                 "icon_mode": ui.iconMode,
                 "source": ui.source,
+                "event_tap_active": self.eventTapManager?.isActive == true,
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
                   let json = String(data: data, encoding: .utf8) else {
@@ -215,9 +218,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 case "broken-glass": self?.animator.showBrokenGlass()
                 case "game-over":    self?.animator.showGameOver()
                 case "pulse":        self?.animator.startPulseOverlay()
-                case "fire-alarm":   self?.animator.showFireAlarm()
-                case "bullet-holes": self?.animator.showBulletHoles()
-                case "phone-ring":   self?.animator.showPhoneRing()
+                case "fire-alarm":       self?.animator.showFireAlarm()
+                case "bullet-holes":    self?.animator.showBulletHoles()
+                case "phone-ring":      self?.animator.showPhoneRing()
+                case "fbi-knock":       self?.animator.showFbiKnock()
+                case "school-bell-zoom": self?.animator.showSchoolBellZoom()
                 default: break
                 }
             }
@@ -321,16 +326,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                     activate
                 end tell
             """)
-        }
-        eventTap.onRepaste = {
-            let src = CGEventSource(stateID: .hidSystemState)
-            let flags: CGEventFlags = [.maskControl, .maskAlternate]
-            let down = CGEvent(keyboardEventSource: src, virtualKey: 0x31, keyDown: true)
-            let up   = CGEvent(keyboardEventSource: src, virtualKey: 0x31, keyDown: false)
-            down?.flags = flags
-            up?.flags   = flags
-            down?.post(tap: .cgSessionEventTap)
-            up?.post(tap: .cgSessionEventTap)
         }
         eventTap.start()
         self.eventTapManager = eventTap

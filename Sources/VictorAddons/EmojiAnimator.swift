@@ -1866,6 +1866,92 @@ class EmojiAnimator {
         trackEffect("bullet-holes", layer: container, duration: totalDuration + 0.1, sound: "minigun.mp3")
     }
 
+    // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)
+
+    func showFbiKnock(playSound: Bool = true) {
+        if cancelIfRunning("fbi-knock", sound: playSound ? "fbi.mp3" : nil) { return }
+
+        let bounds = hostLayer.bounds
+        let totalDuration = 3.3
+
+        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+              let screenshot = CGDisplayCreateImage(
+                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
+              ) else { return }
+
+        if playSound { SoundManager.shared.play("fbi.mp3") }
+
+        let imgLayer = CALayer()
+        imgLayer.frame = bounds
+        imgLayer.contents = screenshot
+        imgLayer.contentsGravity = .resizeAspectFill
+        hostLayer.addSublayer(imgLayer)
+
+        // Knock times detected from fbi.mp3: 0.412s, 0.825s, 1.125s
+        let knockTimes = [0.412, 0.825, 1.125]
+        for (i, knockTime) in knockTimes.enumerated() {
+            let newScale = pow(1.1, Double(i + 1))
+            DispatchQueue.main.asyncAfter(deadline: .now() + knockTime) { [weak imgLayer] in
+                guard let imgLayer = imgLayer else { return }
+                CATransaction.begin()
+                CATransaction.setAnimationDuration(0.08)
+                CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+                imgLayer.transform = CATransform3DMakeScale(newScale, newScale, 1.0)
+                CATransaction.commit()
+            }
+        }
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.3
+        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
+        fadeOut.duration = 0.3
+        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
+        imgLayer.add(fadeOut, forKey: "fadeOut")
+
+        trackEffect("fbi-knock", layer: imgLayer, duration: totalDuration, sound: playSound ? "fbi.mp3" : nil)
+    }
+
+    // MARK: - School bell zoom (screenshot zooms 20% growing from bottom-left toward interior)
+
+    func showSchoolBellZoom(playSound: Bool = true) {
+        if cancelIfRunning("school-bell-zoom", sound: playSound ? "school_bell.mp3" : nil) { return }
+
+        let bounds = hostLayer.bounds
+        let totalDuration = 9.3
+
+        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+              let screenshot = CGDisplayCreateImage(
+                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
+              ) else { return }
+
+        if playSound { SoundManager.shared.play("school_bell.mp3") }
+
+        let imgLayer = CALayer()
+        imgLayer.anchorPoint = CGPoint(x: 0, y: 0)
+        imgLayer.position = CGPoint(x: 0, y: 0)
+        imgLayer.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
+        imgLayer.contents = screenshot
+        imgLayer.contentsGravity = .resizeAspectFill
+        hostLayer.addSublayer(imgLayer)
+
+        // Zoom to 1.2x from bottom-left anchor — image grows toward top-right (interior)
+        let zoomIn = CABasicAnimation(keyPath: "transform.scale")
+        zoomIn.fromValue = 1.0; zoomIn.toValue = 1.2
+        zoomIn.duration = 0.4
+        zoomIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        zoomIn.fillMode = .forwards; zoomIn.isRemovedOnCompletion = false
+        imgLayer.add(zoomIn, forKey: "zoomIn")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.5
+        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
+        fadeOut.duration = 0.5
+        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
+        imgLayer.add(fadeOut, forKey: "fadeOut")
+
+        trackEffect("school-bell-zoom", layer: imgLayer, duration: totalDuration, sound: playSound ? "school_bell.mp3" : nil)
+    }
+
     // MARK: - Phone ring (screenshot shake)
 
     func showPhoneRing() {

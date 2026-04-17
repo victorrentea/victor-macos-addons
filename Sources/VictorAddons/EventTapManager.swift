@@ -44,6 +44,7 @@ class EventTapManager {
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
+    var isActive: Bool { tapPort != nil }
 
     // MARK: - Start
 
@@ -94,6 +95,15 @@ class EventTapManager {
         // Mouse events
         if type == .otherMouseDown {
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
+            // DEBUG: log all extra mouse button events
+            let logLine = "otherMouseDown button=\(button) (MOUSE_BUTTON_5=\(MOUSE_BUTTON_5) MOUSE_BUTTON_3=\(MOUSE_BUTTON_3))\n"
+            if let data = logLine.data(using: .utf8) {
+                if let fh = FileHandle(forWritingAtPath: "/tmp/victor-mouse.log") {
+                    fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
+                } else {
+                    try? data.write(to: URL(fileURLWithPath: "/tmp/victor-mouse.log"))
+                }
+            }
             if button == MOUSE_BUTTON_5 {
                 onDictationMute?()
             } else if button == MOUSE_BUTTON_3 {
