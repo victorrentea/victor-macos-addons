@@ -346,6 +346,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 audioManager?.toggleDictationMute()
             }
         }
+        eventTap.onDictationEscape = { [weak audioManager] in
+            DispatchQueue.global(qos: .userInteractive).async {
+                audioManager?.resumeIfDictationActive()
+            }
+        }
         eventTap.onWheelLongPress = {
             AppleScriptRunner.run("""
                 tell application "Terminal"

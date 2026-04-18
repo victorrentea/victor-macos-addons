@@ -22,6 +22,7 @@ class EventTapManager {
     var onScreenshot: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onDictationMute: (() -> Void)?
+    var onDictationEscape: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onWheelLongPress: (() -> Void)?
@@ -31,6 +32,7 @@ class EventTapManager {
     private let VK_P: CGKeyCode = 0x23
     private let VK_D: CGKeyCode = 0x02
     private let VK_C: CGKeyCode = 0x08
+    private let VK_ESC: CGKeyCode = 0x35
 
     // MARK: Mouse button numbers
     private let MOUSE_BUTTON_5: Int64 = 4
@@ -130,6 +132,12 @@ class EventTapManager {
         let hasCmd  = flags.contains(.maskCommand)
         let hasCtrl = flags.contains(.maskControl)
         let hasOpt  = flags.contains(.maskAlternate)
+
+        // ESC → let Wispr handle it, but also resume media if we paused for dictation (pass through)
+        if keyCode == VK_ESC {
+            DispatchQueue.global().async { [weak self] in self?.onDictationEscape?() }
+            return Unmanaged.passUnretained(event)
+        }
 
         // Ctrl+P → screenshot (suppress)
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt {

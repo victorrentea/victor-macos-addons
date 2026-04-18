@@ -14,6 +14,12 @@ class CoreAudioManager {
         }
     }
 
+    // Called on global ESC: if we paused media for dictation, Wispr was cancelled → resume.
+    func resumeIfDictationActive() {
+        guard isDictationActive else { return }
+        resumeMedia()
+    }
+
     private func pauseMedia() {
         runNowPlaying("pause")
         isDictationActive = true
