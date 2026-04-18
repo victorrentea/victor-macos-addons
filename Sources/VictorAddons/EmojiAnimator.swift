@@ -269,7 +269,8 @@ class EmojiAnimator {
 
     // MARK: - Screen crash (screenshot shatters into broken glass shards)
 
-    func showBrokenGlass() {  // formerly showEarthquake
+    func showBrokenGlass(playSound: Bool = true) {  // formerly showEarthquake
+        if playSound { SoundManager.shared.play("breaking-glass.mp3") }
         let bounds = hostLayer.bounds
         let totalDuration = 4.5
 
@@ -677,12 +678,12 @@ class EmojiAnimator {
          .white],
     ]
 
-    func showFireworks() {
+    func showFireworks(playSound: Bool = true) {
         guard activeEffects["fireworks"] == nil else { return }
         let container = CALayer()
         container.frame = hostLayer.bounds
         hostLayer.addSublayer(container)
-        trackEffect("fireworks", layer: container, duration: 8.0)
+        trackEffect("fireworks", layer: container, duration: 8.0, sound: playSound ? "fireworks.mp3" : nil)
 
         let bounds = hostLayer.bounds
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
@@ -1174,9 +1175,10 @@ class EmojiAnimator {
 
     // MARK: - Applause (toggleable: click to start, click again to stop)
 
-    func showApplause() {
+    func showApplause(playSound: Bool = true) {
         guard applauseTimer == nil else { return }   // already running — ignore
 
+        if playSound { SoundManager.shared.play("applause.mp3") }
         let duration = 6.0
 
         // Initial burst, then steady stream
@@ -1189,12 +1191,14 @@ class EmojiAnimator {
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             self?.applauseTimer?.invalidate()
             self?.applauseTimer = nil
+            SoundManager.shared.stop("applause.mp3")
         }
     }
 
     func stopApplause() {
         applauseTimer?.invalidate()
         applauseTimer = nil
+        SoundManager.shared.stop("applause.mp3")
     }
 
     private func spawnApplauseClap() {
@@ -1257,9 +1261,10 @@ class EmojiAnimator {
 
     // MARK: - Pulse / heartbeat (one-shot: 2 QRS cycles then flatline)
 
-    func showPulse() {
+    func showPulse(playSound: Bool = false) {
         if pulseRunning { _stopPulse(); return }
         pulseRunning = true
+        if playSound { SoundManager.shared.play("flatline.mp3") }
 
         let bounds = hostLayer.bounds
         // Timing: dying.mp3 R-spikes at 0.105s and 1.507s. Image peaks at 22% and 48% of width.
@@ -1526,7 +1531,8 @@ class EmojiAnimator {
 
     // MARK: - Fear
 
-    func showFear() {
+    func showFear(playSound: Bool = true) {
+        if playSound { SoundManager.shared.play("scream_man.mp3") }
         let bounds = hostLayer.bounds
         let duration: Double = 1.75
         let fontSize: CGFloat = 100
@@ -1581,12 +1587,12 @@ class EmojiAnimator {
 
     // MARK: - Explosion GIF overlay
 
-    func showExplosionGif() {
+    func showExplosionGif(playSound: Bool = true) {
         guard activeEffects["explosion"] == nil else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?._showExplosionGif() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?._showExplosionGif(playSound: playSound) }
     }
 
-    private func _showExplosionGif() {
+    private func _showExplosionGif(playSound: Bool = true) {
         guard activeEffects["explosion"] == nil else { return }
         guard let url = Bundle.module.url(forResource: "explosion", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
@@ -1614,6 +1620,7 @@ class EmojiAnimator {
         gifLayer.contentsGravity = .resizeAspect
         if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
+        if playSound { SoundManager.shared.play("explosion.mp3") }
         trackEffect("explosion", layer: gifLayer, duration: totalDuration)
 
         let anim = CAKeyframeAnimation(keyPath: "contents")
@@ -1630,7 +1637,7 @@ class EmojiAnimator {
 
     // MARK: - Game Over overlay
 
-    func showGameOver() {
+    func showGameOver(playSound: Bool = true) {
         guard activeEffects["game-over"] == nil else { return }
         let bounds = hostLayer.bounds
 
@@ -1645,7 +1652,8 @@ class EmojiAnimator {
         let container = CALayer()
         container.frame = bounds
         hostLayer.addSublayer(container)
-        trackEffect("game-over", layer: container, duration: duration)
+        trackEffect("game-over", layer: container, duration: duration, sound: playSound ? "dying.mp3" : nil)
+        if playSound { SoundManager.shared.play("dying.mp3") }
 
         // 70% black backdrop
         let blackLayer = CALayer()
@@ -1671,7 +1679,7 @@ class EmojiAnimator {
 
     // MARK: - Fail overlay (latest PNG from ~/Downloads, centered, 50% screen height)
 
-    func showFail() {
+    func showFail(playSound: Bool = true) {
         guard activeEffects["fail"] == nil else { return }
         let bounds = hostLayer.bounds
         let duration: Double = 3.2  // matches fail.mp3 (~3.21s on tablet)
@@ -1693,7 +1701,8 @@ class EmojiAnimator {
         imgLayer.contents = img
         imgLayer.contentsGravity = .resizeAspect
         hostLayer.addSublayer(imgLayer)
-        trackEffect("fail", layer: imgLayer, duration: duration)
+        trackEffect("fail", layer: imgLayer, duration: duration, sound: playSound ? "fail.mp3" : nil)
+        if playSound { SoundManager.shared.play("fail.mp3") }
 
         // Fade out over the last 0.3s
         let fadeStart = max(0, duration - 0.3)
@@ -1725,8 +1734,8 @@ class EmojiAnimator {
         }
     }
 
-    func startPulseOverlay() {
-        if !pulseRunning { showPulse() }
+    func startPulseOverlay(playSound: Bool = true) {
+        if !pulseRunning { showPulse(playSound: playSound) }
     }
 
     func stopPulseOverlay() {
@@ -1738,6 +1747,7 @@ class EmojiAnimator {
     private func _stopPulse() {
         guard pulseRunning else { return }
         pulseRunning = false
+        SoundManager.shared.stop("flatline.mp3")
         let dim = _pulseDimLayer
         let grid = _pulseGridLayer
         let ecg = _pulseEcgLayer
@@ -1762,8 +1772,8 @@ class EmojiAnimator {
 
     // MARK: - Fire alarm GIF (bottom-left corner)
 
-    func showFireAlarm() {
-        if cancelIfRunning("fire-alarm") { return }
+    func showFireAlarm(playSound: Bool = true) {
+        if cancelIfRunning("fire-alarm", sound: playSound ? "school_bell.mp3" : nil) { return }
 
         guard let url = Bundle.module.url(forResource: "fire-alarm", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
@@ -1808,12 +1818,13 @@ class EmojiAnimator {
         gifLayer.add(anim, forKey: "fireAlarmFrames")
         CATransaction.commit()
 
-        trackEffect("fire-alarm", layer: gifLayer, duration: 4.72)  // school_bell.mp3 minus 4.5s
+        if playSound { SoundManager.shared.play("school_bell.mp3") }
+        trackEffect("fire-alarm", layer: gifLayer, duration: 4.72, sound: playSound ? "school_bell.mp3" : nil)
     }
 
     // MARK: - Bullet holes (minigun)
 
-    func showBulletHoles() {
+    func showBulletHoles(playSound: Bool = true) {
         if cancelIfRunning("bullet-holes") { return }
 
         let bounds = hostLayer.bounds
@@ -1828,7 +1839,7 @@ class EmojiAnimator {
             return
         }
 
-        SoundManager.shared.play("minigun.mp3")
+        if playSound { SoundManager.shared.play("minigun.mp3") }
 
         let container = CALayer()
         container.frame = bounds
@@ -1925,8 +1936,8 @@ class EmojiAnimator {
 
     // MARK: - Phone ring (screenshot shake)
 
-    func showPhoneRing() {
-        if cancelIfRunning("phone-ring", sound: "red_phone.mp3") { return }
+    func showPhoneRing(playSound: Bool = true) {
+        if cancelIfRunning("phone-ring", sound: playSound ? "red_phone.mp3" : nil) { return }
 
         let bounds = hostLayer.bounds
         let totalDuration = 2.29
@@ -1936,7 +1947,7 @@ class EmojiAnimator {
                   (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
               ) else { return }
 
-        SoundManager.shared.play("red_phone.mp3")
+        if playSound { SoundManager.shared.play("red_phone.mp3") }
 
         let imgLayer = CALayer()
         imgLayer.frame = bounds
@@ -1968,13 +1979,13 @@ class EmojiAnimator {
         fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
         imgLayer.add(fadeOut, forKey: "fadeOut")
 
-        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: "red_phone.mp3")
+        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: playSound ? "red_phone.mp3" : nil)
     }
 
     // MARK: - Brother (looping GIF, bottom-left area, toggled by tablet sound)
 
-    func showBrother() {
-        if cancelIfRunning("brother") { return }
+    func showBrother(playSound: Bool = true) {
+        if cancelIfRunning("brother", sound: playSound ? "sfx_109.mp3" : nil) { return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -2007,9 +2018,20 @@ class EmojiAnimator {
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
         gifLayer.contentsGravity = .resizeAspect
-if let first = images.first { gifLayer.contents = first }
+        if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
+
+        // 🤢 emoji overlay in bottom-left corner near the GIF
+        let nauseaLayer = CATextLayer()
+        nauseaLayer.string = "🤢"
+        nauseaLayer.fontSize = size * 0.30
+        nauseaLayer.alignmentMode = .center
+        let emojiSize = size * 0.35
+        nauseaLayer.frame = CGRect(x: x + size * 0.55, y: y + size * 0.55, width: emojiSize, height: emojiSize)
+        nauseaLayer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        hostLayer.addSublayer(nauseaLayer)
+        activeEffects["brother-emoji"] = nauseaLayer
 
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
@@ -2019,10 +2041,25 @@ if let first = images.first { gifLayer.contents = first }
         CATransaction.begin()
         gifLayer.add(anim, forKey: "brotherFrames")
         CATransaction.commit()
+
+        if playSound {
+            SoundManager.shared.play("sfx_109.mp3")
+            if let soundURL = Bundle.module.url(forResource: "sfx_109", withExtension: "mp3") {
+                let asset = AVURLAsset(url: soundURL)
+                let d = asset.duration
+                if d.isNumeric {
+                    let soundDuration = CMTimeGetSeconds(d)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
+                        self?.stopBrother()
+                    }
+                }
+            }
+        }
     }
 
     func stopBrother() {
-        _ = cancelIfRunning("brother")
+        _ = cancelIfRunning("brother", sound: "sfx_109.mp3")
+        _ = cancelIfRunning("brother-emoji")
     }
 
     // MARK: - Stop all active effects (called when tablet stops any sound)
