@@ -97,6 +97,7 @@ _ME_PATTERNS = ["XLR", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
+    # Generic Whisper hallucinations
     "thank you.",
     "thanks for watching.",
     "thanks.",
@@ -109,7 +110,62 @@ _HALLUCINATIONS = {
     "(music)",
     "♪",
     "...",
+    # Romanian YouTube-style hallucinations (silence → Whisper thinks it's a video)
+    "să vă mulțumesc pentru vizionare!",
+    "să vă mulțumim pentru vizionare!",
+    "nu uitați să vă abonați la canal!",
+    "nu uitați să vă abonați la canalul meu!",
+    "vă mulțumesc!",
+    "vă mulțumim!",
+    "mulțumesc pentru vizionare!",
+    "mulțumim pentru vizionare!",
+    "grazie.",
+    "grazie!",
 }
+
+# Regex: a short syllable/char pattern repeated many times within a single token
+# e.g. "iriiriiriiri...", "Tidyidyidyidy...", "doppiriiriiri..."
+_CHAR_REPEAT_RE = re.compile(r'(.{2,4})\1{8,}', re.IGNORECASE)
+
+
+def _is_garbage(text: str) -> bool:
+    """Return True if text is a Whisper hallucination or noise that should be dropped."""
+    from collections import Counter
+
+    stripped = text.strip()
+    if not stripped:
+        return True
+
+    lower = stripped.lower()
+
+    # Exact-match known hallucination phrases
+    if lower in _HALLUCINATIONS:
+        return True
+
+    # Single token that's purely digits or punctuation (e.g. "2", "123", "...")
+    words = stripped.split()
+    if len(words) == 1 and re.fullmatch(r'[\d\W]+', words[0]):
+        return True
+
+    # Character-level repetition inside a word: "iriiriiriiri", "Tidyidyidyidy"
+    if _CHAR_REPEAT_RE.search(stripped):
+        return True
+
+    # Word/phrase repetition loop (most common Whisper hallucination during silence)
+    if len(words) >= 8:
+        counts = Counter(words)
+        top_word, top_count = counts.most_common(1)[0]
+        if top_count >= 5 and top_count / len(words) >= 0.6:
+            return True
+        for n in (2, 3, 4, 5):
+            if len(words) < n * 4:
+                continue
+            ngrams = [tuple(words[i:i+n]) for i in range(len(words) - n + 1)]
+            top_ng, top_ng_count = Counter(ngrams).most_common(1)[0]
+            if top_ng_count >= 3 and top_ng_count * n / len(words) >= 0.55:
+                return True
+
+    return False
 
 # Short display names for known devices
 _DEVICE_SHORT_NAMES = {
@@ -461,7 +517,7 @@ def _transcriber_loop(tx_queue: queue.Queue, on_segment):
                     )
                     text = result.get("text", "").strip()
                     lang = "ro"
-                if not text or text.lower() in _HALLUCINATIONS:
+                if _is_garbage(text):
                     continue
                 # Keep last ~200 chars as context for next chunk
                 prev_text[label] = text[-200:]
