@@ -152,17 +152,24 @@ def _is_garbage(text: str) -> bool:
         return True
 
     # Word/phrase repetition loop (most common Whisper hallucination during silence)
-    if len(words) >= 8:
-        counts = Counter(words)
+    # Normalize: strip punctuation + lowercase so "da," == "da" == "Da,"
+    norm = [re.sub(r'[^\w\u0080-\uffff]', '', w).lower() for w in words]
+    norm = [w for w in norm if w]  # drop empty tokens (pure punctuation)
+    if len(norm) >= 6:
+        counts = Counter(norm)
         top_word, top_count = counts.most_common(1)[0]
-        if top_count >= 5 and top_count / len(words) >= 0.6:
+        # Short segments need higher dominance (≥80%) to avoid filtering "Da, da, corect."
+        threshold = 0.80 if len(norm) < 8 else 0.60
+        min_count = 4   if len(norm) < 8 else 5
+        if top_count >= min_count and top_count / len(norm) >= threshold:
             return True
+    if len(norm) >= 8:
         for n in (2, 3, 4, 5):
-            if len(words) < n * 4:
+            if len(norm) < n * 4:
                 continue
-            ngrams = [tuple(words[i:i+n]) for i in range(len(words) - n + 1)]
+            ngrams = [tuple(norm[i:i+n]) for i in range(len(norm) - n + 1)]
             top_ng, top_ng_count = Counter(ngrams).most_common(1)[0]
-            if top_ng_count >= 3 and top_ng_count * n / len(words) >= 0.55:
+            if top_ng_count >= 3 and top_ng_count * n / len(norm) >= 0.55:
                 return True
 
     return False
