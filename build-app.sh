@@ -71,6 +71,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>Victor Addons needs microphone access for live transcription.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>Victor Addons needs accessibility access for keyboard shortcuts and clipboard monitoring.</string>
+    <key>NSUserNotificationAlertStyle</key>
+    <string>alert</string>
 </dict>
 </plist>
 PLIST

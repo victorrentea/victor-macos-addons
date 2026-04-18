@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate {
     private var overlayPanel: OverlayPanel!
@@ -47,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         requestMicrophonePermissions()
         requestAccessibilityPermissions(promptUser: false)
         requestScreenRecordingPermissions(promptUser: true)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = NSScreen.screens.first { screen in

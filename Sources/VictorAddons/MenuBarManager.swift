@@ -1,8 +1,9 @@
 import AppKit
 import Foundation
+import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 18, 10:56"
+    static let BUILD_TIME = "Apr 18, 20:44"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -492,6 +493,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         isTranscribing = active
         updateTranscribeTitle()
         refreshMenuIcon()
+        postTranscriptionNotification(active)
+    }
+
+    private func postTranscriptionNotification(_ active: Bool) {
+        let content = UNMutableNotificationContent()
+        content.title = active ? "Transcription Started" : "Transcription Stopped"
+        content.sound = .none
+        let request = UNNotificationRequest(identifier: "transcription-state", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func setTranscriptionStale(_ stale: Bool) {
