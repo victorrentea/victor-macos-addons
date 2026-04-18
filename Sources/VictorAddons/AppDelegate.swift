@@ -3,7 +3,7 @@ import AVFoundation
 import Foundation
 import UserNotifications
 
-class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate, UNUserNotificationCenterDelegate {
     private var overlayPanel: OverlayPanel!
     private var animator: EmojiAnimator!
     // buttonBar removed
@@ -31,6 +31,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
     private var transcriptionWatcher: TranscriptionWatcher?
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     private var joinLinkBanner: JoinLinkBanner?
+    private var powerMonitor: PowerMonitor?
+    private var autoStoppedByBattery = false
 
     // Session state for join link feature
     private var isSessionActive: Bool = false
@@ -48,7 +50,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
         requestMicrophonePermissions()
         requestAccessibilityPermissions(promptUser: false)
         requestScreenRecordingPermissions(promptUser: true)
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert]) { granted, err in
+            overlayInfo("Notifications: granted=\(granted) err=\(String(describing: err))")
+        }
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = NSScreen.screens.first { screen in
@@ -167,9 +173,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 startTranscription()
             }
         }
-        menuBarManager.onToggleTranscribe = {
+        menuBarManager.onToggleTranscribe = { [weak self] in
+            self?.autoStoppedByBattery = false
             toggleTranscription()
         }
+
+        let pm = PowerMonitor()
+        pm.onSwitchToBattery = { [weak self, weak whisperManager] in
+            guard whisperManager?.isRunning == true else { return }
+            self?.autoStoppedByBattery = true
+            stopTranscription()
+            self?.postPowerNotification("Transcription paused — on battery")
+        }
+        pm.onSwitchToAC = { [weak self] in
+            guard self?.autoStoppedByBattery == true else { return }
+            self?.autoStoppedByBattery = false
+            startTranscription()
+            self?.postPowerNotification("Transcription resumed — plugged in")
+        }
+        pm.start()
+        self.powerMonitor = pm
         tabletServer?.onTestTranscriptionStart = {
             UserDefaults.standard.set(true, forKey: "transcribingEnabled")
             startTranscription()
@@ -645,5 +668,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate 
                 }
             }
         }
+    }
+
+    private func postPowerNotification(_ message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Victor Addons"
+        content.body = message
+        content.sound = .default
+        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Notif error: \(err)") }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        handler([.banner, .list, .sound])
     }
 }
