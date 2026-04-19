@@ -111,7 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "earthquake":    self?.animator.showBrokenGlass(playSound: false)
             case "explosion":     self?.animator.showExplosionGif(playSound: false)
             case "game-over":     self?.animator.showGameOver(playSound: false)
-            case "broken-glass":  self?.animator.showBrokenGlass()  // tablet skips local audio; desktop plays it
+            case "broken-glass":  self?.animator.showBrokenGlass(playSound: false)
             case "pulse":         self?.animator.startPulseOverlay(playSound: false)
             case "pulse/stop":    self?.animator.stopPulseOverlay()
             case "applause":      self?.animator.showApplause(playSound: false)
