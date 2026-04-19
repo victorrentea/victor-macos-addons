@@ -430,7 +430,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 FileManager.default.createFile(atPath: todayFile.path, contents: nil)
             }
 
-            let escapedPath = todayFile.path.replacingOccurrences(of: "'", with: "'\\''")
+            // If today's file is empty, find the most recent non-empty transcription file
+            let tailFile: URL
+            let attrs = try? FileManager.default.attributesOfItem(atPath: todayFile.path)
+            if (attrs?[.size] as? Int ?? 0) == 0,
+               let files = try? FileManager.default.contentsOfDirectory(at: transcriptionFolder, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]),
+               let recent = files
+                   .filter({ $0.lastPathComponent.hasSuffix("transcription.txt") })
+                   .filter({ (try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) ?? 0 > 0 })
+                   .sorted(by: { ($0.lastPathComponent) > ($1.lastPathComponent) })
+                   .first {
+                tailFile = recent
+            } else {
+                tailFile = todayFile
+            }
+
+            let escapedPath = tailFile.path.replacingOccurrences(of: "'", with: "'\\''")
             let cmd = "tail -n 20 -F '\(escapedPath)'"
             let script = """
             tell application "Terminal"
@@ -443,7 +458,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             p.arguments = ["-e", script]
             try p.run()
-            overlayInfo("Monitoring transcription: \(filename)")
+            overlayInfo("Monitoring transcription: \(tailFile.lastPathComponent)")
         } catch {
             overlayError("Failed to open monitor: \(error)")
         }
