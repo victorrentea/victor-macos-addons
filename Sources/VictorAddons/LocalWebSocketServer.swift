@@ -71,8 +71,9 @@ class LocalWebSocketServer {
         }
     }
 
-    func pushGitFileOpened(url: String, branch: String, file: String) {
-        let msg: [String: Any] = ["type": "git_file_opened", "url": url, "branch": branch, "file": file]
+    func pushGitFileOpened(url: String, branch: String, file: String, fileURL: String?) {
+        var msg: [String: Any] = ["type": "git_file_opened", "url": url, "branch": branch, "file": file]
+        if let fileURL { msg["file_url"] = fileURL }
         guard let data = try? JSONSerialization.data(withJSONObject: msg),
               let text = String(data: data, encoding: .utf8) else { return }
         queue.async { [weak self] in

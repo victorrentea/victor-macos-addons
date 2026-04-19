@@ -345,6 +345,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
+        eventTap.onToggleTranscription = { toggleTranscription() }
         eventTap.onDictationMute = { [weak audioManager] in
             DispatchQueue.global(qos: .userInteractive).async {
                 audioManager?.toggleDictationMute()
@@ -377,8 +378,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         self.pptMonitor = pptMonitor
 
         let ijMonitor = IntelliJMonitor(outputDir: transcriptionFolder)
-        ijMonitor.onGitFileOpened = { [weak self] url, branch, file in
-            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file)
+        ijMonitor.onGitFileOpened = { [weak self] url, branch, file, fileURL in
+            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: fileURL)
         }
         ijMonitor.start()
         self.ijMonitor = ijMonitor

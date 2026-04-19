@@ -8,8 +8,9 @@ class IntelliJMonitor {
     private let outputDir: URL
     private var timer: Timer?
     private var lastLine: String?
+    private var pendingKey: String?  // project+file seen on previous tick
 
-    var onGitFileOpened: ((String, String, String) -> Void)?
+    var onGitFileOpened: ((String, String, String, String?) -> Void)?
 
     init(outputDir: URL) {
         self.outputDir = outputDir
@@ -17,7 +18,7 @@ class IntelliJMonitor {
 
     func start() {
         DispatchQueue.main.async { [weak self] in
-            self?.timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            self?.timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
                 DispatchQueue.global(qos: .utility).async { self?.tick() }
             }
         }
@@ -76,6 +77,12 @@ class IntelliJMonitor {
 
         guard !projectName.isEmpty else { return }
 
+        // Require the same project+file on two consecutive polls before doing git work
+        let currentKey = "\(projectName)\t\(filename)"
+        let stable = currentKey == pendingKey
+        pendingKey = currentKey
+        guard stable else { return }
+
         // Find project path from recentProjects.xml
         guard let projectPath = lookupProjectPath(projectName) else { return }
 
@@ -85,18 +92,25 @@ class IntelliJMonitor {
 
         guard !remoteURL.isEmpty else { return }
 
+        let resolvedBranch = branch.isEmpty ? "unknown" : branch
+        let resolvedFile = filename.isEmpty ? "(none)" : filename
+
+        // Resolve full file URL if filename is known
+        let fileURL: String? = filename.isEmpty ? nil : resolveFileURL(
+            remoteURL: remoteURL, branch: resolvedBranch,
+            projectPath: projectPath, filename: filename
+        )
+
         // Build line content (without timestamp for dedup)
-        var content = "\(remoteURL) branch:\(branch.isEmpty ? "unknown" : branch)"
-        if !filename.isEmpty {
-            content += " file:\(filename)"
-        }
+        var content = "\(remoteURL) branch:\(resolvedBranch) file:\(resolvedFile)"
+        if let fileURL { content += " fileURL:\(fileURL)" }
 
         // Skip duplicate
         if content == lastLine { return }
         lastLine = content
 
         // Send via addon WS bridge instead of writing to file
-        onGitFileOpened?(remoteURL, branch.isEmpty ? "unknown" : branch, filename.isEmpty ? "(none)" : filename)
+        onGitFileOpened?(remoteURL, resolvedBranch, resolvedFile, fileURL)
     }
 
     private func git(_ args: [String], at path: String) -> String {
@@ -122,6 +136,35 @@ class IntelliJMonitor {
         guard process.terminationStatus == 0 else { return "" }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private func resolveFileURL(remoteURL: String, branch: String, projectPath: String, filename: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", projectPath, "ls-files"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return nil }
+        let deadline = Date(timeIntervalSinceNow: 2.0)
+        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        if process.isRunning { process.terminate(); return nil }
+        guard process.terminationStatus == 0 else { return nil }
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+
+        let matches = output.split(separator: "\n").map(String.init).filter { $0.hasSuffix("/\(filename)") || $0 == filename }
+        guard matches.count == 1 else { return nil }
+        let relativePath = matches[0]
+
+        // Convert SSH remote to HTTPS
+        var httpsURL = remoteURL
+        if httpsURL.hasPrefix("git@") {
+            httpsURL = httpsURL.replacingOccurrences(of: ":", with: "/")
+                .replacingOccurrences(of: "git@", with: "https://")
+        }
+        httpsURL = httpsURL.replacingOccurrences(of: "\\.git$", with: "", options: .regularExpression)
+
+        return "\(httpsURL)/blob/\(branch)/\(relativePath)"
     }
 
     private func lookupProjectPath(_ projectName: String) -> String? {
