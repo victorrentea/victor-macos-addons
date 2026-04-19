@@ -26,12 +26,14 @@ class EventTapManager {
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onWheelLongPress: (() -> Void)?
+    var onTileTerminals: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
     private let VK_P: CGKeyCode = 0x23
     private let VK_D: CGKeyCode = 0x02
     private let VK_C: CGKeyCode = 0x08
+    private let VK_A: CGKeyCode = 0x00
     private let VK_ESC: CGKeyCode = 0x35
 
     // MARK: Mouse button numbers
@@ -135,6 +137,14 @@ class EventTapManager {
 
         // ESC → let Wispr handle it, but also resume media if we paused for dictation (pass through)
         if keyCode == VK_ESC {
+            let logLine = "\(Date()) ESC detected\n"
+            if let data = logLine.data(using: .utf8) {
+                if let fh = FileHandle(forWritingAtPath: "/tmp/victor-esc.log") {
+                    fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
+                } else {
+                    try? data.write(to: URL(fileURLWithPath: "/tmp/victor-esc.log"))
+                }
+            }
             DispatchQueue.global().async { [weak self] in self?.onDictationEscape?() }
             return Unmanaged.passUnretained(event)
         }
@@ -154,6 +164,12 @@ class EventTapManager {
         // Cmd+Ctrl+C → open catalog (suppress)
         if keyCode == VK_C && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenCatalog?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+A → tile Terminal windows (suppress)
+        if keyCode == VK_A && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onTileTerminals?() }
             return nil
         }
 

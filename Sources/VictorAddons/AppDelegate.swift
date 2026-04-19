@@ -111,7 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "earthquake":    self?.animator.showBrokenGlass(playSound: false)
             case "explosion":     self?.animator.showExplosionGif(playSound: false)
             case "game-over":     self?.animator.showGameOver(playSound: false)
-            case "broken-glass":  self?.animator.showBrokenGlass(playSound: false)
+            case "broken-glass":  self?.animator.showBrokenGlass()  // tablet skips local audio; desktop plays it
             case "pulse":         self?.animator.startPulseOverlay(playSound: false)
             case "pulse/stop":    self?.animator.stopPulseOverlay()
             case "applause":      self?.animator.showApplause(playSound: false)
@@ -279,6 +279,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
+        menuBarManager.onTileTerminals = {
+            DispatchQueue.global(qos: .userInitiated).async { TerminalTiler.tile() }
+        }
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
         }
@@ -341,6 +344,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
+        eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onDictationMute = { [weak audioManager] in
             DispatchQueue.global(qos: .userInteractive).async {
                 audioManager?.toggleDictationMute()

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 18, 21:17"
+    static let BUILD_TIME = "Apr 18, 22:54"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -48,6 +48,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onConnectTablet: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onDesktopEffect: ((String) -> Void)?
+    var onTileTerminals: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -178,6 +179,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             dreamSubmenu.addItem(item)
         }
         menu.addItem(dreamItem)
+
+        // Tile Terminals (⌘⌃A)
+        let tileItem = addItem("Tile Terminals", action: #selector(tileTerminalsAction))
+        tileItem.keyEquivalent = "a"
+        tileItem.keyEquivalentModifierMask = [.command, .control]
 
         // Shortcut reminders (disabled)
         let pasteItem = addItem("Paste Emotions", action: nil)
@@ -354,6 +360,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func desktopEffectAction(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         onDesktopEffect?(name)
+    }
+
+    @objc private func tileTerminalsAction() {
+        onTileTerminals?()
     }
 
     @objc private func killPort8080() {
