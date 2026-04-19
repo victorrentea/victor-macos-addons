@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 19, 20:20"
+    static let BUILD_TIME = "Apr 20, 01:48"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -110,6 +110,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         resumeItem.isEnabled = false
         // Transcribe toggle
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
+        transcribeItem.keyEquivalent = "t"
+        transcribeItem.keyEquivalentModifierMask = [.command, .control]
 
         // Tail (was Monitor)
         addItem("Tail", action: #selector(monitorAction))
