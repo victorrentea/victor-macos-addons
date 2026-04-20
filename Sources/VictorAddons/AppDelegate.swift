@@ -33,6 +33,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var joinLinkBanner: JoinLinkBanner?
     private var powerMonitor: PowerMonitor?
     private var autoStoppedByBattery = false
+    private var meetingDetector: MeetingDetector?
+    private var isMeetingActive = false
+    private var isTranscribing = false
 
     // Session state for join link feature
     private var isSessionActive: Bool = false
@@ -146,8 +149,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         self.transcriptionWatcher = watcher
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
+            self?.isTranscribing = running
             if running { self?.transcriptionWatcher?.startWatching() }
             else { self?.transcriptionWatcher?.stopWatching() }
+            self?.checkNotCapturing()
         }
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
@@ -309,6 +314,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.setup()
         // Reflect real process state on startup to avoid stale "Stop Transcribing" UI.
         menuBarManager.setTranscribing(false)
+
+        let detector = MeetingDetector()
+        detector.onMeetingChanged = { [weak self] active in
+            self?.isMeetingActive = active
+            self?.checkNotCapturing()
+        }
+        meetingDetector = detector
 
         let rhMonitor = RHTimerMonitor()
         rhMonitor.onBreakEnded = { [weak self] in
@@ -692,6 +704,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                 }
             }
+        }
+    }
+
+    private func checkNotCapturing() {
+        guard isMeetingActive && !isTranscribing else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Not Capturing"
+        content.body = "Meeting active but transcription is off"
+        content.sound = .default
+        let req = UNNotificationRequest(identifier: "not-capturing", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Notif error: \(err)") }
         }
     }
 
