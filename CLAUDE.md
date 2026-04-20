@@ -103,6 +103,7 @@ For local E2E checks without stealing focus:
 
 ## AI Instructions
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.
+- After any code change in this project, always: push to master (`git push`), run `./build-app.sh`, then restart the app (`pkill -f "Victor Addons"; open "/Applications/Victor Addons.app"`).
 
 ## Related
 - Backend repo: `training-assistant` (FastAPI, provides WebSocket server)
