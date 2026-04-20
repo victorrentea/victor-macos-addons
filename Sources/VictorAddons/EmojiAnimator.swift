@@ -2062,7 +2062,8 @@ class EmojiAnimator {
 
         var images: [CGImage] = []
         var totalDuration: Double = 0
-        for i in 0..<count {
+        let skipFrames = 43  // skip static standing-still prefix
+        for i in skipFrames..<count {
             guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
             images.append(cg)
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
@@ -2087,11 +2088,17 @@ class EmojiAnimator {
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.duration = totalDuration
-        anim.repeatCount = .infinity
+        anim.repeatCount = 1
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false
 
         CATransaction.begin()
         gifLayer.add(anim, forKey: "gongFrames")
         CATransaction.commit()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
+            _ = self?.cancelIfRunning("gong", sound: nil)
+        }
 
         if playSound { SoundManager.shared.play("gong.mp3") }
     }
