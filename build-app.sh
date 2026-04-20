@@ -86,6 +86,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Victor Addons needs microphone access for live transcription.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Victor Addons uses screen capture for the magnifier zoom overlay.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>Victor Addons needs accessibility access for keyboard shortcuts and clipboard monitoring.</string>
     <key>NSUserNotificationAlertStyle</key>
