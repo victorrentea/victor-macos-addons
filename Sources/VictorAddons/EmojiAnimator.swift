@@ -2115,21 +2115,16 @@ class EmojiAnimator {
         let count = CGImageSourceGetCount(source)
         guard count > 0 else { return }
 
-        var cycleImages: [CGImage] = []
+        var images: [CGImage] = []
         var cycleDuration: Double = 0
         for i in 0..<count {
             guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
-            cycleImages.append(cg)
+            images.append(cg)
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
             let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
             let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
             cycleDuration += delay
         }
-
-        // Pre-repeat 60× as one long single-pass animation — eliminates the loop-point gap
-        let repetitions = 60
-        let images = Array(repeating: cycleImages, count: repetitions).flatMap { $0 }
-        let totalDuration = cycleDuration * Double(repetitions)
 
         let bounds = hostLayer.bounds
         let w = bounds.width * 0.50
@@ -2148,9 +2143,9 @@ class EmojiAnimator {
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.keyTimes = keyTimes
-        anim.duration = totalDuration
+        anim.duration = cycleDuration
         anim.calculationMode = .discrete
-        anim.repeatCount = 1
+        anim.repeatCount = .infinity
 
         CATransaction.begin()
         gifLayer.add(anim, forKey: "drumRollFrames")
