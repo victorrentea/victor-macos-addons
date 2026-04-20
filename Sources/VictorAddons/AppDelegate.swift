@@ -321,6 +321,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.checkNotCapturing()
         }
         meetingDetector = detector
+        detector.checkInitialState()
 
         let rhMonitor = RHTimerMonitor()
         rhMonitor.onBreakEnded = { [weak self] in

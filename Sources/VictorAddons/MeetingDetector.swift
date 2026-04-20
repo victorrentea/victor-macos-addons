@@ -15,6 +15,9 @@ class MeetingDetector {
             return
         }
         registerListener()
+    }
+
+    func checkInitialState() {
         refreshState()
     }
 

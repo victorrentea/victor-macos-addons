@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf /Users/victorrentea/workspace/.git)",
+      "Read(//Users/victorrentea/workspace/.git/**)"
+    ]
+  }
+}
