@@ -254,10 +254,11 @@ class EmojiAnimator {
 
     func startAlarmOverlay() {
         stopAlarmOverlay()
-        showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3)
+        showVignette(key: "danger", color: .systemRed, duration: 2.72, pulses: 4)
         // Fire 200ms before cycle ends so layers overlap and avoid flicker at the seam
-        alarmOverlayTimer = Timer.scheduledTimer(withTimeInterval: 2.8, repeats: true) { [weak self] _ in
-            self?.showVignette(key: "danger", color: .systemRed, duration: 3.0, pulses: 3)
+        // 4 pulses × 0.68s = 2.72s matches siren.mp3 cycle tempo
+        alarmOverlayTimer = Timer.scheduledTimer(withTimeInterval: 2.52, repeats: true) { [weak self] _ in
+            self?.showVignette(key: "danger", color: .systemRed, duration: 2.72, pulses: 4)
         }
     }
 
