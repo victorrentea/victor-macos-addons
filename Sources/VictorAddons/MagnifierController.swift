@@ -108,7 +108,11 @@ class MagnifierController: NSObject {
 
         let vw = bufferW / CGFloat(zoomFactor)
         let vh = bufferH / CGFloat(zoomFactor)
-        viewportOrigin = CGPoint(x: (bufferW - vw) / 2, y: (bufferH - vh) / 2)
+        let scale = screen.backingScaleFactor
+        let cursor = NSEvent.mouseLocation
+        let cx = (cursor.x - screen.frame.minX) * scale
+        let cy = (screen.frame.height - (cursor.y - screen.frame.minY)) * scale
+        viewportOrigin = CGPoint(x: cx - vw / 2, y: cy - vh / 2)
 
         panel.orderFrontRegardless()
         panel.alphaValue = 0
@@ -160,28 +164,15 @@ class MagnifierController: NSObject {
 
     private func panTick() {
         guard state == .active else { return }
-        let now = Date()
-        let dt = now.timeIntervalSince(lastPanTime)
-        lastPanTime = now
 
         let cursor = NSEvent.mouseLocation
         let scale = screen.backingScaleFactor
-        let relX = cursor.x - screen.frame.minX
-        let relY = cursor.y - screen.frame.minY
+        let cx = (cursor.x - screen.frame.minX) * scale
+        let cy = (screen.frame.height - (cursor.y - screen.frame.minY)) * scale
 
-        let cx = relX * scale
-        let cy = (screen.frame.height - relY) * scale
-
-        let threshold = CGFloat(Self.edgeThresholdPoints) * scale
-        let speed = CGFloat(Self.panSpeedPixelsPerSec) * scale * CGFloat(dt)
-
-        func frac(_ dist: CGFloat) -> CGFloat { max(0, (threshold - dist) / threshold) }
-
-        let dxRight = frac(bufferW - cx) - frac(cx)
-        let dyDown  = frac(bufferH - cy) - frac(cy)
-
-        viewportOrigin.x += speed * dxRight
-        viewportOrigin.y += speed * dyDown
+        let vw = bufferW / CGFloat(zoomFactor)
+        let vh = bufferH / CGFloat(zoomFactor)
+        viewportOrigin = CGPoint(x: cx - vw / 2, y: cy - vh / 2)
 
         clampViewport()
         updateContentsRect()
