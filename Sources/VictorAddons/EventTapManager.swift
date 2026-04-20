@@ -110,7 +110,7 @@ class EventTapManager {
                     try? data.write(to: URL(fileURLWithPath: "/tmp/victor-mouse.log"))
                 }
             }
-            if button == MOUSE_BUTTON_5 {
+            if button == MOUSE_BUTTON_5 && event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]).isEmpty {
                 onDictationMute?()
             } else if button == MOUSE_BUTTON_3 {
                 handleWheelDown()
