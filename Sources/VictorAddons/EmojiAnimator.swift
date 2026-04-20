@@ -2126,6 +2126,7 @@ class EmojiAnimator {
             let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
             cycleDuration += delay
         }
+        cycleDuration /= 2.0  // play 2× faster than GIF native speed
 
         let bounds = hostLayer.bounds
         let w = bounds.width * 0.40
