@@ -129,6 +129,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "fbi-knock":       self?.animator.showFbiKnock(playSound: false)
             case "brother":         self?.animator.showBrother(playSound: false)
             case "brother/stop":    self?.animator.stopBrother()
+            case "gong":            self?.animator.showGong(playSound: false)
             case "stop-all":        self?.animator.stopAllActiveEffects()
             default: break
             }
@@ -255,6 +256,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "phone-ring":      self?.animator.showPhoneRing()
                 case "fbi-knock":       self?.animator.showFbiKnock()
                 case "brother":         self?.animator.showBrother()
+                case "gong":            self?.animator.showGong()
                 default: break
                 }
             }

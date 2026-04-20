@@ -2022,17 +2022,6 @@ class EmojiAnimator {
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
 
-        // 🤢 emoji overlay in bottom-left corner near the GIF
-        let nauseaLayer = CATextLayer()
-        nauseaLayer.string = "🤢"
-        nauseaLayer.fontSize = size * 0.30
-        nauseaLayer.alignmentMode = .center
-        let emojiSize = size * 0.35
-        nauseaLayer.frame = CGRect(x: x + size * 0.55, y: y + size * 0.55, width: emojiSize, height: emojiSize)
-        nauseaLayer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        hostLayer.addSublayer(nauseaLayer)
-        activeEffects["brother-emoji"] = nauseaLayer
-
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.duration = totalDuration
@@ -2059,7 +2048,52 @@ class EmojiAnimator {
 
     func stopBrother() {
         _ = cancelIfRunning("brother", sound: "sfx_109.mp3")
-        _ = cancelIfRunning("brother-emoji")
+    }
+
+    // MARK: - Gong GIF overlay (bottom-left, 25% screen width)
+
+    func showGong(playSound: Bool = true) {
+        if cancelIfRunning("gong", sound: playSound ? "gong.mp3" : nil) { return }
+        guard let url = Bundle.module.url(forResource: "gong", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+            totalDuration += delay
+        }
+
+        let bounds = hostLayer.bounds
+        let w = bounds.width * 0.25
+        let h = w * (600.0 / 800.0)           // preserve original 800x600 aspect ratio
+        let x: CGFloat = 0
+        let y: CGFloat = bounds.height - h
+
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: x, y: y, width: w, height: h)
+        gifLayer.contentsGravity = .resizeAspect
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+        activeEffects["gong"] = gifLayer
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = totalDuration
+        anim.repeatCount = .infinity
+
+        CATransaction.begin()
+        gifLayer.add(anim, forKey: "gongFrames")
+        CATransaction.commit()
+
+        if playSound { SoundManager.shared.play("gong.mp3") }
     }
 
     // MARK: - Stop all active effects (called when tablet stops any sound)
