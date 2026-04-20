@@ -187,14 +187,85 @@ class MagnifierController: NSObject {
         updateContentsRect()
     }
 
-    // MARK: - Stream placeholder (replaced in Task 4)
+    // MARK: - Stream
 
     private func startStream() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self, self.state == .starting else { return }
-            self.state = .active
-            self.panel.alphaValue = 1.0
-            self.startPanTimer()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(
+                    false, onScreenWindowsOnly: false
+                )
+                guard let display = content.displays.first(where: {
+                    CGDisplayIsBuiltin($0.displayID) != 0
+                }) else {
+                    overlayError("MagnifierController: no built-in display found")
+                    await MainActor.run { self.state = .inactive }
+                    return
+                }
+
+                // Exclude our panel to prevent feedback loop (magnifier capturing itself)
+                let myWindowID = CGWindowID(await MainActor.run { self.panel.windowNumber })
+                let excludedWindows = content.windows.filter { $0.windowID == myWindowID }
+
+                let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+
+                let config = SCStreamConfiguration()
+                config.width = Int(self.bufferW)
+                config.height = Int(self.bufferH)
+                config.minimumFrameInterval = CMTime(value: 1, timescale: Self.streamFPS)
+                config.pixelFormat = kCVPixelFormatType_32BGRA
+                config.scalesToFit = false
+                config.showsCursor = false
+
+                let stream = SCStream(filter: filter, configuration: config, delegate: self)
+                try stream.addStreamOutput(
+                    self, type: .screen,
+                    sampleHandlerQueue: .global(qos: .userInteractive)
+                )
+                try await stream.startCapture()
+                await MainActor.run { self.stream = stream }
+            } catch {
+                overlayError("MagnifierController: stream start failed: \(error)")
+                await MainActor.run { self.state = .inactive }
+            }
         }
+    }
+}
+
+// MARK: - SCStreamOutput
+
+extension MagnifierController: SCStreamOutput {
+    nonisolated func stream(
+        _ stream: SCStream,
+        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+        of type: SCStreamOutputType
+    ) {
+        guard type == .screen,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+              let surface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue()
+        else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.state == .starting || self.state == .active else { return }
+            self.contentLayer.contents = surface
+            self.updateContentsRect()
+
+            if !self.firstFrameReceived {
+                self.firstFrameReceived = true
+                self.state = .active
+                self.panel.alphaValue = 1.0
+                self.startPanTimer()
+            }
+        }
+    }
+}
+
+// MARK: - SCStreamDelegate
+
+extension MagnifierController: SCStreamDelegate {
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        overlayError("MagnifierController: stream stopped: \(error)")
+        DispatchQueue.main.async { [weak self] in self?.deactivate() }
     }
 }
