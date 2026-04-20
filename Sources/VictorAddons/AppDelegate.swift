@@ -714,11 +714,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         guard isMeetingActive && !isTranscribing else { return }
         let content = UNMutableNotificationContent()
         content.title = "Not Capturing"
-        content.body = "Meeting active but transcription is off"
         content.sound = .default
         let req = UNNotificationRequest(identifier: "not-capturing", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req) { err in
             if let err { overlayInfo("Notif error: \(err)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["not-capturing"])
         }
     }
 
