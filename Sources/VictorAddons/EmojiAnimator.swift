@@ -2104,6 +2104,63 @@ class EmojiAnimator {
         if playSound { SoundManager.shared.play("gong.mp3") }
     }
 
+    // MARK: - Drum roll GIF overlay (bottom-left, loops until stopped)
+
+    func showDrumRoll(playSound: Bool = true) {
+        if cancelIfRunning("drum-roll", sound: playSound ? "drum.mp3" : nil) { return }
+        guard let url = Bundle.module.url(forResource: "drum", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
+            totalDuration += delay
+        }
+
+        let bounds = hostLayer.bounds
+        let w = bounds.width * 0.25
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: 0, y: 0, width: w, height: w)
+        gifLayer.contentsGravity = .resizeAspect
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+        activeEffects["drum-roll"] = gifLayer
+
+        let n = images.count
+        let keyTimes = (0..<n).map { NSNumber(value: Double($0) / Double(n)) }
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.keyTimes = keyTimes
+        anim.duration = totalDuration
+        anim.calculationMode = .discrete
+        anim.repeatCount = .infinity
+
+        CATransaction.begin()
+        gifLayer.add(anim, forKey: "drumRollFrames")
+        CATransaction.commit()
+
+        if playSound { SoundManager.shared.play("drum.mp3") }
+    }
+
+    func stopDrumRoll() {
+        _ = cancelIfRunning("drum-roll", sound: "drum.mp3")
+    }
+
+    // MARK: - Stop game-over overlay early
+
+    func stopGameOver() {
+        _ = cancelIfRunning("game-over", sound: "dying.mp3")
+    }
+
     // MARK: - Stop all active effects (called when tablet stops any sound)
 
     func stopAllActiveEffects() {
