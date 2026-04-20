@@ -2172,9 +2172,23 @@ class EmojiAnimator {
     }
 
     func stopDrumRoll() {
-        drumRollTimer?.cancel()
-        drumRollTimer = nil
-        _ = cancelIfRunning("drum-roll", sound: "drum.mp3")
+        guard let layer = activeEffects.removeValue(forKey: "drum-roll") else { return }
+        SoundManager.shared.stop("drum.mp3")
+        // Keep drumming while fading out, then clean up
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.duration = 1.0
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            layer.removeFromSuperlayer()
+            self?.drumRollTimer?.cancel()
+            self?.drumRollTimer = nil
+        }
+        layer.add(fade, forKey: "fadeOut")
+        CATransaction.commit()
     }
 
     // MARK: - Stop game-over overlay (0.5s after sound ends)
