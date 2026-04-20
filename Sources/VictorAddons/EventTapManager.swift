@@ -28,6 +28,7 @@ class EventTapManager {
     var onWheelLongPress: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onToggleTranscription: (() -> Void)?
+    var onZoomScroll: ((Double) -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -58,7 +59,8 @@ class EventTapManager {
         let eventsOfInterest: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
-            CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
+            CGEventMask(1 << CGEventType.otherMouseUp.rawValue) |
+            CGEventMask(1 << CGEventType.scrollWheel.rawValue)
 
         let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -124,6 +126,21 @@ class EventTapManager {
                 handleWheelUp()
             }
             return Unmanaged.passUnretained(event)
+        }
+
+        // Option+Scroll → magnifier zoom (suppress native macOS zoom)
+        if type == .scrollWheel {
+            let flags = event.flags
+            guard flags.contains(.maskAlternate) &&
+                  !flags.contains(.maskCommand) &&
+                  !flags.contains(.maskControl) else {
+                return Unmanaged.passUnretained(event)
+            }
+            let delta = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
+            if delta != 0 {
+                DispatchQueue.global().async { [weak self] in self?.onZoomScroll?(delta) }
+            }
+            return nil  // suppress — prevents native macOS zoom from activating
         }
 
         // Keyboard events
