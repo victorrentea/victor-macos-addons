@@ -33,6 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var joinLinkBanner: JoinLinkBanner?
     private var powerMonitor: PowerMonitor?
     private var autoStoppedByBattery = false
+    private var magnifierController: MagnifierController?
     private var meetingDetector: MeetingDetector?
     private var isMeetingActive = false
     private var isTranscribing = false
@@ -67,6 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         overlayPanel = OverlayPanel(screen: builtInScreen)
         overlayPanel.orderFrontRegardless()
+        magnifierController = MagnifierController(screen: builtInScreen)
 
         guard let hostLayer = overlayPanel.contentView?.layer else {
             fatalError("Content view has no layer")
@@ -384,6 +386,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             """)
         }
         eventTap.start()
+        eventTap.onZoomScroll = { [weak self] delta in
+            self?.magnifierController?.adjustZoom(scrollDelta: delta)
+        }
         self.eventTapManager = eventTap
 
         let pptMonitor = PowerPointMonitor()
