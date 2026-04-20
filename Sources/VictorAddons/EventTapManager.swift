@@ -128,12 +128,12 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        // Option+Scroll → magnifier zoom (suppress native macOS zoom)
+        // Ctrl+Option+Scroll → magnifier zoom (suppress native macOS zoom)
         if type == .scrollWheel {
             let flags = event.flags
             guard flags.contains(.maskAlternate) &&
-                  !flags.contains(.maskCommand) &&
-                  !flags.contains(.maskControl) else {
+                  flags.contains(.maskControl) &&
+                  !flags.contains(.maskCommand) else {
                 return Unmanaged.passUnretained(event)
             }
             let delta = Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
