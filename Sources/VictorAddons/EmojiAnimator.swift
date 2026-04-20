@@ -213,7 +213,7 @@ class EmojiAnimator {
 
         let totalPulse = pulseDuration * 2 * Double(pulses)
         let fadeOut = CABasicAnimation(keyPath: "opacity")
-        fadeOut.fromValue = 0.8
+        fadeOut.fromValue = 0.0
         fadeOut.toValue = 0.0
         fadeOut.beginTime = totalPulse
         fadeOut.duration = duration - totalPulse
@@ -251,6 +251,7 @@ class EmojiAnimator {
 
     // MARK: - Tablet-triggered alarm overlay (sound plays on tablet, not here)
     private var alarmOverlayTimer: Timer?
+    private var drumRollTimer: DispatchSourceTimer?
 
     func startAlarmOverlay() {
         stopAlarmOverlay()
@@ -2127,7 +2128,7 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let w = bounds.width * 0.50
+        let w = bounds.width * 0.40
         let x = (bounds.width - w) / 2
         let y = (bounds.height - w) / 2
         let gifLayer = CALayer()
@@ -2140,28 +2141,47 @@ class EmojiAnimator {
         let n = images.count
         let keyTimes = (0..<n).map { NSNumber(value: Double($0) / Double(n)) }
 
-        let anim = CAKeyframeAnimation(keyPath: "contents")
-        anim.values = images
-        anim.keyTimes = keyTimes
-        anim.duration = cycleDuration
-        anim.calculationMode = .discrete
-        anim.repeatCount = .infinity
+        func startCycle() {
+            let anim = CAKeyframeAnimation(keyPath: "contents")
+            anim.values = images
+            anim.keyTimes = keyTimes
+            anim.duration = cycleDuration
+            anim.calculationMode = .discrete
+            anim.fillMode = .forwards
+            anim.isRemovedOnCompletion = false
+            CATransaction.begin()
+            CATransaction.disableActions()
+            gifLayer.add(anim, forKey: "drumRollFrames")
+            CATransaction.commit()
+        }
 
-        CATransaction.begin()
-        gifLayer.add(anim, forKey: "drumRollFrames")
-        CATransaction.commit()
+        startCycle()
+
+        // Restart animation 2ms before cycle end to avoid repeatCount loop-boundary pause
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + cycleDuration - 0.002, repeating: cycleDuration)
+        timer.setEventHandler { [weak gifLayer] in
+            guard gifLayer?.superlayer != nil else { return }
+            startCycle()
+        }
+        timer.resume()
+        drumRollTimer = timer
 
         if playSound { SoundManager.shared.play("drum.mp3") }
     }
 
     func stopDrumRoll() {
+        drumRollTimer?.cancel()
+        drumRollTimer = nil
         _ = cancelIfRunning("drum-roll", sound: "drum.mp3")
     }
 
-    // MARK: - Stop game-over overlay early
+    // MARK: - Stop game-over overlay (0.5s after sound ends)
 
     func stopGameOver() {
-        _ = cancelIfRunning("game-over", sound: "dying.mp3")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            _ = self?.cancelIfRunning("game-over", sound: "dying.mp3")
+        }
     }
 
     // MARK: - Stop all active effects (called when tablet stops any sound)
