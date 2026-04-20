@@ -164,15 +164,22 @@ class MagnifierController: NSObject {
 
     private func panTick() {
         guard state == .active else { return }
+        let now = Date()
+        let dt = now.timeIntervalSince(lastPanTime)
+        lastPanTime = now
 
         let cursor = NSEvent.mouseLocation
         let scale = screen.backingScaleFactor
         let cx = (cursor.x - screen.frame.minX) * scale
         let cy = (screen.frame.height - (cursor.y - screen.frame.minY)) * scale
 
-        let vw = bufferW / CGFloat(zoomFactor)
-        let vh = bufferH / CGFloat(zoomFactor)
-        viewportOrigin = CGPoint(x: cx - vw / 2, y: cy - vh / 2)
+        let threshold = CGFloat(Self.edgeThresholdPoints) * scale
+        let speed = CGFloat(Self.panSpeedPixelsPerSec) * scale * CGFloat(dt)
+
+        func frac(_ dist: CGFloat) -> CGFloat { max(0, (threshold - dist) / threshold) }
+
+        viewportOrigin.x += speed * (frac(bufferW - cx) - frac(cx))
+        viewportOrigin.y += speed * (frac(bufferH - cy) - frac(cy))
 
         clampViewport()
         updateContentsRect()
