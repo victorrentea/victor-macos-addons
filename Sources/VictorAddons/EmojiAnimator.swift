@@ -1589,7 +1589,7 @@ class EmojiAnimator {
 
     func showExplosionGif(playSound: Bool = true) {
         guard activeEffects["explosion"] == nil else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?._showExplosionGif(playSound: playSound) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?._showExplosionGif(playSound: playSound) }
     }
 
     private func _showExplosionGif(playSound: Bool = true) {
