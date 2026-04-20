@@ -20,9 +20,32 @@ class CoreAudioManager {
     }
 
     private func pauseMedia() {
+        guard isMediaPlaying() else {
+            overlayInfo("🟡 Dictation: no media playing, skipping mute")
+            return
+        }
         postPlayPauseKey()
         isDictationActive = true
         overlayInfo("🟢 Dictation: ⏸ media paused")
+    }
+
+    private func isMediaPlaying() -> Bool {
+        let candidates = ["/opt/homebrew/bin/nowplaying-cli", "/usr/local/bin/nowplaying-cli"]
+        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            return true  // conservative: assume playing if tool not found
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = ["get", "playbackRate"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        try? task.run()
+        task.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let rate = Double(output) else { return false }  // "null" or empty → nothing playing
+        return rate > 0
     }
 
     private func resumeMedia() {
