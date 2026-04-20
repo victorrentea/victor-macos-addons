@@ -2062,8 +2062,9 @@ class EmojiAnimator {
 
         var images: [CGImage] = []
         var totalDuration: Double = 0
-        let skipFrames = 43  // skip static standing-still prefix
-        for i in skipFrames..<count {
+        let skipFrames = 43   // skip static standing-still prefix
+        let stopFrame = 119   // frame 119 is a blank blue flash — stop before it
+        for i in skipFrames..<min(stopFrame, count) {
             guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
             images.append(cg)
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
@@ -2073,10 +2074,10 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let w = bounds.width * 0.25
+        let w = bounds.width * 0.50
         let h = w * (600.0 / 800.0)           // preserve original 800x600 aspect ratio
         let x: CGFloat = 0
-        let y: CGFloat = bounds.height - h
+        let y: CGFloat = 0                     // bottom screen edge
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: w, height: h)
