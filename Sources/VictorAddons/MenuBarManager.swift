@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 21, 18:32"
+    static let BUILD_TIME = "Apr 21, 18:39"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -558,14 +558,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             NSColor.white.set()
             baseRect.fill(using: .sourceAtop)
         }
-        // Yellow lightning badge
+        // Yellow lightning drawn full-size over the bubble
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 16),
             .foregroundColor: NSColor.systemYellow
         ]
         let str = "⚡️" as NSString
         let strSize = str.size(withAttributes: attrs)
-        str.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
+        let origin = NSPoint(x: (size.width - strSize.width) / 2, y: (size.height - strSize.height) / 2)
+        str.draw(at: origin, withAttributes: attrs)
         composite.unlockFocus()
         composite.isTemplate = false
         return composite
