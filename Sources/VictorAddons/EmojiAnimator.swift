@@ -1698,7 +1698,7 @@ class EmojiAnimator {
         let imgW = imgH * (img.size.width / img.size.height)
         let imgLayer = CALayer()
         imgLayer.frame = CGRect(x: (bounds.width - imgW) / 2,
-                                y: (bounds.height - imgH) / 2 + 100,
+                                y: (bounds.height - imgH) / 2 + 300,
                                 width: imgW, height: imgH)
         imgLayer.contents = img
         imgLayer.contentsGravity = .resizeAspect
