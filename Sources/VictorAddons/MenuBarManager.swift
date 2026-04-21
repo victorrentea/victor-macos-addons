@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 21, 18:26"
+    static let BUILD_TIME = "Apr 21, 18:31"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -523,7 +523,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
         if !isTranscribing && isTranscriptionPausedByBattery {
-            button.image = makeBadgedIcon(resourceName: "icon_chat", isTemplate: true, badge: "⏸")
+            button.image = makeBadgedIcon(resourceName: "icon_chat", isTemplate: true, badge: "⚡️", badgeColor: .systemYellow)
         } else if !isTranscribing {
             if let url = Bundle.module.url(forResource: "icon_chat_off", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
@@ -543,14 +543,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
     }
 
-    private func makeBadgedIcon(resourceName: String, isTemplate: Bool, badge: String) -> NSImage? {
+    private func makeBadgedIcon(resourceName: String, isTemplate: Bool, badge: String, badgeColor: NSColor? = nil) -> NSImage? {
         guard let url = Bundle.module.url(forResource: resourceName, withExtension: "png"),
               let base = NSImage(contentsOf: url) else { return nil }
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
         composite.lockFocus()
         base.draw(in: NSRect(origin: .zero, size: size))
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9)]
+        var attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9)]
+        if let color = badgeColor { attrs[.foregroundColor] = color }
         let str = badge as NSString
         let strSize = str.size(withAttributes: attrs)
         str.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
