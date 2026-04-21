@@ -11,7 +11,7 @@ class OverlayPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .statusBar
+        level = NSWindowLevel(rawValue: Int(CGWindowLevelForKey(.maximumWindowLevelKey)))
         ignoresMouseEvents = true
         collectionBehavior = [
             .canJoinAllSpaces,
