@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 21, 18:39"
+    static let BUILD_TIME = "Apr 21, 18:43"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -518,6 +518,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func setTranscriptionPausedByBattery(_ paused: Bool) {
         isTranscriptionPausedByBattery = paused
         refreshMenuIcon()
+        updateTranscribeTitle()
     }
 
     private func refreshMenuIcon() {
@@ -595,8 +596,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateTranscribeTitle() {
-        let suffix = transcribeSource.isEmpty ? "" : " \(transcribeSource)"
-        transcribeItem.title = isTranscribing ? "Stop Transcribing\(suffix)" : "Start Transcribing"
+        if isTranscriptionPausedByBattery {
+            transcribeItem.title = "Off - On Battery"
+            transcribeItem.isEnabled = false
+        } else {
+            let suffix = transcribeSource.isEmpty ? "" : " \(transcribeSource)"
+            transcribeItem.title = isTranscribing ? "Stop Transcribing\(suffix)" : "Start Transcribing"
+            transcribeItem.isEnabled = true
+        }
     }
 
     func transcriptionDebugState() -> TranscriptionDebugState {
