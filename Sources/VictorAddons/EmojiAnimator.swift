@@ -2079,7 +2079,7 @@ class EmojiAnimator {
         let w = bounds.width * 0.50
         let h = w * (600.0 / 800.0)           // preserve original 800x600 aspect ratio
         let x: CGFloat = 0
-        let y: CGFloat = 0                     // bottom screen edge
+        let y: CGFloat = -200                  // 200px below bottom screen edge
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: w, height: h)
