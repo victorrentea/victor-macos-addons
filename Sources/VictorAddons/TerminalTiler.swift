@@ -28,8 +28,9 @@ enum TerminalTiler {
         }
 
         var commands: [String] = []
-        for (di, ws) in groups {
+        for (di, var ws) in groups {
             let quads = quadrants(of: displays[di])
+            ws = Array(ws.prefix(quads.count))
             let assignment = assignOptimally(windows: ws, quads: quads)
             for (i, w) in ws.enumerated() {
                 let q = quads[assignment[i]]
