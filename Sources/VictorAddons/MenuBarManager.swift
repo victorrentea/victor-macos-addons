@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 20, 21:48"
+    static let BUILD_TIME = "Apr 21, 18:22"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -27,6 +27,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var portRefreshTimer: Timer?
     private var isTranscribing: Bool = false
     private var isTranscriptionStale: Bool = false
+    private var isTranscriptionPausedByBattery: Bool = false
     private var transcribeSource: String = ""
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
@@ -514,9 +515,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         refreshMenuIcon()
     }
 
+    func setTranscriptionPausedByBattery(_ paused: Bool) {
+        isTranscriptionPausedByBattery = paused
+        refreshMenuIcon()
+    }
+
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
-        if !isTranscribing {
+        if !isTranscribing && isTranscriptionPausedByBattery {
+            button.image = makeBadgedIcon(resourceName: "icon_chat_off", isTemplate: false, badge: "⏸")
+        } else if !isTranscribing {
             if let url = Bundle.module.url(forResource: "icon_chat_off", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
                 image.isTemplate = false
@@ -524,7 +532,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 button.image = image
             }
         } else if isTranscriptionStale {
-            button.image = makeWarnIcon()
+            button.image = makeBadgedIcon(resourceName: "icon_chat", isTemplate: true, badge: "⚠️")
         } else {
             if let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
@@ -535,18 +543,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
     }
 
-    private func makeWarnIcon() -> NSImage? {
-        guard let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+    private func makeBadgedIcon(resourceName: String, isTemplate: Bool, badge: String) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: resourceName, withExtension: "png"),
               let base = NSImage(contentsOf: url) else { return nil }
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
         composite.lockFocus()
         base.draw(in: NSRect(origin: .zero, size: size))
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9)]
-        let emoji = "⚠️" as NSString
-        let strSize = emoji.size(withAttributes: attrs)
-        emoji.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
+        let str = badge as NSString
+        let strSize = str.size(withAttributes: attrs)
+        str.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
         composite.unlockFocus()
+        composite.isTemplate = isTemplate
         return composite
     }
 

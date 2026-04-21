@@ -184,6 +184,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onToggleTranscribe = { [weak self] in
             self?.autoStoppedByBattery = false
+            self?.menuBarManager.setTranscriptionPausedByBattery(false)
             toggleTranscription()
         }
 
@@ -192,11 +193,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard whisperManager?.isRunning == true else { return }
             self?.autoStoppedByBattery = true
             stopTranscription()
+            DispatchQueue.main.async { self?.menuBarManager.setTranscriptionPausedByBattery(true) }
             self?.postPowerNotification("Transcription paused — on battery")
         }
         pm.onSwitchToAC = { [weak self] in
             guard self?.autoStoppedByBattery == true else { return }
             self?.autoStoppedByBattery = false
+            DispatchQueue.main.async { self?.menuBarManager.setTranscriptionPausedByBattery(false) }
             startTranscription()
             self?.postPowerNotification("Transcription resumed — plugged in")
         }
