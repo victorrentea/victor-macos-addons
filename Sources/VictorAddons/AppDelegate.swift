@@ -346,7 +346,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
         let wasTranscribing = UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true
-        if wasTranscribing { startTranscription() }
+        if wasTranscribing {
+            if PowerMonitor.isOnAC() {
+                startTranscription()
+            } else {
+                autoStoppedByBattery = true
+                menuBarManager.setTranscriptionPausedByBattery(true)
+            }
+        }
 
         let secrets = SecretsLoader.load()
         let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
