@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 21, 18:22"
+    static let BUILD_TIME = "Apr 21, 18:26"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -523,7 +523,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
         if !isTranscribing && isTranscriptionPausedByBattery {
-            button.image = makeBadgedIcon(resourceName: "icon_chat_off", isTemplate: false, badge: "⏸")
+            button.image = makeBadgedIcon(resourceName: "icon_chat", isTemplate: true, badge: "⏸")
         } else if !isTranscribing {
             if let url = Bundle.module.url(forResource: "icon_chat_off", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
