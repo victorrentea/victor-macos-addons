@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 21, 18:31"
+    static let BUILD_TIME = "Apr 21, 18:32"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -523,7 +523,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
         if !isTranscribing && isTranscriptionPausedByBattery {
-            button.image = makeBadgedIcon(resourceName: "icon_chat", isTemplate: true, badge: "⚡️", badgeColor: .systemYellow)
+            button.image = makeBatteryPausedIcon()
         } else if !isTranscribing {
             if let url = Bundle.module.url(forResource: "icon_chat_off", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
@@ -541,6 +541,34 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 button.image = image
             }
         }
+    }
+
+    private func makeBatteryPausedIcon() -> NSImage? {
+        guard let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+              let base = NSImage(contentsOf: url) else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let composite = NSImage(size: size)
+        composite.lockFocus()
+        // Draw the base icon tinted to match the current menu bar appearance
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        NSColor.white.withAlphaComponent(isDark ? 1.0 : 0.0).setFill()
+        let baseRect = NSRect(origin: .zero, size: size)
+        base.draw(in: baseRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        if isDark {
+            NSColor.white.set()
+            baseRect.fill(using: .sourceAtop)
+        }
+        // Yellow lightning badge
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 9),
+            .foregroundColor: NSColor.systemYellow
+        ]
+        let str = "⚡️" as NSString
+        let strSize = str.size(withAttributes: attrs)
+        str.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
+        composite.unlockFocus()
+        composite.isTemplate = false
+        return composite
     }
 
     private func makeBadgedIcon(resourceName: String, isTemplate: Bool, badge: String, badgeColor: NSColor? = nil) -> NSImage? {

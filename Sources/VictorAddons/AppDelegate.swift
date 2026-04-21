@@ -194,7 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.autoStoppedByBattery = true
             stopTranscription()
             DispatchQueue.main.async { self?.menuBarManager.setTranscriptionPausedByBattery(true) }
-            self?.postPowerNotification("Transcription paused — on battery")
+            self?.postPowerNotification("Transcription paused — will auto resume when on power")
         }
         pm.onSwitchToAC = { [weak self] in
             guard self?.autoStoppedByBattery == true else { return }
