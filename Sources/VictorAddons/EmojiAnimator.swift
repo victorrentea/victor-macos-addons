@@ -1684,7 +1684,7 @@ class EmojiAnimator {
     func showFail(playSound: Bool = true) {
         guard activeEffects["fail"] == nil else { return }
         let bounds = hostLayer.bounds
-        let duration: Double = 3.2  // matches fail.mp3 (~3.21s on tablet)
+        let duration: Double = 4.2
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -1698,13 +1698,22 @@ class EmojiAnimator {
         let imgW = imgH * (img.size.width / img.size.height)
         let imgLayer = CALayer()
         imgLayer.frame = CGRect(x: (bounds.width - imgW) / 2,
-                                y: (bounds.height - imgH) / 2,
+                                y: (bounds.height - imgH) / 2 + 100,
                                 width: imgW, height: imgH)
         imgLayer.contents = img
         imgLayer.contentsGravity = .resizeAspect
         hostLayer.addSublayer(imgLayer)
         trackEffect("fail", layer: imgLayer, duration: duration, sound: playSound ? "fail.mp3" : nil)
         if playSound { SoundManager.shared.play("fail.mp3") }
+
+        // Zoom out from 1.3x to 1.0x over the first 0.5s
+        let zoomOut = CABasicAnimation(keyPath: "transform.scale")
+        zoomOut.fromValue = 1.3
+        zoomOut.toValue = 1.0
+        zoomOut.duration = 0.5
+        zoomOut.fillMode = .forwards
+        zoomOut.isRemovedOnCompletion = false
+        imgLayer.add(zoomOut, forKey: "failZoom")
 
         // Fade out over the last 0.3s
         let fadeStart = max(0, duration - 0.3)
