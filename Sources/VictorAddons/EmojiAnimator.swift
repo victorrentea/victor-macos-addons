@@ -2200,6 +2200,59 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
+    // MARK: - Laugh (🤣 rolls in from left to center, clockwise, fades at halfway)
+
+    func showLaugh() {
+        let bounds = hostLayer.bounds
+        let size: CGFloat = bounds.height / 4
+        let fontSize: CGFloat = size * 0.85
+        let duration: Double = 2.0
+
+        let layer = CATextLayer()
+        layer.string = "🤣"
+        layer.fontSize = fontSize
+        layer.alignmentMode = .center
+        layer.frame = CGRect(x: -size, y: 0, width: size, height: size)
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        hostLayer.addSublayer(layer)
+
+        let startX: CGFloat = -size / 2
+        let endX: CGFloat = bounds.midX
+        let groundY: CGFloat = size / 2
+
+        let pathAnim = CAKeyframeAnimation(keyPath: "position")
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: startX, y: groundY))
+        path.addLine(to: CGPoint(x: endX, y: groundY))
+        pathAnim.path = path
+        pathAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+
+        let distance = endX - startX
+        let totalRotation = -(distance / (CGFloat.pi * size)) * (2 * CGFloat.pi)
+        let rotAnim = CABasicAnimation(keyPath: "transform.rotation.z")
+        rotAnim.fromValue = 0
+        rotAnim.toValue = totalRotation
+        rotAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+
+        let fadeAnim = CABasicAnimation(keyPath: "opacity")
+        fadeAnim.fromValue = 1.0
+        fadeAnim.toValue = 0.0
+        fadeAnim.beginTime = duration * 0.5
+        fadeAnim.duration = duration * 0.5
+        fadeAnim.fillMode = .forwards
+
+        let group = CAAnimationGroup()
+        group.animations = [pathAnim, rotAnim, fadeAnim]
+        group.duration = duration
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
+        layer.add(group, forKey: "laugh")
+        CATransaction.commit()
+    }
+
     // MARK: - Stop game-over overlay (0.5s after sound ends)
 
     func stopGameOver() {

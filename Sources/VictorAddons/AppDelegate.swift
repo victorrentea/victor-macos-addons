@@ -264,6 +264,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "brother":         self?.animator.showBrother()
                 case "gong":            self?.animator.showGong()
                 case "drum-roll":       self?.animator.showDrumRoll()
+                case "laugh":           self?.animator.showLaugh()
                 default: break
                 }
             }

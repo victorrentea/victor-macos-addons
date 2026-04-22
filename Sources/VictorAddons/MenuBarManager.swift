@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 22, 14:00"
+    static let BUILD_TIME = "Apr 22, 11:32"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -157,6 +157,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Brother 🤢",       "brother"),
             ("Gong 🔔",          "gong"),
             ("Drum Roll 🥁",     "drum-roll"),
+            ("Laugh 🤣",          "laugh"),
         ]
         for (title, name) in effectPairs {
             let item = NSMenuItem(title: title, action: #selector(desktopEffectAction(_:)), keyEquivalent: "")
