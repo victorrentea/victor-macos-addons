@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 21, 19:12"
+    static let BUILD_TIME = "Apr 22, 14:00"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -401,7 +401,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         openDreamClaude(directory: "~/workspace/training-assistant", sessionName: "training-assistant", quarter: .topRight)
     }
 
-    @objc private func openDreamMacOSAddons() {
+    @objc func openDreamMacOSAddons() {
         openDreamClaude(directory: "~/workspace/victor-macos-addons", sessionName: "macos-addons", quarter: .bottomRight)
     }
 

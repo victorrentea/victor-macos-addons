@@ -385,13 +385,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 audioManager?.resumeIfDictationActive()
             }
         }
-        eventTap.onWheelLongPress = {
-            AppleScriptRunner.run("""
-                tell application "Terminal"
-                    do script "cd ~/workspace && claude"
-                    activate
-                end tell
-            """)
+        eventTap.onRepaste = {
+            DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
+        }
+        eventTap.onWheelLongPress = { [weak menuBarManager] in
+            DispatchQueue.main.async { menuBarManager?.openDreamMacOSAddons() }
         }
         eventTap.start()
         self.eventTapManager = eventTap
