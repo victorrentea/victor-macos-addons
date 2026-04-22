@@ -2204,7 +2204,7 @@ class EmojiAnimator {
 
     func showLaugh() {
         let bounds = hostLayer.bounds
-        let size: CGFloat = bounds.height / 4
+        let size: CGFloat = bounds.height / 4 * 1.2
         let fontSize: CGFloat = size * 0.85
         let duration: Double = 2.0
 
@@ -2212,18 +2212,18 @@ class EmojiAnimator {
         layer.string = "🤣"
         layer.fontSize = fontSize
         layer.alignmentMode = .center
-        layer.frame = CGRect(x: -size, y: 0, width: size, height: size)
+        layer.frame = CGRect(x: -size, y: bounds.midY - size / 2, width: size, height: size)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         hostLayer.addSublayer(layer)
 
         let startX: CGFloat = -size / 2
         let endX: CGFloat = bounds.midX
-        let groundY: CGFloat = size / 2
+        let centerY: CGFloat = bounds.midY
 
         let pathAnim = CAKeyframeAnimation(keyPath: "position")
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: startX, y: groundY))
-        path.addLine(to: CGPoint(x: endX, y: groundY))
+        path.move(to: CGPoint(x: startX, y: centerY))
+        path.addLine(to: CGPoint(x: endX, y: centerY))
         pathAnim.path = path
         pathAnim.timingFunction = CAMediaTimingFunction(name: .linear)
 
