@@ -725,7 +725,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     }
 
     private func checkNotCapturing() {
-        guard isMeetingActive && !isTranscribing else { return }
+        guard isMeetingActive && !isTranscribing && autoStoppedByBattery else { return }
         let content = UNMutableNotificationContent()
         content.title = "Not Capturing"
         content.sound = .default
