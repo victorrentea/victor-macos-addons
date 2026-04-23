@@ -386,8 +386,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 audioManager?.resumeIfDictationActive()
             }
         }
-        eventTap.onRepaste = {
+        eventTap.onRepaste = { [weak self] in
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
+            DispatchQueue.main.async { self?.animator.showSanta() }
         }
         eventTap.onWheelLongPress = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamMacOSAddons() }

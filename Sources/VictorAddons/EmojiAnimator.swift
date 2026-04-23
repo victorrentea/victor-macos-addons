@@ -2200,56 +2200,212 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
-    // MARK: - Laugh (🤣 rolls in from left to center, clockwise, fades at halfway)
+    // MARK: - Laugh (🤣 rolls in from left to center at full opacity, then continues + fades; 3 extra laugh emojis)
+
+    private struct EmojiPlacement {
+        var centerX: CGFloat
+        var centerY: CGFloat
+        var size: CGFloat
+
+        func intersects(_ other: EmojiPlacement) -> Bool {
+            let minDist = (size + other.size) / 2
+            let dx = centerX - other.centerX
+            let dy = centerY - other.centerY
+            return sqrt(dx * dx + dy * dy) < minDist
+        }
+    }
 
     func showLaugh() {
         let bounds = hostLayer.bounds
         let size: CGFloat = bounds.height / 4 * 1.2
-        let fontSize: CGFloat = size * 0.85
         let duration: Double = 2.0
+        let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        // Phase geometry for main emoji
+        let mainStartX: CGFloat = -size / 2
+        let mainMidX: CGFloat = bounds.midX          // end of phase 1 / start of phase 2
+        let mainEndX: CGFloat = bounds.midX + 0.25 * bounds.width  // end of phase 2
+
+        let totalDistance = mainEndX - mainStartX
+        let phase1Distance = mainMidX - mainStartX
+        let phase1Fraction = phase1Distance / totalDistance   // time fraction for phase 1
+
+        // Track placements for collision detection
+        var placements: [EmojiPlacement] = [
+            EmojiPlacement(centerX: (mainStartX + mainMidX) / 2, centerY: bounds.midY, size: size)
+        ]
+
+        // Helper: animate one laugh emoji
+        func animateLaughEmoji(emoji: String, emojiSize: CGFloat, startX: CGFloat, endX: CGFloat,
+                               centerY: CGFloat, fadeFraction: Double, layer: CATextLayer) {
+            let fontSize: CGFloat = emojiSize * 0.85
+            layer.string = emoji
+            layer.fontSize = fontSize
+            layer.alignmentMode = .center
+            layer.frame = CGRect(x: startX - emojiSize / 2, y: centerY - emojiSize / 2,
+                                 width: emojiSize, height: emojiSize)
+            layer.contentsScale = scale
+            hostLayer.addSublayer(layer)
+
+            let distance = endX - startX
+            // Rolling: clockwise when moving right (+), counterclockwise when moving left (-)
+            let totalRotation = (distance / (CGFloat.pi * emojiSize)) * (2 * CGFloat.pi)
+
+            let pathAnim = CAKeyframeAnimation(keyPath: "position")
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: startX, y: centerY))
+            path.addLine(to: CGPoint(x: endX, y: centerY))
+            pathAnim.path = path
+            pathAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+
+            let rotAnim = CABasicAnimation(keyPath: "transform.rotation.z")
+            rotAnim.fromValue = 0
+            rotAnim.toValue = totalRotation
+            rotAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+
+            let fadeAnim = CABasicAnimation(keyPath: "opacity")
+            fadeAnim.fromValue = 1.0
+            fadeAnim.toValue = 0.0
+            fadeAnim.beginTime = duration * fadeFraction
+            fadeAnim.duration = duration * (1.0 - fadeFraction)
+            fadeAnim.fillMode = .forwards
+
+            let group = CAAnimationGroup()
+            group.animations = [pathAnim, rotAnim, fadeAnim]
+            group.duration = duration
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
+            layer.add(group, forKey: "laugh")
+            CATransaction.commit()
+        }
+
+        // Main emoji: two-phase — full opacity to center, then fade to center+25%
+        // We model this as traveling mainStartX → mainEndX with fade starting at phase1Fraction
+        let mainLayer = CATextLayer()
+        animateLaughEmoji(emoji: "🤣", emojiSize: size,
+                          startX: mainStartX, endX: mainEndX,
+                          centerY: bounds.midY,
+                          fadeFraction: Double(phase1Fraction),
+                          layer: mainLayer)
+
+        // Helper: random Y placement for an extra emoji that doesn't intersect existing ones
+        func randomYForSize(_ extraSize: CGFloat, existingPlacements: [EmojiPlacement], approxCenterX: CGFloat) -> CGFloat? {
+            for _ in 0..<20 {
+                let minY = extraSize / 2
+                let maxY = bounds.height - extraSize / 2
+                guard maxY > minY else { return bounds.midY }
+                let candidateY = CGFloat.random(in: minY...maxY)
+                let candidate = EmojiPlacement(centerX: approxCenterX, centerY: candidateY, size: extraSize)
+                if !existingPlacements.contains(where: { candidate.intersects($0) }) {
+                    return candidateY
+                }
+            }
+            return nil
+        }
+
+        // Extra 1: from left (😂), different Y
+        let extra1Size = CGFloat.random(in: size / 4 ... size)
+        let extra1StartX: CGFloat = -extra1Size / 2
+        let extra1EndX: CGFloat = bounds.midX + CGFloat.random(in: -0.1 * bounds.width ... 0.1 * bounds.width)
+        let extra1ApproxCenterX = (extra1StartX + extra1EndX) / 2
+        let extra1Y: CGFloat
+        if let y = randomYForSize(extra1Size, existingPlacements: placements, approxCenterX: extra1ApproxCenterX) {
+            extra1Y = y
+        } else {
+            // Fallback: place at 1/4 height if no non-overlapping position found
+            extra1Y = bounds.height * 0.25
+        }
+        placements.append(EmojiPlacement(centerX: extra1ApproxCenterX, centerY: extra1Y, size: extra1Size))
+
+        let extra1Layer = CATextLayer()
+        animateLaughEmoji(emoji: "😂", emojiSize: extra1Size,
+                          startX: extra1StartX, endX: extra1EndX,
+                          centerY: extra1Y,
+                          fadeFraction: Double(phase1Fraction),
+                          layer: extra1Layer)
+
+        // Extras 2 & 3: from right (random emoji), travel leftward toward center area
+        let rightExtras = [2, 3]
+        let rightEmojis = ["🤣", "😂"]
+        for (i, _) in rightExtras.enumerated() {
+            let extraSize = CGFloat.random(in: size / 4 ... size)
+            let extraStartX: CGFloat = bounds.width + extraSize / 2
+            let extraEndX: CGFloat = bounds.midX + CGFloat.random(in: -0.15 * bounds.width ... 0.15 * bounds.width)
+            let extraApproxCenterX = (extraStartX + extraEndX) / 2
+            let extraY: CGFloat
+            if let y = randomYForSize(extraSize, existingPlacements: placements, approxCenterX: extraApproxCenterX) {
+                extraY = y
+            } else {
+                // Fallback: space evenly — 3/4 height for first right extra, 1/2 for second
+                extraY = i == 0 ? bounds.height * 0.75 : bounds.height * 0.5
+            }
+            placements.append(EmojiPlacement(centerX: extraApproxCenterX, centerY: extraY, size: extraSize))
+
+            let extraEmoji = rightEmojis[Int.random(in: 0..<rightEmojis.count)]
+            let extraLayer = CATextLayer()
+            animateLaughEmoji(emoji: extraEmoji, emojiSize: extraSize,
+                              startX: extraStartX, endX: extraEndX,
+                              centerY: extraY,
+                              fadeFraction: Double(phase1Fraction),
+                              layer: extraLayer)
+        }
+    }
+
+    // MARK: - Santa (🎅 slides in from left to top-left corner, stays, then fades out)
+
+    func showSanta() {
+        let bounds = hostLayer.bounds
+        let emojiSize: CGFloat = bounds.height / 2
+        let fontSize: CGFloat = emojiSize * 0.85
+        let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        let finalX: CGFloat = 0
+        let finalY: CGFloat = bounds.height - emojiSize
+        let startX: CGFloat = -emojiSize
 
         let layer = CATextLayer()
-        layer.string = "🤣"
+        layer.string = "🎅"
         layer.fontSize = fontSize
         layer.alignmentMode = .center
-        layer.frame = CGRect(x: -size, y: bounds.midY - size / 2, width: size, height: size)
-        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        layer.frame = CGRect(x: startX, y: finalY, width: emojiSize, height: emojiSize)
+        layer.contentsScale = scale
         hostLayer.addSublayer(layer)
 
-        let startX: CGFloat = -size / 2
-        let endX: CGFloat = bounds.midX
-        let centerY: CGFloat = bounds.midY
+        let slideInDuration: Double = 1.0
+        let stayDuration: Double = 2.0
+        let fadeOutDuration: Double = 2.0
+        let totalDuration: Double = slideInDuration + stayDuration + fadeOutDuration
 
-        let pathAnim = CAKeyframeAnimation(keyPath: "position")
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: startX, y: centerY))
-        path.addLine(to: CGPoint(x: endX, y: centerY))
-        pathAnim.path = path
-        pathAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+        // Slide in: x from startX → finalX
+        let slideAnim = CABasicAnimation(keyPath: "position.x")
+        slideAnim.fromValue = startX + emojiSize / 2
+        slideAnim.toValue = finalX + emojiSize / 2
+        slideAnim.duration = slideInDuration
+        slideAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        slideAnim.fillMode = .forwards
 
-        let distance = endX - startX
-        let totalRotation = -(distance / (CGFloat.pi * size)) * (2 * CGFloat.pi)
-        let rotAnim = CABasicAnimation(keyPath: "transform.rotation.z")
-        rotAnim.fromValue = 0
-        rotAnim.toValue = totalRotation
-        rotAnim.timingFunction = CAMediaTimingFunction(name: .linear)
-
+        // Fade out: starts after slideIn + stay
         let fadeAnim = CABasicAnimation(keyPath: "opacity")
         fadeAnim.fromValue = 1.0
         fadeAnim.toValue = 0.0
-        fadeAnim.beginTime = duration * 0.5
-        fadeAnim.duration = duration * 0.5
+        fadeAnim.beginTime = slideInDuration + stayDuration
+        fadeAnim.duration = fadeOutDuration
         fadeAnim.fillMode = .forwards
 
         let group = CAAnimationGroup()
-        group.animations = [pathAnim, rotAnim, fadeAnim]
-        group.duration = duration
+        group.animations = [slideAnim, fadeAnim]
+        group.duration = totalDuration
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false
 
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
-        layer.add(group, forKey: "laugh")
+        layer.add(group, forKey: "santa")
+        // Set model layer position to final so slide ends correctly
+        layer.position = CGPoint(x: finalX + emojiSize / 2, y: finalY + emojiSize / 2)
         CATransaction.commit()
     }
 
