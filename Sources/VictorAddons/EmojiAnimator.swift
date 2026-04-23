@@ -2248,8 +2248,8 @@ class EmojiAnimator {
             hostLayer.addSublayer(layer)
 
             let distance = endX - startX
-            // Rolling: clockwise when moving right (+), counterclockwise when moving left (-)
-            let totalRotation = (distance / (CGFloat.pi * emojiSize)) * (2 * CGFloat.pi)
+            // Negate: y-up CALayer positive rotation = CCW; rolling right = CW = negative
+            let totalRotation = -(distance / (CGFloat.pi * emojiSize)) * (2 * CGFloat.pi)
 
             let pathAnim = CAKeyframeAnimation(keyPath: "position")
             let path = CGMutablePath()
