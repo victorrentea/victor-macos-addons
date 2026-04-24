@@ -25,7 +25,7 @@ class EventTapManager {
     var onDictationEscape: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
-    var onWheelLongPress: (() -> Void)?
+    var onWheelTripleClick: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onToggleTranscription: (() -> Void)?
 
@@ -43,10 +43,9 @@ class EventTapManager {
     private let MOUSE_BUTTON_3: Int64 = 2
 
     // MARK: Wheel click tracking
+    private var wheelClickCount: Int = 0
     private var wheelPendingWork: DispatchWorkItem?
-    private let wheelDoubleClickWindow: TimeInterval = 0.35
-    private var wheelLongPressWork: DispatchWorkItem?
-    private let wheelLongPressThreshold: TimeInterval = 0.6
+    private let wheelClickWindow: TimeInterval = 0.35
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
@@ -203,45 +202,36 @@ class EventTapManager {
         return Unmanaged.passUnretained(event)
     }
 
-    // MARK: - Wheel long-press and double-click
+    // MARK: - Wheel click (double = repaste, triple = Claude terminal)
 
-    private func handleWheelDown() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            let work = DispatchWorkItem { [weak self] in
-                guard let self = self else { return }
-                self.wheelLongPressWork = nil
-                DispatchQueue.global().async { self.onWheelLongPress?() }
-            }
-            self.wheelLongPressWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + self.wheelLongPressThreshold, execute: work)
-        }
-    }
+    private func handleWheelDown() {}
 
     private func handleWheelUp() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            guard let work = self.wheelLongPressWork else { return }  // long press already fired
-            work.cancel()
-            self.wheelLongPressWork = nil
-            self.handleShortWheelClick()
-        }
+        DispatchQueue.main.async { [weak self] in self?.handleShortWheelClick() }
     }
 
     private func handleShortWheelClick() {
-        if wheelPendingWork != nil {
-            // Second short click within window = double click
-            wheelPendingWork?.cancel()
-            wheelPendingWork = nil
+        wheelPendingWork?.cancel()
+        wheelPendingWork = nil
+        wheelClickCount += 1
+
+        if wheelClickCount == 2 {
+            wheelClickCount = 0
             DispatchQueue.global().async { [weak self] in self?.onRepaste?() }
-        } else {
-            // First short click — start window
-            let work = DispatchWorkItem { [weak self] in
-                self?.wheelPendingWork = nil
-            }
-            wheelPendingWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + wheelDoubleClickWindow, execute: work)
+            return
         }
+        if wheelClickCount == 3 {
+            wheelClickCount = 0
+            DispatchQueue.global().async { [weak self] in self?.onWheelTripleClick?() }
+            return
+        }
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.wheelClickCount = 0
+            self?.wheelPendingWork = nil
+        }
+        wheelPendingWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + wheelClickWindow, execute: work)
     }
 
     // MARK: - Clipboard helper

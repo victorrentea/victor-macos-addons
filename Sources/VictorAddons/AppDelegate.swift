@@ -390,7 +390,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
             DispatchQueue.main.async { self?.animator.showSanta() }
         }
-        eventTap.onWheelLongPress = { [weak menuBarManager] in
+        eventTap.onWheelTripleClick = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamMacOSAddons() }
         }
         eventTap.start()
