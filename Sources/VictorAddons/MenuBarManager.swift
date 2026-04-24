@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 22, 17:17"
+    static let BUILD_TIME = "Apr 24, 08:56"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -404,6 +404,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc func openDreamMacOSAddons() {
         openDreamClaude(directory: "~/workspace/victor-macos-addons", sessionName: "macos-addons", quarter: .bottomRight)
+    }
+
+    func openClaudeCodeTerminal() {
+        let script = """
+        tell application "Terminal"
+            do script "~/.claude/local/claude"
+            activate
+        end tell
+        """
+        DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
     }
 
     @objc private func openDreamWorkspace() {

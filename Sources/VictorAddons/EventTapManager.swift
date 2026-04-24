@@ -202,7 +202,7 @@ class EventTapManager {
         return Unmanaged.passUnretained(event)
     }
 
-    // MARK: - Wheel click (double = repaste, triple = Claude terminal)
+    // MARK: - Wheel click (double = Claude Desktop opt-opt, triple = Claude Code terminal)
 
     private func handleWheelDown() {}
 

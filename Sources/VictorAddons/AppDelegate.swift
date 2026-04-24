@@ -391,7 +391,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async { self?.animator.showSanta() }
         }
         eventTap.onWheelTripleClick = { [weak menuBarManager] in
-            DispatchQueue.main.async { menuBarManager?.openDreamMacOSAddons() }
+            DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
         }
         eventTap.start()
         self.eventTapManager = eventTap
