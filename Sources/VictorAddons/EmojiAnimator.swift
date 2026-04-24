@@ -2208,10 +2208,10 @@ class EmojiAnimator {
         var size: CGFloat
 
         func intersects(_ other: EmojiPlacement) -> Bool {
+            // Emojis travel horizontally at constant Y, so only vertical separation matters
             let minDist = (size + other.size) / 2
-            let dx = centerX - other.centerX
-            let dy = centerY - other.centerY
-            return sqrt(dx * dx + dy * dy) < minDist
+            let dy = abs(centerY - other.centerY)
+            return dy < minDist
         }
     }
 
