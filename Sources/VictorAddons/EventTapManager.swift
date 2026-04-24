@@ -215,20 +215,20 @@ class EventTapManager {
         wheelPendingWork = nil
         wheelClickCount += 1
 
-        if wheelClickCount == 2 {
-            wheelClickCount = 0
-            DispatchQueue.global().async { [weak self] in self?.onRepaste?() }
-            return
-        }
         if wheelClickCount == 3 {
             wheelClickCount = 0
             DispatchQueue.global().async { [weak self] in self?.onWheelTripleClick?() }
             return
         }
 
+        // Wait before firing: a 3rd click within the window upgrades double → triple
+        let count = wheelClickCount
         let work = DispatchWorkItem { [weak self] in
             self?.wheelClickCount = 0
             self?.wheelPendingWork = nil
+            if count == 2 {
+                DispatchQueue.global().async { [weak self] in self?.onRepaste?() }
+            }
         }
         wheelPendingWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + wheelClickWindow, execute: work)
