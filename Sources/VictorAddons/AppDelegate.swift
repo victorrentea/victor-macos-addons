@@ -86,6 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         let wsServer = LocalWebSocketServer()
         wsServer.onEmoji = { [weak self] emoji, count in
+            self?.overlayPanel?.refreshScreenFrame()
             for _ in 0..<max(1, count) {
                 self?.animator.spawnEmoji(emoji)
             }
@@ -107,9 +108,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         overlayInfo("Starting TabletHttpServer...")
         tabletServer = TabletHttpServer()
-        tabletServer?.onAlarmStart = { [weak self] in self?.animator.startAlarmOverlay() }
+        tabletServer?.onAlarmStart = { [weak self] in
+            self?.overlayPanel?.refreshScreenFrame()
+            self?.animator.startAlarmOverlay()
+        }
         tabletServer?.onAlarmStop  = { [weak self] in self?.animator.stopAlarmOverlay() }
         tabletServer?.onEffect = { [weak self] name in
+            self?.overlayPanel?.refreshScreenFrame()
             switch name {
             case "earthquake":    self?.animator.showBrokenGlass(playSound: false)
             case "explosion":     self?.animator.showExplosionGif(playSound: false)
@@ -244,6 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onDesktopEffect = { [weak self] name in
             DispatchQueue.main.async {
+                self?.overlayPanel?.refreshScreenFrame()
                 switch name {
                 case "heart":        self?.animator.spawnEmoji("❤️")
                 case "confetti":     self?.animator.spawnConfetti()
@@ -388,7 +394,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onRepaste = { [weak self] in
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
-            DispatchQueue.main.async { self?.animator.showSanta() }
+            DispatchQueue.main.async {
+                self?.overlayPanel?.refreshScreenFrame()
+                self?.animator.showSanta()
+            }
         }
         eventTap.onWheelTripleClick = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
@@ -569,10 +578,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         if type == "emoji_reaction", let emoji = json["emoji"] as? String {
             DispatchQueue.main.async { [weak self] in
+                self?.overlayPanel?.refreshScreenFrame()
                 self?.animator.spawnEmoji(emoji)
             }
         } else if type == "confetti" {
             DispatchQueue.main.async { [weak self] in
+                self?.overlayPanel?.refreshScreenFrame()
                 self?.animator.spawnConfetti()
             }
         } else if type == "session_started" {
