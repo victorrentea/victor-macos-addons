@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 29, 00:38"
+    static let BUILD_TIME = "Apr 29, 00:40"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -527,7 +527,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 button.image = image
             }
         } else if isTranscriptionStale {
-            button.image = makeStaleIcon()
+            button.image = makeEmojiIcon("🤐")
+        } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource) {
+            button.image = icon
         } else {
             if let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
@@ -567,16 +569,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return composite
     }
 
-    /// Yellow zipper-mouth emoji rendered as a colored menu-bar icon.
+    /// Render any emoji as a colored 18×18 menu-bar icon.
     /// `isTemplate = false` is essential — template images are forced to a single
-    /// tone by macOS, which strips the emoji's color glyph (would render as a
-    /// white blob). Apple Color Emoji draws colored when the host image is non-template.
-    private func makeStaleIcon() -> NSImage? {
+    /// tone by macOS, which strips the emoji's color glyph (renders as a white blob).
+    /// Apple Color Emoji draws colored only when the host image is non-template.
+    private func makeEmojiIcon(_ emoji: String) -> NSImage? {
+        guard !emoji.isEmpty else { return nil }
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
         composite.lockFocus()
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 16)]
-        let str = "🤐" as NSString
+        let str = emoji as NSString
         let strSize = str.size(withAttributes: attrs)
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
@@ -589,6 +592,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func setTranscribeSource(_ emoji: String) {
         transcribeSource = emoji
         updateTranscribeTitle()
+        refreshMenuIcon()
     }
 
     private func updateTranscribeTitle() {
