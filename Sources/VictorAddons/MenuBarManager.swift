@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 24, 08:56"
+    static let BUILD_TIME = "Apr 28, 22:45"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -92,17 +92,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(killItem)
 
         // Copy Git
-        addItem("Copy Git", action: #selector(copyGitAction))
-
-        // Open Catalog
-        let catalogItem = addItem("Catalog", action: #selector(openCatalogAction))
-        catalogItem.keyEquivalent = "c"
-        catalogItem.keyEquivalentModifierMask = [.command, .control]
-
-        // Dark mode (moved up)
-        darkModeItem = addItem("Dark Mode", action: #selector(toggleDarkModeAction))
-        darkModeItem.keyEquivalent = "d"
-        darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]
+        addItem("🌳 Copy Git from IntelliJ", action: #selector(copyGitAction))
 
         menu.addItem(.separator())
 
@@ -168,34 +158,53 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
         menu.addItem(effectsItem)
 
-        // Dream submenu
-        let dreamItem = NSMenuItem(title: "Dream", action: nil, keyEquivalent: "")
-        dreamItem.isEnabled = true
-        let dreamSubmenu = NSMenu()
-        dreamItem.submenu = dreamSubmenu
+        // Extra submenu
+        let extraItem = NSMenuItem(title: "Extra", action: nil, keyEquivalent: "")
+        extraItem.isEnabled = true
+        let extraSubmenu = NSMenu()
+        extraItem.submenu = extraSubmenu
+
+        // Paste Emotions (disabled — shortcut reminder)
+        let pasteItem = NSMenuItem(title: "Paste Emotions", action: nil, keyEquivalent: "v")
+        pasteItem.keyEquivalentModifierMask = [.command, .control]
+        pasteItem.isEnabled = false
+        extraSubmenu.addItem(pasteItem)
+
+        // Dark Mode (⌘⌃⌥D)
+        darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
+        darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]
+        darkModeItem.target = self
+        darkModeItem.isEnabled = true
+        extraSubmenu.addItem(darkModeItem)
+
+        // Catalog (⌘⌃C)
+        let catalogItem = NSMenuItem(title: "Catalog", action: #selector(openCatalogAction), keyEquivalent: "c")
+        catalogItem.keyEquivalentModifierMask = [.command, .control]
+        catalogItem.target = self
+        catalogItem.isEnabled = true
+        extraSubmenu.addItem(catalogItem)
+
+        // Tile Terminals (⌘⌃A)
+        let tileItem = NSMenuItem(title: "Tile Terminals", action: #selector(tileTerminalsAction), keyEquivalent: "a")
+        tileItem.keyEquivalentModifierMask = [.command, .control]
+        tileItem.target = self
+        tileItem.isEnabled = true
+        extraSubmenu.addItem(tileItem)
+
+        // Flattened Dream entries
         let dreamEntries: [(String, Selector)] = [
-            ("Training assistant", #selector(openDreamTrainingAssistant)),
-            ("Mac OS Add-ons",     #selector(openDreamMacOSAddons)),
-            ("Workspace",          #selector(openDreamWorkspace)),
+            ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
+            ("🎅 macos-addons",       #selector(openDreamMacOSAddons)),
+            ("🎅 workspace",          #selector(openDreamWorkspace)),
         ]
         for (title, sel) in dreamEntries {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
             item.target = self
             item.isEnabled = true
-            dreamSubmenu.addItem(item)
+            extraSubmenu.addItem(item)
         }
-        menu.addItem(dreamItem)
 
-        // Tile Terminals (⌘⌃A)
-        let tileItem = addItem("Tile Terminals", action: #selector(tileTerminalsAction))
-        tileItem.keyEquivalent = "a"
-        tileItem.keyEquivalentModifierMask = [.command, .control]
-
-        // Shortcut reminders (disabled)
-        let pasteItem = addItem("Paste Emotions", action: nil)
-        pasteItem.isEnabled = false
-        pasteItem.keyEquivalent = "v"
-        pasteItem.keyEquivalentModifierMask = [.command, .control]
+        menu.addItem(extraItem)
 
         // Build timestamp
         let buildItem = addItem("Built at " + MenuBarManager.BUILD_TIME, action: nil)
