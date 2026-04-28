@@ -92,7 +92,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // Resume item
-        resumeItem = addItem("Resumed -", action: nil)
+        resumeItem = addItem("⏱️ Resumed -", action: nil)
         resumeItem.isEnabled = false
         // Transcribe toggle
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
@@ -154,7 +154,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(effectsItem)
 
         // Extra submenu
-        let extraItem = NSMenuItem(title: "Extra", action: nil, keyEquivalent: "")
+        let extraItem = NSMenuItem(title: "👩🏻‍💻 Extra", action: nil, keyEquivalent: "")
         extraItem.isEnabled = true
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
@@ -264,9 +264,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         if let endedAt = breakEndedAt {
             let elapsed = Int(Date().timeIntervalSince(endedAt))
-            resumeItem.title = elapsed < 3 * 3600 ? RHTimerMonitor.formatElapsed(elapsed) : "Resumed -"
+            resumeItem.title = elapsed < 3 * 3600 ? RHTimerMonitor.formatElapsed(elapsed) : "⏱️ Resumed -"
         } else {
-            resumeItem.title = "Resumed -"
+            resumeItem.title = "⏱️ Resumed -"
         }
 
     }
