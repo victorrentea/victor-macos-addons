@@ -1,6 +1,6 @@
 """Live Whisper transcription runner — writes directly to normalized transcript files.
 
-Victor's mic priority: XLR > Bose > MacBook (auto-switches on connect/disconnect)
+Victor's mic priority: DJI > XLR > Bose > MacBook (auto-switches on connect/disconnect)
 Audience: FROM Zoom loopback
 
 Uses CoreAudio for device detection (no stale devices) and sounddevice for capture.
@@ -93,7 +93,7 @@ _THRESHOLDS = {
 }
 _DEFAULT_THRESHOLD = 0.018
 
-_ME_PATTERNS = ["XLR", "Bose", "MacBook"]
+_ME_PATTERNS = ["DJI", "XLR", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
@@ -176,6 +176,7 @@ def _is_garbage(text: str) -> bool:
 
 # Short display names for known devices
 _DEVICE_SHORT_NAMES = {
+    "dji": "🎤",
     "xlr": "🎙️",
     "bose": "🎧",
     "vic bose": "🎧",
