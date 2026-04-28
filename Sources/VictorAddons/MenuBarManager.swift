@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 29, 00:40"
+    static let BUILD_TIME = "Apr 29, 00:42"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -518,14 +518,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
         if !isTranscribing && isTranscriptionPausedByBattery {
-            button.image = makeBatteryPausedIcon()
+            button.image = makeEmojiIcon("⏸️")
         } else if !isTranscribing {
-            if let url = Bundle.module.url(forResource: "icon_chat_off", withExtension: "png"),
-               let image = NSImage(contentsOf: url) {
-                image.isTemplate = false
-                image.size = NSSize(width: 18, height: 18)
-                button.image = image
-            }
+            button.image = makeEmojiIcon("🟥")
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐")
         } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource) {
@@ -538,35 +533,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 button.image = image
             }
         }
-    }
-
-    private func makeBatteryPausedIcon() -> NSImage? {
-        guard let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
-              let base = NSImage(contentsOf: url) else { return nil }
-        let size = NSSize(width: 18, height: 18)
-        let composite = NSImage(size: size)
-        composite.lockFocus()
-        // Draw the base icon tinted to match the current menu bar appearance
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        NSColor.white.withAlphaComponent(isDark ? 1.0 : 0.0).setFill()
-        let baseRect = NSRect(origin: .zero, size: size)
-        base.draw(in: baseRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-        if isDark {
-            NSColor.white.set()
-            baseRect.fill(using: .sourceAtop)
-        }
-        // Yellow lightning drawn full-size over the bubble
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 16),
-            .foregroundColor: NSColor.systemYellow
-        ]
-        let str = "⚡️" as NSString
-        let strSize = str.size(withAttributes: attrs)
-        let origin = NSPoint(x: (size.width - strSize.width) / 2, y: (size.height - strSize.height) / 2)
-        str.draw(at: origin, withAttributes: attrs)
-        composite.unlockFocus()
-        composite.isTemplate = false
-        return composite
     }
 
     /// Render any emoji as a colored 18×18 menu-bar icon.
