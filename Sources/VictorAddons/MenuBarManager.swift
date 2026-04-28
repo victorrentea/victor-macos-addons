@@ -462,11 +462,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func updateWsStatus(_ connected: Bool) {
         wsConnected = connected
         refreshWsItem()
+        refreshMenuIcon()
     }
 
     func setJoinLinkEnabled(_ enabled: Bool) {
         sessionActive = enabled
         refreshWsItem()
+        refreshMenuIcon()
     }
 
     private func refreshWsItem() {
@@ -517,29 +519,27 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
+        let badge = (wsConnected || sessionActive) ? "🟢" : "🟥"
+
         if !isTranscribing && isTranscriptionPausedByBattery {
-            button.image = makeEmojiIcon("⏸️")
+            button.image = makeEmojiIcon("⏸️", badge: badge)
         } else if !isTranscribing {
-            button.image = makeEmojiIcon("⏹️")
+            button.image = makeEmojiIcon("⏹️", badge: badge)
         } else if isTranscriptionStale {
-            button.image = makeEmojiIcon("🤐")
-        } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource) {
+            button.image = makeEmojiIcon("🤐", badge: badge)
+        } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource, badge: badge) {
             button.image = icon
         } else {
-            if let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
-               let image = NSImage(contentsOf: url) {
-                image.isTemplate = true
-                image.size = NSSize(width: 18, height: 18)
-                button.image = image
-            }
+            button.image = makeChatBubbleIcon(badge: badge)
         }
     }
 
-    /// Render any emoji as a colored 18×18 menu-bar icon.
+    /// Render any emoji as a colored 18×18 menu-bar icon, optionally with a small
+    /// emoji badge in the bottom-right 9×9 quadrant (50% w × 50% h).
     /// `isTemplate = false` is essential — template images are forced to a single
     /// tone by macOS, which strips the emoji's color glyph (renders as a white blob).
     /// Apple Color Emoji draws colored only when the host image is non-template.
-    private func makeEmojiIcon(_ emoji: String) -> NSImage? {
+    private func makeEmojiIcon(_ emoji: String, badge: String? = nil) -> NSImage? {
         guard !emoji.isEmpty else { return nil }
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
@@ -550,9 +550,42 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
         str.draw(at: origin, withAttributes: attrs)
+        if let badge = badge, !badge.isEmpty {
+            drawBadge(badge, canvas: size)
+        }
         composite.unlockFocus()
         composite.isTemplate = false
         return composite
+    }
+
+    /// Chat-bubble PNG fallback (used briefly while transcribing before a source
+    /// is detected). Always composites with badge so the indicator is visible.
+    private func makeChatBubbleIcon(badge: String?) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+              let base = NSImage(contentsOf: url) else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let composite = NSImage(size: size)
+        composite.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: size))
+        if let badge = badge, !badge.isEmpty {
+            drawBadge(badge, canvas: size)
+        }
+        composite.unlockFocus()
+        composite.isTemplate = false
+        return composite
+    }
+
+    /// Draw an emoji badge centered in the bottom-right quadrant of the current
+    /// drawing context. Caller owns lockFocus/unlockFocus.
+    private func drawBadge(_ emoji: String, canvas: NSSize) {
+        let quadSide = canvas.width / 2
+        let quad = NSRect(x: canvas.width - quadSide, y: 0, width: quadSide, height: quadSide)
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 8)]
+        let str = emoji as NSString
+        let strSize = str.size(withAttributes: attrs)
+        let origin = NSPoint(x: quad.midX - strSize.width / 2,
+                             y: quad.midY - strSize.height / 2)
+        str.draw(at: origin, withAttributes: attrs)
     }
 
     func setTranscribeSource(_ emoji: String) {
