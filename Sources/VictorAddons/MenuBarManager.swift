@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 28, 22:45"
+    static let BUILD_TIME = "Apr 29, 00:30"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -16,7 +16,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
 
-    private(set) var kill8080Item: NSMenuItem!
     private(set) var darkModeItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
@@ -80,12 +79,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false
 
-        // Kill :8080
-        kill8080Item = addItem("Kill :8080", action: #selector(killPort8080))
-        kill8080Item.isEnabled = false
-
-        // Kill… submenu
-        let killItem = NSMenuItem(title: "Kill…", action: nil, keyEquivalent: "")
+        // Kill… submenu (8080 is included as a regular entry inside)
+        let killItem = NSMenuItem(title: "☠️ Kill…", action: nil, keyEquivalent: "")
         killItem.isEnabled = true
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu
@@ -105,10 +100,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeItem.keyEquivalentModifierMask = [.command, .control]
 
         // Tail (was Monitor)
-        addItem("Tail", action: #selector(monitorAction))
+        addItem("🐕 Tail", action: #selector(monitorAction))
 
         // Screenshot — clickable
-        let screenshotItem = addItem("Screenshot", action: #selector(takeScreenshotAction))
+        let screenshotItem = addItem("📸 Screenshot", action: #selector(takeScreenshotAction))
         screenshotItem.keyEquivalent = "p"
         screenshotItem.keyEquivalentModifierMask = .control
 
@@ -116,14 +111,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
         wsStatusItem = addItem("", action: nil)
-        addItem("Display clipboard link", action: #selector(displayClipboardLinkAction))
+        addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
 
         menu.addItem(.separator())
 
         addItem("🔌 Tablet via USB-C", action: #selector(connectTabletAction))
 
         // Desktop Effects submenu
-        let effectsItem = NSMenuItem(title: "Desktop Effects", action: nil, keyEquivalent: "")
+        let effectsItem = NSMenuItem(title: "⭐️ Effects", action: nil, keyEquivalent: "")
         effectsItem.isEnabled = true
         let effectsSubmenu = NSMenu()
         effectsItem.submenu = effectsSubmenu
@@ -206,12 +201,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
-        // Build timestamp
-        let buildItem = addItem("Built at " + MenuBarManager.BUILD_TIME, action: nil)
-        buildItem.isEnabled = false
-
-        // Quit
-        let quitItem = addItem("Quit", action: #selector(quitApp))
+        // Quit (build timestamp inlined to save a menu line)
+        let quitItem = addItem("⏻ Quit – " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
         quitItem.keyEquivalent = "q"
         quitItem.keyEquivalentModifierMask = .command
 
@@ -253,7 +244,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu.removeAllItems()
         portItems = [:]
 
-        for port in portHistory {
+        // Always include 8080 first, then deduped port history.
+        let allPorts = ([8080] + portHistory).reduce(into: [Int]()) { if !$0.contains($1) { $0.append($1) } }
+        for port in allPorts {
             let item = NSMenuItem(title: ":\(port)", action: nil, keyEquivalent: "")
             item.isEnabled = false
             killSubmenu.addItem(item)
@@ -264,10 +257,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let portItem = NSMenuItem(title: "Port…", action: #selector(killPortPrompt), keyEquivalent: "")
         portItem.target = self
         killSubmenu.addItem(portItem)
-
-        kill8080Item.title = "Kill :8080"
-        kill8080Item.isEnabled = false
-        kill8080Item.action = nil
 
         darkModeItem.title = "Dark Mode"
 
@@ -289,27 +278,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 let proc = MenuBarManager.processName(forPort: port)
                 DispatchQueue.main.async {
                     guard let self = self else { return }
-                    if port == 8080 {
-                        if let proc = proc {
-                            self.kill8080Item.title = "Kill :8080 \(proc)"
-                            self.kill8080Item.isEnabled = true
-                            self.kill8080Item.action = #selector(self.killPort8080)
-                        } else {
-                            self.kill8080Item.title = "Kill :8080"
-                            self.kill8080Item.isEnabled = false
-                        }
+                    guard let item = self.portItems[port] else { return }
+                    if let proc = proc {
+                        item.title = ":\(port) \(proc)"
+                        item.isEnabled = true
+                        item.action = #selector(self.killHistoricalPort(_:))
+                        item.tag = port
+                        item.target = self
                     } else {
-                        guard let item = self.portItems[port] else { return }
-                        if let proc = proc {
-                            item.title = ":\(port) \(proc)"
-                            item.isEnabled = true
-                            item.action = #selector(self.killHistoricalPort(_:))
-                            item.tag = port
-                            item.target = self
-                        } else {
-                            item.title = ":\(port)"
-                            item.isEnabled = false
-                        }
+                        item.title = ":\(port)"
+                        item.isEnabled = false
                     }
                 }
             }
@@ -379,10 +357,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func tileTerminalsAction() {
         onTileTerminals?()
-    }
-
-    @objc private func killPort8080() {
-        killPort(8080)
     }
 
     @objc private func killHistoricalPort(_ sender: NSMenuItem) {
@@ -620,8 +594,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             transcribeItem.title = "Off - On Battery"
             transcribeItem.isEnabled = false
         } else {
-            let suffix = transcribeSource.isEmpty ? "" : " \(transcribeSource)"
-            transcribeItem.title = isTranscribing ? "Stop Transcribing\(suffix)" : "Start Transcribing"
+            let prefix = transcribeSource.isEmpty ? "" : "\(transcribeSource) "
+            transcribeItem.title = isTranscribing ? "\(prefix)Stop Transcribing" : "Start Transcribing"
             transcribeItem.isEnabled = true
         }
     }

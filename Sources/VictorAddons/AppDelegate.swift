@@ -98,7 +98,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         wsServer.onSessionMessage = { [weak self] json in
             guard let type = json["type"] as? String else { return }
             if type == "session_started", let url = json["participant_url"] as? String {
-                self?.handleSessionStarted(participantUrl: url)
+                let folder = json["session_folder"] as? String
+                self?.handleSessionStarted(participantUrl: url, sessionFolder: folder)
             } else if type == "session_ended" {
                 self?.handleSessionEnded()
             }
@@ -587,10 +588,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.animator.spawnConfetti()
             }
         } else if type == "session_started" {
-            // WebSocket message format: {"type": "session_started", "participant_url": "https://interact.victorrentea.ro/abc123"}
+            // WebSocket message format: {"type": "session_started", "participant_url": "...", "session_folder": "..."}
             if let url = json["participant_url"] as? String {
+                let folder = json["session_folder"] as? String
                 DispatchQueue.main.async { [weak self] in
-                    self?.handleSessionStarted(participantUrl: url)
+                    self?.handleSessionStarted(participantUrl: url, sessionFolder: folder)
                 }
             }
         } else if type == "session_ended" {
@@ -601,15 +603,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    private func handleSessionStarted(participantUrl: String) {
+    private func handleSessionStarted(participantUrl: String, sessionFolder: String?) {
         isSessionActive = true
         self.participantUrl = stripProtocolPrefix(from: participantUrl)
+        if let folder = sessionFolder, !folder.isEmpty {
+            ScreenshotManager.sessionFolder = URL(fileURLWithPath: folder)
+        } else {
+            ScreenshotManager.sessionFolder = nil
+        }
         menuBarManager.setJoinLinkEnabled(true)
     }
 
     private func handleSessionEnded() {
         isSessionActive = false
         participantUrl = nil
+        ScreenshotManager.sessionFolder = nil
         menuBarManager.setJoinLinkEnabled(false)
         // Auto-hide banner if currently visible
         if joinLinkBanner?.bannerIsVisible == true {

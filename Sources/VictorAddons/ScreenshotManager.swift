@@ -2,12 +2,14 @@ import AppKit
 import Foundation
 
 enum ScreenshotManager {
-    private static let screenshotDir = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
+    private static let defaultScreenshotDir = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     static var onScreenshotTaken: (() -> Void)?
+    /// When set, screenshots are saved here (active training-session folder). Cleared on session_ended.
+    static var sessionFolder: URL?
 
     static func takeScreenshot() {
-        // Create dir if needed
-        try? FileManager.default.createDirectory(at: screenshotDir, withIntermediateDirectories: true)
+        let targetDir = sessionFolder ?? defaultScreenshotDir
+        try? FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
 
         let date = Date()
         let dateFormatter = DateFormatter()
@@ -17,7 +19,7 @@ enum ScreenshotManager {
         timeFormatter.locale = Locale(identifier: "en_US_POSIX")
         timeFormatter.dateFormat = "HH-mm-ss"
         let filename = "\(dateFormatter.string(from: date))-screen-\(timeFormatter.string(from: date)).jpg"
-        let filepath = screenshotDir.appendingPathComponent(filename)
+        let filepath = targetDir.appendingPathComponent(filename)
 
         let display = activeDisplayNumber()
 
