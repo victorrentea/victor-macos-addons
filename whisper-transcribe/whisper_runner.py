@@ -1,6 +1,7 @@
 """Live Whisper transcription runner — writes directly to normalized transcript files.
 
-Victor's mic priority: DJI > XLR > Bose > MacBook (auto-switches on connect/disconnect)
+Victor's mic priority: Wireless Mic (DJI Mic Mini, etc.) > XLR > Bose > MacBook
+(auto-switches on connect/disconnect)
 Audience: FROM Zoom loopback
 
 Uses CoreAudio for device detection (no stale devices) and sounddevice for capture.
@@ -93,7 +94,7 @@ _THRESHOLDS = {
 }
 _DEFAULT_THRESHOLD = 0.018
 
-_ME_PATTERNS = ["DJI", "XLR", "Bose", "MacBook"]
+_ME_PATTERNS = ["Wireless Mic", "XLR", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
@@ -176,7 +177,7 @@ def _is_garbage(text: str) -> bool:
 
 # Short display names for known devices
 _DEVICE_SHORT_NAMES = {
-    "dji": "🎤",
+    "wireless mic": "🎤",  # DJI Mic Mini reports as "Wireless Mic Rx"
     "xlr": "🎙️",
     "bose": "🎧",
     "vic bose": "🎧",
@@ -616,6 +617,15 @@ class WhisperTranscriptionRunner:
         if delay:
             time.sleep(delay)
         try:
+            # PortAudio caches its device list at import time and never sees USB
+            # devices plugged in afterwards (e.g. DJI Mic Mini hot-plug). Force a
+            # re-init so sd.query_devices() returns the fresh list before lookup.
+            try:
+                import sounddevice as sd
+                sd._terminate()
+                sd._initialize()
+            except Exception as exc:
+                log.error("transcript", f"PortAudio refresh failed: {exc}")
             resolved = _resolve_device_coreaudio(_ME_PATTERNS)
             best_idx, best_name = resolved if resolved else (None, None)
             log.info(
