@@ -644,13 +644,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.hide()
             return
         }
-        guard let raw = NSPasteboard.general.string(forType: .string),
-              let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard let raw = NSPasteboard.general.string(forType: .string) else {
+            overlayError("No URL in clipboard")
+            return
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
               url.scheme == "https" || url.scheme == "http" else {
             overlayError("No URL in clipboard")
             return
         }
-        banner.show(url: stripProtocolPrefix(from: url.absoluteString))
+        // Display raw trimmed text so spaces aren't percent-encoded as %20
+        banner.show(url: stripProtocolPrefix(from: trimmed))
     }
 
     private func scheduleReconnect() {
