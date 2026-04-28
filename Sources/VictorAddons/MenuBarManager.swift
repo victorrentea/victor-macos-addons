@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 29, 00:43"
+    static let BUILD_TIME = "Apr 29, 00:57"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -520,7 +520,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makeEmojiIcon("⏸️")
         } else if !isTranscribing {
-            button.image = makeEmojiIcon("🟥")
+            button.image = makeEmojiIcon("⏹️")
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐")
         } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource) {
