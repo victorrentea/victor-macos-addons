@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 29, 00:30"
+    static let BUILD_TIME = "Apr 29, 00:38"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -115,7 +115,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        addItem("🔌 Tablet via USB-C", action: #selector(connectTabletAction))
+        addItem("🔌 Connect Tablet / USB-c", action: #selector(connectTabletAction))
 
         // Desktop Effects submenu
         let effectsItem = NSMenuItem(title: "⭐️ Effects", action: nil, keyEquivalent: "")
