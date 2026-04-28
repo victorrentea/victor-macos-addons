@@ -254,7 +254,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
 
         killSubmenu.addItem(.separator())
-        let portItem = NSMenuItem(title: "Port…", action: #selector(killPortPrompt), keyEquivalent: "")
+        let portItem = NSMenuItem(title: "New Port…", action: #selector(killPortPrompt), keyEquivalent: "")
         portItem.target = self
         killSubmenu.addItem(portItem)
 
@@ -527,7 +527,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 button.image = image
             }
         } else if isTranscriptionStale {
-            button.image = makeBadgedIcon(resourceName: "icon_chat", isTemplate: true, badge: "⚠️")
+            button.image = makeStaleIcon()
         } else {
             if let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
                let image = NSImage(contentsOf: url) {
@@ -567,20 +567,22 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return composite
     }
 
-    private func makeBadgedIcon(resourceName: String, isTemplate: Bool, badge: String, badgeColor: NSColor? = nil) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: resourceName, withExtension: "png"),
-              let base = NSImage(contentsOf: url) else { return nil }
+    /// Yellow zipper-mouth emoji rendered as a colored menu-bar icon.
+    /// `isTemplate = false` is essential — template images are forced to a single
+    /// tone by macOS, which strips the emoji's color glyph (would render as a
+    /// white blob). Apple Color Emoji draws colored when the host image is non-template.
+    private func makeStaleIcon() -> NSImage? {
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
         composite.lockFocus()
-        base.draw(in: NSRect(origin: .zero, size: size))
-        var attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9)]
-        if let color = badgeColor { attrs[.foregroundColor] = color }
-        let str = badge as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 16)]
+        let str = "🤐" as NSString
         let strSize = str.size(withAttributes: attrs)
-        str.draw(at: NSPoint(x: size.width - strSize.width, y: 0), withAttributes: attrs)
+        let origin = NSPoint(x: (size.width - strSize.width) / 2,
+                             y: (size.height - strSize.height) / 2)
+        str.draw(at: origin, withAttributes: attrs)
         composite.unlockFocus()
-        composite.isTemplate = isTemplate
+        composite.isTemplate = false
         return composite
     }
 
