@@ -73,8 +73,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
 
+        // No outbound WebSocket: the addon only runs LocalWebSocketServer on
+        // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro
+        // and pushes overlay events to us via that local socket. URLSession is still
+        // initialized (delegate hooks remain wired) but we never start a wsTask.
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
-        connectWebSocket()
         // buttonBar removed — effects are now in the menu bar under Desktop Effects
         setupSignalHandler()
         transcriptionFolder = {
