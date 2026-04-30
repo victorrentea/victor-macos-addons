@@ -88,6 +88,7 @@ _ADAPTIVE_BACKLOG_LOW = int(os.environ.get("WHISPER_ADAPTIVE_BACKLOG_LOW", "2"))
 
 _THRESHOLDS = {
     "xlr": 0.018,
+    "wireless mic": 0.005,  # DJI Mic Mini reports much lower RMS than XLR
     "bose": 0.015,
     "macbook": 0.008,
     "audience": 0.025,
