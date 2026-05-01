@@ -19,7 +19,7 @@ class EventTapManager {
     // MARK: Callbacks (set before calling start())
     var onCaptureClipboard: ((String) -> Void)?
     var onEmotionalPaste: (() -> Void)?
-    var onScreenshot: (() -> Void)?
+    var onScreenshot: ((_ toClipboard: Bool) -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onDictationMute: (() -> Void)?
     var onDictationEscape: (() -> Void)?
@@ -132,9 +132,10 @@ class EventTapManager {
 
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
-        let hasCmd  = flags.contains(.maskCommand)
-        let hasCtrl = flags.contains(.maskControl)
-        let hasOpt  = flags.contains(.maskAlternate)
+        let hasCmd   = flags.contains(.maskCommand)
+        let hasCtrl  = flags.contains(.maskControl)
+        let hasOpt   = flags.contains(.maskAlternate)
+        let hasShift = flags.contains(.maskShift)
 
         // ESC → let Wispr handle it, but also resume media if we paused for dictation (pass through)
         if keyCode == VK_ESC {
@@ -150,9 +151,10 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        // Ctrl+P → screenshot (suppress)
+        // Ctrl+P → screenshot to clipboard, Ctrl+Shift+P → screenshot to file (suppress)
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
+            let toClipboard = !hasShift
+            DispatchQueue.global().async { [weak self] in self?.onScreenshot?(toClipboard) }
             return nil
         }
 

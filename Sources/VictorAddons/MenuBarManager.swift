@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Apr 29, 01:24"
+    static let BUILD_TIME = "Apr 30, 09:25"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -42,7 +42,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onMonitor: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
-    var onTakeScreenshot: (() -> Void)?
+    var onTakeScreenshot: ((_ toClipboard: Bool) -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
     var onConnectTablet: (() -> Void)?
@@ -102,10 +102,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Tail (was Monitor)
         addItem("🐕 Tail", action: #selector(monitorAction))
 
-        // Screenshot — clickable
-        let screenshotItem = addItem("📸 Screenshot", action: #selector(takeScreenshotAction))
-        screenshotItem.keyEquivalent = "p"
-        screenshotItem.keyEquivalentModifierMask = .control
+        // Screenshot → Clipboard (⌃P)
+        let screenshotClipItem = addItem("📸 Screenshot → Clipboard", action: #selector(takeScreenshotClipboardAction))
+        screenshotClipItem.keyEquivalent = "p"
+        screenshotClipItem.keyEquivalentModifierMask = .control
+
+        // Screenshot → File (⌃⇧P)
+        let screenshotFileItem = addItem("📸 Screenshot → File", action: #selector(takeScreenshotFileAction))
+        screenshotFileItem.keyEquivalent = "P"
+        screenshotFileItem.keyEquivalentModifierMask = [.control, .shift]
 
         menu.addItem(.separator())
 
@@ -338,8 +343,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onToggleDarkMode?()
     }
 
-    @objc private func takeScreenshotAction() {
-        onTakeScreenshot?()
+    @objc private func takeScreenshotClipboardAction() {
+        onTakeScreenshot?(true)
+    }
+
+    @objc private func takeScreenshotFileAction() {
+        onTakeScreenshot?(false)
     }
 
     @objc private func displayJoinLinkAction() {
@@ -491,12 +500,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     func flashScreenshotIcon() {
         guard let button = statusItem.button else { return }
-        let originalImage = button.image
         button.image = nil
         button.title = "📷"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             button.title = ""
-            button.image = originalImage
+            self?.refreshMenuIcon()
         }
     }
 
