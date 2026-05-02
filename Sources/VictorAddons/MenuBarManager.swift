@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 2, 07:30"
+    static let BUILD_TIME = "May 2, 07:32"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -547,13 +547,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateStopBlinkTimer() {
-        let shouldBlink = !isTranscribing && !isTranscriptionPausedByBattery
-        if shouldBlink {
+        let isStopped = !isTranscribing && !isTranscriptionPausedByBattery
+        if isStopped {
             if stopBlinkTimer == nil {
                 let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
                     guard let self = self else { return }
-                    self.stopBlinkAlt.toggle()
-                    self.refreshMenuIcon()
+                    if MenuBarManager.isWorkingHours() {
+                        self.stopBlinkAlt.toggle()
+                        self.refreshMenuIcon()
+                    } else if self.stopBlinkAlt {
+                        self.stopBlinkAlt = false
+                        self.refreshMenuIcon()
+                    }
                 }
                 RunLoop.main.add(timer, forMode: .common)
                 stopBlinkTimer = timer
@@ -563,6 +568,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             stopBlinkTimer = nil
             stopBlinkAlt = false
         }
+    }
+
+    /// Mon–Fri, 09:00–17:59 local time.
+    private static func isWorkingHours(_ date: Date = Date()) -> Bool {
+        let cal = Calendar.current
+        let weekday = cal.component(.weekday, from: date)  // 1=Sun … 7=Sat
+        let hour = cal.component(.hour, from: date)
+        return (2...6).contains(weekday) && (9..<18).contains(hour)
     }
 
     /// Resource PNG composited with a badge in the bottom-right quadrant.
