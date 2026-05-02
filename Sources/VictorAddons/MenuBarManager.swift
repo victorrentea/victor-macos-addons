@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 2, 00:32"
+    static let BUILD_TIME = "May 2, 07:06"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -534,7 +534,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makeEmojiIcon("⏸️", badge: badge)
         } else if !isTranscribing {
-            button.image = makeStopIcon(frameColor: stopBlinkRed ? .systemRed : .white, badge: badge)
+            button.image = stopBlinkRed ? makeRedStopIcon(badge: badge) : makeEmojiIcon("⏹️", badge: badge)
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐", badge: badge)
         } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource, badge: badge) {
@@ -549,7 +549,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let shouldBlink = !isTranscribing && !isTranscriptionPausedByBattery
         if shouldBlink {
             if stopBlinkTimer == nil {
-                let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+                let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
                     guard let self = self else { return }
                     self.stopBlinkRed.toggle()
                     self.refreshMenuIcon()
@@ -564,29 +564,25 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Custom-drawn stop icon: outer rounded square (frameColor) with dark inner square,
-    /// mimicking the ⏹️ emoji shape but with a recolorable frame for blinking.
-    private func makeStopIcon(frameColor: NSColor, badge: String?) -> NSImage {
+    /// Red variant of the stop icon: red rounded outer frame with white rounded inner,
+    /// matching the ⏹️ emoji shape but recolored for the blinking-stopped state.
+    private func makeRedStopIcon(badge: String?) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let img = NSImage(size: size)
         img.lockFocus()
 
         let outerRect = NSRect(x: 1, y: 1, width: 16, height: 16)
-        NSBezierPath(roundedRect: outerRect, xRadius: 3, yRadius: 3).addClip()
-        frameColor.setFill()
-        NSBezierPath(rect: outerRect).fill()
+        NSColor.systemRed.setFill()
+        NSBezierPath(roundedRect: outerRect, xRadius: 3, yRadius: 3).fill()
 
         let innerRect = NSRect(x: 5, y: 5, width: 8, height: 8)
-        NSColor(calibratedRed: 0.18, green: 0.18, blue: 0.18, alpha: 1).setFill()
+        NSColor.white.setFill()
         NSBezierPath(roundedRect: innerRect, xRadius: 1.5, yRadius: 1.5).fill()
 
-        img.unlockFocus()
-
         if let badge = badge, !badge.isEmpty {
-            img.lockFocus()
             drawBadge(badge, canvas: size)
-            img.unlockFocus()
         }
+        img.unlockFocus()
         img.isTemplate = false
         return img
     }
