@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 2, 07:24"
+    static let BUILD_TIME = "May 2, 07:30"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -24,6 +24,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var portItems: [Int: NSMenuItem] = [:]
 
     private var portRefreshTimer: Timer?
+    private var stopBlinkTimer: Timer?
+    private var stopBlinkAlt: Bool = false
     private var isTranscribing: Bool = false
     private var isTranscriptionStale: Bool = false
     private var isTranscriptionPausedByBattery: Bool = false
@@ -532,7 +534,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makeEmojiIcon("⏸️", badge: badge)
         } else if !isTranscribing {
-            button.image = makeStopPngIcon(badge: badge)
+            let asset = stopBlinkAlt ? "icon_stop_blue" : "icon_stop"
+            button.image = makePngIcon(asset, badge: badge)
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐", badge: badge)
         } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource, badge: badge) {
@@ -540,11 +543,31 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         } else {
             button.image = makeChatBubbleIcon(badge: badge)
         }
+        updateStopBlinkTimer()
     }
 
-    /// Stop icon (PNG) composited with a badge in the bottom-right quadrant.
-    private func makeStopPngIcon(badge: String?) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: "icon_stop", withExtension: "png"),
+    private func updateStopBlinkTimer() {
+        let shouldBlink = !isTranscribing && !isTranscriptionPausedByBattery
+        if shouldBlink {
+            if stopBlinkTimer == nil {
+                let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+                    guard let self = self else { return }
+                    self.stopBlinkAlt.toggle()
+                    self.refreshMenuIcon()
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                stopBlinkTimer = timer
+            }
+        } else {
+            stopBlinkTimer?.invalidate()
+            stopBlinkTimer = nil
+            stopBlinkAlt = false
+        }
+    }
+
+    /// Resource PNG composited with a badge in the bottom-right quadrant.
+    private func makePngIcon(_ resourceName: String, badge: String?) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: resourceName, withExtension: "png"),
               let base = NSImage(contentsOf: url) else { return nil }
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
