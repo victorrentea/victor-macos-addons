@@ -4,7 +4,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 2, 07:18"
+    static let BUILD_TIME = "May 2, 07:24"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -535,7 +535,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makeEmojiIcon("⏸️", badge: badge)
         } else if !isTranscribing {
-            let base = makeEmojiIcon("⏹️", badge: badge)
+            let base = makeStopPngIcon(badge: badge)
             let tint: CIColor = stopBlinkRed
                 ? CIColor(red: 1.0, green: 0.0, blue: 0.0)
                 : CIColor(red: 1.0, green: 1.0, blue: 1.0)
@@ -567,6 +567,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             stopBlinkTimer = nil
             stopBlinkRed = false
         }
+    }
+
+    /// Stop icon (PNG) composited with a badge in the bottom-right quadrant.
+    /// Used as the base for the stop-blink monochrome/red recoloring.
+    private func makeStopPngIcon(badge: String?) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: "icon_stop", withExtension: "png"),
+              let base = NSImage(contentsOf: url) else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let composite = NSImage(size: size)
+        composite.lockFocus()
+        base.draw(in: NSRect(origin: .zero, size: size))
+        if let badge = badge, !badge.isEmpty {
+            drawBadge(badge, canvas: size)
+        }
+        composite.unlockFocus()
+        composite.isTemplate = false
+        return composite
     }
 
     /// Desaturate `image` to luminance, then multiply by `color`.
