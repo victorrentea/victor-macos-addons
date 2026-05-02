@@ -1,9 +1,10 @@
 import AppKit
+import CoreImage
 import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 2, 07:06"
+    static let BUILD_TIME = "May 2, 07:18"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -534,7 +535,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makeEmojiIcon("⏸️", badge: badge)
         } else if !isTranscribing {
-            button.image = stopBlinkRed ? makeRedStopIcon(badge: badge) : makeEmojiIcon("⏹️", badge: badge)
+            let base = makeEmojiIcon("⏹️", badge: badge)
+            let tint: CIColor = stopBlinkRed
+                ? CIColor(red: 1.0, green: 0.0, blue: 0.0)
+                : CIColor(red: 1.0, green: 1.0, blue: 1.0)
+            button.image = base.flatMap { recolorMonochrome($0, color: tint) } ?? base
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐", badge: badge)
         } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource, badge: badge) {
@@ -564,27 +569,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Red variant of the stop icon: red rounded outer frame with white rounded inner,
-    /// matching the ⏹️ emoji shape but recolored for the blinking-stopped state.
-    private func makeRedStopIcon(badge: String?) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let img = NSImage(size: size)
-        img.lockFocus()
-
-        let outerRect = NSRect(x: 1, y: 1, width: 16, height: 16)
-        NSColor.systemRed.setFill()
-        NSBezierPath(roundedRect: outerRect, xRadius: 3, yRadius: 3).fill()
-
-        let innerRect = NSRect(x: 5, y: 5, width: 8, height: 8)
-        NSColor.white.setFill()
-        NSBezierPath(roundedRect: innerRect, xRadius: 1.5, yRadius: 1.5).fill()
-
-        if let badge = badge, !badge.isEmpty {
-            drawBadge(badge, canvas: size)
-        }
-        img.unlockFocus()
-        img.isTemplate = false
-        return img
+    /// Desaturate `image` to luminance, then multiply by `color`.
+    /// `color = white` → grayscale; `color = red` → red-on-grayscale.
+    private func recolorMonochrome(_ image: NSImage, color: CIColor) -> NSImage? {
+        let size = image.size
+        var proposedRect = NSRect(origin: .zero, size: size)
+        guard let cgImage = image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil),
+              let filter = CIFilter(name: "CIColorMonochrome") else { return nil }
+        filter.setValue(CIImage(cgImage: cgImage), forKey: kCIInputImageKey)
+        filter.setValue(color, forKey: "inputColor")
+        filter.setValue(1.0, forKey: "inputIntensity")
+        guard let output = filter.outputImage,
+              let outCG = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        let result = NSImage(cgImage: outCG, size: size)
+        result.isTemplate = false
+        return result
     }
 
     /// Render any emoji as a colored 18×18 menu-bar icon, optionally with a small
