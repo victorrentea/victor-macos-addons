@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage
 import Foundation
 import UserNotifications
 
@@ -25,8 +24,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var portItems: [Int: NSMenuItem] = [:]
 
     private var portRefreshTimer: Timer?
-    private var stopBlinkTimer: Timer?
-    private var stopBlinkRed: Bool = false
     private var isTranscribing: Bool = false
     private var isTranscriptionStale: Bool = false
     private var isTranscriptionPausedByBattery: Bool = false
@@ -535,11 +532,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makeEmojiIcon("⏸️", badge: badge)
         } else if !isTranscribing {
-            let base = makeStopPngIcon(badge: badge)
-            let tint: CIColor = stopBlinkRed
-                ? CIColor(red: 1.0, green: 0.0, blue: 0.0)
-                : CIColor(red: 1.0, green: 1.0, blue: 1.0)
-            button.image = base.flatMap { recolorMonochrome($0, color: tint) } ?? base
+            button.image = makeStopPngIcon(badge: badge)
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐", badge: badge)
         } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource, badge: badge) {
@@ -547,30 +540,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         } else {
             button.image = makeChatBubbleIcon(badge: badge)
         }
-        updateStopBlinkTimer()
-    }
-
-    private func updateStopBlinkTimer() {
-        let shouldBlink = !isTranscribing && !isTranscriptionPausedByBattery
-        if shouldBlink {
-            if stopBlinkTimer == nil {
-                let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
-                    guard let self = self else { return }
-                    self.stopBlinkRed.toggle()
-                    self.refreshMenuIcon()
-                }
-                RunLoop.main.add(timer, forMode: .common)
-                stopBlinkTimer = timer
-            }
-        } else {
-            stopBlinkTimer?.invalidate()
-            stopBlinkTimer = nil
-            stopBlinkRed = false
-        }
     }
 
     /// Stop icon (PNG) composited with a badge in the bottom-right quadrant.
-    /// Used as the base for the stop-blink monochrome/red recoloring.
     private func makeStopPngIcon(badge: String?) -> NSImage? {
         guard let url = Bundle.module.url(forResource: "icon_stop", withExtension: "png"),
               let base = NSImage(contentsOf: url) else { return nil }
@@ -584,23 +556,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         composite.unlockFocus()
         composite.isTemplate = false
         return composite
-    }
-
-    /// Desaturate `image` to luminance, then multiply by `color`.
-    /// `color = white` → grayscale; `color = red` → red-on-grayscale.
-    private func recolorMonochrome(_ image: NSImage, color: CIColor) -> NSImage? {
-        let size = image.size
-        var proposedRect = NSRect(origin: .zero, size: size)
-        guard let cgImage = image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil),
-              let filter = CIFilter(name: "CIColorMonochrome") else { return nil }
-        filter.setValue(CIImage(cgImage: cgImage), forKey: kCIInputImageKey)
-        filter.setValue(color, forKey: "inputColor")
-        filter.setValue(1.0, forKey: "inputIntensity")
-        guard let output = filter.outputImage,
-              let outCG = CIContext().createCGImage(output, from: output.extent) else { return nil }
-        let result = NSImage(cgImage: outCG, size: size)
-        result.isTemplate = false
-        return result
     }
 
     /// Render any emoji as a colored 18×18 menu-bar icon, optionally with a small
