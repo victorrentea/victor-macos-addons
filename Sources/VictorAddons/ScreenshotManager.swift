@@ -13,7 +13,7 @@ enum ScreenshotManager {
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
 
         if toClipboard {
-            process.arguments = ["-c", "-x", "-t", "jpg", "-D", String(display)]
+            process.arguments = ["-c", "-x", "-C", "-t", "jpg", "-D", String(display)]
             try? process.run()
             process.waitUntilExit()
             overlayInfo("Screenshot copied to clipboard (display \(display))")
@@ -31,7 +31,7 @@ enum ScreenshotManager {
             let filename = "\(dateFormatter.string(from: date))-screen-\(timeFormatter.string(from: date)).jpg"
             let filepath = targetDir.appendingPathComponent(filename)
 
-            process.arguments = ["-x", "-t", "jpg", "-D", String(display), filepath.path]
+            process.arguments = ["-x", "-C", "-t", "jpg", "-D", String(display), filepath.path]
             try? process.run()
             process.waitUntilExit()
             overlayInfo("Screenshot saved: \(filename) (display \(display))")
@@ -39,39 +39,23 @@ enum ScreenshotManager {
         onScreenshotTaken?()
     }
 
+    /// Returns the 1-indexed display number (as expected by `screencapture -D`) for the
+    /// screen currently containing the mouse cursor. Falls back to 1 (main display).
+    /// Uses mouse position rather than focused-window position so the captured frame
+    /// always contains the cursor that `-C` will draw.
     private static func activeDisplayNumber() -> Int {
-        // Returns 1-indexed display number for the screen with the frontmost window
-        // Get the frontmost window's screen
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
-              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+        let mouse = NSEvent.mouseLocation  // Cocoa coords: bottom-left origin
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }),
+              let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else {
             return 1
         }
 
-        // Find the frontmost window
-        for window in windows {
-            guard let ownerPID = window[kCGWindowOwnerPID as String] as? pid_t,
-                  ownerPID == frontmostApp.processIdentifier,
-                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
-                  let x = bounds["X"],
-                  let y = bounds["Y"] else {
-                continue
-            }
-
-            // Find which screen contains this window
-            let screens = NSScreen.screens
-            for (index, screen) in screens.enumerated() {
-                let frame = screen.frame
-                if x >= frame.minX && x < frame.maxX && y >= frame.minY && y < frame.maxY {
-                    return index + 1
-                }
-            }
-        }
-
-        // Fallback to main screen
-        guard let mainScreen = NSScreen.main else { return 1 }
-        let screens = NSScreen.screens
-        for (index, screen) in screens.enumerated() {
-            if screen == mainScreen { return index + 1 }
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return 1 }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return 1 }
+        if let idx = displays.firstIndex(of: displayID) {
+            return idx + 1
         }
         return 1
     }
