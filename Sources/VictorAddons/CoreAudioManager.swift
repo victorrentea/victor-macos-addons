@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 import Foundation
 
 class CoreAudioManager {
@@ -29,23 +30,32 @@ class CoreAudioManager {
         overlayInfo("🟢 Dictation: ⏸ media paused")
     }
 
+    // macOS 15+ locked down MediaRemote.framework so `nowplaying-cli get-raw` returns
+    // "null" — instead, ask CoreAudio whether the default output device is currently
+    // being driven by any process. True when Music, Spotify, a browser tab, etc. is
+    // actively producing audio.
     private func isMediaPlaying() -> Bool {
-        let candidates = ["/opt/homebrew/bin/nowplaying-cli", "/usr/local/bin/nowplaying-cli"]
-        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            return true  // conservative: assume playing if tool not found
-        }
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: path)
-        task.arguments = ["get", "playbackRate"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        try? task.run()
-        task.waitUntilExit()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard let rate = Double(output) else { return false }  // "null" or empty → nothing playing
-        return rate > 0
+        var deviceID = AudioDeviceID(0)
+        var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var defaultAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let getDevice = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultAddr, 0, nil, &deviceSize, &deviceID)
+        guard getDevice == noErr, deviceID != 0 else { return true }  // conservative
+
+        var running = UInt32(0)
+        var runningSize = UInt32(MemoryLayout<UInt32>.size)
+        var runningAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain)
+        let getRunning = AudioObjectGetPropertyData(
+            deviceID, &runningAddr, 0, nil, &runningSize, &running)
+        guard getRunning == noErr else { return true }  // conservative
+        return running != 0
     }
 
     private func resumeMedia() {
