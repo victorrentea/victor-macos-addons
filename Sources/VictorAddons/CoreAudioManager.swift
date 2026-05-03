@@ -4,9 +4,16 @@ import Foundation
 
 class CoreAudioManager {
     private var isDictationActive = false
+    private var dictationStartedAt: Date?
+    // Dictation rarely lasts more than ~5 min; after 10 min assume the
+    // pause-for-dictation flag is stale (e.g. media stopped on its own,
+    // user closed the player) and clear it so the next Mouse 5 click
+    // doesn't blindly resume audio that no longer exists.
+    private let dictationStaleAfter: TimeInterval = 10 * 60
 
     // Toggle media pause/resume: call from EventTapManager.onDictationMute callback
     func toggleDictationMute() {
+        expireStaleDictation()
         if isDictationActive {
             resumeMedia()
         } else {
@@ -16,8 +23,17 @@ class CoreAudioManager {
 
     // Called on global ESC: if we paused media for dictation, Wispr was cancelled → resume.
     func resumeIfDictationActive() {
+        expireStaleDictation()
         guard isDictationActive else { return }
         resumeMedia()
+    }
+
+    private func expireStaleDictation() {
+        guard isDictationActive, let started = dictationStartedAt,
+              Date().timeIntervalSince(started) > dictationStaleAfter else { return }
+        isDictationActive = false
+        dictationStartedAt = nil
+        overlayInfo("🟡 Dictation flag expired (>10 min) — cleared")
     }
 
     private func pauseMedia() {
@@ -27,6 +43,7 @@ class CoreAudioManager {
         }
         postPlayPauseKey()
         isDictationActive = true
+        dictationStartedAt = Date()
         overlayInfo("🟢 Dictation: ⏸ media paused")
     }
 
@@ -61,6 +78,7 @@ class CoreAudioManager {
     private func resumeMedia() {
         postPlayPauseKey()
         isDictationActive = false
+        dictationStartedAt = nil
         overlayInfo("🔴 Dictation: ▶ media resumed")
     }
 
