@@ -15,6 +15,12 @@ class CoreAudioManager {
     func toggleDictationMute() {
         expireStaleDictation()
         if isDictationActive {
+            guard isMediaPlaying() else {
+                isDictationActive = false
+                dictationStartedAt = nil
+                overlayInfo("🟡 Dictation: no audio running, cleared flag")
+                return
+            }
             resumeMedia()
         } else {
             pauseMedia()
