@@ -21,6 +21,15 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+_portaudio_lock = threading.Lock()
+
+
+def _portaudio_reinit():
+    with _portaudio_lock:
+        import sounddevice as sd
+        sd._terminate()
+        sd._initialize()
 from coreaudio_devices import (
     list_input_devices,
     register_device_change_callback,
@@ -363,10 +372,7 @@ class _ChannelCapture:
                 time.sleep(2)
                 # Force PortAudio to reinitialize — recovers from CoreAudio invalid state after reconnect
                 try:
-                    import sounddevice as sd
-
-                    sd._terminate()
-                    sd._initialize()
+                    _portaudio_reinit()
                 except Exception:
                     pass
                 if self._resolve_fn:
@@ -622,9 +628,7 @@ class WhisperTranscriptionRunner:
             # devices plugged in afterwards (e.g. DJI Mic Mini hot-plug). Force a
             # re-init so sd.query_devices() returns the fresh list before lookup.
             try:
-                import sounddevice as sd
-                sd._terminate()
-                sd._initialize()
+                _portaudio_reinit()
             except Exception as exc:
                 log.error("transcript", f"PortAudio refresh failed: {exc}")
             resolved = _resolve_device_coreaudio(_ME_PATTERNS)
