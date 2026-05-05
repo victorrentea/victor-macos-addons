@@ -98,14 +98,14 @@ _ADAPTIVE_BACKLOG_LOW = int(os.environ.get("WHISPER_ADAPTIVE_BACKLOG_LOW", "2"))
 _THRESHOLDS = {
     "xlr": 0.018,
     "wireless mic": 0.005,  # DJI Mic Mini reports much lower RMS than XLR
-    "roomspeakerphone": 0.012,  # far-field room mic with AGC; midrange between bose and wireless
+    "speakerphone": 0.012,  # Room Speakerphone — far-field room mic with AGC; midrange between bose and wireless
     "bose": 0.015,
     "macbook": 0.008,
     "audience": 0.025,
 }
 _DEFAULT_THRESHOLD = 0.018
 
-_ME_PATTERNS = ["Wireless Mic", "RoomSpeakerPhone", "XLR", "Bose", "MacBook"]
+_ME_PATTERNS = ["Wireless Mic", "Room Speakerphone", "XLR", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
@@ -189,7 +189,7 @@ def _is_garbage(text: str) -> bool:
 # Short display names for known devices
 _DEVICE_SHORT_NAMES = {
     "wireless mic": "🎤",  # DJI Mic Mini reports as "Wireless Mic Rx"
-    "roomspeakerphone": "🏛️",
+    "speakerphone": "🏛️",  # Room Speakerphone (USB)
     "xlr": "🎙️",
     "bose": "🎧",
     "vic bose": "🎧",
