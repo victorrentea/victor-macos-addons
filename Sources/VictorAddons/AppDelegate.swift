@@ -33,6 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var joinLinkBanner: JoinLinkBanner?
     private var powerMonitor: PowerMonitor?
     private var autoStoppedByBattery = false
+    private var transcriptionScheduler: TranscriptionScheduler?
     private var meetingDetector: MeetingDetector?
     private var isMeetingActive = false
     private var isTranscribing = false
@@ -182,8 +183,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let stopTranscription: () -> Void = { [weak whisperManager] in
             whisperManager?.stop()
         }
-        let toggleTranscription: () -> Void = { [weak whisperManager] in
-            if whisperManager?.isRunning == true {
+        // User-initiated toggle. Honors the schedule lock: during Mon–Fri 09:00–17:59
+        // a stop request is silently dropped (with a banner explaining why), but a
+        // start request is always allowed (e.g. recovery after battery pause or crash).
+        let toggleTranscription: () -> Void = { [weak whisperManager, weak self] in
+            let running = whisperManager?.isRunning == true
+            if TranscriptionScheduler.isLockedOn() {
+                if running {
+                    overlayInfo("🔒 Transcription locked on until 18:00 (Mon–Fri)")
+                    return
+                }
+                self?.autoStoppedByBattery = false
+                self?.menuBarManager.setTranscriptionPausedByBattery(false)
+                UserDefaults.standard.set(true, forKey: "transcribingEnabled")
+                startTranscription()
+                return
+            }
+            if running {
                 UserDefaults.standard.set(false, forKey: "transcribingEnabled")
                 stopTranscription()
             } else {
@@ -203,22 +219,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.autoStoppedByBattery = true
             stopTranscription()
             DispatchQueue.main.async { self?.menuBarManager.setTranscriptionPausedByBattery(true) }
-            self?.postPowerNotification("Transcription paused — will auto resume when on power")
+            self?.postPowerNotification("Transcription paused — battery mode")
         }
-        pm.onSwitchToAC = { [weak self] in
-            guard self?.autoStoppedByBattery == true else { return }
-            self?.autoStoppedByBattery = false
-            DispatchQueue.main.async { self?.menuBarManager.setTranscriptionPausedByBattery(false) }
-            startTranscription()
-            self?.postPowerNotification("Transcription resumed — plugged in")
-        }
+        // Battery → AC transitions no longer auto-resume. The user wants to manually
+        // restart after any battery pause, regardless of time of day or schedule lock.
         pm.start()
         self.powerMonitor = pm
+
+        // 09:00 weekday: ensure transcription is on (idempotent — skipped if on battery
+        // or already running). 18:00 weekday: stop and clear the persisted preference.
+        // Mid-window heartbeats also call ensureOn to recover from a crashed Whisper.
+        let scheduler = TranscriptionScheduler()
+        scheduler.ensureOn = { [weak self, weak whisperManager] in
+            guard let self else { return }
+            UserDefaults.standard.set(true, forKey: "transcribingEnabled")
+            guard whisperManager?.isRunning != true else { return }
+            guard !self.autoStoppedByBattery, PowerMonitor.isOnAC() else { return }
+            startTranscription()
+        }
+        scheduler.forceOff = { [weak whisperManager] in
+            UserDefaults.standard.set(false, forKey: "transcribingEnabled")
+            guard whisperManager?.isRunning == true else { return }
+            stopTranscription()
+            overlayInfo("🌙 18:00 — transcription auto-stopped")
+        }
+        scheduler.start()
+        self.transcriptionScheduler = scheduler
+
         tabletServer?.onTestTranscriptionStart = {
             UserDefaults.standard.set(true, forKey: "transcribingEnabled")
             startTranscription()
         }
         tabletServer?.onTestTranscriptionStop = {
+            if TranscriptionScheduler.isLockedOn() {
+                overlayInfo("🔒 /test/transcription/stop ignored — locked until 18:00")
+                return
+            }
             UserDefaults.standard.set(false, forKey: "transcribingEnabled")
             stopTranscription()
         }
