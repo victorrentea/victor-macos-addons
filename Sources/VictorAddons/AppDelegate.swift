@@ -368,7 +368,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         let audioManager = CoreAudioManager()
         self.coreAudioManager = audioManager
-        audioManager.start()
+        // Music auto-pause during Wispr dictation is currently disabled at the user's
+        // request; re-enable by uncommenting the line below. The watcher and detector
+        // logic is fully wired in CoreAudioManager — only the start() call is gated.
+        // audioManager.start()
+        _ = audioManager
 
         let eventTap = EventTapManager()
         eventTap.onCaptureClipboard = { [weak pasteHandler] text in
