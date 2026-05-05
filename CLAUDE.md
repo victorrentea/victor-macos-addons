@@ -18,7 +18,7 @@ Menu bar app (💬 icon) with the following features:
 - **💬 Transcribing** — starts/stops Whisper live transcription; toggles icon to 💬-crossed when stopped
 - **Emotional 🥹 Paste (⌘⌃V)** — AI-powered text cleanup via Claude Haiku; intercepts Cmd+V to capture clipboard, Cmd+Ctrl+V cleans and re-pastes
 - **Toggle Dark Mode (⌘⌃⌥D)** — toggles macOS dark/light mode via AppleScript
-- **Mute 🎶 (Mouse 5)** — pauses/resumes media via `nowplaying-cli` during dictation; ESC auto-resumes (pass-through) since ESC cancels Wispr Flow
+- **Mute 🎶 (Mouse 5)** — pauses/resumes media during dictation via the system Play/Pause key; "is anything playing" is detected by tapping the `🔊OS Output` loopback for ~150ms and measuring RMS/peak energy (ground truth — device-level "running" flags lie because Audio Hijack always holds the loopback open). ESC auto-resumes (pass-through) since ESC cancels Wispr Flow.
 - **Re-paste (Wheel x 2)** — double-click mouse wheel re-pastes last intercepted text
 - **📋 IntelliJ Git → Clipboard** — copies git remote URL + branch from frontmost IntelliJ project
 - **Take Screenshot (⌃P)** — captures screenshot to timestamped file
