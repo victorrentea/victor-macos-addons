@@ -4,57 +4,98 @@ import CoreAudio
 import Foundation
 
 class CoreAudioManager {
-    private var isDictationActive = false
-    private var dictationStartedAt: Date?
-    // Dictation rarely lasts more than ~5 min; after 10 min assume the
-    // pause-for-dictation flag is stale (e.g. media stopped on its own,
-    // user closed the player) and clear it so the next Mouse 5 click
-    // doesn't blindly resume audio that no longer exists.
-    private let dictationStaleAfter: TimeInterval = 10 * 60
+    // MARK: - Wispr Flow recording-state watcher
+    //
+    // Wispr Flow's helper process (com.electron.wispr-flow.helper) flips
+    // kAudioProcessPropertyIsRunningInput from 0 to 1 the instant it starts
+    // capturing the mic, and back to 0 when it stops — verified by probe.
+    // We poll that flag and react to edges, which makes the pause/resume
+    // behavior independent of how Wispr was triggered (Mouse 5, hotkey,
+    // Wispr UI button, ESC cancellation, VAD timeout) and immune to the
+    // toggle-drift bugs we hit when counting Mouse 5 clicks ourselves.
 
-    // Toggle media pause/resume: call from EventTapManager.onDictationMute callback.
-    // The dictation flag is the source of truth on resume — we paused it, we resume it,
-    // regardless of current detected energy (the loopback is silent *because* we paused).
-    func toggleDictationMute() {
-        expireStaleDictation()
-        if isDictationActive {
-            resumeMedia()
+    private static let wisprBundlePrefix = "com.electron.wispr-flow"
+    private static let pollInterval: TimeInterval = 0.2
+    private var pollTimer: DispatchSourceTimer?
+    private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
+    private var lastWisprRecording = false
+    private var wePaused = false
+
+    func start() {
+        let timer = DispatchSource.makeTimerSource(queue: pollQueue)
+        timer.schedule(deadline: .now() + Self.pollInterval, repeating: Self.pollInterval)
+        timer.setEventHandler { [weak self] in self?.tick() }
+        timer.resume()
+        pollTimer = timer
+        overlayInfo("🎤 Wispr-watch started (poll every \(Int(Self.pollInterval * 1000))ms)")
+    }
+
+    private func tick() {
+        let recording = isWisprRecording()
+        defer { lastWisprRecording = recording }
+        guard recording != lastWisprRecording else { return }
+        if recording {
+            // 0 → 1: Wispr just started recording. Pause if music actually playing.
+            if isMediaPlaying() {
+                postPlayPauseKey()
+                wePaused = true
+                overlayInfo("🟢 Wispr started → ⏸ media paused")
+            } else {
+                overlayInfo("🟡 Wispr started → silence on loopback, nothing to pause")
+            }
         } else {
-            pauseMedia()
+            // 1 → 0: Wispr stopped. Resume only if we actually paused something.
+            if wePaused {
+                postPlayPauseKey()
+                wePaused = false
+                overlayInfo("🔴 Wispr stopped → ▶ media resumed")
+            }
         }
     }
 
-    // Called on global ESC: if we paused media for dictation, Wispr was cancelled → resume.
-    func resumeIfDictationActive() {
-        expireStaleDictation()
-        guard isDictationActive else { return }
-        resumeMedia()
-    }
-
-    private func expireStaleDictation() {
-        guard isDictationActive, let started = dictationStartedAt,
-              Date().timeIntervalSince(started) > dictationStaleAfter else { return }
-        isDictationActive = false
-        dictationStartedAt = nil
-        overlayInfo("🟡 Dictation flag expired (>10 min) — cleared")
-    }
-
-    private func pauseMedia() {
-        guard isMediaPlaying() else {
-            overlayInfo("🟡 Dictation: no media playing, skipping mute")
-            return
+    private func isWisprRecording() -> Bool {
+        var listAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(sys, &listAddr, 0, nil, &size) == noErr else { return false }
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        var procs = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(sys, &listAddr, 0, nil, &size, &procs) == noErr else { return false }
+        for p in procs {
+            var bidAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioProcessPropertyBundleID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            var bidSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(p, &bidAddr, 0, nil, &bidSize) == noErr else { continue }
+            var bid: Unmanaged<CFString>?
+            guard AudioObjectGetPropertyData(p, &bidAddr, 0, nil, &bidSize, &bid) == noErr else { continue }
+            let bundle = (bid?.takeRetainedValue() as String?) ?? ""
+            guard bundle.hasPrefix(Self.wisprBundlePrefix) else { continue }
+            var inAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioProcessPropertyIsRunningInput,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain)
+            var running: UInt32 = 0
+            var inSize = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(p, &inAddr, 0, nil, &inSize, &running) == noErr, running != 0 {
+                return true
+            }
         }
-        postPlayPauseKey()
-        isDictationActive = true
-        dictationStartedAt = Date()
-        overlayInfo("🟢 Dictation: ⏸ media paused")
+        return false
     }
 
+    // MARK: - Loopback energy detector
+    //
     // The "🔊OS Output" loopback (Rogue Amoeba) carries everything macOS plays.
-    // Device-level "running" flags are unreliable here because Audio Hijack always
-    // holds the loopback open as a listener, and silent-but-open streams keep the
-    // flag latched. Instead, briefly tap the loopback's input scope and measure the
-    // actual sample energy — ground truth for "is anything audible right now".
+    // Device-level "running" flags are unreliable here because Audio Hijack
+    // always holds the loopback open as a listener, and silent-but-open streams
+    // keep the flag latched. Tap the loopback's input scope and measure actual
+    // sample energy — ground truth for "is anything audible right now".
+
     private static let monitoredOutputName = "🔊OS Output"
     private static let silenceRMSThreshold: Float = 0.0005
     private static let silencePeakThreshold: Float = 0.001
@@ -62,12 +103,16 @@ class CoreAudioManager {
 
     private func isMediaPlaying() -> Bool {
         guard let devID = findAudioDevice(named: Self.monitoredOutputName) else {
-            return true  // conservative: device missing → assume playing
+            overlayInfo("🛑 RMS: device '\(Self.monitoredOutputName)' not found → assume playing")
+            return true
         }
         guard let (rms, peak) = measureLoopbackEnergy(deviceID: devID) else {
-            return true  // conservative on any tap failure
+            overlayInfo("🛑 RMS: tap failed on '\(Self.monitoredOutputName)' → assume playing")
+            return true
         }
-        return rms > Self.silenceRMSThreshold || peak > Self.silencePeakThreshold
+        let playing = rms > Self.silenceRMSThreshold || peak > Self.silencePeakThreshold
+        overlayInfo(String(format: "📊 RMS=%.5f peak=%.5f → %@", rms, peak, playing ? "PLAYING" : "silent"))
+        return playing
     }
 
     private func findAudioDevice(named target: String) -> AudioDeviceID? {
@@ -181,12 +226,7 @@ class CoreAudioManager {
         return (rms, peak)
     }
 
-    private func resumeMedia() {
-        postPlayPauseKey()
-        isDictationActive = false
-        dictationStartedAt = nil
-        overlayInfo("🔴 Dictation: ▶ media resumed")
-    }
+    // MARK: - Media key
 
     // NX_KEYTYPE_PLAY=16 — same signal the hardware Play/Pause key sends.
     // Works for YouTube in browsers, Spotify, Music, etc. — anything that

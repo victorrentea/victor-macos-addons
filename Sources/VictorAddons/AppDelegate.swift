@@ -225,11 +225,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestTranscriptionToggle = {
             toggleTranscription()
         }
-        tabletServer?.onTestMute = { [weak self] in
-            DispatchQueue.global(qos: .userInteractive).async {
-                self?.coreAudioManager?.toggleDictationMute()
-            }
-        }
         tabletServer?.onTestState = { [weak self, weak whisperManager] in
             guard let self, let menuBarManager = self.menuBarManager else {
                 return "{\"error\":\"app state unavailable\"}"
@@ -373,6 +368,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         let audioManager = CoreAudioManager()
         self.coreAudioManager = audioManager
+        audioManager.start()
 
         let eventTap = EventTapManager()
         eventTap.onCaptureClipboard = { [weak pasteHandler] text in
@@ -386,16 +382,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onToggleTranscription = { toggleTranscription() }
-        eventTap.onDictationMute = { [weak audioManager] in
-            DispatchQueue.global(qos: .userInteractive).async {
-                audioManager?.toggleDictationMute()
-            }
-        }
-        eventTap.onDictationEscape = { [weak audioManager] in
-            DispatchQueue.global(qos: .userInteractive).async {
-                audioManager?.resumeIfDictationActive()
-            }
-        }
         eventTap.onRepaste = { [weak self] in
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
             DispatchQueue.main.async {

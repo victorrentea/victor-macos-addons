@@ -21,8 +21,6 @@ class EventTapManager {
     var onEmotionalPaste: (() -> Void)?
     var onScreenshot: ((_ toClipboard: Bool) -> Void)?
     var onToggleDarkMode: (() -> Void)?
-    var onDictationMute: (() -> Void)?
-    var onDictationEscape: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onWheelTripleClick: (() -> Void)?
@@ -36,10 +34,8 @@ class EventTapManager {
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
     private let VK_T: CGKeyCode = 0x11
-    private let VK_ESC: CGKeyCode = 0x35
 
     // MARK: Mouse button numbers
-    private let MOUSE_BUTTON_5: Int64 = 4
     private let MOUSE_BUTTON_3: Int64 = 2
 
     // MARK: Wheel click tracking
@@ -100,18 +96,7 @@ class EventTapManager {
         // Mouse events
         if type == .otherMouseDown {
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
-            // DEBUG: log all extra mouse button events
-            let logLine = "otherMouseDown button=\(button) (MOUSE_BUTTON_5=\(MOUSE_BUTTON_5) MOUSE_BUTTON_3=\(MOUSE_BUTTON_3))\n"
-            if let data = logLine.data(using: .utf8) {
-                if let fh = FileHandle(forWritingAtPath: "/tmp/victor-mouse.log") {
-                    fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
-                } else {
-                    try? data.write(to: URL(fileURLWithPath: "/tmp/victor-mouse.log"))
-                }
-            }
-            if button == MOUSE_BUTTON_5 && event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]).isEmpty {
-                onDictationMute?()
-            } else if button == MOUSE_BUTTON_3 {
+            if button == MOUSE_BUTTON_3 {
                 handleWheelDown()
             }
             return Unmanaged.passUnretained(event)
@@ -136,20 +121,6 @@ class EventTapManager {
         let hasCtrl  = flags.contains(.maskControl)
         let hasOpt   = flags.contains(.maskAlternate)
         let hasShift = flags.contains(.maskShift)
-
-        // ESC → let Wispr handle it, but also resume media if we paused for dictation (pass through)
-        if keyCode == VK_ESC {
-            let logLine = "\(Date()) ESC detected\n"
-            if let data = logLine.data(using: .utf8) {
-                if let fh = FileHandle(forWritingAtPath: "/tmp/victor-esc.log") {
-                    fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
-                } else {
-                    try? data.write(to: URL(fileURLWithPath: "/tmp/victor-esc.log"))
-                }
-            }
-            DispatchQueue.global().async { [weak self] in self?.onDictationEscape?() }
-            return Unmanaged.passUnretained(event)
-        }
 
         // Ctrl+P → screenshot to clipboard, Ctrl+Shift+P → screenshot to file (suppress)
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt {

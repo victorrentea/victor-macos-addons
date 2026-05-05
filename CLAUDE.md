@@ -18,7 +18,7 @@ Menu bar app (💬 icon) with the following features:
 - **💬 Transcribing** — starts/stops Whisper live transcription; toggles icon to 💬-crossed when stopped
 - **Emotional 🥹 Paste (⌘⌃V)** — AI-powered text cleanup via Claude Haiku; intercepts Cmd+V to capture clipboard, Cmd+Ctrl+V cleans and re-pastes
 - **Toggle Dark Mode (⌘⌃⌥D)** — toggles macOS dark/light mode via AppleScript
-- **Mute 🎶 (Mouse 5)** — pauses/resumes media during dictation via the system Play/Pause key; "is anything playing" is detected by tapping the `🔊OS Output` loopback for ~150ms and measuring RMS/peak energy (ground truth — device-level "running" flags lie because Audio Hijack always holds the loopback open). ESC auto-resumes (pass-through) since ESC cancels Wispr Flow.
+- **Mute 🎶 (auto)** — pauses/resumes media around Wispr Flow dictation. `CoreAudioManager` polls `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*` every 200ms; on `0→1` (recording started) it pauses media (only if music is actually playing — verified by tapping the `🔊OS Output` loopback for ~150ms and checking RMS/peak energy), on `1→0` (recording stopped) it resumes only if it had paused. Pause/resume uses the system Play/Pause key. No Mouse 5 / ESC hooks involved — we follow Wispr's actual recording state, so the behavior is immune to how Wispr was triggered (Mouse 5, hotkey, UI button, VAD timeout, ESC cancel).
 - **Re-paste (Wheel x 2)** — double-click mouse wheel re-pastes last intercepted text
 - **📋 IntelliJ Git → Clipboard** — copies git remote URL + branch from frontmost IntelliJ project
 - **Take Screenshot (⌃P)** — captures screenshot to timestamped file
