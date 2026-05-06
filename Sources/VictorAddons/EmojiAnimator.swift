@@ -1738,7 +1738,8 @@ class EmojiAnimator {
             return
         }
         let lastBeat = beats.last ?? 0
-        let totalDuration = lastBeat + 0.4
+        // 0.6s tail so the final pulse's full down-segment has time to play.
+        let totalDuration = lastBeat + 0.6
 
         // Capture mouse anchor *now*, before any async work (the user expects
         // the pivot to be wherever the cursor was at trigger time, even if
@@ -1777,18 +1778,27 @@ class EmojiAnimator {
     }
 
     private func scheduleHeartbeatPulses(layer: CALayer, beats: [Double]) {
-        let upDur = 0.08
-        let downDur = 0.25
+        // Up → hold → down. The hold is what makes the peak readable; without
+        // it, the keyframe at peak lasts a single frame and the eye averages
+        // the throb down to ~15%.
+        let upDur = 0.10
+        let holdDur = 0.10
+        let downDur = 0.30
+        let total = upDur + holdDur + downDur
+        let k1 = NSNumber(value: upDur / total)
+        let k2 = NSNumber(value: (upDur + holdDur) / total)
+
         for beat in beats {
             DispatchQueue.main.asyncAfter(deadline: .now() + beat) { [weak self, weak layer] in
                 guard let self = self, let layer = layer,
                       self.activeEffects["heartbeat"] === layer else { return }
                 let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-                pulse.values = [1.0, 1.30, 1.0]
-                pulse.keyTimes = [0, NSNumber(value: upDur / (upDur + downDur)), 1]
-                pulse.duration = upDur + downDur
+                pulse.values = [1.0, 1.30, 1.30, 1.0]
+                pulse.keyTimes = [NSNumber(value: 0.0), k1, k2, NSNumber(value: 1.0)]
+                pulse.duration = total
                 pulse.timingFunctions = [
                     CAMediaTimingFunction(name: .easeOut),
+                    CAMediaTimingFunction(name: .linear),
                     CAMediaTimingFunction(name: .easeIn),
                 ]
                 layer.add(pulse, forKey: "heartbeatPulse")
