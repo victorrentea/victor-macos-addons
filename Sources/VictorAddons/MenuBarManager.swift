@@ -150,6 +150,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Gong 🔔",          "gong"),
             ("Drum Roll 🥁",     "drum-roll"),
             ("Laugh 🤣",          "laugh"),
+            ("Heartbeat 💓",      "heartbeat"),
         ]
         for (title, name) in effectPairs {
             let item = NSMenuItem(title: title, action: #selector(desktopEffectAction(_:)), keyEquivalent: "")

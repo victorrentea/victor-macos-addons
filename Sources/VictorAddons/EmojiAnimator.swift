@@ -1698,7 +1698,7 @@ class EmojiAnimator {
         let imgW = imgH * (img.size.width / img.size.height)
         let imgLayer = CALayer()
         imgLayer.frame = CGRect(x: (bounds.width - imgW) / 2,
-                                y: -bounds.height / 4,
+                                y: -bounds.height / 4 + bounds.height * 0.30,
                                 width: imgW, height: imgH)
         imgLayer.contents = img
         imgLayer.contentsGravity = .resizeAspect
@@ -1725,6 +1725,132 @@ class EmojiAnimator {
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
         imgLayer.add(fadeOut, forKey: "failFade")
+    }
+
+    func showHeartbeat() {
+        guard activeEffects["heartbeat"] == nil else { return }
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        let beats = Self.loadHeartbeatBeats()
+        guard !beats.isEmpty else {
+            overlayInfo("showHeartbeat: no beats in heartbeat_beats.json")
+            return
+        }
+        let lastBeat = beats.last ?? 0
+        let totalDuration = lastBeat + 0.4
+
+        // Capture mouse anchor *now*, before any async work (the user expects
+        // the pivot to be wherever the cursor was at trigger time, even if
+        // they move the mouse during the animation).
+        let mouseGlobal = NSEvent.mouseLocation
+        let panelOriginGlobal = hostLayer.bounds.origin  // contentView bounds: (0,0)
+        // Convert global mouse to layer-local coords. The overlay panel's
+        // window frame defines the global origin of the layer. Find it via
+        // the screen the hostLayer's containing window currently occupies.
+        let anchor = Self.layerAnchor(forGlobalMouse: mouseGlobal,
+                                      panelOrigin: panelOriginGlobal,
+                                      hostLayer: hostLayer)
+
+        // Insert a placeholder layer so a second tap is debounced even while
+        // the screencapture subprocess is still running.
+        let imgLayer = CALayer()
+        imgLayer.frame = bounds
+        imgLayer.anchorPoint = anchor
+        imgLayer.position = CGPoint(x: anchor.x * bounds.width,
+                                    y: anchor.y * bounds.height)
+        trackEffect("heartbeat", layer: imgLayer, duration: totalDuration)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let captured = Self.captureBuiltInDisplay()
+            DispatchQueue.main.async {
+                guard let self = self,
+                      self.activeEffects["heartbeat"] === imgLayer else { return }
+                if let captured = captured {
+                    imgLayer.contents = captured
+                    imgLayer.contentsGravity = .resize
+                }
+                self.hostLayer.addSublayer(imgLayer)
+                self.scheduleHeartbeatPulses(layer: imgLayer, beats: beats)
+            }
+        }
+    }
+
+    private func scheduleHeartbeatPulses(layer: CALayer, beats: [Double]) {
+        let upDur = 0.08
+        let downDur = 0.25
+        for beat in beats {
+            DispatchQueue.main.asyncAfter(deadline: .now() + beat) { [weak self, weak layer] in
+                guard let self = self, let layer = layer,
+                      self.activeEffects["heartbeat"] === layer else { return }
+                let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
+                pulse.values = [1.0, 1.30, 1.0]
+                pulse.keyTimes = [0, NSNumber(value: upDur / (upDur + downDur)), 1]
+                pulse.duration = upDur + downDur
+                pulse.timingFunctions = [
+                    CAMediaTimingFunction(name: .easeOut),
+                    CAMediaTimingFunction(name: .easeIn),
+                ]
+                layer.add(pulse, forKey: "heartbeatPulse")
+            }
+        }
+    }
+
+    private static func loadHeartbeatBeats() -> [Double] {
+        guard let url = Bundle.module.url(forResource: "heartbeat_beats", withExtension: "json", subdirectory: "Resources"),
+              let data = try? Data(contentsOf: url),
+              let beats = try? JSONDecoder().decode([Double].self, from: data) else {
+            return []
+        }
+        return beats
+    }
+
+    private static func captureBuiltInDisplay() -> CGImage? {
+        let tmpPath = NSTemporaryDirectory() + "victor-heartbeat-\(getpid()).png"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-t", "png", "-C", "-D", String(builtInDisplayNumber()), tmpPath]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            overlayError("heartbeat capture failed: \(error)")
+            return nil
+        }
+        guard let provider = CGDataProvider(filename: tmpPath),
+              let image = CGImage(pngDataProviderSource: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            return nil
+        }
+        try? FileManager.default.removeItem(atPath: tmpPath)
+        return image
+    }
+
+    private static func builtInDisplayNumber() -> Int {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return 1 }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return 1 }
+        if let idx = displays.firstIndex(where: { CGDisplayIsBuiltin($0) != 0 }) {
+            return idx + 1
+        }
+        return 1
+    }
+
+    private static func layerAnchor(forGlobalMouse mouse: CGPoint, panelOrigin: CGPoint, hostLayer: CALayer) -> CGPoint {
+        // Find the built-in screen frame in global coords; that's where the
+        // overlay panel sits. Anchor is mouse-position relative to that frame,
+        // expressed as a unit-square fraction. Clamp so an off-screen mouse
+        // still produces a valid pivot inside the layer.
+        let screen = NSScreen.screens.first { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
+            return CGDisplayIsBuiltin(id) != 0
+        } ?? NSScreen.main ?? NSScreen.screens.first
+        guard let frame = screen?.frame, frame.width > 0, frame.height > 0 else {
+            return CGPoint(x: 0.5, y: 0.5)
+        }
+        let relX = (mouse.x - frame.origin.x) / frame.width
+        let relY = (mouse.y - frame.origin.y) / frame.height
+        return CGPoint(x: min(max(relX, 0), 1), y: min(max(relY, 0), 1))
     }
 
     private static func latestDownloadsPNG() -> URL? {
