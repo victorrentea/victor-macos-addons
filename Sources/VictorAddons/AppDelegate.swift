@@ -183,22 +183,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let stopTranscription: () -> Void = { [weak whisperManager] in
             whisperManager?.stop()
         }
-        // User-initiated toggle. Honors the schedule lock: during Mon–Fri 09:00–17:59
-        // a stop request is silently dropped (with a banner explaining why), but a
-        // start request is always allowed (e.g. recovery after battery pause or crash).
-        let toggleTranscription: () -> Void = { [weak whisperManager, weak self] in
+        // User-initiated toggle. The menu item is disabled inside the schedule
+        // window, so this callback is only reached outside Mon–Fri 09:00–17:59.
+        let toggleTranscription: () -> Void = { [weak whisperManager] in
             let running = whisperManager?.isRunning == true
-            if TranscriptionScheduler.isLockedOn() {
-                if running {
-                    overlayInfo("🔒 Transcription locked on until 18:00 (Mon–Fri)")
-                    return
-                }
-                self?.autoStoppedByBattery = false
-                self?.menuBarManager.setTranscriptionPausedByBattery(false)
-                UserDefaults.standard.set(true, forKey: "transcribingEnabled")
-                startTranscription()
-                return
-            }
             if running {
                 UserDefaults.standard.set(false, forKey: "transcribingEnabled")
                 stopTranscription()
@@ -236,12 +224,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard whisperManager?.isRunning != true else { return }
             guard !self.autoStoppedByBattery, PowerMonitor.isOnAC() else { return }
             startTranscription()
+            self.postScheduleNotification(body: "Transcribing started")
         }
-        scheduler.forceOff = { [weak whisperManager] in
+        scheduler.forceOff = { [weak self, weak whisperManager] in
             UserDefaults.standard.set(false, forKey: "transcribingEnabled")
             guard whisperManager?.isRunning == true else { return }
             stopTranscription()
-            overlayInfo("🌙 18:00 — transcription auto-stopped")
+            self?.postScheduleNotification(body: "Transcribing stopped")
         }
         scheduler.start()
         self.transcriptionScheduler = scheduler
@@ -788,6 +777,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["not-capturing"])
+        }
+    }
+
+    private func postScheduleNotification(body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Victor Addons"
+        content.body = body
+        content.sound = .default
+        let id = "transcription-schedule-\(UUID().uuidString)"
+        let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Notif error: \(err)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
         }
     }
 

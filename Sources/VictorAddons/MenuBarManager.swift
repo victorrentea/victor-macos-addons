@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 2, 07:32"
+    static let BUILD_TIME = "May 6, 09:46"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -266,6 +266,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu.addItem(portItem)
 
         darkModeItem.title = "Dark Mode"
+
+        updateTranscribeTitle()
 
         refreshPortItems()
 
@@ -655,6 +657,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateTranscribeTitle() {
+        if TranscriptionScheduler.isLockedOn() {
+            transcribeItem.title = "🔒 Transcribing 9–18"
+            transcribeItem.isEnabled = false
+            return
+        }
         if isTranscriptionPausedByBattery {
             transcribeItem.title = "Off - On Battery"
             transcribeItem.isEnabled = false
