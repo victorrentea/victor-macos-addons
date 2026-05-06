@@ -229,13 +229,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard whisperManager?.isRunning != true else { return }
             guard !self.autoStoppedByBattery, PowerMonitor.isOnAC() else { return }
             startTranscription()
-            self.postScheduleNotification(body: "Transcribing started")
+            self.postScheduleAlert(body: "Transcribing started")
         }
         scheduler.forceOff = { [weak self, weak whisperManager] in
             UserDefaults.standard.set(false, forKey: "transcribingEnabled")
             guard whisperManager?.isRunning == true else { return }
             stopTranscription()
-            self?.postScheduleNotification(body: "Transcribing stopped")
+            self?.postScheduleAlert(body: "Transcribing stopped")
         }
         scheduler.start()
         self.transcriptionScheduler = scheduler
@@ -787,18 +787,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    private func postScheduleNotification(body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "Victor Addons"
-        content.body = body
-        content.sound = .default
-        let id = "transcription-schedule-\(UUID().uuidString)"
-        let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Notif error: \(err)") }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+    private func postScheduleAlert(body: String) {
+        // Modal NSAlert — stays up until dismissed. Banner notifications
+        // auto-disappear, which Victor missed during workshops; a modal
+        // forces an acknowledgment.
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Transcription"
+            alert.informativeText = body
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 
