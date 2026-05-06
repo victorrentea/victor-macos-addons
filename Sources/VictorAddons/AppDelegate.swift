@@ -133,6 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
             case "applause/stop": self?.animator.stopApplause()
             case "heartbeat":     self?.animator.showHeartbeat()
+            case "spiral-hearts": self?.animator.showSpiralHearts()
             case "fireworks":     self?.animator.showFireworks(playSound: false)
             case "fear":          self?.animator.showFear(playSound: false)
             case "fail":          self?.animator.showFail(playSound: false)
@@ -288,6 +289,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "fireworks":    self?.animator.showFireworks()
                 case "applause":     self?.animator.showApplause()
                 case "heartbeat":    self?.animator.showHeartbeat()
+                case "spiral-hearts": self?.animator.showSpiralHearts()
                 case "explosion":    self?.animator.showExplosionGif()
                 case "broken-glass": self?.animator.showBrokenGlass()
                 case "game-over":    self?.animator.showGameOver()

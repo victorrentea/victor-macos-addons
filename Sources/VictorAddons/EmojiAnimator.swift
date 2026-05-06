@@ -1853,6 +1853,92 @@ class EmojiAnimator {
         return CGPoint(x: min(max(relX, 0), 1), y: min(max(relY, 0), 1))
     }
 
+    func showSpiralHearts() {
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        let total = 30
+        let spawnWindow = 5.0  // seconds across which hearts are spawned
+
+        for i in 0..<total {
+            let delay = (Double(i) / Double(total)) * spawnWindow
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.spawnSpiralHeart()
+            }
+        }
+    }
+
+    private func spawnSpiralHeart() {
+        let bounds = hostLayer.bounds
+        let size: CGFloat = CGFloat.random(in: 60...110)
+        let startX = CGFloat.random(in: size...(bounds.width - size))
+        let startY: CGFloat = -size  // just below the bottom edge
+        let riseHeight = bounds.height + size * 2
+        let duration = Double.random(in: 3.2...4.5)
+
+        let layer = CATextLayer()
+        layer.string = "❤️"
+        layer.fontSize = size
+        layer.alignmentMode = .center
+        layer.frame = CGRect(x: startX - size / 2, y: startY, width: size, height: size)
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        hostLayer.addSublayer(layer)
+
+        // Build a sinusoidal upward path. Each heart picks a random amplitude,
+        // frequency, and phase so they don't move in lockstep.
+        let amplitude = CGFloat.random(in: 40...110)
+        let frequency = Double.random(in: 1.5...3.0)  // full sine cycles over the rise
+        let phase = Double.random(in: 0...(2 * .pi))
+        let direction: CGFloat = Bool.random() ? 1 : -1
+
+        let steps = 60
+        let path = CGMutablePath()
+        let startPoint = CGPoint(x: startX, y: startY + size / 2)
+        path.move(to: startPoint)
+        for step in 1...steps {
+            let t = Double(step) / Double(steps)
+            let y = startPoint.y + riseHeight * CGFloat(t)
+            let xWobble = direction * amplitude * CGFloat(sin(phase + t * frequency * 2 * .pi))
+            path.addLine(to: CGPoint(x: startPoint.x + xWobble, y: y))
+        }
+
+        var animations: [CAAnimation] = []
+
+        let pathAnim = CAKeyframeAnimation(keyPath: "position")
+        pathAnim.path = path
+        pathAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        animations.append(pathAnim)
+
+        // Slight rotation wobble — adds to the spiral feel.
+        let rotate = CABasicAnimation(keyPath: "transform.rotation")
+        rotate.fromValue = -0.18 * direction
+        rotate.toValue = 0.18 * direction
+        rotate.autoreverses = true
+        rotate.repeatCount = .greatestFiniteMagnitude
+        rotate.duration = Double.random(in: 0.5...0.9)
+        animations.append(rotate)
+
+        // Fade out: opaque for first 50% of the rise, then fade to 0.
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.beginTime = duration * 0.5
+        fade.duration = duration * 0.5
+        fade.fillMode = .forwards
+        animations.append(fade)
+
+        let group = CAAnimationGroup()
+        group.animations = animations
+        group.duration = duration
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
+        layer.add(group, forKey: "spiralHeart")
+        CATransaction.commit()
+    }
+
     private static func latestDownloadsPNG() -> URL? {
         let fm = FileManager.default
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
