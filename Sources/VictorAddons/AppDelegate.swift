@@ -452,6 +452,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onWheelTripleClick = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
         }
+        eventTap.onWisprTriggerHint = { [weak audioManager] in
+            audioManager?.boostPolling(for: 2.0)
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 

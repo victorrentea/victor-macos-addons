@@ -16,7 +16,10 @@ class CoreAudioManager {
 
     private static let wisprBundlePrefix = "com.electron.wispr-flow"
     private static let pollInterval: TimeInterval = 0.5
+    private static let boostInterval: TimeInterval = 0.1
     private var pollTimer: DispatchSourceTimer?
+    private var boostTimer: DispatchSourceTimer?
+    private var boostDeadline: Date?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
     private var lastWisprRecording = false
     private var wePaused = false
@@ -28,6 +31,35 @@ class CoreAudioManager {
         timer.resume()
         pollTimer = timer
         overlayInfo("🎤 Wispr-watch started (poll every \(Int(Self.pollInterval * 1000))ms)")
+    }
+
+    /// Hint that a likely Wispr trigger just happened (Mouse5, Cmd+Opt chord).
+    /// Spawns a 100ms-interval poll burst on the same serial pollQueue, lasting
+    /// `duration` seconds. Subsequent hints just extend the deadline; only one
+    /// boost timer ever exists. Edge detection in `tick()` deduplicates against
+    /// the baseline 500ms timer naturally — both share `lastWisprRecording`.
+    func boostPolling(for duration: TimeInterval) {
+        pollQueue.async { [weak self] in
+            guard let self else { return }
+            self.boostDeadline = Date().addingTimeInterval(duration)
+            if self.boostTimer != nil { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.pollQueue)
+            timer.schedule(deadline: .now() + Self.boostInterval, repeating: Self.boostInterval)
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                if let dl = self.boostDeadline, Date() >= dl {
+                    self.boostTimer?.cancel()
+                    self.boostTimer = nil
+                    self.boostDeadline = nil
+                    overlayInfo("⏱ Wispr-watch boost ended")
+                    return
+                }
+                self.tick()
+            }
+            self.boostTimer = timer
+            timer.resume()
+            overlayInfo("⏱ Wispr-watch boost \(Int(Self.boostInterval * 1000))ms × \(Int(duration))s")
+        }
     }
 
     private func tick() {
