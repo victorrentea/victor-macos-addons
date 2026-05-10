@@ -255,6 +255,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestTranscriptionToggle = {
             toggleTranscription()
         }
+        tabletServer?.onTestAudioPlaying = { [weak self] in
+            guard let manager = self?.coreAudioManager else {
+                return "{\"error\":\"coreAudioManager unavailable\"}"
+            }
+            let probe = manager.probeOutputLoopback()
+            var payload: [String: Any] = [
+                "device": probe.deviceName,
+                "device_found": probe.deviceFound,
+                "rms_threshold": probe.rmsThreshold,
+                "peak_threshold": probe.peakThreshold,
+            ]
+            if let rms = probe.rms { payload["rms"] = rms }
+            if let peak = probe.peak { payload["peak"] = peak }
+            if let playing = probe.playing { payload["playing"] = playing }
+            if !probe.deviceFound {
+                payload["error"] = "device not found"
+            } else if probe.rms == nil {
+                payload["error"] = "tap failed"
+            }
+            guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+                  let json = String(data: data, encoding: .utf8) else {
+                return "{\"error\":\"failed to encode probe\"}"
+            }
+            return json
+        }
         tabletServer?.onTestState = { [weak self, weak whisperManager] in
             guard let self, let menuBarManager = self.menuBarManager else {
                 return "{\"error\":\"app state unavailable\"}"

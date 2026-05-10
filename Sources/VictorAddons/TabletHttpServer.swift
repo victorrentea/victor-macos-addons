@@ -13,6 +13,7 @@ class TabletHttpServer {
         case testTranscriptionStop
         case testTranscriptionToggle
         case testState
+        case testAudioPlaying
         case unknown
     }
 
@@ -24,6 +25,7 @@ class TabletHttpServer {
     var onTestTranscriptionStop: (() -> Void)?
     var onTestTranscriptionToggle: (() -> Void)?
     var onTestState: (() -> String)?
+    var onTestAudioPlaying: (() -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -77,6 +79,12 @@ class TabletHttpServer {
                     if self?.onTestState == nil {
                         statusCode = 503
                     }
+                case .testAudioPlaying:
+                    contentType = "application/json"
+                    body = self?.onTestAudioPlaying?() ?? "{\"error\":\"audio probe unavailable\"}"
+                    if self?.onTestAudioPlaying == nil {
+                        statusCode = 503
+                    }
                 case .unknown:
                     statusCode = 404
                     body = "not found"
@@ -107,6 +115,8 @@ class TabletHttpServer {
             return .testTranscriptionToggle
         case "/test/state":
             return .testState
+        case "/test/audio/playing":
+            return .testAudioPlaying
         default:
             if path.hasPrefix("/effect/") {
                 return .effect(String(path.dropFirst("/effect/".count)))

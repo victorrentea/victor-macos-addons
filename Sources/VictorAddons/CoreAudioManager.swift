@@ -115,6 +115,36 @@ class CoreAudioManager {
         return playing
     }
 
+    struct LoopbackProbe {
+        let deviceFound: Bool
+        let rms: Float?
+        let peak: Float?
+        let playing: Bool?
+        let deviceName: String
+        let rmsThreshold: Float
+        let peakThreshold: Float
+    }
+
+    func probeOutputLoopback() -> LoopbackProbe {
+        guard let devID = findAudioDevice(named: Self.monitoredOutputName) else {
+            return LoopbackProbe(deviceFound: false, rms: nil, peak: nil, playing: nil,
+                                 deviceName: Self.monitoredOutputName,
+                                 rmsThreshold: Self.silenceRMSThreshold,
+                                 peakThreshold: Self.silencePeakThreshold)
+        }
+        guard let (rms, peak) = measureLoopbackEnergy(deviceID: devID) else {
+            return LoopbackProbe(deviceFound: true, rms: nil, peak: nil, playing: nil,
+                                 deviceName: Self.monitoredOutputName,
+                                 rmsThreshold: Self.silenceRMSThreshold,
+                                 peakThreshold: Self.silencePeakThreshold)
+        }
+        let playing = rms > Self.silenceRMSThreshold || peak > Self.silencePeakThreshold
+        return LoopbackProbe(deviceFound: true, rms: rms, peak: peak, playing: playing,
+                             deviceName: Self.monitoredOutputName,
+                             rmsThreshold: Self.silenceRMSThreshold,
+                             peakThreshold: Self.silencePeakThreshold)
+    }
+
     private func findAudioDevice(named target: String) -> AudioDeviceID? {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
