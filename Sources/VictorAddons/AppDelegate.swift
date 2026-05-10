@@ -255,6 +255,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestTranscriptionToggle = {
             toggleTranscription()
         }
+        tabletServer?.onTestWisprRecording = { [weak self] in
+            guard let manager = self?.coreAudioManager else {
+                return "{\"error\":\"coreAudioManager unavailable\"}"
+            }
+            let recording = manager.probeWisprRecording()
+            return "{\"recording\":\(recording)}"
+        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"

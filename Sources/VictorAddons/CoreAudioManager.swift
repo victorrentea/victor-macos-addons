@@ -53,6 +53,8 @@ class CoreAudioManager {
         }
     }
 
+    func probeWisprRecording() -> Bool { isWisprRecording() }
+
     private func isWisprRecording() -> Bool {
         var listAddr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyProcessObjectList,
