@@ -418,12 +418,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onToggleTranscription = { toggleTranscription() }
-        eventTap.onRepaste = { [weak self] in
+        eventTap.onRepaste = {
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
-            DispatchQueue.main.async {
-                self?.overlayPanel?.refreshScreenFrame()
-                self?.animator.showSanta()
-            }
         }
         eventTap.onWheelTripleClick = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
