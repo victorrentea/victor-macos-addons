@@ -4,7 +4,7 @@ import QuartzCore
 enum ScreenCaptureFlash {
     private static var activePanels: [NSPanel] = []
 
-    static func flash(on screen: NSScreen, duration: CFTimeInterval = 3.0, thickness: CGFloat = 10) {
+    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 10) {
         let panel = NSPanel(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -18,13 +18,46 @@ enum ScreenCaptureFlash {
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
-        let view = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let size = screen.frame.size
+        let view = NSView(frame: NSRect(origin: .zero, size: size))
         view.wantsLayer = true
-        if let layer = view.layer {
-            layer.borderColor = NSColor.systemYellow.cgColor
-            layer.borderWidth = thickness
-            layer.backgroundColor = NSColor.clear.cgColor
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+
+        let yellow = NSColor.systemYellow.cgColor
+        let clear = NSColor.systemYellow.withAlphaComponent(0).cgColor
+
+        // Top edge: yellow at outer (top) → clear at inner (bottom)
+        let top = CAGradientLayer()
+        top.frame = CGRect(x: 0, y: size.height - thickness, width: size.width, height: thickness)
+        top.colors = [yellow, clear]
+        top.startPoint = CGPoint(x: 0.5, y: 1.0)
+        top.endPoint = CGPoint(x: 0.5, y: 0.0)
+
+        // Bottom edge: yellow at outer (bottom) → clear at inner (top)
+        let bottom = CAGradientLayer()
+        bottom.frame = CGRect(x: 0, y: 0, width: size.width, height: thickness)
+        bottom.colors = [yellow, clear]
+        bottom.startPoint = CGPoint(x: 0.5, y: 0.0)
+        bottom.endPoint = CGPoint(x: 0.5, y: 1.0)
+
+        // Left edge: yellow at outer (left) → clear at inner (right)
+        let left = CAGradientLayer()
+        left.frame = CGRect(x: 0, y: 0, width: thickness, height: size.height)
+        left.colors = [yellow, clear]
+        left.startPoint = CGPoint(x: 0.0, y: 0.5)
+        left.endPoint = CGPoint(x: 1.0, y: 0.5)
+
+        // Right edge: yellow at outer (right) → clear at inner (left)
+        let right = CAGradientLayer()
+        right.frame = CGRect(x: size.width - thickness, y: 0, width: thickness, height: size.height)
+        right.colors = [yellow, clear]
+        right.startPoint = CGPoint(x: 1.0, y: 0.5)
+        right.endPoint = CGPoint(x: 0.0, y: 0.5)
+
+        for edge in [top, bottom, left, right] {
+            view.layer?.addSublayer(edge)
         }
+
         panel.contentView = view
         panel.setFrame(screen.frame, display: true)
         panel.orderFrontRegardless()
