@@ -18,7 +18,7 @@ Menu bar app (💬 icon) with the following features:
 - **💬 Transcribing** — starts/stops Whisper live transcription; toggles icon to 💬-crossed when stopped. Schedule (`TranscriptionScheduler`): Mon–Fri 09:00 auto-starts and **locks** the toggle until 18:00 (during the lock, a stop click is dropped with a `🔒` banner; a start click is honored as recovery — useful after a crash or battery pause). 18:00 fires an unconditional auto-stop. Outside the window the user has full control; a manual ON persists until the next 18:00 weekday (e.g. Friday 19:00 → Monday 18:00). A 60s heartbeat inside the window restarts Whisper if the process died. Battery pauses transcription regardless of schedule; AC restoration does **not** auto-resume — the user must restart manually.
 - **Emotional 🥹 Paste (⌘⌃V)** — AI-powered text cleanup via Claude Haiku; intercepts Cmd+V to capture clipboard, Cmd+Ctrl+V cleans and re-pastes
 - **Toggle Dark Mode (⌘⌃⌥D)** — toggles macOS dark/light mode via AppleScript
-- **Mute 🎶 (auto)** — pauses/resumes media around Wispr Flow dictation. `CoreAudioManager` polls `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*` every 200ms; on `0→1` (recording started) it pauses media (only if music is actually playing — verified by tapping the `🔊OS Output` loopback for ~150ms and checking RMS/peak energy), on `1→0` (recording stopped) it resumes only if it had paused. Pause/resume uses the system Play/Pause key. No Mouse 5 / ESC hooks involved — we follow Wispr's actual recording state, so the behavior is immune to how Wispr was triggered (Mouse 5, hotkey, UI button, VAD timeout, ESC cancel).
+- **Mute 🎶 (auto)** — pauses/resumes media around Wispr Flow dictation. `CoreAudioManager` polls `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*` every 500ms; on `0→1` (recording started) it pauses media (only if music is actually playing — verified by tapping the `🔊OS Output` loopback for ~150ms and checking RMS/peak energy; silence thresholds RMS 0.0002 / peak 0.0005), on `1→0` (recording stopped) it resumes only if it had paused. Pause/resume uses the system Play/Pause key. No Mouse 5 / ESC hooks involved — we follow Wispr's actual recording state, so the behavior is immune to how Wispr was triggered (Mouse 5, right Opt-Cmd, hotkey, UI button, VAD timeout, ESC cancel).
 - **Re-paste (Wheel x 2)** — double-click mouse wheel re-pastes last intercepted text
 - **📋 IntelliJ Git → Clipboard** — copies git remote URL + branch from frontmost IntelliJ project
 - **Take Screenshot (⌃P)** — captures screenshot to timestamped file
@@ -85,6 +85,8 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/transcription/start`
 - `GET /test/transcription/stop`
 - `GET /test/transcription/toggle`
+- `GET /test/audio/playing` — taps `🔊OS Output` loopback for ~150ms, returns `{playing, rms, peak, ...}`
+- `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`
 
 For local E2E checks without stealing focus:
 
