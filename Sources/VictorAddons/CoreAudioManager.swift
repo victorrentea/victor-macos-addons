@@ -97,8 +97,8 @@ class CoreAudioManager {
     // sample energy — ground truth for "is anything audible right now".
 
     private static let monitoredOutputName = "🔊OS Output"
-    private static let silenceRMSThreshold: Float = 0.0005
-    private static let silencePeakThreshold: Float = 0.001
+    private static let silenceRMSThreshold: Float = 0.0002
+    private static let silencePeakThreshold: Float = 0.0005
     private static let sampleWindowSeconds: TimeInterval = 0.15
 
     private func isMediaPlaying() -> Bool {
