@@ -4,7 +4,7 @@ import QuartzCore
 enum ScreenCaptureFlash {
     private static var activePanels: [NSPanel] = []
 
-    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 10) {
+    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30) {
         let panel = NSPanel(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
