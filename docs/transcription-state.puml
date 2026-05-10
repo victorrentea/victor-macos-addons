@@ -1,0 +1,76 @@
+@startuml transcription-state
+title Transcription state machine\n(MenuBar / WhisperProcessManager / PowerMonitor / TranscriptionScheduler)
+
+skinparam state {
+  BackgroundColor<<auto>>   #E8F1FF
+  BackgroundColor<<manual>> #FFF6E0
+  BackgroundColor<<paused>> #FFE0E0
+  BackgroundColor<<locked>> #E6FFE6
+}
+
+[*] --> Launch
+
+state Launch <<choice>>
+Launch --> Off              : pref=false
+Launch --> Running          : pref=true & on AC
+Launch --> PausedByBattery  : pref=true & on battery
+
+state "Off" as Off <<manual>> {
+  Off : whisper stopped
+  Off : pref = false
+  Off : menu: "Start Transcribing"
+}
+
+state "Running" as Running <<manual>> {
+  Running : whisper running
+  Running : pref = true
+  Running : menu: "Stop Transcribing"
+}
+
+state "Locked Running" as Locked <<locked>> {
+  Locked : whisper running
+  Locked : pref = true
+  Locked : menu: "🔒 Transcribing 9–18" (disabled)
+  Locked : 60s heartbeat → restart if crashed
+}
+
+state "Paused by Battery" as PausedByBattery <<paused>> {
+  PausedByBattery : whisper stopped
+  PausedByBattery : autoStoppedByBattery = true
+  PausedByBattery : menu: "Off - On Battery" (disabled)
+}
+
+' ── User toggle (outside lock window) ─────────────────────────────
+Off --> Running               : user toggle\n(sets pref=true)
+Running --> Off               : user toggle\n(sets pref=false)
+PausedByBattery --> Running   : user toggle\n(clears autoStoppedByBattery,\nsets pref=true)
+
+' ── Schedule (Mon–Fri) ────────────────────────────────────────────
+Off --> Locked                : 09:00 Mon–Fri\n[on AC & !autoStoppedByBattery]
+Running --> Locked            : enter window\n(09:00 Mon–Fri)
+Locked --> Off                : 18:00 Mon–Fri\n(forceOff, clears pref)
+
+' Inside the lock window, the menu is disabled — toggle clicks
+' do nothing. The 60s heartbeat re-runs ensureOn, which restarts
+' Whisper if the process died.
+Locked --> Locked             : 60s heartbeat\n(crash recovery)
+
+' ── Battery / AC ──────────────────────────────────────────────────
+Running --> PausedByBattery        : switch to battery
+Locked --> PausedByBattery         : switch to battery\n(overrides lock)
+PausedByBattery -[#888,dashed]-> PausedByBattery : switch to AC\n(no auto-resume —\nuser must restart)
+
+' ── Test endpoints (TabletHttpServer) ─────────────────────────────
+note bottom of Locked
+  /test/transcription/stop is dropped
+  inside the lock window (logs 🔒)
+  /test/transcription/start is honored
+  (recovery after crash)
+end note
+
+note bottom of Off
+  Manual ON persists until next 18:00 weekday
+  (e.g. Friday 19:00 → Monday 18:00).
+end note
+
+@enduml
