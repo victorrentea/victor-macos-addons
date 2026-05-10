@@ -26,9 +26,6 @@ class EventTapManager {
     var onWheelTripleClick: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onToggleTranscription: (() -> Void)?
-    /// Fired when a likely Wispr-trigger gesture is detected (Mouse5 down, or
-    /// Cmd+Opt chord becoming asserted). Used to boost the auto-mute poll.
-    var onWisprTriggerHint: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -40,10 +37,6 @@ class EventTapManager {
 
     // MARK: Mouse button numbers
     private let MOUSE_BUTTON_3: Int64 = 2
-    private let MOUSE_BUTTON_5: Int64 = 4
-
-    // MARK: Cmd+Opt chord edge tracking
-    private var lastCmdOptHeld: Bool = false
 
     // MARK: Wheel click tracking
     private var wheelClickCount: Int = 0
@@ -59,7 +52,6 @@ class EventTapManager {
     func start() {
         let eventsOfInterest: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
-            CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
 
@@ -106,8 +98,6 @@ class EventTapManager {
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
             if button == MOUSE_BUTTON_3 {
                 handleWheelDown()
-            } else if button == MOUSE_BUTTON_5 {
-                onWisprTriggerHint?()
             }
             return Unmanaged.passUnretained(event)
         }
@@ -120,16 +110,6 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        // Cmd+Opt chord rising edge → likely Wispr hotkey press
-        if type == .flagsChanged {
-            let f = event.flags
-            let cmdOptHeld = f.contains(.maskCommand) && f.contains(.maskAlternate)
-            if cmdOptHeld && !lastCmdOptHeld {
-                onWisprTriggerHint?()
-            }
-            lastCmdOptHeld = cmdOptHeld
-            return Unmanaged.passUnretained(event)
-        }
 
         // Keyboard events
         guard type == .keyDown else {
