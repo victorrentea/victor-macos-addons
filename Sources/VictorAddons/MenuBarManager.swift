@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 10, 22:50"
+    static let BUILD_TIME = "May 10, 22:59"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -65,7 +65,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
-        if let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+        if let url = Bundle.module.url(forResource: "icon_leaf", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             image.isTemplate = true
             image.size = NSSize(width: 18, height: 18)
@@ -536,7 +536,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let badge = (wsConnected || sessionActive) ? "🟢" : "🟥"
 
         if !isTranscribing && isTranscriptionPausedByBattery {
-            button.image = makeEmojiIcon("⏸️", badge: badge)
+            button.image = makePngIcon("icon_leaf", badge: badge)
         } else if !isTranscribing {
             let asset = stopBlinkAlt ? "icon_stop_blue" : "icon_stop"
             button.image = makePngIcon(asset, badge: badge)
@@ -625,7 +625,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// Chat-bubble PNG fallback (used briefly while transcribing before a source
     /// is detected). Always composites with badge so the indicator is visible.
     private func makeChatBubbleIcon(badge: String?) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: "icon_chat", withExtension: "png"),
+        guard let url = Bundle.module.url(forResource: "icon_leaf", withExtension: "png"),
               let base = NSImage(contentsOf: url) else { return nil }
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)

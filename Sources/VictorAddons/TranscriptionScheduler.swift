@@ -1,18 +1,17 @@
 import Foundation
 
-/// Auto-on/auto-off schedule for live transcription.
+/// Workday window scheduler.
 ///
-/// Lock window = Mon–Fri 09:00–17:59 local time. Within the window the
-/// transcription must be running and the user toggle is ignored. At 09:00
-/// `ensureOn` fires; at 18:00 `forceOff` fires. While inside the window we
-/// also heartbeat `ensureOn` every minute so a crashed Whisper process is
-/// auto-recovered without user intervention.
+/// Lock window = Mon–Fri 09:00–17:59 local time. Fires three distinct
+/// callbacks so the state machine can apply the correct transition:
 ///
-/// Outside the window the user has full manual control. A manual ON persists
-/// until the next 18:00 weekday (e.g. Friday 19:00 → Monday 18:00).
+///   - `onEnterWindow` — at the 09:00 boundary (window just became active)
+///   - `onExitWindow`  — at the 18:00 boundary (window just deactivated)
+///   - `onHeartbeat`   — every minute *while* the window is active
 final class TranscriptionScheduler {
-    var ensureOn: (() -> Void)?
-    var forceOff: (() -> Void)?
+    var onEnterWindow: (() -> Void)?
+    var onExitWindow: (() -> Void)?
+    var onHeartbeat: (() -> Void)?
 
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.transcription-scheduler", qos: .utility)
@@ -29,7 +28,9 @@ final class TranscriptionScheduler {
 
     func start() {
         lastLocked = Self.isLockedOn()
-        if lastLocked { fireEnsureOn() }
+        if lastLocked {
+            DispatchQueue.main.async { [weak self] in self?.onEnterWindow?() }
+        }
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 60, repeating: 60)
         t.setEventHandler { [weak self] in self?.tick() }
@@ -41,19 +42,16 @@ final class TranscriptionScheduler {
         let now = Self.isLockedOn()
         defer { lastLocked = now }
         if now && !lastLocked {
-            fireEnsureOn()
+            fire(\.onEnterWindow)
         } else if !now && lastLocked {
-            fireForceOff()
+            fire(\.onExitWindow)
         } else if now {
-            fireEnsureOn()
+            fire(\.onHeartbeat)
         }
     }
 
-    private func fireEnsureOn() {
-        DispatchQueue.main.async { [weak self] in self?.ensureOn?() }
-    }
-
-    private func fireForceOff() {
-        DispatchQueue.main.async { [weak self] in self?.forceOff?() }
+    private func fire(_ kp: KeyPath<TranscriptionScheduler, (() -> Void)?>) {
+        let cb = self[keyPath: kp]
+        DispatchQueue.main.async { cb?() }
     }
 }

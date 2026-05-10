@@ -32,7 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     private var joinLinkBanner: JoinLinkBanner?
     private var powerMonitor: PowerMonitor?
-    private var autoStoppedByBattery = false
+    private var transcriptionStateMachine: TranscriptionStateMachine?
     private var transcriptionScheduler: TranscriptionScheduler?
     private var meetingDetector: MeetingDetector?
     private var isMeetingActive = false
@@ -176,7 +176,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
         }
-        let startTranscription: () -> Void = { [weak whisperManager, weak self] in
+        let startWhisper: () -> Void = { [weak whisperManager, weak self] in
             var env: [String: String] = [:]
             if let folder = self?.transcriptionFolder {
                 env["TRANSCRIPTION_FOLDER"] = folder.path
@@ -185,75 +185,89 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 whisperManager?.start(env: env)
             }
         }
-        let stopTranscription: () -> Void = { [weak whisperManager] in
+        let stopWhisper: () -> Void = { [weak whisperManager] in
             whisperManager?.stop()
         }
-        // User-initiated toggle. The menu item is disabled inside the schedule
-        // window, so this callback is only reached outside Mon–Fri 09:00–17:59.
-        let toggleTranscription: () -> Void = { [weak whisperManager] in
-            let running = whisperManager?.isRunning == true
-            if running {
-                UserDefaults.standard.set(false, forKey: "transcribingEnabled")
-                stopTranscription()
-            } else {
-                UserDefaults.standard.set(true, forKey: "transcribingEnabled")
-                startTranscription()
+
+        // State machine owns the persisted (state, wasOn) pair and decides
+        // whisper start/stop. See docs/transcription-state.puml.
+        let sm = TranscriptionStateMachine(isWhisperRunning: { [weak whisperManager] in
+            whisperManager?.isRunning == true
+        })
+        sm.onStartWhisper = startWhisper
+        sm.onStopWhisper = stopWhisper
+        sm.onStateChanged = { [weak self] state, _ in
+            DispatchQueue.main.async {
+                self?.menuBarManager.setTranscriptionPausedByBattery(state == .battery)
             }
         }
-        menuBarManager.onToggleTranscribe = { [weak self] in
-            self?.autoStoppedByBattery = false
-            self?.menuBarManager.setTranscriptionPausedByBattery(false)
-            toggleTranscription()
+        self.transcriptionStateMachine = sm
+
+        menuBarManager.onToggleTranscribe = { [weak sm] in
+            guard let sm else { return }
+            switch sm.state {
+            case .off: sm.userClickStart()
+            case .on:  sm.userClickStop()
+            case .onWorkday, .battery: break  // menu disabled in these states
+            }
         }
 
         let pm = PowerMonitor()
-        pm.onSwitchToBattery = { [weak self, weak whisperManager] in
-            guard whisperManager?.isRunning == true else { return }
-            self?.autoStoppedByBattery = true
-            stopTranscription()
-            DispatchQueue.main.async { self?.menuBarManager.setTranscriptionPausedByBattery(true) }
-            self?.postPowerNotification("Transcription paused — battery mode")
+        pm.onSwitchToBattery = { [weak self, weak sm] in
+            guard let sm else { return }
+            let wasRunning = sm.state == .on || sm.state == .onWorkday
+            sm.switchToBattery()
+            if wasRunning {
+                self?.postPowerNotification("Transcription paused — battery mode")
+            }
         }
-        // Battery → AC transitions no longer auto-resume. The user wants to manually
-        // restart after any battery pause, regardless of time of day or schedule lock.
+        pm.onSwitchToAC = { [weak self, weak sm] in
+            guard let sm else { return }
+            let wasPaused = sm.state == .battery
+            sm.switchToAC()
+            if wasPaused, sm.state == .on || sm.state == .onWorkday {
+                self?.postPowerNotification("Transcription resumed — AC restored")
+            }
+        }
         pm.start()
         self.powerMonitor = pm
 
-        // 09:00 weekday: ensure transcription is on (idempotent — skipped if on battery
-        // or already running). 18:00 weekday: stop and clear the persisted preference.
-        // Mid-window heartbeats also call ensureOn to recover from a crashed Whisper.
         let scheduler = TranscriptionScheduler()
-        scheduler.ensureOn = { [weak self, weak whisperManager] in
-            guard let self else { return }
-            UserDefaults.standard.set(true, forKey: "transcribingEnabled")
-            guard whisperManager?.isRunning != true else { return }
-            guard !self.autoStoppedByBattery, PowerMonitor.isOnAC() else { return }
-            startTranscription()
-            self.postScheduleAlert(body: "Transcribing started")
+        scheduler.onEnterWindow = { [weak self, weak sm] in
+            guard let sm else { return }
+            sm.enterWorkday()
+            if sm.state == .onWorkday {
+                self?.postScheduleAlert(body: "Transcribing started")
+            }
         }
-        scheduler.forceOff = { [weak self, weak whisperManager] in
-            UserDefaults.standard.set(false, forKey: "transcribingEnabled")
-            guard whisperManager?.isRunning == true else { return }
-            stopTranscription()
-            self?.postScheduleAlert(body: "Transcribing stopped")
+        scheduler.onExitWindow = { [weak self, weak sm] in
+            guard let sm else { return }
+            sm.exitWorkday()
+            if sm.state == .off {
+                self?.postScheduleAlert(body: "Transcribing stopped")
+            }
         }
+        scheduler.onHeartbeat = { [weak sm] in sm?.heartbeat() }
         scheduler.start()
         self.transcriptionScheduler = scheduler
 
-        tabletServer?.onTestTranscriptionStart = {
-            UserDefaults.standard.set(true, forKey: "transcribingEnabled")
-            startTranscription()
+        tabletServer?.onTestTranscriptionStart = { [weak sm] in
+            sm?.userClickStart()
         }
-        tabletServer?.onTestTranscriptionStop = {
+        tabletServer?.onTestTranscriptionStop = { [weak sm] in
             if TranscriptionScheduler.isLockedOn() {
                 overlayInfo("🔒 /test/transcription/stop ignored — locked until 18:00")
                 return
             }
-            UserDefaults.standard.set(false, forKey: "transcribingEnabled")
-            stopTranscription()
+            sm?.userClickStop()
         }
-        tabletServer?.onTestTranscriptionToggle = {
-            toggleTranscription()
+        tabletServer?.onTestTranscriptionToggle = { [weak sm] in
+            guard let sm else { return }
+            switch sm.state {
+            case .off: sm.userClickStart()
+            case .on:  sm.userClickStop()
+            case .onWorkday, .battery: break
+            }
         }
         tabletServer?.onTestWisprRecording = { [weak self] in
             guard let manager = self?.coreAudioManager else {
@@ -294,7 +308,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let ui = menuBarManager.transcriptionDebugState()
             let payload: [String: Any] = [
                 "running": whisperManager?.isRunning == true,
-                "enabled_preference": UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true,
+                "state": self.transcriptionStateMachine?.state.rawValue ?? "unknown",
+                "wasOn": self.transcriptionStateMachine?.wasOn ?? false,
                 "ui_transcribing": ui.isTranscribing,
                 "ui_stale": ui.isStale,
                 "menu_title": ui.menuTitle,
@@ -415,15 +430,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 menuBarManager?.flashScreenshotIcon()
             }
         }
-        let wasTranscribing = UserDefaults.standard.object(forKey: "transcribingEnabled") as? Bool ?? true
-        if wasTranscribing {
-            if PowerMonitor.isOnAC() {
-                startTranscription()
-            } else {
-                autoStoppedByBattery = true
-                menuBarManager.setTranscriptionPausedByBattery(true)
-            }
-        }
+        // Settle the persisted state against the current hour / battery.
+        // This is the single launch entry point — see Restore + Settle in
+        // docs/transcription-state.puml.
+        sm.settle()
 
         let secrets = SecretsLoader.load()
         let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
@@ -445,7 +455,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
-        eventTap.onToggleTranscription = { toggleTranscription() }
+        eventTap.onToggleTranscription = { [weak sm] in
+            guard let sm else { return }
+            switch sm.state {
+            case .off: sm.userClickStart()
+            case .on:  sm.userClickStop()
+            case .onWorkday, .battery: break
+            }
+        }
         eventTap.onRepaste = {
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
         }
@@ -798,7 +815,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     }
 
     private func checkNotCapturing() {
-        guard isMeetingActive && !isTranscribing && autoStoppedByBattery else { return }
+        guard isMeetingActive && !isTranscribing && transcriptionStateMachine?.state == .battery else { return }
         let content = UNMutableNotificationContent()
         content.title = "Not Capturing"
         content.sound = .default
