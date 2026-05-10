@@ -19,7 +19,7 @@ note right of Restore
 
   | saved \ now      | inside workday & AC | inside workday & battery | off-hours & AC      | off-hours & battery |
   |------------------|---------------------|---------------------------|---------------------|---------------------|
-  | Off              | OnWorkday (settle)  | Off                       | Off                 | Off                 |
+  | Off              | OnWorkday (settle)  | Battery (wasOn=false)     | Off                 | Battery (wasOn=false)|
   | On               | OnWorkday           | Battery (wasOn=true)      | On                  | Battery (wasOn=true)|
   | OnWorkday        | OnWorkday           | Battery (wasOn=false)     | Off (settle 18:00)  | Battery (wasOn=false)|
   | Battery wasOn    | OnWorkday           | Battery (wasOn=true)      | On                  | Battery (wasOn=true)|
@@ -29,7 +29,7 @@ end note
 Restore --> Off       : saved=Off OR\n(saved=OnWorkday & off-hours & on AC) OR\n(saved=Battery & !wasOn & off-hours & on AC)
 Restore --> On        : (saved=On OR saved=Battery&wasOn) &\noff-hours & on AC
 Restore --> OnWorkday : inside workday & on AC\n(any saved state except Off-on-battery)
-Restore --> Battery   : on battery\n(wasOn from saved: On→true, OnWorkday→false,\nBattery→preserved, Off→stays Off instead)
+Restore --> Battery   : on battery\n(wasOn from saved: On→true, OnWorkday→false,\nOff→false, Battery→preserved)
 
 state "Off" as Off <<manual>> {
   Off : whisper stopped
@@ -70,6 +70,7 @@ OnWorkday --> OnWorkday  : 60s heartbeat —\nrestart Whisper if it died
 ' ── Battery / AC ──────────────────────────────────────────────────
 On --> Battery           : switch to battery\n(set wasOn=true)
 OnWorkday --> Battery    : switch to battery\n(wasOn=false)
+Off --> Battery          : switch to battery\n(wasOn=false)
 Battery --> OnWorkday    : switch to AC\n[inside workday window]\n(auto-resume)
 Battery --> On           : switch to AC\n[outside workday & wasOn]\n(auto-resume off-hours)
 Battery --> Off          : switch to AC\n[outside workday & !wasOn]\n(no auto-resume)

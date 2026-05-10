@@ -62,10 +62,10 @@ final class TranscriptionStateMachine {
     private func resolveSettleTarget(saved: State, savedWasOn: Bool, inside: Bool, onAC: Bool) -> (State, Bool) {
         if !onAC {
             // On battery: every saved state collapses to .battery, with
-            // wasOn derived from saved (Battery preserves, On→true,
-            // OnWorkday→false). Off stays Off — nothing was running.
+            // wasOn derived from saved (On→true, OnWorkday/Off→false,
+            // Battery→preserved).
             switch saved {
-            case .off:                  return (.off, false)
+            case .off:                  return (.battery, false)
             case .on:                   return (.battery, true)
             case .onWorkday:            return (.battery, false)
             case .battery:              return (.battery, savedWasOn)
@@ -140,7 +140,8 @@ final class TranscriptionStateMachine {
         switch state {
         case .on:        transition(to: .battery, wasOn: true)
         case .onWorkday: transition(to: .battery, wasOn: false)
-        case .off, .battery: break
+        case .off:       transition(to: .battery, wasOn: false)
+        case .battery:   break
         }
     }
 
