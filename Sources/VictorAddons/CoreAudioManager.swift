@@ -15,7 +15,7 @@ class CoreAudioManager {
     // toggle-drift bugs we hit when counting Mouse 5 clicks ourselves.
 
     private static let wisprBundlePrefix = "com.electron.wispr-flow"
-    private static let pollInterval: TimeInterval = 0.5
+    private static let pollInterval: TimeInterval = 0.3
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
     private var lastWisprRecording = false
