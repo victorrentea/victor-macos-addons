@@ -36,19 +36,20 @@ class CoreAudioManager {
         guard recording != lastWisprRecording else { return }
         if recording {
             // 0 → 1: Wispr just started recording. Pause if music actually playing.
-            if isMediaPlaying() {
+            let playing = isMediaPlaying()
+            overlayInfo("🟢 Wispr started → isMediaPlaying=\(playing) wePaused=\(wePaused)")
+            if playing {
+                overlayInfo("⏸ sending Play/Pause key (pause)")
                 postPlayPauseKey()
                 wePaused = true
-                overlayInfo("🟢 Wispr started → ⏸ media paused")
-            } else {
-                overlayInfo("🟡 Wispr started → silence on loopback, nothing to pause")
             }
         } else {
             // 1 → 0: Wispr stopped. Resume only if we actually paused something.
+            overlayInfo("🔴 Wispr stopped → wePaused=\(wePaused)")
             if wePaused {
+                overlayInfo("▶ sending Play/Pause key (resume)")
                 postPlayPauseKey()
                 wePaused = false
-                overlayInfo("🔴 Wispr stopped → ▶ media resumed")
             }
         }
     }
@@ -108,12 +109,15 @@ class CoreAudioManager {
             overlayInfo("🛑 RMS: device '\(Self.monitoredOutputName)' not found → assume silent")
             return false
         }
-        guard let (rms, peak) = measureLoopbackEnergy(deviceID: devID) else {
+        guard let (rms, peak, sampleCount) = measureLoopbackEnergy(deviceID: devID) else {
             overlayInfo("🛑 RMS: tap failed on '\(Self.monitoredOutputName)' → assume silent")
             return false
         }
         let playing = rms > Self.silenceRMSThreshold || peak > Self.silencePeakThreshold
-        overlayInfo(String(format: "📊 RMS=%.5f peak=%.5f → %@", rms, peak, playing ? "PLAYING" : "silent"))
+        overlayInfo(String(format: "📊 RMS=%.5f (thr=%.5f) peak=%.5f (thr=%.5f) samples=%d window=%.0fms → %@",
+                           rms, Self.silenceRMSThreshold, peak, Self.silencePeakThreshold,
+                           sampleCount, Self.sampleWindowSeconds * 1000,
+                           playing ? "PLAYING ⚠️" : "silent"))
         return playing
     }
 
@@ -134,7 +138,7 @@ class CoreAudioManager {
                                  rmsThreshold: Self.silenceRMSThreshold,
                                  peakThreshold: Self.silencePeakThreshold)
         }
-        guard let (rms, peak) = measureLoopbackEnergy(deviceID: devID) else {
+        guard let (rms, peak, _) = measureLoopbackEnergy(deviceID: devID) else {
             return LoopbackProbe(deviceFound: true, rms: nil, peak: nil, playing: nil,
                                  deviceName: Self.monitoredOutputName,
                                  rmsThreshold: Self.silenceRMSThreshold,
@@ -178,7 +182,7 @@ class CoreAudioManager {
         let lock = NSLock()
     }
 
-    private func measureLoopbackEnergy(deviceID: AudioDeviceID) -> (rms: Float, peak: Float)? {
+    private func measureLoopbackEnergy(deviceID: AudioDeviceID) -> (rms: Float, peak: Float, sampleCount: Int)? {
         var desc = AudioComponentDescription(
             componentType: kAudioUnitType_Output,
             componentSubType: kAudioUnitSubType_HALOutput,
@@ -246,7 +250,10 @@ class CoreAudioManager {
         ctx.lock.lock()
         let samples = ctx.samples
         ctx.lock.unlock()
-        guard !samples.isEmpty else { return nil }
+        guard !samples.isEmpty else {
+            overlayInfo("⚠️ measureLoopbackEnergy: 0 samples captured (sr=\(Int(sr)))")
+            return nil
+        }
         var sumSq: Double = 0
         var peak: Float = 0
         for s in samples {
@@ -255,7 +262,7 @@ class CoreAudioManager {
             if a > peak { peak = a }
         }
         let rms = Float(sqrt(sumSq / Double(samples.count)))
-        return (rms, peak)
+        return (rms, peak, samples.count)
     }
 
     // MARK: - Media key
