@@ -104,7 +104,45 @@ class CoreAudioManager {
     private static let silencePeakThreshold: Float = 0.0005
     private static let sampleWindowSeconds: TimeInterval = 0.15
 
+    // MARK: - MediaRemote Now Playing check
+    //
+    // MediaRemote is authoritative: it knows whether any app is registered
+    // as the system's Now Playing source and is actively playing.
+    // Using it as the primary gate prevents false-positives from ambient
+    // loopback noise triggering a Play/Pause that would wake up iTunes.
+
+    private typealias MRIsPlayingFunc = @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
+
+    private func queryMediaRemotePlaying() -> Bool? {
+        guard let bundle = CFBundleCreate(nil, NSURL(fileURLWithPath: "/System/Library/PrivateFrameworks/MediaRemote.framework")),
+              let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteGetNowPlayingApplicationIsPlaying" as CFString)
+        else { return nil }
+        let fn = unsafeBitCast(ptr, to: MRIsPlayingFunc.self)
+        var result = false
+        let sema = DispatchSemaphore(value: 0)
+        fn(DispatchQueue.global()) { isPlaying in
+            result = isPlaying
+            sema.signal()
+        }
+        _ = sema.wait(timeout: .now() + 0.5)
+        return result
+    }
+
     private func isMediaPlaying() -> Bool {
+        // Primary: system Now Playing state — authoritative, no false positives.
+        if let mrPlaying = queryMediaRemotePlaying() {
+            overlayInfo("🎵 MediaRemote → \(mrPlaying ? "PLAYING ⚠️" : "silent")")
+            if mrPlaying {
+                // Confirm with loopback so we don't pause notification chimes etc.
+                return isLoopbackPlaying()
+            }
+            return false
+        }
+        // Fallback: loopback energy (MediaRemote unavailable)
+        return isLoopbackPlaying()
+    }
+
+    private func isLoopbackPlaying() -> Bool {
         guard let devID = findAudioDevice(named: Self.monitoredOutputName) else {
             overlayInfo("🛑 RMS: device '\(Self.monitoredOutputName)' not found → assume silent")
             return false
