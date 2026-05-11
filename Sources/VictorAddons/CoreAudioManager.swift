@@ -105,12 +105,12 @@ class CoreAudioManager {
 
     private func isMediaPlaying() -> Bool {
         guard let devID = findAudioDevice(named: Self.monitoredOutputName) else {
-            overlayInfo("🛑 RMS: device '\(Self.monitoredOutputName)' not found → assume playing")
-            return true
+            overlayInfo("🛑 RMS: device '\(Self.monitoredOutputName)' not found → assume silent")
+            return false
         }
         guard let (rms, peak) = measureLoopbackEnergy(deviceID: devID) else {
-            overlayInfo("🛑 RMS: tap failed on '\(Self.monitoredOutputName)' → assume playing")
-            return true
+            overlayInfo("🛑 RMS: tap failed on '\(Self.monitoredOutputName)' → assume silent")
+            return false
         }
         let playing = rms > Self.silenceRMSThreshold || peak > Self.silencePeakThreshold
         overlayInfo(String(format: "📊 RMS=%.5f peak=%.5f → %@", rms, peak, playing ? "PLAYING" : "silent"))
