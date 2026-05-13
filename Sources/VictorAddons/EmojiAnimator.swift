@@ -1964,29 +1964,35 @@ class EmojiAnimator {
         _ = cancelIfRunning("love-hands", sound: "love_hearts.mp3")
     }
 
-    /// 7 red hearts emerge from `center` and rise on **divergent** pseudo-random
-    /// spiral paths — each heart has its own starting angle, turn count, max
-    /// radius, rise height, end-scale and small spawn jitter, so the swarm
-    /// fans out instead of every heart tracing the same ring.
-    /// They grow while rising, then fade after `rise` seconds of motion.
+    /// 7 red hearts rise gently from `center` and diverge outward — modelled on
+    /// the WebSocket emoji float (`spawnEmoji`) so the motion looks calm and
+    /// continuous rather than spinny. Each heart picks its own pseudo-random
+    /// direction, rise height, lateral drift, end scale and spawn delay so
+    /// the swarm fans out without repeating the same arc.
+    /// Parameters `rise`/`fadeOver` set the *target* duration; per-heart life
+    /// is randomized ±15% around `rise + fadeOver` for organic spread.
     private func spawnLoveHearts(center: CGPoint, rise: CFTimeInterval, fadeOver: CFTimeInterval) {
         let bounds = hostLayer.bounds
         let heartCount = 7
         let baseSize: CGFloat = 70
+        let nominalLife = rise + fadeOver
 
         for i in 0..<heartCount {
-            // Per-heart pseudo-random parameters. Phase is anchored on the even
-            // 2π / heartCount slice so we still diverge outward symmetrically,
-            // then jittered by ±π/heartCount so adjacent hearts don't trace
-            // exactly the same arc on every play.
-            let basePhase = Double(i) / Double(heartCount) * 2.0 * Double.pi
-            let phase = basePhase + Double.random(in: -(Double.pi / Double(heartCount))...(Double.pi / Double(heartCount)))
-            let turns = Double.random(in: 0.6...1.4)                    // less rotation, more verticality
-            let maxRadius = bounds.width * CGFloat.random(in: 0.08...0.22)
+            // Per-heart divergent direction; jittered around the even slice so
+            // adjacent hearts don't take exactly the same outward angle.
+            let baseAngle = Double(i) / Double(heartCount) * 2.0 * Double.pi
+            let direction = baseAngle + Double.random(in: -0.35...0.35)
+            // Mostly vertical lift with a modest lateral component along the
+            // chosen direction (eased outward, never overshooting).
+            let lateralReach = bounds.width * CGFloat.random(in: 0.06...0.18)
             let riseHeight = bounds.height * CGFloat.random(in: 0.55...0.78)
-            let endScale: CGFloat = CGFloat.random(in: 1.6...2.1)
-            let spawnDelay = Double.random(in: 0.0...0.20)
-            let radialBias = Double.random(in: 0.85...1.15)              // squish/stretch the spiral
+            let endScale: CGFloat = CGFloat.random(in: 1.25...1.55)
+            let duration: CFTimeInterval = nominalLife * Double.random(in: 0.85...1.15)
+            let spawnDelay = Double.random(in: 0.0...0.30)
+            // Low-frequency S-curve wobble layered on top of the linear drift —
+            // matches `spawnEmoji`'s subtle wobble character.
+            let wobblePhase = Double.random(in: 0.0...(2.0 * Double.pi))
+            let wobbleAmp = bounds.width * CGFloat.random(in: 0.010...0.025)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + spawnDelay) { [weak self] in
                 guard let self = self else { return }
@@ -1998,44 +2004,47 @@ class EmojiAnimator {
                 layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
                 self.hostLayer.addSublayer(layer)
 
+                let dirCos = CGFloat(cos(direction))
                 let path = CGMutablePath()
                 path.move(to: center)
-                let steps = 80
+                let steps = 40
                 for s in 1...steps {
                     let t = CGFloat(s) / CGFloat(steps)
-                    let angle = phase + Double(t) * turns * 2.0 * Double.pi
-                    let radius = CGFloat(radialBias) * t * maxRadius
-                    let x = center.x + CGFloat(cos(angle)) * radius
+                    let lateral = dirCos * lateralReach * t
+                    let wobble = CGFloat(sin(wobblePhase + Double(t) * 2.0 * Double.pi)) * wobbleAmp
+                    let x = center.x + lateral + wobble
                     let y = center.y + riseHeight * t
                     path.addLine(to: CGPoint(x: x, y: y))
                 }
                 let posAnim = CAKeyframeAnimation(keyPath: "position")
                 posAnim.path = path
-                posAnim.duration = rise + fadeOver
+                posAnim.duration = duration
                 posAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 posAnim.fillMode = .forwards
                 posAnim.isRemovedOnCompletion = false
-                layer.add(posAnim, forKey: "spiral")
+                layer.add(posAnim, forKey: "rise")
 
                 let scale = CABasicAnimation(keyPath: "transform.scale")
-                scale.fromValue = 0.5
+                scale.fromValue = 1.0
                 scale.toValue = endScale
-                scale.duration = rise + fadeOver
+                scale.duration = duration
                 scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 scale.fillMode = .forwards
                 scale.isRemovedOnCompletion = false
                 layer.add(scale, forKey: "grow")
 
+                // Fade starts at 40% of the lifetime — matches spawnEmoji's
+                // gentle melt-out.
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = 1.0
                 fade.toValue = 0.0
-                fade.beginTime = CACurrentMediaTime() + rise
-                fade.duration = fadeOver
+                fade.beginTime = CACurrentMediaTime() + duration * 0.4
+                fade.duration = duration * 0.6
                 fade.fillMode = .forwards
                 fade.isRemovedOnCompletion = false
                 layer.add(fade, forKey: "fade")
 
-                DispatchQueue.main.asyncAfter(deadline: .now() + rise + fadeOver + 0.1) { [weak layer] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak layer] in
                     layer?.removeFromSuperlayer()
                 }
             }
