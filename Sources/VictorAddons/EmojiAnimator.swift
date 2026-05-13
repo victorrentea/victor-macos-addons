@@ -1863,6 +1863,172 @@ class EmojiAnimator {
         return CGPoint(x: min(max(relX, 0), 1), y: min(max(relY, 0), 1))
     }
 
+    // MARK: - Love hands (sound #41) — two hands close in from edges, then hearts
+    // spiral up out of the meeting point.
+
+    func showLoveHands(playSound: Bool = true) {
+        if cancelIfRunning("love-hands", sound: playSound ? "love_hearts.mp3" : nil) { return }
+
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
+        guard let leftSrc = NSImage(contentsOf: downloadsURL.appendingPathComponent("love_hand_left.png")),
+              let rightSrc = NSImage(contentsOf: downloadsURL.appendingPathComponent("love_hand_right.png")),
+              let leftCG = leftSrc.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let rightCG = rightSrc.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            overlayError("love_hand_{left,right}.png not found in Downloads")
+            return
+        }
+
+        let bounds = hostLayer.bounds
+        let handHeight = bounds.height * 0.40
+        // Source images are square halves (512x1024 → aspect 0.5).
+        let handWidth = handHeight * 0.5
+        let handY = bounds.midY - handHeight / 2
+
+        // End positions: hands touching at the horizontal center.
+        let leftEndX  = bounds.midX - handWidth
+        let rightEndX = bounds.midX
+        // Start positions: just off-screen at the edges.
+        let leftStartX  = -handWidth
+        let rightStartX = bounds.width
+
+        let leftLayer = CALayer()
+        leftLayer.frame = CGRect(x: leftEndX, y: handY, width: handWidth, height: handHeight)
+        leftLayer.contents = leftCG
+        leftLayer.contentsGravity = .resizeAspect
+        hostLayer.addSublayer(leftLayer)
+
+        let rightLayer = CALayer()
+        rightLayer.frame = CGRect(x: rightEndX, y: handY, width: handWidth, height: handHeight)
+        rightLayer.contents = rightCG
+        rightLayer.contentsGravity = .resizeAspect
+        hostLayer.addSublayer(rightLayer)
+
+        // Use a wrapper layer in activeEffects so cancelIfRunning can tear down both hands.
+        let container = CALayer()
+        container.bounds = bounds
+        // Container is just a tracker — both hand layers are real siblings under host,
+        // so we manually remove them when the effect ends.
+        activeEffects["love-hands"] = container
+
+        let converge: CFTimeInterval = 0.9
+        let slideLeft = CABasicAnimation(keyPath: "position.x")
+        slideLeft.fromValue = leftStartX + handWidth / 2
+        slideLeft.toValue   = leftEndX + handWidth / 2
+        slideLeft.duration = converge
+        slideLeft.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        leftLayer.add(slideLeft, forKey: "slide")
+
+        let slideRight = CABasicAnimation(keyPath: "position.x")
+        slideRight.fromValue = rightStartX + handWidth / 2
+        slideRight.toValue   = rightEndX + handWidth / 2
+        slideRight.duration = converge
+        slideRight.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        rightLayer.add(slideRight, forKey: "slide")
+
+        // When the hands touch, spawn the heart spiral; then fade everything out.
+        let meetingPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+        let riseDuration: CFTimeInterval = 2.0      // user spec: 2s of rising, then fade
+        let fadeDuration: CFTimeInterval = 0.6
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + converge) { [weak self, weak leftLayer, weak rightLayer, weak container] in
+            guard let self = self, let container = container else { return }
+            // Don't proceed if the effect was cancelled mid-converge.
+            guard self.activeEffects["love-hands"] === container else { return }
+            self.spawnLoveHearts(center: meetingPoint, rise: riseDuration, fadeOver: fadeDuration)
+            // After the hearts have fully risen and faded, sweep the hands offscreen too.
+            DispatchQueue.main.asyncAfter(deadline: .now() + riseDuration + fadeDuration) { [weak self, weak leftLayer, weak rightLayer, weak container] in
+                guard let self = self else { return }
+                CATransaction.begin()
+                CATransaction.setAnimationDuration(0.5)
+                leftLayer?.opacity = 0
+                rightLayer?.opacity = 0
+                CATransaction.commit()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    leftLayer?.removeFromSuperlayer()
+                    rightLayer?.removeFromSuperlayer()
+                    if let container = container, self.activeEffects["love-hands"] === container {
+                        self.activeEffects.removeValue(forKey: "love-hands")
+                    }
+                }
+            }
+        }
+
+        if playSound {
+            SoundManager.shared.play("love_hearts.mp3")
+        }
+    }
+
+    func stopLoveHands() {
+        _ = cancelIfRunning("love-hands", sound: "love_hearts.mp3")
+    }
+
+    /// 7 red hearts emerge from `center`, spiral upward while growing, then
+    /// fade out after `rise` seconds of motion (fade taking `fadeOver` more).
+    private func spawnLoveHearts(center: CGPoint, rise: CFTimeInterval, fadeOver: CFTimeInterval) {
+        let bounds = hostLayer.bounds
+        let heartCount = 7
+        let riseHeight = bounds.height * 0.55
+        let maxRadius = bounds.width * 0.18
+        let baseSize: CGFloat = 70
+
+        for i in 0..<heartCount {
+            let phase = Double(i) / Double(heartCount) * 2.0 * Double.pi
+            let layer = CATextLayer()
+            layer.string = "❤️"
+            layer.fontSize = baseSize
+            layer.alignmentMode = .center
+            layer.frame = CGRect(x: center.x - baseSize, y: center.y - baseSize, width: baseSize * 2, height: baseSize * 2)
+            layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+            hostLayer.addSublayer(layer)
+
+            // Spiral upward path: angle grows with t (~1.5 turns), radius grows
+            // toward maxRadius, vertical climbs up to riseHeight.
+            let path = CGMutablePath()
+            path.move(to: center)
+            let steps = 60
+            for s in 1...steps {
+                let t = CGFloat(s) / CGFloat(steps)
+                let angle = phase + Double(t) * 3.0 * Double.pi
+                let radius = t * maxRadius
+                let x = center.x + CGFloat(cos(angle)) * radius
+                let y = center.y + riseHeight * t
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+            let posAnim = CAKeyframeAnimation(keyPath: "position")
+            posAnim.path = path
+            posAnim.duration = rise + fadeOver
+            posAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            posAnim.fillMode = .forwards
+            posAnim.isRemovedOnCompletion = false
+            layer.add(posAnim, forKey: "spiral")
+
+            // Grow 0.6 → 1.8 over the full life.
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 0.6
+            scale.toValue = 1.8
+            scale.duration = rise + fadeOver
+            scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            scale.fillMode = .forwards
+            scale.isRemovedOnCompletion = false
+            layer.add(scale, forKey: "grow")
+
+            // Fade kicks in after `rise` seconds of motion.
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1.0
+            fade.toValue = 0.0
+            fade.beginTime = CACurrentMediaTime() + rise
+            fade.duration = fadeOver
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            layer.add(fade, forKey: "fade")
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + rise + fadeOver + 0.1) { [weak layer] in
+                layer?.removeFromSuperlayer()
+            }
+        }
+    }
+
     func showSpiralHearts() {
         let bounds = hostLayer.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
@@ -2313,7 +2479,7 @@ class EmojiAnimator {
 
         let bounds = hostLayer.bounds
         let size = bounds.height * 0.55          // taller than brother — full dance reads better
-        let x: CGFloat = bounds.width - size * 0.85   // bottom-right area
+        let x: CGFloat = 0                       // flush to left edge
         let y: CGFloat = -20
 
         let gifLayer = CALayer()
