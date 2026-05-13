@@ -176,10 +176,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
         }
+        whisperManager.onAvailableDevicesChanged = { [weak self] devices in
+            self?.menuBarManager.setAvailableSources(devices)
+        }
         let startWhisper: () -> Void = { [weak whisperManager, weak self] in
             var env: [String: String] = [:]
             if let folder = self?.transcriptionFolder {
                 env["TRANSCRIPTION_FOLDER"] = folder.path
+                env["WHISPER_PREFERRED_SOURCE_FILE"] = folder.appendingPathComponent(".preferred-me-source").path
             }
             DispatchQueue.global(qos: .userInitiated).async {
                 whisperManager?.start(env: env)
@@ -366,7 +370,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 DispatchQueue.main.async { overlayInfo(msg) }
             }
         }
-        menuBarManager.onCopyGit = { DispatchQueue.global(qos: .userInitiated).async { GitCopier.copyIntelliJGit() } }
+        menuBarManager.onCopyGit = { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let url = GitCopier.copyIntelliJGit() else { return }
+                DispatchQueue.main.async { self?.showBanner(forGitUrl: url) }
+            }
+        }
         menuBarManager.onOpenCatalog = {
             DispatchQueue.global(qos: .userInitiated).async {
                 let path = NSHomeDirectory() + "/My Drive/Clients/Catalog.docx"
@@ -383,6 +392,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
+        }
+        menuBarManager.onTailPreview = { [weak self] in
+            self?.transcriptionTailPreview()
+        }
+        menuBarManager.onPickSource = { [weak self] pattern in
+            self?.writePreferredSource(pattern)
         }
         menuBarManager.onTakeScreenshot = { toClipboard in
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot(toClipboard: toClipboard) }
@@ -521,6 +536,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             wsTask?.cancel(with: .goingAway, reason: nil)
             NSApplication.shared.terminate(nil)
         }
+    }
+
+    /// Persist the user's preferred ME-source pattern to disk so whisper
+    /// picks it up via its file watcher and switches without a restart.
+    private func writePreferredSource(_ pattern: String) {
+        let file = transcriptionFolder.appendingPathComponent(".preferred-me-source")
+        do {
+            try FileManager.default.createDirectory(at: transcriptionFolder, withIntermediateDirectories: true)
+            try pattern.write(to: file, atomically: true, encoding: .utf8)
+            overlayInfo("Preferred source: \(pattern)")
+        } catch {
+            overlayError("Failed to write preferred source: \(error)")
+        }
+    }
+
+    /// Returns a short suffix to append to the Tail menu item, like
+    /// "(5s ago): word1 word2 word3", or nil if no transcription is found.
+    private func transcriptionTailPreview() -> String? {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: transcriptionFolder,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
+        ) else { return nil }
+
+        let candidates = files
+            .filter { $0.lastPathComponent.hasSuffix("transcription.txt") }
+            .filter { (try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) ?? 0 > 0 }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+        guard let latest = candidates.first else { return nil }
+
+        guard let data = try? Data(contentsOf: latest), !data.isEmpty else { return nil }
+        // Read last ~4KB to grab the final line without loading the whole file.
+        let tailBytes = data.suffix(4096)
+        guard let tailText = String(data: tailBytes, encoding: .utf8) else { return nil }
+        let lastLine = tailText
+            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+            .last
+            .map(String.init) ?? ""
+        // Strip leading "[HH:MM] Speaker:" prefix if present.
+        let bodyStart = lastLine.range(of: "]")
+            .map { lastLine.index(after: $0.upperBound) } ?? lastLine.startIndex
+        let afterTimestamp = String(lastLine[bodyStart...])
+        let body: String
+        if let colon = afterTimestamp.range(of: ":") {
+            body = String(afterTimestamp[colon.upperBound...])
+        } else {
+            body = afterTimestamp
+        }
+        let words = body
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+        guard !words.isEmpty else { return nil }
+        let lastThree = words.suffix(3).joined(separator: " ")
+
+        let mtime = (try? latest.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+        let secsAgo = max(0, Int(Date().timeIntervalSince(mtime)))
+        return "(\(formatAgo(secsAgo))): \(lastThree)"
+    }
+
+    private func formatAgo(_ secs: Int) -> String {
+        if secs < 60 { return "\(secs)s ago" }
+        if secs < 3600 { return "\(secs / 60)m ago" }
+        return "\(secs / 3600)h ago"
     }
 
     private func openTranscriptionMonitor() {
@@ -710,6 +787,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard isSessionActive, let url = participantUrl else { return }
             banner.show(url: url)
         }
+    }
+
+    private func showBanner(forGitUrl url: String) {
+        guard let banner = joinLinkBanner else { return }
+        if banner.bannerIsVisible { banner.hide() }
+        banner.show(url: stripProtocolPrefix(from: url))
     }
 
     private func displayClipboardLinkBanner() {

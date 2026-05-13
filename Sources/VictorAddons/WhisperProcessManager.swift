@@ -7,6 +7,7 @@ class WhisperProcessManager {
 
     var onStateChanged: ((Bool) -> Void)?
     var onDeviceChanged: ((String) -> Void)?
+    var onAvailableDevicesChanged: (([String]) -> Void)?
 
     func start(env: [String: String]) {
         guard !isRunning else { return }
@@ -48,6 +49,10 @@ class WhisperProcessManager {
                 if trimmed.hasPrefix("VICTOR_SOURCE:") {
                     let emoji = String(trimmed.dropFirst("VICTOR_SOURCE:".count))
                     DispatchQueue.main.async { self?.onDeviceChanged?(emoji) }
+                } else if trimmed.hasPrefix("VICTOR_AVAILABLE:") {
+                    let csv = String(trimmed.dropFirst("VICTOR_AVAILABLE:".count))
+                    let parts = csv.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    DispatchQueue.main.async { self?.onAvailableDevicesChanged?(parts) }
                 } else {
                     overlayInfo("Whisper: \(trimmed)")
                 }

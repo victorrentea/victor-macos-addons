@@ -20,6 +20,14 @@ class JoinLinkBanner: NSPanel {
     private var qrPanel: NSPanel?
     private var qrImageView: NSImageView?
 
+    // Progress bar (yellow, full-width, shrinks over `progressDuration`).
+    // Sits directly below the banner; click dismisses, hover resets.
+    private var progressPanel: ProgressBarPanel?
+    private let progressDuration: TimeInterval = 30.0
+    private let progressBarHeight: CGFloat = 5.0
+    private var progressExpiresAt: Date?
+    private var progressTickTimer: Timer?
+
     init(screen: NSScreen) {
         self.targetScreen = screen
 
@@ -49,6 +57,23 @@ class JoinLinkBanner: NSPanel {
         self.contentView?.addSubview(urlLabel)
 
         setupQRPanel()
+        setupProgressPanel()
+    }
+
+    private func setupProgressPanel() {
+        let panel = ProgressBarPanel(
+            contentRect: NSRect(x: 0, y: 0, width: targetScreen.frame.width, height: progressBarHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = false
+        panel.onClick = { [weak self] in self?.hide() }
+        progressPanel = panel
     }
 
     // MARK: - QR Panel setup
@@ -121,12 +146,28 @@ class JoinLinkBanner: NSPanel {
         // Show QR code
         showQR(for: trimmedUrl)
 
+        // Position + show progress bar just below banner.
+        positionProgressPanel(belowBannerY: bannerY)
+        progressPanel?.alphaValue = 1.0
+        progressPanel?.orderFrontRegardless()
+
         startMousePolling()
 
-        // If mouse is already outside, begin countdown immediately
-        if !frame.contains(NSEvent.mouseLocation) {
-            scheduleHide()
-        }
+        // Always start the countdown — hover will pause/reset it.
+        scheduleHide()
+    }
+
+    private func positionProgressPanel(belowBannerY bannerY: CGFloat) {
+        guard let panel = progressPanel else { return }
+        let y = bannerY - progressBarHeight
+        let frame = NSRect(
+            x: targetScreen.frame.origin.x,
+            y: y,
+            width: targetScreen.frame.width,
+            height: progressBarHeight
+        )
+        panel.setFrame(frame, display: false)
+        panel.setFullWidth(screenWidth: targetScreen.frame.width)
     }
 
     func hide() {
@@ -135,6 +176,8 @@ class JoinLinkBanner: NSPanel {
         bannerShowing = false
         self.orderOut(nil)
         hideQR()
+        progressPanel?.alphaValue = 0.0
+        progressPanel?.orderOut(nil)
     }
 
     var bannerIsVisible: Bool { bannerShowing }
@@ -189,16 +232,22 @@ class JoinLinkBanner: NSPanel {
 
     private func checkMouse() {
         guard bannerShowing else { return }
-        let inside = self.frame.contains(NSEvent.mouseLocation)
+        let mouse = NSEvent.mouseLocation
+        let bannerHit = self.frame.contains(mouse)
+        let barHit = progressPanel?.frame.contains(mouse) ?? false
+        let inside = bannerHit || barHit
 
         if inside && !mouseWasInside {
-            // Mouse entered — cancel any countdown and restore opacity
+            // Mouse entered — pause countdown and restore full progress bar.
             mouseWasInside = true
             fadeTimer?.invalidate()
             fadeTimer = nil
+            stopProgressTick()
+            progressExpiresAt = nil
+            progressPanel?.setFullWidth(screenWidth: targetScreen.frame.width)
             self.alphaValue = 1.0
         } else if !inside && mouseWasInside {
-            // Mouse exited — start 30s countdown
+            // Mouse exited — restart the 30s countdown from full.
             mouseWasInside = false
             scheduleHide()
         }
@@ -208,9 +257,37 @@ class JoinLinkBanner: NSPanel {
 
     private func scheduleHide() {
         fadeTimer?.invalidate()
-        // 30s visible, then 3s fade = schedule fade at 27s
-        fadeTimer = Timer.scheduledTimer(withTimeInterval: 27.0, repeats: false) { [weak self] _ in
-            self?.startFadeOut()
+        // Drive both the visible progress bar and the eventual fade from a single
+        // expiration timestamp. When the bar hits zero, kick off the existing 3s fade.
+        progressExpiresAt = Date().addingTimeInterval(progressDuration)
+        startProgressTick()
+    }
+
+    private func startProgressTick() {
+        stopProgressTick()
+        // 30 fps is enough for a smooth shrink without burning cycles.
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            self?.tickProgress()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        progressTickTimer = timer
+        tickProgress()
+    }
+
+    private func stopProgressTick() {
+        progressTickTimer?.invalidate()
+        progressTickTimer = nil
+    }
+
+    private func tickProgress() {
+        guard let expiresAt = progressExpiresAt else { return }
+        let remaining = expiresAt.timeIntervalSinceNow
+        let ratio = max(0, min(1, remaining / progressDuration))
+        progressPanel?.setProgress(CGFloat(ratio), screenWidth: targetScreen.frame.width)
+        if remaining <= 0 {
+            stopProgressTick()
+            progressExpiresAt = nil
+            startFadeOut()
         }
     }
 
@@ -221,10 +298,12 @@ class JoinLinkBanner: NSPanel {
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.animator().alphaValue = 0.0
             self.qrPanel?.animator().alphaValue = 0.0
+            self.progressPanel?.animator().alphaValue = 0.0
         }, completionHandler: { [weak self] in
             self?.bannerShowing = false
             self?.orderOut(nil)
             self?.qrPanel?.orderOut(nil)
+            self?.progressPanel?.orderOut(nil)
         })
     }
 
@@ -232,6 +311,8 @@ class JoinLinkBanner: NSPanel {
         fadeTimer?.invalidate()
         fadeTimer = nil
         stopMousePolling()
+        stopProgressTick()
+        progressExpiresAt = nil
     }
 
     private func stopMousePolling() {
@@ -270,5 +351,48 @@ class JoinLinkBanner: NSPanel {
             ))
         }
         return result
+    }
+}
+
+/// Yellow progress bar that visualizes the join-link auto-hide countdown.
+/// The bar shrinks centered as time runs out; the underlying panel still spans
+/// the full screen width so clicks anywhere along the row dismiss the link.
+final class ProgressBarPanel: NSPanel {
+    var onClick: (() -> Void)?
+    private let fillView: NSView
+
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        fillView = NSView(frame: contentRect)
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+
+        let host = NSView(frame: contentRect)
+        host.wantsLayer = true
+        // Faint backing so the clickable strip is still hittable when the
+        // visible bar has shrunk to zero — without it, AppKit ignores clicks
+        // on the transparent regions.
+        host.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.001).cgColor
+        self.contentView = host
+
+        fillView.wantsLayer = true
+        fillView.layer?.backgroundColor = NSColor.systemYellow.cgColor
+        host.addSubview(fillView)
+
+        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
+        host.addGestureRecognizer(click)
+    }
+
+    func setFullWidth(screenWidth: CGFloat) {
+        setProgress(1.0, screenWidth: screenWidth)
+    }
+
+    func setProgress(_ ratio: CGFloat, screenWidth: CGFloat) {
+        let clamped = max(0, min(1, ratio))
+        let width = screenWidth * clamped
+        let x = (screenWidth - width) / 2
+        fillView.frame = NSRect(x: x, y: 0, width: width, height: fillView.superview?.bounds.height ?? frame.height)
+    }
+
+    @objc private func handleClick() {
+        onClick?()
     }
 }

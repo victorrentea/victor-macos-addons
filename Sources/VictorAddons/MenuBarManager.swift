@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 12, 01:30"
+    static let BUILD_TIME = "May 12, 01:18"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -30,8 +30,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var isTranscriptionStale: Bool = false
     private var isTranscriptionPausedByBattery: Bool = false
     private var transcribeSource: String = ""
+    private var availableSources: [String] = []
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
+    private(set) var tailItem: NSMenuItem!
+    private var transcribeSubmenu: NSMenu!
 
     private(set) var resumeItem: NSMenuItem!
     var breakEndedAt: Date?
@@ -51,6 +54,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onOpenCatalog: (() -> Void)?
     var onDesktopEffect: ((String) -> Void)?
     var onTileTerminals: (() -> Void)?
+    var onPickSource: ((String) -> Void)?
+    var onTailPreview: (() -> String?)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -100,9 +105,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
         transcribeItem.keyEquivalent = "t"
         transcribeItem.keyEquivalentModifierMask = [.command, .control]
+        transcribeSubmenu = NSMenu()
+        transcribeSubmenu.autoenablesItems = false
 
         // Tail (was Monitor)
-        addItem("🐕 Tail", action: #selector(monitorAction))
+        tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
 
         // Screenshot → Clipboard (⌃P)
         let screenshotClipItem = addItem("📸 Screenshot → Clipboard", action: #selector(takeScreenshotClipboardAction))
@@ -270,6 +277,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.title = "Dark Mode"
 
         updateTranscribeTitle()
+        updateTailItem()
 
         refreshPortItems()
 
@@ -659,19 +667,109 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateTranscribeTitle() {
-        if TranscriptionScheduler.isLockedOn() {
-            transcribeItem.title = "🔒 Transcribing 9–18"
+        let locked = TranscriptionScheduler.isLockedOn()
+
+        // Reset everything; configure per-state below.
+        transcribeItem.image = nil
+        transcribeItem.submenu = nil
+        transcribeItem.action = nil
+        transcribeItem.target = self
+        transcribeItem.keyEquivalent = ""
+        transcribeItem.keyEquivalentModifierMask = []
+
+        if isTranscriptionPausedByBattery {
+            transcribeItem.title = "Off - On Battery"
+            transcribeItem.image = loadResourceIcon("icon_leaf")
             transcribeItem.isEnabled = false
             return
         }
-        if isTranscriptionPausedByBattery {
-            transcribeItem.title = "Off - On Battery"
-            transcribeItem.isEnabled = false
+
+        if isTranscribing {
+            let suffix = locked ? " 🔒" : ""
+            transcribeItem.title = "Stop Transcribing\(suffix)"
+            transcribeItem.image = transcribeSource.isEmpty ? nil : emojiAsIcon(transcribeSource)
+            transcribeItem.submenu = transcribeSubmenu
+            transcribeItem.isEnabled = true
+            rebuildTranscribeSubmenu(locked: locked)
         } else {
-            let prefix = transcribeSource.isEmpty ? "" : "\(transcribeSource) "
-            transcribeItem.title = isTranscribing ? "\(prefix)Stop Transcribing" : "Start Transcribing"
+            transcribeItem.title = locked ? "Start Transcribing 🔒" : "Start Transcribing"
+            transcribeItem.action = #selector(toggleTranscribe)
+            transcribeItem.keyEquivalent = "t"
+            transcribeItem.keyEquivalentModifierMask = [.command, .control]
             transcribeItem.isEnabled = true
         }
+    }
+
+    // Known _ME_PATTERNS in whisper_runner.py — order matches Python priority.
+    // Each tuple: (display name, short emoji emitted by whisper, pattern token sent back).
+    private static let knownSources: [(name: String, emoji: String, pattern: String)] = [
+        ("Wireless Mic",     "🎤",  "Wireless Mic"),
+        ("Stage Speakerphone","🏛️", "Room Speakerphone"),
+        ("XLR Mic",          "🎙️",  "XLR"),
+        ("Bose Headset",     "🎧",  "Bose"),
+        ("MacBook",          "💻",  "MacBook"),
+    ]
+
+    private func rebuildTranscribeSubmenu(locked: Bool) {
+        transcribeSubmenu.removeAllItems()
+        for src in Self.knownSources {
+            let item = NSMenuItem(title: "\(src.emoji) \(src.name)",
+                                  action: #selector(pickSource(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = src.pattern
+            let available = availableSources.contains(src.emoji)
+            item.isEnabled = available
+            item.state = (src.emoji == transcribeSource) ? .on : .off
+            transcribeSubmenu.addItem(item)
+        }
+        transcribeSubmenu.addItem(.separator())
+        let stop = NSMenuItem(title: locked ? "Stop Transcribing 🔒" : "Stop Transcribing",
+                              action: locked ? nil : #selector(toggleTranscribe),
+                              keyEquivalent: "")
+        stop.target = self
+        stop.isEnabled = !locked
+        transcribeSubmenu.addItem(stop)
+    }
+
+    @objc private func pickSource(_ sender: NSMenuItem) {
+        guard let pattern = sender.representedObject as? String else { return }
+        onPickSource?(pattern)
+    }
+
+    private func updateTailItem() {
+        let preview = onTailPreview?() ?? nil
+        if let preview = preview, !preview.isEmpty {
+            tailItem.title = "🐕 Tail \(preview)"
+        } else {
+            tailItem.title = "🐕 Tail"
+        }
+    }
+
+    private func loadResourceIcon(_ name: String, size: NSSize = NSSize(width: 16, height: 16)) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = size
+        return img
+    }
+
+    private func emojiAsIcon(_ emoji: String, size: NSSize = NSSize(width: 16, height: 16)) -> NSImage? {
+        guard !emoji.isEmpty else { return nil }
+        let img = NSImage(size: size)
+        img.lockFocus()
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size.height - 2)]
+        let str = emoji as NSString
+        let strSize = str.size(withAttributes: attrs)
+        let origin = NSPoint(x: (size.width - strSize.width) / 2,
+                             y: (size.height - strSize.height) / 2)
+        str.draw(at: origin, withAttributes: attrs)
+        img.unlockFocus()
+        return img
+    }
+
+    func setAvailableSources(_ sources: [String]) {
+        availableSources = sources
+        updateTranscribeTitle()
     }
 
     func transcriptionDebugState() -> TranscriptionDebugState {

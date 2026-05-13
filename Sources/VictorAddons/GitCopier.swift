@@ -2,22 +2,27 @@ import Foundation
 import AppKit
 
 enum GitCopier {
-    static func copyIntelliJGit() {
+    /// Copies "<remote-url> (<branch>)" to the clipboard for the last-used
+    /// IntelliJ project. Returns the bare remote URL so callers can also
+    /// surface it in the on-screen banner.
+    @discardableResult
+    static func copyIntelliJGit() -> String? {
         guard let path = findLastUsedProjectPath() else {
             overlayInfo("No IntelliJ project found")
-            return
+            return nil
         }
         let url = git(["-C", path, "remote", "get-url", "origin"])
         let branch = git(["-C", path, "branch", "--show-current"])
         guard !url.isEmpty else {
             overlayInfo("No git remote found")
-            return
+            return nil
         }
         let text = branch.isEmpty ? url : "\(url) (\(branch))"
         DispatchQueue.main.async {
             ClipboardManager.write(text)
             notify(body: text)
         }
+        return url
     }
 
     private static func notify(body: String) {

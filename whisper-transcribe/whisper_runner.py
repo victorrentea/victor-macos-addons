@@ -224,6 +224,44 @@ def _parse_pattern_env(var_name: str) -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
+_PREFERRED_SOURCE_FILE = os.environ.get("WHISPER_PREFERRED_SOURCE_FILE", "").strip()
+
+
+def _read_preferred_source() -> str:
+    if not _PREFERRED_SOURCE_FILE:
+        return ""
+    try:
+        with open(_PREFERRED_SOURCE_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+def _available_me_short_names() -> list[str]:
+    """Return short-emoji names of currently available _ME_PATTERNS devices, in priority order."""
+    import sounddevice as sd
+
+    ca_devices = [d for d in list_input_devices() if d["alive"]]
+    alive_ca_names = [d["name"] for d in ca_devices]
+    seen: set[str] = set()
+    available: list[str] = []
+    for pattern in _ME_PATTERNS:
+        plower = pattern.lower()
+        for d in sd.query_devices():
+            if d["max_input_channels"] <= 0:
+                continue
+            sd_name = d["name"]
+            if plower not in sd_name.lower():
+                continue
+            if any(_names_equivalent(sd_name, ca_name) for ca_name in alive_ca_names):
+                short = _short_device_name(sd_name)
+                if short not in seen:
+                    seen.add(short)
+                    available.append(short)
+                break
+    return available
+
+
 def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
     """Find the best input device by pattern priority using CoreAudio (no stale devices).
     Returns (sounddevice_index, device_name) or None."""
@@ -238,12 +276,16 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
     #   WHISPER_ME_DEVICE_HINT="scarlett"
     #   WHISPER_AUDIENCE_DEVICE_HINT="from zoom"
     hint_patterns = []
+    preferred = ""
     if patterns is _ME_PATTERNS:
         hint_patterns = _parse_pattern_env("WHISPER_ME_DEVICE_HINT")
+        preferred = _read_preferred_source()
     elif patterns is _AUD_PATTERNS:
         hint_patterns = _parse_pattern_env("WHISPER_AUDIENCE_DEVICE_HINT")
     if hint_patterns:
         patterns = hint_patterns + patterns
+    if preferred:
+        patterns = [preferred] + patterns
 
     alive_ca_names = [d["name"] for d in ca_devices]
 
@@ -557,6 +599,7 @@ class WhisperTranscriptionRunner:
         self._unregister_listener = None
         self._unregister_alive_listener = None
         self._recent_victor: list[tuple[float, str]] = []  # (timestamp, text) for dedup
+        self._pref_watch_mtime: float = 0.0
 
     def start(self):
         tx_queue: queue.Queue = queue.Queue()
@@ -616,6 +659,15 @@ class WhisperTranscriptionRunner:
         )
         log.info("transcript", "🎙️ CoreAudio device listeners registered")
 
+        # Emit initial availability snapshot for the menu bar UI.
+        self._emit_available()
+
+        # Poll preference file for menu-driven source switches.
+        if _PREFERRED_SOURCE_FILE:
+            threading.Thread(
+                target=self._watch_preference_file, daemon=True
+            ).start()
+
     def _on_device_list_changed(self):
         """Called by CoreAudio when devices are added/removed."""
         self._check_best_device(delay=2)  # delay for Bluetooth stabilization
@@ -651,8 +703,39 @@ class WhisperTranscriptionRunner:
                 print(f"VICTOR_SOURCE:{short}", flush=True)
                 if self._on_device_change:
                     self._on_device_change()
+            # Always re-emit availability — device-list change may have toggled
+            # available sources without changing the active one.
+            self._emit_available()
         except Exception as exc:
             log.error("transcript", f"🎙️ Device change handler error: {exc}")
+
+    def _emit_available(self):
+        try:
+            avail = _available_me_short_names()
+            print(f"VICTOR_AVAILABLE:{','.join(avail)}", flush=True)
+        except Exception as exc:
+            log.error("transcript", f"🎙️ availability emit failed: {exc}")
+
+    def _watch_preference_file(self):
+        # Polls _PREFERRED_SOURCE_FILE for menu-driven source switches.
+        # Whenever its mtime changes, re-run device resolution so the new
+        # preferred pattern is applied without restarting whisper.
+        while True:
+            try:
+                time.sleep(1)
+                try:
+                    mtime = os.path.getmtime(_PREFERRED_SOURCE_FILE)
+                except (FileNotFoundError, OSError):
+                    continue
+                if mtime != self._pref_watch_mtime:
+                    self._pref_watch_mtime = mtime
+                    log.info(
+                        "transcript",
+                        f"🎙️ preferred source changed → {_read_preferred_source()!r}",
+                    )
+                    self._check_best_device()
+            except Exception as exc:
+                log.error("transcript", f"🎙️ preference watcher error: {exc}")
 
     def stop(self):
         if self._unregister_listener:
