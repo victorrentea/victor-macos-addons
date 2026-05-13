@@ -155,6 +155,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Phone Ring 📱",   "phone-ring"),
             ("FBI Knock 🚪",    "fbi-knock"),
             ("Brother 🤢",       "brother"),
+            ("Gangnam 💃",       "gangnam"),
             ("Gong 🔔",          "gong"),
             ("Drum Roll 🥁",     "drum-roll"),
             ("Laugh 🤣",          "laugh"),

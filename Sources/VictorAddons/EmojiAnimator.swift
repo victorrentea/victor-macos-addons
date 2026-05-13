@@ -2283,6 +2283,74 @@ class EmojiAnimator {
         _ = cancelIfRunning("brother", sound: "sfx_109.mp3")
     }
 
+    // MARK: - Gangnam (looping transparent GIF, toggled by sound #29)
+
+    func showGangnam(playSound: Bool = true) {
+        if cancelIfRunning("gangnam", sound: playSound ? "gangnam_style.mp3" : nil) { return }
+
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
+        let gifURL = downloadsURL.appendingPathComponent("gangnam_transparent.gif")
+
+        guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else {
+            overlayError("gangnam_transparent.gif not found in Downloads")
+            return
+        }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+            totalDuration += delay
+        }
+
+        let bounds = hostLayer.bounds
+        let size = bounds.height * 0.55          // taller than brother — full dance reads better
+        let x: CGFloat = bounds.width - size * 0.85   // bottom-right area
+        let y: CGFloat = -20
+
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
+        gifLayer.contentsGravity = .resizeAspect
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+        activeEffects["gangnam"] = gifLayer
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = totalDuration
+        anim.repeatCount = .infinity
+
+        CATransaction.begin()
+        gifLayer.add(anim, forKey: "gangnamFrames")
+        CATransaction.commit()
+
+        if playSound {
+            SoundManager.shared.play("gangnam_style.mp3")
+            if let soundURL = Bundle.module.url(forResource: "gangnam_style", withExtension: "mp3") {
+                let asset = AVURLAsset(url: soundURL)
+                let d = asset.duration
+                if d.isNumeric {
+                    let soundDuration = CMTimeGetSeconds(d)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
+                        self?.stopGangnam()
+                    }
+                }
+            }
+        }
+    }
+
+    func stopGangnam() {
+        _ = cancelIfRunning("gangnam", sound: "gangnam_style.mp3")
+    }
+
     // MARK: - Gong GIF overlay (bottom-left, 25% screen width)
 
     func showGong(playSound: Bool = true) {
