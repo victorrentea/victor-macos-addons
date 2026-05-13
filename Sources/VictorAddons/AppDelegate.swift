@@ -399,6 +399,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onPickSource = { [weak self] pattern in
             self?.writePreferredSource(pattern)
         }
+        menuBarManager.onMenuOpened = { [weak self] in
+            // Opening the app menu is a clear "I'm done with the link" signal —
+            // hide the banner + QR immediately so it never lingers on the screen.
+            if self?.joinLinkBanner?.bannerIsVisible == true {
+                self?.joinLinkBanner?.hide()
+            }
+        }
         menuBarManager.onTakeScreenshot = { toClipboard in
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot(toClipboard: toClipboard) }
         }

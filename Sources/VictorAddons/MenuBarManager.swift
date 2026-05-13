@@ -56,6 +56,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTileTerminals: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
+    var onMenuOpened: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -240,6 +241,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
+        onMenuOpened?()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
         }
