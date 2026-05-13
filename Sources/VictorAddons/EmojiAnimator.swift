@@ -1879,10 +1879,12 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let handHeight = bounds.height * 0.40
+        let handHeight = bounds.height * 0.52        // +30% over the original 0.40
         // Source images are square halves (512x1024 → aspect 0.5).
         let handWidth = handHeight * 0.5
-        let handY = bounds.midY - handHeight / 2
+        // Place the hand centre 1/5 of screen height below screen midpoint
+        // (AppKit y grows upward, so subtract).
+        let handY = bounds.midY - handHeight / 2 - bounds.height * 0.20
 
         // End positions: hands touching at the horizontal center.
         let leftEndX  = bounds.midX - handWidth
@@ -1910,7 +1912,7 @@ class EmojiAnimator {
         // so we manually remove them when the effect ends.
         activeEffects["love-hands"] = container
 
-        let converge: CFTimeInterval = 0.9
+        let converge: CFTimeInterval = 2.7          // 3× slower than the original 0.9s
         let slideLeft = CABasicAnimation(keyPath: "position.x")
         slideLeft.fromValue = leftStartX + handWidth / 2
         slideLeft.toValue   = leftEndX + handWidth / 2
@@ -1926,7 +1928,7 @@ class EmojiAnimator {
         rightLayer.add(slideRight, forKey: "slide")
 
         // When the hands touch, spawn the heart spiral; then fade everything out.
-        let meetingPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+        let meetingPoint = CGPoint(x: bounds.midX, y: bounds.midY - bounds.height * 0.20)
         let riseDuration: CFTimeInterval = 2.0      // user spec: 2s of rising, then fade
         let fadeDuration: CFTimeInterval = 0.6
 
@@ -1962,68 +1964,80 @@ class EmojiAnimator {
         _ = cancelIfRunning("love-hands", sound: "love_hearts.mp3")
     }
 
-    /// 7 red hearts emerge from `center`, spiral upward while growing, then
-    /// fade out after `rise` seconds of motion (fade taking `fadeOver` more).
+    /// 7 red hearts emerge from `center` and rise on **divergent** pseudo-random
+    /// spiral paths — each heart has its own starting angle, turn count, max
+    /// radius, rise height, end-scale and small spawn jitter, so the swarm
+    /// fans out instead of every heart tracing the same ring.
+    /// They grow while rising, then fade after `rise` seconds of motion.
     private func spawnLoveHearts(center: CGPoint, rise: CFTimeInterval, fadeOver: CFTimeInterval) {
         let bounds = hostLayer.bounds
         let heartCount = 7
-        let riseHeight = bounds.height * 0.55
-        let maxRadius = bounds.width * 0.18
         let baseSize: CGFloat = 70
 
         for i in 0..<heartCount {
-            let phase = Double(i) / Double(heartCount) * 2.0 * Double.pi
-            let layer = CATextLayer()
-            layer.string = "❤️"
-            layer.fontSize = baseSize
-            layer.alignmentMode = .center
-            layer.frame = CGRect(x: center.x - baseSize, y: center.y - baseSize, width: baseSize * 2, height: baseSize * 2)
-            layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-            hostLayer.addSublayer(layer)
+            // Per-heart pseudo-random parameters. Phase is anchored on the even
+            // 2π / heartCount slice so we still diverge outward symmetrically,
+            // then jittered by ±π/heartCount so adjacent hearts don't trace
+            // exactly the same arc on every play.
+            let basePhase = Double(i) / Double(heartCount) * 2.0 * Double.pi
+            let phase = basePhase + Double.random(in: -(Double.pi / Double(heartCount))...(Double.pi / Double(heartCount)))
+            let turns = Double.random(in: 0.6...1.4)                    // less rotation, more verticality
+            let maxRadius = bounds.width * CGFloat.random(in: 0.08...0.22)
+            let riseHeight = bounds.height * CGFloat.random(in: 0.55...0.78)
+            let endScale: CGFloat = CGFloat.random(in: 1.6...2.1)
+            let spawnDelay = Double.random(in: 0.0...0.20)
+            let radialBias = Double.random(in: 0.85...1.15)              // squish/stretch the spiral
 
-            // Spiral upward path: angle grows with t (~1.5 turns), radius grows
-            // toward maxRadius, vertical climbs up to riseHeight.
-            let path = CGMutablePath()
-            path.move(to: center)
-            let steps = 60
-            for s in 1...steps {
-                let t = CGFloat(s) / CGFloat(steps)
-                let angle = phase + Double(t) * 3.0 * Double.pi
-                let radius = t * maxRadius
-                let x = center.x + CGFloat(cos(angle)) * radius
-                let y = center.y + riseHeight * t
-                path.addLine(to: CGPoint(x: x, y: y))
-            }
-            let posAnim = CAKeyframeAnimation(keyPath: "position")
-            posAnim.path = path
-            posAnim.duration = rise + fadeOver
-            posAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            posAnim.fillMode = .forwards
-            posAnim.isRemovedOnCompletion = false
-            layer.add(posAnim, forKey: "spiral")
+            DispatchQueue.main.asyncAfter(deadline: .now() + spawnDelay) { [weak self] in
+                guard let self = self else { return }
+                let layer = CATextLayer()
+                layer.string = "❤️"
+                layer.fontSize = baseSize
+                layer.alignmentMode = .center
+                layer.frame = CGRect(x: center.x - baseSize, y: center.y - baseSize, width: baseSize * 2, height: baseSize * 2)
+                layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+                self.hostLayer.addSublayer(layer)
 
-            // Grow 0.6 → 1.8 over the full life.
-            let scale = CABasicAnimation(keyPath: "transform.scale")
-            scale.fromValue = 0.6
-            scale.toValue = 1.8
-            scale.duration = rise + fadeOver
-            scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            scale.fillMode = .forwards
-            scale.isRemovedOnCompletion = false
-            layer.add(scale, forKey: "grow")
+                let path = CGMutablePath()
+                path.move(to: center)
+                let steps = 80
+                for s in 1...steps {
+                    let t = CGFloat(s) / CGFloat(steps)
+                    let angle = phase + Double(t) * turns * 2.0 * Double.pi
+                    let radius = CGFloat(radialBias) * t * maxRadius
+                    let x = center.x + CGFloat(cos(angle)) * radius
+                    let y = center.y + riseHeight * t
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+                let posAnim = CAKeyframeAnimation(keyPath: "position")
+                posAnim.path = path
+                posAnim.duration = rise + fadeOver
+                posAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                posAnim.fillMode = .forwards
+                posAnim.isRemovedOnCompletion = false
+                layer.add(posAnim, forKey: "spiral")
 
-            // Fade kicks in after `rise` seconds of motion.
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1.0
-            fade.toValue = 0.0
-            fade.beginTime = CACurrentMediaTime() + rise
-            fade.duration = fadeOver
-            fade.fillMode = .forwards
-            fade.isRemovedOnCompletion = false
-            layer.add(fade, forKey: "fade")
+                let scale = CABasicAnimation(keyPath: "transform.scale")
+                scale.fromValue = 0.5
+                scale.toValue = endScale
+                scale.duration = rise + fadeOver
+                scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                scale.fillMode = .forwards
+                scale.isRemovedOnCompletion = false
+                layer.add(scale, forKey: "grow")
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + rise + fadeOver + 0.1) { [weak layer] in
-                layer?.removeFromSuperlayer()
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 1.0
+                fade.toValue = 0.0
+                fade.beginTime = CACurrentMediaTime() + rise
+                fade.duration = fadeOver
+                fade.fillMode = .forwards
+                fade.isRemovedOnCompletion = false
+                layer.add(fade, forKey: "fade")
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + rise + fadeOver + 0.1) { [weak layer] in
+                    layer?.removeFromSuperlayer()
+                }
             }
         }
     }
