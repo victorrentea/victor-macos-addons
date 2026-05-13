@@ -51,16 +51,22 @@ class PowerPointMonitor {
     private var sendTimer: Timer?
     private var lastWasFrontmost: Bool = false
 
+    // Serial queue ensures tick()/sendDelta() never race on the duration
+    // dictionaries — a concurrent global queue caused EXC_BAD_ACCESS in
+    // Dictionary._Variant.setValue when the 2s tick and the 60s sender
+    // overlapped (crash 2026-05-13 23:19).
+    private let queue = DispatchQueue(label: "ro.victorrentea.ppt-monitor", qos: .utility)
+
     init() {
     }
 
     func start() {
         DispatchQueue.main.async { [weak self] in
             self?.timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-                DispatchQueue.global(qos: .utility).async { self?.tick() }
+                self?.queue.async { self?.tick() }
             }
             self?.sendTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-                DispatchQueue.global(qos: .utility).async { self?.sendDelta() }
+                self?.queue.async { self?.sendDelta() }
             }
         }
     }
