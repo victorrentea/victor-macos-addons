@@ -1781,9 +1781,16 @@ class EmojiAnimator {
         // Up → hold → down. The hold is what makes the peak readable; without
         // it, the keyframe at peak lasts a single frame and the eye averages
         // the throb down to ~15%.
-        let upDur = 0.10
-        let holdDur = 0.10
-        let downDur = 0.30
+        //
+        // Total pulse must fit under the *shortest* inter-beat gap so successive
+        // beats never overlap — otherwise the second pulse fires while the
+        // previous is still mid-decay and the scale stays compounded near 1.30
+        // instead of bouncing 1.00 ↔ 1.30 on every beat. The closest beats in
+        // heartbeat_beats.json are 240ms apart, so we keep the pulse at 220ms
+        // and preserve the original 1:1:3 (up:hold:down) asymmetry.
+        let upDur = 0.044
+        let holdDur = 0.044
+        let downDur = 0.132
         let total = upDur + holdDur + downDur
         let k1 = NSNumber(value: upDur / total)
         let k2 = NSNumber(value: (upDur + holdDur) / total)
