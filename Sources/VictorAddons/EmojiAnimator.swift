@@ -2449,36 +2449,40 @@ class EmojiAnimator {
         _ = cancelIfRunning("brother", sound: "sfx_109.mp3")
     }
 
-    // MARK: - Gangnam (looping transparent GIF, toggled by sound #29)
+    // MARK: - Gangnam (looping transparent frames, toggled by sound #29)
 
     func showGangnam(playSound: Bool = true) {
         if cancelIfRunning("gangnam", sound: playSound ? "gangnam_style.mp3" : nil) { return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
-        let gifURL = downloadsURL.appendingPathComponent("gangnam_transparent.gif")
-
-        guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else {
-            overlayError("gangnam_transparent.gif not found in Downloads")
+        // Load each frame from ~/Downloads/gangnam_frames/frame_XXX.png. The
+        // GIF path produced ghost trails because successive frames were
+        // alpha-stacked once the background became transparent — PNG sequence
+        // sidesteps GIF disposal handling entirely.
+        let framesDir = downloadsURL.appendingPathComponent("gangnam_frames")
+        let frameURLs: [URL] = (try? FileManager.default.contentsOfDirectory(at: framesDir, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension.lowercased() == "png" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
+        guard !frameURLs.isEmpty else {
+            overlayError("gangnam_frames/ not found in Downloads")
             return
         }
 
-        let count = CGImageSourceGetCount(source)
-        guard count > 0 else { return }
-
         var images: [CGImage] = []
-        var totalDuration: Double = 0
-        for i in 0..<count {
-            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+        for url in frameURLs {
+            guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { continue }
             images.append(cg)
-            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
-            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
-            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
-            totalDuration += delay
         }
+        guard !images.isEmpty else { return }
+
+        // ~40ms per frame (≈ original 25fps gif cadence).
+        let perFrame = 0.04
+        let totalDuration = Double(images.count) * perFrame
 
         let bounds = hostLayer.bounds
-        let size = bounds.height * 0.55          // taller than brother — full dance reads better
+        let size = bounds.height * 0.72          // +30% over the original 0.55 sizing
         let x: CGFloat = 0                       // flush to left edge
         let y: CGFloat = -20
 
@@ -2493,6 +2497,10 @@ class EmojiAnimator {
         anim.values = images
         anim.duration = totalDuration
         anim.repeatCount = .infinity
+        // Without .discrete Core Animation tries to interpolate between
+        // adjacent frames; on a transparent GIF this causes ghost-trail
+        // artefacts because successive frames are alpha-blended together.
+        anim.calculationMode = .discrete
 
         CATransaction.begin()
         gifLayer.add(anim, forKey: "gangnamFrames")
