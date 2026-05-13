@@ -1778,35 +1778,27 @@ class EmojiAnimator {
     }
 
     private func scheduleHeartbeatPulses(layer: CALayer, beats: [Double]) {
-        // Up → hold → down. The hold is what makes the peak readable; without
-        // it, the keyframe at peak lasts a single frame and the eye averages
-        // the throb down to ~15%.
-        //
-        // Total pulse must fit under the *shortest* inter-beat gap so successive
-        // beats never overlap — otherwise the second pulse fires while the
-        // previous is still mid-decay and the scale stays compounded near 1.30
-        // instead of bouncing 1.00 ↔ 1.30 on every beat. The closest beats in
-        // heartbeat_beats.json are 240ms apart, so we keep the pulse at 220ms
-        // and preserve the original 1:1:3 (up:hold:down) asymmetry.
-        let upDur = 0.044
-        let holdDur = 0.044
-        let downDur = 0.132
-        let total = upDur + holdDur + downDur
-        let k1 = NSNumber(value: upDur / total)
-        let k2 = NSNumber(value: (upDur + holdDur) / total)
+        // Bell-shaped pulse, perfectly symmetric in both time and curve so every
+        // ♥ renders the identical zoom-in/out. Two equal halves of easeInOut
+        // (110ms each, total 220ms) — easeInOut is symmetric around its midpoint,
+        // so the rise and fall mirror each other and the peak plateau is implicit
+        // (zero derivative at the join, ~10–15ms of natural "linger" at 1.30).
+        // Pulse total stays under the shortest inter-beat gap (240ms) in
+        // heartbeat_beats.json so pulses never overlap.
+        let halfDur = 0.11
+        let total = halfDur * 2.0
 
         for beat in beats {
             DispatchQueue.main.asyncAfter(deadline: .now() + beat) { [weak self, weak layer] in
                 guard let self = self, let layer = layer,
                       self.activeEffects["heartbeat"] === layer else { return }
                 let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-                pulse.values = [1.0, 1.30, 1.30, 1.0]
-                pulse.keyTimes = [NSNumber(value: 0.0), k1, k2, NSNumber(value: 1.0)]
+                pulse.values = [1.0, 1.30, 1.0]
+                pulse.keyTimes = [NSNumber(value: 0.0), NSNumber(value: 0.5), NSNumber(value: 1.0)]
                 pulse.duration = total
                 pulse.timingFunctions = [
-                    CAMediaTimingFunction(name: .easeOut),
-                    CAMediaTimingFunction(name: .linear),
-                    CAMediaTimingFunction(name: .easeIn),
+                    CAMediaTimingFunction(name: .easeInEaseOut),
+                    CAMediaTimingFunction(name: .easeInEaseOut),
                 ]
                 layer.add(pulse, forKey: "heartbeatPulse")
             }
