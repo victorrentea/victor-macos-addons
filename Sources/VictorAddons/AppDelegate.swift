@@ -828,7 +828,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return
         }
         // Display raw trimmed text so spaces aren't percent-encoded as %20
-        banner.show(url: stripProtocolPrefix(from: trimmed))
+        let cleaned = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
+        banner.show(url: stripProtocolPrefix(from: cleaned))
     }
 
     private func scheduleReconnect() {

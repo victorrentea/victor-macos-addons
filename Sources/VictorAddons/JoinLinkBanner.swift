@@ -21,7 +21,7 @@ class JoinLinkBanner: NSPanel {
     private var qrImageView: NSImageView?
 
     // Progress bar (yellow, full-width, shrinks over `progressDuration`).
-    // Sits directly below the banner; click dismisses, hover resets.
+    // Pinned to the top edge of the screen; click dismisses, hover resets.
     private var progressPanel: ProgressBarPanel?
     private let progressDuration: TimeInterval = 30.0
     private let progressBarHeight: CGFloat = 5.0
@@ -146,8 +146,8 @@ class JoinLinkBanner: NSPanel {
         // Show QR code
         showQR(for: trimmedUrl)
 
-        // Position + show progress bar just below banner.
-        positionProgressPanel(belowBannerY: bannerY)
+        // Position + show progress bar at the top edge of the screen.
+        positionProgressPanel()
         progressPanel?.alphaValue = 1.0
         progressPanel?.orderFrontRegardless()
 
@@ -157,9 +157,9 @@ class JoinLinkBanner: NSPanel {
         scheduleHide()
     }
 
-    private func positionProgressPanel(belowBannerY bannerY: CGFloat) {
+    private func positionProgressPanel() {
         guard let panel = progressPanel else { return }
-        let y = bannerY - progressBarHeight
+        let y = targetScreen.frame.origin.y + targetScreen.frame.height - progressBarHeight
         let frame = NSRect(
             x: targetScreen.frame.origin.x,
             y: y,
