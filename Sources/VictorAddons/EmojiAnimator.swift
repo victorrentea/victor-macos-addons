@@ -2051,6 +2051,76 @@ class EmojiAnimator {
         }
     }
 
+    // MARK: - Star Wars Death Star slide (sound #55)
+
+    func showStarWars(playSound: Bool = true) {
+        if cancelIfRunning("star-wars", sound: playSound ? "star_wars.mp3" : nil) { return }
+
+        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
+        let pngURL = downloadsURL.appendingPathComponent("death-star.png")
+        guard let nsImage = NSImage(contentsOf: pngURL),
+              let cg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            overlayError("death-star.png not found in Downloads")
+            return
+        }
+
+        let bounds = hostLayer.bounds
+        let W = bounds.width
+        let H = bounds.height
+        // Death Star sized to ~40% of screen height; aspect preserved.
+        let imgH = H * 0.40
+        let aspect = CGFloat(cg.width) / CGFloat(cg.height)
+        let imgW = imgH * aspect
+
+        // End: image's BL corner at screen's BL (0,0). CALayer anchorPoint is
+        // (0.5,0.5), so position = image centre.
+        let endPos = CGPoint(x: imgW / 2, y: imgH / 2)
+
+        // Trajectory: the line connecting screen-centre (W/2, H/2) to
+        // screen-BL (0,0), extended past (0,0) into the (-,-) quadrant.
+        // Parameterize BL(t) = ((1-t)·W/2, (1-t)·H/2); t=1 → screen-BL,
+        // t>1 → outside (bottom-left of screen). Pick t large enough that
+        // the image is fully outside, with either its right edge or its top
+        // edge tangent to a screen edge.
+        let tStart = max(1 + 2 * imgW / W, 1 + 2 * imgH / H)
+        let startBLx = (1 - tStart) * W / 2
+        let startBLy = (1 - tStart) * H / 2
+        let startPos = CGPoint(x: startBLx + imgW / 2, y: startBLy + imgH / 2)
+
+        let layer = CALayer()
+        layer.contents = cg
+        layer.bounds = CGRect(x: 0, y: 0, width: imgW, height: imgH)
+        layer.contentsGravity = .resizeAspect
+        layer.position = endPos        // model value matches the post-anim state
+        hostLayer.addSublayer(layer)
+        activeEffects["star-wars"] = layer
+
+        // Sound is 10.08s; animation must finish 2s before, so 8s slide.
+        let soundDuration: CFTimeInterval = 10.0
+        let slideDuration: CFTimeInterval = soundDuration - 2.0
+
+        let anim = CABasicAnimation(keyPath: "position")
+        anim.fromValue = NSValue(point: startPos)
+        anim.toValue = NSValue(point: endPos)
+        anim.duration = slideDuration
+        anim.timingFunction = CAMediaTimingFunction(name: .linear)   // constant speed
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false
+        layer.add(anim, forKey: "slide")
+
+        if playSound {
+            SoundManager.shared.play("star_wars.mp3")
+            DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
+                self?.stopStarWars()
+            }
+        }
+    }
+
+    func stopStarWars() {
+        _ = cancelIfRunning("star-wars", sound: "star_wars.mp3")
+    }
+
     func showSpiralHearts() {
         let bounds = hostLayer.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
