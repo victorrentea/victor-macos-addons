@@ -2077,15 +2077,17 @@ class EmojiAnimator {
         // (0.5,0.5), so position = image centre.
         let endPos = CGPoint(x: imgW / 2, y: imgH / 2)
 
-        // Trajectory: the line connecting screen-centre (W/2, H/2) to
-        // screen-BL (0,0), extended past (0,0) into the (-,-) quadrant.
-        // Parameterize BL(t) = ((1-t)·W/2, (1-t)·H/2); t=1 → screen-BL,
-        // t>1 → outside (bottom-left of screen). Pick t large enough that
-        // the image is fully outside, with either its right edge or its top
-        // edge tangent to a screen edge.
-        let tStart = max(1 + 2 * imgW / W, 1 + 2 * imgH / H)
-        let startBLx = (1 - tStart) * W / 2
-        let startBLy = (1 - tStart) * H / 2
+        // Trajectory: line from screen-BL (0,0) through screen-centre,
+        // extended into the (-,-) quadrant where the image starts.
+        // We position the image so its leading opaque pixel — the
+        // top-right of the Death Star sphere — sits just outside the
+        // screen corner at t=0, instead of the image's rectangular
+        // bbox (whose top-right corner is fully transparent and wastes
+        // ~3s of the slide before any pixel is visible).
+        // Empirically tuned: BL_start = (-0.25·W, -0.25·H) puts the
+        // first opaque pixel at ~0.3s into the 8s slide on 16:9 / 16:10.
+        let startBLx = -0.25 * W
+        let startBLy = -0.25 * H
         let startPos = CGPoint(x: startBLx + imgW / 2, y: startBLy + imgH / 2)
 
         let layer = CALayer()
