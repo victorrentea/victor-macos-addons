@@ -80,6 +80,17 @@ class WhisperProcessManager {
         }
     }
 
+    /// Fast SIGKILL teardown for the "we're being replaced / parent died" path.
+    /// Sentinel thread in whisper_runner.py is a backstop, but killing directly
+    /// avoids a 2s race window where the old runner could still write into the
+    /// transcription file or fight for audio devices.
+    func killImmediate() {
+        guard let p = process, p.isRunning else { return }
+        _ = kill(p.processIdentifier, SIGKILL)
+        isRunning = false
+        process = nil
+    }
+
     func stop() {
         guard let p = process else {
             isRunning = false

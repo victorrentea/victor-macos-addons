@@ -546,9 +546,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         if filePID != myPID {
             overlayInfo("Replaced by newer instance — exiting")
             pidCheckTimer?.invalidate()
-            wsTask?.cancel(with: .goingAway, reason: nil)
+            tearDownForReplacement()
             NSApplication.shared.terminate(nil)
         }
+    }
+
+    /// Fast, synchronous teardown for "we're being replaced" / SIGTERM /
+    /// parent-died paths. Kills any subprocesses we own so the new instance
+    /// does not have to fight orphans. Safe to call multiple times.
+    func tearDownForReplacement() {
+        wsTask?.cancel(with: .goingAway, reason: nil)
+        whisperManager?.killImmediate()
     }
 
     /// Persist the user's preferred ME-source pattern to disk so whisper
