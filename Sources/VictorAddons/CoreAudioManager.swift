@@ -129,16 +129,17 @@ class CoreAudioManager {
     }
 
     private func isMediaPlaying() -> Bool {
-        // Primary: system Now Playing state — authoritative, no false positives.
-        if let mrPlaying = queryMediaRemotePlaying() {
-            overlayInfo("🎵 MediaRemote → \(mrPlaying ? "PLAYING ⚠️" : "silent")")
-            if mrPlaying {
-                // Confirm with loopback so we don't pause notification chimes etc.
-                return isLoopbackPlaying()
-            }
-            return false
-        }
-        // Fallback: loopback energy (MediaRemote unavailable)
+        // Loopback energy is ground truth — it directly measures samples being
+        // sent to the output device, regardless of which app produced them.
+        // MediaRemote was tried as a primary gate (commit bf78466) to avoid an
+        // iTunes false-start, but on the current macOS it returns "silent" even
+        // while YouTube / Spotify / Chrome are audibly playing, so it bypassed
+        // the pause entirely. We log MR for diagnostics but no longer let it
+        // veto a pause. The iTunes false-start risk is already covered by the
+        // loopback check: if nothing is audibly playing, we never send the key.
+        let mr = queryMediaRemotePlaying()
+        let mrLabel = mr.map { $0 ? "PLAYING" : "silent" } ?? "nil"
+        overlayInfo("🎵 MediaRemote (diagnostic) → \(mrLabel)")
         return isLoopbackPlaying()
     }
 
