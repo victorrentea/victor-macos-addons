@@ -6,20 +6,33 @@ import Foundation
 class CoreAudioManager {
     // MARK: - Wispr Flow recording-state watcher
     //
-    // Wispr Flow's helper process (com.electron.wispr-flow.helper) flips
-    // kAudioProcessPropertyIsRunningInput from 0 to 1 the instant it starts
-    // capturing the mic, and back to 0 when it stops — verified by probe.
-    // We poll that flag and react to edges, which makes the pause/resume
-    // behavior independent of how Wispr was triggered (Mouse 5, hotkey,
-    // Wispr UI button, ESC cancellation, VAD timeout) and immune to the
-    // toggle-drift bugs we hit when counting Mouse 5 clicks ourselves.
+    // Continuously poll Wispr Flow's recording state
+    // (kAudioProcessPropertyIsRunningInput on com.electron.wispr-flow.helper).
+    // When Wispr is recording AND audio is playing on 🔊OS Output, drop the
+    // device's volume to 1% and remember the original. When Wispr stops,
+    // restore the original — but only if we were the one who dropped it.
+    //
+    // Race-condition rules (the whole reason this design exists):
+    //   1. Loopback "is playing" only decides whether to MUTE. It is never
+    //      consulted to decide whether to restore — once we drop to 1%, the
+    //      loopback measures near-silence and would falsely un-mute mid-talk.
+    //   2. originalVolume is captured ONLY on the false→true transition of
+    //      volumePushedDown. We never re-save while pushed down (otherwise
+    //      we'd save 1% and lose the real value).
+    //   3. All state mutation runs on the serial pollQueue. Even if a tick
+    //      overshoots the 300ms interval (the loopback probe sleeps ~150ms),
+    //      the next tick queues behind it — no concurrent reads/writes.
 
+    private static let monitoredOutputName = "🔊OS Output"
+    private static let dictationVolumeLow: Float = 0.01
     private static let wisprBundlePrefix = "com.electron.wispr-flow"
     private static let pollInterval: TimeInterval = 0.3
+
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
     private var lastWisprRecording = false
-    private var wePaused = false
+    private var volumePushedDown = false
+    private var originalVolume: Float = 1.0
 
     func start() {
         let timer = DispatchSource.makeTimerSource(queue: pollQueue)
@@ -27,31 +40,70 @@ class CoreAudioManager {
         timer.setEventHandler { [weak self] in self?.tick() }
         timer.resume()
         pollTimer = timer
-        overlayInfo("🎤 Wispr-watch started (poll every \(Int(Self.pollInterval * 1000))ms)")
+        overlayInfo("🎤 Wispr-watch started (poll every \(Int(Self.pollInterval * 1000))ms, mute target=\(Self.monitoredOutputName) @ \(Int(Self.dictationVolumeLow * 100))%)")
     }
 
     private func tick() {
         let recording = isWisprRecording()
-        defer { lastWisprRecording = recording }
-        guard recording != lastWisprRecording else { return }
+        let prev = lastWisprRecording
+        lastWisprRecording = recording
+
         if recording {
-            // 0 → 1: Wispr just started recording. Pause if music actually playing.
-            let playing = isMediaPlaying()
-            overlayInfo("🟢 Wispr started → isMediaPlaying=\(playing) wePaused=\(wePaused)")
-            if playing {
-                overlayInfo("⏸ sending Play/Pause key (pause)")
-                postPlayPauseKey()
-                wePaused = true
+            if !volumePushedDown {
+                // Either Wispr just started, or it's been on but no audio
+                // was playing yet. Keep checking the loopback every poll
+                // until we either mute or Wispr stops.
+                let playing = isLoopbackPlaying()
+                if !prev {
+                    overlayInfo("🟢 Wispr started → isMediaPlaying=\(playing)")
+                }
+                if playing {
+                    pushVolumeDown()
+                }
             }
+            // If volumePushedDown is already true: do nothing. Loopback would
+            // read silent and mislead us.
         } else {
-            // 1 → 0: Wispr stopped. Resume only if we actually paused something.
-            overlayInfo("🔴 Wispr stopped → wePaused=\(wePaused)")
-            if wePaused {
-                overlayInfo("▶ sending Play/Pause key (resume)")
-                postPlayPauseKey()
-                wePaused = false
+            if volumePushedDown {
+                if prev {
+                    overlayInfo("🔴 Wispr stopped → restoring volume")
+                }
+                restoreVolume()
+            } else if prev {
+                overlayInfo("🔴 Wispr stopped (no volume change to restore)")
             }
         }
+    }
+
+    private func pushVolumeDown() {
+        guard let deviceID = findAudioDevice(named: Self.monitoredOutputName) else {
+            overlayInfo("🛑 push-down: device '\(Self.monitoredOutputName)' not found")
+            return
+        }
+        let current = getDeviceVolume(deviceID: deviceID)
+        // Capture BEFORE we change it. This is the only place originalVolume
+        // is written while volumePushedDown is false → no risk of saving 1%.
+        originalVolume = current
+        setDeviceVolume(deviceID: deviceID, volume: Self.dictationVolumeLow)
+        volumePushedDown = true
+        let fromPct = Int((current * 100).rounded())
+        let toPct = Int((Self.dictationVolumeLow * 100).rounded())
+        overlayInfo("🔇 \(Self.monitoredOutputName) \(fromPct)% → \(toPct)% (Wispr active)")
+    }
+
+    private func restoreVolume() {
+        let target = originalVolume
+        // Clear the flag first. Even if findAudioDevice or set fails, we
+        // don't want to be stuck thinking we still own the volume — the next
+        // Wispr-start cycle would skip the save and we'd lose the real value.
+        volumePushedDown = false
+        guard let deviceID = findAudioDevice(named: Self.monitoredOutputName) else {
+            overlayInfo("🛑 restore: device '\(Self.monitoredOutputName)' not found (target was \(Int((target * 100).rounded()))%)")
+            return
+        }
+        setDeviceVolume(deviceID: deviceID, volume: target)
+        let pct = Int((target * 100).rounded())
+        overlayInfo("🔊 \(Self.monitoredOutputName) → \(pct)% (Wispr stopped)")
     }
 
     func probeWisprRecording() -> Bool { isWisprRecording() }
@@ -99,49 +151,9 @@ class CoreAudioManager {
     // keep the flag latched. Tap the loopback's input scope and measure actual
     // sample energy — ground truth for "is anything audible right now".
 
-    private static let monitoredOutputName = "🔊OS Output"
     private static let silenceRMSThreshold: Float = 0.0002
     private static let silencePeakThreshold: Float = 0.0005
     private static let sampleWindowSeconds: TimeInterval = 0.15
-
-    // MARK: - MediaRemote Now Playing check
-    //
-    // MediaRemote is authoritative: it knows whether any app is registered
-    // as the system's Now Playing source and is actively playing.
-    // Using it as the primary gate prevents false-positives from ambient
-    // loopback noise triggering a Play/Pause that would wake up iTunes.
-
-    private typealias MRIsPlayingFunc = @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
-
-    private func queryMediaRemotePlaying() -> Bool? {
-        guard let bundle = CFBundleCreate(nil, NSURL(fileURLWithPath: "/System/Library/PrivateFrameworks/MediaRemote.framework")),
-              let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteGetNowPlayingApplicationIsPlaying" as CFString)
-        else { return nil }
-        let fn = unsafeBitCast(ptr, to: MRIsPlayingFunc.self)
-        var result = false
-        let sema = DispatchSemaphore(value: 0)
-        fn(DispatchQueue.global()) { isPlaying in
-            result = isPlaying
-            sema.signal()
-        }
-        _ = sema.wait(timeout: .now() + 0.5)
-        return result
-    }
-
-    private func isMediaPlaying() -> Bool {
-        // Loopback energy is ground truth — it directly measures samples being
-        // sent to the output device, regardless of which app produced them.
-        // MediaRemote was tried as a primary gate (commit bf78466) to avoid an
-        // iTunes false-start, but on the current macOS it returns "silent" even
-        // while YouTube / Spotify / Chrome are audibly playing, so it bypassed
-        // the pause entirely. We log MR for diagnostics but no longer let it
-        // veto a pause. The iTunes false-start risk is already covered by the
-        // loopback check: if nothing is audibly playing, we never send the key.
-        let mr = queryMediaRemotePlaying()
-        let mrLabel = mr.map { $0 ? "PLAYING" : "silent" } ?? "nil"
-        overlayInfo("🎵 MediaRemote (diagnostic) → \(mrLabel)")
-        return isLoopbackPlaying()
-    }
 
     private func isLoopbackPlaying() -> Bool {
         guard let devID = findAudioDevice(named: Self.monitoredOutputName) else {
@@ -190,6 +202,8 @@ class CoreAudioManager {
                              peakThreshold: Self.silencePeakThreshold)
     }
 
+    // MARK: - CoreAudio device helpers
+
     private func findAudioDevice(named target: String) -> AudioDeviceID? {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
@@ -213,6 +227,27 @@ class CoreAudioManager {
             if (n?.takeRetainedValue() as String?) == target { return id }
         }
         return nil
+    }
+
+    private func getDeviceVolume(deviceID: AudioObjectID) -> Float {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain)
+        var volume: Float = 1.0
+        var size = UInt32(MemoryLayout<Float>.size)
+        AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &volume)
+        return volume
+    }
+
+    private func setDeviceVolume(deviceID: AudioObjectID, volume: Float) {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain)
+        var vol = volume
+        let size = UInt32(MemoryLayout<Float>.size)
+        AudioObjectSetPropertyData(deviceID, &addr, 0, nil, size, &vol)
     }
 
     private final class TapContext {
@@ -302,30 +337,5 @@ class CoreAudioManager {
         }
         let rms = Float(sqrt(sumSq / Double(samples.count)))
         return (rms, peak, samples.count)
-    }
-
-    // MARK: - Media key
-
-    // NX_KEYTYPE_PLAY=16 — same signal the hardware Play/Pause key sends.
-    // Works for YouTube in browsers, Spotify, Music, etc. — anything that
-    // listens for the system media key. Replaces nowplaying-cli which is
-    // broken on macOS 15+ because Apple locked down MediaRemote.framework.
-    private func postPlayPauseKey() {
-        let NX_KEYTYPE_PLAY: Int32 = 16
-        for flagsDown in [0xA00, 0xB00] {
-            let data1 = (Int(NX_KEYTYPE_PLAY) << 16) | flagsDown
-            guard let event = NSEvent.otherEvent(
-                with: .systemDefined,
-                location: .zero,
-                modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(flagsDown)),
-                timestamp: 0,
-                windowNumber: 0,
-                context: nil,
-                subtype: 8,
-                data1: data1,
-                data2: -1
-            ) else { continue }
-            event.cgEvent?.post(tap: .cghidEventTap)
-        }
     }
 }
