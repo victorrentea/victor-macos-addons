@@ -11,7 +11,7 @@ class JoinLinkBanner: NSPanel {
     private var mouseWasInside = false
     private var bannerShowing: Bool = false
 
-    private let targetScreen: NSScreen
+    private var targetScreen: NSScreen
     private let bannerHeight: CGFloat = 120
     private let menuBarHeight: CGFloat = 25
     private let horizontalPadding: CGFloat = 48
@@ -108,6 +108,12 @@ class JoinLinkBanner: NSPanel {
 
     // MARK: - Public API
 
+    /// Re-target this banner onto a different screen. Call before show()
+    /// so the banner, QR and progress bar all land on the desired display.
+    func setTargetScreen(_ screen: NSScreen) {
+        self.targetScreen = screen
+    }
+
     func show(url: String) {
         let trimmedUrl = url.trimmingCharacters(in: .whitespaces)
         let maxWidth = targetScreen.frame.width - horizontalPadding * 2
@@ -186,6 +192,14 @@ class JoinLinkBanner: NSPanel {
 
     private func showQR(for url: String) {
         guard let qrPanel = qrPanel, let qrImageView = qrImageView else { return }
+
+        // Re-position against the current targetScreen so multi-monitor swaps
+        // and screen-config changes after launch place the QR in the right corner.
+        let qrSize = targetScreen.frame.height * 0.30
+        let x = targetScreen.frame.origin.x + targetScreen.frame.width - qrSize - 20
+        let y = targetScreen.frame.origin.y + 20
+        qrPanel.setFrame(NSRect(x: x, y: y, width: qrSize, height: qrSize), display: false)
+        qrImageView.frame = NSRect(x: 0, y: 0, width: qrSize, height: qrSize)
 
         // Prepend https:// for the QR code so phones can open it directly
         let fullUrl = url.hasPrefix("http") ? url : "https://\(url)"

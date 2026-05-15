@@ -61,10 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
-        let builtInScreen = NSScreen.screens.first { screen in
-            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
-            return CGDisplayIsBuiltin(id) != 0
-        } ?? NSScreen.screens[0]
+        let builtInScreen = AppDelegate.findRetinaScreen()
 
         overlayPanel = OverlayPanel(screen: builtInScreen)
         overlayPanel.orderFrontRegardless()
@@ -793,6 +790,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         return url
     }
 
+    /// Always resolve the laptop's retina display when (re-)showing the banner,
+    /// in case external monitors were connected/disconnected after launch.
+    static func findRetinaScreen() -> NSScreen {
+        let screens = NSScreen.screens
+        if let s = screens.first(where: { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
+            return CGDisplayIsBuiltin(id) != 0
+        }) { return s }
+        if let s = screens.first(where: { $0.localizedName.localizedCaseInsensitiveContains("built-in") }) { return s }
+        if let s = screens.first(where: { $0.backingScaleFactor >= 2 }) { return s }
+        return NSScreen.main ?? screens[0]
+    }
+
     private func toggleJoinLinkBanner() {
         guard let banner = joinLinkBanner else { return }
 
@@ -801,6 +811,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.hide()
         } else {
             guard isSessionActive, let url = participantUrl else { return }
+            banner.setTargetScreen(AppDelegate.findRetinaScreen())
             banner.show(url: url)
         }
     }
@@ -808,6 +819,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private func showBanner(forGitUrl url: String) {
         guard let banner = joinLinkBanner else { return }
         if banner.bannerIsVisible { banner.hide() }
+        banner.setTargetScreen(AppDelegate.findRetinaScreen())
         banner.show(url: stripProtocolPrefix(from: url))
     }
 
@@ -829,6 +841,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         // Display raw trimmed text so spaces aren't percent-encoded as %20
         let cleaned = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
+        banner.setTargetScreen(AppDelegate.findRetinaScreen())
         banner.show(url: stripProtocolPrefix(from: cleaned))
     }
 
