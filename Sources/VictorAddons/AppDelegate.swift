@@ -35,9 +35,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionStateMachine: TranscriptionStateMachine?
     private var transcriptionScheduler: TranscriptionScheduler?
     private var transcriptionCountdownOverlay: TranscriptionCountdownOverlay?
+    private var statusBanner: StatusBanner?
     private var meetingDetector: MeetingDetector?
-    private var isMeetingActive = false
-    private var isTranscribing = false
 
     // Session state for join link feature
     private var isSessionActive: Bool = false
@@ -172,10 +171,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         self.transcriptionWatcher = watcher
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
-            self?.isTranscribing = running
             if running { self?.transcriptionWatcher?.startWatching() }
             else { self?.transcriptionWatcher?.stopWatching() }
-            self?.checkNotCapturing()
         }
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
@@ -226,7 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let wasRunning = sm.state == .on || sm.state == .onWorkday
             sm.switchToBattery()
             if wasRunning {
-                self?.postPowerNotification("Transcription paused — battery mode")
+                self?.statusBanner?.showOnPresence(text: "paused on battery", sound: StatusBannerSound.stop)
             }
         }
         pm.onSwitchToAC = { [weak self, weak sm] in
@@ -234,7 +231,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let wasPaused = sm.state == .battery
             sm.switchToAC()
             if wasPaused, sm.state == .on || sm.state == .onWorkday {
-                self?.postPowerNotification("Transcription resumed — AC restored")
+                self?.statusBanner?.showOnPresence(text: "resumed on AC", sound: StatusBannerSound.start)
             }
         }
         pm.start()
@@ -245,7 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard let sm else { return }
             sm.enterWorkday()
             if sm.state == .onWorkday {
-                self?.postScheduleAlert(body: "Transcribing started")
+                self?.statusBanner?.showOnPresence(text: "started", sound: StatusBannerSound.start)
             }
         }
         scheduler.onExitWindow = { [weak self, weak sm] in
@@ -432,6 +429,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
+        statusBanner = StatusBanner(overlayPanel: overlayPanel)
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
         }
@@ -452,10 +450,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.setTranscribing(false)
 
         let detector = MeetingDetector()
-        detector.onMeetingChanged = { [weak self] active in
-            self?.isMeetingActive = active
-            self?.checkNotCapturing()
-        }
         meetingDetector = detector
         detector.checkInitialState()
 
@@ -1015,46 +1009,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                 }
             }
-        }
-    }
-
-    private func checkNotCapturing() {
-        guard isMeetingActive && !isTranscribing && transcriptionStateMachine?.state == .battery else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "Not Capturing"
-        content.sound = .default
-        let req = UNNotificationRequest(identifier: "not-capturing", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Notif error: \(err)") }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["not-capturing"])
-        }
-    }
-
-    private func postScheduleAlert(body: String) {
-        // Modal NSAlert — stays up until dismissed. Banner notifications
-        // auto-disappear, which Victor missed during workshops; a modal
-        // forces an acknowledgment.
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.messageText = "Transcription"
-            alert.informativeText = body
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
-    }
-
-    private func postPowerNotification(_ message: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "Victor Addons"
-        content.body = message
-        content.sound = .default
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Notif error: \(err)") }
         }
     }
 
