@@ -12,6 +12,7 @@ class TabletHttpServer {
         case testTranscriptionStart
         case testTranscriptionStop
         case testTranscriptionToggle
+        case testExitWindow
         case testState
         case testAudioPlaying
         case testWisprRecording
@@ -25,6 +26,7 @@ class TabletHttpServer {
     var onTestTranscriptionStart: (() -> Void)?
     var onTestTranscriptionStop: (() -> Void)?
     var onTestTranscriptionToggle: (() -> Void)?
+    var onTestExitWindow: (() -> Void)?
     var onTestState: (() -> String)?
     var onTestAudioPlaying: (() -> String)?
     var onTestWisprRecording: (() -> String)?
@@ -75,6 +77,8 @@ class TabletHttpServer {
                     self?.onTestTranscriptionStop?()
                 case .testTranscriptionToggle:
                     self?.onTestTranscriptionToggle?()
+                case .testExitWindow:
+                    self?.onTestExitWindow?()
                 case .testState:
                     contentType = "application/json"
                     body = self?.onTestState?() ?? "{\"error\":\"state unavailable\"}"
@@ -121,6 +125,8 @@ class TabletHttpServer {
             return .testTranscriptionStop
         case "/test/transcription/toggle":
             return .testTranscriptionToggle
+        case "/test/transcription/exit-window":
+            return .testExitWindow
         case "/test/state":
             return .testState
         case "/test/audio/playing":

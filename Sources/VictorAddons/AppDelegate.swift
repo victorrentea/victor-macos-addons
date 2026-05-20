@@ -245,26 +245,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.statusBanner?.showOnPresence(text: "started", sound: StatusBannerSound.start)
             }
         }
-        scheduler.onExitWindow = { [weak self, weak sm] in
+        let exitWindowAction: () -> Void = { [weak self, weak sm] in
             guard let self = self, let sm = sm else { return }
 
-            // Start countdown overlay instead of showing alert
             if self.transcriptionCountdownOverlay == nil {
                 self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(overlayPanel: self.overlayPanel)
             }
 
             self.transcriptionCountdownOverlay?.startCountdown(
                 onContinue: {
-                    // User hovered during countdown - keep transcribing
                     overlayInfo("Transcription continues beyond 6pm (user hovered)")
                 },
                 onStop: {
-                    // Countdown finished without hover - stop transcription
                     sm.exitWorkday()
                     overlayInfo("Transcription stopped at 6pm (countdown finished)")
                 }
             )
         }
+        scheduler.onExitWindow = exitWindowAction
         scheduler.onHeartbeat = { [weak sm] in sm?.heartbeat() }
         scheduler.start()
         self.transcriptionScheduler = scheduler
@@ -287,6 +285,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case .onWorkday, .battery: break
             }
         }
+        tabletServer?.onTestExitWindow = exitWindowAction
         tabletServer?.onTestWisprRecording = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"

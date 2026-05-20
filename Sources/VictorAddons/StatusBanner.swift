@@ -146,29 +146,30 @@ final class StatusBanner {
 
 /// Shared visual constants. Both `StatusBanner` and
 /// `TranscriptionCountdownOverlay` use this to stay consistent.
+///
+/// 30% of the original size, flush against the bottom-left screen edge,
+/// square corners.
 enum StatusBannerStyle {
-    static let fontSize: CGFloat = 40
-    static let padding: CGFloat = 24
-    static let cornerRadius: CGFloat = 12
-    static let textWidth: CGFloat = 480
-    static let textHeight: CGFloat = 80
+    static let fontSize: CGFloat = 12
+    static let padding: CGFloat = 7
+    static let cornerRadius: CGFloat = 0
+    static let textWidth: CGFloat = 144
+    static let textHeight: CGFloat = 24
     static let backgroundColor = NSColor.gray.withAlphaComponent(0.6).cgColor
     static let textColor = NSColor.white.cgColor
 
     static func makeLayers(scale: CGFloat) -> (CALayer, CATextLayer) {
         let totalWidth = textWidth + padding * 2
         let totalHeight = textHeight + padding * 2
-        let xPos = padding
-        let yPos = padding
 
         let bg = CALayer()
-        bg.frame = CGRect(x: xPos, y: yPos, width: totalWidth, height: totalHeight)
+        bg.frame = CGRect(x: 0, y: 0, width: totalWidth, height: totalHeight)
         bg.backgroundColor = backgroundColor
         bg.cornerRadius = cornerRadius
         bg.opacity = 0
 
         let text = CATextLayer()
-        text.frame = CGRect(x: xPos + padding, y: yPos + padding / 2, width: textWidth, height: textHeight)
+        text.frame = CGRect(x: padding, y: padding / 2, width: textWidth, height: textHeight)
         text.fontSize = fontSize
         text.foregroundColor = textColor
         text.alignmentMode = .left
