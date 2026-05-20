@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 15, 11:39"
+    static let BUILD_TIME = "May 20, 09:45"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -103,7 +103,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         resumeItem = addItem("⏱️ Resumed -", action: nil)
         resumeItem.isEnabled = false
         // Transcribe toggle
-        transcribeItem = addItem("Start Transcribing", action: #selector(toggleTranscribe))
+        transcribeItem = addItem("Start", action: #selector(toggleTranscribe))
         transcribeItem.keyEquivalent = "t"
         transcribeItem.keyEquivalentModifierMask = [.command, .control]
         transcribeSubmenu = NSMenu()
@@ -691,13 +691,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         if isTranscribing {
             let suffix = locked ? " 🔒" : ""
-            transcribeItem.title = "Stop Transcribing\(suffix)"
+            transcribeItem.title = "Stop\(suffix)"
             transcribeItem.image = transcribeSource.isEmpty ? nil : emojiAsIcon(transcribeSource)
             transcribeItem.submenu = transcribeSubmenu
             transcribeItem.isEnabled = true
             rebuildTranscribeSubmenu(locked: locked)
         } else {
-            transcribeItem.title = locked ? "Start Transcribing 🔒" : "Start Transcribing"
+            transcribeItem.title = locked ? "Start 🔒" : "Start"
             transcribeItem.action = #selector(toggleTranscribe)
             transcribeItem.keyEquivalent = "t"
             transcribeItem.keyEquivalentModifierMask = [.command, .control]
@@ -729,7 +729,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             transcribeSubmenu.addItem(item)
         }
         transcribeSubmenu.addItem(.separator())
-        let stop = NSMenuItem(title: locked ? "Stop Transcribing 🔒" : "Stop Transcribing",
+        let stop = NSMenuItem(title: locked ? "Stop 🔒" : "Stop",
                               action: locked ? nil : #selector(toggleTranscribe),
                               keyEquivalent: "")
         stop.target = self
