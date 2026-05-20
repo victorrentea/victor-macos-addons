@@ -151,25 +151,31 @@ final class StatusBanner {
 /// square corners.
 enum StatusBannerStyle {
     static let fontSize: CGFloat = 36
-    static let padding: CGFloat = 4
+    static let leftPadding: CGFloat = 20
+    static let rightPadding: CGFloat = 12
     static let cornerRadius: CGFloat = 0
-    static let textWidth: CGFloat = 432
-    static let textHeight: CGFloat = 72
+    static let textWidth: CGFloat = 448
+    static let boxHeight: CGFloat = 80
+    static let textRenderHeight: CGFloat = 50  // tall enough for descenders
     static let backgroundColor = NSColor.gray.withAlphaComponent(0.6).cgColor
     static let textColor = NSColor.white.cgColor
 
     static func makeLayers(scale: CGFloat) -> (CALayer, CATextLayer) {
-        let totalWidth = textWidth + padding * 2
-        let totalHeight = textHeight + padding * 2
+        let totalWidth = leftPadding + textWidth + rightPadding
 
         let bg = CALayer()
-        bg.frame = CGRect(x: 0, y: 0, width: totalWidth, height: totalHeight)
+        bg.frame = CGRect(x: 0, y: 0, width: totalWidth, height: boxHeight)
         bg.backgroundColor = backgroundColor
         bg.cornerRadius = cornerRadius
         bg.opacity = 0
 
         let text = CATextLayer()
-        text.frame = CGRect(x: padding, y: padding / 2, width: textWidth, height: textHeight)
+        text.frame = CGRect(
+            x: leftPadding,
+            y: (boxHeight - textRenderHeight) / 2,
+            width: textWidth,
+            height: textRenderHeight
+        )
         text.font = NSFont.boldSystemFont(ofSize: fontSize)
         text.fontSize = fontSize
         text.foregroundColor = textColor
