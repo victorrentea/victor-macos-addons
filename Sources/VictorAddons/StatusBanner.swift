@@ -150,11 +150,11 @@ final class StatusBanner {
 /// 30% of the original size, flush against the bottom-left screen edge,
 /// square corners.
 enum StatusBannerStyle {
-    static let fontSize: CGFloat = 12
-    static let padding: CGFloat = 7
+    static let fontSize: CGFloat = 36
+    static let padding: CGFloat = 4
     static let cornerRadius: CGFloat = 0
-    static let textWidth: CGFloat = 144
-    static let textHeight: CGFloat = 24
+    static let textWidth: CGFloat = 432
+    static let textHeight: CGFloat = 72
     static let backgroundColor = NSColor.gray.withAlphaComponent(0.6).cgColor
     static let textColor = NSColor.white.cgColor
 
@@ -170,6 +170,7 @@ enum StatusBannerStyle {
 
         let text = CATextLayer()
         text.frame = CGRect(x: padding, y: padding / 2, width: textWidth, height: textHeight)
+        text.font = NSFont.boldSystemFont(ofSize: fontSize)
         text.fontSize = fontSize
         text.foregroundColor = textColor
         text.alignmentMode = .left
