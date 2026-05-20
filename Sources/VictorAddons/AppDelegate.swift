@@ -34,6 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var powerMonitor: PowerMonitor?
     private var transcriptionStateMachine: TranscriptionStateMachine?
     private var transcriptionScheduler: TranscriptionScheduler?
+    private var transcriptionCountdownOverlay: TranscriptionCountdownOverlay?
     private var meetingDetector: MeetingDetector?
     private var isMeetingActive = false
     private var isTranscribing = false
@@ -248,11 +249,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
         scheduler.onExitWindow = { [weak self, weak sm] in
-            guard let sm else { return }
-            sm.exitWorkday()
-            if sm.state == .off {
-                self?.postScheduleAlert(body: "Transcribing stopped")
+            guard let self = self, let sm = sm else { return }
+
+            // Start countdown overlay instead of showing alert
+            if self.transcriptionCountdownOverlay == nil {
+                self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(overlayPanel: self.overlayPanel)
             }
+
+            self.transcriptionCountdownOverlay?.startCountdown(
+                onContinue: {
+                    // User hovered during countdown - keep transcribing
+                    overlayInfo("Transcription continues beyond 6pm (user hovered)")
+                },
+                onStop: {
+                    // Countdown finished without hover - stop transcription
+                    sm.exitWorkday()
+                    overlayInfo("Transcription stopped at 6pm (countdown finished)")
+                }
+            )
         }
         scheduler.onHeartbeat = { [weak sm] in sm?.heartbeat() }
         scheduler.start()
@@ -520,6 +534,53 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.checkPIDFile()
+        }
+
+        registerSleepWakeObservers()
+    }
+
+    // MARK: - Sleep/wake handling
+    //
+    // libportaudio's Pa_Terminate double-frees an internal buffer when CoreAudio
+    // republishes devices on wake, crashing the whisper subprocess with SIGABRT
+    // ~9s after wake. Stop whisper before sleep (SIGKILL, skipping the broken
+    // teardown path) and restart it after wake once CoreAudio has settled.
+    private var wasTranscribingBeforeSleep = false
+
+    private func registerSleepWakeObservers() {
+        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(self, selector: #selector(handleWillSleep),
+                       name: NSWorkspace.willSleepNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleDidWake),
+                       name: NSWorkspace.didWakeNotification, object: nil)
+    }
+
+    @objc private func handleWillSleep() {
+        let running = whisperManager?.isRunning == true
+        wasTranscribingBeforeSleep = running
+        if running {
+            overlayInfo("System sleeping — SIGKILL whisper to avoid PortAudio wake crash")
+            whisperManager?.killImmediate()
+        }
+    }
+
+    @objc private func handleDidWake() {
+        guard wasTranscribingBeforeSleep else { return }
+        wasTranscribingBeforeSleep = false
+        let st = transcriptionStateMachine?.state
+        guard st == .on || st == .onWorkday else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self else { return }
+            let s = self.transcriptionStateMachine?.state
+            guard s == .on || s == .onWorkday, self.whisperManager?.isRunning != true else { return }
+            overlayInfo("System woke — restarting whisper")
+            let env: [String: String] = [
+                "TRANSCRIPTION_FOLDER": self.transcriptionFolder.path,
+                "WHISPER_PREFERRED_SOURCE_FILE": self.transcriptionFolder.appendingPathComponent(".preferred-me-source").path,
+            ]
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.whisperManager?.start(env: env)
+            }
         }
     }
 
@@ -838,19 +899,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return
         }
         guard let raw = NSPasteboard.general.string(forType: .string) else {
-            overlayError("No URL in clipboard")
+            postInvalidURLNotification("(empty)")
             return
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            postInvalidURLNotification("(empty)")
+            return
+        }
         guard let url = URL(string: trimmed),
               url.scheme == "https" || url.scheme == "http" else {
-            overlayError("No URL in clipboard")
+            // Invalid URL - show notification with first 10 chars
+            let preview = String(trimmed.prefix(10))
+            postInvalidURLNotification(preview)
             return
         }
         // Display raw trimmed text so spaces aren't percent-encoded as %20
         let cleaned = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
         banner.setTargetScreen(AppDelegate.findRetinaScreen())
         banner.show(url: stripProtocolPrefix(from: cleaned))
+    }
+
+    private func postInvalidURLNotification(_ clipboardPreview: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Invalid URL"
+        content.body = clipboardPreview
+        content.sound = .default
+        let identifier = "invalid-url-\(UUID().uuidString)"
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Invalid URL notification error: \(err)") }
+        }
+        // Auto-dismiss after 5 seconds (transient)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+        }
     }
 
     private func scheduleReconnect() {
