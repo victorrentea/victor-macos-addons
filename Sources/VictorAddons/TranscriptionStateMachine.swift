@@ -18,6 +18,9 @@ final class TranscriptionStateMachine {
     var onStartWhisper: (() -> Void)?
     var onStopWhisper: (() -> Void)?
     var onStateChanged: ((State, Bool) -> Void)?
+    /// Fired when whisper is restarted in-place by the heartbeat after it
+    /// died without a corresponding state transition (e.g. crash, OOM).
+    var onAutoRestart: (() -> Void)?
 
     private(set) var state: State
     /// Only meaningful when `state == .battery`. Tracks whether the
@@ -131,6 +134,7 @@ final class TranscriptionStateMachine {
         case .onWorkday where onAC && !isWhisperRunning():
             // In-place restart, no state change.
             onStartWhisper?()
+            onAutoRestart?()
         default:
             break
         }

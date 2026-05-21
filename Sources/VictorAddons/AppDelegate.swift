@@ -38,6 +38,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionCountdownOverlay: TranscriptionCountdownOverlay?
     private var statusBanner: StatusBanner?
     private var meetingDetector: MeetingDetector?
+    /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
+    /// that the next `whisperManager.onStateChanged(true)` shows the
+    /// "started" banner. Consumed (cleared) when the banner fires.
+    private var pendingAutoRestartBanner = false
 
     // Session state for join link feature
     private var isSessionActive: Bool = false
@@ -179,8 +183,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         self.transcriptionWatcher = watcher
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
-            if running { self?.transcriptionWatcher?.startWatching() }
-            else { self?.transcriptionWatcher?.stopWatching() }
+            if running {
+                self?.transcriptionWatcher?.startWatching()
+                if self?.pendingAutoRestartBanner == true {
+                    self?.pendingAutoRestartBanner = false
+                    self?.statusBanner?.showOnPresence(text: "started", sound: StatusBannerSound.start)
+                }
+            } else {
+                self?.transcriptionWatcher?.stopWatching()
+            }
         }
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
@@ -209,6 +220,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         })
         sm.onStartWhisper = startWhisper
         sm.onStopWhisper = stopWhisper
+        sm.onAutoRestart = { [weak self] in
+            // Whisper died inside the workday window — heartbeat is bringing
+            // it back. Arm the "started" banner; it fires once whisper is
+            // actually confirmed running.
+            self?.pendingAutoRestartBanner = true
+        }
         sm.onStateChanged = { [weak self] state, _ in
             DispatchQueue.main.async {
                 self?.menuBarManager.setTranscriptionPausedByBattery(state == .battery)
@@ -583,6 +600,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 "TRANSCRIPTION_FOLDER": self.transcriptionFolder.path,
                 "WHISPER_PREFERRED_SOURCE_FILE": self.transcriptionFolder.appendingPathComponent(".preferred-me-source").path,
             ]
+            self.pendingAutoRestartBanner = true
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.whisperManager?.start(env: env)
             }

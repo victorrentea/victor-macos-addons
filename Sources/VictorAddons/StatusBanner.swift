@@ -26,7 +26,7 @@ final class StatusBanner {
 
     private var pendingText: String?
     private var pendingSound: NSSound?
-    private var pendingVisibleDuration: TimeInterval = 4.0
+    private var pendingVisibleDuration: TimeInterval = 5.0
     private var isVisible = false
 
     init(panelsProvider: @escaping () -> [OverlayPanel]) {
@@ -36,7 +36,7 @@ final class StatusBanner {
     /// Schedule a banner to fade in after the next mouse movement.
     /// Plays `sound` when it appears. Stays visible `visibleDuration`,
     /// then fades out. Latest-wins.
-    func showOnPresence(text: String, sound: NSSound?, visibleDuration: TimeInterval = 4.0) {
+    func showOnPresence(text: String, sound: NSSound?, visibleDuration: TimeInterval = 5.0) {
         pendingText = text
         pendingSound = sound
         pendingVisibleDuration = visibleDuration
