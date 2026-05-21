@@ -1,6 +1,6 @@
 import Cocoa
 
-/// Reusable bottom-left status banner.
+/// Reusable bottom-left status banner, shown on **every** connected screen.
 ///
 /// Calls to `showOnPresence` defer the actual fade-in until mouse movement
 /// is detected, so the user never misses a state change while they're away
@@ -11,10 +11,14 @@ import Cocoa
 /// Visual style matches `TranscriptionCountdownOverlay`. Both share the
 /// constants in `StatusBannerStyle`.
 final class StatusBanner {
-    private weak var overlayPanel: OverlayPanel?
+    private let panelsProvider: () -> [OverlayPanel]
 
-    private var backgroundLayer: CALayer?
-    private var textLayer: CATextLayer?
+    private struct PanelLayers {
+        let panel: OverlayPanel
+        let bg: CALayer
+        let text: CATextLayer
+    }
+    private var perScreen: [PanelLayers] = []
 
     private var presenceTimer: Timer?
     private var visibleTimer: Timer?
@@ -25,8 +29,8 @@ final class StatusBanner {
     private var pendingVisibleDuration: TimeInterval = 4.0
     private var isVisible = false
 
-    init(overlayPanel: OverlayPanel?) {
-        self.overlayPanel = overlayPanel
+    init(panelsProvider: @escaping () -> [OverlayPanel]) {
+        self.panelsProvider = panelsProvider
     }
 
     /// Schedule a banner to fade in after the next mouse movement.
@@ -38,9 +42,12 @@ final class StatusBanner {
         pendingVisibleDuration = visibleDuration
 
         if isVisible {
-            // Already on screen: swap text in place, reset the auto-fade timer,
-            // re-play the sound to alert the user that something else happened.
-            textLayer?.string = text
+            // Already on screen: swap text in place on all screens, reset the
+            // auto-fade timer, re-play the sound to alert the user that
+            // something else happened.
+            for layers in perScreen {
+                layers.text.string = text
+            }
             sound?.play()
             scheduleFadeOut(after: visibleDuration)
             return
@@ -89,7 +96,9 @@ final class StatusBanner {
         guard let text = pendingText else { return }
         let sound = pendingSound
         createLayersIfNeeded()
-        textLayer?.string = text
+        for layers in perScreen {
+            layers.text.string = text
+        }
         fadeIn()
         sound?.play()
         scheduleFadeOut(after: pendingVisibleDuration)
@@ -97,24 +106,29 @@ final class StatusBanner {
     }
 
     private func createLayersIfNeeded() {
-        guard backgroundLayer == nil, textLayer == nil else { return }
-        guard let overlayView = overlayPanel?.contentView else { return }
-        overlayView.wantsLayer = true
-        guard let hostLayer = overlayView.layer else { return }
-        let screen = NSScreen.main ?? NSScreen.screens.first!
+        guard perScreen.isEmpty else { return }
+        for panel in panelsProvider() {
+            guard let overlayView = panel.contentView else { continue }
+            overlayView.wantsLayer = true
+            guard let hostLayer = overlayView.layer else { continue }
+            let scale = panel.screen?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor
+                ?? 2.0
 
-        let (bg, txt) = StatusBannerStyle.makeLayers(scale: screen.backingScaleFactor)
-        hostLayer.addSublayer(bg)
-        hostLayer.addSublayer(txt)
-        backgroundLayer = bg
-        textLayer = txt
+            let (bg, txt) = StatusBannerStyle.makeLayers(scale: scale)
+            hostLayer.addSublayer(bg)
+            hostLayer.addSublayer(txt)
+            perScreen.append(PanelLayers(panel: panel, bg: bg, text: txt))
+        }
     }
 
     private func fadeIn() {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
-            backgroundLayer?.opacity = 1
-            textLayer?.opacity = 1
+            for layers in perScreen {
+                layers.bg.opacity = 1
+                layers.text.opacity = 1
+            }
         }
     }
 
@@ -130,16 +144,20 @@ final class StatusBanner {
         visibleTimer = nil
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.3
-            self.backgroundLayer?.opacity = 0
-            self.textLayer?.opacity = 0
+            for layers in self.perScreen {
+                layers.bg.opacity = 0
+                layers.text.opacity = 0
+            }
         }, completionHandler: { [weak self] in
-            self?.backgroundLayer?.removeFromSuperlayer()
-            self?.textLayer?.removeFromSuperlayer()
-            self?.backgroundLayer = nil
-            self?.textLayer = nil
-            self?.isVisible = false
-            self?.pendingText = nil
-            self?.pendingSound = nil
+            guard let self = self else { return }
+            for layers in self.perScreen {
+                layers.bg.removeFromSuperlayer()
+                layers.text.removeFromSuperlayer()
+            }
+            self.perScreen.removeAll()
+            self.isVisible = false
+            self.pendingText = nil
+            self.pendingSound = nil
         })
     }
 }

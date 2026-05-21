@@ -5,6 +5,7 @@ import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate, UNUserNotificationCenterDelegate {
     private var overlayPanel: OverlayPanel!
+    private var auxOverlayPanels: [OverlayPanel] = []
     private var animator: EmojiAnimator!
     // buttonBar removed
     private var menuBarManager: MenuBarManager!
@@ -65,6 +66,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         overlayPanel = OverlayPanel(screen: builtInScreen)
         overlayPanel.orderFrontRegardless()
+        rebuildAuxOverlayPanels()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
 
         guard let hostLayer = overlayPanel.contentView?.layer else {
             fatalError("Content view has no layer")
@@ -249,7 +257,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard let self = self, let sm = sm else { return }
 
             if self.transcriptionCountdownOverlay == nil {
-                self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(overlayPanel: self.overlayPanel)
+                self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(panelsProvider: { [weak self] in
+                    self?.allStatusOverlayPanels() ?? []
+                })
             }
 
             self.transcriptionCountdownOverlay?.startCountdown(
@@ -428,7 +438,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
-        statusBanner = StatusBanner(overlayPanel: overlayPanel)
+        statusBanner = StatusBanner(panelsProvider: { [weak self] in
+            self?.allStatusOverlayPanels() ?? []
+        })
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
         }
@@ -850,6 +862,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return String(url.dropFirst(7))
         }
         return url
+    }
+
+    // MARK: - Multi-screen status overlays
+    //
+    // Status banners (9 a.m. "started", 6 p.m. countdown, battery
+    // pause/resume, final "stopped") render on **every** connected screen
+    // so a glance at any display surfaces them. Emoji animations stay on
+    // the built-in panel only.
+
+    /// All panels eligible to host status banners — built-in + every
+    /// connected external display.
+    fileprivate func allStatusOverlayPanels() -> [OverlayPanel] {
+        var result: [OverlayPanel] = []
+        if let main = overlayPanel { result.append(main) }
+        result.append(contentsOf: auxOverlayPanels)
+        return result
+    }
+
+    /// Recreate one transparent overlay panel per non-built-in screen.
+    /// Safe to call repeatedly — also tears down stale panels.
+    private func rebuildAuxOverlayPanels() {
+        for p in auxOverlayPanels {
+            p.orderOut(nil)
+        }
+        auxOverlayPanels.removeAll()
+
+        let builtIn = AppDelegate.findRetinaScreen()
+        let builtInID = builtIn.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        for screen in NSScreen.screens {
+            let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            if id == builtInID { continue }
+            let panel = OverlayPanel(screen: screen)
+            panel.orderFrontRegardless()
+            auxOverlayPanels.append(panel)
+        }
+        overlayInfo("Aux overlay panels rebuilt: \(auxOverlayPanels.count) external screen(s)")
+    }
+
+    @objc private func handleScreensChanged() {
+        rebuildAuxOverlayPanels()
     }
 
     /// Always resolve the laptop's retina display when (re-)showing the banner,
