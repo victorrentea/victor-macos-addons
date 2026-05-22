@@ -61,9 +61,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         requestScreenRecordingPermissions(promptUser: true)
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, err in
+        center.requestAuthorization(options: [.alert]) { granted, err in
             overlayInfo("Notifications: granted=\(granted) err=\(String(describing: err))")
-            if granted { self?.postStartupNotification() }
         }
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
@@ -534,7 +533,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onWheelTripleClick = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
         }
-        eventTap.onDoubleFnKey = { [weak menuBarManager] in
+        eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
         eventTap.start()
@@ -985,27 +984,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let cleaned = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
         banner.setTargetScreen(AppDelegate.findRetinaScreen())
         banner.show(url: stripProtocolPrefix(from: cleaned))
-    }
-
-    private func postStartupNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "Victor Addons started"
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        let firesAt = Date().addingTimeInterval(15)
-        content.body = "Lock-screen notification test — fires at \(formatter.string(from: firesAt))"
-        content.sound = .default
-        // Time-sensitive level keeps the notification visible through Focus
-        // modes and on the lock screen until the user dismisses it.
-        content.interruptionLevel = .timeSensitive
-        // 15s delay so the user can lock the screen and verify the
-        // notification appears there (notifications delivered while
-        // unlocked are treated as "seen" and won't reappear on lock).
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 15, repeats: false)
-        let req = UNNotificationRequest(identifier: "startup-\(UUID().uuidString)", content: content, trigger: trigger)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Startup notification error: \(err)") }
-        }
     }
 
     private func postInvalidURLNotification(_ clipboardPreview: String) {
