@@ -27,6 +27,7 @@ class EventTapManager {
     var onTileTerminals: (() -> Void)?
     var onToggleTranscription: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
+    var onMouseButton5Pressed: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -36,8 +37,9 @@ class EventTapManager {
     private let VK_A: CGKeyCode = 0x00
     private let VK_T: CGKeyCode = 0x11
 
-    // MARK: Mouse button numbers
-    private let MOUSE_BUTTON_3: Int64 = 2
+    // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
+    private let MOUSE_BUTTON_3: Int64 = 2  // wheel click
+    private let MOUSE_BUTTON_5: Int64 = 4  // "forward" side button — used by Wispr Flow push-to-talk
 
     // MARK: Wheel click tracking
     private var wheelClickCount: Int = 0
@@ -99,6 +101,10 @@ class EventTapManager {
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
             if button == MOUSE_BUTTON_3 {
                 handleWheelDown()
+            } else if button == MOUSE_BUTTON_5 {
+                // Pass the event through — Wispr Flow needs to see it. We only
+                // observe so the audio mute poll can briefly run at 100ms.
+                DispatchQueue.global().async { [weak self] in self?.onMouseButton5Pressed?() }
             }
             return Unmanaged.passUnretained(event)
         }

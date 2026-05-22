@@ -26,7 +26,9 @@ class CoreAudioManager {
     private static let monitoredOutputName = "🔊OS Output"
     private static let dictationVolumeLow: Float = 0.01
     private static let wisprBundlePrefix = "com.electron.wispr-flow"
-    private static let pollInterval: TimeInterval = 0.3
+    private static let normalPollInterval: TimeInterval = 0.3
+    private static let boostedPollInterval: TimeInterval = 0.1
+    private static let boostDuration: TimeInterval = 1.0
 
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
@@ -34,13 +36,56 @@ class CoreAudioManager {
     private var volumePushedDown = false
     private var originalVolume: Float = 1.0
 
+    // Boost window: while Date() < boostedUntil, the next tick is scheduled
+    // 100ms out instead of 300ms. Mouse-5 (Wispr push-to-talk) press extends
+    // this window by 1s — every press resets the deadline to now+1s, so the
+    // boost ends exactly 1s after the LAST press.
+    //
+    // nextDeadline mirrors the timer's scheduled fire time so notifyMouseButton5Pressed
+    // can decide whether the upcoming tick is already soon enough or needs pulling
+    // forward. All four fields are touched only from pollQueue → no locking.
+    private var boostedUntil: Date = .distantPast
+    private var nextDeadline: Date = .distantPast
+
     func start() {
         let timer = DispatchSource.makeTimerSource(queue: pollQueue)
-        timer.schedule(deadline: .now() + Self.pollInterval, repeating: Self.pollInterval)
-        timer.setEventHandler { [weak self] in self?.tick() }
-        timer.resume()
+        timer.setEventHandler { [weak self] in self?.tickAndReschedule() }
         pollTimer = timer
-        overlayInfo("🎤 Wispr-watch started (poll every \(Int(Self.pollInterval * 1000))ms, mute target=\(Self.monitoredOutputName) @ \(Int(Self.dictationVolumeLow * 100))%)")
+        pollQueue.async { [weak self] in
+            self?.scheduleNext(in: Self.normalPollInterval)
+        }
+        timer.resume()
+        overlayInfo("🎤 Wispr-watch started (poll \(Int(Self.normalPollInterval * 1000))ms, boost \(Int(Self.boostedPollInterval * 1000))ms for \(Int(Self.boostDuration * 1000))ms after Mouse5, mute target=\(Self.monitoredOutputName) @ \(Int(Self.dictationVolumeLow * 100))%)")
+    }
+
+    /// Called from the event tap when Mouse 5 (Wispr push-to-talk) is pressed.
+    /// Bumps the poll into boosted mode for 1s after the last press.
+    func notifyMouseButton5Pressed() {
+        pollQueue.async { [weak self] in
+            guard let self = self else { return }
+            let now = Date()
+            self.boostedUntil = now.addingTimeInterval(Self.boostDuration)
+            // Only pull the next tick forward if the currently-scheduled one
+            // is later than 100ms from now. An already-imminent tick will fire
+            // on its existing deadline; it will then re-arm at 100ms because
+            // boostedUntil is now in the future.
+            let desired = now.addingTimeInterval(Self.boostedPollInterval)
+            if desired < self.nextDeadline {
+                self.scheduleNext(in: Self.boostedPollInterval)
+            }
+        }
+    }
+
+    // Must be called on pollQueue.
+    private func scheduleNext(in interval: TimeInterval) {
+        nextDeadline = Date().addingTimeInterval(interval)
+        pollTimer?.schedule(deadline: .now() + interval, repeating: .never)
+    }
+
+    private func tickAndReschedule() {
+        tick()
+        let interval = (Date() < boostedUntil) ? Self.boostedPollInterval : Self.normalPollInterval
+        scheduleNext(in: interval)
     }
 
     private func tick() {

@@ -535,6 +535,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
+        eventTap.onMouseButton5Pressed = { [weak audioManager] in
+            audioManager?.notifyMouseButton5Pressed()
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 
