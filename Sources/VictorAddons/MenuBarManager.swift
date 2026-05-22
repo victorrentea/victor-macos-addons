@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 21, 09:17"
+    static let BUILD_TIME = "May 22, 14:42"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -420,7 +420,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func openClaudeCodeTerminal() {
         let script = """
         tell application "Terminal"
-            do script "~/.claude/local/claude"
+            do script "claude"
             activate
         end tell
         """
@@ -442,7 +442,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter)
 
         let tmpPath = "/tmp/dream_\(sessionName).sh"
-        let shContent = "#!/bin/bash\ncd \(directory) && ~/.claude/local/claude '/rename \(sessionName)'\n"
+        let shContent = "#!/bin/zsh -l\ncd \(directory) && claude '/rename \(sessionName)'\n"
         try? shContent.write(toFile: tmpPath, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
 
