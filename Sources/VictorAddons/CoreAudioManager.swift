@@ -32,7 +32,7 @@ class CoreAudioManager {
     // Asymmetric debounce on restore: mute on the first "recording=true" read,
     // but require recording=false to be stable for this many seconds before
     // restoring. Cancels audible flicker when Wispr's isRunningInput cycles.
-    private static let restoreDebounceDuration: TimeInterval = 0.5
+    private static let restoreDebounceDuration: TimeInterval = 0.7
 
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
