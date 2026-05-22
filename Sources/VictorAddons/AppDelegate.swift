@@ -529,9 +529,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onRepaste = {
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
         }
-        eventTap.onWheelTripleClick = { [weak menuBarManager] in
-            DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
-        }
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }

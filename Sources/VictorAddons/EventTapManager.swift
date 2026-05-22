@@ -23,7 +23,6 @@ class EventTapManager {
     var onToggleDarkMode: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
-    var onWheelTripleClick: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onToggleTranscription: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
@@ -188,7 +187,7 @@ class EventTapManager {
         return Unmanaged.passUnretained(event)
     }
 
-    // MARK: - Wheel click (double = Claude Desktop opt-opt, triple = Claude Code terminal)
+    // MARK: - Wheel click (double = Claude Desktop opt-opt)
 
     private func handleWheelDown() {}
 
@@ -201,13 +200,6 @@ class EventTapManager {
         wheelPendingWork = nil
         wheelClickCount += 1
 
-        if wheelClickCount == 3 {
-            wheelClickCount = 0
-            DispatchQueue.global().async { [weak self] in self?.onWheelTripleClick?() }
-            return
-        }
-
-        // Wait before firing: a 3rd click within the window upgrades double → triple
         let count = wheelClickCount
         let work = DispatchWorkItem { [weak self] in
             self?.wheelClickCount = 0
