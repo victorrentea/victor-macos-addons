@@ -29,12 +29,19 @@ class CoreAudioManager {
     private static let normalPollInterval: TimeInterval = 0.3
     private static let boostedPollInterval: TimeInterval = 0.1
     private static let boostDuration: TimeInterval = 1.0
+    // Asymmetric debounce on restore: mute on the first "recording=true" read,
+    // but require recording=false to be stable for this many seconds before
+    // restoring. Cancels audible flicker when Wispr's isRunningInput cycles.
+    private static let restoreDebounceDuration: TimeInterval = 0.5
 
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
     private var lastWisprRecording = false
     private var volumePushedDown = false
     private var originalVolume: Float = 1.0
+    // Timestamp of the first "recording=false" read since the current mute.
+    // Cleared on any "recording=true" read or after a successful restore.
+    private var firstNotRecordingAt: Date?
 
     // Boost window: while Date() < boostedUntil, the next tick is scheduled
     // 100ms out instead of 300ms. Mouse-5 (Wispr push-to-talk) press extends
@@ -94,6 +101,12 @@ class CoreAudioManager {
         lastWisprRecording = recording
 
         if recording {
+            // Any "recording" read cancels a pending restore: this is the
+            // hysteresis that absorbs sub-500ms isRunningInput flicker.
+            if firstNotRecordingAt != nil {
+                overlayInfo("⏸️ Wispr resumed within debounce → keeping muted")
+                firstNotRecordingAt = nil
+            }
             if !volumePushedDown {
                 // Either Wispr just started, or it's been on but no audio
                 // was playing yet. Keep checking the loopback every poll
@@ -110,10 +123,19 @@ class CoreAudioManager {
             // read silent and mislead us.
         } else {
             if volumePushedDown {
-                if prev {
-                    overlayInfo("🔴 Wispr stopped → restoring volume")
+                let now = Date()
+                if let started = firstNotRecordingAt {
+                    let elapsed = now.timeIntervalSince(started)
+                    if elapsed >= Self.restoreDebounceDuration {
+                        overlayInfo(String(format: "⏱️ %.0fms stable not-recording → restoring volume", elapsed * 1000))
+                        restoreVolume()
+                        firstNotRecordingAt = nil
+                    }
+                    // else: still within debounce window — wait for the next tick.
+                } else {
+                    firstNotRecordingAt = now
+                    overlayInfo("🔴 Wispr stopped → waiting \(Int(Self.restoreDebounceDuration * 1000))ms before restore")
                 }
-                restoreVolume()
             } else if prev {
                 overlayInfo("🔴 Wispr stopped (no volume change to restore)")
             }
