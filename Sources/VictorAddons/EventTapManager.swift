@@ -26,6 +26,7 @@ class EventTapManager {
     var onWheelTripleClick: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onToggleTranscription: (() -> Void)?
+    var onDoubleFnKey: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -34,6 +35,7 @@ class EventTapManager {
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
     private let VK_T: CGKeyCode = 0x11
+    private let VK_FN: CGKeyCode = 0x3F
 
     // MARK: Mouse button numbers
     private let MOUSE_BUTTON_3: Int64 = 2
@@ -42,6 +44,12 @@ class EventTapManager {
     private var wheelClickCount: Int = 0
     private var wheelPendingWork: DispatchWorkItem?
     private let wheelClickWindow: TimeInterval = 0.35
+
+    // MARK: Fn key double-tap tracking
+    private var fnClickCount: Int = 0
+    private var fnPendingWork: DispatchWorkItem?
+    private let fnClickWindow: TimeInterval = 0.35
+    private var fnPreviouslyPressed: Bool = false
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
@@ -52,6 +60,7 @@ class EventTapManager {
     func start() {
         let eventsOfInterest: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
+            CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
 
@@ -110,6 +119,18 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
+        // Fn key (flagsChanged only — Fn alone never fires keyDown)
+        if type == .flagsChanged {
+            let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if keyCode == VK_FN {
+                let isPressed = event.flags.contains(.maskSecondaryFn)
+                if isPressed && !fnPreviouslyPressed {
+                    DispatchQueue.main.async { [weak self] in self?.handleFnPress() }
+                }
+                fnPreviouslyPressed = isPressed
+            }
+            return Unmanaged.passUnretained(event)
+        }
 
         // Keyboard events
         guard type == .keyDown else {
@@ -206,6 +227,27 @@ class EventTapManager {
         }
         wheelPendingWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + wheelClickWindow, execute: work)
+    }
+
+    // MARK: - Fn key double-tap
+
+    private func handleFnPress() {
+        fnPendingWork?.cancel()
+        fnPendingWork = nil
+        fnClickCount += 1
+
+        if fnClickCount == 2 {
+            fnClickCount = 0
+            DispatchQueue.global().async { [weak self] in self?.onDoubleFnKey?() }
+            return
+        }
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.fnClickCount = 0
+            self?.fnPendingWork = nil
+        }
+        fnPendingWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + fnClickWindow, execute: work)
     }
 
     // MARK: - Clipboard helper

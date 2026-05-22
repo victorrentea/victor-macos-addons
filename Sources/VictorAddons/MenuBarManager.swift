@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 20, 09:45"
+    static let BUILD_TIME = "May 21, 09:17"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -429,6 +429,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func openDreamWorkspace() {
         openDreamClaude(directory: "~/workspace/ai", sessionName: "workspace", quarter: .topLeft)
+    }
+
+    @objc func openDreamPlainWorkspace() {
+        openDreamClaude(directory: "~/workspace", sessionName: "workspace-root", quarter: .bottomLeft)
     }
 
     private enum ScreenQuarter { case topLeft, topRight, bottomLeft, bottomRight }

@@ -533,6 +533,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onWheelTripleClick = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openClaudeCodeTerminal() }
         }
+        eventTap.onDoubleFnKey = { [weak menuBarManager] in
+            DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 
