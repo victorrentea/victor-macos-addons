@@ -66,19 +66,41 @@ class CoreAudioManager {
     }
 
     /// Called from the event tap when Mouse 5 (Wispr push-to-talk) is pressed.
-    /// Bumps the poll into boosted mode for 1s after the last press.
+    /// Speculative mute: probe the loopback immediately and drop volume if music
+    /// is playing — don't wait for the poll to observe Wispr's recording state.
+    /// firstNotRecordingAt is seeded with "now" so the existing 500ms debounce
+    /// doubles as the safety net: if Wispr never confirms within that window,
+    /// the next tick that sees recording=false restores the volume. Also bumps
+    /// the boost window so other (non-Mouse-5) triggers stay snappy.
     func notifyMouseButton5Pressed() {
         pollQueue.async { [weak self] in
             guard let self = self else { return }
             let now = Date()
             self.boostedUntil = now.addingTimeInterval(Self.boostDuration)
-            // Only pull the next tick forward if the currently-scheduled one
-            // is later than 100ms from now. An already-imminent tick will fire
-            // on its existing deadline; it will then re-arm at 100ms because
-            // boostedUntil is now in the future.
             let desired = now.addingTimeInterval(Self.boostedPollInterval)
             if desired < self.nextDeadline {
                 self.scheduleNext(in: Self.boostedPollInterval)
+            }
+
+            if self.volumePushedDown {
+                // Already muted from a prior dictation. A fresh click means
+                // the user wants to keep talking — cancel any pending restore.
+                if self.firstNotRecordingAt != nil {
+                    overlayInfo("🎯 Mouse 5 (already muted) → cancelling pending restore")
+                    self.firstNotRecordingAt = nil
+                }
+                return
+            }
+
+            // isLoopbackPlaying blocks ~150ms — fine here, it's the same probe
+            // a normal tick would do, just front-loaded so we mute faster.
+            let playing = self.isLoopbackPlaying()
+            if playing {
+                self.pushVolumeDown()
+                self.firstNotRecordingAt = Date()
+                overlayInfo("🎯 Mouse 5 → speculative mute (awaiting \(Int(Self.restoreDebounceDuration * 1000))ms Wispr confirmation)")
+            } else {
+                overlayInfo("🎯 Mouse 5 → no mute (loopback silent)")
             }
         }
     }
@@ -101,10 +123,11 @@ class CoreAudioManager {
         lastWisprRecording = recording
 
         if recording {
-            // Any "recording" read cancels a pending restore: this is the
-            // hysteresis that absorbs sub-500ms isRunningInput flicker.
+            // Any "recording" read cancels a pending restore: this covers both
+            // (a) Wispr confirming a speculative Mouse-5 mute, and
+            // (b) sub-500ms isRunningInput flicker after a real stop.
             if firstNotRecordingAt != nil {
-                overlayInfo("⏸️ Wispr resumed within debounce → keeping muted")
+                overlayInfo("✅ Wispr active → keeping muted (cancelled pending restore)")
                 firstNotRecordingAt = nil
             }
             if !volumePushedDown {
