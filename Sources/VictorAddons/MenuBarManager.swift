@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 22, 22:36"
+    static let BUILD_TIME = "May 22, 22:39"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -492,7 +492,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private func killPort(_ port: Int) {
         onKillPort?(port)
-        addToPortHistory(port)
     }
 
     // MARK: - Public API
@@ -803,15 +802,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             menuTitle: transcribeItem.title,
             iconMode: iconMode
         )
-    }
-
-    func addToPortHistory(_ port: Int) {
-        portHistory.removeAll { $0 == port }
-        portHistory.insert(port, at: 0)
-        if portHistory.count > 5 { portHistory = Array(portHistory.prefix(5)) }
-        let text = portHistory.map { String($0) }.joined(separator: "\n")
-        try? text.write(toFile: "/Users/victorrentea/workspace/victor-macos-addons/ports-to-kill.txt",
-                        atomically: true, encoding: .utf8)
     }
 
     // MARK: - Port History Persistence

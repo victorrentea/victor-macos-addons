@@ -5,7 +5,6 @@ class PortKiller: NSObject {
     static let portsFileURL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/ports-to-kill.txt")
     private let portHistoryURL: URL
     private(set) var history: [Int]
-    var onKillComplete: ((Int) -> Void)?
 
     override init() {
         portHistoryURL = Self.portsFileURL
@@ -46,7 +45,6 @@ class PortKiller: NSObject {
         }
 
         remember(port: port)
-        DispatchQueue.main.async { self.onKillComplete?(port) }
     }
 
     func showPortPrompt() {

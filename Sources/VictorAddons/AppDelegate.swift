@@ -471,7 +471,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { portKiller.kill(port: port) }
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
-        portKiller.onKillComplete = { [weak menuBarManager] port in menuBarManager?.addToPortHistory(port) }
 
         menuBarManager.setup()
         // Reflect real process state on startup to avoid stale "Stop Transcribing" UI.
