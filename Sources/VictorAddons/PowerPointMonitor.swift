@@ -10,6 +10,10 @@ tell application "Microsoft PowerPoint"
         return "__NO_PRESENTATION__"
     end if
     set presentationName to name of active presentation
+    set presentationPath to ""
+    try
+        set presentationPath to full name of active presentation as text
+    end try
     set slideNumber to 1
     set isPresenting to "false"
     try
@@ -30,7 +34,7 @@ tell application "Microsoft PowerPoint"
     on error
         set slideNumber to "__SLIDE_UNKNOWN__"
     end try
-    return presentationName & tab & isPresenting & tab & (slideNumber as string)
+    return presentationName & tab & isPresenting & tab & (slideNumber as string) & tab & presentationPath
 end tell
 """
 
@@ -42,6 +46,7 @@ class PowerPointMonitor {
 
     // State
     private var currentDeck: String?
+    private var currentDeckPath: String?
     private var currentSlide: Int = 1
     private var currentPresenting: Bool = false
     private var lastProbeTime: Date?
@@ -102,6 +107,11 @@ class PowerPointMonitor {
         } else {
             slide = max(1, Int(slideRaw) ?? 1)
         }
+        let deckPath: String? = {
+            guard parts.count >= 4 else { return nil }
+            let p = parts[3].trimmingCharacters(in: .whitespaces)
+            return p.isEmpty ? nil : p
+        }()
 
         // Only count time when PowerPoint was frontmost at the previous probe
         let isFrontmostNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased().contains("powerpoint") == true
@@ -122,10 +132,12 @@ class PowerPointMonitor {
         if deck != currentDeck {
             // Start new deck
             currentDeck = deck
+            currentDeckPath = deckPath
             currentSlide = slide
             currentPresenting = isPresenting
             notifySlideChange()
         } else if slide != currentSlide || isPresenting != currentPresenting {
+            currentDeckPath = deckPath
             currentSlide = slide
             currentPresenting = isPresenting
             notifySlideChange()
@@ -138,12 +150,16 @@ class PowerPointMonitor {
 
     private func notifySlideChange() {
         guard let deck = currentDeck else { return }
-        onSlideChange?([
+        var payload: [String: Any] = [
             "type": "slide_presenting_now",
             "deck": deck,
             "slide": currentSlide,
             "presenting": currentPresenting
-        ])
+        ]
+        if let path = currentDeckPath {
+            payload["path"] = path
+        }
+        onSlideChange?(payload)
     }
 
     private func sendDelta() {

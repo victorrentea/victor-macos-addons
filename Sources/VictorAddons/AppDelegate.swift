@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     private var pptMonitor: PowerPointMonitor?
+    private var driveShareCache: GoogleDriveShareCache?
     private var ijMonitor: IntelliJMonitor?
     private var rhTimerMonitor: RHTimerMonitor?
     private var portKiller: PortKiller?
@@ -538,9 +539,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.start()
         self.eventTapManager = eventTap
 
+        self.driveShareCache = GoogleDriveShareCache()
+
         let pptMonitor = PowerPointMonitor()
         pptMonitor.onSlideChange = { [weak self] event in
             self?.wsServer?.pushSlide(event)
+            self?.checkSlideSharedState(event: event)
         }
         pptMonitor.onSlidesViewed = { [weak self] slides in
             self?.wsServer?.pushSlidesViewed(slides)
@@ -985,6 +989,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         banner.show(url: stripProtocolPrefix(from: cleaned))
     }
 
+    private func checkSlideSharedState(event: [String: Any]) {
+        guard let path = event["path"] as? String, !path.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self, let cache = self.driveShareCache else { return }
+            let shared = cache.isShared(path: path)
+            if !shared {
+                DispatchQueue.main.async {
+                    self.postSlidesNotSharedNotification(path: path)
+                }
+            }
+        }
+    }
+
+    private func postSlidesNotSharedNotification(path: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Slides not shared"
+        content.body = "Click to locate."
+        content.userInfo = ["purpose": "slides-not-shared", "slidesPath": path]
+        let identifier = "slides-not-shared:\(path)"
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Slides not-shared notification error: \(err)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+        }
+    }
+
     private func postInvalidURLNotification(_ clipboardPreview: String) {
         let content = UNMutableNotificationContent()
         content.title = "Invalid URL"
@@ -1087,5 +1119,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void) {
         handler([.banner, .list, .sound])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        if let purpose = userInfo["purpose"] as? String,
+           purpose == "slides-not-shared",
+           let path = userInfo["slidesPath"] as? String {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        }
+        completionHandler()
     }
 }
