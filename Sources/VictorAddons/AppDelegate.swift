@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var wsTask: URLSessionWebSocketTask?
     private var session: URLSession!
     private var reconnecting = false
+    private var wsConnected = false
     private var pendingDisconnectError: DispatchWorkItem?
     private let disconnectErrorDelay: TimeInterval = 3.0
     private let pidFilePath: String
@@ -779,6 +780,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didOpenWithProtocol protocol: String?) {
+        wsConnected = true
         cancelPendingDisconnectError()
         overlayInfo("WebSocket connected to daemon")
         let msg = "{\"type\":\"set_name\",\"name\":\"Overlay\"}"
@@ -794,12 +796,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        wsConnected = false
         scheduleDisconnectError()
         scheduleReconnect()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
+            wsConnected = false
             overlayError("WebSocket connection failed: \(error.localizedDescription)")
             scheduleDisconnectError()
             scheduleReconnect()
@@ -818,6 +822,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
                 self?.receiveMessage()
             case .failure:
+                self?.wsConnected = false
                 self?.scheduleDisconnectError()
                 self?.scheduleReconnect()
             }
@@ -990,12 +995,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     }
 
     private func checkSlideSharedState(event: [String: Any]) {
+        guard wsConnected else { return }
         guard let path = event["path"] as? String, !path.isEmpty else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self, let cache = self.driveShareCache else { return }
             let shared = cache.isShared(path: path)
             if !shared {
                 DispatchQueue.main.async {
+                    guard self.wsConnected else { return }
                     self.postSlidesNotSharedNotification(path: path)
                 }
             }
