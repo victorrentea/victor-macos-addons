@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 24, 02:30"
+    static let BUILD_TIME = "May 24, 23:18"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -57,6 +57,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
+    var onAppendClipboardToNotes: (() -> Void)?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -184,6 +185,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         pasteItem.keyEquivalentModifierMask = [.command, .control]
         pasteItem.isEnabled = false
         extraSubmenu.addItem(pasteItem)
+
+        // Append clipboard to session notes (⌃⌥V)
+        let appendNotesItem = NSMenuItem(title: "📝 Append Clipboard to Notes", action: #selector(appendClipboardToNotesAction), keyEquivalent: "v")
+        appendNotesItem.keyEquivalentModifierMask = [.control, .option]
+        appendNotesItem.target = self
+        appendNotesItem.isEnabled = true
+        extraSubmenu.addItem(appendNotesItem)
 
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
@@ -397,6 +405,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func displayClipboardLinkAction() {
         onDisplayClipboardLink?()
+    }
+
+    @objc private func appendClipboardToNotesAction() {
+        onAppendClipboardToNotes?()
     }
 
     @objc private func startTrainingAssistantAction() {

@@ -466,6 +466,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onDisplayClipboardLink = { [weak self] in
             self?.displayClipboardLinkBanner()
         }
+        menuBarManager.onAppendClipboardToNotes = {
+            DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
+        }
 
         let portKiller = PortKiller()
         self.portKiller = portKiller
@@ -536,6 +539,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
             audioManager?.notifyMouseButton5Pressed()
+        }
+        eventTap.onAppendClipboardToNotes = {
+            DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
         eventTap.start()
         self.eventTapManager = eventTap

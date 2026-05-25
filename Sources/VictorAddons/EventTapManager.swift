@@ -27,6 +27,7 @@ class EventTapManager {
     var onToggleTranscription: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
+    var onAppendClipboardToNotes: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -165,9 +166,15 @@ class EventTapManager {
             return nil
         }
 
-        // Only Cmd+V variants below
+        // V variants below
         guard keyCode == VK_V else {
             return Unmanaged.passUnretained(event)
+        }
+
+        // Ctrl+Opt+V → append clipboard to session notes (suppress)
+        if hasCtrl && hasOpt && !hasCmd {
+            DispatchQueue.global().async { [weak self] in self?.onAppendClipboardToNotes?() }
+            return nil
         }
 
         // Cmd+Ctrl+V → emotional paste (suppress)
