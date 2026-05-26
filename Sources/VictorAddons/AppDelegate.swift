@@ -553,6 +553,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
+        eventTap.onOpenCalendar = { [weak self] in
+            DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/") }
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 

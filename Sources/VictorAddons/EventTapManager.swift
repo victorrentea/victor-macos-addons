@@ -28,6 +28,7 @@ class EventTapManager {
     var onClaudeWorkspaceHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
+    var onOpenCalendar: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -151,6 +152,13 @@ class EventTapManager {
         // Cmd+Ctrl+C → open catalog (suppress)
         if keyCode == VK_C && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenCatalog?() }
+            return nil
+        }
+
+        // Cmd+Opt+C → open Google Calendar in Chrome, snapped to the Retina
+        // display (suppress)
+        if keyCode == VK_C && hasCmd && hasOpt && !hasCtrl {
+            DispatchQueue.global().async { [weak self] in self?.onOpenCalendar?() }
             return nil
         }
 
