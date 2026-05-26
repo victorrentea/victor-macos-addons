@@ -9,6 +9,7 @@ class TabletHttpServer {
         case alarmStart
         case alarmStop
         case effect(String)
+        case openUrl(String)
         case testTranscriptionStart
         case testTranscriptionStop
         case testTranscriptionToggle
@@ -23,6 +24,8 @@ class TabletHttpServer {
     var onAlarmStop: (() -> Void)?
     /// Generic effect handler: receives the effect name (e.g. "fireworks", "applause", "applause/stop")
     var onEffect: ((String) -> Void)?
+    /// Open a URL in a fullscreen Chrome window on the primary display.
+    var onOpenUrl: ((String) -> Void)?
     var onTestTranscriptionStart: (() -> Void)?
     var onTestTranscriptionStop: (() -> Void)?
     var onTestTranscriptionToggle: (() -> Void)?
@@ -71,6 +74,8 @@ class TabletHttpServer {
                     self?.onAlarmStop?()
                 case .effect(let name):
                     self?.onEffect?(name)
+                case .openUrl(let url):
+                    self?.onOpenUrl?(url)
                 case .testTranscriptionStart:
                     self?.onTestTranscriptionStart?()
                 case .testTranscriptionStop:
@@ -114,7 +119,8 @@ class TabletHttpServer {
     }
 
     static func route(forPath path: String) -> Route {
-        switch path {
+        let (pathOnly, queryItems) = parsePathAndQuery(path)
+        switch pathOnly {
         case "/alarm/start":
             return .alarmStart
         case "/alarm/stop":
@@ -133,12 +139,22 @@ class TabletHttpServer {
             return .testAudioPlaying
         case "/test/wispr/recording":
             return .testWisprRecording
+        case "/open":
+            if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
+                return .openUrl(url)
+            }
+            return .unknown
         default:
-            if path.hasPrefix("/effect/") {
-                return .effect(String(path.dropFirst("/effect/".count)))
+            if pathOnly.hasPrefix("/effect/") {
+                return .effect(String(pathOnly.dropFirst("/effect/".count)))
             }
             return .unknown
         }
+    }
+
+    private static func parsePathAndQuery(_ raw: String) -> (String, [URLQueryItem]) {
+        guard let comps = URLComponents(string: "http://x" + raw) else { return (raw, []) }
+        return (comps.path, comps.queryItems ?? [])
     }
 
     private static func httpResponse(statusCode: Int, contentType: String, body: String) -> String {

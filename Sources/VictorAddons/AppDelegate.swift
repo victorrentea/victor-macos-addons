@@ -170,6 +170,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             default: break
             }
         }
+        tabletServer?.onOpenUrl = { [weak self] url in
+            self?.openUrlInFullscreenChrome(url)
+        }
         tabletServer?.start()
         overlayInfo("TabletHttpServer.start() called")
 
@@ -588,6 +591,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     // ~9s after wake. Stop whisper before sleep (SIGKILL, skipping the broken
     // teardown path) and restart it after wake once CoreAudio has settled.
     private var wasTranscribingBeforeSleep = false
+
+    /// Launch a separate Chrome instance in kiosk (true fullscreen) mode on the
+    /// primary display. Uses a dedicated user-data-dir so the new window can
+    /// coexist with the user's regular Chrome session and apply the --kiosk
+    /// flag even if Chrome is already running with their main profile.
+    private func openUrlInFullscreenChrome(_ url: String) {
+        overlayInfo("Opening fullscreen Chrome: \(url)")
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = [
+            "-na", "Google Chrome",
+            "--args",
+            "--user-data-dir=/tmp/chrome-kiosk",
+            "--kiosk",
+            url,
+        ]
+        do {
+            try task.run()
+        } catch {
+            overlayError("Failed to launch Chrome: \(error)")
+        }
+    }
 
     private func registerSleepWakeObservers() {
         let nc = NSWorkspace.shared.notificationCenter
