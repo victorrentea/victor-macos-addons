@@ -171,7 +171,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
         tabletServer?.onOpenUrl = { [weak self] url in
-            self?.openUrlInFullscreenChrome(url)
+            self?.openUrlInChrome(url)
         }
         tabletServer?.start()
         overlayInfo("TabletHttpServer.start() called")
@@ -592,17 +592,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     // teardown path) and restart it after wake once CoreAudio has settled.
     private var wasTranscribingBeforeSleep = false
 
-    /// Open the URL as a new tab in the user's frontmost Chrome window (so it
-    /// inherits that window's profile — YouTube Premium / signed-in / no ads
-    /// — instead of falling back to Chrome's empty "Default" profile the way
-    /// `make new window` and `--user-data-dir=…` did). Then Cmd+Ctrl+F to
-    /// enter macOS fullscreen on the now-frontmost window.
-    private func openUrlInFullscreenChrome(_ url: String) {
+    /// Open the URL as a new tab in the user's frontmost Chrome window so it
+    /// inherits that window's profile — YouTube Premium / signed-in / no ads.
+    /// `make new window` and `--user-data-dir=…` were tried first but both
+    /// fell back to Chrome's empty "Default" profile.
+    private func openUrlInChrome(_ url: String) {
         overlayInfo("Opening Chrome (front-window profile): \(url)")
-
-        // Phase 1: `open -a` routes the URL through Chrome's normal URL
-        // handler — that opens it as a new tab in the front window, using
-        // that window's profile.
         let openTask = Process()
         openTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         openTask.arguments = ["-a", "Google Chrome", url]
@@ -610,23 +605,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             try openTask.run()
         } catch {
             overlayError("Failed to open URL in Chrome: \(error)")
-            return
-        }
-
-        // Phase 2: bring Chrome to the front and send Cmd+Ctrl+F (macOS
-        // "Enter Full Screen"). Run on a background queue because System
-        // Events can block briefly.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.8) {
-            let script = """
-            tell application "Google Chrome" to activate
-            delay 0.25
-            tell application "System Events"
-                tell process "Google Chrome"
-                    key code 3 using {command down, control down}
-                end tell
-            end tell
-            """
-            _ = AppleScriptRunner.run(script, timeout: 5)
         }
     }
 
