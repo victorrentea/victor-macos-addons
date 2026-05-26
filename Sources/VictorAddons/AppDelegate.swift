@@ -592,25 +592,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     // teardown path) and restart it after wake once CoreAudio has settled.
     private var wasTranscribingBeforeSleep = false
 
-    /// Launch a separate Chrome instance in kiosk (true fullscreen) mode on the
-    /// primary display. Uses a dedicated user-data-dir so the new window can
-    /// coexist with the user's regular Chrome session and apply the --kiosk
-    /// flag even if Chrome is already running with their main profile.
+    /// Open the URL in a NEW window of the user's existing Chrome (so we keep
+    /// their profile — YouTube Premium / no ads, sign-ins, history). Then send
+    /// Cmd+Ctrl+F to enter macOS fullscreen on the frontmost window.
+    ///
+    /// A separate Chrome instance with `--kiosk --user-data-dir=…` was tried
+    /// first but spawned a fresh profile (signed-out, ad-supported, first-run
+    /// dialog blocking the page), so we switched to the AppleScript route.
     private func openUrlInFullscreenChrome(_ url: String) {
         overlayInfo("Opening fullscreen Chrome: \(url)")
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = [
-            "-na", "Google Chrome",
-            "--args",
-            "--user-data-dir=/tmp/chrome-kiosk",
-            "--kiosk",
-            url,
-        ]
-        do {
-            try task.run()
-        } catch {
-            overlayError("Failed to launch Chrome: \(error)")
+        // AppleScript string literal — escape backslashes and double-quotes.
+        let escaped = url
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Google Chrome"
+            activate
+            set newWindow to make new window
+            set URL of active tab of newWindow to "\(escaped)"
+        end tell
+        delay 0.4
+        tell application "System Events"
+            tell process "Google Chrome"
+                key code 3 using {command down, control down}
+            end tell
+        end tell
+        """
+        DispatchQueue.global().async {
+            _ = AppleScriptRunner.run(script, timeout: 8)
         }
     }
 
