@@ -36,7 +36,7 @@ class SoundManager {
 
     /// Play a sound from the bundle Resources folder.
     /// If the same sound is already playing, does nothing (no restart).
-    func play(_ filename: String) {
+    func play(_ filename: String, volume: Float = 1.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
@@ -52,7 +52,7 @@ class SoundManager {
 
             do {
                 let player = try AVAudioPlayer(contentsOf: url)
-                player.volume = 1.0
+                player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.players[filename] = player
                 player.play()

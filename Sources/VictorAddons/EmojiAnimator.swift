@@ -87,19 +87,25 @@ class EmojiAnimator {
     }
 
     func spawnEmoji(_ emoji: String = "❤️") {
-        let bounds = hostLayer.bounds
+        // 🖥 (with/without variant selector) → full broken-screen shatter animation with sound,
+        // not the floating-emoji desktop effect.
+        let normalized = emoji
+            .replacingOccurrences(of: "\u{FE0F}", with: "")
+            .replacingOccurrences(of: "\u{FE0E}", with: "")
+        if normalized == "🖥" {
+            showBrokenGlass(playSound: true)
+            return
+        }
 
         if let sound = EmojiAnimator.soundEffect(for: emoji) {
             SoundManager.shared.playOverlapping(sound, volume: 0.5)
         }
 
-        let isScreen = emoji == "🖥️"
-        let fontSize: CGFloat = isScreen ? 234 : 78
-        let size: CGFloat = isScreen ? 260 : 91
+        let fontSize: CGFloat = 78
+        let size: CGFloat = 91
 
-        // Screen emoji: center of screen; others: bottom-left corner with ±56px random offset (30% narrower)
-        let spawnX: CGFloat = isScreen ? bounds.midX : 100 + CGFloat.random(in: -56...56)
-        let spawnY: CGFloat = isScreen ? bounds.height * 0.15 : 80
+        let spawnX: CGFloat = 100 + CGFloat.random(in: -56...56)
+        let spawnY: CGFloat = 80
 
         let layer = CATextLayer()
         layer.string = emoji
@@ -272,7 +278,8 @@ class EmojiAnimator {
     // MARK: - Screen crash (screenshot shatters into broken glass shards)
 
     func showBrokenGlass(playSound: Bool = true) {  // formerly showEarthquake
-        if playSound { SoundManager.shared.play("breaking-glass.mp3") }
+        // 0.8: full volume is too violent for live workshops
+        if playSound { SoundManager.shared.play("breaking-glass.mp3", volume: 0.8) }
         let bounds = hostLayer.bounds
         let totalDuration = 4.5
 
