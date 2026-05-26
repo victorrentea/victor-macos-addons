@@ -39,6 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionScheduler: TranscriptionScheduler?
     private var transcriptionCountdownOverlay: TranscriptionCountdownOverlay?
     private var statusBanner: StatusBanner?
+    private var silentTranscriptionWarning: SilentTranscriptionWarning?
     private var meetingDetector: MeetingDetector?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
     /// that the next `whisperManager.onStateChanged(true)` shows the
@@ -181,18 +182,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let watcher = TranscriptionWatcher(transcriptionFolder: transcriptionFolder)
         watcher.onStaleChanged = { [weak self] stale in
             self?.menuBarManager.setTranscriptionStale(stale)
+            self?.silentTranscriptionWarning?.setStale(stale)
         }
         self.transcriptionWatcher = watcher
         whisperManager.onStateChanged = { [weak self] running in
             self?.menuBarManager.setTranscribing(running)
             if running {
                 self?.transcriptionWatcher?.startWatching()
+                self?.silentTranscriptionWarning?.transcriptionStarted()
                 if self?.pendingAutoRestartBanner == true {
                     self?.pendingAutoRestartBanner = false
                     self?.statusBanner?.showOnPresence(text: "started", sound: StatusBannerSound.start)
                 }
             } else {
                 self?.transcriptionWatcher?.stopWatching()
+                self?.silentTranscriptionWarning?.transcriptionStopped()
             }
         }
         whisperManager.onDeviceChanged = { [weak self] emoji in
@@ -458,6 +462,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
         statusBanner = StatusBanner(panelsProvider: { [weak self] in
+            self?.allStatusOverlayPanels() ?? []
+        })
+        silentTranscriptionWarning = SilentTranscriptionWarning(panelsProvider: { [weak self] in
             self?.allStatusOverlayPanels() ?? []
         })
         menuBarManager.onDisplayJoinLink = { [weak self] in
