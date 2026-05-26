@@ -605,6 +605,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             try openTask.run()
         } catch {
             overlayError("Failed to open URL in Chrome: \(error)")
+            return
+        }
+        // Give Chrome a moment to surface the new tab in its front window,
+        // then yank that window onto the built-in Retina display so the
+        // video lands on the main monitor regardless of where Chrome was.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.moveFrontChromeWindowToRetina()
+        }
+    }
+
+    private func moveFrontChromeWindowToRetina() {
+        let screen = AppDelegate.findRetinaScreen()
+        let primaryHeight = (NSScreen.screens.first { $0.frame.origin == .zero } ?? screen).frame.height
+        let f = screen.visibleFrame
+        // AppleScript window bounds use a top-left origin where Y grows down,
+        // measured from the top of the primary (menu-bar) display.
+        let x1 = Int(f.minX)
+        let y1 = Int(primaryHeight - f.maxY)
+        let x2 = Int(f.maxX)
+        let y2 = Int(primaryHeight - f.minY)
+        let script = """
+        tell application "Google Chrome"
+            if (count of windows) > 0 then
+                set bounds of front window to {\(x1), \(y1), \(x2), \(y2)}
+            end if
+        end tell
+        """
+        DispatchQueue.global().async {
+            _ = AppleScriptRunner.run(script)
         }
     }
 
