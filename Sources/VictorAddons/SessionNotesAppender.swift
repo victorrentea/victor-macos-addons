@@ -23,12 +23,28 @@ enum SessionNotesAppender {
         do {
             try appendLine(text, to: notes)
             let preview = text.count > 120 ? String(text.prefix(120)) + "…" : text
-            notify(title: "📝 Added to \(notes.lastPathComponent)", body: preview)
+            let topic = stripDatePrefix(folder.lastPathComponent)
+            notify(title: "Pasted in notes of \(topic)", body: preview)
             overlayInfo("Appended \(text.count) chars to \(notes.path)")
         } catch {
             notify(title: "Append failed", body: "\(error.localizedDescription)")
             overlayError("Append to notes failed: \(error)")
         }
+    }
+
+    /// Strip the leading date prefix from a session folder name.
+    /// Examples: "2026-05-15 Kafka@ITKonekt" → "Kafka@ITKonekt",
+    /// "2026-05-18..22 Performance@Bloomberg" → "Performance@Bloomberg",
+    /// "2026-06-05+06 AI@HEITS" → "AI@HEITS".
+    private static func stripDatePrefix(_ name: String) -> String {
+        if let spaceIdx = name.firstIndex(of: " ") {
+            let head = name[..<spaceIdx]
+            if head.first?.isNumber == true {
+                let tail = name[name.index(after: spaceIdx)...].trimmingCharacters(in: .whitespaces)
+                if !tail.isEmpty { return tail }
+            }
+        }
+        return name
     }
 
     /// Most-recently modified .txt in the session folder (matches daemon `find_notes_in_folder`).
