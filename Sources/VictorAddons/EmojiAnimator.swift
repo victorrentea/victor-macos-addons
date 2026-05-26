@@ -1543,48 +1543,54 @@ class EmojiAnimator {
     func showFear(playSound: Bool = true) {
         if playSound { SoundManager.shared.play("scream_man.mp3") }
         let bounds = hostLayer.bounds
-        let duration: Double = 1.75
-        let fontSize: CGFloat = 100
-        let size: CGFloat = 120
 
-        // Spawn at 20% from left, 20% from bottom; rise to marked target (63%, 63%)
-        let startX = bounds.width * 0.20
-        let startY = bounds.height * 0.20
-        let endX = bounds.width * 0.63
-        let endY = bounds.height * 0.63
+        let initialSize: CGFloat = 200
+        let growPhaseDuration: Double = 3.0    // grow 200→600px at 100% opacity
+        let fadePhaseDuration: Double = 1.75   // fade out + continue scaling
+        let totalDuration = growPhaseDuration + fadePhaseDuration
+
+        // Anchor at the mouse cursor (captured at trigger time, so a user
+        // moving the mouse after pressing #8 won't drag the emoji).
+        let mouseGlobal = NSEvent.mouseLocation
+        let anchor = Self.layerAnchor(forGlobalMouse: mouseGlobal,
+                                      panelOrigin: hostLayer.bounds.origin,
+                                      hostLayer: hostLayer)
+        let cx = anchor.x * bounds.width
+        let cy = anchor.y * bounds.height
 
         let layer = CATextLayer()
         layer.string = "😱"
-        layer.fontSize = fontSize
+        layer.fontSize = initialSize * 0.83
         layer.alignmentMode = .center
-        layer.frame = CGRect(x: startX - size / 2, y: startY - size / 2, width: size, height: size)
+        layer.frame = CGRect(x: cx - initialSize / 2, y: cy - initialSize / 2,
+                             width: initialSize, height: initialSize)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         hostLayer.addSublayer(layer)
 
-        // Position: linear drift from spawn to screen center
-        let pathAnim = CAKeyframeAnimation(keyPath: "position")
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: startX, y: startY))
-        path.addLine(to: CGPoint(x: endX, y: endY))
-        pathAnim.path = path
-        pathAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+        let growEndFrac = growPhaseDuration / totalDuration
+        let finalScale = 3.0 * bounds.height / initialSize
 
-        // Scale: linear, reaching 300% of screen height at end
-        let finalScale = 3.0 * bounds.height / size
-        let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
-        scaleAnim.fromValue = 1.0
-        scaleAnim.toValue = finalScale
-        scaleAnim.timingFunction = CAMediaTimingFunction(name: .linear)
+        // Scale: 1.0 → 3.0 over first 3s (200→600px), then continue to giant.
+        let scaleAnim = CAKeyframeAnimation(keyPath: "transform.scale")
+        scaleAnim.values = [1.0, 3.0, finalScale]
+        scaleAnim.keyTimes = [0, NSNumber(value: growEndFrac), 1]
+        scaleAnim.timingFunctions = [
+            CAMediaTimingFunction(name: .linear),
+            CAMediaTimingFunction(name: .linear),
+        ]
 
-        // Fade to 20% opacity across full duration
-        let fadeAnim = CABasicAnimation(keyPath: "opacity")
-        fadeAnim.fromValue = 1.0
-        fadeAnim.toValue = 0.0
-        fadeAnim.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        // Opacity: 100% for the first 3s, then fade to 0.
+        let opacityAnim = CAKeyframeAnimation(keyPath: "opacity")
+        opacityAnim.values = [1.0, 1.0, 0.0]
+        opacityAnim.keyTimes = [0, NSNumber(value: growEndFrac), 1]
+        opacityAnim.timingFunctions = [
+            CAMediaTimingFunction(name: .linear),
+            CAMediaTimingFunction(name: .easeIn),
+        ]
 
         let group = CAAnimationGroup()
-        group.animations = [pathAnim, scaleAnim, fadeAnim]
-        group.duration = duration
+        group.animations = [scaleAnim, opacityAnim]
+        group.duration = totalDuration
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false
 
