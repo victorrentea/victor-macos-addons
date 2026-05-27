@@ -22,7 +22,9 @@ final class BottomLeftBanner {
         static let textRenderHeight: CGFloat = 50
         static let boxWidth: CGFloat = 480
         static let boxHeight: CGFloat = 80
-        static let defaultBackground: NSColor = NSColor.gray.withAlphaComponent(0.6)
+        /// Light tint over the NSVisualEffectView so the glass blur stays
+        /// visible. Lower alpha = more glass, higher alpha = more flat gray.
+        static let defaultBackground: NSColor = NSColor.gray.withAlphaComponent(0.3)
         static let textColor: NSColor = .white
         static func defaultFont() -> NSFont {
             NSFont.boldSystemFont(ofSize: fontSize)
@@ -39,10 +41,19 @@ final class BottomLeftBanner {
     }
     private var panels: [PanelEntry] = []
 
-    /// Fires the first time the cursor enters the banner on any screen,
-    /// per `show()` invocation. Only meaningful when `hoverable: true`.
+    /// Fires once per `show()` after the cursor has *dwelled* inside the
+    /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
+    /// (0.5s by default). Cursor merely happening to be in the corner when
+    /// the banner appears never fires this — NSTrackingArea only kicks in
+    /// on a fresh entry, and even then the user must hold the cursor in
+    /// place. Only meaningful when `hoverable: true`.
     var onHover: (() -> Void)?
     private var hoverFired = false
+
+    private static let hoverDwellInterval: TimeInterval = 0.1
+    private static let hoverDwellRequiredSamples = 5
+    private var hoverDwellTimer: Timer?
+    private var hoverDwellCount = 0
 
     init(screensProvider: @escaping () -> [NSScreen], hoverable: Bool = false) {
         self.screensProvider = screensProvider
@@ -111,6 +122,7 @@ final class BottomLeftBanner {
 
     func dismiss(animated: Bool = true) {
         guard isVisible else { return }
+        cancelHoverDwell()
         let toRemove = panels
         panels.removeAll()
         if animated {
@@ -125,7 +137,42 @@ final class BottomLeftBanner {
         }
     }
 
-    fileprivate func handleHover() {
+    fileprivate func startHoverDwell() {
+        guard hoverable, !hoverFired, hoverDwellTimer == nil else { return }
+        hoverDwellCount = 0
+        hoverDwellTimer = Timer.scheduledTimer(withTimeInterval: Self.hoverDwellInterval, repeats: true) { [weak self] _ in
+            self?.tickHoverDwell()
+        }
+    }
+
+    fileprivate func cancelHoverDwell() {
+        hoverDwellTimer?.invalidate()
+        hoverDwellTimer = nil
+        hoverDwellCount = 0
+    }
+
+    private func tickHoverDwell() {
+        guard !hoverFired else { cancelHoverDwell(); return }
+        if isMouseInsideAnyPanel() {
+            hoverDwellCount += 1
+            if hoverDwellCount >= Self.hoverDwellRequiredSamples {
+                cancelHoverDwell()
+                fireHover()
+            }
+        } else {
+            hoverDwellCount = 0
+        }
+    }
+
+    private func isMouseInsideAnyPanel() -> Bool {
+        let pos = NSEvent.mouseLocation
+        for entry in panels where entry.panel.frame.contains(pos) {
+            return true
+        }
+        return false
+    }
+
+    private func fireHover() {
         guard !hoverFired else { return }
         hoverFired = true
         onHover?()
@@ -214,6 +261,10 @@ private final class HoverView: NSView {
     }
 
     override func mouseEntered(with _: NSEvent) {
-        banner?.handleHover()
+        banner?.startHoverDwell()
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        banner?.cancelHoverDwell()
     }
 }
