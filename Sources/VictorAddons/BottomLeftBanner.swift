@@ -56,6 +56,10 @@ final class BottomLeftBanner {
     private var hoverDwellTimer: Timer?
     private var hoverDwellCount = 0
 
+    /// Final window opacity when visible. Below 1.0 to add an extra layer
+    /// of see-through on top of the NSVisualEffectView glass.
+    private static let visibleAlpha: CGFloat = 0.75
+
     init(screensProvider: @escaping () -> [NSScreen], hoverable: Bool = false) {
         self.screensProvider = screensProvider
         self.hoverable = hoverable
@@ -89,7 +93,7 @@ final class BottomLeftBanner {
         }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.3
-            for entry in panels { entry.panel.animator().alphaValue = 1 }
+            for entry in panels { entry.panel.animator().alphaValue = Self.visibleAlpha }
         }
     }
 
