@@ -2759,6 +2759,7 @@ class EmojiAnimator {
 
         let container = CALayer()
         container.frame = bounds
+        container.actions = ["opacity": NSNull()]   // no implicit opacity animation racing the fade
         hostLayer.addSublayer(container)
         activeEffects["wrong-x"] = container
 
@@ -2807,17 +2808,14 @@ class EmojiAnimator {
         scheduleDraw(maskB, beginTime: startTime + drawEach)
 
         let fadeStart = totalDraw + holdAfterDraw
-        DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart) { [weak container] in
-            guard let container = container else { return }
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1.0
-            fade.toValue = 0.0
-            fade.duration = fadeDuration
-            fade.fillMode = .forwards
-            fade.isRemovedOnCompletion = false
-            container.add(fade, forKey: "fade")
-            container.opacity = 0
-        }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.duration = fadeDuration
+        fade.beginTime = startTime + fadeStart
+        fade.fillMode = .both
+        fade.isRemovedOnCompletion = false
+        container.add(fade, forKey: "fade")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart + fadeDuration) { [weak self] in
             _ = self?.cancelIfRunning("wrong-x", sound: nil)
