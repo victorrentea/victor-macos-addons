@@ -52,6 +52,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDisplayClipboardLink: (() -> Void)?
     var onConnectTablet: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
+    var onOpenCalendar: (() -> Void)?
     var onDesktopEffect: ((String) -> Void)?
     var onTileTerminals: (() -> Void)?
     var onPickSource: ((String) -> Void)?
@@ -208,6 +209,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         catalogItem.isEnabled = true
         extraSubmenu.addItem(catalogItem)
 
+        // Google Calendar (⌘⌥C)
+        let calendarItem = NSMenuItem(title: "📅 Google Calendar", action: #selector(openCalendarAction), keyEquivalent: "c")
+        calendarItem.keyEquivalentModifierMask = [.command, .option]
+        calendarItem.target = self
+        calendarItem.isEnabled = true
+        extraSubmenu.addItem(calendarItem)
+
         // Tile Terminals (⌘⌃A)
         let tileItem = NSMenuItem(title: "Tile Terminals", action: #selector(tileTerminalsAction), keyEquivalent: "a")
         tileItem.keyEquivalentModifierMask = [.command, .control]
@@ -357,6 +365,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func openCatalogAction() {
         onOpenCatalog?()
+    }
+
+    @objc private func openCalendarAction() {
+        onOpenCalendar?()
     }
 
     @objc private func toggleTranscribe() {

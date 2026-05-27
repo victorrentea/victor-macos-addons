@@ -437,6 +437,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 DispatchQueue.main.async { self?.showBanner(forGitUrl: url) }
             }
         }
+        menuBarManager.onOpenCalendar = { [weak self] in
+            DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/") }
+        }
         menuBarManager.onOpenCatalog = {
             DispatchQueue.global(qos: .userInitiated).async {
                 let path = NSHomeDirectory() + "/My Drive/Clients/Catalog.docx"
@@ -560,8 +563,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
-        eventTap.onOpenCalendar = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/") }
+        eventTap.onOpenCalendar = { [weak menuBarManager] in
+            menuBarManager?.onOpenCalendar?()
         }
         eventTap.start()
         self.eventTapManager = eventTap
