@@ -57,7 +57,7 @@ enum SessionNotesAppender {
         let collapsed = text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
-        let head = collapsed.prefix(20)
+        let head = collapsed.prefix(24)
         return "⬆️ \(head)"
     }
 

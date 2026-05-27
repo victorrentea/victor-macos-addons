@@ -42,6 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var statusBanner: StatusBanner?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
     private var meetingDetector: MeetingDetector?
+    private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
     /// that the next `whisperManager.onStateChanged(true)` shows the
     /// "started" banner. Consumed (cleared) when the banner fires.
@@ -509,6 +510,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         rhMonitor.onBreakEnded = { [weak self] in
             DispatchQueue.main.async {
                 self?.menuBarManager.breakEndedAt = Date()
+                self?.scheduleBreakReminder()
             }
         }
         rhMonitor.start()
@@ -685,6 +687,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.whisperManager?.start(env: env)
             }
+        }
+    }
+
+    // MARK: - Break reminder
+
+    /// Subtle bottom-left nudge 1h 15m after the most recent resume, prompting
+    /// the trainer to ask if anyone wants a break. Latest-wins: a fresh resume
+    /// cancels the previous pending reminder.
+    private func scheduleBreakReminder() {
+        breakReminderTimer?.invalidate()
+        breakReminderTimer = Timer.scheduledTimer(withTimeInterval: 75 * 60, repeats: false) { [weak self] _ in
+            self?.statusBanner?.showOnPresence(
+                text: "Click ☕ in interact to request a break",
+                sound: nil,
+                visibleDuration: 7.0
+            )
         }
     }
 
