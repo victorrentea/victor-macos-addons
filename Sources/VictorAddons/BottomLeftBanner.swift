@@ -38,6 +38,9 @@ final class BottomLeftBanner {
     private struct PanelEntry {
         let panel: NSPanel
         let tint: NSView
+        /// White overlay above the tint that ramps up during the hover
+        /// dwell. Alpha 0 at rest, alpha 1 the instant `onHover` fires.
+        let whitenTint: NSView
         let label: NSTextField
     }
     private var panels: [PanelEntry] = []
@@ -153,19 +156,46 @@ final class BottomLeftBanner {
     fileprivate func cancelHoverDwell() {
         hoverDwellTimer?.invalidate()
         hoverDwellTimer = nil
-        hoverDwellCount = 0
+        if hoverDwellCount > 0 {
+            hoverDwellCount = 0
+            applyWhitenProgress(0)
+        }
     }
 
     private func tickHoverDwell() {
         guard !hoverFired else { cancelHoverDwell(); return }
         if isMouseInsideAnyPanel() {
             hoverDwellCount += 1
+            let progress = min(1.0, CGFloat(hoverDwellCount) / CGFloat(Self.hoverDwellRequiredSamples))
+            applyWhitenProgress(progress)
             if hoverDwellCount >= Self.hoverDwellRequiredSamples {
-                cancelHoverDwell()
+                hoverDwellTimer?.invalidate()
+                hoverDwellTimer = nil
                 fireHover()
             }
-        } else {
+        } else if hoverDwellCount > 0 {
             hoverDwellCount = 0
+            applyWhitenProgress(0)
+        }
+    }
+
+    /// Animate the per-panel "whitening" overlay to `alpha`. Linear over
+    /// one dwell-tick interval so the ramp feels continuous as the user
+    /// holds the cursor in place.
+    private func applyWhitenProgress(_ alpha: CGFloat) {
+        let cg = NSColor.white.withAlphaComponent(alpha).cgColor
+        for entry in panels {
+            guard let layer = entry.whitenTint.layer else { continue }
+            let anim = CABasicAnimation(keyPath: "backgroundColor")
+            anim.fromValue = layer.backgroundColor
+            anim.toValue = cg
+            anim.duration = Self.hoverDwellInterval
+            anim.timingFunction = CAMediaTimingFunction(name: .linear)
+            layer.add(anim, forKey: "whiten")
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.backgroundColor = cg
+            CATransaction.commit()
         }
     }
 
@@ -228,6 +258,12 @@ final class BottomLeftBanner {
         tint.layer?.backgroundColor = bg.cgColor
         content.addSubview(tint)
 
+        let whitenTint = NSView(frame: content.bounds)
+        whitenTint.autoresizingMask = [.width, .height]
+        whitenTint.wantsLayer = true
+        whitenTint.layer?.backgroundColor = NSColor.white.withAlphaComponent(0).cgColor
+        content.addSubview(whitenTint)
+
         let textWidth = width - Style.leftPadding - Style.rightPadding
         let label = NSTextField(labelWithString: text)
         label.font = font
@@ -247,7 +283,7 @@ final class BottomLeftBanner {
         content.addSubview(label)
 
         panel.contentView = content
-        return PanelEntry(panel: panel, tint: tint, label: label)
+        return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint, label: label)
     }
 }
 
