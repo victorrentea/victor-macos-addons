@@ -22,9 +22,10 @@ final class BottomLeftBanner {
         static let textRenderHeight: CGFloat = 50
         static let boxWidth: CGFloat = 480
         static let boxHeight: CGFloat = 80
-        /// Light tint over the NSVisualEffectView so the glass blur stays
-        /// visible. Lower alpha = more glass, higher alpha = more flat gray.
-        static let defaultBackground: NSColor = NSColor.gray.withAlphaComponent(0.3)
+        /// No extra tint by default — the NSVisualEffectView glass handles
+        /// the gray-translucent look on its own. Callers that need a
+        /// specific color (e.g. countdown red) pass their own NSColor.
+        static let defaultBackground: NSColor = .clear
         static let textColor: NSColor = .white
         static func defaultFont() -> NSFont {
             NSFont.boldSystemFont(ofSize: fontSize)
@@ -214,6 +215,7 @@ final class BottomLeftBanner {
         effect.material = .hudWindow
         effect.blendingMode = .behindWindow
         effect.state = .active
+        effect.isEmphasized = true
         content.addSubview(effect)
 
         let tint = NSView(frame: content.bounds)
