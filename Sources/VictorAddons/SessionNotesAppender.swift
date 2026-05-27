@@ -3,13 +3,18 @@ import Foundation
 import UserNotifications
 
 enum SessionNotesAppender {
-    /// Set by AppDelegate after the banner is constructed. `offerPrompt`
-    /// shows the bottom-left hover banner on this instance; if unset, the
-    /// prompt is silently dropped (with a log line).
-    static weak var promptBanner: PromptCaptureBanner?
+    /// Set by AppDelegate at startup. The unified bottom-left banner used to
+    /// surface a prompt-capture offer; the user hovers it to commit. If the
+    /// banner is unset, prompt-capture requests are silently dropped.
+    static weak var promptBanner: BottomLeftBanner?
 
-    private static var pendingPrompts: [String: String] = [:]
-    private static let pendingLimit = 20
+    private static let promptFont = NSFont.monospacedSystemFont(ofSize: 36, weight: .bold)
+    private static let promptBoxWidth: CGFloat = 640
+    private static let promptVisibleDuration: TimeInterval = 20
+
+    /// Currently-pending prompt text, if any. Cleared on hover-accept or
+    /// timeout. Only one prompt-capture offer is on screen at a time.
+    private static var pendingPrompt: String?
 
     static func appendClipboard() {
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,28 +32,33 @@ enum SessionNotesAppender {
         guard !trimmed.isEmpty else { return }
         guard ScreenshotManager.sessionFolder != nil else { return }
         guard let banner = promptBanner else {
-            overlayInfo("PromptCaptureBanner not set; dropping prompt-capture request")
+            overlayInfo("Prompt-capture banner not set; dropping request")
             return
         }
 
-        let id = UUID().uuidString
-        pendingPrompts[id] = trimmed
-        if pendingPrompts.count > pendingLimit, let key = pendingPrompts.keys.first {
-            pendingPrompts.removeValue(forKey: key)
+        pendingPrompt = trimmed
+        let display = formatPromptLabel(from: trimmed)
+        banner.onHover = { [weak banner] in
+            guard let captured = pendingPrompt else { return }
+            pendingPrompt = nil
+            banner?.dismiss()
+            appendAndReport(text: captured)
         }
+        banner.show(text: display, font: promptFont, boxWidth: promptBoxWidth)
 
-        banner.show(text: trimmed, id: id)
+        DispatchQueue.main.asyncAfter(deadline: .now() + promptVisibleDuration) { [weak banner] in
+            guard pendingPrompt == trimmed else { return }
+            pendingPrompt = nil
+            banner?.dismiss()
+        }
     }
 
-    /// Called by the notification action handler when "Add to notes" is tapped.
-    static func acceptPendingPrompt(id: String) {
-        guard let text = pendingPrompts.removeValue(forKey: id) else { return }
-        appendAndReport(text: text)
-    }
-
-    /// Called when the user skips or dismisses the prompt-capture notification.
-    static func discardPendingPrompt(id: String) {
-        pendingPrompts.removeValue(forKey: id)
+    private static func formatPromptLabel(from text: String) -> String {
+        let collapsed = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        let head = collapsed.prefix(20)
+        return "Send? - \(head)"
     }
 
     private static func appendAndReport(text: String) {

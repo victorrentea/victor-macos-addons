@@ -34,7 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionWatcher: TranscriptionWatcher?
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     private var joinLinkBanner: JoinLinkBanner?
-    private var promptCaptureBanner: PromptCaptureBanner?
+    private var promptCaptureBanner: BottomLeftBanner?
     private var powerMonitor: PowerMonitor?
     private var transcriptionStateMachine: TranscriptionStateMachine?
     private var transcriptionScheduler: TranscriptionScheduler?
@@ -292,9 +292,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             guard let self = self, let sm = sm else { return }
 
             if self.transcriptionCountdownOverlay == nil {
-                self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(panelsProvider: { [weak self] in
-                    self?.allStatusOverlayPanels() ?? []
-                })
+                self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(screensProvider: { NSScreen.screens })
             }
 
             self.transcriptionCountdownOverlay?.startCountdown(
@@ -473,13 +471,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
-        statusBanner = StatusBanner(panelsProvider: { [weak self] in
-            self?.allStatusOverlayPanels() ?? []
-        })
-        silentTranscriptionWarning = SilentTranscriptionWarning(panelsProvider: { [weak self] in
-            self?.allStatusOverlayPanels() ?? []
-        })
-        promptCaptureBanner = PromptCaptureBanner(screensProvider: { NSScreen.screens })
+        statusBanner = StatusBanner(screensProvider: { NSScreen.screens })
+        silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.screens })
+        promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.screens }, hoverable: true)
         SessionNotesAppender.promptBanner = promptCaptureBanner
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
