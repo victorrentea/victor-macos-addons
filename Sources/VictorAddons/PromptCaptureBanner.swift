@@ -14,23 +14,35 @@ final class PromptCaptureBanner {
     private var dismissTimer: Timer?
     private var pendingId: String?
 
-    private static let width: CGFloat = 280
-    private static let height: CGFloat = 64
+    private static let width: CGFloat = 640
+    private static let height: CGFloat = 80
+    private static let fontSize: CGFloat = 36
+    private static let leftPadding: CGFloat = 20
+    private static let rightPadding: CGFloat = 12
 
     init(screensProvider: @escaping () -> [NSScreen]) {
         self.screensProvider = screensProvider
     }
 
     /// Show the banner on every screen. Replaces any currently visible banner.
-    func show(text _: String, id: String, visibleDuration: TimeInterval = 20.0) {
+    func show(text: String, id: String, visibleDuration: TimeInterval = 20.0) {
         dismiss(notifying: false)
         pendingId = id
+        let display = Self.formatLabel(from: text)
         for screen in screensProvider() {
-            panels.append(makePanel(on: screen))
+            panels.append(makePanel(on: screen, labelText: display))
         }
         dismissTimer = Timer.scheduledTimer(withTimeInterval: visibleDuration, repeats: false) { [weak self] _ in
             self?.handleTimeout()
         }
+    }
+
+    private static func formatLabel(from text: String) -> String {
+        let collapsed = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        let head = collapsed.prefix(20)
+        return "Send? - \(head)"
     }
 
     private func handleTimeout() {
@@ -56,7 +68,7 @@ final class PromptCaptureBanner {
         pendingId = nil
     }
 
-    private func makePanel(on screen: NSScreen) -> NSPanel {
+    private func makePanel(on screen: NSScreen, labelText: String) -> NSPanel {
         let frame = screen.frame
         let rect = NSRect(x: frame.minX, y: frame.minY, width: Self.width, height: Self.height)
         let panel = NSPanel(
@@ -77,37 +89,37 @@ final class PromptCaptureBanner {
         hover.banner = self
         hover.wantsLayer = true
 
-        // Glass — NSVisualEffectView with hudWindow material gives the
-        // translucent gray look matching macOS HUDs.
+        // Glass background (NSVisualEffectView, hudWindow material).
         let effect = NSVisualEffectView(frame: hover.bounds)
         effect.autoresizingMask = [.width, .height]
         effect.material = .hudWindow
         effect.blendingMode = .behindWindow
         effect.state = .active
-        effect.wantsLayer = true
-        // Round only the top-right corner since the banner is flush to the
-        // bottom-left screen corner.
-        effect.layer?.cornerRadius = 10
-        effect.layer?.maskedCorners = [.layerMaxXMaxYCorner]
         hover.addSubview(effect)
 
-        // Extra gray tint for a slightly stronger "gray translucent" feel.
+        // Gray tint over the glass for the requested "gray translucent" feel,
+        // matched to StatusBannerStyle's 0.6 alpha.
         let tint = NSView(frame: hover.bounds)
         tint.autoresizingMask = [.width, .height]
         tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.25).cgColor
-        tint.layer?.cornerRadius = 10
-        tint.layer?.maskedCorners = [.layerMaxXMaxYCorner]
+        tint.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.6).cgColor
         hover.addSubview(tint)
 
-        let label = NSTextField(labelWithString: "Send prompt")
-        label.font = NSFont.boldSystemFont(ofSize: 22)
+        let textWidth = Self.width - Self.leftPadding - Self.rightPadding
+        let label = NSTextField(labelWithString: labelText)
+        label.font = NSFont.monospacedSystemFont(ofSize: Self.fontSize, weight: .bold)
         label.textColor = .white
-        label.alignment = .center
+        label.alignment = .left
         label.isBezeled = false
         label.isEditable = false
         label.drawsBackground = false
-        label.frame = NSRect(x: 0, y: (Self.height - 28) / 2, width: Self.width, height: 28)
+        label.lineBreakMode = .byTruncatingTail
+        label.frame = NSRect(
+            x: Self.leftPadding,
+            y: (Self.height - 50) / 2,
+            width: textWidth,
+            height: 50
+        )
         label.autoresizingMask = [.width]
         hover.addSubview(label)
 
