@@ -57,7 +57,7 @@ enum SessionNotesAppender {
         let collapsed = text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
-        let head = collapsed.prefix(24)
+        let head = collapsed.count > 23 ? String(collapsed.prefix(23)) + "⋯" : collapsed
         return "⬆️ \(head)"
     }
 
