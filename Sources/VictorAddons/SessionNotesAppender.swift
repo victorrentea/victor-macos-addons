@@ -58,7 +58,7 @@ enum SessionNotesAppender {
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
         let head = collapsed.prefix(20)
-        return "Send? - \(head)"
+        return "⬆️ \(head)"
     }
 
     private static func appendAndReport(text: String) {
