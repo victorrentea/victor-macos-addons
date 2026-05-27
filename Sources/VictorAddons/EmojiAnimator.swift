@@ -2715,7 +2715,7 @@ class EmojiAnimator {
         let aspect: CGFloat = 600.0 / 800.0     // gong gif is 800x600
         let w = min(bounds.width, bounds.height / aspect)
         let h = w * aspect
-        let x: CGFloat = 0
+        let x: CGFloat = -150                  // shifted 150px past the left edge
         let y: CGFloat = -310                  // shifted 310px toward the bottom of the screen
 
         let gifLayer = CALayer()
