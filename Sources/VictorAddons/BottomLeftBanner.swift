@@ -52,7 +52,7 @@ final class BottomLeftBanner {
     private var hoverFired = false
 
     private static let hoverDwellInterval: TimeInterval = 0.1
-    private static let hoverDwellRequiredSamples = 5
+    private static let hoverDwellRequiredSamples = 10
     private var hoverDwellTimer: Timer?
     private var hoverDwellCount = 0
 
