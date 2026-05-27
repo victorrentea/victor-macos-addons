@@ -67,6 +67,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         center.requestAuthorization(options: [.alert]) { granted, err in
             overlayInfo("Notifications: granted=\(granted) err=\(String(describing: err))")
         }
+        let addAction = UNNotificationAction(identifier: SessionNotesAppender.addToNotesActionId,
+                                             title: "Add to notes",
+                                             options: [])
+        let skipAction = UNNotificationAction(identifier: SessionNotesAppender.skipActionId,
+                                              title: "Skip",
+                                              options: [.destructive])
+        let promptCategory = UNNotificationCategory(identifier: SessionNotesAppender.promptCaptureCategoryId,
+                                                    actions: [addAction, skipAction],
+                                                    intentIdentifiers: [],
+                                                    options: [])
+        center.setNotificationCategories([promptCategory])
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = AppDelegate.findRetinaScreen()
@@ -172,6 +183,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onOpenUrl = { [weak self] url in
             self?.openUrlInChrome(url)
+        }
+        tabletServer?.onPromptCapture = { [weak self] prompt in
+            guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
+            guard self.isSessionActive else {
+                return "{\"captured\":false,\"reason\":\"no-session\"}"
+            }
+            SessionNotesAppender.offerPrompt(prompt)
+            return "{\"captured\":true}"
         }
         tabletServer?.start()
         overlayInfo("TabletHttpServer.start() called")
@@ -1196,9 +1215,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        if let purpose = userInfo["purpose"] as? String,
-           purpose == "slides-not-shared",
-           let path = userInfo["slidesPath"] as? String {
+        let category = response.notification.request.content.categoryIdentifier
+        if category == SessionNotesAppender.promptCaptureCategoryId,
+           let promptId = userInfo["promptId"] as? String {
+            switch response.actionIdentifier {
+            case SessionNotesAppender.addToNotesActionId, UNNotificationDefaultActionIdentifier:
+                SessionNotesAppender.acceptPendingPrompt(id: promptId)
+            default:
+                SessionNotesAppender.discardPendingPrompt(id: promptId)
+            }
+        } else if let purpose = userInfo["purpose"] as? String,
+                  purpose == "slides-not-shared",
+                  let path = userInfo["slidesPath"] as? String {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
         }
         completionHandler()

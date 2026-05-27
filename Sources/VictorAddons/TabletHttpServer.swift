@@ -17,6 +17,7 @@ class TabletHttpServer {
         case testState
         case testAudioPlaying
         case testWisprRecording
+        case promptCapture
         case unknown
     }
 
@@ -33,6 +34,8 @@ class TabletHttpServer {
     var onTestState: (() -> String)?
     var onTestAudioPlaying: (() -> String)?
     var onTestWisprRecording: (() -> String)?
+    /// Receives the prompt body; returns JSON describing whether it was captured.
+    var onPromptCapture: ((String) -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -58,8 +61,9 @@ class TabletHttpServer {
 
     private func handle(_ conn: NWConnection) {
         conn.start(queue: queue)
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] data, _, _, _ in
-            let path = data.flatMap { String(data: $0, encoding: .utf8) }.map(Self.parsePath) ?? "/"
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, _ in
+            let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            let path = Self.parsePath(raw)
             let route = Self.route(forPath: path)
 
             var statusCode = 200
@@ -102,6 +106,10 @@ class TabletHttpServer {
                     if self?.onTestWisprRecording == nil {
                         statusCode = 503
                     }
+                case .promptCapture:
+                    contentType = "application/json"
+                    let promptBody = Self.extractBody(raw)
+                    body = self?.onPromptCapture?(promptBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
                 case .unknown:
                     statusCode = 404
                     body = "not found"
@@ -111,6 +119,18 @@ class TabletHttpServer {
             let response = Self.httpResponse(statusCode: statusCode, contentType: contentType, body: body)
             conn.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in conn.cancel() })
         }
+    }
+
+    /// Extract the body from a raw HTTP request — everything after the blank
+    /// line that terminates the headers. Returns "" if no body present.
+    static func extractBody(_ raw: String) -> String {
+        if let range = raw.range(of: "\r\n\r\n") {
+            return String(raw[range.upperBound...])
+        }
+        if let range = raw.range(of: "\n\n") {
+            return String(raw[range.upperBound...])
+        }
+        return ""
     }
 
     static func parsePath(_ request: String) -> String {
@@ -139,6 +159,8 @@ class TabletHttpServer {
             return .testAudioPlaying
         case "/test/wispr/recording":
             return .testWisprRecording
+        case "/training/prompt-capture":
+            return .promptCapture
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)

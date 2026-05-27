@@ -3,33 +3,86 @@ import Foundation
 import UserNotifications
 
 enum SessionNotesAppender {
+    static let promptCaptureCategoryId = "training-prompt-capture"
+    static let addToNotesActionId = "add-to-notes"
+    static let skipActionId = "skip"
+
+    private static var pendingPrompts: [String: String] = [:]
+    private static let pendingLimit = 20
+
     static func appendClipboard() {
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             notify(title: "Clipboard empty", body: "Nothing to append to session notes.")
             return
         }
+        appendAndReport(text: text)
+    }
 
+    /// Offer to append `text` to the current session notes via an interactive notification.
+    /// No-op if there is no active session folder.
+    static func offerPrompt(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard ScreenshotManager.sessionFolder != nil else { return }
+
+        let id = UUID().uuidString
+        pendingPrompts[id] = trimmed
+        if pendingPrompts.count > pendingLimit, let key = pendingPrompts.keys.first {
+            pendingPrompts.removeValue(forKey: key)
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Capture to session notes?"
+        content.body = preview(of: trimmed, max: 180)
+        content.categoryIdentifier = promptCaptureCategoryId
+        content.userInfo = ["promptId": id]
+
+        let identifier = "training-prompt-capture-\(id)"
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Prompt-capture notification error: \(err)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+            pendingPrompts.removeValue(forKey: id)
+        }
+    }
+
+    /// Called by the notification action handler when "Add to notes" is tapped.
+    static func acceptPendingPrompt(id: String) {
+        guard let text = pendingPrompts.removeValue(forKey: id) else { return }
+        appendAndReport(text: text)
+    }
+
+    /// Called when the user skips or dismisses the prompt-capture notification.
+    static func discardPendingPrompt(id: String) {
+        pendingPrompts.removeValue(forKey: id)
+    }
+
+    private static func appendAndReport(text: String) {
         guard let folder = ScreenshotManager.sessionFolder else {
             notify(title: "No active session", body: "Session folder unknown — start a session first.")
             return
         }
-
         guard let notes = findNotesFile(in: folder) else {
             notify(title: "No notes file", body: "No .txt file found in \(folder.lastPathComponent).")
             return
         }
-
         do {
             try appendLine(text, to: notes)
-            let preview = text.count > 120 ? String(text.prefix(120)) + "…" : text
             let topic = stripDatePrefix(folder.lastPathComponent)
-            notify(title: "Pasted in notes of \(topic)", body: preview)
+            notify(title: "Pasted in notes of \(topic)", body: preview(of: text, max: 120))
             overlayInfo("Appended \(text.count) chars to \(notes.path)")
         } catch {
             notify(title: "Append failed", body: "\(error.localizedDescription)")
             overlayError("Append to notes failed: \(error)")
         }
+    }
+
+    private static func preview(of text: String, max: Int) -> String {
+        let single = text.replacingOccurrences(of: "\n", with: " ")
+        return single.count > max ? String(single.prefix(max)) + "…" : single
     }
 
     /// Strip the leading date prefix from a session folder name.
