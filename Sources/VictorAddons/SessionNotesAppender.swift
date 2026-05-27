@@ -71,7 +71,7 @@ enum SessionNotesAppender {
         if !existing.isEmpty, existing.last != 0x0A {
             payload += "\n"
         }
-        payload += text + "\n"
+        payload += "- " + text + "\n"
         if let data = payload.data(using: .utf8) {
             try handle.write(contentsOf: data)
         }
