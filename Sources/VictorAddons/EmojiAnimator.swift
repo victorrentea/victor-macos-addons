@@ -2718,25 +2718,40 @@ class EmojiAnimator {
         let x: CGFloat = -150                  // shifted 150px past the left edge
         let y: CGFloat = -310                  // shifted 310px toward the bottom of the screen
 
+        let startDelay: TimeInterval = 0.3
+        let startTime = CACurrentMediaTime() + startDelay
+
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: w, height: h)
         gifLayer.contentsGravity = .resizeAspect
         if let first = images.first { gifLayer.contents = first }
+        gifLayer.opacity = 0   // hidden during the start delay
+        gifLayer.actions = ["opacity": NSNull()]
         hostLayer.addSublayer(gifLayer)
         activeEffects["gong"] = gifLayer
+
+        let reveal = CABasicAnimation(keyPath: "opacity")
+        reveal.fromValue = 0
+        reveal.toValue = 1
+        reveal.beginTime = startTime
+        reveal.duration = 0.001
+        reveal.fillMode = .both
+        reveal.isRemovedOnCompletion = false
 
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.duration = totalDuration
+        anim.beginTime = startTime
         anim.repeatCount = 1
-        anim.fillMode = .forwards
+        anim.fillMode = .both
         anim.isRemovedOnCompletion = false
 
         CATransaction.begin()
+        gifLayer.add(reveal, forKey: "gongReveal")
         gifLayer.add(anim, forKey: "gongFrames")
         CATransaction.commit()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalDuration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + startDelay + totalDuration) { [weak self] in
             _ = self?.cancelIfRunning("gong", sound: nil)
         }
 
@@ -2793,8 +2808,7 @@ class EmojiAnimator {
         container.addSublayer(legA)
         container.addSublayer(legB)
 
-        let startDelay: TimeInterval = 0.3
-        let startTime = CACurrentMediaTime() + startDelay
+        let startTime = CACurrentMediaTime()
         func scheduleDraw(_ mask: CALayer, beginTime: CFTimeInterval) {
             let anim = CABasicAnimation(keyPath: "bounds.size.width")
             anim.fromValue = 0
@@ -2818,7 +2832,7 @@ class EmojiAnimator {
         fade.isRemovedOnCompletion = false
         container.add(fade, forKey: "fade")
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + startDelay + fadeStart + fadeDuration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart + fadeDuration) { [weak self] in
             _ = self?.cancelIfRunning("wrong-x", sound: nil)
         }
 
