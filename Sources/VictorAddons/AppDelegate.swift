@@ -164,6 +164,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "star-wars":       self?.animator.showStarWars(playSound: false)
             case "star-wars/stop":  self?.animator.stopStarWars()
             case "gong":            self?.animator.showGong(playSound: false)
+            case "wrong-x":         self?.animator.showWrongX(playSound: false)
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
             case "game-over/stop":  self?.animator.stopGameOver()
@@ -410,6 +411,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "love-hands":      self?.animator.showLoveHands()
                 case "star-wars":       self?.animator.showStarWars()
                 case "gong":            self?.animator.showGong()
+                case "wrong-x":         self?.animator.showWrongX()
                 case "drum-roll":       self?.animator.showDrumRoll()
                 case "laugh":           self?.animator.showLaugh()
                 default: break

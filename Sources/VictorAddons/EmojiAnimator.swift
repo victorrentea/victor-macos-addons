@@ -2742,6 +2742,86 @@ class EmojiAnimator {
         if playSound { SoundManager.shared.play("gong.mp3") }
     }
 
+    // MARK: - Wrong X (two diagonal brush strokes, drawn one after the other)
+
+    func showWrongX(playSound: Bool = true) {
+        if cancelIfRunning("wrong-x", sound: playSound ? "49_wrong.mp3" : nil) { return }
+        guard let url = Bundle.module.url(forResource: "leg", withExtension: "png"),
+              let nsImg = NSImage(contentsOf: url),
+              let cg = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        let bounds = hostLayer.bounds
+        let w = bounds.width * 0.5
+        let aspect = CGFloat(cg.height) / CGFloat(cg.width)
+        let h = w * aspect
+        let legRect = CGRect(x: bounds.midX - w / 2, y: bounds.midY - h / 2, width: w, height: h)
+
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+        activeEffects["wrong-x"] = container
+
+        func makeLeg(flipped: Bool) -> (CALayer, CALayer) {
+            let leg = CALayer()
+            leg.frame = legRect
+            leg.contents = cg
+            leg.contentsGravity = .resizeAspect
+            if flipped { leg.transform = CATransform3DMakeScale(-1, 1, 1) }
+
+            let mask = CALayer()
+            mask.backgroundColor = NSColor.black.cgColor
+            mask.anchorPoint = CGPoint(x: 0, y: 0.5)
+            mask.position = CGPoint(x: 0, y: h / 2)
+            mask.bounds = CGRect(x: 0, y: 0, width: 0, height: h)
+            leg.mask = mask
+            return (leg, mask)
+        }
+
+        let (legA, maskA) = makeLeg(flipped: false)
+        let (legB, maskB) = makeLeg(flipped: true)
+        container.addSublayer(legA)
+        container.addSublayer(legB)
+
+        let drawEach: TimeInterval = 0.25
+        let soundDuration: TimeInterval = 1.02   // 49_wrong.mp3
+        let totalDraw = 2 * drawEach
+        let holdAfterDraw = max(0.15, soundDuration - totalDraw)
+        let fadeDuration: TimeInterval = 0.6
+
+        func drawMask(_ mask: CALayer) {
+            let anim = CABasicAnimation(keyPath: "bounds.size.width")
+            anim.fromValue = 0
+            anim.toValue = w
+            anim.duration = drawEach
+            anim.fillMode = .forwards
+            anim.isRemovedOnCompletion = false
+            mask.add(anim, forKey: "draw")
+            mask.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+        }
+
+        drawMask(maskA)
+        DispatchQueue.main.asyncAfter(deadline: .now() + drawEach) { drawMask(maskB) }
+
+        let fadeStart = totalDraw + holdAfterDraw
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart) { [weak container] in
+            guard let container = container else { return }
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1.0
+            fade.toValue = 0.0
+            fade.duration = fadeDuration
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            container.add(fade, forKey: "fade")
+            container.opacity = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart + fadeDuration) { [weak self] in
+            _ = self?.cancelIfRunning("wrong-x", sound: nil)
+        }
+
+        if playSound { SoundManager.shared.play("49_wrong.mp3") }
+    }
+
     // MARK: - Drum roll GIF overlay (bottom-left, loops until stopped)
 
     func showDrumRoll(playSound: Bool = true) {
