@@ -12,6 +12,12 @@ enum SessionNotesAppender {
     private static let promptBoxWidth: CGFloat = 640
     private static let promptVisibleDuration: TimeInterval = 20
 
+    /// Prompts whose trimmed text starts with any of these prefixes are silently
+    /// dropped — no banner, no notes append. Extend as new system-noise prefixes appear.
+    private static let blockedPromptPrefixes: [String] = [
+        "<task-notification>",
+    ]
+
     /// Currently-pending prompt text, if any. Cleared on hover-accept or
     /// timeout. Only one prompt-capture offer is on screen at a time.
     private static var pendingPrompt: String?
@@ -30,6 +36,7 @@ enum SessionNotesAppender {
     static func offerPrompt(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if blockedPromptPrefixes.contains(where: { trimmed.hasPrefix($0) }) { return }
         guard ScreenshotManager.sessionFolder != nil else { return }
         guard let banner = promptBanner else {
             overlayInfo("Prompt-capture banner not set; dropping request")
