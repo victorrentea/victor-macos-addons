@@ -2793,7 +2793,8 @@ class EmojiAnimator {
         container.addSublayer(legA)
         container.addSublayer(legB)
 
-        let startTime = CACurrentMediaTime()
+        let startDelay: TimeInterval = 0.3
+        let startTime = CACurrentMediaTime() + startDelay
         func scheduleDraw(_ mask: CALayer, beginTime: CFTimeInterval) {
             let anim = CABasicAnimation(keyPath: "bounds.size.width")
             anim.fromValue = 0
@@ -2817,7 +2818,7 @@ class EmojiAnimator {
         fade.isRemovedOnCompletion = false
         container.add(fade, forKey: "fade")
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart + fadeDuration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + startDelay + fadeStart + fadeDuration) { [weak self] in
             _ = self?.cancelIfRunning("wrong-x", sound: nil)
         }
 
