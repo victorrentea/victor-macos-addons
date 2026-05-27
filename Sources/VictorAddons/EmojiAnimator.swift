@@ -2634,6 +2634,50 @@ class EmojiAnimator {
 
     // MARK: - Gong GIF overlay (bottom-left, full screen width)
 
+    private func detectLastCycleLength(_ images: [CGImage]) -> Int {
+        let n = images.count
+        guard n >= 6 else { return 0 }
+        let thumbSize = 32
+        let pixelCount = thumbSize * thumbSize
+
+        func thumb(_ img: CGImage) -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: pixelCount)
+            let cs = CGColorSpaceCreateDeviceGray()
+            guard let ctx = CGContext(data: &bytes, width: thumbSize, height: thumbSize,
+                                      bitsPerComponent: 8, bytesPerRow: thumbSize,
+                                      space: cs, bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return bytes }
+            ctx.interpolationQuality = .low
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: thumbSize, height: thumbSize))
+            return bytes
+        }
+
+        let thumbs = images.map(thumb)
+        // Threshold: avg per-pixel grayscale diff <= 12 over the cycle window.
+        let threshold = pixelCount * 12
+
+        func framesMatch(_ a: Int, _ b: Int) -> Bool {
+            let ta = thumbs[a]
+            let tb = thumbs[b]
+            var sum = 0
+            for i in 0..<pixelCount {
+                sum += abs(Int(ta[i]) - Int(tb[i]))
+                if sum > threshold { return false }
+            }
+            return true
+        }
+
+        for k in 2...(n / 2) {
+            var ok = true
+            for i in 0..<k {
+                let a = n - 1 - i
+                let b = a - k
+                if b < 0 || !framesMatch(a, b) { ok = false; break }
+            }
+            if ok { return k }
+        }
+        return 0
+    }
+
     func showGong(playSound: Bool = true) {
         if cancelIfRunning("gong", sound: playSound ? "gong.mp3" : nil) { return }
         guard let url = Bundle.module.url(forResource: "gong", withExtension: "gif"),
@@ -2655,11 +2699,23 @@ class EmojiAnimator {
             totalDuration += delay
         }
 
+        let originalCount = images.count
+        if originalCount >= 6 {
+            let cycleLen = detectLastCycleLength(images)
+            if cycleLen > 0 {
+                let extraFrames = (originalCount + 1) / 2
+                let repeats = max(1, (extraFrames + cycleLen - 1) / cycleLen)
+                let cycle = Array(images.suffix(cycleLen))
+                for _ in 0..<repeats { images.append(contentsOf: cycle) }
+                totalDuration = totalDuration * Double(images.count) / Double(originalCount)
+            }
+        }
+
         let bounds = hostLayer.bounds
         let w = bounds.width * 1.00
         let h = w * (600.0 / 800.0)           // preserve original 800x600 aspect ratio
         let x: CGFloat = 0
-        let y: CGFloat = -200                  // 200px below bottom screen edge
+        let y: CGFloat = 0                     // anchored to bottom-left screen edge
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: w, height: h)
