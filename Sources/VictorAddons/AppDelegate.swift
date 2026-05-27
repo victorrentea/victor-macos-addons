@@ -34,6 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionWatcher: TranscriptionWatcher?
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     private var joinLinkBanner: JoinLinkBanner?
+    private var promptCaptureBanner: PromptCaptureBanner?
     private var powerMonitor: PowerMonitor?
     private var transcriptionStateMachine: TranscriptionStateMachine?
     private var transcriptionScheduler: TranscriptionScheduler?
@@ -67,17 +68,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         center.requestAuthorization(options: [.alert]) { granted, err in
             overlayInfo("Notifications: granted=\(granted) err=\(String(describing: err))")
         }
-        let addAction = UNNotificationAction(identifier: SessionNotesAppender.addToNotesActionId,
-                                             title: "Add to notes",
-                                             options: [])
-        let skipAction = UNNotificationAction(identifier: SessionNotesAppender.skipActionId,
-                                              title: "Skip",
-                                              options: [.destructive])
-        let promptCategory = UNNotificationCategory(identifier: SessionNotesAppender.promptCaptureCategoryId,
-                                                    actions: [addAction, skipAction],
-                                                    intentIdentifiers: [],
-                                                    options: [])
-        center.setNotificationCategories([promptCategory])
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
         let builtInScreen = AppDelegate.findRetinaScreen()
@@ -489,6 +479,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         silentTranscriptionWarning = SilentTranscriptionWarning(panelsProvider: { [weak self] in
             self?.allStatusOverlayPanels() ?? []
         })
+        promptCaptureBanner = PromptCaptureBanner(screensProvider: { NSScreen.screens })
+        SessionNotesAppender.promptBanner = promptCaptureBanner
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
         }
@@ -1215,18 +1207,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        let category = response.notification.request.content.categoryIdentifier
-        if category == SessionNotesAppender.promptCaptureCategoryId,
-           let promptId = userInfo["promptId"] as? String {
-            switch response.actionIdentifier {
-            case SessionNotesAppender.addToNotesActionId, UNNotificationDefaultActionIdentifier:
-                SessionNotesAppender.acceptPendingPrompt(id: promptId)
-            default:
-                SessionNotesAppender.discardPendingPrompt(id: promptId)
-            }
-        } else if let purpose = userInfo["purpose"] as? String,
-                  purpose == "slides-not-shared",
-                  let path = userInfo["slidesPath"] as? String {
+        if let purpose = userInfo["purpose"] as? String,
+           purpose == "slides-not-shared",
+           let path = userInfo["slidesPath"] as? String {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
         }
         completionHandler()

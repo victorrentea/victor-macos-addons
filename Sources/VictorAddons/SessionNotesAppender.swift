@@ -3,9 +3,10 @@ import Foundation
 import UserNotifications
 
 enum SessionNotesAppender {
-    static let promptCaptureCategoryId = "training-prompt-capture"
-    static let addToNotesActionId = "add-to-notes"
-    static let skipActionId = "skip"
+    /// Set by AppDelegate after the banner is constructed. `offerPrompt`
+    /// shows the bottom-left hover banner on this instance; if unset, the
+    /// prompt is silently dropped (with a log line).
+    static weak var promptBanner: PromptCaptureBanner?
 
     private static var pendingPrompts: [String: String] = [:]
     private static let pendingLimit = 20
@@ -19,12 +20,16 @@ enum SessionNotesAppender {
         appendAndReport(text: text)
     }
 
-    /// Offer to append `text` to the current session notes via an interactive notification.
-    /// No-op if there is no active session folder.
+    /// Offer to append `text` to the current session notes via the bottom-left
+    /// hover banner. No-op when there is no active session folder.
     static func offerPrompt(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard ScreenshotManager.sessionFolder != nil else { return }
+        guard let banner = promptBanner else {
+            overlayInfo("PromptCaptureBanner not set; dropping prompt-capture request")
+            return
+        }
 
         let id = UUID().uuidString
         pendingPrompts[id] = trimmed
@@ -32,21 +37,7 @@ enum SessionNotesAppender {
             pendingPrompts.removeValue(forKey: key)
         }
 
-        let content = UNMutableNotificationContent()
-        content.title = "Capture to session notes?"
-        content.body = preview(of: trimmed, max: 180)
-        content.categoryIdentifier = promptCaptureCategoryId
-        content.userInfo = ["promptId": id]
-
-        let identifier = "training-prompt-capture-\(id)"
-        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Prompt-capture notification error: \(err)") }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
-            pendingPrompts.removeValue(forKey: id)
-        }
+        banner.show(text: trimmed, id: id)
     }
 
     /// Called by the notification action handler when "Add to notes" is tapped.
