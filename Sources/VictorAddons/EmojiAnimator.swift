@@ -2632,7 +2632,7 @@ class EmojiAnimator {
         _ = cancelIfRunning("gangnam", sound: "gangnam_style.mp3")
     }
 
-    // MARK: - Gong GIF overlay (bottom-left, 25% screen width)
+    // MARK: - Gong GIF overlay (bottom-left, full screen width)
 
     func showGong(playSound: Bool = true) {
         if cancelIfRunning("gong", sound: playSound ? "gong.mp3" : nil) { return }
@@ -2656,7 +2656,7 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let w = bounds.width * 0.50
+        let w = bounds.width * 1.00
         let h = w * (600.0 / 800.0)           // preserve original 800x600 aspect ratio
         let x: CGFloat = 0
         let y: CGFloat = -200                  // 200px below bottom screen edge
