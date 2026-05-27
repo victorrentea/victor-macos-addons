@@ -2716,7 +2716,7 @@ class EmojiAnimator {
         let w = min(bounds.width, bounds.height / aspect)
         let h = w * aspect
         let x: CGFloat = 0
-        let y: CGFloat = 0                     // anchored to bottom-left screen edge
+        let y: CGFloat = -310                  // shifted 310px toward the bottom of the screen
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: w, height: h)
@@ -2762,6 +2762,12 @@ class EmojiAnimator {
         hostLayer.addSublayer(container)
         activeEffects["wrong-x"] = container
 
+        let drawEach: TimeInterval = 0.5
+        let visibleDuration: TimeInterval = 2.04   // 2× 49_wrong.mp3 duration
+        let totalDraw = 2 * drawEach
+        let holdAfterDraw = max(0.3, visibleDuration - totalDraw)
+        let fadeDuration: TimeInterval = 1.2
+
         func makeLeg(flipped: Bool) -> (CALayer, CALayer) {
             let leg = CALayer()
             leg.frame = legRect
@@ -2770,10 +2776,13 @@ class EmojiAnimator {
             if flipped { leg.transform = CATransform3DMakeScale(-1, 1, 1) }
 
             let mask = CALayer()
+            // Silence implicit animations on this layer's bounds/position so
+            // our explicit CABasicAnimation is the only thing driving width.
+            mask.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
             mask.backgroundColor = NSColor.black.cgColor
             mask.anchorPoint = CGPoint(x: 0, y: 0.5)
             mask.position = CGPoint(x: 0, y: h / 2)
-            mask.bounds = CGRect(x: 0, y: 0, width: 0, height: h)
+            mask.bounds = CGRect(x: 0, y: 0, width: w, height: h)   // final width — held by animation
             leg.mask = mask
             return (leg, mask)
         }
@@ -2783,25 +2792,19 @@ class EmojiAnimator {
         container.addSublayer(legA)
         container.addSublayer(legB)
 
-        let drawEach: TimeInterval = 0.5
-        let visibleDuration: TimeInterval = 2.04   // 2× 49_wrong.mp3 duration
-        let totalDraw = 2 * drawEach
-        let holdAfterDraw = max(0.3, visibleDuration - totalDraw)
-        let fadeDuration: TimeInterval = 1.2
-
-        func drawMask(_ mask: CALayer) {
+        let startTime = CACurrentMediaTime()
+        func scheduleDraw(_ mask: CALayer, beginTime: CFTimeInterval) {
             let anim = CABasicAnimation(keyPath: "bounds.size.width")
             anim.fromValue = 0
             anim.toValue = w
             anim.duration = drawEach
-            anim.fillMode = .forwards
+            anim.beginTime = beginTime
+            anim.fillMode = .both
             anim.isRemovedOnCompletion = false
             mask.add(anim, forKey: "draw")
-            mask.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         }
-
-        drawMask(maskA)
-        DispatchQueue.main.asyncAfter(deadline: .now() + drawEach) { drawMask(maskB) }
+        scheduleDraw(maskA, beginTime: startTime)
+        scheduleDraw(maskB, beginTime: startTime + drawEach)
 
         let fadeStart = totalDraw + holdAfterDraw
         DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart) { [weak container] in
