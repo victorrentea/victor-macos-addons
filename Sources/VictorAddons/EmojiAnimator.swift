@@ -2712,8 +2712,9 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let w = bounds.width * 1.00
-        let h = w * (600.0 / 800.0)           // preserve original 800x600 aspect ratio
+        let aspect: CGFloat = 600.0 / 800.0     // gong gif is 800x600
+        let w = min(bounds.width, bounds.height / aspect)
+        let h = w * aspect
         let x: CGFloat = 0
         let y: CGFloat = 0                     // anchored to bottom-left screen edge
 
@@ -2782,11 +2783,11 @@ class EmojiAnimator {
         container.addSublayer(legA)
         container.addSublayer(legB)
 
-        let drawEach: TimeInterval = 0.25
-        let soundDuration: TimeInterval = 1.02   // 49_wrong.mp3
+        let drawEach: TimeInterval = 0.5
+        let visibleDuration: TimeInterval = 2.04   // 2× 49_wrong.mp3 duration
         let totalDraw = 2 * drawEach
-        let holdAfterDraw = max(0.15, soundDuration - totalDraw)
-        let fadeDuration: TimeInterval = 0.6
+        let holdAfterDraw = max(0.3, visibleDuration - totalDraw)
+        let fadeDuration: TimeInterval = 1.2
 
         func drawMask(_ mask: CALayer) {
             let anim = CABasicAnimation(keyPath: "bounds.size.width")
