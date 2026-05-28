@@ -43,19 +43,6 @@ class EmojiAnimator {
         self.hostLayer = hostLayer
     }
 
-    static func soundEffect(for emoji: String) -> String? {
-        let normalizedEmoji = emoji
-            .replacingOccurrences(of: "\u{FE0F}", with: "")
-            .replacingOccurrences(of: "\u{FE0E}", with: "")
-
-        switch normalizedEmoji {
-        case "🖥":
-            return "breaking-glass.mp3"
-        default:
-            return nil
-        }
-    }
-
     /// Cancel a running toggleable effect. Returns true if it was running (and got cancelled).
     private func cancelIfRunning(_ key: String, sound: String? = nil) -> Bool {
         if let layer = activeEffects[key] {
@@ -87,20 +74,6 @@ class EmojiAnimator {
     }
 
     func spawnEmoji(_ emoji: String = "❤️") {
-        // 🖥 (with/without variant selector) → full broken-screen shatter animation with sound,
-        // not the floating-emoji desktop effect.
-        let normalized = emoji
-            .replacingOccurrences(of: "\u{FE0F}", with: "")
-            .replacingOccurrences(of: "\u{FE0E}", with: "")
-        if normalized == "🖥" {
-            showBrokenGlass(playSound: true)
-            return
-        }
-
-        if let sound = EmojiAnimator.soundEffect(for: emoji) {
-            SoundManager.shared.playOverlapping(sound, volume: 0.5)
-        }
-
         let fontSize: CGFloat = 78
         let size: CGFloat = 91
 
