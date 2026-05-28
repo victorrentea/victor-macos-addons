@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "May 28, 00:01"
+    static let BUILD_TIME = "May 28, 09:01"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -97,7 +97,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(killItem)
 
         // Copy Git
-        addItem("🌳 Copy Git from IntelliJ", action: #selector(copyGitAction))
+        addItem("IntelliJ: Copy Git", action: #selector(copyGitAction))
 
         menu.addItem(.separator())
 
