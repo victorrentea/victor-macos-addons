@@ -1,16 +1,18 @@
 import AppKit
 import Foundation
-import UserNotifications
 
 enum SessionNotesAppender {
     /// Set by AppDelegate at startup. The unified bottom-left banner used to
-    /// surface a prompt-capture offer; the user hovers it to commit. If the
-    /// banner is unset, prompt-capture requests are silently dropped.
+    /// surface a prompt-capture offer (hover to commit) and the short
+    /// confirmation flash after a clipboard append. If unset, those requests
+    /// are silently dropped.
     static weak var promptBanner: BottomLeftBanner?
 
     private static let promptFont = NSFont.monospacedSystemFont(ofSize: 36, weight: .bold)
     private static let promptBoxWidth: CGFloat = 640
     private static let promptVisibleDuration: TimeInterval = 20
+    private static let resultVisibleDuration: TimeInterval = 2.0
+    private static var resultDismissWork: DispatchWorkItem?
 
     /// Prompts whose trimmed text starts with any of these prefixes are silently
     /// dropped — no banner, no notes append. Extend as new system-noise prefixes appear.
@@ -25,7 +27,7 @@ enum SessionNotesAppender {
     static func appendClipboard() {
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
-            notify(title: "Clipboard empty", body: "Nothing to append to session notes.")
+            showResult("(empty clipboard)")
             return
         }
         appendAndReport(text: text)
@@ -43,6 +45,8 @@ enum SessionNotesAppender {
             return
         }
 
+        resultDismissWork?.cancel()
+        resultDismissWork = nil
         pendingPrompt = trimmed
         let display = formatPromptLabel(from: trimmed)
         banner.onHover = { [weak banner] in
@@ -70,27 +74,44 @@ enum SessionNotesAppender {
 
     private static func appendAndReport(text: String) {
         guard let folder = ScreenshotManager.sessionFolder else {
-            notify(title: "No active session", body: "Session folder unknown — start a session first.")
+            showResult("(no active session)")
             return
         }
         guard let notes = findNotesFile(in: folder) else {
-            notify(title: "No notes file", body: "No .txt file found in \(folder.lastPathComponent).")
+            showResult("(no notes file)")
             return
         }
         do {
             try appendLine(text, to: notes)
-            let topic = stripDatePrefix(folder.lastPathComponent)
-            notify(title: "Pasted in notes of \(topic)", body: preview(of: text, max: 120))
+            showResult("⬆️ Pasted")
             overlayInfo("Appended \(text.count) chars to \(notes.path)")
         } catch {
-            notify(title: "Append failed", body: "\(error.localizedDescription)")
+            showResult("⚠️ Append failed")
             overlayError("Append to notes failed: \(error)")
         }
     }
 
-    private static func preview(of text: String, max: Int) -> String {
-        let single = text.replacingOccurrences(of: "\n", with: " ")
-        return single.count > max ? String(single.prefix(max)) + "…" : single
+    /// Flash a short status message in the bottom-left banner and auto-dismiss
+    /// after `resultVisibleDuration`. Replaces any visible prompt-capture
+    /// banner: pendingPrompt and onHover are cleared so an accidental hover
+    /// on the flashing confirmation can't commit a stale prompt.
+    private static func showResult(_ text: String) {
+        DispatchQueue.main.async {
+            guard let banner = promptBanner else {
+                overlayInfo("Result banner unset; would have shown: \(text)")
+                return
+            }
+            pendingPrompt = nil
+            banner.onHover = nil
+            resultDismissWork?.cancel()
+            banner.show(text: text, font: promptFont, boxWidth: promptBoxWidth)
+            let work = DispatchWorkItem { [weak banner] in
+                resultDismissWork = nil
+                banner?.dismiss()
+            }
+            resultDismissWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + resultVisibleDuration, execute: work)
+        }
     }
 
     /// Strip the leading date prefix from a session folder name.
@@ -138,17 +159,4 @@ enum SessionNotesAppender {
         }
     }
 
-    private static func notify(title: String, body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        let identifier = "session-notes-append-\(UUID().uuidString)"
-        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Session notes notification error: \(err)") }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
-        }
-    }
 }
