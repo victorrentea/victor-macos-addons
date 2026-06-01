@@ -124,6 +124,8 @@ final class BottomLeftBanner {
     private func panelWidth(for text: String, font: NSFont, screen: NSScreen) -> CGFloat {
         let probe = NSTextField(labelWithString: text)
         probe.font = font
+        probe.maximumNumberOfLines = 1
+        probe.lineBreakMode = .byClipping
         probe.sizeToFit()
         let content = ceil(probe.frame.width) + Style.leftPadding + Style.rightPadding
         let maxWidth = screen.frame.width * Style.maxWidthFraction
