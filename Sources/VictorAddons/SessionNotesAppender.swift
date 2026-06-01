@@ -9,7 +9,6 @@ enum SessionNotesAppender {
     static weak var promptBanner: BottomLeftBanner?
 
     private static let promptFont = NSFont.monospacedSystemFont(ofSize: 36, weight: .bold)
-    private static let promptBoxWidth: CGFloat = 640
     private static let promptVisibleDuration: TimeInterval = 20
     private static let resultVisibleDuration: TimeInterval = 2.0
     private static var resultDismissWork: DispatchWorkItem?
@@ -87,7 +86,7 @@ enum SessionNotesAppender {
             banner?.dismiss()
             appendAndReport(text: captured)
         }
-        banner.show(text: display, font: promptFont, boxWidth: promptBoxWidth)
+        banner.show(text: display, font: promptFont)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + promptVisibleDuration) { [weak banner] in
             guard pendingPrompt == trimmed else { return }
@@ -136,7 +135,7 @@ enum SessionNotesAppender {
             pendingPrompt = nil
             banner.onHover = nil
             resultDismissWork?.cancel()
-            banner.show(text: text, font: promptFont, boxWidth: promptBoxWidth)
+            banner.show(text: text, font: promptFont)
             let work = DispatchWorkItem { [weak banner] in
                 resultDismissWork = nil
                 banner?.dismiss()

@@ -20,7 +20,12 @@ final class BottomLeftBanner {
         static let leftPadding: CGFloat = 20
         static let rightPadding: CGFloat = 12
         static let textRenderHeight: CGFloat = 50
-        static let boxWidth: CGFloat = 480
+        /// Lower bound so a single glyph (e.g. a lone emoji) never collapses to
+        /// a sliver. The box hugs the text above this and caps at `maxWidthFraction`.
+        static let minBoxWidth: CGFloat = 80
+        /// Hard cap as a fraction of the screen width — past this the text
+        /// truncates with an ellipsis instead of the box growing further.
+        static let maxWidthFraction: CGFloat = 0.5
         static let boxHeight: CGFloat = 80
         /// No extra tint by default — the NSVisualEffectView glass handles
         /// the gray-translucent look on its own. Callers that need a
@@ -42,6 +47,10 @@ final class BottomLeftBanner {
         /// dwell. Alpha 0 at rest, alpha 1 the instant `onHover` fires.
         let whitenTint: NSView
         let label: NSTextField
+        /// Kept so `updateText` can re-measure and resize the box to hug the
+        /// new text (still capped at `maxWidthFraction` of this screen).
+        let font: NSFont
+        let screen: NSScreen
     }
     private var panels: [PanelEntry] = []
 
@@ -75,8 +84,7 @@ final class BottomLeftBanner {
     /// flicker). Fades in over 0.3s when first appearing.
     func show(text: String,
               backgroundColor: NSColor = Style.defaultBackground,
-              font: NSFont = Style.defaultFont(),
-              boxWidth: CGFloat = Style.boxWidth) {
+              font: NSFont = Style.defaultFont()) {
         if isVisible {
             updateText(text)
             updateBackgroundColor(backgroundColor)
@@ -87,8 +95,7 @@ final class BottomLeftBanner {
             panels.append(buildPanel(on: screen,
                                      text: text,
                                      bg: backgroundColor,
-                                     font: font,
-                                     width: boxWidth))
+                                     font: font))
         }
         for entry in panels {
             entry.panel.alphaValue = 0
@@ -101,7 +108,33 @@ final class BottomLeftBanner {
     }
 
     func updateText(_ text: String) {
-        for entry in panels { entry.label.stringValue = text }
+        for entry in panels {
+            entry.label.stringValue = text
+            resize(entry, to: panelWidth(for: text, font: entry.font, screen: entry.screen))
+        }
+    }
+
+    /// Width that hugs `text` at `font`, floored at `minBoxWidth` and capped at
+    /// `maxWidthFraction` of the screen — past the cap the label truncates.
+    private func panelWidth(for text: String, font: NSFont, screen: NSScreen) -> CGFloat {
+        let measured = (text as NSString).size(withAttributes: [.font: font]).width
+        let content = ceil(measured) + Style.leftPadding + Style.rightPadding
+        let maxWidth = screen.frame.width * Style.maxWidthFraction
+        return min(max(content, Style.minBoxWidth), maxWidth)
+    }
+
+    /// Resize a panel (anchored bottom-left) and its label to `width` in place.
+    private func resize(_ entry: PanelEntry, to width: CGFloat) {
+        guard abs(entry.panel.frame.width - width) > 0.5 else { return }
+        let f = entry.screen.frame
+        entry.panel.setFrame(NSRect(x: f.minX, y: f.minY, width: width, height: Style.boxHeight),
+                             display: true)
+        entry.label.frame = NSRect(
+            x: Style.leftPadding,
+            y: (Style.boxHeight - Style.textRenderHeight) / 2,
+            width: width - Style.leftPadding - Style.rightPadding,
+            height: Style.textRenderHeight
+        )
     }
 
     /// Update the gray-tint color over the glass. When `animated`, the
@@ -216,9 +249,9 @@ final class BottomLeftBanner {
     private func buildPanel(on screen: NSScreen,
                             text: String,
                             bg: NSColor,
-                            font: NSFont,
-                            width: CGFloat) -> PanelEntry {
+                            font: NSFont) -> PanelEntry {
         let frame = screen.frame
+        let width = panelWidth(for: text, font: font, screen: screen)
         let rect = NSRect(x: frame.minX, y: frame.minY, width: width, height: Style.boxHeight)
         let panel = NSPanel(
             contentRect: rect,
@@ -283,7 +316,8 @@ final class BottomLeftBanner {
         content.addSubview(label)
 
         panel.contentView = content
-        return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint, label: label)
+        return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint, label: label,
+                          font: font, screen: screen)
     }
 }
 
