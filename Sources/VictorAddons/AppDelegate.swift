@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var overlayPanel: OverlayPanel!
     private var auxOverlayPanels: [OverlayPanel] = []
     private var animator: EmojiAnimator!
+    private var progressBarOverlay: ProgressBarOverlay?
     // buttonBar removed
     private var menuBarManager: MenuBarManager!
     private let serverURL: String
@@ -87,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             fatalError("Content view has no layer")
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
+        progressBarOverlay = ProgressBarOverlay(hostLayer: hostLayer)
 
         // No outbound WebSocket: the addon only runs LocalWebSocketServer on
         // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro
@@ -169,8 +171,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
             case "game-over/stop":  self?.animator.stopGameOver()
-            case "stop-all":        self?.animator.stopAllActiveEffects()
-            default: break
+            case "stop-all":
+                self?.animator.stopAllActiveEffects()
+                self?.progressBarOverlay?.cancel()
+            default:
+                // Tablet timer: "progress-bar/<seconds>" grows a bar over N
+                // seconds; "progress-bar/stop" clears it.
+                if name.hasPrefix("progress-bar/") {
+                    let arg = String(name.dropFirst("progress-bar/".count))
+                    if arg == "stop" {
+                        self?.progressBarOverlay?.cancel()
+                    } else if let secs = Int(arg), secs > 0 {
+                        self?.progressBarOverlay?.start(seconds: TimeInterval(secs))
+                    }
+                }
             }
         }
         tabletServer?.onOpenUrl = { [weak self] url in
