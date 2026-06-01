@@ -108,12 +108,11 @@ enum SessionNotesAppender {
         return collapsed.trimmingCharacters(in: .whitespaces)
     }
 
+    /// Label for the prompt-capture offer: collapse to one line and prefix the
+    /// up-arrow. No character cap — the banner box grows up to half the screen
+    /// width and the label truncates with its own ellipsis only past that.
     private static func formatPromptLabel(from text: String) -> String {
-        let collapsed = text
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        let head = collapsed.count > 23 ? String(collapsed.prefix(23)) + "⋯" : collapsed
-        return "⬆️ \(head)"
+        return "⬆️ " + singleLine(text)
     }
 
     private static func appendAndReport(text: String) {
