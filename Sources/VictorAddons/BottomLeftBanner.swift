@@ -35,6 +35,18 @@ final class BottomLeftBanner {
         static func defaultFont() -> NSFont {
             NSFont.boldSystemFont(ofSize: fontSize)
         }
+
+        // MARK: Hover hint (small label above the pill, flush to the left edge,
+        // explaining what hovering does). Only shown when the banner is
+        // hoverable AND has an active onHover action.
+        static let hintFontSize: CGFloat = 15
+        static let hintHeight: CGFloat = 26
+        static let hintTextHeight: CGFloat = 18
+        /// Vertical gap between the top of the pill and the bottom of the hint.
+        static let hintGap: CGFloat = 8
+        static let hintHPadding: CGFloat = 10
+        static let hintBackground: NSColor = NSColor.black.withAlphaComponent(0.6)
+        static func hintFont() -> NSFont { NSFont.boldSystemFont(ofSize: hintFontSize) }
     }
 
     private let screensProvider: () -> [NSScreen]
@@ -53,6 +65,10 @@ final class BottomLeftBanner {
         let screen: NSScreen
     }
     private var panels: [PanelEntry] = []
+    /// Small "Hover to …" hint panels above the pill, one per screen. Managed
+    /// independently of `panels` since the hint is optional. Empty unless the
+    /// banner is hoverable with an active `onHover` and a non-nil hint.
+    private var hintPanels: [NSPanel] = []
 
     /// Fires once per `show()` after the cursor has *dwelled* inside the
     /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
@@ -84,13 +100,18 @@ final class BottomLeftBanner {
     /// flicker). Fades in over 0.3s when first appearing.
     func show(text: String,
               backgroundColor: NSColor = Style.defaultBackground,
-              font: NSFont = Style.defaultFont()) {
+              font: NSFont = Style.defaultFont(),
+              hoverHint: String? = nil) {
+        // Each show() presents new content → re-arm hover and clear any leftover
+        // dwell whitening (e.g. after a previous fire on a banner being reused).
+        cancelHoverDwell()
+        hoverFired = false
         if isVisible {
             updateText(text)
             updateBackgroundColor(backgroundColor)
+            applyHint(hoverHint)
             return
         }
-        hoverFired = false
         for screen in screensProvider() {
             panels.append(buildPanel(on: screen,
                                      text: text,
@@ -105,6 +126,7 @@ final class BottomLeftBanner {
             ctx.duration = 0.3
             for entry in panels { entry.panel.animator().alphaValue = Self.visibleAlpha }
         }
+        applyHint(hoverHint)
     }
 
     func updateText(_ text: String) {
@@ -175,20 +197,27 @@ final class BottomLeftBanner {
         cancelHoverDwell()
         let toRemove = panels
         panels.removeAll()
+        let hints = hintPanels
+        hintPanels.removeAll()
         if animated {
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.3
                 for entry in toRemove { entry.panel.animator().alphaValue = 0 }
+                for hint in hints { hint.animator().alphaValue = 0 }
             }, completionHandler: {
                 for entry in toRemove { entry.panel.orderOut(nil) }
+                for hint in hints { hint.orderOut(nil) }
             })
         } else {
             for entry in toRemove { entry.panel.orderOut(nil) }
+            for hint in hints { hint.orderOut(nil) }
         }
     }
 
     fileprivate func startHoverDwell() {
-        guard hoverable, !hoverFired, hoverDwellTimer == nil else { return }
+        // Only arm the dwell when hovering actually does something — error
+        // flashes (onHover == nil) must not whiten or fire.
+        guard hoverable, onHover != nil, !hoverFired, hoverDwellTimer == nil else { return }
         hoverDwellCount = 0
         hoverDwellTimer = Timer.scheduledTimer(withTimeInterval: Self.hoverDwellInterval, repeats: true) { [weak self] _ in
             self?.tickHoverDwell()
@@ -252,7 +281,82 @@ final class BottomLeftBanner {
     private func fireHover() {
         guard !hoverFired else { return }
         hoverFired = true
+        clearHint()
         onHover?()
+    }
+
+    /// (Re)build the "Hover to …" hint panels. Tears down any existing ones,
+    /// then — only when the banner is hoverable, has an active `onHover`, and
+    /// `hint` is non-empty — fades a small label in above the pill, flush to
+    /// each screen's left edge.
+    private func applyHint(_ hint: String?) {
+        clearHint()
+        guard hoverable, onHover != nil, let hint = hint, !hint.isEmpty else { return }
+        for screen in screensProvider() {
+            let panel = buildHintPanel(on: screen, text: hint)
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+            hintPanels.append(panel)
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.3
+            for panel in hintPanels { panel.animator().alphaValue = 1.0 }
+        }
+    }
+
+    /// Immediately remove all hint panels (no fade).
+    func clearHint() {
+        for panel in hintPanels { panel.orderOut(nil) }
+        hintPanels.removeAll()
+    }
+
+    private func buildHintPanel(on screen: NSScreen, text: String) -> NSPanel {
+        let font = Style.hintFont()
+        let probe = NSTextField(labelWithString: text)
+        probe.font = font
+        probe.maximumNumberOfLines = 1
+        probe.lineBreakMode = .byClipping
+        probe.sizeToFit()
+        let width = ceil(probe.frame.width) + Style.hintHPadding * 2
+
+        let f = screen.frame
+        let rect = NSRect(x: f.minX,
+                          y: f.minY + Style.boxHeight + Style.hintGap,
+                          width: width,
+                          height: Style.hintHeight)
+        let panel = NSPanel(contentRect: rect,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
+        panel.level = .statusBar
+        panel.isFloatingPanel = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        panel.ignoresMouseEvents = true
+
+        let content = NSView(frame: NSRect(origin: .zero, size: rect.size))
+        content.wantsLayer = true
+        content.layer?.backgroundColor = Style.hintBackground.cgColor
+        content.layer?.cornerRadius = 6
+
+        let label = NSTextField(labelWithString: text)
+        label.font = font
+        label.textColor = Style.textColor
+        label.alignment = .left
+        label.isBezeled = false
+        label.isEditable = false
+        label.drawsBackground = false
+        label.lineBreakMode = .byClipping
+        label.frame = NSRect(x: Style.hintHPadding,
+                             y: (Style.hintHeight - Style.hintTextHeight) / 2,
+                             width: width - Style.hintHPadding * 2,
+                             height: Style.hintTextHeight)
+        content.addSubview(label)
+
+        panel.contentView = content
+        return panel
     }
 
     private func buildPanel(on screen: NSScreen,

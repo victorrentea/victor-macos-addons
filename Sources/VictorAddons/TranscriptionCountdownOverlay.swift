@@ -59,7 +59,8 @@ final class TranscriptionCountdownOverlay {
 
     private func beginVisibleCountdown() {
         overlayInfo("Presence detected — starting 5s countdown")
-        banner.show(text: "ending in \(remainingSeconds)…", backgroundColor: Self.redColor)
+        banner.show(text: "ending in \(remainingSeconds)…", backgroundColor: Self.redColor,
+                    hoverHint: "Hover to continue")
         banner.updateBackgroundColor(Self.grayColor, animated: true, duration: Self.totalSeconds)
         countdownTimer?.invalidate()
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -89,6 +90,7 @@ final class TranscriptionCountdownOverlay {
         guard !didFire else { return }
         didFire = true
         overlayInfo("Countdown reached 0 — stopping")
+        banner.clearHint()  // no longer continuable — drop the "Hover to continue" hint
         banner.updateText("stopped")
         StatusBannerSound.stop?.play()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in

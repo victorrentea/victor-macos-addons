@@ -9,7 +9,11 @@ enum SessionNotesAppender {
     static weak var promptBanner: BottomLeftBanner?
 
     private static let promptFont = NSFont.monospacedSystemFont(ofSize: 36, weight: .bold)
-    private static let promptVisibleDuration: TimeInterval = 20
+    /// How long any *actionable* (hoverable) banner stays up so the user has a
+    /// uniform window to react — hover-to-Send on a prompt offer, hover-to-undo
+    /// after an append. Kept equal to the countdown's window for consistency.
+    private static let hoverActionDuration: TimeInterval = 5
+    /// Non-actionable flashes (errors, "Undone" confirmation) clear faster.
     private static let resultVisibleDuration: TimeInterval = 2.0
     private static var resultDismissWork: DispatchWorkItem?
 
@@ -86,9 +90,9 @@ enum SessionNotesAppender {
             banner?.dismiss()
             appendAndReport(text: captured)
         }
-        banner.show(text: display, font: promptFont)
+        banner.show(text: display, font: promptFont, hoverHint: "Hover to Send")
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + promptVisibleDuration) { [weak banner] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + hoverActionDuration) { [weak banner] in
             guard pendingPrompt == trimmed else { return }
             pendingPrompt = nil
             banner?.dismiss()
@@ -122,12 +126,60 @@ enum SessionNotesAppender {
             return
         }
         do {
-            try appendLine(text, to: notes)
-            showResult("⬆️ Pasted: " + singleLine(text))
+            let offset = try appendLine(text, to: notes)
             overlayInfo("Appended \(text.count) chars to \(notes.path)")
+            showUndoable("⬆️ Pasted: " + singleLine(text),
+                         undo: { undoAppend(file: notes, toOffset: offset) })
         } catch {
             showResult("⚠️ Append failed")
             overlayError("Append to notes failed: \(error)")
+        }
+    }
+
+    /// Undo the most recent append by truncating the notes file back to the
+    /// byte offset captured just before the line was written — removing the
+    /// "- …" line and any newline we inserted, and nothing else. If the file
+    /// shrank since (shorter than the offset), there is nothing of ours left
+    /// to remove, so we leave it untouched.
+    private static func undoAppend(file: URL, toOffset offset: UInt64) {
+        do {
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            let currentEnd = try handle.seekToEnd()
+            guard currentEnd >= offset else {
+                showResult("(nothing to undo)")
+                return
+            }
+            try handle.truncate(atOffset: offset)
+            overlayInfo("Undid append; truncated \(file.lastPathComponent) to \(offset) bytes")
+            showResult("↩️ Undone")
+        } catch {
+            showResult("⚠️ Undo failed")
+            overlayError("Undo append failed: \(error)")
+        }
+    }
+
+    /// Show an append confirmation that stays up for `hoverActionDuration` and
+    /// can be hovered to undo the append. `undo` runs on the main thread when
+    /// the hover fires; the captured file/offset live in the closure, so no
+    /// shared undo state can race with a concurrent append.
+    private static func showUndoable(_ text: String, undo: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            guard let banner = promptBanner else {
+                overlayInfo("Result banner unset; would have shown: \(text)")
+                return
+            }
+            pendingPrompt = nil
+            resultDismissWork?.cancel()
+            banner.onHover = { undo() }
+            banner.show(text: text, font: promptFont, hoverHint: "Hover to undo")
+            let work = DispatchWorkItem { [weak banner] in
+                resultDismissWork = nil
+                banner?.onHover = nil
+                banner?.dismiss()
+            }
+            resultDismissWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + hoverActionDuration, execute: work)
         }
     }
 
@@ -184,10 +236,13 @@ enum SessionNotesAppender {
         })
     }
 
-    private static func appendLine(_ text: String, to file: URL) throws {
+    /// Append a "- <text>" line and return the file's byte offset *before* the
+    /// write, so the append can be undone by truncating back to it.
+    @discardableResult
+    private static func appendLine(_ text: String, to file: URL) throws -> UInt64 {
         let handle = try FileHandle(forWritingTo: file)
         defer { try? handle.close() }
-        try handle.seekToEnd()
+        let originalEnd = try handle.seekToEnd()
         let existing = (try? Data(contentsOf: file)) ?? Data()
         var payload = ""
         if !existing.isEmpty, existing.last != 0x0A {
@@ -197,6 +252,7 @@ enum SessionNotesAppender {
         if let data = payload.data(using: .utf8) {
             try handle.write(contentsOf: data)
         }
+        return originalEnd
     }
 
 }
