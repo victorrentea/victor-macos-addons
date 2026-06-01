@@ -1538,6 +1538,7 @@ class EmojiAnimator {
         layer.frame = CGRect(x: cx - initialSize / 2, y: cy - initialSize / 2,
                              width: initialSize, height: initialSize)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        layer.opacity = 0.3   // start faded (matches opacityAnim) so no full-opacity flash
         hostLayer.addSublayer(layer)
 
         let growEndFrac = growPhaseDuration / totalDuration
@@ -1552,9 +1553,10 @@ class EmojiAnimator {
             CAMediaTimingFunction(name: .linear),
         ]
 
-        // Opacity: 100% for the first 3s, then fade to 0.
+        // Opacity: start at 30% (so whatever is on screen stays readable through
+        // the emoji) and hold for the first 3s, then fade to 0.
         let opacityAnim = CAKeyframeAnimation(keyPath: "opacity")
-        opacityAnim.values = [1.0, 1.0, 0.0]
+        opacityAnim.values = [0.3, 0.3, 0.0]
         opacityAnim.keyTimes = [0, NSNumber(value: growEndFrac), 1]
         opacityAnim.timingFunctions = [
             CAMediaTimingFunction(name: .linear),
