@@ -88,7 +88,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             fatalError("Content view has no layer")
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
-        progressBarOverlay = ProgressBarOverlay(hostLayer: hostLayer)
+        if let contentView = overlayPanel.contentView {
+            progressBarOverlay = ProgressBarOverlay(hostView: contentView)
+        }
 
         // No outbound WebSocket: the addon only runs LocalWebSocketServer on
         // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro

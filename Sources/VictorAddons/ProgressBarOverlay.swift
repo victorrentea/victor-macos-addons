@@ -2,24 +2,26 @@ import Cocoa
 
 /// Full-width countdown progress bar pinned to the bottom of the screen.
 ///
-/// Triggered from the tablet (3S/5S/7S/10S buttons): a gray bar grows from the
-/// left edge to the full screen width over `seconds`, acting as a visible
-/// warm-up / break timer. When the fill completes the bar fades out so the
-/// screen clears. Pressing another value restarts it from zero (latest-wins).
+/// Triggered from the tablet (3S/5S/7S/10S buttons): a translucent frosted-glass
+/// bar grows from the left edge to the full screen width over `seconds`, acting
+/// as a discreet, barely-visible warm-up / break timer. When the fill completes
+/// the bar fades out so the screen clears. Pressing another value restarts it
+/// from zero (latest-wins).
 ///
-/// Draws directly into the main overlay panel's host layer, so it lives on the
-/// built-in Retina display alongside the emoji effects.
+/// Uses an `NSVisualEffectView` with `.behindWindow` blending so it blurs the
+/// content behind the transparent overlay — a genuine glass effect rather than
+/// a flat tint. Lives on the built-in Retina display alongside the emoji effects.
 final class ProgressBarOverlay {
-    private let hostLayer: CALayer
-    private var barLayer: CALayer?
+    private let hostView: NSView
+    private var bar: NSVisualEffectView?
     private var fadeWork: DispatchWorkItem?
 
     private static let height: CGFloat = 15
-    private static let fillColor = NSColor(white: 0.5, alpha: 0.9)
+    private static let alpha: CGFloat = 0.5            // extra translucency — "less visible"
     private static let fadeDuration: TimeInterval = 0.5
 
-    init(hostLayer: CALayer) {
-        self.hostLayer = hostLayer
+    init(hostView: NSView) {
+        self.hostView = hostView
     }
 
     /// Start (or restart) the bar, filling left→right over `seconds`.
@@ -27,28 +29,27 @@ final class ProgressBarOverlay {
         guard seconds > 0 else { return }
         cancel()  // restart-from-zero semantics
 
-        let width = hostLayer.bounds.width > 0
-            ? hostLayer.bounds.width
+        let width = hostView.bounds.width > 0
+            ? hostView.bounds.width
             : (NSScreen.main?.frame.width ?? 1440)
 
-        // anchorPoint (0,0) + position (0,0) pins the bottom-left corner to the
-        // bottom-left of the screen; growing bounds.width then extends rightward.
-        let bar = CALayer()
-        bar.anchorPoint = CGPoint(x: 0, y: 0)
-        bar.bounds = CGRect(x: 0, y: 0, width: width, height: Self.height)
-        bar.position = CGPoint(x: 0, y: 0)
-        bar.backgroundColor = Self.fillColor.cgColor
-        hostLayer.addSublayer(bar)
-        barLayer = bar
+        // hostView is non-flipped (origin bottom-left), so y=0 pins it to the
+        // bottom; we drive the frame ourselves (no autoresizing).
+        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 0, height: Self.height))
+        effect.material = .hudWindow
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.alphaValue = Self.alpha
+        effect.autoresizingMask = []
+        hostView.addSubview(effect)
+        bar = effect
 
-        let grow = CABasicAnimation(keyPath: "bounds.size.width")
-        grow.fromValue = 0
-        grow.toValue = width
-        grow.duration = seconds
-        grow.timingFunction = CAMediaTimingFunction(name: .linear)
-        grow.isRemovedOnCompletion = false
-        grow.fillMode = .forwards
-        bar.add(grow, forKey: "grow")
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = seconds
+            ctx.timingFunction = CAMediaTimingFunction(name: .linear)
+            ctx.allowsImplicitAnimation = true
+            effect.animator().frame = NSRect(x: 0, y: 0, width: width, height: Self.height)
+        }
 
         // After the fill completes, fade the bar out so the screen clears.
         let work = DispatchWorkItem { [weak self] in self?.fadeOut() }
@@ -61,25 +62,18 @@ final class ProgressBarOverlay {
     func cancel() {
         fadeWork?.cancel()
         fadeWork = nil
-        barLayer?.removeFromSuperlayer()
-        barLayer = nil
+        bar?.removeFromSuperview()
+        bar = nil
     }
 
     private func fadeOut() {
-        guard let bar = barLayer else { return }
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1
-        fade.toValue = 0
-        fade.duration = Self.fadeDuration
-        fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        fade.isRemovedOnCompletion = false
-        fade.fillMode = .forwards
-        bar.add(fade, forKey: "fade")
-        let remove = DispatchWorkItem { [weak self] in
-            self?.barLayer?.removeFromSuperlayer()
-            self?.barLayer = nil
-        }
-        fadeWork = remove
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration, execute: remove)
+        guard let bar = bar else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Self.fadeDuration
+            bar.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.bar?.removeFromSuperview()
+            self?.bar = nil
+        })
     }
 }
