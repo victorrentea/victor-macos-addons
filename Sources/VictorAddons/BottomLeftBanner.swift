@@ -116,9 +116,16 @@ final class BottomLeftBanner {
 
     /// Width that hugs `text` at `font`, floored at `minBoxWidth` and capped at
     /// `maxWidthFraction` of the screen — past the cap the label truncates.
+    ///
+    /// Measured via a throwaway `NSTextField.sizeToFit()` rather than
+    /// `NSString.size(withAttributes:)`: the latter ignores font substitution
+    /// for emoji, under-measuring strings like "⬆️ Pasted" so the real label
+    /// clipped to "⬆️ Past⋯". The probe lays out exactly as the shown label.
     private func panelWidth(for text: String, font: NSFont, screen: NSScreen) -> CGFloat {
-        let measured = (text as NSString).size(withAttributes: [.font: font]).width
-        let content = ceil(measured) + Style.leftPadding + Style.rightPadding
+        let probe = NSTextField(labelWithString: text)
+        probe.font = font
+        probe.sizeToFit()
+        let content = ceil(probe.frame.width) + Style.leftPadding + Style.rightPadding
         let maxWidth = screen.frame.width * Style.maxWidthFraction
         return min(max(content, Style.minBoxWidth), maxWidth)
     }

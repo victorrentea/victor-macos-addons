@@ -95,6 +95,15 @@ enum SessionNotesAppender {
         }
     }
 
+    /// Flatten newlines/tabs to single spaces so a multi-line selection shows
+    /// on one banner line. Length isn't capped here — the banner box hugs the
+    /// text and truncates with an ellipsis once it hits half the screen width.
+    private static func singleLine(_ text: String) -> String {
+        let collapsed = text.split(whereSeparator: { $0.isNewline || $0 == "\t" })
+            .joined(separator: " ")
+        return collapsed.trimmingCharacters(in: .whitespaces)
+    }
+
     private static func formatPromptLabel(from text: String) -> String {
         let collapsed = text
             .replacingOccurrences(of: "\n", with: " ")
@@ -114,7 +123,7 @@ enum SessionNotesAppender {
         }
         do {
             try appendLine(text, to: notes)
-            showResult("⬆️ Pasted")
+            showResult("⬆️ Pasted: " + singleLine(text))
             overlayInfo("Appended \(text.count) chars to \(notes.path)")
         } catch {
             showResult("⚠️ Append failed")
