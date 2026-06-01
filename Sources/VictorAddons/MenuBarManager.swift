@@ -189,7 +189,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         extraSubmenu.addItem(pasteItem)
 
         // Append clipboard to session notes (⌃⌥V)
-        let appendNotesItem = NSMenuItem(title: "📝 Append Clipboard to Notes", action: #selector(appendClipboardToNotesAction), keyEquivalent: "v")
+        let appendNotesItem = NSMenuItem(title: "📝 Paste Clipboard to Notes", action: #selector(appendClipboardToNotesAction), keyEquivalent: "v")
         appendNotesItem.keyEquivalentModifierMask = [.control, .option]
         appendNotesItem.target = self
         appendNotesItem.isEnabled = true
