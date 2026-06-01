@@ -1724,8 +1724,9 @@ class EmojiAnimator {
             return
         }
         let lastBeat = beats.last ?? 0
-        // 0.6s tail so the final pulse's full down-segment has time to play.
-        let totalDuration = lastBeat + 0.6
+        // 1.0s tail: the pulse animation only begins after the async screen
+        // capture, so leave enough margin that cleanup never clips the last cycle.
+        let totalDuration = lastBeat + 1.0
 
         // Capture mouse anchor *now*, before any async work (the user expects
         // the pivot to be wherever the cursor was at trigger time, even if
@@ -1764,31 +1765,56 @@ class EmojiAnimator {
     }
 
     private func scheduleHeartbeatPulses(layer: CALayer, beats: [Double]) {
-        // Bell-shaped pulse, perfectly symmetric in both time and curve so every
-        // ♥ renders the identical zoom-in/out. Two equal halves of easeInOut
-        // (110ms each, total 220ms) — easeInOut is symmetric around its midpoint,
-        // so the rise and fall mirror each other and the peak plateau is implicit
-        // (zero derivative at the join, ~10–15ms of natural "linger" at 1.30).
-        // Pulse total stays under the shortest inter-beat gap (240ms) in
-        // heartbeat_beats.json so pulses never overlap.
-        let halfDur = 0.11
-        let total = halfDur * 2.0
+        // A heartbeat is a lub-dub: two quick zoom-in-outs close together, then a
+        // rest, repeated at a steady rate. Instead of firing one animation per beat
+        // (which jitters on the main thread and inherits any drift in the recorded
+        // beat times), build ONE canonical lub-dub cycle and let Core Animation
+        // repeat it on the render server — every cycle is pixel-identical and the
+        // cadence is perfectly regular for the whole clip.
+        //
+        // Timing comes from heartbeat_beats.json, laid out as [lub, dub, lub, dub …]:
+        //   firstLub  = beats[0]              (when the first lub lands)
+        //   dubOffset = beats[1] - beats[0]   (dub after lub, within a cycle)
+        //   period    = beats[2] - beats[0]   (lub-to-lub spacing)
+        // We impose that period uniformly and ignore per-beat jitter.
+        guard beats.count >= 3 else { return }
+        let firstLub  = beats[0]
+        let dubOffset = beats[1] - beats[0]
+        let period    = beats[2] - beats[0]
+        guard period > 0, dubOffset > 0 else { return }
+        let cycles = max(1, Int((((beats.last ?? firstLub) - firstLub) / period).rounded()) + 1)
 
-        for beat in beats {
-            DispatchQueue.main.asyncAfter(deadline: .now() + beat) { [weak self, weak layer] in
-                guard let self = self, let layer = layer,
-                      self.activeEffects["heartbeat"] === layer else { return }
-                let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-                pulse.values = [1.0, 1.30, 1.0]
-                pulse.keyTimes = [NSNumber(value: 0.0), NSNumber(value: 0.5), NSNumber(value: 1.0)]
-                pulse.duration = total
-                pulse.timingFunctions = [
-                    CAMediaTimingFunction(name: .easeInEaseOut),
-                    CAMediaTimingFunction(name: .easeInEaseOut),
-                ]
-                layer.add(pulse, forKey: "heartbeatPulse")
-            }
-        }
+        // Each zoom-in-out is a symmetric easeInOut bell (rise == fall). Keep the
+        // lub pulse fully clear of the dub so the two never blend.
+        let pulseDur = min(0.22, max(0.08, dubOffset - 0.02))
+        let rise     = pulseDur / 2.0
+
+        // Key times within a single period (seconds), normalised to [0,1] below.
+        let times: [Double] = [
+            0.0,                    // lub: start rise
+            rise,                   // lub: peak
+            pulseDur,               // lub: back to rest
+            dubOffset,              // dub: start rise
+            dubOffset + rise,       // dub: peak
+            dubOffset + pulseDur,   // dub: back to rest
+            period,                 // rest until next cycle
+        ]
+        let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
+        pulse.values   = [1.0, 1.30, 1.0, 1.0, 1.30, 1.0, 1.0]
+        pulse.keyTimes = times.map { NSNumber(value: $0 / period) }
+        pulse.timingFunctions = [
+            CAMediaTimingFunction(name: .easeInEaseOut), // lub rise
+            CAMediaTimingFunction(name: .easeInEaseOut), // lub fall
+            CAMediaTimingFunction(name: .linear),        // rest between lub and dub
+            CAMediaTimingFunction(name: .easeInEaseOut), // dub rise
+            CAMediaTimingFunction(name: .easeInEaseOut), // dub fall
+            CAMediaTimingFunction(name: .linear),        // rest until cycle end
+        ]
+        pulse.duration    = period
+        pulse.repeatCount = Float(cycles)
+        pulse.beginTime   = CACurrentMediaTime() + firstLub
+        pulse.fillMode    = .forwards
+        layer.add(pulse, forKey: "heartbeatPulse")
     }
 
     private static func loadHeartbeatBeats() -> [Double] {
