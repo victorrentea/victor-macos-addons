@@ -28,6 +28,7 @@ class EventTapManager {
     var onClaudeWorkspaceHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
+    var onCopySelectionToNotes: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
 
     // MARK: Key codes
@@ -159,6 +160,13 @@ class EventTapManager {
         // display (suppress)
         if keyCode == VK_C && hasCmd && hasOpt && !hasCtrl {
             DispatchQueue.global().async { [weak self] in self?.onOpenCalendar?() }
+            return nil
+        }
+
+        // Ctrl+Opt+C → copy current selection and append it to session notes
+        // (sibling of Ctrl+Opt+V, which appends the existing clipboard) (suppress)
+        if keyCode == VK_C && hasCtrl && hasOpt && !hasCmd {
+            DispatchQueue.global().async { [weak self] in self?.onCopySelectionToNotes?() }
             return nil
         }
 

@@ -14,6 +14,7 @@ enum KeySimulator {
     }
 
     static func cmdV() { simulateKeyPress(keyCode: 0x09, flags: .maskCommand) }
+    static func cmdC() { simulateKeyPress(keyCode: 0x08, flags: .maskCommand) }
     static func cmdZ() { simulateKeyPress(keyCode: 0x06, flags: .maskCommand) }
 
     static func simulateDoubleOptionPress() {

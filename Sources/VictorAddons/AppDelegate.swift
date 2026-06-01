@@ -565,6 +565,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
+        eventTap.onCopySelectionToNotes = {
+            DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.copySelectionAndAppend() }
+        }
         eventTap.onOpenCalendar = { [weak menuBarManager] in
             menuBarManager?.onOpenCalendar?()
         }

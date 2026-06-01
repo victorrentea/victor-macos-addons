@@ -195,6 +195,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         appendNotesItem.isEnabled = true
         extraSubmenu.addItem(appendNotesItem)
 
+        // Copy selection to session notes (⌃⌥C) — disabled shortcut reminder:
+        // a menu click can't capture the prior app's selection, so it's hotkey-only.
+        let copySelectionItem = NSMenuItem(title: "Copy Selection to Notes", action: nil, keyEquivalent: "c")
+        copySelectionItem.keyEquivalentModifierMask = [.control, .option]
+        copySelectionItem.isEnabled = false
+        extraSubmenu.addItem(copySelectionItem)
+
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
         darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]

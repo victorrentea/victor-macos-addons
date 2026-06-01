@@ -33,6 +33,38 @@ enum SessionNotesAppender {
         appendAndReport(text: text)
     }
 
+    /// Copy the current selection in the frontmost app (simulated Cmd+C), then
+    /// append it to the session notes — a one-key alternative to manually
+    /// copying and then calling `appendClipboard`. Leaves the copied text on the
+    /// clipboard, matching normal Cmd+C semantics. Run off the main thread: it
+    /// blocks briefly polling the pasteboard for the copy to land.
+    static func copySelectionAndAppend() {
+        let pasteboard = NSPasteboard.general
+        let before = pasteboard.changeCount
+        KeySimulator.cmdC()
+
+        // Wait for the app to service the copy. changeCount bumps on every
+        // pasteboard write (even identical content), so this reliably detects
+        // whether anything was copied — apps no-op Cmd+C when nothing is selected.
+        var waited: TimeInterval = 0
+        let step: TimeInterval = 0.02
+        while pasteboard.changeCount == before && waited < 0.5 {
+            Thread.sleep(forTimeInterval: step)
+            waited += step
+        }
+        guard pasteboard.changeCount != before else {
+            showResult("(no selection)")
+            return
+        }
+
+        let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            showResult("(empty selection)")
+            return
+        }
+        appendAndReport(text: text)
+    }
+
     /// Offer to append `text` to the current session notes via the bottom-left
     /// hover banner. No-op when there is no active session folder.
     static func offerPrompt(_ text: String) {
