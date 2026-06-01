@@ -751,7 +751,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         breakReminderTimer?.invalidate()
         breakReminderTimer = Timer.scheduledTimer(withTimeInterval: 75 * 60, repeats: false) { [weak self] _ in
             self?.statusBanner?.showOnPresence(
-                text: "Click ☕ in interact to request a break",
+                text: "Hit ☕ to request a break",
                 sound: nil,
                 visibleDuration: 7.0
             )
