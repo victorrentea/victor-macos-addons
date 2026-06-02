@@ -18,6 +18,7 @@ class TabletHttpServer {
         case testAudioPlaying
         case testWisprRecording
         case promptCapture
+        case intellijFileOpened
         case unknown
     }
 
@@ -36,6 +37,8 @@ class TabletHttpServer {
     var onTestWisprRecording: (() -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
+    /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
+    var onIntellijFileOpened: ((String) -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -110,6 +113,10 @@ class TabletHttpServer {
                     contentType = "application/json"
                     let promptBody = Self.extractBody(raw)
                     body = self?.onPromptCapture?(promptBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
+                case .intellijFileOpened:
+                    contentType = "application/json"
+                    let fileBody = Self.extractBody(raw)
+                    body = self?.onIntellijFileOpened?(fileBody) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
                 case .unknown:
                     statusCode = 404
                     body = "not found"
@@ -161,6 +168,8 @@ class TabletHttpServer {
             return .testWisprRecording
         case "/training/prompt-capture":
             return .promptCapture
+        case "/intellij/file-opened":
+            return .intellijFileOpened
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)

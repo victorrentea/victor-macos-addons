@@ -603,12 +603,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         pptMonitor.start()
         self.pptMonitor = pptMonitor
 
+        // IntelliJ open-file reporting is now driven by the live-coding IntelliJ plugin, which
+        // POSTs accurate data to /intellij/file-opened (wired below). The AppleScript window-title
+        // scraper is kept for reference but no longer started — the plugin is the single source.
         let ijMonitor = IntelliJMonitor(outputDir: transcriptionFolder)
         ijMonitor.onGitFileOpened = { [weak self] url, branch, file, fileURL in
             self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: fileURL)
         }
-        ijMonitor.start()
+        // ijMonitor.start()  // disabled: superseded by the IntelliJ plugin push
         self.ijMonitor = ijMonitor
+
+        // IntelliJ plugin → POST /intellij/file-opened → forward to the daemon via the WS bridge.
+        tabletServer?.onIntellijFileOpened = { [weak self] body in
+            guard let data = body.data(using: .utf8),
+                  let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let rawUrl = json["url"] as? String, !rawUrl.isEmpty,
+                  let file = json["file"] as? String, !file.isEmpty else {
+                return "{\"ok\":false,\"reason\":\"bad-request\"}"
+            }
+            let url = IntelliJMonitor.httpsRemote(rawUrl)
+            let branch = (json["branch"] as? String) ?? ""
+            // Daemon ignores branch/fileURL and builds the default-branch blob URL itself.
+            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: nil)
+            return "{\"ok\":true}"
+        }
 
         // Check every 2s if another instance took over the PID file
         pidCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in

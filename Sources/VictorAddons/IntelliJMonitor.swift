@@ -156,15 +156,18 @@ class IntelliJMonitor {
         guard matches.count == 1 else { return nil }
         let relativePath = matches[0]
 
-        // Convert SSH remote to HTTPS
+        return "\(Self.httpsRemote(remoteURL))/blob/\(branch)/\(relativePath)"
+    }
+
+    /// Normalize a git remote URL to its canonical https form.
+    /// e.g. `git@github.com:owner/repo.git` → `https://github.com/owner/repo`
+    static func httpsRemote(_ remoteURL: String) -> String {
         var httpsURL = remoteURL
         if httpsURL.hasPrefix("git@") {
             httpsURL = httpsURL.replacingOccurrences(of: ":", with: "/")
                 .replacingOccurrences(of: "git@", with: "https://")
         }
-        httpsURL = httpsURL.replacingOccurrences(of: "\\.git$", with: "", options: .regularExpression)
-
-        return "\(httpsURL)/blob/\(branch)/\(relativePath)"
+        return httpsURL.replacingOccurrences(of: "\\.git$", with: "", options: .regularExpression)
     }
 
     private func lookupProjectPath(_ projectName: String) -> String? {
