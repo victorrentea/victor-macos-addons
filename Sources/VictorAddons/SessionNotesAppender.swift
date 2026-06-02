@@ -93,14 +93,16 @@ enum SessionNotesAppender {
             // — no hover-to-undo (there's nothing left to cancel).
             appendAndReport(text: captured, offerUndo: false)
         }
-        banner.show(text: display, font: promptFont, hoverHint: "Hover to Send",
-                    hoverCountdown: hoverActionDuration)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + hoverActionDuration) { [weak banner] in
+        // Auto-dismiss when the hover window closes. Driven by the banner's
+        // countdown (which pauses while the cursor is on the pill) rather than a
+        // fixed timer, so parking the mouse on the offer keeps it up.
+        banner.onHoverCountdownExpired = { [weak banner] in
             guard pendingPrompt == trimmed else { return }
             pendingPrompt = nil
             banner?.dismiss()
         }
+        banner.show(text: display, font: promptFont, hoverHint: "Hover to Send",
+                    hoverCountdown: hoverActionDuration)
     }
 
     /// Flatten newlines/tabs to single spaces so a multi-line selection shows
@@ -182,17 +184,16 @@ enum SessionNotesAppender {
                 return
             }
             pendingPrompt = nil
-            resultDismissWork?.cancel()
+            resultDismissWork?.cancel(); resultDismissWork = nil
             banner.onHover = { undo() }
-            banner.show(text: text, font: promptFont, hoverHint: "Hover to undo",
-                        hoverCountdown: hoverActionDuration)
-            let work = DispatchWorkItem { [weak banner] in
-                resultDismissWork = nil
+            // Auto-dismiss when the undo window closes; pauses while hovered, so
+            // the bar and the window both freeze under the cursor.
+            banner.onHoverCountdownExpired = { [weak banner] in
                 banner?.onHover = nil
                 banner?.dismiss()
             }
-            resultDismissWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + hoverActionDuration, execute: work)
+            banner.show(text: text, font: promptFont, hoverHint: "Hover to undo",
+                        hoverCountdown: hoverActionDuration)
         }
     }
 

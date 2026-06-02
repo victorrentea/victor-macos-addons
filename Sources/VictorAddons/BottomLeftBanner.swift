@@ -94,6 +94,18 @@ final class BottomLeftBanner {
     private var hoverDwellTimer: Timer?
     private var hoverDwellCount = 0
 
+    /// Fires once the hover-countdown bar fills completely *without* the user
+    /// hovering to act — i.e. the window closed on its own. Callers use it to
+    /// dismiss the banner. Because the countdown pauses whenever the cursor is
+    /// inside the pill, this fires after `duration` seconds of *un-hovered*
+    /// time, not wall-clock. Only meaningful while a countdown is running.
+    var onHoverCountdownExpired: (() -> Void)?
+
+    private static let countdownTick: TimeInterval = 0.05
+    private var countdownTimer: Timer?
+    private var countdownDuration: TimeInterval = 0
+    private var countdownElapsed: TimeInterval = 0
+
     /// Final window opacity when visible. Below 1.0 to add an extra layer
     /// of see-through on top of the NSVisualEffectView glass.
     private static let visibleAlpha: CGFloat = 0.75
@@ -219,6 +231,7 @@ final class BottomLeftBanner {
     func dismiss(animated: Bool = true) {
         guard isVisible else { return }
         cancelHoverDwell()
+        clearHoverCountdown()
         let toRemove = panels
         panels.removeAll()
         let hints = hintPanels
@@ -342,42 +355,63 @@ final class BottomLeftBanner {
         }
     }
 
-    /// Grow the bottom-edge orange bar from zero to the full box width over
-    /// `duration`, linearly. Gated on the banner being hoverable with an active
-    /// `onHover` — a non-actionable flash never sprouts a bar even if a caller
-    /// passes a duration. Resets any in-flight bar first, so a reused banner
-    /// restarts cleanly.
+    /// Begin filling the bottom-edge orange bar from left to right over
+    /// `duration` seconds of *un-hovered* time. While the cursor sits inside
+    /// the pill the bar freezes — the window can't expire out from under a
+    /// hovering user, and they get unlimited time to dwell-confirm — and it
+    /// resumes when the cursor leaves. Gated on the banner being hoverable with
+    /// an active `onHover` (a non-actionable flash never sprouts a bar). Resets
+    /// any in-flight countdown first, so a reused banner restarts cleanly.
     func startHoverCountdown(duration: TimeInterval) {
         clearHoverCountdown()
         guard hoverable, onHover != nil, duration > 0 else { return }
+        countdownDuration = duration
+        countdownElapsed = 0
         for entry in panels {
-            let bar = entry.progressBar
-            let full = entry.panel.frame.width
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            bar.frame = NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight)
-            bar.isHidden = false
-            CATransaction.commit()
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = duration
-                ctx.timingFunction = CAMediaTimingFunction(name: .linear)
-                bar.animator().frame = NSRect(x: 0, y: 0, width: full, height: Style.progressBarHeight)
-            }
+            entry.progressBar.isHidden = false
+            setBarWidth(entry.progressBar, 0)
+        }
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: Self.countdownTick, repeats: true) { [weak self] _ in
+            self?.tickCountdown()
         }
     }
 
-    /// Stop and hide the hover-countdown bar on every panel. Called on each
-    /// show() (so a reused banner never shows a stale bar) and by callers once
-    /// the window closes (e.g. a countdown reaching 0).
-    func clearHoverCountdown() {
+    private func tickCountdown() {
+        // The defining behavior: pause while the cursor is on the pill. Elapsed
+        // time (and therefore the bar) only advances when the user is away.
+        if !isMouseInsideAnyPanel() {
+            countdownElapsed += Self.countdownTick
+        }
+        let progress = countdownDuration > 0 ? min(1.0, countdownElapsed / countdownDuration) : 1.0
         for entry in panels {
-            let bar = entry.progressBar
-            bar.layer?.removeAllAnimations()
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            bar.frame = NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight)
-            bar.isHidden = true
-            CATransaction.commit()
+            setBarWidth(entry.progressBar, CGFloat(progress) * entry.panel.frame.width)
+        }
+        if countdownElapsed >= countdownDuration {
+            countdownTimer?.invalidate(); countdownTimer = nil
+            onHoverCountdownExpired?()
+        }
+    }
+
+    /// Set the bar width with implicit animation disabled. At the 20 fps tick
+    /// the steps are imperceptible, and an implicit ~0.25s animation would lag
+    /// the freeze the instant the cursor lands on the pill.
+    private func setBarWidth(_ bar: NSView, _ width: CGFloat) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        bar.frame = NSRect(x: 0, y: 0, width: max(0, width), height: Style.progressBarHeight)
+        CATransaction.commit()
+    }
+
+    /// Stop the countdown and hide the bar on every panel. Called on each
+    /// show() (so a reused banner never shows a stale bar), on dismiss(), and
+    /// by callers once the window closes another way (e.g. a countdown overlay
+    /// reaching 0).
+    func clearHoverCountdown() {
+        countdownTimer?.invalidate(); countdownTimer = nil
+        countdownElapsed = 0
+        for entry in panels {
+            setBarWidth(entry.progressBar, 0)
+            entry.progressBar.isHidden = true
         }
     }
 

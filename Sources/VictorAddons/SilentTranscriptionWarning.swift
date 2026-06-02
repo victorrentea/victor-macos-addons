@@ -10,7 +10,6 @@ import Cocoa
 final class SilentTranscriptionWarning {
     private let banner: BottomLeftBanner
     private var checkTimer: Timer?
-    private var visibleTimer: Timer?
 
     private var notificationEnabled = true
     private var isStale = false
@@ -54,12 +53,12 @@ final class SilentTranscriptionWarning {
     private func tick() {
         guard notificationEnabled, isStale, !banner.isVisible else { return }
         overlayInfo("Silent transcription warning shown")
+        // Auto-dismiss when the snooze window closes. The banner's countdown
+        // pauses while the cursor is on the pill, so hovering freezes the bar
+        // and keeps the warning up until the user moves away (or snoozes).
+        banner.onHoverCountdownExpired = { [weak self] in self?.dismiss() }
         banner.show(text: Self.warningEmoji, hoverHint: "Hover to snooze",
                     hoverCountdown: Self.visibleDuration)
-        visibleTimer?.invalidate()
-        visibleTimer = Timer.scheduledTimer(withTimeInterval: Self.visibleDuration, repeats: false) { [weak self] _ in
-            self?.dismiss()
-        }
     }
 
     private func snooze() {
@@ -69,7 +68,6 @@ final class SilentTranscriptionWarning {
     }
 
     private func dismiss() {
-        visibleTimer?.invalidate(); visibleTimer = nil
         banner.dismiss()
     }
 }
