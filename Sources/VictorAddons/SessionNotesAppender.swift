@@ -88,7 +88,10 @@ enum SessionNotesAppender {
             guard let captured = pendingPrompt else { return }
             pendingPrompt = nil
             banner?.dismiss()
-            appendAndReport(text: captured)
+            // Hovering the offer is itself the explicit confirmation, so the
+            // follow-up banner is a plain non-hoverable "pasted in notes" flash
+            // — no hover-to-undo (there's nothing left to cancel).
+            appendAndReport(text: captured, offerUndo: false)
         }
         banner.show(text: display, font: promptFont, hoverHint: "Hover to Send")
 
@@ -115,7 +118,12 @@ enum SessionNotesAppender {
         return "⬆️ " + singleLine(text)
     }
 
-    private static func appendAndReport(text: String) {
+    /// Append `text` to the session notes and flash a confirmation. When
+    /// `offerUndo` is true (direct clipboard / selection paste, triggered by a
+    /// keypress) the confirmation is hoverable to undo. When false (a prompt
+    /// the user already confirmed by hovering the offer) it's a plain
+    /// non-cancellable "pasted in notes" flash.
+    private static func appendAndReport(text: String, offerUndo: Bool = true) {
         guard let folder = ScreenshotManager.sessionFolder else {
             showResult("(no active session)")
             return
@@ -127,8 +135,12 @@ enum SessionNotesAppender {
         do {
             let offset = try appendLine(text, to: notes)
             overlayInfo("Appended \(text.count) chars to \(notes.path)")
-            showUndoable("⬆️ Pasted: " + singleLine(text),
-                         undo: { undoAppend(file: notes, toOffset: offset) })
+            if offerUndo {
+                showUndoable("⬆️ Pasted: " + singleLine(text),
+                             undo: { undoAppend(file: notes, toOffset: offset) })
+            } else {
+                showResult("⬆️ pasted in notes")
+            }
         } catch {
             showResult("⚠️ Append failed")
             overlayError("Append to notes failed: \(error)")
