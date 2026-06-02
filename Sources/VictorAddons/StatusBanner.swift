@@ -12,6 +12,7 @@ final class StatusBanner {
     private let banner: BottomLeftBanner
     private var presenceTimer: Timer?
     private var visibleTimer: Timer?
+    private var hoverPollTimer: Timer?
     private var lastMousePosition: NSPoint?
 
     private var pendingText: String?
@@ -34,6 +35,7 @@ final class StatusBanner {
             banner.updateText(text)
             sound?.play()
             scheduleFadeOut(after: visibleDuration)
+            startHoverKeepAlive()
             return
         }
         startPresencePolling()
@@ -43,6 +45,7 @@ final class StatusBanner {
     func dismiss() {
         presenceTimer?.invalidate(); presenceTimer = nil
         visibleTimer?.invalidate(); visibleTimer = nil
+        hoverPollTimer?.invalidate(); hoverPollTimer = nil
         pendingText = nil
         pendingSound = nil
         lastMousePosition = nil
@@ -72,14 +75,29 @@ final class StatusBanner {
         banner.show(text: text)
         pendingSound?.play()
         scheduleFadeOut(after: pendingVisibleDuration)
+        startHoverKeepAlive()
     }
 
     private func scheduleFadeOut(after seconds: TimeInterval) {
         visibleTimer?.invalidate()
         visibleTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.hoverPollTimer?.invalidate(); self?.hoverPollTimer = nil
             self?.banner.dismiss()
             self?.pendingText = nil
             self?.pendingSound = nil
+        }
+    }
+
+    /// While the banner is visible, hovering the cursor over it resets the
+    /// auto-fade countdown: the box stays up as long as the cursor is on it,
+    /// and only fades `pendingVisibleDuration` (e.g. 7s) after the cursor
+    /// leaves. Polls position rather than capturing mouse events so the
+    /// banner stays click-through.
+    private func startHoverKeepAlive() {
+        hoverPollTimer?.invalidate()
+        hoverPollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self, self.banner.isMouseInside else { return }
+            self.scheduleFadeOut(after: self.pendingVisibleDuration)
         }
     }
 }

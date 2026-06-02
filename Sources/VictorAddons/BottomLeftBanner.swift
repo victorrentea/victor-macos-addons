@@ -95,6 +95,11 @@ final class BottomLeftBanner {
 
     var isVisible: Bool { !panels.isEmpty }
 
+    /// True while the cursor is within any of this banner's panels. Lets
+    /// callers (e.g. `StatusBanner`) keep a transient banner alive on hover
+    /// without making the panel intercept mouse events.
+    var isMouseInside: Bool { isMouseInsideAnyPanel() }
+
     /// Show the banner with `text` and `backgroundColor`. Replaces any
     /// existing visible content (text + color updated in place; no fade-out
     /// flicker). Fades in over 0.3s when first appearing.
