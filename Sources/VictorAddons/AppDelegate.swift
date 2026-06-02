@@ -625,6 +625,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let branch = (json["branch"] as? String) ?? ""
             // Daemon ignores branch/fileURL and builds the default-branch blob URL itself.
             self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: nil)
+            // Standard bottom-left flash for each new file received from the IntelliJ plugin.
+            self?.statusBanner?.showOnPresence(text: "📄 " + (file as NSString).lastPathComponent,
+                                               sound: nil, visibleDuration: 3.0)
             return "{\"ok\":true}"
         }
 
