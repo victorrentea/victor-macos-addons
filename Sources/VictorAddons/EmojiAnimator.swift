@@ -2704,10 +2704,8 @@ class EmojiAnimator {
         if originalCount >= 6 {
             let cycleLen = detectLastCycleLength(images)
             if cycleLen > 0 {
-                // Prolong the ending: append the detected tail loop 50× so the
-                // gong's final swinging frames keep playing (matches the now
-                // longer, 1s-delayed gong sound on the tablet).
-                let repeats = 50
+                let extraFrames = (originalCount + 1) / 2
+                let repeats = max(1, (extraFrames + cycleLen - 1) / cycleLen)
                 let cycle = Array(images.suffix(cycleLen))
                 for _ in 0..<repeats { images.append(contentsOf: cycle) }
                 totalDuration = totalDuration * Double(images.count) / Double(originalCount)
