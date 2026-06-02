@@ -54,7 +54,8 @@ final class SilentTranscriptionWarning {
     private func tick() {
         guard notificationEnabled, isStale, !banner.isVisible else { return }
         overlayInfo("Silent transcription warning shown")
-        banner.show(text: Self.warningEmoji, hoverHint: "Hover to snooze")
+        banner.show(text: Self.warningEmoji, hoverHint: "Hover to snooze",
+                    hoverCountdown: Self.visibleDuration)
         visibleTimer?.invalidate()
         visibleTimer = Timer.scheduledTimer(withTimeInterval: Self.visibleDuration, repeats: false) { [weak self] _ in
             self?.dismiss()

@@ -93,7 +93,8 @@ enum SessionNotesAppender {
             // — no hover-to-undo (there's nothing left to cancel).
             appendAndReport(text: captured, offerUndo: false)
         }
-        banner.show(text: display, font: promptFont, hoverHint: "Hover to Send")
+        banner.show(text: display, font: promptFont, hoverHint: "Hover to Send",
+                    hoverCountdown: hoverActionDuration)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + hoverActionDuration) { [weak banner] in
             guard pendingPrompt == trimmed else { return }
@@ -183,7 +184,8 @@ enum SessionNotesAppender {
             pendingPrompt = nil
             resultDismissWork?.cancel()
             banner.onHover = { undo() }
-            banner.show(text: text, font: promptFont, hoverHint: "Hover to undo")
+            banner.show(text: text, font: promptFont, hoverHint: "Hover to undo",
+                        hoverCountdown: hoverActionDuration)
             let work = DispatchWorkItem { [weak banner] in
                 resultDismissWork = nil
                 banner?.onHover = nil

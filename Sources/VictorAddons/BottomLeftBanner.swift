@@ -47,6 +47,13 @@ final class BottomLeftBanner {
         static let hintHPadding: CGFloat = 10
         static let hintBackground: NSColor = NSColor.black.withAlphaComponent(0.6)
         static func hintFont() -> NSFont { NSFont.boldSystemFont(ofSize: hintFontSize) }
+
+        // MARK: Hover-countdown bar (a thin orange strip along the bottom edge
+        // that grows left→right over the window during which the banner can
+        // still be hovered to act). Only shown when the banner is hoverable
+        // AND has an active onHover.
+        static let progressBarHeight: CGFloat = 5
+        static let progressBarColor: NSColor = .systemOrange
     }
 
     private let screensProvider: () -> [NSScreen]
@@ -58,6 +65,9 @@ final class BottomLeftBanner {
         /// White overlay above the tint that ramps up during the hover
         /// dwell. Alpha 0 at rest, alpha 1 the instant `onHover` fires.
         let whitenTint: NSView
+        /// Thin orange strip along the bottom edge whose width animates from 0
+        /// to the full box width over the hover window. Hidden at rest.
+        let progressBar: NSView
         let label: NSTextField
         /// Kept so `updateText` can re-measure and resize the box to hug the
         /// new text (still capped at `maxWidthFraction` of this screen).
@@ -103,10 +113,17 @@ final class BottomLeftBanner {
     /// Show the banner with `text` and `backgroundColor`. Replaces any
     /// existing visible content (text + color updated in place; no fade-out
     /// flicker). Fades in over 0.3s when first appearing.
+    ///
+    /// `hoverCountdown`, when non-nil, draws a thin orange bar along the bottom
+    /// edge that grows from left to right over that many seconds, visualizing
+    /// how long the banner can still be hovered to act. It only appears when the
+    /// banner is hoverable with an active `onHover` (status/error flashes get no
+    /// bar). Pass nil to clear any bar from a previous show on a reused banner.
     func show(text: String,
               backgroundColor: NSColor = Style.defaultBackground,
               font: NSFont = Style.defaultFont(),
-              hoverHint: String? = nil) {
+              hoverHint: String? = nil,
+              hoverCountdown: TimeInterval? = nil) {
         // Each show() presents new content → re-arm hover and clear any leftover
         // dwell whitening (e.g. after a previous fire on a banner being reused).
         cancelHoverDwell()
@@ -115,6 +132,7 @@ final class BottomLeftBanner {
             updateText(text)
             updateBackgroundColor(backgroundColor)
             applyHint(hoverHint)
+            applyHoverCountdown(hoverCountdown)
             return
         }
         for screen in screensProvider() {
@@ -132,6 +150,7 @@ final class BottomLeftBanner {
             for entry in panels { entry.panel.animator().alphaValue = Self.visibleAlpha }
         }
         applyHint(hoverHint)
+        applyHoverCountdown(hoverCountdown)
     }
 
     func updateText(_ text: String) {
@@ -315,6 +334,53 @@ final class BottomLeftBanner {
         hintPanels.removeAll()
     }
 
+    private func applyHoverCountdown(_ duration: TimeInterval?) {
+        if let duration = duration {
+            startHoverCountdown(duration: duration)
+        } else {
+            clearHoverCountdown()
+        }
+    }
+
+    /// Grow the bottom-edge orange bar from zero to the full box width over
+    /// `duration`, linearly. Gated on the banner being hoverable with an active
+    /// `onHover` — a non-actionable flash never sprouts a bar even if a caller
+    /// passes a duration. Resets any in-flight bar first, so a reused banner
+    /// restarts cleanly.
+    func startHoverCountdown(duration: TimeInterval) {
+        clearHoverCountdown()
+        guard hoverable, onHover != nil, duration > 0 else { return }
+        for entry in panels {
+            let bar = entry.progressBar
+            let full = entry.panel.frame.width
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bar.frame = NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight)
+            bar.isHidden = false
+            CATransaction.commit()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = duration
+                ctx.timingFunction = CAMediaTimingFunction(name: .linear)
+                bar.animator().frame = NSRect(x: 0, y: 0, width: full, height: Style.progressBarHeight)
+            }
+        }
+    }
+
+    /// Stop and hide the hover-countdown bar on every panel. Called on each
+    /// show() (so a reused banner never shows a stale bar) and by callers once
+    /// the window closes (e.g. a countdown reaching 0).
+    func clearHoverCountdown() {
+        for entry in panels {
+            let bar = entry.progressBar
+            bar.layer?.removeAllAnimations()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bar.frame = NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight)
+            bar.isHidden = true
+            CATransaction.commit()
+        }
+    }
+
     private func buildHintPanel(on screen: NSScreen, text: String) -> NSPanel {
         let font = Style.hintFont()
         let probe = NSTextField(labelWithString: text)
@@ -433,8 +499,19 @@ final class BottomLeftBanner {
         label.autoresizingMask = [.width]
         content.addSubview(label)
 
+        // Topmost so it stays visible over the glass, tint, text, and the
+        // dwell whitening. Width is driven manually by the hover countdown;
+        // no autoresizing so a panel resize never stretches it on its own.
+        let progressBar = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight))
+        progressBar.wantsLayer = true
+        progressBar.layer?.backgroundColor = Style.progressBarColor.cgColor
+        progressBar.autoresizingMask = []
+        progressBar.isHidden = true
+        content.addSubview(progressBar)
+
         panel.contentView = content
-        return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint, label: label,
+        return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint,
+                          progressBar: progressBar, label: label,
                           font: font, screen: screen)
     }
 }
