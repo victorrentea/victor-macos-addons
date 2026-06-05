@@ -2869,6 +2869,7 @@ class EmojiAnimator {
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: w, height: w)
         gifLayer.contentsGravity = .resizeAspect
+        gifLayer.opacity = 0.5
         if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
         activeEffects["drum-roll"] = gifLayer
@@ -2910,7 +2911,7 @@ class EmojiAnimator {
         SoundManager.shared.stop("drum.mp3")
         // Keep drumming while fading out, then clean up
         let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1.0
+        fade.fromValue = layer.opacity
         fade.toValue = 0.0
         fade.duration = 1.0
         fade.fillMode = .forwards
