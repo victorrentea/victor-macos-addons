@@ -2572,8 +2572,9 @@ class EmojiAnimator {
         gifLayer.contents = images.first
         // Glued to the bottom screen edge: center at half the layer height,
         // pulled down by the APNG's transparent margin below the hooves
-        // (5.6% of frame height) so the hooves actually touch the bottom.
-        gifLayer.position = CGPoint(x: startX, y: height / 2 - height * 0.056)
+        // (5.6% of frame height) plus 10px so the hooves sit right on the
+        // bottom.
+        gifLayer.position = CGPoint(x: startX, y: height / 2 - height * 0.056 - 10)
         hostLayer.addSublayer(gifLayer)
 
         let gallop = CAKeyframeAnimation(keyPath: "contents")
