@@ -173,6 +173,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
             case "game-over/stop":  self?.animator.stopGameOver()
+            case "green-flash":
+                // Tablet → Mac connectivity confirmation: green screenshot-style border
+                if let screen = ScreenCaptureFlash.builtInScreen {
+                    ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
+                }
             case "stop-all":
                 self?.animator.stopAllActiveEffects()
                 self?.progressBarOverlay?.cancel()
@@ -431,6 +436,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "wrong-x":         self?.animator.showWrongX()
                 case "drum-roll":       self?.animator.showDrumRoll()
                 case "laugh":           self?.animator.showLaugh()
+                case "green-flash":
+                    if let screen = ScreenCaptureFlash.builtInScreen {
+                        ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
+                    }
                 default: break
                 }
             }

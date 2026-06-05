@@ -4,7 +4,15 @@ import QuartzCore
 enum ScreenCaptureFlash {
     private static var activePanels: [NSPanel] = []
 
-    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30) {
+    /// The built-in (Retina) display, falling back to the main screen.
+    static var builtInScreen: NSScreen? {
+        NSScreen.screens.first { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
+            return CGDisplayIsBuiltin(id) != 0
+        } ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30, color: NSColor = .systemYellow) {
         let panel = NSPanel(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -23,34 +31,34 @@ enum ScreenCaptureFlash {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
 
-        let yellow = NSColor.systemYellow.cgColor
-        let clear = NSColor.systemYellow.withAlphaComponent(0).cgColor
+        let solid = color.cgColor
+        let clear = color.withAlphaComponent(0).cgColor
 
-        // Top edge: yellow at outer (top) → clear at inner (bottom)
+        // Top edge: solid at outer (top) → clear at inner (bottom)
         let top = CAGradientLayer()
         top.frame = CGRect(x: 0, y: size.height - thickness, width: size.width, height: thickness)
-        top.colors = [yellow, clear]
+        top.colors = [solid, clear]
         top.startPoint = CGPoint(x: 0.5, y: 1.0)
         top.endPoint = CGPoint(x: 0.5, y: 0.0)
 
-        // Bottom edge: yellow at outer (bottom) → clear at inner (top)
+        // Bottom edge: solid at outer (bottom) → clear at inner (top)
         let bottom = CAGradientLayer()
         bottom.frame = CGRect(x: 0, y: 0, width: size.width, height: thickness)
-        bottom.colors = [yellow, clear]
+        bottom.colors = [solid, clear]
         bottom.startPoint = CGPoint(x: 0.5, y: 0.0)
         bottom.endPoint = CGPoint(x: 0.5, y: 1.0)
 
-        // Left edge: yellow at outer (left) → clear at inner (right)
+        // Left edge: solid at outer (left) → clear at inner (right)
         let left = CAGradientLayer()
         left.frame = CGRect(x: 0, y: 0, width: thickness, height: size.height)
-        left.colors = [yellow, clear]
+        left.colors = [solid, clear]
         left.startPoint = CGPoint(x: 0.0, y: 0.5)
         left.endPoint = CGPoint(x: 1.0, y: 0.5)
 
-        // Right edge: yellow at outer (right) → clear at inner (left)
+        // Right edge: solid at outer (right) → clear at inner (left)
         let right = CAGradientLayer()
         right.frame = CGRect(x: size.width - thickness, y: 0, width: thickness, height: size.height)
-        right.colors = [yellow, clear]
+        right.colors = [solid, clear]
         right.startPoint = CGPoint(x: 1.0, y: 0.5)
         right.endPoint = CGPoint(x: 0.0, y: 0.5)
 

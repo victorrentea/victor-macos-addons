@@ -2,18 +2,14 @@ import Cocoa
 
 /// Full-width countdown progress bar pinned to the bottom of the screen.
 ///
-/// Triggered from the tablet (3S/5S/7S/10S buttons): a translucent frosted-glass
+/// Triggered from the tablet (3s/5s/7s/10s buttons): a semi-transparent yellow
 /// bar grows from the left edge to the full screen width over `seconds`, acting
-/// as a discreet, barely-visible warm-up / break timer. When the fill completes
-/// the bar fades out so the screen clears. Pressing another value restarts it
-/// from zero (latest-wins).
-///
-/// Uses an `NSVisualEffectView` with `.behindWindow` blending so it blurs the
-/// content behind the transparent overlay — a genuine glass effect rather than
-/// a flat tint. Lives on the built-in Retina display alongside the emoji effects.
+/// as a discreet warm-up / break timer. When the fill completes the bar fades
+/// out so the screen clears. Pressing another value restarts it from zero
+/// (latest-wins). Lives on the built-in Retina display alongside the emoji effects.
 final class ProgressBarOverlay {
     private let hostView: NSView
-    private var bar: NSVisualEffectView?
+    private var bar: NSView?
     private var fadeWork: DispatchWorkItem?
 
     private static let height: CGFloat = 15
@@ -35,20 +31,19 @@ final class ProgressBarOverlay {
 
         // hostView is non-flipped (origin bottom-left), so y=0 pins it to the
         // bottom; we drive the frame ourselves (no autoresizing).
-        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 0, height: Self.height))
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.alphaValue = Self.alpha
-        effect.autoresizingMask = []
-        hostView.addSubview(effect)
-        bar = effect
+        let fill = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Self.height))
+        fill.wantsLayer = true
+        fill.layer?.backgroundColor = NSColor.systemYellow.cgColor
+        fill.alphaValue = Self.alpha
+        fill.autoresizingMask = []
+        hostView.addSubview(fill)
+        bar = fill
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = seconds
             ctx.timingFunction = CAMediaTimingFunction(name: .linear)
             ctx.allowsImplicitAnimation = true
-            effect.animator().frame = NSRect(x: 0, y: 0, width: width, height: Self.height)
+            fill.animator().frame = NSRect(x: 0, y: 0, width: width, height: Self.height)
         }
 
         // After the fill completes, fade the bar out so the screen clears.

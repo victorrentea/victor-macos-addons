@@ -2331,6 +2331,13 @@ class EmojiAnimator {
 
     // MARK: - Bullet holes (minigun)
 
+    /// Current mouse location converted into hostLayer (overlay panel) coordinates.
+    private func mouseInHostLayer() -> CGPoint {
+        let global = NSEvent.mouseLocation
+        let origin = (hostLayer.delegate as? NSView)?.window?.frame.origin ?? .zero
+        return CGPoint(x: global.x - origin.x, y: global.y - origin.y)
+    }
+
     func showBulletHoles(playSound: Bool = true) {
         if cancelIfRunning("bullet-holes") { return }
 
@@ -2359,10 +2366,16 @@ class EmojiAnimator {
 
         for i in 0..<count {
             let delay = spawnStart + Double(i) * interval
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak container] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
                 guard let container = container else { return }
-                let x = CGFloat.random(in: 0...(bounds.width - holeW))
-                let y = CGFloat.random(in: 0...(bounds.height - holeH))
+                // Bullets land randomly within 200px of the mouse, sampled at
+                // spawn time so the burst follows the cursor as it moves.
+                let mouse = self?.mouseInHostLayer() ?? CGPoint(x: bounds.midX, y: bounds.midY)
+                let radius: CGFloat = 200
+                let angle = CGFloat.random(in: 0..<(2 * .pi))
+                let r = radius * sqrt(CGFloat.random(in: 0...1))  // uniform over the disk
+                let x = min(max(mouse.x + r * cos(angle) - holeW / 2, 0), bounds.width - holeW)
+                let y = min(max(mouse.y + r * sin(angle) - holeH / 2, 0), bounds.height - holeH)
                 let hole = CALayer()
                 hole.frame = CGRect(x: x, y: y, width: holeW, height: holeH)
                 hole.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
