@@ -2535,6 +2535,72 @@ class EmojiAnimator {
         trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: playSound ? "10_red_phone.mp3" : nil)
     }
 
+    // MARK: - Cavalry charge (knight gallops in from the left, fades past mid-screen — sound #70)
+
+    func showCavalry(playSound: Bool = true) {
+        if cancelIfRunning("cavalry", sound: playSound ? "70_cavalry.mp3" : nil) { return }
+
+        // APNG (full 8-bit alpha — flood-filled from the GIF's black bg) in
+        // the bundle; frame delays come from the APNG dictionary.
+        guard let url = Bundle.module.url(forResource: "cavalry", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("cavalry.png not found in bundle")
+            return
+        }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+        var images: [CGImage] = []
+        var loopDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let png = props?[kCGImagePropertyPNGDictionary as String] as? [String: Any]
+            loopDuration += png?[kCGImagePropertyAPNGDelayTime as String] as? Double ?? 0.05
+        }
+
+        let bounds = hostLayer.bounds
+        let width = bounds.width * 0.26
+        let height = width * 373.0 / 498.0
+        let travel = 5.0                          // ≈ 70_cavalry.mp3 duration (5.56s)
+        let startX = -width / 2                   // fully offscreen left
+        let endX = bounds.width * 0.78            // gone around the right quarter
+
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        gifLayer.contentsGravity = .resizeAspect
+        gifLayer.contents = images.first
+        gifLayer.position = CGPoint(x: startX, y: bounds.height * 0.22)
+        hostLayer.addSublayer(gifLayer)
+
+        let gallop = CAKeyframeAnimation(keyPath: "contents")
+        gallop.values = images
+        gallop.duration = loopDuration
+        gallop.repeatCount = .infinity
+        gifLayer.add(gallop, forKey: "gallop")
+
+        let charge = CABasicAnimation(keyPath: "position.x")
+        charge.fromValue = startX
+        charge.toValue = endX
+        charge.duration = travel
+        charge.fillMode = .forwards
+        charge.isRemovedOnCompletion = false
+        gifLayer.add(charge, forKey: "charge")
+
+        // Full strength until mid-screen, then fade away by the end of the run.
+        let halfTime = (bounds.width * 0.50 - startX) / (endX - startX)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1.0, 1.0, 0.0]
+        fade.keyTimes = [0, NSNumber(value: Double(halfTime)), 1]
+        fade.duration = travel
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        gifLayer.add(fade, forKey: "fade")
+
+        if playSound { SoundManager.shared.play("70_cavalry.mp3") }
+        trackEffect("cavalry", layer: gifLayer, duration: travel + 0.1, sound: playSound ? "70_cavalry.mp3" : nil)
+    }
+
     // MARK: - Rainbow (translucent semicircle smeared in like a wiper, toggled by tablet sound #37)
 
     func showRainbow(playSound: Bool = true) {
