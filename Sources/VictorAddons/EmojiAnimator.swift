@@ -2342,8 +2342,10 @@ class EmojiAnimator {
         if cancelIfRunning("bullet-holes") { return }
 
         let bounds = hostLayer.bounds
-        let totalDuration = 6.37
-        let count = 60
+        let totalDuration = 6.37  // matches minigun.mp3
+        // 42 evenly-spaced shots (~7/s): 30% lower fire rate than the original
+        // 60, spread over the same window so the burst still spans the sound.
+        let count = 42
         let spawnStart = 0.25
         let spawnEnd = totalDuration - 0.25
 
