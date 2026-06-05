@@ -711,39 +711,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.moveFrontChromeWindowToRetina()
         }
-        // YouTube tabs: force the in-page player volume to 100% (unmuted).
-        // The player loads asynchronously, so inject a short self-retrying
-        // loop, and fire it twice to dodge the about:blank → youtube nav race.
-        if AppDelegate.isYouTubeUrl(url) {
-            for delay in [2.5, 5.0] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                    self?.maxYouTubeVolumeInChrome()
-                }
-            }
-        }
-    }
-
-    private static func isYouTubeUrl(_ url: String) -> Bool {
-        let lower = url.lowercased()
-        return lower.contains("youtube.com") || lower.contains("youtu.be")
-    }
-
-    /// Drive the YouTube player to full volume (unmuted) in Chrome's front tab.
-    /// Uses the page's `#movie_player` API when present and also pins the raw
-    /// `<video>` element, retrying in-page (~10s) while the player boots.
-    /// Requires Chrome's "Allow JavaScript from Apple Events" (View → Developer).
-    private func maxYouTubeVolumeInChrome() {
-        let js = "(function(){var t=0;var iv=setInterval(function(){t++;var p=document.getElementById('movie_player');var v=document.querySelector('video');var d=false;try{if(p&&p.unMute&&p.setVolume){p.unMute();p.setVolume(100);d=true;}}catch(e){}try{if(v){v.muted=false;v.volume=1;d=true;}}catch(e){}if(d||t>40)clearInterval(iv);},250);})();"
-        let script = """
-        tell application "Google Chrome"
-            if (count of windows) > 0 then
-                execute active tab of front window javascript "\(js)"
-            end if
-        end tell
-        """
-        DispatchQueue.global().async {
-            _ = AppleScriptRunner.run(script)
-        }
     }
 
     private func moveFrontChromeWindowToRetina() {
