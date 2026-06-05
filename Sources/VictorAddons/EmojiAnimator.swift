@@ -2364,18 +2364,39 @@ class EmojiAnimator {
         let holeW: CGFloat = image.size.width
         let holeH: CGFloat = image.size.height
 
+        // Mouse-follow state shared across the spawn closures (main thread only).
+        // Bullets cluster around the cursor only while it is actually MOVING on
+        // this screen; once it sits still for >1s (or is off-screen) they spray
+        // the whole screen randomly, like the original effect.
+        var lastMouse: CGPoint?
+        var lastMoveAt: CFTimeInterval = 0  // distant past → start in full-screen mode
+
         for i in 0..<count {
             let delay = spawnStart + Double(i) * interval
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
-                guard let container = container else { return }
-                // Bullets land randomly within 200px of the mouse, sampled at
-                // spawn time so the burst follows the cursor as it moves.
-                let mouse = self?.mouseInHostLayer() ?? CGPoint(x: bounds.midX, y: bounds.midY)
-                let radius: CGFloat = 200
-                let angle = CGFloat.random(in: 0..<(2 * .pi))
-                let r = radius * sqrt(CGFloat.random(in: 0...1))  // uniform over the disk
-                let x = min(max(mouse.x + r * cos(angle) - holeW / 2, 0), bounds.width - holeW)
-                let y = min(max(mouse.y + r * sin(angle) - holeH / 2, 0), bounds.height - holeH)
+                guard let self, let container else { return }
+                let now = CACurrentMediaTime()
+                let mouse = self.mouseInHostLayer()
+                if let prev = lastMouse, hypot(mouse.x - prev.x, mouse.y - prev.y) > 2 {
+                    lastMoveAt = now
+                }
+                lastMouse = mouse
+
+                let x: CGFloat
+                let y: CGFloat
+                if bounds.contains(mouse), now - lastMoveAt <= 1.0 {
+                    // Cursor on-screen and moving: cluster within 140px of it,
+                    // with higher density toward the center (r ∝ u, not √u).
+                    let radius: CGFloat = 140
+                    let angle = CGFloat.random(in: 0..<(2 * .pi))
+                    let r = radius * CGFloat.random(in: 0...1)
+                    x = min(max(mouse.x + r * cos(angle) - holeW / 2, 0), bounds.width - holeW)
+                    y = min(max(mouse.y + r * sin(angle) - holeH / 2, 0), bounds.height - holeH)
+                } else {
+                    // Idle or off-screen cursor: spray the whole screen.
+                    x = CGFloat.random(in: 0...(bounds.width - holeW))
+                    y = CGFloat.random(in: 0...(bounds.height - holeH))
+                }
                 let hole = CALayer()
                 hole.frame = CGRect(x: x, y: y, width: holeW, height: holeH)
                 hole.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -2391,15 +2412,25 @@ class EmojiAnimator {
             }
         }
 
-        // Fade out entire container at the tail
-        let fadeOut = CABasicAnimation(keyPath: "opacity")
-        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.4
-        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
-        fadeOut.duration = 0.4
-        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
-        container.add(fadeOut, forKey: "fadeOut")
+        // At the tail, each hole shrinks to nothing over 1s — the bullets get
+        // "resorbed" instead of fading out.
+        let resorbDuration = 1.0
+        let resorbStart = spawnEnd + 0.05  // just after the last bullet lands
+        DispatchQueue.main.asyncAfter(deadline: .now() + resorbStart) { [weak container] in
+            guard let holes = container?.sublayers else { return }
+            for hole in holes {
+                let shrink = CABasicAnimation(keyPath: "transform.scale")
+                shrink.fromValue = 1.0
+                shrink.toValue = 0.0
+                shrink.duration = resorbDuration
+                shrink.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                shrink.fillMode = .forwards
+                shrink.isRemovedOnCompletion = false
+                hole.add(shrink, forKey: "resorb")
+            }
+        }
 
-        trackEffect("bullet-holes", layer: container, duration: totalDuration + 0.1, sound: "minigun.mp3")
+        trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: "minigun.mp3")
     }
 
     // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)
