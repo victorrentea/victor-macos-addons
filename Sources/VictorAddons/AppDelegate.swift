@@ -210,9 +210,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\"}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
-        tabletServer?.onSoundPlay = { name in
-            guard let duration = SoundManager.shared.playTabletSound(name) else { return nil }
+        tabletServer?.onSoundPlay = { name, volumePct in
+            let volume = volumePct.map { Float($0) / 100 }
+            guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }
             return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
+        }
+        tabletServer?.onSoundVolume = { pct in
+            SoundManager.shared.setTabletVolume(Float(pct) / 100)
         }
         tabletServer?.onSoundStop = { SoundManager.shared.stopTabletSound() }
         // Watchdog: if the tablet stops pinging (crash, network drop) while a

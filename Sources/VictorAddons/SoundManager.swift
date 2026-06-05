@@ -15,6 +15,11 @@ class SoundManager {
     /// MediaPlayer semantics: same button = stop, other button = preempt).
     private var tabletPlayer: AVAudioPlayer?
 
+    /// Playback volume (0..1) for tablet-routed sounds, controlled from the
+    /// tablet's volume buttons/wedge. Player-level only — the macOS system
+    /// volume is never touched.
+    private var tabletVolume: Float = 1.0
+
     private init() {}
 
     /// Resolve a sound file: shared tablet sounds (Resources/sounds — a
@@ -110,12 +115,14 @@ class SoundManager {
 
     // MARK: - Tablet-routed sounds (GET /sound/play/<file>, /sound/stop)
 
-    /// Play a tablet-routed sound at full volume, preempting any currently
-    /// playing tablet sound. Returns the sound duration in seconds (the
-    /// tablet schedules its effect-stop chain from it), or nil if the file
-    /// is unknown/unplayable. Synchronous — must be called on the main
-    /// thread (TabletHttpServer dispatches handlers via DispatchQueue.main.sync).
-    func playTabletSound(_ filename: String) -> TimeInterval? {
+    /// Play a tablet-routed sound, preempting any currently playing tablet
+    /// sound. `volume` (0..1) accompanies each play from the tablet and is
+    /// remembered as the new tablet volume. Returns the sound duration in
+    /// seconds (the tablet schedules its effect-stop chain from it), or nil
+    /// if the file is unknown/unplayable. Synchronous — must be called on the
+    /// main thread (TabletHttpServer dispatches handlers via DispatchQueue.main.sync).
+    func playTabletSound(_ filename: String, volume: Float? = nil) -> TimeInterval? {
+        if let volume { tabletVolume = max(0.0, min(1.0, volume)) }
         tabletPlayer?.stop()
         tabletPlayer = nil
         guard let url = soundURL(for: filename) else {
@@ -124,7 +131,7 @@ class SoundManager {
         }
         do {
             let player = try AVAudioPlayer(contentsOf: url)
-            player.volume = 1.0
+            player.volume = tabletVolume
             player.prepareToPlay()
             tabletPlayer = player
             player.play()
@@ -132,6 +139,18 @@ class SoundManager {
         } catch {
             overlayError("Tablet sound play failed \(filename): \(error)")
             return nil
+        }
+    }
+
+    /// Live-adjust the tablet-routed volume (applies to the sound currently
+    /// playing too) and play the tablet's click tone at the new level as
+    /// audible feedback — the same generated 1800Hz tap the tablet uses.
+    func setTabletVolume(_ volume: Float) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.tabletVolume = max(0.0, min(1.0, volume))
+            self.tabletPlayer?.volume = self.tabletVolume
+            self.playOverlapping("click.wav", volume: self.tabletVolume)
         }
     }
 

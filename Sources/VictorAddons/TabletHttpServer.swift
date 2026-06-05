@@ -12,7 +12,9 @@ class TabletHttpServer {
         case openUrl(String)
         case ping
         case soundsManifest
-        case soundPlay(String)
+        /// Filename + optional volume percent (0–100) from "?vol=".
+        case soundPlay(String, Int?)
+        case soundVolume(Int)
         case soundStop
         case testTranscriptionStart
         case testTranscriptionStop
@@ -36,9 +38,13 @@ class TabletHttpServer {
     var onPing: (() -> String)?
     /// Full sounds manifest JSON — fetched by the tablet on a hash mismatch.
     var onSoundsManifest: (() -> String)?
-    /// Play a tablet-routed sound by filename; returns JSON with durationMs,
-    /// or nil if the sound is unknown (→ 404, tablet falls back to local playback).
-    var onSoundPlay: ((String) -> String?)?
+    /// Play a tablet-routed sound by filename at an optional volume percent;
+    /// returns JSON with durationMs, or nil if the sound is unknown (→ 404,
+    /// tablet falls back to local playback).
+    var onSoundPlay: ((String, Int?) -> String?)?
+    /// Tablet volume change (0–100): adjust tablet-routed playback volume and
+    /// play a feedback click at the new level.
+    var onSoundVolume: ((Int) -> Void)?
     var onSoundStop: (() -> Void)?
     var onTestTranscriptionStart: (() -> Void)?
     var onTestTranscriptionStop: (() -> Void)?
@@ -104,14 +110,16 @@ class TabletHttpServer {
                     if self?.onSoundsManifest == nil {
                         statusCode = 503
                     }
-                case .soundPlay(let name):
+                case .soundPlay(let name, let volumePct):
                     contentType = "application/json"
-                    if let json = self?.onSoundPlay?(name) {
+                    if let json = self?.onSoundPlay?(name, volumePct) {
                         body = json
                     } else {
                         statusCode = 404
                         body = "{\"ok\":false,\"reason\":\"unknown-sound\"}"
                     }
+                case .soundVolume(let pct):
+                    self?.onSoundVolume?(pct)
                 case .soundStop:
                     self?.onSoundStop?()
                 case .testTranscriptionStart:
@@ -218,7 +226,13 @@ class TabletHttpServer {
             }
             if pathOnly.hasPrefix("/sound/play/") {
                 let name = String(pathOnly.dropFirst("/sound/play/".count))
-                if !name.isEmpty { return .soundPlay(name) }
+                let vol = queryItems.first(where: { $0.name == "vol" })?.value.flatMap(Int.init)
+                if !name.isEmpty { return .soundPlay(name, vol) }
+            }
+            if pathOnly.hasPrefix("/sound/volume/") {
+                if let pct = Int(pathOnly.dropFirst("/sound/volume/".count)) {
+                    return .soundVolume(pct)
+                }
             }
             return .unknown
         }
