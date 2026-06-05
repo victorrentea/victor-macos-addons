@@ -74,6 +74,26 @@ Fullscreen overlay and WebSocket integration for live sessions:
 Connects to the training-assistant backend via WebSocket at `/ws/__overlay__`.
 Receives session lifecycle events (`session_started`, `session_ended`) to enable/disable join link menu item.
 
+### Tablet sound routing (tablet → Mac playback)
+The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash`).
+When the tablet has no BT speaker / wired headphones and the Mac answers, the tablet routes
+soundboard playback here instead of playing locally:
+- `GET /sound/play/<file>?vol=<0-100>` — one sound at a time, a new play preempts the
+  current one; responds `{ok, durationMs}` (the tablet schedules its effect-stop chain from
+  it); 404 for unknown files → tablet falls back to local playback
+- `GET /sound/stop`; `/effect/stop-all` also stops the tablet-routed sound
+- `GET /sound/volume/<pct>` — live player-level volume (never the macOS system volume)
+  + plays `click.wav` (the tablet's generated 1800Hz tap) at the new level as feedback
+- Watchdog: the routed sound is stopped if pings cease >12s (tablet crash / network drop)
+
+**Anti-drift**: `Sources/VictorAddons/Resources/sounds` is a single folder symlink to
+`victor-android/app/src/main/assets` (the canonical sound library; dereferenced into the
+bundle by `build-app.sh`), so the protocol identifies sounds by bare filename.
+`SoundsManifest` hashes every bundled mp3 (SHA-256, canonical "name:hash\n" lines);
+`GET /sounds/manifest` returns the per-file map. A hash mismatch in `/ping` means a stale
+Mac bundle — the tablet plays the differing files locally and shows an amber dot until
+`build-app.sh` is re-run.
+
 **Tech**: Swift, AppKit, AVFoundation, Swift Package Manager
 **Build**: `swift build && swift test`
 
@@ -87,6 +107,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/transcription/toggle`
 - `GET /test/audio/playing` — taps `🔊OS Output` loopback for ~150ms, returns `{playing, rms, peak, ...}`
 - `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`
+- `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 
 For local E2E checks without stealing focus:
 
