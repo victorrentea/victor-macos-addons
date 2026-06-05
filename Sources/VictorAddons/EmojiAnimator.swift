@@ -2535,6 +2535,76 @@ class EmojiAnimator {
         trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: playSound ? "10_red_phone.mp3" : nil)
     }
 
+    // MARK: - Rainbow (translucent semicircle smeared in like a wiper, toggled by tablet sound #37)
+
+    func showRainbow(playSound: Bool = true) {
+        if cancelIfRunning("rainbow", sound: playSound ? "37_rainbow.mp3" : nil) { return }
+
+        let bounds = hostLayer.bounds
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+        activeEffects["rainbow"] = container
+
+        // Semicircle anchored at the bottom: the tail starts at the
+        // bottom-left foot and sweeps over the top; the right side runs off
+        // the screen edge (center is right of middle, radius > half-width).
+        let center = CGPoint(x: bounds.width * 0.55, y: 0)
+        let outerRadius = bounds.width * 0.52
+        let bandWidth = outerRadius * 0.035
+        let colors: [NSColor] = [
+            .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue,
+            NSColor(red: 0.29, green: 0.0, blue: 0.51, alpha: 1),  // indigo
+            NSColor(red: 0.56, green: 0.0, blue: 1.0, alpha: 1),   // violet
+        ]
+        for (i, color) in colors.enumerated() {
+            let radius = outerRadius - CGFloat(i) * bandWidth
+            let path = CGMutablePath()
+            // From 180° (bottom-left tail) over the top (90°) down to 0°.
+            path.addArc(center: center, radius: radius,
+                        startAngle: .pi, endAngle: 0, clockwise: true)
+            let band = CAShapeLayer()
+            band.path = path
+            band.strokeColor = color.withAlphaComponent(0.55).cgColor
+            band.fillColor = nil
+            band.lineWidth = bandWidth + 1  // +1 hides hairline gaps between bands
+            band.lineCap = .round
+            container.addSublayer(band)
+
+            // Wiper smear: the arc draws itself from the left tail to the right.
+            let draw = CABasicAnimation(keyPath: "strokeEnd")
+            draw.fromValue = 0
+            draw.toValue = 1
+            draw.duration = 2.5
+            draw.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            band.add(draw, forKey: "draw")
+        }
+
+        if playSound {
+            SoundManager.shared.play("37_rainbow.mp3")
+            if let soundURL = SoundManager.shared.soundURL(for: "37_rainbow.mp3") {
+                let asset = AVURLAsset(url: soundURL)
+                let d = asset.duration
+                if d.isNumeric {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + CMTimeGetSeconds(d)) { [weak self] in
+                        self?.stopRainbow()
+                    }
+                }
+            }
+        }
+    }
+
+    func stopRainbow() {
+        guard let layer = activeEffects["rainbow"] else { return }
+        activeEffects.removeValue(forKey: "rainbow")
+        SoundManager.shared.stop("37_rainbow.mp3")
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.8)
+        CATransaction.setCompletionBlock { layer.removeFromSuperlayer() }
+        layer.opacity = 0
+        CATransaction.commit()
+    }
+
     // MARK: - Brother (looping GIF, bottom-left area, toggled by tablet sound)
 
     func showBrother(playSound: Bool = true) {
