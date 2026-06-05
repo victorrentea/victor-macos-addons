@@ -26,6 +26,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var coreAudioManager: CoreAudioManager?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
+    /// Last time the tablet hit /ping — feeds the tablet-sound watchdog.
+    private var lastTabletPingAt: Date?
+    private var tabletSoundWatchdog: Timer?
     private var pptMonitor: PowerPointMonitor?
     private var driveShareCache: GoogleDriveShareCache?
     private var ijMonitor: IntelliJMonitor?
@@ -179,6 +182,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                     ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
                 }
             case "stop-all":
+                SoundManager.shared.stopTabletSound()
                 self?.animator.stopAllActiveEffects()
                 self?.progressBarOverlay?.cancel()
             default:
@@ -197,6 +201,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onOpenUrl = { [weak self] url in
             self?.openUrlInChrome(url)
         }
+        // Tablet → Mac sound routing: the tablet pings every 5s to detect the
+        // Mac and compares soundsHash to detect a stale Mac bundle; when its
+        // "MAC" toggle is pressed it routes soundboard playback here instead
+        // of playing locally (one sound at a time, new play preempts).
+        tabletServer?.onPing = { [weak self] in
+            self?.lastTabletPingAt = Date()
+            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\"}"
+        }
+        tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
+        tabletServer?.onSoundPlay = { name in
+            guard let duration = SoundManager.shared.playTabletSound(name) else { return nil }
+            return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
+        }
+        tabletServer?.onSoundStop = { SoundManager.shared.stopTabletSound() }
+        // Watchdog: if the tablet stops pinging (crash, network drop) while a
+        // tablet-routed sound is playing, stop it — otherwise a long sound
+        // would blare on with no way to stop it from the tablet.
+        tabletSoundWatchdog = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self, SoundManager.shared.isTabletSoundPlaying,
+                  let last = self.lastTabletPingAt, Date().timeIntervalSince(last) > 12 else { return }
+            overlayInfo("Tablet ping lost >12s — stopping tablet-routed sound")
+            SoundManager.shared.stopTabletSound()
+        }
+        // Warm up the sounds manifest (~15MB of SHA-256) off the main thread
+        // so the first /ping doesn't pay for it.
+        DispatchQueue.global(qos: .utility).async { _ = SoundsManifest.combinedHash }
         tabletServer?.onPromptCapture = { [weak self] prompt in
             guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
             guard self.isSessionActive else {

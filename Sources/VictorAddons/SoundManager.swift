@@ -9,7 +9,28 @@ class SoundManager {
     private var players: [String: AVAudioPlayer] = [:]
     private var overlappingPlayers: [AVAudioPlayer] = []
 
+    /// Player for the single tablet-routed sound. The tablet routes its
+    /// soundboard here when "play on Mac" is active: one sound at a time, a
+    /// new play preempts the current one (mirrors the tablet's local
+    /// MediaPlayer semantics: same button = stop, other button = preempt).
+    private var tabletPlayer: AVAudioPlayer?
+
     private init() {}
+
+    /// Resolve a sound file: shared tablet sounds (Resources/sounds — a
+    /// symlink to the Android app's assets folder, dereferenced by
+    /// build-app.sh) first, then Mac-only sounds in Resources/.
+    func soundURL(for filename: String) -> URL? {
+        // bundleURL, not resourceURL: NSBundle reports <bundle>/Resources as
+        // the resource dir for this flat SPM bundle, which would double the
+        // "Resources" path component.
+        let base = Bundle.module.bundleURL
+        let shared = base.appendingPathComponent("Resources/sounds/\(filename)")
+        if FileManager.default.fileExists(atPath: shared.path) { return shared }
+        let local = base.appendingPathComponent("Resources/\(filename)")
+        if FileManager.default.fileExists(atPath: local.path) { return local }
+        return nil
+    }
 
     /// Play a sound from the bundle Resources folder, looping indefinitely.
     /// If the same sound is already playing, does nothing.
@@ -17,7 +38,7 @@ class SoundManager {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if let existing = self.players[filename], existing.isPlaying { return }
-            guard let url = Bundle.module.url(forResource: filename, withExtension: nil, subdirectory: "Resources") else {
+            guard let url = self.soundURL(for: filename) else {
                 overlayError("Sound file not found: \(filename)")
                 return
             }
@@ -45,7 +66,7 @@ class SoundManager {
                 return
             }
 
-            guard let url = Bundle.module.url(forResource: filename, withExtension: nil, subdirectory: "Resources") else {
+            guard let url = self.soundURL(for: filename) else {
                 overlayError("Sound file not found: \(filename)")
                 return
             }
@@ -67,7 +88,7 @@ class SoundManager {
     func playOverlapping(_ filename: String, volume: Float = 1.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            guard let url = Bundle.module.url(forResource: filename, withExtension: nil, subdirectory: "Resources") else {
+            guard let url = self.soundURL(for: filename) else {
                 overlayError("Sound file not found: \(filename)")
                 return
             }
@@ -85,6 +106,48 @@ class SoundManager {
                 overlayError("Sound play failed \(filename): \(error)")
             }
         }
+    }
+
+    // MARK: - Tablet-routed sounds (GET /sound/play/<file>, /sound/stop)
+
+    /// Play a tablet-routed sound at full volume, preempting any currently
+    /// playing tablet sound. Returns the sound duration in seconds (the
+    /// tablet schedules its effect-stop chain from it), or nil if the file
+    /// is unknown/unplayable. Synchronous — must be called on the main
+    /// thread (TabletHttpServer dispatches handlers via DispatchQueue.main.sync).
+    func playTabletSound(_ filename: String) -> TimeInterval? {
+        tabletPlayer?.stop()
+        tabletPlayer = nil
+        guard let url = soundURL(for: filename) else {
+            overlayError("Tablet sound not found: \(filename)")
+            return nil
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.volume = 1.0
+            player.prepareToPlay()
+            tabletPlayer = player
+            player.play()
+            return player.duration
+        } catch {
+            overlayError("Tablet sound play failed \(filename): \(error)")
+            return nil
+        }
+    }
+
+    /// Stop the tablet-routed sound immediately (mirrors the tablet's abrupt
+    /// MediaPlayer.stop on re-press / preempt).
+    func stopTabletSound() {
+        DispatchQueue.main.async { [weak self] in
+            self?.tabletPlayer?.stop()
+            self?.tabletPlayer = nil
+        }
+    }
+
+    /// Whether a tablet-routed sound is currently playing (main thread only —
+    /// used by the ping watchdog).
+    var isTabletSoundPlaying: Bool {
+        tabletPlayer?.isPlaying ?? false
     }
 
     /// Fade out over 300ms then stop. Called when the animation finishes —

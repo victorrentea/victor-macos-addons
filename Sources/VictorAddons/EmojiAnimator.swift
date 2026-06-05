@@ -252,7 +252,7 @@ class EmojiAnimator {
 
     func showBrokenGlass(playSound: Bool = true) {  // formerly showEarthquake
         // 0.8: full volume is too violent for live workshops
-        if playSound { SoundManager.shared.play("breaking-glass.mp3", volume: 0.8) }
+        if playSound { SoundManager.shared.play("90_breaking-glass.mp3", volume: 0.8) }
         let bounds = hostLayer.bounds
         let totalDuration = 4.5
 
@@ -665,7 +665,7 @@ class EmojiAnimator {
         let container = CALayer()
         container.frame = hostLayer.bounds
         hostLayer.addSublayer(container)
-        trackEffect("fireworks", layer: container, duration: 8.0, sound: playSound ? "fireworks.mp3" : nil)
+        trackEffect("fireworks", layer: container, duration: 8.0, sound: playSound ? "89_fireworks.mp3" : nil)
 
         let bounds = hostLayer.bounds
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
@@ -959,13 +959,13 @@ class EmojiAnimator {
     // MARK: - Sepia / old film overlay
 
     func showSepia(playSound: Bool = true) {
-        let soundKey: String? = playSound ? "projector.mp3" : nil
+        let soundKey: String? = playSound ? "78_projector.mp3" : nil
         if cancelIfRunning("sepia", sound: soundKey) { return }
         let bounds = hostLayer.bounds
         let totalDuration = 7.0
 
         if playSound {
-            SoundManager.shared.play("projector.mp3")
+            SoundManager.shared.play("78_projector.mp3")
         }
 
         let container = CALayer()
@@ -1246,7 +1246,7 @@ class EmojiAnimator {
     func showPulse(playSound: Bool = false) {
         if pulseRunning { _stopPulse(); return }
         pulseRunning = true
-        if playSound { SoundManager.shared.play("flatline.mp3") }
+        if playSound { SoundManager.shared.play("15_flatline.mp3") }
 
         let bounds = hostLayer.bounds
         // Timing: dying.mp3 R-spikes at 0.105s and 1.507s. Image peaks at 22% and 48% of width.
@@ -1514,7 +1514,7 @@ class EmojiAnimator {
     // MARK: - Fear
 
     func showFear(playSound: Bool = true) {
-        if playSound { SoundManager.shared.play("scream_man.mp3") }
+        if playSound { SoundManager.shared.play("08_scream_man.mp3") }
         let bounds = hostLayer.bounds
 
         let initialSize: CGFloat = 200
@@ -1610,7 +1610,7 @@ class EmojiAnimator {
         gifLayer.contentsGravity = .resizeAspect
         if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
-        if playSound { SoundManager.shared.play("explosion.mp3") }
+        if playSound { SoundManager.shared.play("03_explosion.mp3") }
         trackEffect("explosion", layer: gifLayer, duration: totalDuration)
 
         let anim = CAKeyframeAnimation(keyPath: "contents")
@@ -1633,7 +1633,7 @@ class EmojiAnimator {
 
         // Match tablet sound duration
         var duration: Double = 8.0
-        if let soundURL = Bundle.module.url(forResource: "dying", withExtension: "mp3") {
+        if let soundURL = SoundManager.shared.soundURL(for: "dying.mp3") {
             let asset = AVURLAsset(url: soundURL)
             let d = asset.duration
             if d.isNumeric { duration = CMTimeGetSeconds(d) }
@@ -1691,8 +1691,8 @@ class EmojiAnimator {
         imgLayer.contents = img
         imgLayer.contentsGravity = .resizeAspect
         hostLayer.addSublayer(imgLayer)
-        trackEffect("fail", layer: imgLayer, duration: duration, sound: playSound ? "fail.mp3" : nil)
-        if playSound { SoundManager.shared.play("fail.mp3") }
+        trackEffect("fail", layer: imgLayer, duration: duration, sound: playSound ? "19_fail.mp3" : nil)
+        if playSound { SoundManager.shared.play("19_fail.mp3") }
 
         // Zoom out from 1.3x to 1.0x over the first 0.5s
         let zoomOut = CABasicAnimation(keyPath: "transform.scale")
@@ -1880,7 +1880,7 @@ class EmojiAnimator {
     // spiral up out of the meeting point.
 
     func showLoveHands(playSound: Bool = true) {
-        if cancelIfRunning("love-hands", sound: playSound ? "love_hearts.mp3" : nil) { return }
+        if cancelIfRunning("love-hands", sound: playSound ? "41_love_hearts.mp3" : nil) { return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -1970,12 +1970,12 @@ class EmojiAnimator {
         }
 
         if playSound {
-            SoundManager.shared.play("love_hearts.mp3")
+            SoundManager.shared.play("41_love_hearts.mp3")
         }
     }
 
     func stopLoveHands() {
-        _ = cancelIfRunning("love-hands", sound: "love_hearts.mp3")
+        _ = cancelIfRunning("love-hands", sound: "41_love_hearts.mp3")
     }
 
     /// 7 red hearts rise gently from `center` and diverge outward — modelled on
@@ -2068,7 +2068,7 @@ class EmojiAnimator {
     // MARK: - Star Wars Death Star slide (sound #55)
 
     func showStarWars(playSound: Bool = true) {
-        if cancelIfRunning("star-wars", sound: playSound ? "star_wars.mp3" : nil) { return }
+        if cancelIfRunning("star-wars", sound: playSound ? "55_star_wars.mp3" : nil) { return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -2126,7 +2126,7 @@ class EmojiAnimator {
         layer.add(anim, forKey: "slide")
 
         if playSound {
-            SoundManager.shared.play("star_wars.mp3")
+            SoundManager.shared.play("55_star_wars.mp3")
             DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
                 self?.stopStarWars()
             }
@@ -2134,7 +2134,7 @@ class EmojiAnimator {
     }
 
     func stopStarWars() {
-        _ = cancelIfRunning("star-wars", sound: "star_wars.mp3")
+        _ = cancelIfRunning("star-wars", sound: "55_star_wars.mp3")
     }
 
     func showSpiralHearts() {
@@ -2254,7 +2254,7 @@ class EmojiAnimator {
     private func _stopPulse() {
         guard pulseRunning else { return }
         pulseRunning = false
-        SoundManager.shared.stop("flatline.mp3")
+        SoundManager.shared.stop("15_flatline.mp3")
         let dim = _pulseDimLayer
         let grid = _pulseGridLayer
         let ecg = _pulseEcgLayer
@@ -2280,7 +2280,7 @@ class EmojiAnimator {
     // MARK: - Fire alarm GIF (bottom-left corner)
 
     func showFireAlarm(playSound: Bool = true) {
-        if cancelIfRunning("fire-alarm", sound: playSound ? "school_bell.mp3" : nil) { return }
+        if cancelIfRunning("fire-alarm", sound: playSound ? "65_school_bell.mp3" : nil) { return }
 
         guard let url = Bundle.module.url(forResource: "fire-alarm", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
@@ -2325,8 +2325,8 @@ class EmojiAnimator {
         gifLayer.add(anim, forKey: "fireAlarmFrames")
         CATransaction.commit()
 
-        if playSound { SoundManager.shared.play("school_bell.mp3") }
-        trackEffect("fire-alarm", layer: gifLayer, duration: 4.72, sound: playSound ? "school_bell.mp3" : nil)
+        if playSound { SoundManager.shared.play("65_school_bell.mp3") }
+        trackEffect("fire-alarm", layer: gifLayer, duration: 4.72, sound: playSound ? "65_school_bell.mp3" : nil)
     }
 
     // MARK: - Bullet holes (minigun)
@@ -2355,7 +2355,7 @@ class EmojiAnimator {
             return
         }
 
-        if playSound { SoundManager.shared.play("minigun.mp3") }
+        if playSound { SoundManager.shared.play("22_minigun.mp3") }
 
         let container = CALayer()
         container.frame = bounds
@@ -2432,13 +2432,13 @@ class EmojiAnimator {
             }
         }
 
-        trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: "minigun.mp3")
+        trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: "22_minigun.mp3")
     }
 
     // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)
 
     func showFbiKnock(playSound: Bool = true) {
-        if cancelIfRunning("fbi-knock", sound: playSound ? "fbi.mp3" : nil) { return }
+        if cancelIfRunning("fbi-knock", sound: playSound ? "64_fbi.mp3" : nil) { return }
 
         let bounds = hostLayer.bounds
         let totalDuration = 3.3
@@ -2448,7 +2448,7 @@ class EmojiAnimator {
                   (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
               ) else { return }
 
-        if playSound { SoundManager.shared.play("fbi.mp3") }
+        if playSound { SoundManager.shared.play("64_fbi.mp3") }
 
         let imgLayer = CALayer()
         imgLayer.frame = bounds
@@ -2484,13 +2484,13 @@ class EmojiAnimator {
         fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
         imgLayer.add(fadeOut, forKey: "fadeOut")
 
-        trackEffect("fbi-knock", layer: imgLayer, duration: totalDuration, sound: playSound ? "fbi.mp3" : nil)
+        trackEffect("fbi-knock", layer: imgLayer, duration: totalDuration, sound: playSound ? "64_fbi.mp3" : nil)
     }
 
     // MARK: - Phone ring (screenshot shake)
 
     func showPhoneRing(playSound: Bool = true) {
-        if cancelIfRunning("phone-ring", sound: playSound ? "red_phone.mp3" : nil) { return }
+        if cancelIfRunning("phone-ring", sound: playSound ? "10_red_phone.mp3" : nil) { return }
 
         let bounds = hostLayer.bounds
         let totalDuration = 2.29
@@ -2500,7 +2500,7 @@ class EmojiAnimator {
                   (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
               ) else { return }
 
-        if playSound { SoundManager.shared.play("red_phone.mp3") }
+        if playSound { SoundManager.shared.play("10_red_phone.mp3") }
 
         let imgLayer = CALayer()
         imgLayer.frame = bounds
@@ -2532,13 +2532,13 @@ class EmojiAnimator {
         fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
         imgLayer.add(fadeOut, forKey: "fadeOut")
 
-        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: playSound ? "red_phone.mp3" : nil)
+        trackEffect("phone-ring", layer: imgLayer, duration: totalDuration + 0.1, sound: playSound ? "10_red_phone.mp3" : nil)
     }
 
     // MARK: - Brother (looping GIF, bottom-left area, toggled by tablet sound)
 
     func showBrother(playSound: Bool = true) {
-        if cancelIfRunning("brother", sound: playSound ? "sfx_109.mp3" : nil) { return }
+        if cancelIfRunning("brother", sound: playSound ? "67_sfx_109.mp3" : nil) { return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -2585,8 +2585,8 @@ class EmojiAnimator {
         CATransaction.commit()
 
         if playSound {
-            SoundManager.shared.play("sfx_109.mp3")
-            if let soundURL = Bundle.module.url(forResource: "sfx_109", withExtension: "mp3") {
+            SoundManager.shared.play("67_sfx_109.mp3")
+            if let soundURL = SoundManager.shared.soundURL(for: "67_sfx_109.mp3") {
                 let asset = AVURLAsset(url: soundURL)
                 let d = asset.duration
                 if d.isNumeric {
@@ -2600,13 +2600,13 @@ class EmojiAnimator {
     }
 
     func stopBrother() {
-        _ = cancelIfRunning("brother", sound: "sfx_109.mp3")
+        _ = cancelIfRunning("brother", sound: "67_sfx_109.mp3")
     }
 
     // MARK: - Gangnam (looping transparent frames, toggled by sound #29)
 
     func showGangnam(playSound: Bool = true) {
-        if cancelIfRunning("gangnam", sound: playSound ? "gangnam_style.mp3" : nil) { return }
+        if cancelIfRunning("gangnam", sound: playSound ? "29_gangnam_style.mp3" : nil) { return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -2661,8 +2661,8 @@ class EmojiAnimator {
         CATransaction.commit()
 
         if playSound {
-            SoundManager.shared.play("gangnam_style.mp3")
-            if let soundURL = Bundle.module.url(forResource: "gangnam_style", withExtension: "mp3") {
+            SoundManager.shared.play("29_gangnam_style.mp3")
+            if let soundURL = SoundManager.shared.soundURL(for: "29_gangnam_style.mp3") {
                 let asset = AVURLAsset(url: soundURL)
                 let d = asset.duration
                 if d.isNumeric {
@@ -2676,7 +2676,7 @@ class EmojiAnimator {
     }
 
     func stopGangnam() {
-        _ = cancelIfRunning("gangnam", sound: "gangnam_style.mp3")
+        _ = cancelIfRunning("gangnam", sound: "29_gangnam_style.mp3")
     }
 
     // MARK: - Gong GIF overlay (bottom-left, full screen width)
@@ -2726,7 +2726,7 @@ class EmojiAnimator {
     }
 
     func showGong(playSound: Bool = true) {
-        if cancelIfRunning("gong", sound: playSound ? "gong.mp3" : nil) { return }
+        if cancelIfRunning("gong", sound: playSound ? "50_gong.mp3" : nil) { return }
         guard let url = Bundle.module.url(forResource: "gong", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
 
@@ -2802,7 +2802,7 @@ class EmojiAnimator {
             _ = self?.cancelIfRunning("gong", sound: nil)
         }
 
-        if playSound { SoundManager.shared.play("gong.mp3") }
+        if playSound { SoundManager.shared.play("50_gong.mp3") }
     }
 
     // MARK: - Wrong X (two diagonal brush strokes, drawn one after the other)
@@ -2889,7 +2889,7 @@ class EmojiAnimator {
     // MARK: - Drum roll GIF overlay (bottom-left, loops until stopped)
 
     func showDrumRoll(playSound: Bool = true) {
-        if cancelIfRunning("drum-roll", sound: playSound ? "drum.mp3" : nil) { return }
+        if cancelIfRunning("drum-roll", sound: playSound ? "26_drum.mp3" : nil) { return }
         guard let url = Bundle.module.url(forResource: "drum", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
 
@@ -2949,12 +2949,12 @@ class EmojiAnimator {
         timer.resume()
         drumRollTimer = timer
 
-        if playSound { SoundManager.shared.play("drum.mp3") }
+        if playSound { SoundManager.shared.play("26_drum.mp3") }
     }
 
     func stopDrumRoll() {
         guard let layer = activeEffects.removeValue(forKey: "drum-roll") else { return }
-        SoundManager.shared.stop("drum.mp3")
+        SoundManager.shared.stop("26_drum.mp3")
         // Keep drumming while fading out, then clean up
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = layer.opacity

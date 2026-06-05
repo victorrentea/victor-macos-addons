@@ -21,20 +21,21 @@ echo "Build timestamp: $BUILD_TIMESTAMP"
 swift build -c "$BUILD_CONFIG"
 echo "VictorAddons built."
 
-# Dereference symlinked resources. Sources/VictorAddons/Resources/*.mp3 are
-# symlinks with "../../../../victor-android/..." relative paths that resolve
-# in the source tree, but SwiftPM copies them verbatim into
+# Dereference symlinked resources. Sources/VictorAddons/Resources/sounds is a
+# directory symlink ("../../../../victor-android/app/src/main/assets") that
+# resolves in the source tree, but SwiftPM copies symlinks verbatim into
 # .build/.../bundle/Resources/, where the relative path no longer resolves
 # (AVAudioPlayer then fails with kAudioFileUnsupportedFileTypeError).
+# cp -RL replaces each symlink (file or directory) with its dereferenced copy.
 BUNDLE_RES="$DIR/.build/arm64-apple-macosx/$BUILD_CONFIG/VictorAddons_VictorAddons.bundle/Resources"
 SRC_RES="$DIR/Sources/VictorAddons/Resources"
 if [ -d "$BUNDLE_RES" ]; then
     for link in "$BUNDLE_RES"/*; do
         [ -L "$link" ] || continue
         src="$SRC_RES/$(basename "$link")"
-        [ -f "$src" ] || continue
+        [ -e "$src" ] || continue
         rm "$link"
-        cp -L "$src" "$link"
+        cp -RL "$src" "$link"
     done
 fi
 

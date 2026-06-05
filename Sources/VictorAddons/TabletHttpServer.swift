@@ -10,6 +10,10 @@ class TabletHttpServer {
         case alarmStop
         case effect(String)
         case openUrl(String)
+        case ping
+        case soundsManifest
+        case soundPlay(String)
+        case soundStop
         case testTranscriptionStart
         case testTranscriptionStop
         case testTranscriptionToggle
@@ -28,6 +32,14 @@ class TabletHttpServer {
     var onEffect: ((String) -> Void)?
     /// Open a URL in a fullscreen Chrome window on the primary display.
     var onOpenUrl: ((String) -> Void)?
+    /// Tablet connectivity ping (every 5s); returns JSON with the sounds manifest hash.
+    var onPing: (() -> String)?
+    /// Full sounds manifest JSON — fetched by the tablet on a hash mismatch.
+    var onSoundsManifest: (() -> String)?
+    /// Play a tablet-routed sound by filename; returns JSON with durationMs,
+    /// or nil if the sound is unknown (→ 404, tablet falls back to local playback).
+    var onSoundPlay: ((String) -> String?)?
+    var onSoundStop: (() -> Void)?
     var onTestTranscriptionStart: (() -> Void)?
     var onTestTranscriptionStop: (() -> Void)?
     var onTestTranscriptionToggle: (() -> Void)?
@@ -83,6 +95,25 @@ class TabletHttpServer {
                     self?.onEffect?(name)
                 case .openUrl(let url):
                     self?.onOpenUrl?(url)
+                case .ping:
+                    contentType = "application/json"
+                    body = self?.onPing?() ?? "{\"ok\":true}"
+                case .soundsManifest:
+                    contentType = "application/json"
+                    body = self?.onSoundsManifest?() ?? "{\"error\":\"manifest unavailable\"}"
+                    if self?.onSoundsManifest == nil {
+                        statusCode = 503
+                    }
+                case .soundPlay(let name):
+                    contentType = "application/json"
+                    if let json = self?.onSoundPlay?(name) {
+                        body = json
+                    } else {
+                        statusCode = 404
+                        body = "{\"ok\":false,\"reason\":\"unknown-sound\"}"
+                    }
+                case .soundStop:
+                    self?.onSoundStop?()
                 case .testTranscriptionStart:
                     self?.onTestTranscriptionStart?()
                 case .testTranscriptionStop:
@@ -152,6 +183,12 @@ class TabletHttpServer {
             return .alarmStart
         case "/alarm/stop":
             return .alarmStop
+        case "/ping":
+            return .ping
+        case "/sounds/manifest":
+            return .soundsManifest
+        case "/sound/stop":
+            return .soundStop
         case "/test/transcription/start":
             return .testTranscriptionStart
         case "/test/transcription/stop":
@@ -178,6 +215,10 @@ class TabletHttpServer {
         default:
             if pathOnly.hasPrefix("/effect/") {
                 return .effect(String(pathOnly.dropFirst("/effect/".count)))
+            }
+            if pathOnly.hasPrefix("/sound/play/") {
+                let name = String(pathOnly.dropFirst("/sound/play/".count))
+                if !name.isEmpty { return .soundPlay(name) }
             }
             return .unknown
         }
