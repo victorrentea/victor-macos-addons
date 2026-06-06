@@ -41,6 +41,7 @@ class EmojiAnimator {
 
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
+        Self.warmBrotherCache()
     }
 
     /// Cancel a running toggleable effect. Returns true if it was running (and got cancelled).
@@ -2677,31 +2678,79 @@ class EmojiAnimator {
 
     // MARK: - Brother (looping GIF, bottom-left area, toggled by tablet sound)
 
-    func showBrother(playSound: Bool = true) {
-        if cancelIfRunning("brother", sound: playSound ? "67_sfx_109.mp3" : nil) { return }
+    // Decoded brother frames, pre-warmed at init. CGImageSourceCreateImageAtIndex
+    // is lazy: creating the 174 CGImages takes ~30ms but the bitmap decode
+    // (~450ms) happened at first render, so the GIF showed up half a second
+    // after its sound (which starts one HTTP call earlier in the tablet-routed
+    // path). Force-decoding into bitmap-backed CGImages up front makes the
+    // animation start in sync with the sound, at the cost of ~100MB resident.
+    private static var brotherCache: (frames: [CGImage], duration: Double, modDate: Date?)?
+    private static let brotherDecodeQueue = DispatchQueue(label: "brother-gif-decode", qos: .userInitiated)
 
+    static func warmBrotherCache() {
+        brotherDecodeQueue.async { _ = decodedBrotherFrames() }
+    }
+
+    private static var brotherGifURL: URL {
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
-        let gifURL = downloadsURL.appendingPathComponent("brother_full.gif")
+        return downloadsURL.appendingPathComponent("brother_full.gif")
+    }
 
-        guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else {
-            overlayError("brother_full.gif not found in Downloads")
-            return
+    /// Decode every GIF frame into a bitmap-backed CGImage (cached by file mod
+    /// date, so a re-downloaded GIF is picked up). Must run on brotherDecodeQueue.
+    private static func decodedBrotherFrames() -> (frames: [CGImage], duration: Double)? {
+        let gifURL = brotherGifURL
+        let modDate = (try? FileManager.default.attributesOfItem(atPath: gifURL.path)[.modificationDate]) as? Date
+        if let cache = brotherCache, cache.modDate == modDate {
+            return (cache.frames, cache.duration)
         }
 
+        guard let source = CGImageSourceCreateWithURL(gifURL as CFURL, nil) else { return nil }
         let count = CGImageSourceGetCount(source)
-        guard count > 0 else { return }
+        guard count > 0 else { return nil }
 
-        var images: [CGImage] = []
+        var frames: [CGImage] = []
         var totalDuration: Double = 0
         for i in 0..<count {
             guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
-            images.append(cg)
+            // Draw into a context to force the otherwise-lazy bitmap decode now.
+            if let ctx = CGContext(data: nil, width: cg.width, height: cg.height,
+                                   bitsPerComponent: 8, bytesPerRow: 0,
+                                   space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) {
+                ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+                frames.append(ctx.makeImage() ?? cg)
+            } else {
+                frames.append(cg)
+            }
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
             let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
             let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
             totalDuration += delay
         }
+        guard !frames.isEmpty else { return nil }
+
+        brotherCache = (frames, totalDuration, modDate)
+        return (frames, totalDuration)
+    }
+
+    func showBrother(playSound: Bool = true) {
+        if cancelIfRunning("brother", sound: playSound ? "67_sfx_109.mp3" : nil) { return }
+
+        Self.brotherDecodeQueue.async { [weak self] in
+            guard let decoded = Self.decodedBrotherFrames() else {
+                DispatchQueue.main.async { overlayError("brother_full.gif not found in Downloads") }
+                return
+            }
+            DispatchQueue.main.async {
+                self?.startBrother(images: decoded.frames, totalDuration: decoded.duration, playSound: playSound)
+            }
+        }
+    }
+
+    private func startBrother(images: [CGImage], totalDuration: Double, playSound: Bool) {
+        guard activeEffects["brother"] == nil else { return }  // double-trigger guard across the async hop
 
         let bounds = hostLayer.bounds
         let size = bounds.width * 0.32         // ~1/3 of screen width
