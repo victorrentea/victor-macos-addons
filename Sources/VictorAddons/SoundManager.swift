@@ -20,6 +20,14 @@ class SoundManager {
     /// volume is never touched.
     private var tabletVolume: Float = 1.0
 
+    /// Per-sound playback start delay (seconds) for sounds paired with a
+    /// visual effect: the animation gets a head start so it is on screen
+    /// before the audio kicks in. Applied in the tablet-routed path
+    /// (playTabletSound) and the Mac-local path (EmojiAnimator).
+    static let pairedEffectStartDelays: [String: TimeInterval] = [
+        "67_sfx_109.mp3": 0.2,   // brother GIF leads its sound by 0.2s
+    ]
+
     private init() {}
 
     /// Resolve a sound file: shared tablet sounds (Resources/sounds — a
@@ -134,8 +142,15 @@ class SoundManager {
             player.volume = tabletVolume
             player.prepareToPlay()
             tabletPlayer = player
-            player.play()
-            return player.duration
+            let delay = Self.pairedEffectStartDelays[filename] ?? 0
+            if delay > 0 {
+                player.play(atTime: player.deviceCurrentTime + delay)
+            } else {
+                player.play()
+            }
+            // Include the delay so the tablet's completion timer (durationMs
+            // + 100ms → effect-stop chain) doesn't cut the tail of the sound.
+            return player.duration + delay
         } catch {
             overlayError("Tablet sound play failed \(filename): \(error)")
             return nil

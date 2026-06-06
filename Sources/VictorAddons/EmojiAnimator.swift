@@ -2774,13 +2774,18 @@ class EmojiAnimator {
         CATransaction.commit()
 
         if playSound {
-            SoundManager.shared.play("67_sfx_109.mp3")
+            // Sound trails the animation by the paired-effect delay, matching
+            // the tablet-routed path (see SoundManager.pairedEffectStartDelays).
+            let soundDelay = SoundManager.pairedEffectStartDelays["67_sfx_109.mp3"] ?? 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + soundDelay) {
+                SoundManager.shared.play("67_sfx_109.mp3")
+            }
             if let soundURL = SoundManager.shared.soundURL(for: "67_sfx_109.mp3") {
                 let asset = AVURLAsset(url: soundURL)
                 let d = asset.duration
                 if d.isNumeric {
                     let soundDuration = CMTimeGetSeconds(d)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + soundDelay + soundDuration) { [weak self] in
                         self?.stopBrother()
                     }
                 }
