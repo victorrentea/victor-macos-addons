@@ -2710,27 +2710,46 @@ class EmojiAnimator {
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var images: [CGImage] = [firstFrame]
-            var totalDuration: Double = 0
-            for i in 0..<count {
-                if i > 0, let cg = CGImageSourceCreateImageAtIndex(source, i, decodeOpts) {
-                    _ = cg.dataProvider?.data   // force decompression off the main thread
-                    images.append(cg)
-                }
-                let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
-                let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
-                totalDuration += gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+        // Stream the frames instead of waiting for the full decode: a
+        // CAKeyframeAnimation needs all ~174 frames up front (~0.5s decode =
+        // visibly frozen first frame), so the main thread steps frames
+        // manually while the background pass decodes ahead of it (decode
+        // ~3ms/frame vs display ~66ms/frame — playback never starves).
+        let frameDelay: (Int) -> Double = { i in
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            return gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+        }
+        var frames: [(image: CGImage, delay: Double)] = [(firstFrame, frameDelay(0))]
+        var decodingDone = count == 1
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            for i in 1..<count {
+                guard let cg = CGImageSourceCreateImageAtIndex(source, i, decodeOpts) else { continue }
+                _ = cg.dataProvider?.data   // force decompression off the main thread
+                let delay = frameDelay(i)
+                DispatchQueue.main.async { frames.append((cg, delay)) }
             }
-            DispatchQueue.main.async {
-                guard let self, self.activeEffects["brother"] === gifLayer else { return }
-                let anim = CAKeyframeAnimation(keyPath: "contents")
-                anim.values = images
-                anim.duration = totalDuration
-                anim.repeatCount = .infinity
-                gifLayer.add(anim, forKey: "brotherFrames")
+            DispatchQueue.main.async { decodingDone = true }
+        }
+
+        func step(_ idx: Int) {
+            guard activeEffects["brother"] === gifLayer else { return }
+            if idx < frames.count {
+                let frame = frames[idx]
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)   // no implicit crossfade between frames
+                gifLayer.contents = frame.image
+                CATransaction.commit()
+                DispatchQueue.main.asyncAfter(deadline: .now() + frame.delay) { step(idx + 1) }
+            } else if decodingDone {
+                step(0)                                 // all frames shown — loop
+            } else {
+                // decoder momentarily behind — hold this frame and retry
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { step(idx) }
             }
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + frames[0].delay) { step(1) }
 
         if playSound {
             SoundManager.shared.play("67_sfx_109.mp3")
