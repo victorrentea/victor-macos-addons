@@ -2692,11 +2692,16 @@ class EmojiAnimator {
         let count = CGImageSourceGetCount(source)
         guard count > 0 else { return }
 
-        // Show the first frame immediately: decoding all ~174 frames up front
-        // cost ~0.5s at first render, making the visual lag the (already
-        // playing) tablet-routed sound. The rest decode on a background queue.
-        let decodeOpts = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-        guard let firstFrame = CGImageSourceCreateImageAtIndex(source, 0, decodeOpts) else { return }
+        var images: [CGImage] = []
+        var totalDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+            totalDuration += delay
+        }
 
         let bounds = hostLayer.bounds
         let size = bounds.width * 0.32         // ~1/3 of screen width
@@ -2706,50 +2711,18 @@ class EmojiAnimator {
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
         gifLayer.contentsGravity = .resizeAspect
-        gifLayer.contents = firstFrame
+        if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
 
-        // Stream the frames instead of waiting for the full decode: a
-        // CAKeyframeAnimation needs all ~174 frames up front (~0.5s decode =
-        // visibly frozen first frame), so the main thread steps frames
-        // manually while the background pass decodes ahead of it (decode
-        // ~3ms/frame vs display ~66ms/frame — playback never starves).
-        let frameDelay: (Int) -> Double = { i in
-            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
-            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
-            return gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
-        }
-        var frames: [(image: CGImage, delay: Double)] = [(firstFrame, frameDelay(0))]
-        var decodingDone = count == 1
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = totalDuration
+        anim.repeatCount = .infinity
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            for i in 1..<count {
-                guard let cg = CGImageSourceCreateImageAtIndex(source, i, decodeOpts) else { continue }
-                _ = cg.dataProvider?.data   // force decompression off the main thread
-                let delay = frameDelay(i)
-                DispatchQueue.main.async { frames.append((cg, delay)) }
-            }
-            DispatchQueue.main.async { decodingDone = true }
-        }
-
-        func step(_ idx: Int) {
-            guard activeEffects["brother"] === gifLayer else { return }
-            if idx < frames.count {
-                let frame = frames[idx]
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)   // no implicit crossfade between frames
-                gifLayer.contents = frame.image
-                CATransaction.commit()
-                DispatchQueue.main.asyncAfter(deadline: .now() + frame.delay) { step(idx + 1) }
-            } else if decodingDone {
-                step(0)                                 // all frames shown — loop
-            } else {
-                // decoder momentarily behind — hold this frame and retry
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { step(idx) }
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + frames[0].delay) { step(1) }
+        CATransaction.begin()
+        gifLayer.add(anim, forKey: "brotherFrames")
+        CATransaction.commit()
 
         if playSound {
             SoundManager.shared.play("67_sfx_109.mp3")
