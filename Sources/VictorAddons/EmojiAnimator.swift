@@ -2692,16 +2692,11 @@ class EmojiAnimator {
         let count = CGImageSourceGetCount(source)
         guard count > 0 else { return }
 
-        var images: [CGImage] = []
-        var totalDuration: Double = 0
-        for i in 0..<count {
-            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
-            images.append(cg)
-            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
-            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
-            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
-            totalDuration += delay
-        }
+        // Show the first frame immediately: decoding all ~174 frames up front
+        // cost ~0.5s at first render, making the visual lag the (already
+        // playing) tablet-routed sound. The rest decode on a background queue.
+        let decodeOpts = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        guard let firstFrame = CGImageSourceCreateImageAtIndex(source, 0, decodeOpts) else { return }
 
         let bounds = hostLayer.bounds
         let size = bounds.width * 0.32         // ~1/3 of screen width
@@ -2711,18 +2706,31 @@ class EmojiAnimator {
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
         gifLayer.contentsGravity = .resizeAspect
-        if let first = images.first { gifLayer.contents = first }
+        gifLayer.contents = firstFrame
         hostLayer.addSublayer(gifLayer)
         activeEffects["brother"] = gifLayer
 
-        let anim = CAKeyframeAnimation(keyPath: "contents")
-        anim.values = images
-        anim.duration = totalDuration
-        anim.repeatCount = .infinity
-
-        CATransaction.begin()
-        gifLayer.add(anim, forKey: "brotherFrames")
-        CATransaction.commit()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var images: [CGImage] = [firstFrame]
+            var totalDuration: Double = 0
+            for i in 0..<count {
+                if i > 0, let cg = CGImageSourceCreateImageAtIndex(source, i, decodeOpts) {
+                    _ = cg.dataProvider?.data   // force decompression off the main thread
+                    images.append(cg)
+                }
+                let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+                let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+                totalDuration += gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.05
+            }
+            DispatchQueue.main.async {
+                guard let self, self.activeEffects["brother"] === gifLayer else { return }
+                let anim = CAKeyframeAnimation(keyPath: "contents")
+                anim.values = images
+                anim.duration = totalDuration
+                anim.repeatCount = .infinity
+                gifLayer.add(anim, forKey: "brotherFrames")
+            }
+        }
 
         if playSound {
             SoundManager.shared.play("67_sfx_109.mp3")
