@@ -25,7 +25,7 @@ class SoundManager {
     /// before the audio kicks in. Applied in the tablet-routed path
     /// (playTabletSound) and the Mac-local path (EmojiAnimator).
     static let pairedEffectStartDelays: [String: TimeInterval] = [
-        "67_sfx_109.mp3": 0.2,   // brother GIF leads its sound by 0.2s
+        "67_sfx_109.mp3": 0.3,   // brother GIF leads its sound by 0.3s
     ]
 
     private init() {}
