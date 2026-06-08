@@ -249,7 +249,8 @@ class JoinLinkBanner: NSPanel {
         let mouse = NSEvent.mouseLocation
         let bannerHit = self.frame.contains(mouse)
         let barHit = progressPanel?.frame.contains(mouse) ?? false
-        let inside = bannerHit || barHit
+        let qrHit = qrPanel?.frame.contains(mouse) ?? false
+        let inside = bannerHit || barHit || qrHit
 
         if inside && !mouseWasInside {
             // Mouse entered — pause countdown and restore full progress bar.
