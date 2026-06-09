@@ -39,7 +39,7 @@ enum ScreenshotManager {
         }
         if let screen = target.screen {
             DispatchQueue.main.async {
-                ScreenCaptureFlash.flash(on: screen)
+                ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
             }
         }
         onScreenshotTaken?()
