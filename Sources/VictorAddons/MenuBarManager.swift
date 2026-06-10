@@ -166,6 +166,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Wrong X ❌",        "wrong-x"),
             ("Drum Roll 🥁",     "drum-roll"),
             ("Laugh 🤣",          "laugh"),
+            ("Corner Confetti 🎉", "corner-confetti"),
             ("Heartbeat 💓",      "heartbeat"),
             ("Spiral Hearts 💘",  "spiral-hearts"),
             ("Green Flash 🟢",    "green-flash"),

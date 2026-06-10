@@ -1156,6 +1156,84 @@ class EmojiAnimator {
         }
     }
 
+    /// Party-popper burst from the bottom-right corner. Fired when the tablet
+    /// progress bar fills to the right edge: pieces shoot up-and-to-the-left
+    /// out of the corner, then arc back down under gravity. Pairs with the
+    /// short confetti pop to signal the end of the interval.
+    func spawnCornerConfetti(count: Int = 70) {
+        SoundManager.shared.playOverlapping("confetti.mp3")
+        let bounds = hostLayer.bounds
+        let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        let origin = CGPoint(x: bounds.width, y: 0) // bottom-right corner
+        let gravity: CGFloat = 1500
+
+        for i in 0..<count {
+            let delay = Double(i) * 0.004 // near-simultaneous pop (~0.28s)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self else { return }
+
+                let color = EmojiAnimator.confettiColors.randomElement()!
+                let layer = CALayer()
+
+                let w = CGFloat.random(in: 12...24)
+                let h = CGFloat.random(in: 8...22)
+                layer.frame = CGRect(x: origin.x, y: origin.y, width: w, height: h)
+                layer.backgroundColor = color.cgColor
+                layer.cornerRadius = Bool.random() ? w / 2 : 1
+                layer.contentsScale = scale
+                self.hostLayer.addSublayer(layer)
+
+                // Launch up-and-to-the-left: angle 118°…172° from the +x axis
+                // (90° = straight up, 180° = straight left).
+                let angle = CGFloat.random(in: (118 * .pi / 180)...(172 * .pi / 180))
+                let speed = CGFloat.random(in: 650...1200)
+                let vx = speed * cos(angle) // negative → leftward
+                let vy = speed * sin(angle) // positive → upward
+                let duration = Double.random(in: 2.2...3.4)
+
+                // Sample the ballistic arc (x linear, y under gravity) into a path.
+                let path = CGMutablePath()
+                path.move(to: origin)
+                let steps = 24
+                for s in 1...steps {
+                    let t = CGFloat(duration) * CGFloat(s) / CGFloat(steps)
+                    let x = origin.x + vx * t
+                    let y = origin.y + vy * t - 0.5 * gravity * t * t
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+
+                let pathAnim = CAKeyframeAnimation(keyPath: "position")
+                pathAnim.path = path
+                pathAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+                let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+                spin.fromValue = 0
+                spin.toValue = Double.random(in: -8...8) * .pi
+
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 1.0
+                fade.toValue = 0.0
+                fade.beginTime = duration * 0.65
+                fade.duration = duration * 0.35
+                fade.fillMode = .forwards
+
+                let group = CAAnimationGroup()
+                group.animations = [pathAnim, spin, fade]
+                group.duration = duration
+                group.fillMode = .forwards
+                group.isRemovedOnCompletion = false
+
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { [weak layer] in
+                    layer?.removeFromSuperlayer()
+                }
+                layer.add(group, forKey: "cornerConfetti")
+                CATransaction.commit()
+            }
+        }
+    }
+
     // MARK: - Applause (toggleable: click to start, click again to stop)
 
     func showApplause(playSound: Bool = true) {

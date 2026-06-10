@@ -12,6 +12,11 @@ final class ProgressBarOverlay {
     private var bar: NSView?
     private var fadeWork: DispatchWorkItem?
 
+    /// Fired when the bar fills all the way to the right edge — i.e. the
+    /// interval elapsed naturally. NOT fired on `cancel()` (manual stop or a
+    /// restart-from-zero), since that cancels the pending work item.
+    var onComplete: (() -> Void)?
+
     private static let height: CGFloat = 15
     private static let alpha: CGFloat = 0.5            // extra translucency — "less visible"
     private static let fadeDuration: TimeInterval = 0.5
@@ -46,8 +51,12 @@ final class ProgressBarOverlay {
             fill.animator().frame = NSRect(x: 0, y: 0, width: width, height: Self.height)
         }
 
-        // After the fill completes, fade the bar out so the screen clears.
-        let work = DispatchWorkItem { [weak self] in self?.fadeOut() }
+        // After the fill completes, celebrate at the right corner, then fade
+        // the bar out so the screen clears.
+        let work = DispatchWorkItem { [weak self] in
+            self?.onComplete?()
+            self?.fadeOut()
+        }
         fadeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
         overlayInfo("Progress bar started: \(Int(seconds))s")

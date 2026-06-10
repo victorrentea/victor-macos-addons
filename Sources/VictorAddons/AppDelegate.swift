@@ -93,6 +93,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         animator = EmojiAnimator(hostLayer: hostLayer)
         if let contentView = overlayPanel.contentView {
             progressBarOverlay = ProgressBarOverlay(hostView: contentView)
+            // When the tablet timer fills to the right edge, pop confetti out
+            // of that bottom-right corner with a short sound.
+            progressBarOverlay?.onComplete = { [weak self] in self?.animator.spawnCornerConfetti() }
         }
 
         // No outbound WebSocket: the addon only runs LocalWebSocketServer on
@@ -178,6 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "wrong-x":         self?.animator.showWrongX(playSound: false)
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
+            case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
                 // Tablet → Mac connectivity confirmation: green screenshot-style border
@@ -475,6 +479,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "wrong-x":         self?.animator.showWrongX()
                 case "drum-roll":       self?.animator.showDrumRoll()
                 case "laugh":           self?.animator.showLaugh()
+                case "corner-confetti": self?.animator.spawnCornerConfetti()
                 case "green-flash":
                     if let screen = ScreenCaptureFlash.builtInScreen {
                         ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
