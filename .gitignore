@@ -9,3 +9,6 @@ jmeter.log
 secrets.env
 ports-to-kill.txt
 addons-output/
+
+# Claude Code git worktrees (transient)
+.claude/worktrees/
