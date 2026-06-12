@@ -145,6 +145,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onAlarmStop  = { [weak self] in self?.animator.stopAlarmOverlay() }
         tabletServer?.onEffect = { [weak self] name in
+            // If a tablet-routed sound was just started on THIS Mac with
+            // Bluetooth compensation, delay the paired visual by the same amount
+            // so it stays in sync with the silence-prepended audio. 0 for
+            // stop/utility signals and on non-Bluetooth output → fires now.
+            let comp = SoundManager.consumePendingVisualCompensation(for: name)
+            let fire = {
             self?.overlayPanel?.refreshScreenFrame()
             switch name {
             case "earthquake":    self?.animator.showBrokenGlass(playSound: false)
@@ -205,6 +211,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                         self?.progressBarOverlay?.start(seconds: TimeInterval(secs))
                     }
                 }
+            }
+            }
+            if comp > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + comp, execute: fire)
+            } else {
+                fire()
             }
         }
         tabletServer?.onOpenUrl = { [weak self] url in
@@ -451,6 +463,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onDesktopEffect = { [weak self] name in
             DispatchQueue.main.async {
+                // When the Mac's own output is Bluetooth, warm the A2DP link and
+                // shift the WHOLE effect (its sound AND its animation) later by
+                // the compensation, so the leading edge isn't clipped and every
+                // internal sound↔animation delta is preserved. Zero on
+                // non-Bluetooth output → fires immediately, exactly as before.
+                let comp = SoundTimingConfig.shared.currentBluetoothCompensation
+                if comp > 0 { BluetoothOutput.playWakeTone(seconds: comp) }
+                let fire = {
                 self?.overlayPanel?.refreshScreenFrame()
                 switch name {
                 case "heart":        self?.animator.spawnEmoji("❤️")
@@ -487,6 +507,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                         ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
                     }
                 default: break
+                }
+                }
+                if comp > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + comp, execute: fire)
+                } else {
+                    fire()
                 }
             }
         }

@@ -1,0 +1,150 @@
+import AVFoundation
+import CoreAudio
+import Foundation
+
+/// Shared helpers describing the current default audio **output** device, plus
+/// an inaudible "wake" tone used to warm a Bluetooth A2DP link before a real
+/// sound so its start isn't clipped.
+///
+/// Bluetooth output has a startup lag (the codec/amp must spin up), which both
+/// truncates the leading edge of a sound and pushes the audio late relative to
+/// any on-screen animation. The companion LaunchBreak tablet already
+/// compensates for this on its own output (its `BT_WAKE_MS`); these helpers let
+/// the Mac do the *same thing* keyed on the Mac's own output, sharing the
+/// `bluetoothCompensationMs` value from `sound-timing.json` (see
+/// `SoundTimingConfig`). On built-in/wired output everything is a no-op.
+enum BluetoothOutput {
+
+    // MARK: - Output device transport
+
+    /// `(isBluetooth, deviceName)` for the current default output device.
+    static func defaultOutput() -> (isBluetooth: Bool, name: String) {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var devAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var devID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(sys, &devAddr, 0, nil, &size, &devID) == noErr, devID != 0 else {
+            return (false, "?")
+        }
+
+        var transAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var transport: UInt32 = 0
+        var tsize = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(devID, &transAddr, 0, nil, &tsize, &transport) == noErr else {
+            return (false, deviceName(devID))
+        }
+        let isBT = transport == kAudioDeviceTransportTypeBluetooth
+            || transport == kAudioDeviceTransportTypeBluetoothLE
+        return (isBT, deviceName(devID))
+    }
+
+    /// Whether the current default output device is a Bluetooth device. Cheap
+    /// CoreAudio property read; safe to call on the main thread per effect.
+    static var isDefaultOutputBluetooth: Bool { defaultOutput().isBluetooth }
+
+    private static func deviceName(_ devID: AudioDeviceID) -> String {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var nameSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(devID, &addr, 0, nil, &nameSize) == noErr else { return "?" }
+        var n: Unmanaged<CFString>?
+        guard AudioObjectGetPropertyData(devID, &addr, 0, nil, &nameSize, &n) == noErr else { return "?" }
+        return (n?.takeRetainedValue() as String?) ?? "?"
+    }
+
+    // MARK: - A2DP wake tone
+
+    /// Held strong while it plays so it isn't deallocated mid-playback. Main
+    /// thread only (AVAudioPlayer is not thread-safe).
+    private static var wakePlayer: AVAudioPlayer?
+    /// Cache the generated WAV per duration so a burst of effects doesn't
+    /// re-synthesize the same samples.
+    private static var cachedWav: (seconds: Double, data: Data)?
+
+    /// Play an inaudible tone of `seconds` length on the current default output
+    /// to warm the Bluetooth A2DP link, so a real sound played right after it
+    /// isn't clipped during codec/amp spin-up. No-op for `seconds <= 0`. Must be
+    /// called on the main thread.
+    static func playWakeTone(seconds: Double) {
+        guard seconds > 0 else { return }
+        let data: Data
+        if let c = cachedWav, abs(c.seconds - seconds) < 0.001 {
+            data = c.data
+        } else {
+            data = makeSilentToneWav(seconds: seconds)
+            cachedWav = (seconds, data)
+        }
+        do {
+            let p = try AVAudioPlayer(data: data)
+            p.volume = 1.0  // amplitude is baked into the samples (≈ -56 dBFS)
+            p.prepareToPlay()
+            wakePlayer = p
+            p.play()
+        } catch {
+            overlayError("BT wake tone failed: \(error)")
+        }
+    }
+
+    // MARK: - Tone generation
+
+    /// Build a mono 16-bit PCM WAV of a very quiet sine burst with 10ms fades
+    /// (no click). Amplitude ≈ -56 dBFS: real PCM energy that keeps a Bluetooth
+    /// stream/amp alive, yet inaudible in a room. Shared by `playWakeTone` and
+    /// `BluetoothKeepAlive`.
+    static func makeSilentToneWav(seconds: Double) -> Data {
+        let sampleRate = 44100
+        let frames = max(1, Int(Double(sampleRate) * seconds))
+        let amplitude = 0.0015  // ≈ -56 dBFS
+        let freq = 220.0
+        let fade = min(frames / 2, Int(0.01 * Double(sampleRate)))  // 10ms fade in/out
+
+        var samples = [Int16](repeating: 0, count: frames)
+        for i in 0..<frames {
+            var a = amplitude
+            if fade > 0 {
+                if i < fade {
+                    a *= Double(i) / Double(fade)
+                } else if i >= frames - fade {
+                    a *= Double(frames - i) / Double(fade)
+                }
+            }
+            let v = sin(2.0 * Double.pi * freq * Double(i) / Double(sampleRate)) * a
+            samples[i] = Int16((max(-1.0, min(1.0, v)) * 32767.0).rounded())
+        }
+
+        let bytesPerSample = 2
+        let dataSize = frames * bytesPerSample
+        let byteRate = sampleRate * bytesPerSample
+
+        var d = Data()
+        func appendLE32(_ v: UInt32) { var x = v.littleEndian; withUnsafeBytes(of: &x) { d.append(contentsOf: $0) } }
+        func appendLE16(_ v: UInt16) { var x = v.littleEndian; withUnsafeBytes(of: &x) { d.append(contentsOf: $0) } }
+
+        d.append(contentsOf: Array("RIFF".utf8))
+        appendLE32(UInt32(36 + dataSize))
+        d.append(contentsOf: Array("WAVE".utf8))
+        d.append(contentsOf: Array("fmt ".utf8))
+        appendLE32(16)                       // PCM fmt chunk size
+        appendLE16(1)                        // audio format = PCM
+        appendLE16(1)                        // channels = mono
+        appendLE32(UInt32(sampleRate))
+        appendLE32(UInt32(byteRate))
+        appendLE16(UInt16(bytesPerSample))   // block align
+        appendLE16(16)                       // bits per sample
+        d.append(contentsOf: Array("data".utf8))
+        appendLE32(UInt32(dataSize))
+        for s in samples {
+            var x = s.littleEndian
+            withUnsafeBytes(of: &x) { d.append(contentsOf: $0) }
+        }
+        return d
+    }
+}

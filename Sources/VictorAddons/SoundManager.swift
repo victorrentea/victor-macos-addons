@@ -23,10 +23,41 @@ class SoundManager {
     /// Per-sound playback start delay (seconds) for sounds paired with a
     /// visual effect: the animation gets a head start so it is on screen
     /// before the audio kicks in. Applied in the tablet-routed path
-    /// (playTabletSound) and the Mac-local path (EmojiAnimator).
-    static let pairedEffectStartDelays: [String: TimeInterval] = [
-        "67_sfx_109.mp3": 0.3,   // brother GIF leads its sound by 0.3s
-    ]
+    /// (playTabletSound) and the Mac-local path (EmojiAnimator). Sourced from
+    /// the shared sound-timing.json (animationLeadMs) so the Mac and tablet
+    /// agree; see SoundTimingConfig.
+    static var pairedEffectStartDelays: [String: TimeInterval] {
+        SoundTimingConfig.shared.animationLeads
+    }
+
+    // MARK: - Bluetooth visual sync (tablet-routed path)
+
+    /// When a tablet-routed sound is started with Bluetooth compensation, the
+    /// paired Mac visual (delivered as a separate /effect request right after)
+    /// must be delayed by the same amount to stay in sync with the
+    /// silence-prepended audio. Set by playTabletSound, consumed once by the
+    /// next show-effect. Main-thread only — both the sound and the effect HTTP
+    /// handlers run inside TabletHttpServer's DispatchQueue.main.sync.
+    private static var pendingVisualCompensation: TimeInterval = 0
+    private static var pendingVisualCompensationAt: Date?
+
+    /// Returns (and clears) the Bluetooth compensation that the imminent paired
+    /// visual `name` should be delayed by, or 0. Only a fresh (<1.5s) pending
+    /// compensation tied to a just-routed sound applies, and never to
+    /// stop/utility signals (those must fire immediately).
+    static func consumePendingVisualCompensation(for name: String) -> TimeInterval {
+        guard pendingVisualCompensation > 0,
+              let at = pendingVisualCompensationAt,
+              Date().timeIntervalSince(at) < 1.5 else { return 0 }
+        if name == "stop-all" || name.hasSuffix("/stop")
+            || name == "green-flash" || name.hasPrefix("progress-bar/") {
+            return 0
+        }
+        let comp = pendingVisualCompensation
+        pendingVisualCompensation = 0
+        pendingVisualCompensationAt = nil
+        return comp
+    }
 
     private init() {}
 
@@ -142,15 +173,28 @@ class SoundManager {
             player.volume = tabletVolume
             player.prepareToPlay()
             tabletPlayer = player
-            let delay = Self.pairedEffectStartDelays[filename] ?? 0
-            if delay > 0 {
-                player.play(atTime: player.deviceCurrentTime + delay)
+            let lead = Self.pairedEffectStartDelays[filename] ?? 0
+            // When this Mac's own output is Bluetooth, prepend silence to warm
+            // the A2DP link (so the sound isn't clipped) and remember the
+            // compensation so the paired visual — a separate /effect request
+            // right after — is delayed to match. Zero on non-Bluetooth output,
+            // leaving the previous behaviour untouched.
+            let btComp = SoundTimingConfig.shared.currentBluetoothCompensation
+            let total = lead + btComp
+            if btComp > 0 {
+                BluetoothOutput.playWakeTone(seconds: total)
+                Self.pendingVisualCompensation = btComp
+                Self.pendingVisualCompensationAt = Date()
+            }
+            if total > 0 {
+                player.play(atTime: player.deviceCurrentTime + total)
             } else {
                 player.play()
             }
-            // Include the delay so the tablet's completion timer (durationMs
-            // + 100ms → effect-stop chain) doesn't cut the tail of the sound.
-            return player.duration + delay
+            // Include the lead + Bluetooth compensation so the tablet's
+            // completion timer (durationMs + 100ms → effect-stop chain) doesn't
+            // cut the tail of the sound.
+            return player.duration + total
         } catch {
             overlayError("Tablet sound play failed \(filename): \(error)")
             return nil
