@@ -10,6 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var progressBarOverlay: ProgressBarOverlay?
     // buttonBar removed
     private var menuBarManager: MenuBarManager!
+    private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
     private let serverURL: String
     private var wsTask: URLSessionWebSocketTask?
     private var session: URLSession!
@@ -568,6 +569,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
 
+        // 🔥 Whip Claude — toggle the playful "interrupt Claude" overlay on/off.
+        menuBarManager.onToggleWhip = { [weak self] enabled in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if enabled {
+                    self.showWhip()
+                } else {
+                    self.whipController?.hide()
+                }
+            }
+        }
+
         menuBarManager.setup()
         // Reflect real process state on startup to avoid stale "Stop Transcribing" UI.
         menuBarManager.setTranscribing(false)
@@ -1121,6 +1134,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
     @objc private func handleScreensChanged() {
         rebuildAuxOverlayPanels()
+    }
+
+    /// Show the 🔥 Whip Claude overlay, returning keyboard focus to the terminal
+    /// that was frontmost when the menu opened (so the click macro's Ctrl+C lands
+    /// there). Esc dismisses the overlay and unchecks the menu item.
+    private func showWhip() {
+        let controller = whipController ?? WhipController()
+        whipController = controller
+        controller.onEscape = { [weak self] in
+            self?.whipController?.hide()
+            self?.menuBarManager.setWhipEnabled(false)
+        }
+        controller.show(returnFocusTo: menuBarManager.frontmostAppAtMenuOpen)
     }
 
     /// Always resolve the laptop's retina display when (re-)showing the banner,

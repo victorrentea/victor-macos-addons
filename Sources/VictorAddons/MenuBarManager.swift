@@ -59,6 +59,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
+    var onToggleWhip: ((Bool) -> Void)?
+
+    // 🔥 Whip Claude — playful "interrupt Claude" overlay. OFF at every launch.
+    private(set) var whipItem: NSMenuItem!
+    private var whipEnabled = false
+    /// Frontmost app captured when the menu opens — the terminal the whip's
+    /// Ctrl+C macro is sent to (so it doesn't land in our menu-bar app).
+    private(set) var frontmostAppAtMenuOpen: NSRunningApplication?
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -249,6 +257,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
+        // 🔥 Whip Claude — crack a whip to interrupt Claude. Checkbox, OFF each launch.
+        menu.addItem(.separator())
+        whipItem = addItem("🔥 Whip Claude", action: #selector(toggleWhipAction))
+        whipItem.state = whipEnabled ? .on : .off
+
         // Quit (build timestamp inlined to save a menu line)
         let quitItem = addItem("⏻ Quit – " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
         quitItem.keyEquivalent = "q"
@@ -272,6 +285,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
+        // Capture the terminal BEFORE the menu interaction can change focus, so
+        // the whip's Ctrl+C macro is delivered to it (not to us).
+        frontmostAppAtMenuOpen = NSWorkspace.shared.frontmostApplication
         onMenuOpened?()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
@@ -514,6 +530,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         overlayInfo("Quit")
         onQuit?()
         exit(0)
+    }
+
+    @objc private func toggleWhipAction() {
+        whipEnabled.toggle()
+        whipItem.state = whipEnabled ? .on : .off
+        onToggleWhip?(whipEnabled)
+    }
+
+    /// Force the whip checkbox to a given state (e.g. unchecked when the user
+    /// dismisses the overlay with Esc), without firing `onToggleWhip`.
+    func setWhipEnabled(_ enabled: Bool) {
+        whipEnabled = enabled
+        whipItem?.state = enabled ? .on : .off
     }
 
     private func killPort(_ port: Int) {
