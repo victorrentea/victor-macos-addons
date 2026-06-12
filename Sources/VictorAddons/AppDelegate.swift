@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var eventTapManager: EventTapManager?
     private var emotionalPasteHandler: EmotionalPasteHandler?
     private var coreAudioManager: CoreAudioManager?
+    private var bluetoothKeepAlive: BluetoothKeepAlive?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// Last time the tablet hit /ping — feeds the tablet-sound watchdog.
@@ -602,6 +603,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let audioManager = CoreAudioManager()
         self.coreAudioManager = audioManager
         audioManager.start()
+
+        let btKeepAlive = BluetoothKeepAlive()
+        self.bluetoothKeepAlive = btKeepAlive
+        btKeepAlive.start()
 
         let eventTap = EventTapManager()
         eventTap.onCaptureClipboard = { [weak pasteHandler] text in
