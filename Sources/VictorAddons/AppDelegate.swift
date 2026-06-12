@@ -595,15 +595,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
 
-        // 🔥 Whip Claude — toggle the playful "interrupt Claude" overlay on/off.
-        menuBarManager.onToggleWhip = { [weak self] enabled in
+        // 🔥 Whip Claude — show the playful "interrupt Claude" overlay (Esc dismisses).
+        menuBarManager.onWhip = { [weak self] in
             DispatchQueue.main.async {
-                guard let self else { return }
-                if enabled {
-                    self.showWhip()
-                } else {
-                    self.whipController?.hide()
-                }
+                self?.showWhip()
             }
         }
 
@@ -1164,13 +1159,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
     /// Show the 🔥 Whip Claude overlay, returning keyboard focus to the terminal
     /// that was frontmost when the menu opened (so the click macro's Ctrl+C lands
-    /// there). Esc dismisses the overlay and unchecks the menu item.
+    /// there). Esc dismisses the overlay.
     private func showWhip() {
         let controller = whipController ?? WhipController()
         whipController = controller
         controller.onEscape = { [weak self] in
             self?.whipController?.hide()
-            self?.menuBarManager.setWhipEnabled(false)
         }
         controller.show(returnFocusTo: menuBarManager.frontmostAppAtMenuOpen)
     }

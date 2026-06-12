@@ -59,11 +59,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
-    var onToggleWhip: ((Bool) -> Void)?
+    var onWhip: (() -> Void)?
 
-    // 🔥 Whip Claude — playful "interrupt Claude" overlay. OFF at every launch.
-    private(set) var whipItem: NSMenuItem!
-    private var whipEnabled = false
+    // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
     /// Frontmost app captured when the menu opens — the terminal the whip's
     /// Ctrl+C macro is sent to (so it doesn't land in our menu-bar app).
     private(set) var frontmostAppAtMenuOpen: NSRunningApplication?
@@ -257,10 +255,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
-        // 🔥 Whip Claude — crack a whip to interrupt Claude. Checkbox, OFF each launch.
+        // 🔥 Whip Claude — crack a whip to interrupt Claude. Plain action (no checkbox); Esc dismisses.
         menu.addItem(.separator())
-        whipItem = addItem("🔥 Whip Claude", action: #selector(toggleWhipAction))
-        whipItem.state = whipEnabled ? .on : .off
+        addItem("🔥 Whip Claude", action: #selector(whipAction))
 
         // Quit (build timestamp inlined to save a menu line)
         let quitItem = addItem("⏻ Quit – " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
@@ -532,17 +529,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         exit(0)
     }
 
-    @objc private func toggleWhipAction() {
-        whipEnabled.toggle()
-        whipItem.state = whipEnabled ? .on : .off
-        onToggleWhip?(whipEnabled)
-    }
-
-    /// Force the whip checkbox to a given state (e.g. unchecked when the user
-    /// dismisses the overlay with Esc), without firing `onToggleWhip`.
-    func setWhipEnabled(_ enabled: Bool) {
-        whipEnabled = enabled
-        whipItem?.state = enabled ? .on : .off
+    @objc private func whipAction() {
+        onWhip?()
     }
 
     private func killPort(_ port: Int) {
