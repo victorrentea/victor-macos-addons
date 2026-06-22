@@ -717,9 +717,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let branch = (json["branch"] as? String) ?? ""
             // Daemon ignores branch/fileURL and builds the default-branch blob URL itself.
             self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: nil)
-            // Standard bottom-left flash for each new file received from the IntelliJ plugin.
-            self?.statusBanner?.showOnPresence(text: "📄 " + (file as NSString).lastPathComponent,
-                                               sound: nil, visibleDuration: 3.0)
+            // Bottom-left flash only while a session is live — outside a session a file
+            // opening in IntelliJ is just noise (the daemon discards the push too).
+            if self?.isSessionActive == true {
+                self?.statusBanner?.showOnPresence(text: "📄 " + (file as NSString).lastPathComponent,
+                                                   sound: nil, visibleDuration: 3.0)
+            }
             return "{\"ok\":true}"
         }
 
