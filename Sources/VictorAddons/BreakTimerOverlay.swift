@@ -21,7 +21,9 @@ final class BreakTimerController {
     private var freezeNow: Date?              // wall-clock frozen while paused
     private var timer: Timer?
     private var blinkTimer: Timer?            // drives the expiry blink
-    private var activityTimer: Timer?         // dims the background while the user works
+    private var activityTimer: Timer?         // toggles the background while the user works
+    private var bgView: NSView?              // opaque backdrop, faded in/out
+    private var bgOpaque = true              // current backdrop state
     private var epoch = 0                      // invalidates in-flight expiry blocks
 
     private let cetZone = TimeZone(identifier: "Europe/Paris") ?? .current
@@ -78,32 +80,34 @@ final class BreakTimerController {
         panel?.orderOut(nil)
         panel = nil
         view = nil
+        bgView = nil
     }
 
-    // MARK: - Activity-driven background dimming
+    // MARK: - Activity-driven backdrop
 
-    /// While the user is active (mouse/keyboard within the last 5s) the panel
-    /// background fades down to 20% so it's out of the way; after 5s idle it
-    /// eases back to its full 60%.
+    /// While the user is active (mouse/keyboard within the last 5s) the opaque
+    /// backdrop fades fully away — only the outlined digits remain. After 5s
+    /// idle it fades back to fully opaque. One smooth fade per transition, so
+    /// it never flickers.
     private func startActivityMonitor() {
         activityTimer?.invalidate()
-        let t = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in self?.updateBackgroundDimming() }
+        bgOpaque = true
+        bgView?.alphaValue = 1
+        let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.setBackgroundOpaque(Self.systemIdleSeconds() >= 5.0)
+        }
         RunLoop.main.add(t, forMode: .common)
         activityTimer = t
     }
 
-    private func updateBackgroundDimming() {
-        guard let view else { return }
-        let target: CGFloat = Self.systemIdleSeconds() < 5.0 ? 0.20 : 0.60
-        let cur = view.bgOpacity
-        let delta = target - cur
-        if abs(delta) < 0.01 {
-            if cur != target { view.bgOpacity = target; view.needsDisplay = true }
-            return
+    private func setBackgroundOpaque(_ opaque: Bool) {
+        guard let bgView, opaque != bgOpaque else { return }
+        bgOpaque = opaque
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.35
+            bgView.animator().alphaValue = opaque ? 1.0 : 0.0
         }
-        let step: CGFloat = 0.06
-        view.bgOpacity = cur + (delta > 0 ? step : -step)
-        view.needsDisplay = true
     }
 
     /// Seconds since the last user input of any kind (mouse or keyboard).
@@ -119,42 +123,31 @@ final class BreakTimerController {
         if let view { return view }
         let frame = Self.defaultFrame()
         let panel = BreakTimerPanel(contentRect: frame)
+        let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        container.autoresizingMask = [.width, .height]
 
-        // Frosted "glass": a behind-window blur with rounded corners; the digits
-        // view sits on top and paints a translucent dark tint over it.
-        let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: frame.size))
-        glass.material = .hudWindow
-        glass.blendingMode = .behindWindow
-        glass.state = .active
-        glass.autoresizingMask = [.width, .height]
-        glass.maskImage = Self.roundedMask(radius: frame.height * 0.05)
+        // Opaque rounded backdrop on its own layer, so it can fade in/out on the
+        // GPU (no per-frame redraw, no flicker).
+        let bg = NSView(frame: container.bounds)
+        bg.autoresizingMask = [.width, .height]
+        bg.wantsLayer = true
+        bg.layer?.backgroundColor = NSColor.black.cgColor
+        bg.layer?.cornerRadius = frame.height * 0.05
+        bg.layer?.masksToBounds = true
+        container.addSubview(bg)
 
-        let view = BreakTimerView(frame: glass.bounds)
+        let view = BreakTimerView(frame: container.bounds)
         view.autoresizingMask = [.width, .height]
         view.onClose = { [weak self] in self?.close() }
         view.onTogglePause = { [weak self] in self?.togglePause() }
         view.onAdd = { [weak self] m in self?.addMinutes(m) }
-        glass.addSubview(view)
+        container.addSubview(view)
 
-        panel.contentView = glass
+        panel.contentView = container
         self.panel = panel
+        self.bgView = bg
         self.view = view
         return view
-    }
-
-    /// A resizable (cap-inset) rounded-rect mask image for the glass view, so the
-    /// blur keeps rounded corners at any window size.
-    private static func roundedMask(radius: CGFloat) -> NSImage {
-        let d = radius * 2 + 2
-        let img = NSImage(size: NSSize(width: d, height: d))
-        img.lockFocus()
-        NSColor.black.setFill()
-        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: d, height: d),
-                     xRadius: radius, yRadius: radius).fill()
-        img.unlockFocus()
-        img.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        img.resizingMode = .stretch
-        return img
     }
 
     private func startTicking() {
@@ -269,7 +262,6 @@ final class BreakTimerView: NSView {
     private var finishCET = ""
     private var paused = false
     private var digitsVisible = true
-    var bgOpacity: CGFloat = 0.60            // dark-tint alpha; dimmed while user is active
 
     private var dragMode: DragMode = .none
     private var dragStartMouse = NSPoint.zero
@@ -350,10 +342,8 @@ final class BreakTimerView: NSView {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        let b = bounds
-        NSColor.black.withAlphaComponent(bgOpacity).setFill()
-        NSBezierPath(roundedRect: b, xRadius: b.height * 0.05, yRadius: b.height * 0.05).fill()
-
+        // Background is a separate layer (faded in/out); this view only paints
+        // the digits, labels and buttons so they stay fully visible.
         let L = computeLayout()
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
@@ -362,34 +352,18 @@ final class BreakTimerView: NSView {
 
     private func drawDigits(in area: NSRect) {
         guard area.width > 0, area.height > 0 else { return }
-        let chars = Array(digits)
-        // Cell metrics relative to digit height (digits are narrow on the X axis).
-        let digitW: CGFloat = 0.52
-        let colonW: CGFloat = 0.22
-        let cellGap: CGFloat = 0.10
-        let digitCount = chars.filter { $0 != ":" }.count
-        let colonCount = chars.filter { $0 == ":" }.count
-        let gapsCount = max(0, chars.count - 1)
-        let widthFactor = CGFloat(digitCount) * digitW + CGFloat(colonCount) * colonW + CGFloat(gapsCount) * cellGap
-        guard widthFactor > 0 else { return }
-        let digitH = min(area.height, area.width / widthFactor)
-        let totalW = widthFactor * digitH
-        var x = area.midX - totalW / 2
-        let y = area.midY - digitH / 2
-        let t = digitH * 0.14          // segment thickness (thin on X)
-        let gap = digitH * cellGap
+        // Fit the canonical 4-digit + colon layout into the available area.
+        let scale = min(area.height / Self.cellH, area.width / Self.contentW)
+        let totalW = Self.contentW * scale
+        let cellHpx = Self.cellH * scale
+        let originX = area.midX - totalW / 2
+        let originY = area.midY - cellHpx / 2     // bottom of the digit cells (y-up)
 
-        for c in chars {
-            if c == ":" {
-                let w = digitH * colonW
-                drawColon(NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
-                x += w + gap
-            } else {
-                let w = digitH * digitW
-                drawDigit(c, in: NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
-                x += w + gap
-            }
+        let digitChars = digits.filter { $0 != ":" }
+        for (i, ch) in digitChars.enumerated() where i < 4 {
+            drawSegDigit(ch, cellX: originX + Self.dX[i] * scale, originY: originY, scale: scale)
         }
+        drawColonDots(cx: originX + Self.colonCx * scale, originY: originY, scale: scale)
     }
 
     // Segment membership per digit (a,b,c,d,e,f,g).
@@ -406,49 +380,58 @@ final class BreakTimerView: NSView {
         "9": ["a", "b", "c", "d", "f", "g"],
     ]
 
-    private func drawDigit(_ c: Character, in r: NSRect, thickness t: CGFloat) {
-        let x0 = r.minX, y0 = r.minY, w = r.width, h = r.height
-        let g = t * 0.32                  // uniform gap between every segment
-        let midLo = (h - t) / 2           // bottom edge of the middle bar
-        let midHi = (h + t) / 2           // top edge of the middle bar
-        let vH = h / 2 - 1.5 * t - 2 * g  // height of each vertical segment
+    // Reverse-engineered seven-segment polygons, traced from the reference watch.
+    // Canonical cell: 80 wide x 137 tall; yl is measured from the cell TOP.
+    private static let cellW: CGFloat = 80, cellH: CGFloat = 137
+    private static let segPolys: [Character: [(CGFloat, CGFloat)]] = [
+        "a": [(15, 0), (63, 0), (68, 4), (54, 19), (24, 19), (11, 5)],
+        "b": [(74, 10), (78, 14), (78, 64), (73, 68), (60, 55), (60, 24)],
+        "c": [(74, 69), (78, 73), (78, 123), (73, 127), (59, 112), (59, 84)],
+        "d": [(25, 118), (54, 118), (68, 132), (64, 137), (15, 137), (11, 132)],
+        "e": [(5, 69), (20, 84), (20, 112), (5, 127), (1, 123), (1, 73)],
+        "f": [(5, 10), (19, 24), (19, 54), (5, 68), (1, 64), (1, 14)],
+        "g": [(25, 59), (54, 59), (63, 68), (54, 78), (25, 78), (16, 68)],
+    ]
+    // Layout (canonical units): 4 digit cells + central colon, with the
+    // digit↔colon gap HALVED from the reference watch.
+    private static let dX: [CGFloat] = [0, 88, 236.5, 324.5]
+    private static let colonCx: CGFloat = 202.25
+    private static let contentW: CGFloat = 404.5
+    private static let dotR: CGFloat = 10.5
+    private static let dotCy: [CGFloat] = [35.5, 101.5]   // dot centers, from cell top
 
-        // Each segment is a rectangle (4 vertices). Vertical gaps are uniform,
-        // so the space around the middle bar equals the space around the top/bottom bars.
-        let segRects: [Character: NSRect] = [
-            "a": NSRect(x: x0 + g, y: y0 + h - t, width: w - 2 * g, height: t),
-            "g": NSRect(x: x0 + g, y: y0 + midLo, width: w - 2 * g, height: t),
-            "d": NSRect(x: x0 + g, y: y0, width: w - 2 * g, height: t),
-            "f": NSRect(x: x0, y: y0 + midHi + g, width: t, height: vH),
-            "b": NSRect(x: x0 + w - t, y: y0 + midHi + g, width: t, height: vH),
-            "e": NSRect(x: x0, y: y0 + t + g, width: t, height: vH),
-            "c": NSRect(x: x0 + w - t, y: y0 + t + g, width: t, height: vH),
-        ]
-        let on = Self.segments[c] ?? []
-
-        // Ghost (all off segments) first, then lit segments — flat (no glow).
-        Self.ghost.setFill()
-        for (_, seg) in segRects { NSBezierPath(rect: seg).fill() }
-
-        guard digitsVisible else { return }
-
-        Self.lit.setFill()
-        for key in on { if let seg = segRects[key] { NSBezierPath(rect: seg).fill() } }
+    private func segPath(_ pts: [(CGFloat, CGFloat)], cellX: CGFloat, originY: CGFloat, scale: CGFloat) -> NSBezierPath {
+        let p = NSBezierPath()
+        for (k, v) in pts.enumerated() {
+            let pt = NSPoint(x: cellX + v.0 * scale, y: originY + (Self.cellH - v.1) * scale)
+            if k == 0 { p.move(to: pt) } else { p.line(to: pt) }
+        }
+        p.close()
+        return p
     }
 
-    private func drawColon(_ r: NSRect, thickness t: CGFloat) {
-        let radius = t * 0.48
-        let cx = r.midX
-        let dots = [r.minY + r.height * 0.34, r.minY + r.height * 0.66]
-        let draw = { (color: NSColor) in
-            color.setFill()
-            for cy in dots {
-                NSBezierPath(ovalIn: NSRect(x: cx - radius, y: cy - radius,
-                                            width: radius * 2, height: radius * 2)).fill()
-            }
+    private func drawSegDigit(_ c: Character, cellX: CGFloat, originY: CGFloat, scale: CGFloat) {
+        // Only lit segments are drawn — unlit ones are absent (not dimmed).
+        // Each lit segment gets a 2px black outline so it reads on any backdrop.
+        guard digitsVisible else { return }
+        let on = Self.segments[c] ?? []
+        for seg in on {
+            guard let pts = Self.segPolys[seg] else { continue }
+            let path = segPath(pts, cellX: cellX, originY: originY, scale: scale)
+            Self.lit.setFill(); path.fill()
+            NSColor.black.setStroke(); path.lineWidth = 2; path.stroke()
         }
-        draw(Self.ghost)
-        if digitsVisible { draw(Self.lit) }
+    }
+
+    private func drawColonDots(cx: CGFloat, originY: CGFloat, scale: CGFloat) {
+        guard digitsVisible else { return }
+        let r = Self.dotR * scale
+        for yl in Self.dotCy {
+            let cy = originY + (Self.cellH - yl) * scale
+            let dot = NSBezierPath(ovalIn: NSRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
+            Self.lit.setFill(); dot.fill()
+            NSColor.black.setStroke(); dot.lineWidth = 2; dot.stroke()
+        }
     }
 
     private func drawLabels(in area: NSRect) {
