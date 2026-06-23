@@ -137,19 +137,19 @@ final class BreakTimerController {
         refresh()
     }
 
-    /// Chaotic 2D shake for the WHOLE expiry: violent at each gong strike, decaying
-    /// toward a small residual jitter (~5px) that never fully stops until the window
-    /// closes. Not just on X — the watch wobbles all over the place.
+    /// Chaotic 2D shake for the expiry: violent at each gong strike, then decaying
+    /// fully to still as that strike's sound fades out (no residual jitter). Not
+    /// just on X — the watch wobbles all over the place.
     private func startExpiryShake(totalDuration: Double, strikeAt: [Double]) {
         guard let layer = panel?.contentView?.layer else { return }
         let fps = 60.0
         let n = max(2, Int(totalDuration * fps))
-        let peak: CGFloat = 36, floor: CGFloat = 5     // same peak amplitude as before; 5px residual
-        let k = 3.0
+        let peak: CGFloat = 36                         // same peak amplitude as before
+        let k = 2.4                                    // decay rate ~ the gong's loud fade
         func env(_ t: Double) -> Double {
             var bump = 0.0
             for s in strikeAt where t >= s { bump += exp(-k * (t - s)) }
-            return Double(floor) + Double(peak - floor) * min(1.0, bump)
+            return Double(peak) * min(1.0, bump)       // decays to 0 → still as the gong fades
         }
         var xs = [NSNumber](), ys = [NSNumber]()
         for i in 0..<n {
