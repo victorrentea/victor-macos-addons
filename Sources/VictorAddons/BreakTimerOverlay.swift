@@ -257,18 +257,18 @@ final class BreakTimerController {
         timer?.invalidate(); timer = nil
         clearPersisted()
         let myEpoch = epoch
-        let secondStrike = 0.8
-        let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 3.0
+        let gongLen: TimeInterval = 4.0   // each strike ~4s; two in a row ≈ 8s
 
-        SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1
+        // Strike 1, then strike 2 only after the first finishes (no overlap).
+        SoundManager.shared.playClip("50_gong.mp3", seconds: gongLen)
         shakeWatch()
-        DispatchQueue.main.asyncAfter(deadline: .now() + secondStrike) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + gongLen) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
-            SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2
+            SoundManager.shared.playClip("50_gong.mp3", seconds: gongLen)
             self.shakeWatch()
         }
-        // Stay on screen until the second gong sound has fully played out.
-        DispatchQueue.main.asyncAfter(deadline: .now() + secondStrike + gong) { [weak self] in
+        // Stay on screen until the second gong has fully played out.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2 * gongLen) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             self.close()
         }
@@ -279,11 +279,14 @@ final class BreakTimerController {
         // NSScreen.main is the *focused* screen, which may be an external monitor.
         let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
             ?? NSScreen.main ?? NSScreen.screens.first
-        let vf = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let w = vf.width * 0.16
+        let f = screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        // Default placement/size measured from the reference: ~29% of screen
+        // width, top-right with a 6.4% right gap and 15% top gap.
+        let w = f.width * 0.29
         let h = w / aspect
-        let margin = vf.width * 0.02
-        return NSRect(x: vf.maxX - w - margin, y: vf.maxY - h - margin, width: w, height: h)
+        let x = f.maxX - w - f.width * 0.064
+        let y = f.maxY - f.height * 0.15 - h
+        return NSRect(x: x, y: y, width: w, height: h)
     }
 }
 
@@ -691,8 +694,9 @@ final class BreakTimerView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        // While grabbing the timer body, the wheel adds/subtracts minutes.
-        guard case .move = dragMode else { return }
+        // While ANY mouse button is held on the timer (body, button, corner, or
+        // even if the pressed element has since hidden), the wheel adjusts minutes.
+        if case .none = dragMode { return }
         let dy = event.scrollingDeltaY
         guard dy != 0 else { return }
         if event.hasPreciseScrollingDeltas {

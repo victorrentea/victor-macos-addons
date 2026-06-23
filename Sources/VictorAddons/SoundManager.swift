@@ -158,6 +158,35 @@ class SoundManager {
         }
     }
 
+    /// Play a sound as a fixed-length "clip": it plays for `seconds`, fading out
+    /// over the final `fade` seconds so the cut is clean. Layers over other sounds.
+    func playClip(_ filename: String, seconds: TimeInterval, fade: TimeInterval = 0.6) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard let url = self.soundURL(for: filename) else {
+                overlayError("Sound file not found: \(filename)")
+                return
+            }
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.volume = 1.0
+                player.prepareToPlay()
+                self.overlappingPlayers.append(player)
+                player.play()
+                let fadeStart = max(0, seconds - fade)
+                DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart) {
+                    if player.isPlaying { player.setVolume(0, fadeDuration: fade) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) { [weak self] in
+                    player.stop()
+                    self?.overlappingPlayers.removeAll { !$0.isPlaying }
+                }
+            } catch {
+                overlayError("Sound clip failed \(filename): \(error)")
+            }
+        }
+    }
+
     // MARK: - Tablet-routed sounds (GET /sound/play/<file>, /sound/stop)
 
     /// Play a tablet-routed sound, preempting any currently playing tablet
