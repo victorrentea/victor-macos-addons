@@ -952,14 +952,15 @@ final class BreakTimerView: NSView {
     }
 
     func handleTapScroll(_ event: CGEvent) {
+        // Scroll UP adds time, scroll DOWN subtracts.
         if event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 {
             let dy = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
             scrollAccum += dy
-            while scrollAccum >= 20 { onAdd?(1); scrollAccum -= 20 }
-            while scrollAccum <= -20 { onAdd?(-1); scrollAccum += 20 }
+            while scrollAccum >= 20 { onAdd?(-1); scrollAccum -= 20 }
+            while scrollAccum <= -20 { onAdd?(1); scrollAccum += 20 }
         } else {
             let dy = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)   // line units
-            if dy != 0 { onAdd?(dy > 0 ? 1 : -1) }
+            if dy != 0 { onAdd?(dy > 0 ? -1 : 1) }
         }
     }
 
