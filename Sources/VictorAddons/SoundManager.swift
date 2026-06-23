@@ -263,6 +263,16 @@ class SoundManager {
         tabletPlayer?.isPlaying ?? false
     }
 
+    /// Stop any overlapping instances of a given sound immediately (e.g. interrupt
+    /// the break-timer gong when the user closes the watch mid-strike).
+    func stopOverlapping(_ filename: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let url = self.soundURL(for: filename) else { return }
+            for p in self.overlappingPlayers where p.url == url { p.stop() }
+            self.overlappingPlayers.removeAll { !$0.isPlaying }
+        }
+    }
+
     /// Fade out over 300ms then stop. Called when the animation finishes —
     /// the sound continues playing (fading) for 300ms after the visual ends.
     func stop(_ filename: String) {

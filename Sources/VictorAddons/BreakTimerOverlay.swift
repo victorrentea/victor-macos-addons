@@ -77,7 +77,8 @@ final class BreakTimerController {
     }
 
     func close() {
-        epoch += 1
+        epoch += 1                                       // cancels pending gong/expiry blocks
+        SoundManager.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
         activityTimer?.invalidate(); activityTimer = nil
@@ -165,8 +166,10 @@ final class BreakTimerController {
     /// it never flickers.
     private func startActivityMonitor() {
         activityTimer?.invalidate()
-        bgOpaque = true
-        bgView?.alphaValue = 1
+        // Start with NO backdrop — the timer just appeared because the user acted,
+        // so the mouse is active; the backdrop fades in only after 30s idle.
+        bgOpaque = false
+        bgView?.alphaValue = 0
         let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.setBackgroundOpaque(Self.systemIdleSeconds() >= 30.0)
@@ -456,6 +459,7 @@ final class BreakTimerView: NSView {
         // Background is a separate layer (faded in/out); this view only paints
         // the digits, labels and buttons so they stay fully visible.
         let L = computeLayout()
+        drawTitle(above: L.digits)
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
         // Controls and resize handles appear only while hovering the panel.
@@ -592,10 +596,35 @@ final class BreakTimerView: NSView {
     private static let segColonW: CGFloat = 0.30
     private static let segSpaceW: CGFloat = 0.45
     private static let segGapW: CGFloat = 0.12
+    private static let labelTzCharW: CGFloat = 0.46  // ~monospaced char width, cell-height units
+    private static let labelTzGap: CGFloat = 0.34
+    private static let labelArrowSlotW: CGFloat = 0.72 // "→" width, cell-height units
+    private static let labelArrowGap: CGFloat = 0.28
+
+    // Splits "HH:MM TZ" and returns the time, tz, and total line width in cell-height units.
+    private func labelLineParts(_ s: String) -> (time: String, tz: String, unit: CGFloat) {
+        let parts = s.split(separator: " ", maxSplits: 1).map(String.init)
+        let timeStr = parts.first ?? s
+        let tz = parts.count > 1 ? parts[1] : ""
+        let unit = Self.labelArrowSlotW + Self.labelArrowGap + segLineUnitWidth(timeStr)
+            + (tz.isEmpty ? 0 : Self.labelTzGap + CGFloat(tz.count) * Self.labelTzCharW)
+        return (timeStr, tz, unit)
+    }
 
     private func drawLabels(in area: NSRect) {
         guard area.height > 0, area.width > 0 else { return }
         let lineH = area.height * 0.46
+        // 50% opaque black backing so the finish times read on any backdrop.
+        let u1 = labelLineParts(finishLocal).unit, u2 = labelLineParts(finishCET).unit
+        let textW = max(min(lineH, area.width / max(u1, 0.01)) * u1,
+                        min(lineH, area.width / max(u2, 0.01)) * u2)
+        if textW > 0 {
+            let pad = lineH * 0.22
+            let box = NSRect(x: area.minX - pad, y: area.minY - pad * 0.6,
+                             width: textW + pad * 2, height: area.height + pad * 1.2)
+            NSColor.black.withAlphaComponent(0.5).setFill()
+            NSBezierPath(roundedRect: box, xRadius: pad, yRadius: pad).fill()
+        }
         drawLabelLine(finishLocal, leftX: area.minX, bottomY: area.minY + area.height - lineH,
                       lineH: lineH, maxW: area.width, color: Self.lit)
         drawLabelLine(finishCET, leftX: area.minX, bottomY: area.minY,
@@ -606,38 +635,45 @@ final class BreakTimerView: NSView {
     /// timezone abbreviation kept in the plain (readable) text font.
     private func drawLabelLine(_ s: String, leftX: CGFloat, bottomY: CGFloat,
                                lineH: CGFloat, maxW: CGFloat, color: NSColor) {
-        let parts = s.split(separator: " ", maxSplits: 1).map(String.init)
-        let timeStr = parts.first ?? s
-        let tz = parts.count > 1 ? parts[1] : ""
-        let tzCharW: CGFloat = 0.46    // ~monospaced char width, in cell-height units
-        let tzGap: CGFloat = 0.34
-        let arrowSlotW: CGFloat = 0.72 // "→" width, in cell-height units
-        let arrowGap: CGFloat = 0.28
-        let unit = arrowSlotW + arrowGap + segLineUnitWidth(timeStr)
-            + (tz.isEmpty ? 0 : tzGap + CGFloat(tz.count) * tzCharW)
+        let (timeStr, tz, unit) = labelLineParts(s)
         let cellH = min(lineH, maxW / unit)
         // Leading "→" in plain text, vertically centered with the seg-font time.
         let arrowFont = NSFont.systemFont(ofSize: cellH * 0.72, weight: .medium)
         drawOutlinedText("→", at: NSPoint(x: leftX, y: bottomY + (cellH - arrowFont.pointSize) / 2),
                          font: arrowFont, fill: color)
-        let timeX = leftX + (arrowSlotW + arrowGap) * cellH
+        let timeX = leftX + (Self.labelArrowSlotW + Self.labelArrowGap) * cellH
         drawSegLine(timeStr, leftX: timeX, bottomY: bottomY, cellH: cellH, color: color)
         guard !tz.isEmpty else { return }
         let font = NSFont.monospacedSystemFont(ofSize: cellH * 0.72, weight: .medium)
-        let tzX = timeX + segLineUnitWidth(timeStr) * cellH + cellH * tzGap
+        let tzX = timeX + segLineUnitWidth(timeStr) * cellH + cellH * Self.labelTzGap
         let tzY = bottomY + (cellH - font.pointSize) / 2
         drawOutlinedText(tz, at: NSPoint(x: tzX, y: tzY), font: font, fill: color)
     }
 
+    /// "BREAK" centered in the top margin band, above the countdown digits.
+    private func drawTitle(above digits: NSRect) {
+        let b = bounds
+        let bandBottom = digits.maxY
+        let bandH = b.height - bandBottom
+        guard bandH > 4 else { return }
+        let fontSize = bandH * 0.62
+        let kern = fontSize * 0.22
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let sz = NSAttributedString(string: "BREAK", attributes: [.font: font, .kern: kern]).size()
+        drawOutlinedText("BREAK",
+                         at: NSPoint(x: b.midX - sz.width / 2, y: bandBottom + (bandH - sz.height) / 2),
+                         font: font, fill: Self.lit, kern: kern)
+    }
+
     /// Text with a black 50% OUTER border (stroke under the fill, so the fill shows).
-    private func drawOutlinedText(_ s: String, at p: NSPoint, font: NSFont, fill: NSColor) {
+    private func drawOutlinedText(_ s: String, at p: NSPoint, font: NSFont, fill: NSColor, kern: CGFloat = 0) {
         let pct = (1.5 * 2 / font.pointSize) * 100   // centered stroke → half sits outside
         NSAttributedString(string: s, attributes: [
-            .font: font, .foregroundColor: NSColor.clear,
+            .font: font, .foregroundColor: NSColor.clear, .kern: kern,
             .strokeColor: NSColor.black.withAlphaComponent(0.5), .strokeWidth: pct,
         ]).draw(at: p)
         NSAttributedString(string: s, attributes: [
-            .font: font, .foregroundColor: fill,
+            .font: font, .foregroundColor: fill, .kern: kern,
         ]).draw(at: p)
     }
 
