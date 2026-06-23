@@ -342,6 +342,7 @@ final class BreakTimerView: NSView {
     private var dragStartFrame = NSRect.zero
     private var pressedButton: BreakButtonKind?
     private var scrollAccum: CGFloat = 0      // precise-scroll accumulator while grabbing
+    private var scrollMonitors: [Any] = []    // wheel monitors active while pressed
 
     // Red LED look — colors sampled from the reference: a deep red for lit
     // segments and a solid very-dark red for the unlit (ghost) segments.
@@ -586,7 +587,7 @@ final class BreakTimerView: NSView {
         let pct = (outer * 2 / font.pointSize) * 100   // centered stroke → half sits outside
         NSAttributedString(string: s, attributes: [
             .font: font, .foregroundColor: NSColor.clear,
-            .strokeColor: NSColor.black, .strokeWidth: pct,
+            .strokeColor: NSColor.black.withAlphaComponent(0.5), .strokeWidth: pct,
         ]).draw(at: p)
         NSAttributedString(string: s, attributes: [
             .font: font, .foregroundColor: fill,
@@ -674,6 +675,9 @@ final class BreakTimerView: NSView {
             dragMode = .move
             NSCursor.closedHand.set()
         }
+        // While held, capture the wheel globally so minute-adjust keeps working
+        // even if the cursor leaves the view during a drag.
+        startScrollMonitor()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -699,6 +703,7 @@ final class BreakTimerView: NSView {
         dragMode = .none
         pressedButton = nil
         needsDisplay = true
+        stopScrollMonitor()
         // Restore the resting cursor for the release position (e.g. the open
         // "grab" hand over the body, not the closed "grabbing" hand).
         let L = computeLayout()
@@ -707,11 +712,28 @@ final class BreakTimerView: NSView {
         else { Self.moveCursor.set() }
     }
 
-    override func scrollWheel(with event: NSEvent) {
-        // Adjust minutes whenever a mouse button is *physically* held over the
-        // timer — based on the real button state, not dragMode (which can be
-        // cleared when the originally-clicked element changes/hides).
-        guard NSEvent.pressedMouseButtons != 0 else { return }
+    // While the timer is held, capture the wheel via global + local monitors, so
+    // minute-adjust keeps working even when the cursor leaves the view during a
+    // drag (mouseDragged keeps coming to us, but scrollWheel is hit-test routed
+    // to whatever is under the cursor).
+    private func startScrollMonitor() {
+        stopScrollMonitor()
+        let g = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+            self?.adjustFromScroll(e)
+        }
+        let l = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+            self?.adjustFromScroll(e); return nil
+        }
+        scrollMonitors = [g, l].compactMap { $0 }
+    }
+
+    private func stopScrollMonitor() {
+        scrollMonitors.forEach { NSEvent.removeMonitor($0) }
+        scrollMonitors.removeAll()
+        scrollAccum = 0
+    }
+
+    private func adjustFromScroll(_ event: NSEvent) {
         let dy = event.scrollingDeltaY
         guard dy != 0 else { return }
         if event.hasPreciseScrollingDeltas {
@@ -722,6 +744,8 @@ final class BreakTimerView: NSView {
             onAdd?(dy > 0 ? 1 : -1)   // one minute per wheel notch
         }
     }
+
+    deinit { scrollMonitors.forEach { NSEvent.removeMonitor($0) } }
 
     private func fire(_ kind: BreakButtonKind) {
         switch kind {
