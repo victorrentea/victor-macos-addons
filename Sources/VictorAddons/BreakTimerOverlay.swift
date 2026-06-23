@@ -164,7 +164,6 @@ final class BreakTimerController {
         activityTimer?.invalidate()
         bgOpaque = true
         bgView?.alphaValue = 1
-        view?.setBackgroundTransparent(false)
         let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.setBackgroundOpaque(Self.systemIdleSeconds() >= 5.0)
@@ -176,7 +175,6 @@ final class BreakTimerController {
     private func setBackgroundOpaque(_ opaque: Bool) {
         guard let bgView, opaque != bgOpaque else { return }
         bgOpaque = opaque
-        view?.setBackgroundTransparent(!opaque)
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.35
             bgView.animator().alphaValue = opaque ? 1.0 : 0.0
@@ -259,16 +257,18 @@ final class BreakTimerController {
         timer?.invalidate(); timer = nil
         clearPersisted()
         let myEpoch = epoch
+        let secondStrike = 0.8
+        let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 3.0
 
         SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1
         shakeWatch()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + secondStrike) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2
             self.shakeWatch()
         }
-        // Let both strikes shake, then close.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+        // Stay on screen until the second gong sound has fully played out.
+        DispatchQueue.main.asyncAfter(deadline: .now() + secondStrike + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             self.close()
         }
@@ -376,14 +376,10 @@ final class BreakTimerView: NSView {
         needsDisplay = true
     }
 
-    /// When the backdrop is transparent we draw small red resize-handle corners
-    /// so the (otherwise invisible) window bounds can be grabbed and resized.
-    private var bgTransparent = false
-    func setBackgroundTransparent(_ transparent: Bool) {
-        guard bgTransparent != transparent else { return }
-        bgTransparent = transparent
-        needsDisplay = true
-    }
+    /// The resize corners and the control buttons are shown only while the mouse
+    /// hovers the timer; `hoveredButton` highlights the button under the cursor.
+    private var mouseInside = false
+    private var hoveredButton: BreakButtonKind?
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -402,11 +398,12 @@ final class BreakTimerView: NSView {
         let pad = b.height * 0.08
         let ch = max(18, min(b.width, b.height) * 0.13)
         let bottomH = b.height * 0.22
-        let bottomY = pad * 0.6
+        let bottomY = pad * 0.9            // bottom margin (+50%)
 
         // Digits area + the x of the digits' left edge (labels align to this).
-        let hInset = b.width * 0.04
-        let topInset = b.height * 0.08
+        // Content margins increased 50% on all four edges.
+        let hInset = b.width * 0.06
+        let topInset = b.height * 0.12
         let digitsBottom = bottomY + bottomH + b.height * 0.03
         let digitsArea = NSRect(x: hInset, y: digitsBottom,
                                 width: b.width - 2 * hInset,
@@ -452,18 +449,21 @@ final class BreakTimerView: NSView {
         let L = computeLayout()
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
-        for (rect, kind) in L.buttons { drawButton(kind, rect: rect) }
-        if bgTransparent { drawResizeCorners() }
+        // Controls and resize handles appear only while hovering the panel.
+        if mouseInside {
+            for (rect, kind) in L.buttons { drawButton(kind, rect: rect) }
+            drawResizeCorners()
+        }
     }
 
-    /// Thin red L-brackets at the 4 corners — visible only when the backdrop is
-    /// transparent — marking where the window can be grabbed to resize.
+    /// Red L-brackets at the 4 corners — shown while hovering — marking (and
+    /// providing a fat target for) the resize corners.
     private func drawResizeCorners() {
         let b = bounds
-        let len = max(8, min(b.width, b.height) * 0.08)
-        let i: CGFloat = 2
+        let len = max(10, min(b.width, b.height) * 0.10)
+        let i: CGFloat = 3
         let p = NSBezierPath()
-        p.lineWidth = 1.5
+        p.lineWidth = 4.5          // 3x thicker, easy to click
         p.lineCapStyle = .round
         p.move(to: NSPoint(x: i, y: i + len));            p.line(to: NSPoint(x: i, y: i));            p.line(to: NSPoint(x: i + len, y: i))
         p.move(to: NSPoint(x: b.width - i - len, y: i));  p.line(to: NSPoint(x: b.width - i, y: i));  p.line(to: NSPoint(x: b.width - i, y: i + len))
@@ -578,7 +578,8 @@ final class BreakTimerView: NSView {
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
         let pressed = pressedButton == kind
-        let bgAlpha: CGFloat = pressed ? 0.28 : 0.10
+        let hovered = hoveredButton == kind
+        let bgAlpha: CGFloat = pressed ? 0.32 : (hovered ? 0.20 : 0.10)
         Self.lit.withAlphaComponent(bgAlpha).setFill()
         Self.lit.withAlphaComponent(0.30).setStroke()
         let bg = NSBezierPath(roundedRect: r, xRadius: r.height * 0.25, yRadius: r.height * 0.25)
@@ -768,12 +769,13 @@ final class BreakTimerView: NSView {
         for (rect, corner) in L.corners { addCursorRect(rect, cursor: Self.cursor(forCorner: corner)) }
     }
 
-    // Tracking area exists so mouseEntered can claim cursor management.
+    // Tracking area: mouseEntered claims cursor management; enter/exit/moved
+    // drive the hover state for the corners and buttons.
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+                                       options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
                                        owner: self, userInfo: nil))
     }
 
@@ -786,5 +788,23 @@ final class BreakTimerView: NSView {
         // Become key (without activating the app) so our cursor rects are honored.
         window?.makeKey()
         window?.invalidateCursorRects(for: self)
+        mouseInside = true
+        needsDisplay = true
+        updateHover(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        mouseInside = false
+        hoveredButton = nil
+        needsDisplay = true
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHover(event)
+    }
+
+    private func updateHover(_ event: NSEvent) {
+        let h = buttonHit(convert(event.locationInWindow, from: nil), computeLayout())
+        if h != hoveredButton { hoveredButton = h; needsDisplay = true }
     }
 }
