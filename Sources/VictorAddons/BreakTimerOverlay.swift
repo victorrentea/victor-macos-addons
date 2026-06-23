@@ -679,11 +679,15 @@ final class BreakTimerView: NSView {
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
         let pressed = pressedButton == kind
         let hovered = hoveredButton == kind
-        let bgAlpha: CGFloat = pressed ? 0.32 : (hovered ? 0.20 : 0.10)
-        Self.lit.withAlphaComponent(bgAlpha).setFill()
-        Self.lit.withAlphaComponent(0.30).setStroke()
         let bg = NSBezierPath(roundedRect: r, xRadius: r.height * 0.25, yRadius: r.height * 0.25)
+        // Opaque black base so the button reads solidly even when the backdrop
+        // is transparent (while the user is active); red tint deepens on hover/press.
+        NSColor.black.setFill()
         bg.fill()
+        let bgAlpha: CGFloat = pressed ? 0.45 : (hovered ? 0.30 : 0.18)
+        Self.lit.withAlphaComponent(bgAlpha).setFill()
+        bg.fill()
+        Self.lit.setStroke()
         bg.lineWidth = 1
         bg.stroke()
 
