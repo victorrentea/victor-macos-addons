@@ -23,6 +23,7 @@ Menu bar app (💬 icon) with the following features:
 - **📋 IntelliJ Git → Clipboard** — copies git remote URL + branch from frontmost IntelliJ project
 - **Take Screenshot (⌃P)** — captures screenshot to timestamped file
 - **Display join link** — shows participant join URL banner at top of screen (enabled when session active); banner auto-hides after 20s with fade-out animation
+- **☕️ Break (countdown watch)** — submenu of fixed durations (5/7/10/12/15/45 min, 1 hour) opens a draggable, resizable digital countdown overlay (`BreakTimerOverlay`): a big cyan **custom-drawn seven-segment** `MM:SS` (with faint ghost segments) over a **20%-opaque black** panel, the finish time shown in **local + CET** timezones (e.g. `08:33 AM EEST` / `07:33 AM CEST`), and small controls (✕ close, ⏸ pause/resume, +1m/+3m/+5m). Opens top-right at **25% of the main screen width** on first use (no persistence — it's draggable); the panel **accepts mouse events** (unlike `OverlayPanel`), drags from anywhere on the body and resizes from any of the 4 corners with **locked aspect ratio**. Re-clicking a duration resets the time **in place** (keeps position/size). On expiry the gong plays **twice**, the digits **blink twice**, then it **fades out and closes**. While paused the countdown and finish-time displays freeze. Pure formatting/finish-time math lives in a unit-tested `BreakTimerModel`; the controller invalidates in-flight expiry blocks via an `epoch` counter so +Nm / re-click cancel a pending fade.
 - **☠️ Kill port** — submenu with recent ports + custom port dialog
 
 **Tech**: Swift, AppKit, Anthropic API (Haiku)
@@ -107,6 +108,8 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/transcription/toggle`
 - `GET /test/audio/playing` — taps `🔊OS Output` loopback for ~150ms, returns `{playing, rms, peak, ...}`
 - `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`
+- `GET /test/break/<minutes>` — start/reset the ☕️ Break countdown overlay for N minutes
+- `GET /test/break/close` — close the Break overlay
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 
 For local E2E checks without stealing focus:

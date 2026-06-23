@@ -23,6 +23,10 @@ class TabletHttpServer {
         case testState
         case testAudioPlaying
         case testWisprRecording
+        /// Start/reset the Break countdown overlay for N minutes (test hook).
+        case testBreakStart(Int)
+        /// Close the Break countdown overlay (test hook).
+        case testBreakClose
         case promptCapture
         case intellijFileOpened
         case unknown
@@ -53,6 +57,8 @@ class TabletHttpServer {
     var onTestState: (() -> String)?
     var onTestAudioPlaying: (() -> String)?
     var onTestWisprRecording: (() -> String)?
+    var onTestBreakStart: ((Int) -> Void)?
+    var onTestBreakClose: (() -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -148,6 +154,10 @@ class TabletHttpServer {
                     if self?.onTestWisprRecording == nil {
                         statusCode = 503
                     }
+                case .testBreakStart(let minutes):
+                    self?.onTestBreakStart?(minutes)
+                case .testBreakClose:
+                    self?.onTestBreakClose?()
                 case .promptCapture:
                     contentType = "application/json"
                     let promptBody = Self.extractBody(raw)
@@ -211,6 +221,8 @@ class TabletHttpServer {
             return .testAudioPlaying
         case "/test/wispr/recording":
             return .testWisprRecording
+        case "/test/break/close":
+            return .testBreakClose
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":
@@ -232,6 +244,11 @@ class TabletHttpServer {
             if pathOnly.hasPrefix("/sound/volume/") {
                 if let pct = Int(pathOnly.dropFirst("/sound/volume/".count)) {
                     return .soundVolume(pct)
+                }
+            }
+            if pathOnly.hasPrefix("/test/break/") {
+                if let minutes = Int(pathOnly.dropFirst("/test/break/".count)) {
+                    return .testBreakStart(minutes)
                 }
             }
             return .unknown

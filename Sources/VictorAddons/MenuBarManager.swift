@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 23, 02:03"
+    static let BUILD_TIME = "Jun 23, 08:20"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -60,6 +60,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onWhip: (() -> Void)?
+    var onBreak: ((Int) -> Void)?
 
     // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
     /// Frontmost app captured when the menu opens — the terminal the whip's
@@ -104,6 +105,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // Copy Git
         addItem("IntelliJ: Copy Git", action: #selector(copyGitAction))
+
+        // ☕️ Break — countdown "watch" overlay
+        let breakItem = NSMenuItem(title: "☕️ Break", action: nil, keyEquivalent: "")
+        breakItem.isEnabled = true
+        let breakSubmenu = NSMenu()
+        let breakDurations: [(String, Int)] = [
+            ("5 minutes", 5), ("7 minutes", 7), ("10 minutes", 10),
+            ("12 minutes", 12), ("15 minutes", 15), ("45 minutes", 45), ("1 hour", 60),
+        ]
+        for (title, minutes) in breakDurations {
+            let item = NSMenuItem(title: title, action: #selector(breakAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = true
+            item.representedObject = minutes
+            breakSubmenu.addItem(item)
+        }
+        breakItem.submenu = breakSubmenu
+        menu.addItem(breakItem)
 
         menu.addItem(.separator())
 
@@ -531,6 +550,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func whipAction() {
         onWhip?()
+    }
+
+    @objc private func breakAction(_ sender: NSMenuItem) {
+        guard let minutes = sender.representedObject as? Int else { return }
+        onBreak?(minutes)
     }
 
     private func killPort(_ port: Int) {

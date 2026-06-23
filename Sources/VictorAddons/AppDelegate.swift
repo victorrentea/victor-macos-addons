@@ -11,6 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     // buttonBar removed
     private var menuBarManager: MenuBarManager!
     private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
+    private let breakTimer = BreakTimerController()  // ☕️ Break countdown watch overlay
     private let serverURL: String
     private var wsTask: URLSessionWebSocketTask?
     private var session: URLSession!
@@ -414,6 +415,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let recording = manager.probeWisprRecording()
             return "{\"recording\":\(recording)}"
         }
+        tabletServer?.onTestBreakStart = { [weak self] minutes in
+            DispatchQueue.main.async { self?.breakTimer.start(minutes: minutes) }
+        }
+        tabletServer?.onTestBreakClose = { [weak self] in
+            DispatchQueue.main.async { self?.breakTimer.close() }
+        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -599,6 +606,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onWhip = { [weak self] in
             DispatchQueue.main.async {
                 self?.showWhip()
+            }
+        }
+
+        // ☕️ Break — start/reset the countdown watch overlay for the chosen duration.
+        menuBarManager.onBreak = { [weak self] minutes in
+            DispatchQueue.main.async {
+                self?.breakTimer.start(minutes: minutes)
             }
         }
 
