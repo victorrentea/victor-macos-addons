@@ -615,6 +615,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.breakTimer.start(minutes: minutes)
             }
         }
+        // Resume an in-progress break after a redeploy/restart.
+        DispatchQueue.main.async { [weak self] in self?.breakTimer.resumeIfNeeded() }
 
         menuBarManager.setup()
         // Reflect real process state on startup to avoid stale "Stop Transcribing" UI.

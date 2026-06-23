@@ -46,18 +46,20 @@ final class BreakTimerController {
         startTicking()
         startActivityMonitor()
         refresh()
+        persist()
     }
 
     func addMinutes(_ m: Int) {
         guard panel != nil else { return }
         epoch += 1                            // cancel any pending expiry sequence
         blinkTimer?.invalidate(); blinkTimer = nil
-        remaining += m * 60
+        remaining = max(0, remaining + m * 60)
         if paused { freezeNow = Date() }      // re-anchor frozen finish time
         view?.setDigitsVisible(true)
         panel?.alphaValue = 1
         if !paused { startTicking() }
         refresh()
+        persist()
     }
 
     func togglePause() {
@@ -71,6 +73,7 @@ final class BreakTimerController {
             startTicking()
         }
         refresh()
+        persist()
     }
 
     func close() {
@@ -82,6 +85,73 @@ final class BreakTimerController {
         panel = nil
         view = nil
         bgView = nil
+        clearPersisted()
+    }
+
+    // MARK: - Persistence (survive an app redeploy mid-break)
+
+    private static let kFinishAt = "BreakTimer.finishAt"
+    private static let kPausedRemaining = "BreakTimer.pausedRemaining"
+
+    private func persist() {
+        let d = UserDefaults.standard
+        if paused {
+            d.removeObject(forKey: Self.kFinishAt)
+            d.set(remaining, forKey: Self.kPausedRemaining)
+        } else {
+            d.set(Date().addingTimeInterval(TimeInterval(remaining)), forKey: Self.kFinishAt)
+            d.removeObject(forKey: Self.kPausedRemaining)
+        }
+    }
+
+    private func clearPersisted() {
+        UserDefaults.standard.removeObject(forKey: Self.kFinishAt)
+        UserDefaults.standard.removeObject(forKey: Self.kPausedRemaining)
+    }
+
+    /// On launch, resume a countdown that was running/paused when the app quit.
+    func resumeIfNeeded() {
+        let d = UserDefaults.standard
+        if d.object(forKey: Self.kPausedRemaining) != nil {
+            let rem = d.integer(forKey: Self.kPausedRemaining)
+            if rem > 0 { resume(remaining: rem, paused: true) } else { clearPersisted() }
+        } else if let finishAt = d.object(forKey: Self.kFinishAt) as? Date {
+            let rem = Int(finishAt.timeIntervalSinceNow.rounded())
+            if rem > 0 { resume(remaining: rem, paused: false) } else { clearPersisted() }
+        }
+    }
+
+    private func resume(remaining rem: Int, paused isPaused: Bool) {
+        epoch += 1
+        blinkTimer?.invalidate(); blinkTimer = nil
+        remaining = rem
+        paused = isPaused
+        freezeNow = isPaused ? Date() : nil
+        let v = ensureWindow()
+        v.setDigitsVisible(true)
+        panel?.alphaValue = 1
+        panel?.orderFrontRegardless()
+        if !isPaused { startTicking() }
+        startActivityMonitor()
+        refresh()
+    }
+
+    /// A short, decaying left↔right shake of the whole watch (used on each gong
+    /// strike at expiry to simulate the gong's vibration).
+    private func shakeWatch() {
+        guard let layer = panel?.contentView?.layer else { return }
+        let n = 26
+        let amp: CGFloat = 16
+        let values: [NSNumber] = (0..<n).map { i in
+            let t = CGFloat(i) / CGFloat(n - 1)
+            return NSNumber(value: Double(amp * exp(-3.2 * t) * sin(t * .pi * 9)))
+        }
+        let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        shake.values = values
+        shake.duration = 0.85
+        shake.isAdditive = true
+        shake.calculationMode = .cubic
+        layer.add(shake, forKey: "shake")
     }
 
     // MARK: - Activity-driven backdrop
@@ -94,6 +164,7 @@ final class BreakTimerController {
         activityTimer?.invalidate()
         bgOpaque = true
         bgView?.alphaValue = 1
+        view?.setBackgroundTransparent(false)
         let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.setBackgroundOpaque(Self.systemIdleSeconds() >= 5.0)
@@ -105,6 +176,7 @@ final class BreakTimerController {
     private func setBackgroundOpaque(_ opaque: Bool) {
         guard let bgView, opaque != bgOpaque else { return }
         bgOpaque = opaque
+        view?.setBackgroundTransparent(!opaque)
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.35
             bgView.animator().alphaValue = opaque ? 1.0 : 0.0
@@ -181,28 +253,22 @@ final class BreakTimerController {
         )
     }
 
-    /// At zero: strike the gong ONCE, blink the digits while it plays, then
-    /// close instantly (no fade) so the end is crisp.
+    /// At zero: two gong strikes, each shaking the watch left↔right to simulate
+    /// the gong's vibration, then close.
     private func beginExpiry() {
         timer?.invalidate(); timer = nil
+        clearPersisted()
         let myEpoch = epoch
-        let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 3.0
 
-        SoundManager.shared.playOverlapping("50_gong.mp3")   // a single strike
-
-        // Blink for the duration of the gong…
-        blinkTimer?.invalidate()
-        var visible = true
-        let bt = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
+        SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1
+        shakeWatch()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
-            visible.toggle()
-            self.view?.setDigitsVisible(visible)
+            SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2
+            self.shakeWatch()
         }
-        RunLoop.main.add(bt, forMode: .common)
-        blinkTimer = bt
-
-        // …then vanish instantly.
-        DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
+        // Let both strikes shake, then close.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             self.close()
         }
@@ -268,6 +334,7 @@ final class BreakTimerView: NSView {
     private var dragStartMouse = NSPoint.zero
     private var dragStartFrame = NSRect.zero
     private var pressedButton: BreakButtonKind?
+    private var scrollAccum: CGFloat = 0      // precise-scroll accumulator while grabbing
 
     // Red LED look — colors sampled from the reference: a deep red for lit
     // segments and a solid very-dark red for the unlit (ghost) segments.
@@ -309,6 +376,15 @@ final class BreakTimerView: NSView {
         needsDisplay = true
     }
 
+    /// When the backdrop is transparent we draw small red resize-handle corners
+    /// so the (otherwise invisible) window bounds can be grabbed and resized.
+    private var bgTransparent = false
+    func setBackgroundTransparent(_ transparent: Bool) {
+        guard bgTransparent != transparent else { return }
+        bgTransparent = transparent
+        needsDisplay = true
+    }
+
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -337,14 +413,16 @@ final class BreakTimerView: NSView {
                                 height: max(0, b.height - topInset - digitsBottom))
         let dscale = min(digitsArea.height / Self.cellH, digitsArea.width / Self.contentW)
         let digitsLeftX = digitsArea.midX - (Self.contentW * dscale) / 2
+        let digitsRightX = digitsLeftX + Self.contentW * dscale   // right edge of the last digit
 
         // Finish-time labels: left-aligned to the digits' left margin.
         let labelRight = ch + b.width * 0.40
         let label = NSRect(x: digitsLeftX, y: bottomY,
                            width: max(0, labelRight - digitsLeftX), height: bottomH)
 
+        // Buttons end exactly at the digits' right edge.
         let btnLeft = label.maxX
-        let btnRight = b.width - ch
+        let btnRight = digitsRightX
         let kinds: [BreakButtonKind] = [.add1, .add3, .add5, .pause, .close]
         var buttons: [(NSRect, BreakButtonKind)] = []
         let areaW = max(0, btnRight - btnLeft)
@@ -375,6 +453,24 @@ final class BreakTimerView: NSView {
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
         for (rect, kind) in L.buttons { drawButton(kind, rect: rect) }
+        if bgTransparent { drawResizeCorners() }
+    }
+
+    /// Thin red L-brackets at the 4 corners — visible only when the backdrop is
+    /// transparent — marking where the window can be grabbed to resize.
+    private func drawResizeCorners() {
+        let b = bounds
+        let len = max(8, min(b.width, b.height) * 0.08)
+        let i: CGFloat = 2
+        let p = NSBezierPath()
+        p.lineWidth = 1.5
+        p.lineCapStyle = .round
+        p.move(to: NSPoint(x: i, y: i + len));            p.line(to: NSPoint(x: i, y: i));            p.line(to: NSPoint(x: i + len, y: i))
+        p.move(to: NSPoint(x: b.width - i - len, y: i));  p.line(to: NSPoint(x: b.width - i, y: i));  p.line(to: NSPoint(x: b.width - i, y: i + len))
+        p.move(to: NSPoint(x: i, y: b.height - i - len)); p.line(to: NSPoint(x: i, y: b.height - i)); p.line(to: NSPoint(x: i + len, y: b.height - i))
+        p.move(to: NSPoint(x: b.width - i - len, y: b.height - i)); p.line(to: NSPoint(x: b.width - i, y: b.height - i)); p.line(to: NSPoint(x: b.width - i, y: b.height - i - len))
+        Self.lit.setStroke()
+        p.stroke()
     }
 
     private func drawDigits(in area: NSRect) {
@@ -578,13 +674,33 @@ final class BreakTimerView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
         if case .button(let kind) = dragMode {
-            let p = convert(event.locationInWindow, from: nil)
             if buttonHit(p, computeLayout()) == kind { fire(kind) }
         }
         dragMode = .none
         pressedButton = nil
         needsDisplay = true
+        // Restore the resting cursor for the release position (e.g. the open
+        // "grab" hand over the body, not the closed "grabbing" hand).
+        let L = computeLayout()
+        if let corner = cornerHit(p, L) { Self.cursor(forCorner: corner).set() }
+        else if buttonHit(p, L) != nil { NSCursor.pointingHand.set() }
+        else { Self.moveCursor.set() }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // While grabbing the timer body, the wheel adds/subtracts minutes.
+        guard case .move = dragMode else { return }
+        let dy = event.scrollingDeltaY
+        guard dy != 0 else { return }
+        if event.hasPreciseScrollingDeltas {
+            scrollAccum += dy
+            while scrollAccum >= 20 { onAdd?(1); scrollAccum -= 20 }
+            while scrollAccum <= -20 { onAdd?(-1); scrollAccum += 20 }
+        } else {
+            onAdd?(dy > 0 ? 1 : -1)   // one minute per wheel notch
+        }
     }
 
     private func fire(_ kind: BreakButtonKind) {
