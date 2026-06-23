@@ -140,15 +140,18 @@ final class BreakTimerController {
     /// strike at expiry to simulate the gong's vibration).
     private func shakeWatch() {
         guard let layer = panel?.contentView?.layer else { return }
-        let n = 26
-        let amp: CGFloat = 16
+        let duration = 1.8                 // lasts ~2s, like the gong's loud decay
+        let amp: CGFloat = 24              // starts wide…
+        let cycles: CGFloat = 6            // ~3.3 Hz
+        let n = 90
         let values: [NSNumber] = (0..<n).map { i in
             let t = CGFloat(i) / CGFloat(n - 1)
-            return NSNumber(value: Double(amp * exp(-3.2 * t) * sin(t * .pi * 9)))
+            // amplitude decays as the gong's volume drops
+            return NSNumber(value: Double(amp * exp(-2.4 * t) * sin(t * .pi * 2 * cycles)))
         }
         let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
         shake.values = values
-        shake.duration = 0.85
+        shake.duration = duration
         shake.isAdditive = true
         shake.calculationMode = .cubic
         layer.add(shake, forKey: "shake")
@@ -166,7 +169,7 @@ final class BreakTimerController {
         bgView?.alphaValue = 1
         let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.setBackgroundOpaque(Self.systemIdleSeconds() >= 5.0)
+            self.setBackgroundOpaque(Self.systemIdleSeconds() >= 30.0)
         }
         RunLoop.main.add(t, forMode: .common)
         activityTimer = t
@@ -568,11 +571,16 @@ final class BreakTimerView: NSView {
         guard area.height > 0 else { return }
         let fontSize = max(8, area.height * 0.34)
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
+        // 2px black outline around the text (same thickness as the digit outline);
+        // negative strokeWidth strokes AND fills, as a % of the font size.
+        let strokePct = -(2.0 / fontSize) * 100
         let local = NSAttributedString(string: finishLocal, attributes: [
             .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.95),
+            .strokeColor: NSColor.black, .strokeWidth: strokePct,
         ])
         let cet = NSAttributedString(string: finishCET, attributes: [
             .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.55),
+            .strokeColor: NSColor.black, .strokeWidth: strokePct,
         ])
         // Left-aligned to the digits' left margin (area.minX == digits' left edge).
         local.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52))
@@ -694,9 +702,10 @@ final class BreakTimerView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        // While ANY mouse button is held on the timer (body, button, corner, or
-        // even if the pressed element has since hidden), the wheel adjusts minutes.
-        if case .none = dragMode { return }
+        // Adjust minutes whenever a mouse button is *physically* held over the
+        // timer — based on the real button state, not dragMode (which can be
+        // cleared when the originally-clicked element changes/hides).
+        guard NSEvent.pressedMouseButtons != 0 else { return }
         let dy = event.scrollingDeltaY
         guard dy != 0 else { return }
         if event.hasPreciseScrollingDeltas {
