@@ -265,10 +265,14 @@ final class BreakTimerView: NSView {
             buttons.append((NSRect(x: x, y: bottomY + (bottomH - bh) / 2, width: bw, height: bh), k))
         }
 
-        let digitsBottom = bottomY + bottomH + pad * 0.4
-        let digitsArea = NSRect(x: pad, y: digitsBottom,
-                                width: b.width - 2 * pad,
-                                height: max(0, b.height - pad - digitsBottom))
+        // Digits fill nearly the full width (small side margins) and most of the
+        // height above the bottom row, so the watch face isn't mostly empty.
+        let hInset = b.width * 0.02
+        let topInset = b.height * 0.04
+        let digitsBottom = bottomY + bottomH + b.height * 0.015
+        let digitsArea = NSRect(x: hInset, y: digitsBottom,
+                                width: b.width - 2 * hInset,
+                                height: max(0, b.height - topInset - digitsBottom))
 
         let corners: [(NSRect, ResizeCorner)] = [
             (NSRect(x: 0, y: 0, width: ch, height: ch), .bottomLeft),
@@ -284,36 +288,41 @@ final class BreakTimerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
+        let bgPath = NSBezierPath(roundedRect: b, xRadius: b.height * 0.10, yRadius: b.height * 0.10)
         NSColor.black.withAlphaComponent(0.50).setFill()
-        NSBezierPath(roundedRect: b, xRadius: b.height * 0.10, yRadius: b.height * 0.10).fill()
+        bgPath.fill()
 
+        // Clip content to the rounded panel so wide digits never poke out of the corners.
+        NSGraphicsContext.saveGraphicsState()
+        bgPath.addClip()
         let L = computeLayout()
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
         for (rect, kind) in L.buttons { drawButton(kind, rect: rect) }
         drawCorners(L.corners)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawDigits(in area: NSRect) {
         guard area.width > 0, area.height > 0 else { return }
         let chars = Array(digits)
         // Cell metrics relative to digit height.
-        // total width = digits*0.58h + colons*0.30h + gaps*0.12h
+        // total width = digits*0.58h + colons*0.26h + gaps*0.10h
         let digitCount = chars.filter { $0 != ":" }.count
         let colonCount = chars.filter { $0 == ":" }.count
         let gapsCount = max(0, chars.count - 1)
-        let widthFactor = CGFloat(digitCount) * 0.58 + CGFloat(colonCount) * 0.30 + CGFloat(gapsCount) * 0.12
+        let widthFactor = CGFloat(digitCount) * 0.58 + CGFloat(colonCount) * 0.26 + CGFloat(gapsCount) * 0.10
         guard widthFactor > 0 else { return }
         let digitH = min(area.height, area.width / widthFactor)
         let totalW = widthFactor * digitH
         var x = area.midX - totalW / 2
         let y = area.midY - digitH / 2
         let t = digitH * 0.14
-        let gap = digitH * 0.12
+        let gap = digitH * 0.10
 
         for c in chars {
             if c == ":" {
-                let w = digitH * 0.30
+                let w = digitH * 0.26
                 drawColon(NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
                 x += w + gap
             } else {
