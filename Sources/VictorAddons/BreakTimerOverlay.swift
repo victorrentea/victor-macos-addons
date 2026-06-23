@@ -342,7 +342,8 @@ final class BreakTimerView: NSView {
     private var dragStartFrame = NSRect.zero
     private var pressedButton: BreakButtonKind?
     private var scrollAccum: CGFloat = 0      // precise-scroll accumulator while grabbing
-    private var scrollMonitors: [Any] = []    // wheel monitors active while pressed
+    private var scrollTap: CFMachPort?        // consumes the wheel while pressed
+    private var scrollTapSource: CFRunLoopSource?
 
     // Red LED look — colors sampled from the reference: a deep red for lit
     // segments and a solid very-dark red for the unlit (ghost) segments.
@@ -511,6 +512,23 @@ final class BreakTimerView: NSView {
         "9": ["a", "b", "c", "d", "f", "g"],
     ]
 
+    // Best-effort seven-segment letters (for the timezone abbreviations).
+    private static let segLetters: [Character: Set<Character>] = [
+        "A": ["a", "b", "c", "e", "f", "g"], "B": ["c", "d", "e", "f", "g"],
+        "C": ["a", "d", "e", "f"], "D": ["b", "c", "d", "e", "g"],
+        "E": ["a", "d", "e", "f", "g"], "F": ["a", "e", "f", "g"],
+        "G": ["a", "c", "d", "e", "f"], "H": ["b", "c", "e", "f", "g"],
+        "I": ["b", "c"], "J": ["b", "c", "d", "e"], "L": ["d", "e", "f"],
+        "N": ["c", "e", "g"], "O": ["a", "b", "c", "d", "e", "f"],
+        "P": ["a", "b", "e", "f", "g"], "R": ["e", "g"],
+        "S": ["a", "c", "d", "f", "g"], "T": ["d", "e", "f", "g"],
+        "U": ["b", "c", "d", "e", "f"], "Y": ["b", "c", "d", "f", "g"],
+    ]
+
+    private static func segsFor(_ c: Character) -> Set<Character>? {
+        segments[c] ?? segLetters[Character(c.uppercased())]
+    }
+
     // Reverse-engineered seven-segment polygons, traced from the reference watch.
     // Canonical cell: 80 wide x 137 tall; yl is measured from the cell TOP.
     private static let cellW: CGFloat = 80, cellH: CGFloat = 137
@@ -569,22 +587,43 @@ final class BreakTimerView: NSView {
         CATransaction.commit()
     }
 
+    // Per-glyph widths for the small seven-segment label lines, in cell-height units.
+    private static let segGlyphW: CGFloat = 0.584
+    private static let segColonW: CGFloat = 0.30
+    private static let segSpaceW: CGFloat = 0.45
+    private static let segGapW: CGFloat = 0.12
+
     private func drawLabels(in area: NSRect) {
-        guard area.height > 0 else { return }
-        let fontSize = max(8, area.height * 0.34)
-        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
-        // Left-aligned to the digits' left margin (area.minX == digits' left edge).
-        drawOutlinedText(finishLocal, at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52),
-                         font: font, fill: Self.lit.withAlphaComponent(0.95))
-        drawOutlinedText(finishCET, at: NSPoint(x: area.minX, y: area.minY + area.height * 0.06),
-                         font: font, fill: Self.lit.withAlphaComponent(0.55))
+        guard area.height > 0, area.width > 0 else { return }
+        let lineH = area.height * 0.46
+        drawLabelLine(finishLocal, leftX: area.minX, bottomY: area.minY + area.height - lineH,
+                      lineH: lineH, maxW: area.width, color: Self.lit)
+        drawLabelLine(finishCET, leftX: area.minX, bottomY: area.minY,
+                      lineH: lineH, maxW: area.width, color: Self.lit.withAlphaComponent(0.78))
     }
 
-    /// Text with a black OUTER border: stroke (black) first, then the colored fill
-    /// on top, so the fill is never covered — only the outer half of the stroke shows.
+    /// One finish-time line: the HH:MM in the seven-segment "bar" font, but the
+    /// timezone abbreviation kept in the plain (readable) text font.
+    private func drawLabelLine(_ s: String, leftX: CGFloat, bottomY: CGFloat,
+                               lineH: CGFloat, maxW: CGFloat, color: NSColor) {
+        let parts = s.split(separator: " ", maxSplits: 1).map(String.init)
+        let timeStr = parts.first ?? s
+        let tz = parts.count > 1 ? parts[1] : ""
+        let tzCharW: CGFloat = 0.46    // ~monospaced char width, in cell-height units
+        let tzGap: CGFloat = 0.34
+        let unit = segLineUnitWidth(timeStr) + (tz.isEmpty ? 0 : tzGap + CGFloat(tz.count) * tzCharW)
+        let cellH = min(lineH, maxW / unit)
+        drawSegLine(timeStr, leftX: leftX, bottomY: bottomY, cellH: cellH, color: color)
+        guard !tz.isEmpty else { return }
+        let font = NSFont.monospacedSystemFont(ofSize: cellH * 0.72, weight: .medium)
+        let tzX = leftX + segLineUnitWidth(timeStr) * cellH + cellH * tzGap
+        let tzY = bottomY + (cellH - font.pointSize) / 2
+        drawOutlinedText(tz, at: NSPoint(x: tzX, y: tzY), font: font, fill: color)
+    }
+
+    /// Text with a black 50% OUTER border (stroke under the fill, so the fill shows).
     private func drawOutlinedText(_ s: String, at p: NSPoint, font: NSFont, fill: NSColor) {
-        let outer: CGFloat = 1.5
-        let pct = (outer * 2 / font.pointSize) * 100   // centered stroke → half sits outside
+        let pct = (1.5 * 2 / font.pointSize) * 100   // centered stroke → half sits outside
         NSAttributedString(string: s, attributes: [
             .font: font, .foregroundColor: NSColor.clear,
             .strokeColor: NSColor.black.withAlphaComponent(0.5), .strokeWidth: pct,
@@ -592,6 +631,49 @@ final class BreakTimerView: NSView {
         NSAttributedString(string: s, attributes: [
             .font: font, .foregroundColor: fill,
         ]).draw(at: p)
+    }
+
+    private func segLineUnitWidth(_ s: String) -> CGFloat {
+        var w: CGFloat = 0
+        for ch in s {
+            switch ch {
+            case " ": w += Self.segSpaceW
+            case ":": w += Self.segColonW + Self.segGapW
+            default:  w += Self.segGlyphW + Self.segGapW
+            }
+        }
+        return max(0.01, w)
+    }
+
+    private func drawSegLine(_ s: String, leftX: CGFloat, bottomY: CGFloat, cellH: CGFloat, color: NSColor) {
+        let scale = cellH / Self.cellH
+        let dW = Self.cellW * scale
+        let colonW = Self.segColonW * cellH
+        let spaceW = Self.segSpaceW * cellH
+        let gap = Self.segGapW * cellH
+        let r = Self.dotR * scale
+        let outline = NSColor.black.withAlphaComponent(0.5)
+        var x = leftX
+        for ch in s {
+            if ch == " " { x += spaceW; continue }
+            if ch == ":" {
+                for yl in Self.dotCy {
+                    let cy = bottomY + (Self.cellH - yl) * scale
+                    let dot = NSBezierPath(ovalIn: NSRect(x: x + colonW / 2 - r, y: cy - r, width: 2 * r, height: 2 * r))
+                    color.setFill(); dot.fill()
+                    outline.setStroke(); dot.lineWidth = 1; dot.stroke()
+                }
+                x += colonW + gap; continue
+            }
+            if let segs = Self.segsFor(ch) {
+                for seg in segs where Self.segPolys[seg] != nil {
+                    let path = segPath(Self.segPolys[seg]!, cellX: x, originY: bottomY, scale: scale)
+                    color.setFill(); path.fill()
+                    outline.setStroke(); path.lineWidth = 1; path.stroke()
+                }
+            }
+            x += dW + gap
+        }
     }
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
@@ -712,40 +794,58 @@ final class BreakTimerView: NSView {
         else { Self.moveCursor.set() }
     }
 
-    // While the timer is held, capture the wheel via global + local monitors, so
-    // minute-adjust keeps working even when the cursor leaves the view during a
-    // drag (mouseDragged keeps coming to us, but scrollWheel is hit-test routed
-    // to whatever is under the cursor).
+    // While the timer is held, capture the wheel with a CGEventTap so minute-
+    // adjust keeps working wherever the cursor goes during a drag AND the scroll
+    // is consumed (it never leaks to the app underneath). A tap (unlike an
+    // NSEvent global monitor) can swallow the event.
     private func startScrollMonitor() {
         stopScrollMonitor()
-        let g = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
-            self?.adjustFromScroll(e)
+        let mask = CGEventMask(1 << CGEventType.scrollWheel.rawValue)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
+            let view = Unmanaged<BreakTimerView>.fromOpaque(refcon).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = view.scrollTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                return Unmanaged.passUnretained(event)
+            }
+            if type == .scrollWheel {
+                view.handleTapScroll(event)
+                return nil   // consume — don't let it reach the app below
+            }
+            return Unmanaged.passUnretained(event)
         }
-        let l = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
-            self?.adjustFromScroll(e); return nil
-        }
-        scrollMonitors = [g, l].compactMap { $0 }
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+                                          options: .defaultTap, eventsOfInterest: mask,
+                                          callback: callback, userInfo: refcon) else { return }
+        let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        scrollTap = tap
+        scrollTapSource = src
     }
 
     private func stopScrollMonitor() {
-        scrollMonitors.forEach { NSEvent.removeMonitor($0) }
-        scrollMonitors.removeAll()
+        if let tap = scrollTap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+        if let src = scrollTapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes) }
+        scrollTap = nil
+        scrollTapSource = nil
         scrollAccum = 0
     }
 
-    private func adjustFromScroll(_ event: NSEvent) {
-        let dy = event.scrollingDeltaY
-        guard dy != 0 else { return }
-        if event.hasPreciseScrollingDeltas {
+    func handleTapScroll(_ event: CGEvent) {
+        if event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 {
+            let dy = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
             scrollAccum += dy
             while scrollAccum >= 20 { onAdd?(1); scrollAccum -= 20 }
             while scrollAccum <= -20 { onAdd?(-1); scrollAccum += 20 }
         } else {
-            onAdd?(dy > 0 ? 1 : -1)   // one minute per wheel notch
+            let dy = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)   // line units
+            if dy != 0 { onAdd?(dy > 0 ? 1 : -1) }
         }
     }
 
-    deinit { scrollMonitors.forEach { NSEvent.removeMonitor($0) } }
+    deinit { stopScrollMonitor() }
 
     private func fire(_ kind: BreakButtonKind) {
         switch kind {
