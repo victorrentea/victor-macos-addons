@@ -523,19 +523,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
             }
         }
-        menuBarManager.onConnectTablet = {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let adb = "\(NSHomeDirectory())/Library/Android/sdk/platform-tools/adb"
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: adb)
-                p.arguments = ["reverse", "tcp:55123", "tcp:55123"]
-                p.standardOutput = FileHandle.nullDevice
-                p.standardError = FileHandle.nullDevice
-                try? p.run(); p.waitUntilExit()
-                let msg = p.terminationStatus == 0 ? "Tablet connected via USB-C ✓" : "Tablet not found — plug in USB-C first"
-                DispatchQueue.main.async { overlayInfo(msg) }
-            }
-        }
         menuBarManager.onCopyGit = { [weak self] in
             DispatchQueue.global(qos: .userInitiated).async {
                 guard let url = GitCopier.copyIntelliJGit() else { return }

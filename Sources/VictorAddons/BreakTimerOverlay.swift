@@ -354,8 +354,12 @@ final class BreakTimerView: NSView {
     private static let ghost = NSColor(calibratedRed: 0.137, green: 0.031, blue: 0.039, alpha: 1.0)
 
     // The colon dots live on their own layer so they can pulse gently (1.0↔0.5
-    // every second) on the GPU, independent of the digit redraws.
+    // every second) on the GPU, independent of the digit redraws. The "BREAK"
+    // title sits on its own layer too and blinks (1.0↔0.0) at the SAME rate —
+    // both animations are added back-to-back so they stay in phase.
     private let colonLayer = CAShapeLayer()
+    private let titleLayer = CALayer()
+    private var blinkPaused = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -363,23 +367,49 @@ final class BreakTimerView: NSView {
         colonLayer.fillColor = Self.lit.cgColor
         colonLayer.strokeColor = NSColor.black.cgColor
         colonLayer.lineWidth = 2
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = 1.0
-        pulse.toValue = 0.5
-        pulse.duration = 0.5            // 0.5s down + 0.5s up = 1s gentle cycle
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        colonLayer.add(pulse, forKey: "pulse")
+        colonLayer.add(Self.makeBlink(to: 0.5), forKey: "pulse")   // gentle colon pulse
         layer?.addSublayer(colonLayer)
+        titleLayer.contentsGravity = .resizeAspect
+        titleLayer.add(Self.makeBlink(to: 0.5), forKey: "pulse")   // BREAK blink, same as colon
+        layer?.addSublayer(titleLayer)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// One 1s blink/pulse cycle (0.5s down + 0.5s up), used by both the colon and
+    /// the BREAK title so they share an identical cadence and phase.
+    private static func makeBlink(to: CGFloat) -> CABasicAnimation {
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = 1.0
+        a.toValue = to
+        a.duration = 0.5
+        a.autoreverses = true
+        a.repeatCount = .infinity
+        a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        return a
+    }
+
+    /// Stop (or resume) the colon pulse and BREAK blink — called when the timer is
+    /// paused/stopped. On pause both snap solid; on resume both restart in phase.
+    private func setBlinkingPaused(_ paused: Bool) {
+        guard paused != blinkPaused else { return }
+        blinkPaused = paused
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        if paused {
+            colonLayer.removeAnimation(forKey: "pulse"); colonLayer.opacity = 1.0
+            titleLayer.removeAnimation(forKey: "pulse"); titleLayer.opacity = 1.0
+        } else {
+            colonLayer.add(Self.makeBlink(to: 0.5), forKey: "pulse")
+            titleLayer.add(Self.makeBlink(to: 0.5), forKey: "pulse")
+        }
+        CATransaction.commit()
+    }
 
     func update(digits: String, finishLocal: String, finishCET: String, paused: Bool) {
         self.digits = digits
         self.finishLocal = finishLocal
         self.finishCET = finishCET
         self.paused = paused
+        setBlinkingPaused(paused)
         needsDisplay = true
     }
 
@@ -415,7 +445,7 @@ final class BreakTimerView: NSView {
         // Digits area + the x of the digits' left edge (labels align to this).
         // Content margins increased 50% on all four edges.
         let hInset = b.width * 0.06
-        let topInset = b.height * 0.155       // room for the (large) BREAK title
+        let topInset = b.height * 0.20        // room for the (large) BREAK title
         let digitsBottom = bottomY + bottomH + b.height * 0.03
         let digitsArea = NSRect(x: hInset, y: digitsBottom,
                                 width: b.width - 2 * hInset,
@@ -460,7 +490,7 @@ final class BreakTimerView: NSView {
         // Background is a separate layer (faded in/out); this view only paints
         // the digits, labels and buttons so they stay fully visible.
         let L = computeLayout()
-        drawTitle(above: L.digits)
+        updateTitleLayer(above: L.digits)
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
         // Controls and resize handles appear only while hovering the panel.
@@ -592,75 +622,60 @@ final class BreakTimerView: NSView {
         CATransaction.commit()
     }
 
-    // Per-glyph widths for the small seven-segment label lines, in cell-height units.
-    private static let segGlyphW: CGFloat = 0.584
-    private static let segColonW: CGFloat = 0.30
-    private static let segSpaceW: CGFloat = 0.45
-    private static let segGapW: CGFloat = 0.12
-    // Font metrics so the tz label & the → render at the digit cell height.
-    // capRatio = capHeight/pointSize; charW/slotW = advance ÷ capHeight, so they
-    // stay valid at any cellH (font sized so its cap-height == cellH).
-    private static let labelTz: (capRatio: CGFloat, charW: CGFloat) = {
-        let f = NSFont.monospacedSystemFont(ofSize: 100, weight: .semibold)
-        let adv = ("0" as NSString).size(withAttributes: [.font: f]).width
-        return (f.capHeight / 100, adv / f.capHeight)
-    }()
-    private static let labelArrow: (capRatio: CGFloat, slotW: CGFloat) = {
-        let f = NSFont.systemFont(ofSize: 100, weight: .semibold)
-        let adv = ("→" as NSString).size(withAttributes: [.font: f]).width
-        return (f.capHeight / 100, adv / f.capHeight)
-    }()
-    private static var labelTzCharW: CGFloat { labelTz.charW }
-    private static var labelArrowSlotW: CGFloat { labelArrow.slotW }
-    private static let labelTzGap: CGFloat = 0.30
-    private static let labelArrowGap: CGFloat = 0.30
-
-    // Splits "HH:MM TZ" and returns the time, tz, and total line width in cell-height units.
-    private func labelLineParts(_ s: String) -> (time: String, tz: String, unit: CGFloat) {
-        let parts = s.split(separator: " ", maxSplits: 1).map(String.init)
-        let timeStr = parts.first ?? s
-        let tz = parts.count > 1 ? parts[1] : ""
-        let unit = Self.labelArrowSlotW + Self.labelArrowGap + segLineUnitWidth(timeStr)
-            + (tz.isEmpty ? 0 : Self.labelTzGap + CGFloat(tz.count) * Self.labelTzCharW)
-        return (timeStr, tz, unit)
+    /// Display font for the title & finish times — the rounded system design
+    /// (distinct from the default SF, pairs cleanly with the LED digits).
+    private static func labelFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        if let d = base.fontDescriptor.withDesign(.rounded) {
+            return NSFont(descriptor: d, size: size) ?? base
+        }
+        return base
     }
 
     private func drawLabels(in area: NSRect) {
         guard area.height > 0, area.width > 0 else { return }
         let lineH = area.height * 0.46
-        // 50% opaque black backing so the finish times read on any backdrop.
-        let u1 = labelLineParts(finishLocal).unit, u2 = labelLineParts(finishCET).unit
-        let textW = max(min(lineH, area.width / max(u1, 0.01)) * u1,
-                        min(lineH, area.width / max(u2, 0.01)) * u2)
-        if textW > 0 {
-            let pad = lineH * 0.22
-            let box = NSRect(x: area.minX - pad, y: area.minY - pad * 0.6,
-                             width: textW + pad * 2, height: area.height + pad * 1.2)
+        let topBottom = area.minY + area.height - lineH      // top line slot bottom
+        let f1 = finishFont(finishLocal, lineH: lineH, maxW: area.width)
+        let f2 = finishFont(finishCET, lineH: lineH, maxW: area.width)
+        // 50% opaque black backing with EQUAL padding on all sides: derived from
+        // the actual rendered ink of both lines (not advance widths / cell slots).
+        let r1 = lineInkRect(f1.full, font: f1.font, x: area.minX, slotBottom: topBottom, lineH: lineH)
+        let r2 = lineInkRect(f2.full, font: f2.font, x: area.minX, slotBottom: area.minY, lineH: lineH)
+        let textRect = r1.union(r2)
+        if textRect.width > 0 {
+            let p = lineH * 0.30
+            let box = textRect.insetBy(dx: -p, dy: -p)
             NSColor.black.withAlphaComponent(0.5).setFill()
-            NSBezierPath(roundedRect: box, xRadius: pad, yRadius: pad).fill()
+            NSBezierPath(roundedRect: box, xRadius: p, yRadius: p).fill()
         }
-        drawLabelLine(finishLocal, leftX: area.minX, bottomY: area.minY + area.height - lineH,
-                      lineH: lineH, maxW: area.width, color: Self.lit)
-        drawLabelLine(finishCET, leftX: area.minX, bottomY: area.minY,
-                      lineH: lineH, maxW: area.width, color: Self.lit.withAlphaComponent(0.78))
+        drawGlyphCentered(f1.full, x: area.minX, bottomY: topBottom,
+                          cellH: lineH, font: f1.font, fill: Self.lit)
+        drawGlyphCentered(f2.full, x: area.minX, bottomY: area.minY,
+                          cellH: lineH, font: f2.font, fill: Self.lit.withAlphaComponent(0.78))
     }
 
-    /// One finish-time line: the HH:MM in the seven-segment "bar" font, but the
-    /// timezone abbreviation kept in the plain (readable) text font.
-    private func drawLabelLine(_ s: String, leftX: CGFloat, bottomY: CGFloat,
-                               lineH: CGFloat, maxW: CGFloat, color: NSColor) {
-        let (timeStr, tz, unit) = labelLineParts(s)
-        let cellH = min(lineH, maxW / unit)
-        // Leading "→", sized to the digit cell height and vertically centered.
-        let arrowFont = NSFont.systemFont(ofSize: cellH / Self.labelArrow.capRatio, weight: .semibold)
-        drawGlyphCentered("→", x: leftX, bottomY: bottomY, cellH: cellH, font: arrowFont, fill: color)
-        let timeX = leftX + (Self.labelArrowSlotW + Self.labelArrowGap) * cellH
-        drawSegLine(timeStr, leftX: timeX, bottomY: bottomY, cellH: cellH, color: color)
-        guard !tz.isEmpty else { return }
-        // Timezone abbreviation, sized so its cap-height == the digit cell height.
-        let font = NSFont.monospacedSystemFont(ofSize: cellH / Self.labelTz.capRatio, weight: .semibold)
-        let tzX = timeX + segLineUnitWidth(timeStr) * cellH + cellH * Self.labelTzGap
-        drawGlyphCentered(tz, x: tzX, bottomY: bottomY, cellH: cellH, font: font, fill: color)
+    /// The view-space ink rectangle of one finish line, matching how
+    /// `drawGlyphCentered` positions it (ink centered in the line slot).
+    private func lineInkRect(_ full: String, font: NSFont, x: CGFloat, slotBottom: CGFloat, lineH: CGFloat) -> NSRect {
+        let ink = NSAttributedString(string: full, attributes: [.font: font])
+            .boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
+        return NSRect(x: x + ink.minX, y: slotBottom + (lineH - ink.height) / 2,
+                      width: ink.width, height: ink.height)
+    }
+
+    /// A finish-time line "→ HH:MM TZ" in a normal font: sized so its caps fill the
+    /// line height, then reduced 30%, and clamped so it never exceeds the width.
+    private func finishFont(_ s: String, lineH: CGFloat, maxW: CGFloat) -> (font: NSFont, full: String, width: CGFloat) {
+        let full = "→ " + s
+        func width(_ sz: CGFloat) -> CGFloat {
+            NSAttributedString(string: full, attributes: [.font: Self.labelFont(size: sz, weight: .semibold)]).size().width
+        }
+        let capRatio = Self.labelFont(size: 100, weight: .semibold).capHeight / 100
+        var size = 0.7 * lineH / capRatio          // 30% smaller than the digit cell height
+        let w = width(size)
+        if w > maxW { size *= maxW / w }
+        return (Self.labelFont(size: size, weight: .semibold), full, width(size))
     }
 
     /// Draw `s` left-aligned at `x`, vertically centering its ink in [bottomY, bottomY+cellH].
@@ -672,23 +687,36 @@ final class BreakTimerView: NSView {
                          font: font, fill: fill)
     }
 
-    /// "BREAK" centered in the top margin band, above the countdown digits.
-    /// Centered by its ink (all-caps → no descenders) so the large size still
-    /// fits the band without reserving wasted ascender/descender space.
-    private func drawTitle(above digits: NSRect) {
+    /// Render the blinking "BREAK" title onto its own layer, centered (by ink) in
+    /// the top band above the digits. The layer's opacity blinks in sync with the
+    /// colon; here we only refresh its image/position on layout changes.
+    private func updateTitleLayer(above digits: NSRect) {
         let b = bounds
         let bandBottom = digits.maxY
         let bandH = b.height - bandBottom
-        guard bandH > 4 else { return }
-        let fontSize = bandH * 0.92          // ~2x the original cap height, fits the band
-        let kern = fontSize * 0.02           // tight letter spacing
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        guard bandH > 4 else { titleLayer.isHidden = true; return }
+        titleLayer.isHidden = !digitsVisible
+        let font = Self.labelFont(size: bandH * 0.86, weight: .heavy)
+        let fontSize = font.pointSize
+        let kern = fontSize * 0.0            // tight letter spacing
         let str = NSAttributedString(string: "BREAK", attributes: [.font: font, .kern: kern])
         let ink = str.boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
-        drawOutlinedText("BREAK",
-                         at: NSPoint(x: b.midX - ink.width / 2 - ink.minX,
-                                     y: bandBottom + (bandH - ink.height) / 2 - ink.minY),
-                         font: font, fill: Self.lit, kern: kern)
+        let pad: CGFloat = max(2, fontSize * 0.10)   // headroom for the outline stroke
+        let imgSize = NSSize(width: ceil(ink.width + pad * 2), height: ceil(ink.height + pad * 2))
+        guard imgSize.width > 1, imgSize.height > 1 else { titleLayer.isHidden = true; return }
+        // Drawing-handler image re-renders at the layer's scale → crisp on retina.
+        let img = NSImage(size: imgSize, flipped: false) { [weak self] _ in
+            self?.drawOutlinedText("BREAK", at: NSPoint(x: pad - ink.minX, y: pad - ink.minY),
+                                   font: font, fill: Self.lit, kern: kern)
+            return true
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        titleLayer.contents = img
+        titleLayer.contentsScale = window?.backingScaleFactor ?? 2
+        titleLayer.frame = NSRect(x: b.midX - imgSize.width / 2,
+                                  y: bandBottom + (bandH - imgSize.height) / 2,
+                                  width: imgSize.width, height: imgSize.height)
+        CATransaction.commit()
     }
 
     /// Text with a black 50% OUTER border (stroke under the fill, so the fill shows).
@@ -701,49 +729,6 @@ final class BreakTimerView: NSView {
         NSAttributedString(string: s, attributes: [
             .font: font, .foregroundColor: fill, .kern: kern,
         ]).draw(at: p)
-    }
-
-    private func segLineUnitWidth(_ s: String) -> CGFloat {
-        var w: CGFloat = 0
-        for ch in s {
-            switch ch {
-            case " ": w += Self.segSpaceW
-            case ":": w += Self.segColonW + Self.segGapW
-            default:  w += Self.segGlyphW + Self.segGapW
-            }
-        }
-        return max(0.01, w)
-    }
-
-    private func drawSegLine(_ s: String, leftX: CGFloat, bottomY: CGFloat, cellH: CGFloat, color: NSColor) {
-        let scale = cellH / Self.cellH
-        let dW = Self.cellW * scale
-        let colonW = Self.segColonW * cellH
-        let spaceW = Self.segSpaceW * cellH
-        let gap = Self.segGapW * cellH
-        let r = Self.dotR * scale
-        let outline = NSColor.black.withAlphaComponent(0.5)
-        var x = leftX
-        for ch in s {
-            if ch == " " { x += spaceW; continue }
-            if ch == ":" {
-                for yl in Self.dotCy {
-                    let cy = bottomY + (Self.cellH - yl) * scale
-                    let dot = NSBezierPath(ovalIn: NSRect(x: x + colonW / 2 - r, y: cy - r, width: 2 * r, height: 2 * r))
-                    color.setFill(); dot.fill()
-                    outline.setStroke(); dot.lineWidth = 1; dot.stroke()
-                }
-                x += colonW + gap; continue
-            }
-            if let segs = Self.segsFor(ch) {
-                for seg in segs where Self.segPolys[seg] != nil {
-                    let path = segPath(Self.segPolys[seg]!, cellX: x, originY: bottomY, scale: scale)
-                    color.setFill(); path.fill()
-                    outline.setStroke(); path.lineWidth = 1; path.stroke()
-                }
-            }
-            x += dW + gap
-        }
     }
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {

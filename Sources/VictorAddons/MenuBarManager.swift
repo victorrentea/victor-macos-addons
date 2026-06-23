@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 23, 20:26"
+    static let BUILD_TIME = "Jun 24, 00:11"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -50,7 +50,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTakeScreenshot: ((_ toClipboard: Bool) -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
-    var onConnectTablet: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
     var onDesktopEffect: ((String) -> Void)?
@@ -156,8 +155,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
 
         menu.addItem(.separator())
-
-        addItem("🔌 Connect Tablet / USB-c", action: #selector(connectTabletAction))
 
         // Desktop Effects submenu
         let effectsItem = NSMenuItem(title: "⭐️ Effects", action: nil, keyEquivalent: "")
@@ -436,10 +433,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func displayJoinLinkAction() {
         onDisplayJoinLink?()
-    }
-
-    @objc private func connectTabletAction() {
-        onConnectTablet?()
     }
 
     @objc private func desktopEffectAction(_ sender: NSMenuItem) {
