@@ -19,14 +19,14 @@ enum BreakTimerModel {
         now.addingTimeInterval(TimeInterval(max(0, seconds)))
     }
 
-    /// The finish time rendered as `hh:mm a TZ` in the given timezone,
-    /// e.g. `05:10 PM EEST` or `04:10 PM CET`.
+    /// The finish time rendered as `hh:mm TZ` in the given timezone (no AM/PM),
+    /// e.g. `05:10 EEST` or `04:10 CET`.
     static func finishLabel(now: Date, remaining seconds: Int, timeZone: TimeZone) -> String {
         let finish = finishDate(now: now, remaining: seconds)
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.timeZone = timeZone
-        df.dateFormat = "hh:mm a"
+        df.dateFormat = "hh:mm"
         let abbr = timeZone.abbreviation(for: finish) ?? ""
         return "\(df.string(from: finish)) \(abbr)"
     }

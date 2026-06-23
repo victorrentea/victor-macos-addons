@@ -53,7 +53,7 @@ final class BreakTimerModelTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 0)
         let tz = TimeZone(identifier: "Europe/Paris")!
         XCTAssertEqual(BreakTimerModel.finishLabel(now: now, remaining: 600, timeZone: tz),
-                       "01:10 AM CET")
+                       "01:10 CET")
     }
 
     func testFinishLabelLocalBucharest() {
@@ -61,6 +61,6 @@ final class BreakTimerModelTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 0)
         let tz = TimeZone(identifier: "Europe/Bucharest")!
         XCTAssertEqual(BreakTimerModel.finishLabel(now: now, remaining: 0, timeZone: tz),
-                       "02:00 AM EET")
+                       "02:00 EET")
     }
 }

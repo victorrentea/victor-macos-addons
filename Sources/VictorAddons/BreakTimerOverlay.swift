@@ -1,9 +1,9 @@
 import AppKit
 
 /// Break countdown "watch" overlay: a draggable, resizable, mouse-interactive
-/// panel showing a big cyan seven-segment MM:SS countdown over a faint black
+/// panel showing a big red seven-segment MM:SS countdown over a 50%-opaque black
 /// background, the finish time in two timezones, and small controls
-/// (close / pause / +1m / +3m / +5m). On expiry it gongs twice, blinks twice,
+/// (+1m / +3m / +5m / pause / close). On expiry it gongs twice, blinks twice,
 /// and fades out. Unlike OverlayPanel, this panel accepts mouse events.
 
 // MARK: - Controller
@@ -214,8 +214,9 @@ final class BreakTimerView: NSView {
     private var dragStartFrame = NSRect.zero
     private var pressedButton: BreakButtonKind?
 
-    private static let cyan = NSColor(calibratedRed: 0.30, green: 0.95, blue: 1.0, alpha: 1.0)
-    private static let ghost = NSColor(calibratedRed: 0.30, green: 0.95, blue: 1.0, alpha: 0.10)
+    // Red LED look (see reference): bright red lit segments, dim dark-red ghost.
+    private static let lit = NSColor(calibratedRed: 0.95, green: 0.13, blue: 0.10, alpha: 1.0)
+    private static let ghost = NSColor(calibratedRed: 0.95, green: 0.13, blue: 0.10, alpha: 0.14)
 
     func update(digits: String, finishLocal: String, finishCET: String, paused: Bool) {
         self.digits = digits
@@ -253,7 +254,7 @@ final class BreakTimerView: NSView {
 
         let btnLeft = label.maxX
         let btnRight = b.width - ch
-        let kinds: [BreakButtonKind] = [.close, .pause, .add1, .add3, .add5]
+        let kinds: [BreakButtonKind] = [.add1, .add3, .add5, .pause, .close]
         var buttons: [(NSRect, BreakButtonKind)] = []
         let areaW = max(0, btnRight - btnLeft)
         let gap = areaW * 0.03
@@ -283,7 +284,7 @@ final class BreakTimerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
-        NSColor.black.withAlphaComponent(0.20).setFill()
+        NSColor.black.withAlphaComponent(0.50).setFill()
         NSBezierPath(roundedRect: b, xRadius: b.height * 0.10, yRadius: b.height * 0.10).fill()
 
         let L = computeLayout()
@@ -339,34 +340,73 @@ final class BreakTimerView: NSView {
 
     private func drawDigit(_ c: Character, in r: NSRect, thickness t: CGFloat) {
         let x0 = r.minX, y0 = r.minY, w = r.width, h = r.height
-        let vH = h / 2 - t
-        let segRects: [Character: NSRect] = [
-            "a": NSRect(x: x0 + t, y: y0 + h - t, width: w - 2 * t, height: t),
-            "g": NSRect(x: x0 + t, y: y0 + (h - t) / 2, width: w - 2 * t, height: t),
-            "d": NSRect(x: x0 + t, y: y0, width: w - 2 * t, height: t),
-            "f": NSRect(x: x0, y: y0 + h / 2, width: t, height: vH),
-            "b": NSRect(x: x0 + w - t, y: y0 + h / 2, width: t, height: vH),
-            "e": NSRect(x: x0, y: y0 + t, width: t, height: vH),
-            "c": NSRect(x: x0 + w - t, y: y0 + t, width: t, height: vH),
+        let half = t / 2
+        let gp = t * 0.18                 // gap between adjacent segment ends
+        let midY = y0 + h / 2
+        let xL = x0 + half + gp           // horizontal-segment span
+        let xR = x0 + w - half - gp
+        let cxL = x0 + half               // vertical-segment centers
+        let cxR = x0 + w - half
+        let upB = midY + half + gp, upT = y0 + h - half - gp   // upper verticals
+        let loB = y0 + half + gp, loT = midY - half - gp       // lower verticals
+
+        let segPaths: [Character: NSBezierPath] = [
+            "a": Self.hexH(xL, xR, y0 + h - half, t),
+            "g": Self.hexH(xL, xR, midY, t),
+            "d": Self.hexH(xL, xR, y0 + half, t),
+            "f": Self.hexV(upB, upT, cxL, t),
+            "b": Self.hexV(upB, upT, cxR, t),
+            "e": Self.hexV(loB, loT, cxL, t),
+            "c": Self.hexV(loB, loT, cxR, t),
         ]
         let on = Self.segments[c] ?? []
 
         // Ghost (all off segments) first.
         Self.ghost.setFill()
-        for (_, seg) in segRects { capsule(seg).fill() }
+        for (_, seg) in segPaths { seg.fill() }
 
         guard digitsVisible else { return }
 
-        // Lit segments with a soft cyan glow.
+        // Lit segments with a soft red glow.
         let shadow = NSShadow()
-        shadow.shadowColor = Self.cyan.withAlphaComponent(0.8)
-        shadow.shadowBlurRadius = t
+        shadow.shadowColor = Self.lit.withAlphaComponent(0.8)
+        shadow.shadowBlurRadius = t * 0.9
         shadow.shadowOffset = .zero
         NSGraphicsContext.saveGraphicsState()
         shadow.set()
-        Self.cyan.setFill()
-        for key in on { if let seg = segRects[key] { capsule(seg).fill() } }
+        Self.lit.setFill()
+        for key in on { segPaths[key]?.fill() }
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Horizontal seven-segment bar as an elongated hexagon (pointed left/right
+    /// ends) spanning xL…xR at vertical center cy, with thickness t.
+    private static func hexH(_ xL: CGFloat, _ xR: CGFloat, _ cy: CGFloat, _ t: CGFloat) -> NSBezierPath {
+        let half = t / 2
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: xL, y: cy))
+        p.line(to: NSPoint(x: xL + half, y: cy + half))
+        p.line(to: NSPoint(x: xR - half, y: cy + half))
+        p.line(to: NSPoint(x: xR, y: cy))
+        p.line(to: NSPoint(x: xR - half, y: cy - half))
+        p.line(to: NSPoint(x: xL + half, y: cy - half))
+        p.close()
+        return p
+    }
+
+    /// Vertical seven-segment bar as an elongated hexagon (pointed top/bottom
+    /// ends) spanning yB…yT at horizontal center cx, with thickness t.
+    private static func hexV(_ yB: CGFloat, _ yT: CGFloat, _ cx: CGFloat, _ t: CGFloat) -> NSBezierPath {
+        let half = t / 2
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: cx, y: yT))
+        p.line(to: NSPoint(x: cx + half, y: yT - half))
+        p.line(to: NSPoint(x: cx + half, y: yB + half))
+        p.line(to: NSPoint(x: cx, y: yB))
+        p.line(to: NSPoint(x: cx - half, y: yB + half))
+        p.line(to: NSPoint(x: cx - half, y: yT - half))
+        p.close()
+        return p
     }
 
     private func drawColon(_ r: NSRect, thickness t: CGFloat) {
@@ -381,12 +421,7 @@ final class BreakTimerView: NSView {
             }
         }
         draw(Self.ghost)
-        if digitsVisible { draw(Self.cyan) }
-    }
-
-    private func capsule(_ r: NSRect) -> NSBezierPath {
-        let radius = min(r.width, r.height) / 2
-        return NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
+        if digitsVisible { draw(Self.lit) }
     }
 
     private func drawLabels(in area: NSRect) {
@@ -394,10 +429,10 @@ final class BreakTimerView: NSView {
         let fontSize = max(8, area.height * 0.34)
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
         let local = NSAttributedString(string: finishLocal, attributes: [
-            .font: font, .foregroundColor: Self.cyan.withAlphaComponent(0.95),
+            .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.95),
         ])
         let cet = NSAttributedString(string: finishCET, attributes: [
-            .font: font, .foregroundColor: Self.cyan.withAlphaComponent(0.55),
+            .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.55),
         ])
         local.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52))
         cet.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.06))
@@ -406,8 +441,8 @@ final class BreakTimerView: NSView {
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
         let pressed = pressedButton == kind
         let bgAlpha: CGFloat = pressed ? 0.28 : 0.10
-        Self.cyan.withAlphaComponent(bgAlpha).setFill()
-        Self.cyan.withAlphaComponent(0.30).setStroke()
+        Self.lit.withAlphaComponent(bgAlpha).setFill()
+        Self.lit.withAlphaComponent(0.30).setStroke()
         let bg = NSBezierPath(roundedRect: r, xRadius: r.height * 0.25, yRadius: r.height * 0.25)
         bg.fill()
         bg.lineWidth = 1
@@ -416,7 +451,7 @@ final class BreakTimerView: NSView {
         let inset = r.insetBy(dx: r.width * 0.28, dy: r.height * 0.28)
         switch kind {
         case .close:
-            Self.cyan.setStroke()
+            Self.lit.setStroke()
             let p = NSBezierPath()
             p.lineWidth = max(1.5, r.height * 0.08)
             p.lineCapStyle = .round
@@ -424,7 +459,7 @@ final class BreakTimerView: NSView {
             p.move(to: NSPoint(x: inset.minX, y: inset.maxY)); p.line(to: NSPoint(x: inset.maxX, y: inset.minY))
             p.stroke()
         case .pause:
-            Self.cyan.setFill()
+            Self.lit.setFill()
             if paused {
                 let tri = NSBezierPath()
                 tri.move(to: NSPoint(x: inset.minX, y: inset.minY))
@@ -441,7 +476,7 @@ final class BreakTimerView: NSView {
             let fontSize = max(7, r.height * 0.36)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .semibold),
-                .foregroundColor: Self.cyan,
+                .foregroundColor: Self.lit,
             ]
             let s = NSAttributedString(string: text, attributes: attrs)
             let sz = s.size()
@@ -450,7 +485,7 @@ final class BreakTimerView: NSView {
     }
 
     private func drawCorners(_ corners: [(NSRect, ResizeCorner)]) {
-        Self.cyan.withAlphaComponent(0.22).setStroke()
+        Self.lit.withAlphaComponent(0.22).setStroke()
         for (rect, corner) in corners {
             let p = NSBezierPath()
             p.lineWidth = 1.5
