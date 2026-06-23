@@ -328,7 +328,20 @@ final class BreakTimerView: NSView {
         let bottomH = b.height * 0.22
         let bottomY = pad * 0.6
 
-        let label = NSRect(x: ch, y: bottomY, width: b.width * 0.40, height: bottomH)
+        // Digits area + the x of the digits' left edge (labels align to this).
+        let hInset = b.width * 0.04
+        let topInset = b.height * 0.08
+        let digitsBottom = bottomY + bottomH + b.height * 0.03
+        let digitsArea = NSRect(x: hInset, y: digitsBottom,
+                                width: b.width - 2 * hInset,
+                                height: max(0, b.height - topInset - digitsBottom))
+        let dscale = min(digitsArea.height / Self.cellH, digitsArea.width / Self.contentW)
+        let digitsLeftX = digitsArea.midX - (Self.contentW * dscale) / 2
+
+        // Finish-time labels: left-aligned to the digits' left margin.
+        let labelRight = ch + b.width * 0.40
+        let label = NSRect(x: digitsLeftX, y: bottomY,
+                           width: max(0, labelRight - digitsLeftX), height: bottomH)
 
         let btnLeft = label.maxX
         let btnRight = b.width - ch
@@ -342,15 +355,6 @@ final class BreakTimerView: NSView {
             let x = btnLeft + CGFloat(i) * (bw + gap)
             buttons.append((NSRect(x: x, y: bottomY + (bottomH - bh) / 2, width: bw, height: bh), k))
         }
-
-        // Digits fill nearly the full width (small side margins) and most of the
-        // height above the bottom row, so the watch face isn't mostly empty.
-        let hInset = b.width * 0.04
-        let topInset = b.height * 0.08
-        let digitsBottom = bottomY + bottomH + b.height * 0.03
-        let digitsArea = NSRect(x: hInset, y: digitsBottom,
-                                width: b.width - 2 * hInset,
-                                height: max(0, b.height - topInset - digitsBottom))
 
         let corners: [(NSRect, ResizeCorner)] = [
             (NSRect(x: 0, y: 0, width: ch, height: ch), .bottomLeft),
@@ -471,10 +475,9 @@ final class BreakTimerView: NSView {
         let cet = NSAttributedString(string: finishCET, attributes: [
             .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.55),
         ])
-        // Right-align: the finish time sits at the right of its area, just left
-        // of the +1 button.
-        local.draw(at: NSPoint(x: area.maxX - local.size().width, y: area.minY + area.height * 0.52))
-        cet.draw(at: NSPoint(x: area.maxX - cet.size().width, y: area.minY + area.height * 0.06))
+        // Left-aligned to the digits' left margin (area.minX == digits' left edge).
+        local.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52))
+        cet.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.06))
     }
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
