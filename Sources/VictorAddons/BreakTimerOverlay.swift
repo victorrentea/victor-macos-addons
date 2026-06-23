@@ -804,7 +804,18 @@ final class BreakTimerView: NSView {
     }
 
     private func updateHover(_ event: NSEvent) {
-        let h = buttonHit(convert(event.locationInWindow, from: nil), computeLayout())
+        let p = convert(event.locationInWindow, from: nil)
+        let L = computeLayout()
+        let h = buttonHit(p, L)
         if h != hoveredButton { hoveredButton = h; needsDisplay = true }
+        // Set the cursor for the hovered region (resize on corners, pointer on
+        // buttons, open-hand on the body) — works because we became key on enter.
+        if let corner = cornerHit(p, L) {
+            Self.cursor(forCorner: corner).set()
+        } else if h != nil {
+            NSCursor.pointingHand.set()
+        } else {
+            Self.moveCursor.set()
+        }
     }
 }
