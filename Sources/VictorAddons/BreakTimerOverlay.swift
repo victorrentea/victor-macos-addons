@@ -10,8 +10,8 @@ import AppKit
 // MARK: - Controller
 
 final class BreakTimerController {
-    static let aspect: CGFloat = 2.0          // width / height; locked on resize
-    static let minWidth: CGFloat = 200
+    static let aspect: CGFloat = 1.85         // width / height; locked on resize
+    static let minWidth: CGFloat = 180
 
     private var panel: BreakTimerPanel?
     private var view: BreakTimerView?
@@ -21,6 +21,7 @@ final class BreakTimerController {
     private var freezeNow: Date?              // wall-clock frozen while paused
     private var timer: Timer?
     private var blinkTimer: Timer?            // drives the expiry blink
+    private var activityTimer: Timer?         // dims the background while the user works
     private var epoch = 0                      // invalidates in-flight expiry blocks
 
     private let cetZone = TimeZone(identifier: "Europe/Paris") ?? .current
@@ -40,6 +41,7 @@ final class BreakTimerController {
         panel?.orderFrontRegardless()
 
         startTicking()
+        startActivityMonitor()
         refresh()
     }
 
@@ -72,9 +74,43 @@ final class BreakTimerController {
         epoch += 1
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
+        activityTimer?.invalidate(); activityTimer = nil
         panel?.orderOut(nil)
         panel = nil
         view = nil
+    }
+
+    // MARK: - Activity-driven background dimming
+
+    /// While the user is active (mouse/keyboard within the last 5s) the panel
+    /// background fades down to 20% so it's out of the way; after 5s idle it
+    /// eases back to its full 60%.
+    private func startActivityMonitor() {
+        activityTimer?.invalidate()
+        let t = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in self?.updateBackgroundDimming() }
+        RunLoop.main.add(t, forMode: .common)
+        activityTimer = t
+    }
+
+    private func updateBackgroundDimming() {
+        guard let view else { return }
+        let target: CGFloat = Self.systemIdleSeconds() < 5.0 ? 0.20 : 0.60
+        let cur = view.bgOpacity
+        let delta = target - cur
+        if abs(delta) < 0.01 {
+            if cur != target { view.bgOpacity = target; view.needsDisplay = true }
+            return
+        }
+        let step: CGFloat = 0.06
+        view.bgOpacity = cur + (delta > 0 ? step : -step)
+        view.needsDisplay = true
+    }
+
+    /// Seconds since the last user input of any kind (mouse or keyboard).
+    private static func systemIdleSeconds() -> CFTimeInterval {
+        let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .rightMouseDown,
+                                    .leftMouseDragged, .keyDown, .scrollWheel, .flagsChanged]
+        return types.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 999
     }
 
     // MARK: - Internals
@@ -151,22 +187,16 @@ final class BreakTimerController {
         )
     }
 
-    /// At zero: gong twice, blink the digits for as long as the gongs play,
-    /// then fade out and close.
+    /// At zero: strike the gong ONCE, blink the digits while it plays, then
+    /// close instantly (no fade) so the end is crisp.
     private func beginExpiry() {
         timer?.invalidate(); timer = nil
         let myEpoch = epoch
-        let secondGongDelay = 0.8
         let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 3.0
-        let total = secondGongDelay + gong   // blink until both gongs finish
 
-        SoundManager.shared.playOverlapping("50_gong.mp3")
-        DispatchQueue.main.asyncAfter(deadline: .now() + secondGongDelay) { [weak self] in
-            guard let self, self.epoch == myEpoch else { return }
-            SoundManager.shared.playOverlapping("50_gong.mp3")
-        }
+        SoundManager.shared.playOverlapping("50_gong.mp3")   // a single strike
 
-        // Blink continuously for the whole gong playback…
+        // Blink for the duration of the gong…
         blinkTimer?.invalidate()
         var visible = true
         let bt = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
@@ -177,24 +207,11 @@ final class BreakTimerController {
         RunLoop.main.add(bt, forMode: .common)
         blinkTimer = bt
 
-        // …then stop blinking and fade out.
-        DispatchQueue.main.asyncAfter(deadline: .now() + total) { [weak self] in
-            guard let self, self.epoch == myEpoch else { return }
-            self.blinkTimer?.invalidate(); self.blinkTimer = nil
-            self.view?.setDigitsVisible(true)
-            self.fadeOutAndClose(myEpoch: myEpoch)
-        }
-    }
-
-    private func fadeOutAndClose(myEpoch: Int) {
-        guard let panel, epoch == myEpoch else { return }
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.5
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
+        // …then vanish instantly.
+        DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             self.close()
-        })
+        }
     }
 
     private static func defaultFrame() -> NSRect {
@@ -203,7 +220,7 @@ final class BreakTimerController {
         let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
             ?? NSScreen.main ?? NSScreen.screens.first
         let vf = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let w = vf.width * 0.25
+        let w = vf.width * 0.20
         let h = w / aspect
         let margin = vf.width * 0.02
         return NSRect(x: vf.maxX - w - margin, y: vf.maxY - h - margin, width: w, height: h)
@@ -252,6 +269,7 @@ final class BreakTimerView: NSView {
     private var finishCET = ""
     private var paused = false
     private var digitsVisible = true
+    var bgOpacity: CGFloat = 0.60            // dark-tint alpha; dimmed while user is active
 
     private var dragMode: DragMode = .none
     private var dragStartMouse = NSPoint.zero
@@ -333,45 +351,41 @@ final class BreakTimerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
-        let bgPath = NSBezierPath(roundedRect: b, xRadius: b.height * 0.05, yRadius: b.height * 0.05)
-        NSColor.black.withAlphaComponent(0.60).setFill()
-        bgPath.fill()
+        NSColor.black.withAlphaComponent(bgOpacity).setFill()
+        NSBezierPath(roundedRect: b, xRadius: b.height * 0.05, yRadius: b.height * 0.05).fill()
 
-        // Clip content to the rounded panel so wide digits never poke out of the corners.
-        NSGraphicsContext.saveGraphicsState()
-        bgPath.addClip()
         let L = computeLayout()
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
         for (rect, kind) in L.buttons { drawButton(kind, rect: rect) }
-        drawCorners(L.corners)
-        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawDigits(in area: NSRect) {
         guard area.width > 0, area.height > 0 else { return }
         let chars = Array(digits)
-        // Cell metrics relative to digit height.
-        // total width = digits*0.58h + colons*0.26h + gaps*0.10h
+        // Cell metrics relative to digit height (digits are narrow on the X axis).
+        let digitW: CGFloat = 0.52
+        let colonW: CGFloat = 0.22
+        let cellGap: CGFloat = 0.10
         let digitCount = chars.filter { $0 != ":" }.count
         let colonCount = chars.filter { $0 == ":" }.count
         let gapsCount = max(0, chars.count - 1)
-        let widthFactor = CGFloat(digitCount) * 0.60 + CGFloat(colonCount) * 0.22 + CGFloat(gapsCount) * 0.10
+        let widthFactor = CGFloat(digitCount) * digitW + CGFloat(colonCount) * colonW + CGFloat(gapsCount) * cellGap
         guard widthFactor > 0 else { return }
         let digitH = min(area.height, area.width / widthFactor)
         let totalW = widthFactor * digitH
         var x = area.midX - totalW / 2
         let y = area.midY - digitH / 2
-        let t = digitH * 0.18          // chunky segments, like the reference
-        let gap = digitH * 0.10
+        let t = digitH * 0.14          // segment thickness (thin on X)
+        let gap = digitH * cellGap
 
         for c in chars {
             if c == ":" {
-                let w = digitH * 0.22
+                let w = digitH * colonW
                 drawColon(NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
                 x += w + gap
             } else {
-                let w = digitH * 0.60
+                let w = digitH * digitW
                 drawDigit(c, in: NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
                 x += w + gap
             }
@@ -394,66 +408,32 @@ final class BreakTimerView: NSView {
 
     private func drawDigit(_ c: Character, in r: NSRect, thickness t: CGFloat) {
         let x0 = r.minX, y0 = r.minY, w = r.width, h = r.height
-        let half = t / 2
-        let gp = t * 0.10                 // tight gaps between adjacent segment ends
-        let midY = y0 + h / 2
-        let xL = x0 + half + gp           // horizontal-segment span
-        let xR = x0 + w - half - gp
-        let cxL = x0 + half               // vertical-segment centers
-        let cxR = x0 + w - half
-        let upB = midY + half + gp, upT = y0 + h - half - gp   // upper verticals
-        let loB = y0 + half + gp, loT = midY - half - gp       // lower verticals
+        let g = t * 0.32                  // uniform gap between every segment
+        let midLo = (h - t) / 2           // bottom edge of the middle bar
+        let midHi = (h + t) / 2           // top edge of the middle bar
+        let vH = h / 2 - 1.5 * t - 2 * g  // height of each vertical segment
 
-        let segPaths: [Character: NSBezierPath] = [
-            "a": Self.hexH(xL, xR, y0 + h - half, t),
-            "g": Self.hexH(xL, xR, midY, t),
-            "d": Self.hexH(xL, xR, y0 + half, t),
-            "f": Self.hexV(upB, upT, cxL, t),
-            "b": Self.hexV(upB, upT, cxR, t),
-            "e": Self.hexV(loB, loT, cxL, t),
-            "c": Self.hexV(loB, loT, cxR, t),
+        // Each segment is a rectangle (4 vertices). Vertical gaps are uniform,
+        // so the space around the middle bar equals the space around the top/bottom bars.
+        let segRects: [Character: NSRect] = [
+            "a": NSRect(x: x0 + g, y: y0 + h - t, width: w - 2 * g, height: t),
+            "g": NSRect(x: x0 + g, y: y0 + midLo, width: w - 2 * g, height: t),
+            "d": NSRect(x: x0 + g, y: y0, width: w - 2 * g, height: t),
+            "f": NSRect(x: x0, y: y0 + midHi + g, width: t, height: vH),
+            "b": NSRect(x: x0 + w - t, y: y0 + midHi + g, width: t, height: vH),
+            "e": NSRect(x: x0, y: y0 + t + g, width: t, height: vH),
+            "c": NSRect(x: x0 + w - t, y: y0 + t + g, width: t, height: vH),
         ]
         let on = Self.segments[c] ?? []
 
-        // Ghost (all off segments) first.
+        // Ghost (all off segments) first, then lit segments — flat (no glow).
         Self.ghost.setFill()
-        for (_, seg) in segPaths { seg.fill() }
+        for (_, seg) in segRects { NSBezierPath(rect: seg).fill() }
 
         guard digitsVisible else { return }
 
-        // Lit segments — flat (no glow), like the reference, so they read clearly.
         Self.lit.setFill()
-        for key in on { segPaths[key]?.fill() }
-    }
-
-    /// Horizontal seven-segment bar as an elongated hexagon (pointed left/right
-    /// ends) spanning xL…xR at vertical center cy, with thickness t.
-    private static func hexH(_ xL: CGFloat, _ xR: CGFloat, _ cy: CGFloat, _ t: CGFloat) -> NSBezierPath {
-        let half = t / 2
-        let p = NSBezierPath()
-        p.move(to: NSPoint(x: xL, y: cy))
-        p.line(to: NSPoint(x: xL + half, y: cy + half))
-        p.line(to: NSPoint(x: xR - half, y: cy + half))
-        p.line(to: NSPoint(x: xR, y: cy))
-        p.line(to: NSPoint(x: xR - half, y: cy - half))
-        p.line(to: NSPoint(x: xL + half, y: cy - half))
-        p.close()
-        return p
-    }
-
-    /// Vertical seven-segment bar as an elongated hexagon (pointed top/bottom
-    /// ends) spanning yB…yT at horizontal center cx, with thickness t.
-    private static func hexV(_ yB: CGFloat, _ yT: CGFloat, _ cx: CGFloat, _ t: CGFloat) -> NSBezierPath {
-        let half = t / 2
-        let p = NSBezierPath()
-        p.move(to: NSPoint(x: cx, y: yT))
-        p.line(to: NSPoint(x: cx + half, y: yT - half))
-        p.line(to: NSPoint(x: cx + half, y: yB + half))
-        p.line(to: NSPoint(x: cx, y: yB))
-        p.line(to: NSPoint(x: cx - half, y: yB + half))
-        p.line(to: NSPoint(x: cx - half, y: yT - half))
-        p.close()
-        return p
+        for key in on { if let seg = segRects[key] { NSBezierPath(rect: seg).fill() } }
     }
 
     private func drawColon(_ r: NSRect, thickness t: CGFloat) {
@@ -523,37 +503,17 @@ final class BreakTimerView: NSView {
             // Size the text to fill the button (≈86% of it).
             let base: CGFloat = 100
             let probe = NSAttributedString(string: text, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: base, weight: .bold)])
+                .font: NSFont.monospacedSystemFont(ofSize: base, weight: .regular)])
             let psz = probe.size()
             let scale = min(r.width * 0.86 / psz.width, r.height * 0.86 / psz.height)
             let fontSize = max(7, base * scale)
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
+                .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
                 .foregroundColor: Self.lit,
             ]
             let s = NSAttributedString(string: text, attributes: attrs)
             let sz = s.size()
             s.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2))
-        }
-    }
-
-    private func drawCorners(_ corners: [(NSRect, ResizeCorner)]) {
-        Self.lit.withAlphaComponent(0.22).setStroke()
-        for (rect, corner) in corners {
-            let p = NSBezierPath()
-            p.lineWidth = 1.5
-            let len = rect.width * 0.5
-            switch corner {
-            case .bottomLeft:
-                p.move(to: NSPoint(x: rect.minX + 3, y: rect.minY + 3 + len)); p.line(to: NSPoint(x: rect.minX + 3, y: rect.minY + 3)); p.line(to: NSPoint(x: rect.minX + 3 + len, y: rect.minY + 3))
-            case .bottomRight:
-                p.move(to: NSPoint(x: rect.maxX - 3 - len, y: rect.minY + 3)); p.line(to: NSPoint(x: rect.maxX - 3, y: rect.minY + 3)); p.line(to: NSPoint(x: rect.maxX - 3, y: rect.minY + 3 + len))
-            case .topLeft:
-                p.move(to: NSPoint(x: rect.minX + 3, y: rect.maxY - 3 - len)); p.line(to: NSPoint(x: rect.minX + 3, y: rect.maxY - 3)); p.line(to: NSPoint(x: rect.minX + 3 + len, y: rect.maxY - 3))
-            case .topRight:
-                p.move(to: NSPoint(x: rect.maxX - 3 - len, y: rect.maxY - 3)); p.line(to: NSPoint(x: rect.maxX - 3, y: rect.maxY - 3)); p.line(to: NSPoint(x: rect.maxX - 3, y: rect.maxY - 3 - len))
-            }
-            p.stroke()
         }
     }
 
@@ -583,14 +543,14 @@ final class BreakTimerView: NSView {
             needsDisplay = true
         } else {
             dragMode = .move
-            Self.moveCursor.set()
+            NSCursor.closedHand.set()
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
         switch dragMode {
         case .move:
-            Self.moveCursor.set()
+            NSCursor.closedHand.set()
             let m = NSEvent.mouseLocation
             window?.setFrameOrigin(NSPoint(x: dragStartFrame.origin.x + (m.x - dragStartMouse.x),
                                            y: dragStartFrame.origin.y + (m.y - dragStartMouse.y)))
@@ -647,40 +607,17 @@ final class BreakTimerView: NSView {
 
     // MARK: Cursor
 
-    // Custom cursors so resize/move affordances are unmistakable on hover:
-    // a 4-way arrow over the draggable body, diagonal double-arrows at corners.
-    private static let moveCursor = makeArrowCursor(angles: [0, 90, 180, 270])
-    private static let nwseCursor = makeArrowCursor(angles: [135, 315])   // ↖↘
-    private static let neswCursor = makeArrowCursor(angles: [45, 225])    // ↗↙
+    // Standard OS cursors: the system diagonal resize cursors at the corners
+    // (behind verified private selectors) and the standard open-hand for moving.
+    private static let moveCursor = NSCursor.openHand
+    private static let nwseCursor = privateCursor("_windowResizeNorthWestSouthEastCursor", fallback: .crosshair)
+    private static let neswCursor = privateCursor("_windowResizeNorthEastSouthWestCursor", fallback: .crosshair)
 
-    private static func makeArrowCursor(angles: [CGFloat]) -> NSCursor {
-        let s: CGFloat = 26
-        let c = NSPoint(x: s / 2, y: s / 2)
-        let arm = s / 2 - 3.5
-        let headLen: CGFloat = 6, headW: CGFloat = 5
-        let path = NSBezierPath()
-        for deg in angles {
-            let a = deg * .pi / 180
-            let dx = cos(a), dy = sin(a)
-            let px = -dy, py = dx
-            let tip = NSPoint(x: c.x + dx * arm, y: c.y + dy * arm)
-            let base = NSPoint(x: c.x + dx * (arm - headLen), y: c.y + dy * (arm - headLen))
-            path.move(to: c); path.line(to: base)
-            path.move(to: tip)
-            path.line(to: NSPoint(x: base.x + px * headW, y: base.y + py * headW))
-            path.line(to: NSPoint(x: base.x - px * headW, y: base.y - py * headW))
-            path.close()
+    private static func privateCursor(_ name: String, fallback: NSCursor) -> NSCursor {
+        if let cursor = NSCursor.perform(NSSelectorFromString(name))?.takeUnretainedValue() as? NSCursor {
+            return cursor
         }
-        path.lineJoinStyle = .round
-        path.lineCapStyle = .round
-        let img = NSImage(size: NSSize(width: s, height: s))
-        img.lockFocus()
-        NSColor.white.setStroke(); NSColor.white.setFill()
-        path.lineWidth = 4.5; path.stroke(); path.fill()       // white halo
-        NSColor.black.setStroke(); NSColor.black.setFill()
-        path.lineWidth = 1.8; path.stroke(); path.fill()        // black core
-        img.unlockFocus()
-        return NSCursor(image: img, hotSpot: c)
+        return fallback
     }
 
     private static func cursor(forCorner corner: ResizeCorner) -> NSCursor {
