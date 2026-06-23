@@ -611,12 +611,20 @@ final class BreakTimerView: NSView {
         let tz = parts.count > 1 ? parts[1] : ""
         let tzCharW: CGFloat = 0.46    // ~monospaced char width, in cell-height units
         let tzGap: CGFloat = 0.34
-        let unit = segLineUnitWidth(timeStr) + (tz.isEmpty ? 0 : tzGap + CGFloat(tz.count) * tzCharW)
+        let arrowSlotW: CGFloat = 0.72 // "→" width, in cell-height units
+        let arrowGap: CGFloat = 0.28
+        let unit = arrowSlotW + arrowGap + segLineUnitWidth(timeStr)
+            + (tz.isEmpty ? 0 : tzGap + CGFloat(tz.count) * tzCharW)
         let cellH = min(lineH, maxW / unit)
-        drawSegLine(timeStr, leftX: leftX, bottomY: bottomY, cellH: cellH, color: color)
+        // Leading "→" in plain text, vertically centered with the seg-font time.
+        let arrowFont = NSFont.systemFont(ofSize: cellH * 0.72, weight: .medium)
+        drawOutlinedText("→", at: NSPoint(x: leftX, y: bottomY + (cellH - arrowFont.pointSize) / 2),
+                         font: arrowFont, fill: color)
+        let timeX = leftX + (arrowSlotW + arrowGap) * cellH
+        drawSegLine(timeStr, leftX: timeX, bottomY: bottomY, cellH: cellH, color: color)
         guard !tz.isEmpty else { return }
         let font = NSFont.monospacedSystemFont(ofSize: cellH * 0.72, weight: .medium)
-        let tzX = leftX + segLineUnitWidth(timeStr) * cellH + cellH * tzGap
+        let tzX = timeX + segLineUnitWidth(timeStr) * cellH + cellH * tzGap
         let tzY = bottomY + (cellH - font.pointSize) / 2
         drawOutlinedText(tz, at: NSPoint(x: tzX, y: tzY), font: font, fill: color)
     }
