@@ -596,10 +596,23 @@ final class BreakTimerView: NSView {
     private static let segColonW: CGFloat = 0.30
     private static let segSpaceW: CGFloat = 0.45
     private static let segGapW: CGFloat = 0.12
-    private static let labelTzCharW: CGFloat = 0.46  // ~monospaced char width, cell-height units
-    private static let labelTzGap: CGFloat = 0.34
-    private static let labelArrowSlotW: CGFloat = 0.72 // "→" width, cell-height units
-    private static let labelArrowGap: CGFloat = 0.28
+    // Font metrics so the tz label & the → render at the digit cell height.
+    // capRatio = capHeight/pointSize; charW/slotW = advance ÷ capHeight, so they
+    // stay valid at any cellH (font sized so its cap-height == cellH).
+    private static let labelTz: (capRatio: CGFloat, charW: CGFloat) = {
+        let f = NSFont.monospacedSystemFont(ofSize: 100, weight: .semibold)
+        let adv = ("0" as NSString).size(withAttributes: [.font: f]).width
+        return (f.capHeight / 100, adv / f.capHeight)
+    }()
+    private static let labelArrow: (capRatio: CGFloat, slotW: CGFloat) = {
+        let f = NSFont.systemFont(ofSize: 100, weight: .semibold)
+        let adv = ("→" as NSString).size(withAttributes: [.font: f]).width
+        return (f.capHeight / 100, adv / f.capHeight)
+    }()
+    private static var labelTzCharW: CGFloat { labelTz.charW }
+    private static var labelArrowSlotW: CGFloat { labelArrow.slotW }
+    private static let labelTzGap: CGFloat = 0.30
+    private static let labelArrowGap: CGFloat = 0.30
 
     // Splits "HH:MM TZ" and returns the time, tz, and total line width in cell-height units.
     private func labelLineParts(_ s: String) -> (time: String, tz: String, unit: CGFloat) {
@@ -637,31 +650,43 @@ final class BreakTimerView: NSView {
                                lineH: CGFloat, maxW: CGFloat, color: NSColor) {
         let (timeStr, tz, unit) = labelLineParts(s)
         let cellH = min(lineH, maxW / unit)
-        // Leading "→" in plain text, vertically centered with the seg-font time.
-        let arrowFont = NSFont.systemFont(ofSize: cellH * 0.72, weight: .medium)
-        drawOutlinedText("→", at: NSPoint(x: leftX, y: bottomY + (cellH - arrowFont.pointSize) / 2),
-                         font: arrowFont, fill: color)
+        // Leading "→", sized to the digit cell height and vertically centered.
+        let arrowFont = NSFont.systemFont(ofSize: cellH / Self.labelArrow.capRatio, weight: .semibold)
+        drawGlyphCentered("→", x: leftX, bottomY: bottomY, cellH: cellH, font: arrowFont, fill: color)
         let timeX = leftX + (Self.labelArrowSlotW + Self.labelArrowGap) * cellH
         drawSegLine(timeStr, leftX: timeX, bottomY: bottomY, cellH: cellH, color: color)
         guard !tz.isEmpty else { return }
-        let font = NSFont.monospacedSystemFont(ofSize: cellH * 0.72, weight: .medium)
+        // Timezone abbreviation, sized so its cap-height == the digit cell height.
+        let font = NSFont.monospacedSystemFont(ofSize: cellH / Self.labelTz.capRatio, weight: .semibold)
         let tzX = timeX + segLineUnitWidth(timeStr) * cellH + cellH * Self.labelTzGap
-        let tzY = bottomY + (cellH - font.pointSize) / 2
-        drawOutlinedText(tz, at: NSPoint(x: tzX, y: tzY), font: font, fill: color)
+        drawGlyphCentered(tz, x: tzX, bottomY: bottomY, cellH: cellH, font: font, fill: color)
+    }
+
+    /// Draw `s` left-aligned at `x`, vertically centering its ink in [bottomY, bottomY+cellH].
+    private func drawGlyphCentered(_ s: String, x: CGFloat, bottomY: CGFloat, cellH: CGFloat,
+                                   font: NSFont, fill: NSColor) {
+        let ink = NSAttributedString(string: s, attributes: [.font: font])
+            .boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
+        drawOutlinedText(s, at: NSPoint(x: x, y: bottomY + (cellH - ink.height) / 2 - ink.minY),
+                         font: font, fill: fill)
     }
 
     /// "BREAK" centered in the top margin band, above the countdown digits.
+    /// Centered by its ink (all-caps → no descenders) so the large size still
+    /// fits the band without reserving wasted ascender/descender space.
     private func drawTitle(above digits: NSRect) {
         let b = bounds
         let bandBottom = digits.maxY
         let bandH = b.height - bandBottom
         guard bandH > 4 else { return }
-        let fontSize = bandH * 0.62
-        let kern = fontSize * 0.22
+        let fontSize = bandH * 1.24          // 2x the previous size
+        let kern = fontSize * 0.02           // tight letter spacing
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        let sz = NSAttributedString(string: "BREAK", attributes: [.font: font, .kern: kern]).size()
+        let str = NSAttributedString(string: "BREAK", attributes: [.font: font, .kern: kern])
+        let ink = str.boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
         drawOutlinedText("BREAK",
-                         at: NSPoint(x: b.midX - sz.width / 2, y: bandBottom + (bandH - sz.height) / 2),
+                         at: NSPoint(x: b.midX - ink.width / 2 - ink.minX,
+                                     y: bandBottom + (bandH - ink.height) / 2 - ink.minY),
                          font: font, fill: Self.lit, kern: kern)
     }
 
