@@ -1,10 +1,11 @@
 import AppKit
 
 /// Break countdown "watch" overlay: a draggable, resizable, mouse-interactive
-/// panel showing a big red seven-segment MM:SS countdown over a 50%-opaque black
-/// background, the finish time in two timezones, and small controls
-/// (+1m / +3m / +5m / pause / close). On expiry it gongs twice, blinks twice,
-/// and fades out. Unlike OverlayPanel, this panel accepts mouse events.
+/// panel showing a big red seven-segment MM:SS countdown over a frosted-glass
+/// (blurred) 60%-opaque black background, the finish time in two timezones, and
+/// small controls (+1 / +3 / +5 / pause / close). Hovering shows resize cursors
+/// at the corners and a 4-way move cursor on the body. On expiry it gongs twice,
+/// blinks twice, and fades out. Unlike OverlayPanel, this panel accepts mouse events.
 
 // MARK: - Controller
 
@@ -19,6 +20,7 @@ final class BreakTimerController {
     private var paused = false
     private var freezeNow: Date?              // wall-clock frozen while paused
     private var timer: Timer?
+    private var blinkTimer: Timer?            // drives the expiry blink
     private var epoch = 0                      // invalidates in-flight expiry blocks
 
     private let cetZone = TimeZone(identifier: "Europe/Paris") ?? .current
@@ -27,6 +29,7 @@ final class BreakTimerController {
     /// (keeping its position & size); a fresh window opens top-right at 25% width.
     func start(minutes: Int) {
         epoch += 1
+        blinkTimer?.invalidate(); blinkTimer = nil
         remaining = max(0, minutes) * 60
         paused = false
         freezeNow = nil
@@ -43,6 +46,7 @@ final class BreakTimerController {
     func addMinutes(_ m: Int) {
         guard panel != nil else { return }
         epoch += 1                            // cancel any pending expiry sequence
+        blinkTimer?.invalidate(); blinkTimer = nil
         remaining += m * 60
         if paused { freezeNow = Date() }      // re-anchor frozen finish time
         view?.setDigitsVisible(true)
@@ -67,6 +71,7 @@ final class BreakTimerController {
     func close() {
         epoch += 1
         timer?.invalidate(); timer = nil
+        blinkTimer?.invalidate(); blinkTimer = nil
         panel?.orderOut(nil)
         panel = nil
         view = nil
@@ -78,14 +83,42 @@ final class BreakTimerController {
         if let view { return view }
         let frame = Self.defaultFrame()
         let panel = BreakTimerPanel(contentRect: frame)
-        let view = BreakTimerView(frame: NSRect(origin: .zero, size: frame.size))
+
+        // Frosted "glass": a behind-window blur with rounded corners; the digits
+        // view sits on top and paints a translucent dark tint over it.
+        let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: frame.size))
+        glass.material = .hudWindow
+        glass.blendingMode = .behindWindow
+        glass.state = .active
+        glass.autoresizingMask = [.width, .height]
+        glass.maskImage = Self.roundedMask(radius: frame.height * 0.05)
+
+        let view = BreakTimerView(frame: glass.bounds)
+        view.autoresizingMask = [.width, .height]
         view.onClose = { [weak self] in self?.close() }
         view.onTogglePause = { [weak self] in self?.togglePause() }
         view.onAdd = { [weak self] m in self?.addMinutes(m) }
-        panel.contentView = view
+        glass.addSubview(view)
+
+        panel.contentView = glass
         self.panel = panel
         self.view = view
         return view
+    }
+
+    /// A resizable (cap-inset) rounded-rect mask image for the glass view, so the
+    /// blur keeps rounded corners at any window size.
+    private static func roundedMask(radius: CGFloat) -> NSImage {
+        let d = radius * 2 + 2
+        let img = NSImage(size: NSSize(width: d, height: d))
+        img.lockFocus()
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: d, height: d),
+                     xRadius: radius, yRadius: radius).fill()
+        img.unlockFocus()
+        img.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        img.resizingMode = .stretch
+        return img
     }
 
     private func startTicking() {
@@ -118,31 +151,38 @@ final class BreakTimerController {
         )
     }
 
-    /// At zero: gong twice, blink the digits twice, then fade out and close.
+    /// At zero: gong twice, blink the digits for as long as the gongs play,
+    /// then fade out and close.
     private func beginExpiry() {
         timer?.invalidate(); timer = nil
         let myEpoch = epoch
+        let secondGongDelay = 0.8
+        let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 3.0
+        let total = secondGongDelay + gong   // blink until both gongs finish
+
         SoundManager.shared.playOverlapping("50_gong.mp3")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + secondGongDelay) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             SoundManager.shared.playOverlapping("50_gong.mp3")
         }
-        blink(remaining: 2, myEpoch: myEpoch) { [weak self] in
-            guard let self, self.epoch == myEpoch else { return }
-            self.fadeOutAndClose(myEpoch: myEpoch)
-        }
-    }
 
-    private func blink(remaining count: Int, myEpoch: Int, done: @escaping () -> Void) {
-        guard epoch == myEpoch else { return }
-        guard count > 0 else { done(); return }
-        view?.setDigitsVisible(false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
+        // Blink continuously for the whole gong playback…
+        blinkTimer?.invalidate()
+        var visible = true
+        let bt = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
             guard let self, self.epoch == myEpoch else { return }
+            visible.toggle()
+            self.view?.setDigitsVisible(visible)
+        }
+        RunLoop.main.add(bt, forMode: .common)
+        blinkTimer = bt
+
+        // …then stop blinking and fade out.
+        DispatchQueue.main.asyncAfter(deadline: .now() + total) { [weak self] in
+            guard let self, self.epoch == myEpoch else { return }
+            self.blinkTimer?.invalidate(); self.blinkTimer = nil
             self.view?.setDigitsVisible(true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
-                self?.blink(remaining: count - 1, myEpoch: myEpoch, done: done)
-            }
+            self.fadeOutAndClose(myEpoch: myEpoch)
         }
     }
 
@@ -214,9 +254,10 @@ final class BreakTimerView: NSView {
     private var dragStartFrame = NSRect.zero
     private var pressedButton: BreakButtonKind?
 
-    // Red LED look (see reference): bright red lit segments, dim dark-red ghost.
-    private static let lit = NSColor(calibratedRed: 0.95, green: 0.13, blue: 0.10, alpha: 1.0)
-    private static let ghost = NSColor(calibratedRed: 0.95, green: 0.13, blue: 0.10, alpha: 0.14)
+    // Red LED look — colors sampled from the reference: a deep red for lit
+    // segments and a solid very-dark red for the unlit (ghost) segments.
+    private static let lit = NSColor(calibratedRed: 0.847, green: 0.196, blue: 0.224, alpha: 1.0)
+    private static let ghost = NSColor(calibratedRed: 0.137, green: 0.031, blue: 0.039, alpha: 1.0)
 
     func update(digits: String, finishLocal: String, finishCET: String, paused: Bool) {
         self.digits = digits
@@ -246,8 +287,8 @@ final class BreakTimerView: NSView {
     private func computeLayout() -> Layout {
         let b = bounds
         let pad = b.height * 0.08
-        let ch = max(16, min(b.width, b.height) * 0.12)
-        let bottomH = b.height * 0.24
+        let ch = max(18, min(b.width, b.height) * 0.13)
+        let bottomH = b.height * 0.22
         let bottomY = pad * 0.6
 
         let label = NSRect(x: ch, y: bottomY, width: b.width * 0.40, height: bottomH)
@@ -267,9 +308,9 @@ final class BreakTimerView: NSView {
 
         // Digits fill nearly the full width (small side margins) and most of the
         // height above the bottom row, so the watch face isn't mostly empty.
-        let hInset = b.width * 0.02
-        let topInset = b.height * 0.04
-        let digitsBottom = bottomY + bottomH + b.height * 0.015
+        let hInset = b.width * 0.012
+        let topInset = b.height * 0.03
+        let digitsBottom = bottomY + bottomH + b.height * 0.01
         let digitsArea = NSRect(x: hInset, y: digitsBottom,
                                 width: b.width - 2 * hInset,
                                 height: max(0, b.height - topInset - digitsBottom))
@@ -288,8 +329,8 @@ final class BreakTimerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
-        let bgPath = NSBezierPath(roundedRect: b, xRadius: b.height * 0.10, yRadius: b.height * 0.10)
-        NSColor.black.withAlphaComponent(0.50).setFill()
+        let bgPath = NSBezierPath(roundedRect: b, xRadius: b.height * 0.05, yRadius: b.height * 0.05)
+        NSColor.black.withAlphaComponent(0.60).setFill()
         bgPath.fill()
 
         // Clip content to the rounded panel so wide digits never poke out of the corners.
@@ -317,7 +358,7 @@ final class BreakTimerView: NSView {
         let totalW = widthFactor * digitH
         var x = area.midX - totalW / 2
         let y = area.midY - digitH / 2
-        let t = digitH * 0.14
+        let t = digitH * 0.16
         let gap = digitH * 0.10
 
         for c in chars {
@@ -376,16 +417,9 @@ final class BreakTimerView: NSView {
 
         guard digitsVisible else { return }
 
-        // Lit segments with a soft red glow.
-        let shadow = NSShadow()
-        shadow.shadowColor = Self.lit.withAlphaComponent(0.8)
-        shadow.shadowBlurRadius = t * 0.9
-        shadow.shadowOffset = .zero
-        NSGraphicsContext.saveGraphicsState()
-        shadow.set()
+        // Lit segments — flat (no glow), like the reference, so they read clearly.
         Self.lit.setFill()
         for key in on { segPaths[key]?.fill() }
-        NSGraphicsContext.restoreGraphicsState()
     }
 
     /// Horizontal seven-segment bar as an elongated hexagon (pointed left/right
@@ -481,7 +515,7 @@ final class BreakTimerView: NSView {
                 NSBezierPath(rect: NSRect(x: inset.maxX - barW, y: inset.minY, width: barW, height: inset.height)).fill()
             }
         case .add1, .add3, .add5:
-            let text = kind == .add1 ? "+1m" : (kind == .add3 ? "+3m" : "+5m")
+            let text = kind == .add1 ? "+1" : (kind == .add3 ? "+3" : "+5")
             let fontSize = max(7, r.height * 0.36)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .semibold),
@@ -532,23 +566,26 @@ final class BreakTimerView: NSView {
         dragStartFrame = window?.frame ?? .zero
         if let corner = cornerHit(p, L) {
             dragMode = .resize(corner)
+            Self.cursor(forCorner: corner).set()
         } else if let kind = buttonHit(p, L) {
             dragMode = .button(kind)
             pressedButton = kind
             needsDisplay = true
         } else {
             dragMode = .move
-            NSCursor.closedHand.set()
+            Self.moveCursor.set()
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
         switch dragMode {
         case .move:
+            Self.moveCursor.set()
             let m = NSEvent.mouseLocation
             window?.setFrameOrigin(NSPoint(x: dragStartFrame.origin.x + (m.x - dragStartMouse.x),
                                            y: dragStartFrame.origin.y + (m.y - dragStartMouse.y)))
         case .resize(let corner):
+            Self.cursor(forCorner: corner).set()
             performResize(corner)
         case .button, .none:
             break
@@ -600,24 +637,69 @@ final class BreakTimerView: NSView {
 
     // MARK: Cursor
 
+    // Custom cursors so resize/move affordances are unmistakable on hover:
+    // a 4-way arrow over the draggable body, diagonal double-arrows at corners.
+    private static let moveCursor = makeArrowCursor(angles: [0, 90, 180, 270])
+    private static let nwseCursor = makeArrowCursor(angles: [135, 315])   // ↖↘
+    private static let neswCursor = makeArrowCursor(angles: [45, 225])    // ↗↙
+
+    private static func makeArrowCursor(angles: [CGFloat]) -> NSCursor {
+        let s: CGFloat = 26
+        let c = NSPoint(x: s / 2, y: s / 2)
+        let arm = s / 2 - 3.5
+        let headLen: CGFloat = 6, headW: CGFloat = 5
+        let path = NSBezierPath()
+        for deg in angles {
+            let a = deg * .pi / 180
+            let dx = cos(a), dy = sin(a)
+            let px = -dy, py = dx
+            let tip = NSPoint(x: c.x + dx * arm, y: c.y + dy * arm)
+            let base = NSPoint(x: c.x + dx * (arm - headLen), y: c.y + dy * (arm - headLen))
+            path.move(to: c); path.line(to: base)
+            path.move(to: tip)
+            path.line(to: NSPoint(x: base.x + px * headW, y: base.y + py * headW))
+            path.line(to: NSPoint(x: base.x - px * headW, y: base.y - py * headW))
+            path.close()
+        }
+        path.lineJoinStyle = .round
+        path.lineCapStyle = .round
+        let img = NSImage(size: NSSize(width: s, height: s))
+        img.lockFocus()
+        NSColor.white.setStroke(); NSColor.white.setFill()
+        path.lineWidth = 4.5; path.stroke(); path.fill()       // white halo
+        NSColor.black.setStroke(); NSColor.black.setFill()
+        path.lineWidth = 1.8; path.stroke(); path.fill()        // black core
+        img.unlockFocus()
+        return NSCursor(image: img, hotSpot: c)
+    }
+
+    private static func cursor(forCorner corner: ResizeCorner) -> NSCursor {
+        switch corner {
+        case .bottomLeft, .topRight: return neswCursor
+        case .bottomRight, .topLeft: return nwseCursor
+        }
+    }
+
+    private func cursor(at p: NSPoint, _ L: Layout) -> NSCursor {
+        if let corner = cornerHit(p, L) { return Self.cursor(forCorner: corner) }
+        if buttonHit(p, L) != nil { return NSCursor.pointingHand }
+        return Self.moveCursor
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+                                       options: [.activeAlways, .mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .inVisibleRect],
                                        owner: self, userInfo: nil))
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        let L = computeLayout()
-        if cornerHit(p, L) != nil {
-            NSCursor.crosshair.set()
-        } else if buttonHit(p, L) != nil {
-            NSCursor.pointingHand.set()
-        } else {
-            NSCursor.openHand.set()
-        }
+        cursor(at: convert(event.locationInWindow, from: nil), computeLayout()).set()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        cursor(at: convert(event.locationInWindow, from: nil), computeLayout()).set()
     }
 
     override func mouseExited(with event: NSEvent) {

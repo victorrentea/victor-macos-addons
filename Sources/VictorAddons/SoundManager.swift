@@ -76,6 +76,12 @@ class SoundManager {
         return nil
     }
 
+    /// Duration (seconds) of a bundled sound file, or nil if unavailable.
+    func soundDuration(_ filename: String) -> TimeInterval? {
+        guard let url = soundURL(for: filename) else { return nil }
+        return try? AVAudioPlayer(contentsOf: url).duration
+    }
+
     /// Play a sound from the bundle Resources folder, looping indefinitely.
     /// If the same sound is already playing, does nothing.
     func playLooping(_ filename: String) {
