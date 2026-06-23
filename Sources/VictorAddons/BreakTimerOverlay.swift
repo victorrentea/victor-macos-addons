@@ -141,9 +141,9 @@ final class BreakTimerController {
     private func shakeWatch() {
         guard let layer = panel?.contentView?.layer else { return }
         let duration = 1.8                 // lasts ~2s, like the gong's loud decay
-        let amp: CGFloat = 24              // starts wide…
-        let cycles: CGFloat = 6            // ~3.3 Hz
-        let n = 90
+        let amp: CGFloat = 36              // starts violently wide…
+        let cycles: CGFloat = 8            // ~4.4 Hz
+        let n = 110
         let values: [NSNumber] = (0..<n).map { i in
             let t = CGFloat(i) / CGFloat(n - 1)
             // amplitude decays as the gong's volume drops
@@ -260,18 +260,19 @@ final class BreakTimerController {
         timer?.invalidate(); timer = nil
         clearPersisted()
         let myEpoch = epoch
-        let gongLen: TimeInterval = 4.0   // each strike ~4s; two in a row ≈ 8s
+        // Play the FULL gong (exact same mp3 as tablet effect #50 — not a clip),
+        // then the second strike after the first finishes.
+        let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 8.6
 
-        // Strike 1, then strike 2 only after the first finishes (no overlap).
-        SoundManager.shared.playClip("50_gong.mp3", seconds: gongLen)
+        SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1 (full)
         shakeWatch()
-        DispatchQueue.main.asyncAfter(deadline: .now() + gongLen) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
-            SoundManager.shared.playClip("50_gong.mp3", seconds: gongLen)
+            SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
             self.shakeWatch()
         }
         // Stay on screen until the second gong has fully played out.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2 * gongLen) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2 * gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             self.close()
         }
@@ -571,20 +572,25 @@ final class BreakTimerView: NSView {
         guard area.height > 0 else { return }
         let fontSize = max(8, area.height * 0.34)
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
-        // 2px black outline around the text (same thickness as the digit outline);
-        // negative strokeWidth strokes AND fills, as a % of the font size.
-        let strokePct = -(2.0 / fontSize) * 100
-        let local = NSAttributedString(string: finishLocal, attributes: [
-            .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.95),
-            .strokeColor: NSColor.black, .strokeWidth: strokePct,
-        ])
-        let cet = NSAttributedString(string: finishCET, attributes: [
-            .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.55),
-            .strokeColor: NSColor.black, .strokeWidth: strokePct,
-        ])
         // Left-aligned to the digits' left margin (area.minX == digits' left edge).
-        local.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52))
-        cet.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.06))
+        drawOutlinedText(finishLocal, at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52),
+                         font: font, fill: Self.lit.withAlphaComponent(0.95))
+        drawOutlinedText(finishCET, at: NSPoint(x: area.minX, y: area.minY + area.height * 0.06),
+                         font: font, fill: Self.lit.withAlphaComponent(0.55))
+    }
+
+    /// Text with a black OUTER border: stroke (black) first, then the colored fill
+    /// on top, so the fill is never covered — only the outer half of the stroke shows.
+    private func drawOutlinedText(_ s: String, at p: NSPoint, font: NSFont, fill: NSColor) {
+        let outer: CGFloat = 1.5
+        let pct = (outer * 2 / font.pointSize) * 100   // centered stroke → half sits outside
+        NSAttributedString(string: s, attributes: [
+            .font: font, .foregroundColor: NSColor.clear,
+            .strokeColor: NSColor.black, .strokeWidth: pct,
+        ]).draw(at: p)
+        NSAttributedString(string: s, attributes: [
+            .font: font, .foregroundColor: fill,
+        ]).draw(at: p)
     }
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
