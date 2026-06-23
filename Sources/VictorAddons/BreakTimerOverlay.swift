@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 /// Break countdown "watch" overlay: a draggable, resizable, mouse-interactive
 /// panel showing a big red seven-segment MM:SS countdown over a frosted-glass
@@ -213,7 +214,7 @@ final class BreakTimerController {
         let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
             ?? NSScreen.main ?? NSScreen.screens.first
         let vf = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let w = vf.width * 0.20
+        let w = vf.width * 0.16
         let h = w / aspect
         let margin = vf.width * 0.02
         return NSRect(x: vf.maxX - w - margin, y: vf.maxY - h - margin, width: w, height: h)
@@ -272,6 +273,28 @@ final class BreakTimerView: NSView {
     // segments and a solid very-dark red for the unlit (ghost) segments.
     private static let lit = NSColor(calibratedRed: 0.847, green: 0.196, blue: 0.224, alpha: 1.0)
     private static let ghost = NSColor(calibratedRed: 0.137, green: 0.031, blue: 0.039, alpha: 1.0)
+
+    // The colon dots live on their own layer so they can pulse gently (1.0↔0.5
+    // every second) on the GPU, independent of the digit redraws.
+    private let colonLayer = CAShapeLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        colonLayer.fillColor = Self.lit.cgColor
+        colonLayer.strokeColor = NSColor.black.cgColor
+        colonLayer.lineWidth = 2
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1.0
+        pulse.toValue = 0.5
+        pulse.duration = 0.5            // 0.5s down + 0.5s up = 1s gentle cycle
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        colonLayer.add(pulse, forKey: "pulse")
+        layer?.addSublayer(colonLayer)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func update(digits: String, finishLocal: String, finishCET: String, paused: Bool) {
         self.digits = digits
@@ -363,7 +386,7 @@ final class BreakTimerView: NSView {
         for (i, ch) in digitChars.enumerated() where i < 4 {
             drawSegDigit(ch, cellX: originX + Self.dX[i] * scale, originY: originY, scale: scale)
         }
-        drawColonDots(cx: originX + Self.colonCx * scale, originY: originY, scale: scale)
+        updateColonLayer(cx: originX + Self.colonCx * scale, originY: originY, scale: scale)
     }
 
     // Segment membership per digit (a,b,c,d,e,f,g).
@@ -423,15 +446,19 @@ final class BreakTimerView: NSView {
         }
     }
 
-    private func drawColonDots(cx: CGFloat, originY: CGFloat, scale: CGFloat) {
-        guard digitsVisible else { return }
+    private func updateColonLayer(cx: CGFloat, originY: CGFloat, scale: CGFloat) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)   // don't animate path/frame changes
+        colonLayer.frame = bounds
+        colonLayer.isHidden = !digitsVisible    // hide with the digits during expiry blink
         let r = Self.dotR * scale
+        let path = CGMutablePath()
         for yl in Self.dotCy {
             let cy = originY + (Self.cellH - yl) * scale
-            let dot = NSBezierPath(ovalIn: NSRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
-            Self.lit.setFill(); dot.fill()
-            NSColor.black.setStroke(); dot.lineWidth = 2; dot.stroke()
+            path.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
         }
+        colonLayer.path = path
+        CATransaction.commit()
     }
 
     private func drawLabels(in area: NSRect) {
@@ -444,8 +471,10 @@ final class BreakTimerView: NSView {
         let cet = NSAttributedString(string: finishCET, attributes: [
             .font: font, .foregroundColor: Self.lit.withAlphaComponent(0.55),
         ])
-        local.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.52))
-        cet.draw(at: NSPoint(x: area.minX, y: area.minY + area.height * 0.06))
+        // Right-align: the finish time sits at the right of its area, just left
+        // of the +1 button.
+        local.draw(at: NSPoint(x: area.maxX - local.size().width, y: area.minY + area.height * 0.52))
+        cet.draw(at: NSPoint(x: area.maxX - cet.size().width, y: area.minY + area.height * 0.06))
     }
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
