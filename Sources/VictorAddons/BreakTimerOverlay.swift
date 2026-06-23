@@ -415,7 +415,7 @@ final class BreakTimerView: NSView {
         // Digits area + the x of the digits' left edge (labels align to this).
         // Content margins increased 50% on all four edges.
         let hInset = b.width * 0.06
-        let topInset = b.height * 0.12
+        let topInset = b.height * 0.155       // room for the (large) BREAK title
         let digitsBottom = bottomY + bottomH + b.height * 0.03
         let digitsArea = NSRect(x: hInset, y: digitsBottom,
                                 width: b.width - 2 * hInset,
@@ -424,8 +424,9 @@ final class BreakTimerView: NSView {
         let digitsLeftX = digitsArea.midX - (Self.contentW * dscale) / 2
         let digitsRightX = digitsLeftX + Self.contentW * dscale   // right edge of the last digit
 
-        // Finish-time labels: left-aligned to the digits' left margin.
-        let labelRight = ch + b.width * 0.40
+        // Finish-time labels: left-aligned to the digits' left margin. Wide
+        // enough that the digit-height tz labels don't starve the line width.
+        let labelRight = ch + b.width * 0.47
         let label = NSRect(x: digitsLeftX, y: bottomY,
                            width: max(0, labelRight - digitsLeftX), height: bottomH)
 
@@ -679,7 +680,7 @@ final class BreakTimerView: NSView {
         let bandBottom = digits.maxY
         let bandH = b.height - bandBottom
         guard bandH > 4 else { return }
-        let fontSize = bandH * 1.24          // 2x the previous size
+        let fontSize = bandH * 0.92          // ~2x the original cap height, fits the band
         let kern = fontSize * 0.02           // tight letter spacing
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
         let str = NSAttributedString(string: "BREAK", attributes: [.font: font, .kern: kern])
