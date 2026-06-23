@@ -158,7 +158,10 @@ final class BreakTimerController {
     }
 
     private static func defaultFrame() -> NSRect {
-        let screen = NSScreen.main ?? NSScreen.screens.first
+        // "Main screen" = the primary display (menu-bar screen, origin .zero) —
+        // NSScreen.main is the *focused* screen, which may be an external monitor.
+        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.main ?? NSScreen.screens.first
         let vf = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let w = vf.width * 0.25
         let h = w / aspect
