@@ -228,6 +228,10 @@ final class BreakTimerPanel: NSPanel {
         level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
     }
+
+    // A non-activating panel can become key (so our cursor management is honored
+    // on hover) without activating the app or stealing the user's keyboard focus.
+    override var canBecomeKey: Bool { true }
 }
 
 // MARK: - Buttons / corners
@@ -308,9 +312,9 @@ final class BreakTimerView: NSView {
 
         // Digits fill nearly the full width (small side margins) and most of the
         // height above the bottom row, so the watch face isn't mostly empty.
-        let hInset = b.width * 0.012
-        let topInset = b.height * 0.03
-        let digitsBottom = bottomY + bottomH + b.height * 0.01
+        let hInset = b.width * 0.04
+        let topInset = b.height * 0.08
+        let digitsBottom = bottomY + bottomH + b.height * 0.03
         let digitsArea = NSRect(x: hInset, y: digitsBottom,
                                 width: b.width - 2 * hInset,
                                 height: max(0, b.height - topInset - digitsBottom))
@@ -352,22 +356,22 @@ final class BreakTimerView: NSView {
         let digitCount = chars.filter { $0 != ":" }.count
         let colonCount = chars.filter { $0 == ":" }.count
         let gapsCount = max(0, chars.count - 1)
-        let widthFactor = CGFloat(digitCount) * 0.58 + CGFloat(colonCount) * 0.26 + CGFloat(gapsCount) * 0.10
+        let widthFactor = CGFloat(digitCount) * 0.60 + CGFloat(colonCount) * 0.22 + CGFloat(gapsCount) * 0.10
         guard widthFactor > 0 else { return }
         let digitH = min(area.height, area.width / widthFactor)
         let totalW = widthFactor * digitH
         var x = area.midX - totalW / 2
         let y = area.midY - digitH / 2
-        let t = digitH * 0.16
+        let t = digitH * 0.18          // chunky segments, like the reference
         let gap = digitH * 0.10
 
         for c in chars {
             if c == ":" {
-                let w = digitH * 0.26
+                let w = digitH * 0.22
                 drawColon(NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
                 x += w + gap
             } else {
-                let w = digitH * 0.58
+                let w = digitH * 0.60
                 drawDigit(c, in: NSRect(x: x, y: y, width: w, height: digitH), thickness: t)
                 x += w + gap
             }
@@ -391,7 +395,7 @@ final class BreakTimerView: NSView {
     private func drawDigit(_ c: Character, in r: NSRect, thickness t: CGFloat) {
         let x0 = r.minX, y0 = r.minY, w = r.width, h = r.height
         let half = t / 2
-        let gp = t * 0.18                 // gap between adjacent segment ends
+        let gp = t * 0.10                 // tight gaps between adjacent segment ends
         let midY = y0 + h / 2
         let xL = x0 + half + gp           // horizontal-segment span
         let xR = x0 + w - half - gp
@@ -453,7 +457,7 @@ final class BreakTimerView: NSView {
     }
 
     private func drawColon(_ r: NSRect, thickness t: CGFloat) {
-        let radius = t * 0.7
+        let radius = t * 0.48
         let cx = r.midX
         let dots = [r.minY + r.height * 0.34, r.minY + r.height * 0.66]
         let draw = { (color: NSColor) in
@@ -516,9 +520,15 @@ final class BreakTimerView: NSView {
             }
         case .add1, .add3, .add5:
             let text = kind == .add1 ? "+1" : (kind == .add3 ? "+3" : "+5")
-            let fontSize = max(7, r.height * 0.36)
+            // Size the text to fill the button (≈86% of it).
+            let base: CGFloat = 100
+            let probe = NSAttributedString(string: text, attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: base, weight: .bold)])
+            let psz = probe.size()
+            let scale = min(r.width * 0.86 / psz.width, r.height * 0.86 / psz.height)
+            let fontSize = max(7, base * scale)
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .semibold),
+                .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
                 .foregroundColor: Self.lit,
             ]
             let s = NSAttributedString(string: text, attributes: attrs)
@@ -680,29 +690,33 @@ final class BreakTimerView: NSView {
         }
     }
 
-    private func cursor(at p: NSPoint, _ L: Layout) -> NSCursor {
-        if let corner = cornerHit(p, L) { return Self.cursor(forCorner: corner) }
-        if buttonHit(p, L) != nil { return NSCursor.pointingHand }
-        return Self.moveCursor
+    // Cursor rectangles are AppKit's standard mechanism for per-region hover
+    // cursors and work even when the window is in the background (the way a
+    // background window still shows a resize cursor at its edges).
+    override func resetCursorRects() {
+        let L = computeLayout()
+        addCursorRect(bounds, cursor: Self.moveCursor)                       // body → move
+        for (rect, _) in L.buttons { addCursorRect(rect, cursor: NSCursor.pointingHand) }
+        for (rect, corner) in L.corners { addCursorRect(rect, cursor: Self.cursor(forCorner: corner)) }
     }
 
+    // Tracking area exists so mouseEntered can claim cursor management.
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.activeAlways, .mouseMoved, .cursorUpdate, .mouseEnteredAndExited, .inVisibleRect],
+                                       options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
                                        owner: self, userInfo: nil))
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        cursor(at: convert(event.locationInWindow, from: nil), computeLayout()).set()
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        window?.invalidateCursorRects(for: self)   // cursor rects depend on layout
     }
 
-    override func cursorUpdate(with event: NSEvent) {
-        cursor(at: convert(event.locationInWindow, from: nil), computeLayout()).set()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        NSCursor.arrow.set()
+    override func mouseEntered(with event: NSEvent) {
+        // Become key (without activating the app) so our cursor rects are honored.
+        window?.makeKey()
+        window?.invalidateCursorRects(for: self)
     }
 }
