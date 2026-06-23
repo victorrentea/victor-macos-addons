@@ -137,25 +137,35 @@ final class BreakTimerController {
         refresh()
     }
 
-    /// A short, decaying left↔right shake of the whole watch (used on each gong
-    /// strike at expiry to simulate the gong's vibration).
-    private func shakeWatch() {
+    /// Chaotic 2D shake for the WHOLE expiry: violent at each gong strike, decaying
+    /// toward a small residual jitter (~5px) that never fully stops until the window
+    /// closes. Not just on X — the watch wobbles all over the place.
+    private func startExpiryShake(totalDuration: Double, strikeAt: [Double]) {
         guard let layer = panel?.contentView?.layer else { return }
-        let duration = 1.8                 // lasts ~2s, like the gong's loud decay
-        let amp: CGFloat = 36              // starts violently wide…
-        let cycles: CGFloat = 8            // ~4.4 Hz
-        let n = 110
-        let values: [NSNumber] = (0..<n).map { i in
-            let t = CGFloat(i) / CGFloat(n - 1)
-            // amplitude decays as the gong's volume drops
-            return NSNumber(value: Double(amp * exp(-2.4 * t) * sin(t * .pi * 2 * cycles)))
+        let fps = 60.0
+        let n = max(2, Int(totalDuration * fps))
+        let peak: CGFloat = 36, floor: CGFloat = 5     // same peak amplitude as before; 5px residual
+        let k = 3.0
+        func env(_ t: Double) -> Double {
+            var bump = 0.0
+            for s in strikeAt where t >= s { bump += exp(-k * (t - s)) }
+            return Double(floor) + Double(peak - floor) * min(1.0, bump)
         }
-        let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
-        shake.values = values
-        shake.duration = duration
-        shake.isAdditive = true
-        shake.calculationMode = .cubic
-        layer.add(shake, forKey: "shake")
+        var xs = [NSNumber](), ys = [NSNumber]()
+        for i in 0..<n {
+            let t = Double(i) / fps
+            let e = env(t)
+            // incommensurate frequencies on X and Y → chaotic, non-axis-aligned wobble
+            let dx = e * (0.7 * sin(t * 2 * .pi * 7.3) + 0.3 * sin(t * 2 * .pi * 13.1 + 0.7))
+            let dy = e * (0.7 * sin(t * 2 * .pi * 9.7 + 1.1) + 0.3 * sin(t * 2 * .pi * 5.3 + 2.0))
+            xs.append(NSNumber(value: dx)); ys.append(NSNumber(value: dy))
+        }
+        let ax = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        ax.values = xs; ax.duration = totalDuration; ax.isAdditive = true; ax.calculationMode = .cubic
+        let ay = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        ay.values = ys; ay.duration = totalDuration; ay.isAdditive = true; ay.calculationMode = .cubic
+        layer.add(ax, forKey: "shakeX")
+        layer.add(ay, forKey: "shakeY")
     }
 
     // MARK: - Activity-driven backdrop
@@ -268,11 +278,11 @@ final class BreakTimerController {
         let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 8.6
 
         SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1 (full)
-        shakeWatch()
+        // One continuous chaotic shake spanning both strikes; peaks at t=0 and t=gong.
+        startExpiryShake(totalDuration: 2 * gong, strikeAt: [0, gong])
         DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
-            self.shakeWatch()
         }
         // Stay on screen until the second gong has fully played out.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2 * gong) { [weak self] in
@@ -421,6 +431,9 @@ final class BreakTimerView: NSView {
     /// The resize corners and the control buttons are shown only while the mouse
     /// hovers the timer; `hoveredButton` highlights the button under the cursor.
     private var mouseInside = false
+    private var cornerAlpha: CGFloat = 0           // resize-corner opacity while not hovering
+    private var cornerHoldTimer: Timer?           // 2s hold before the fade
+    private var cornerFadeTimer: Timer?           // 1s fade-out
     private var hoveredButton: BreakButtonKind?
 
     override var acceptsFirstResponder: Bool { true }
@@ -439,14 +452,14 @@ final class BreakTimerView: NSView {
         let b = bounds
         let pad = b.height * 0.08
         let ch = max(18, min(b.width, b.height) * 0.13)
-        let bottomH = b.height * 0.22
+        let bottomH = b.height * 0.17
         let bottomY = pad * 0.9            // bottom margin (+50%)
 
         // Digits area + the x of the digits' left edge (labels align to this).
         // Content margins increased 50% on all four edges.
         let hInset = b.width * 0.06
         let topInset = b.height * 0.20        // room for the (large) BREAK title
-        let digitsBottom = bottomY + bottomH + b.height * 0.03
+        let digitsBottom = bottomY + bottomH + b.height * 0.09   // 3x bigger gap to the countdown
         let digitsArea = NSRect(x: hInset, y: digitsBottom,
                                 width: b.width - 2 * hInset,
                                 height: max(0, b.height - topInset - digitsBottom))
@@ -493,16 +506,18 @@ final class BreakTimerView: NSView {
         updateTitleLayer(above: L.digits)
         drawDigits(in: L.digits)
         drawLabels(in: L.label)
-        // Controls and resize handles appear only while hovering the panel.
+        // Controls appear while hovering; the resize corners stay 2s after the mouse
+        // leaves then fade over 1s, so they're easy to grab.
         if mouseInside {
             for (rect, kind) in L.buttons { drawButton(kind, rect: rect) }
-            drawResizeCorners()
         }
+        let cornerA: CGFloat = mouseInside ? 1 : cornerAlpha
+        if cornerA > 0 { drawResizeCorners(alpha: cornerA) }
     }
 
     /// Red L-brackets at the 4 corners — shown while hovering — marking (and
     /// providing a fat target for) the resize corners.
-    private func drawResizeCorners() {
+    private func drawResizeCorners(alpha: CGFloat) {
         let b = bounds
         let len = max(10, min(b.width, b.height) * 0.10)
         let i: CGFloat = 3
@@ -513,7 +528,7 @@ final class BreakTimerView: NSView {
         p.move(to: NSPoint(x: b.width - i - len, y: i));  p.line(to: NSPoint(x: b.width - i, y: i));  p.line(to: NSPoint(x: b.width - i, y: i + len))
         p.move(to: NSPoint(x: i, y: b.height - i - len)); p.line(to: NSPoint(x: i, y: b.height - i)); p.line(to: NSPoint(x: i + len, y: b.height - i))
         p.move(to: NSPoint(x: b.width - i - len, y: b.height - i)); p.line(to: NSPoint(x: b.width - i, y: b.height - i)); p.line(to: NSPoint(x: b.width - i, y: b.height - i - len))
-        Self.lit.setStroke()
+        Self.lit.withAlphaComponent(alpha).setStroke()
         p.stroke()
     }
 
@@ -622,6 +637,38 @@ final class BreakTimerView: NSView {
         CATransaction.commit()
     }
 
+    /// A flag emoji rendered to an image with a baked black outline (8-way
+    /// silhouette), so color-emoji flags get the same black border as the text.
+    private static var flagImageCache: [String: NSImage] = [:]
+    private static func outlinedFlagImage(_ flag: String, pointSize: CGFloat) -> NSImage {
+        let key = "\(flag)@\(Int(pointSize.rounded()))"
+        if let cached = flagImageCache[key] { return cached }
+        let font = labelFont(size: pointSize, weight: .semibold)
+        let attr = NSAttributedString(string: flag, attributes: [.font: font])
+        let gs = attr.size()
+        guard gs.width > 1, gs.height > 1 else { return NSImage(size: NSSize(width: 1, height: 1)) }
+        let glyph = NSImage(size: gs, flipped: false) { _ in attr.draw(at: .zero); return true }
+        let silhouette = NSImage(size: gs, flipped: false) { rect in
+            glyph.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            NSColor.black.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        let b = max(1.5, pointSize * 0.07)
+        let out = NSSize(width: ceil(gs.width + 2 * b), height: ceil(gs.height + 2 * b))
+        let img = NSImage(size: out, flipped: false) { _ in
+            let offs: [(CGFloat, CGFloat)] = [(-1,0),(1,0),(0,-1),(0,1),(-0.7,-0.7),(0.7,-0.7),(-0.7,0.7),(0.7,0.7)]
+            for (dx, dy) in offs {
+                silhouette.draw(at: NSPoint(x: b + dx * b, y: b + dy * b), from: .zero,
+                                operation: .sourceOver, fraction: 1)
+            }
+            glyph.draw(at: NSPoint(x: b, y: b), from: .zero, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        flagImageCache[key] = img
+        return img
+    }
+
     /// Display font for the title & finish times — the rounded system design
     /// (distinct from the default SF, pairs cleanly with the LED digits).
     private static func labelFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
@@ -636,55 +683,64 @@ final class BreakTimerView: NSView {
         guard area.height > 0, area.width > 0 else { return }
         let lineH = area.height * 0.46
         let topBottom = area.minY + area.height - lineH      // top line slot bottom
-        let f1 = finishFont(finishLocal, lineH: lineH, maxW: area.width)
-        let f2 = finishFont(finishCET, lineH: lineH, maxW: area.width)
-        // 50% opaque black backing with EQUAL padding on all sides: derived from
-        // the actual rendered ink of both lines (not advance widths / cell slots).
-        let r1 = lineInkRect(f1.full, font: f1.font, x: area.minX, slotBottom: topBottom, lineH: lineH)
-        let r2 = lineInkRect(f2.full, font: f2.font, x: area.minX, slotBottom: area.minY, lineH: lineH)
-        let textRect = r1.union(r2)
-        if textRect.width > 0 {
-            let p = lineH * 0.30
-            let box = textRect.insetBy(dx: -p, dy: -p)
-            NSColor.black.withAlphaComponent(0.5).setFill()
-            NSBezierPath(roundedRect: box, xRadius: p, yRadius: p).fill()
+        let gap: CGFloat = 5                                  // extra space between the two lines
+        // Both lines at the SAME opacity; no background — just the black outline.
+        let a1 = finishAttr(finishLocal, flag: "🇷🇴", lineH: lineH, maxW: area.width, color: Self.lit)
+        let a2 = finishAttr(finishCET, flag: "🇪🇺", lineH: lineH, maxW: area.width, color: Self.lit)
+        drawAttrCentered(a1, x: area.minX, bottomY: topBottom + gap / 2, cellH: lineH)
+        drawAttrCentered(a2, x: area.minX, bottomY: area.minY - gap / 2, cellH: lineH)
+    }
+
+    /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, EU CET),
+    /// then the arrow and time in a MONOSPACED font so the two lines' columns align.
+    /// Sized to the line, clamped to width.
+    private func finishAttr(_ s: String, flag: String, lineH: CGFloat, maxW: CGFloat, color: NSColor) -> NSAttributedString {
+        let time = s.split(separator: " ").first.map(String.init) ?? s
+        let capRatio = NSFont.monospacedSystemFont(ofSize: 100, weight: .semibold).capHeight / 100
+        func build(_ sz: CGFloat) -> NSAttributedString {
+            let timeFont = NSFont.monospacedSystemFont(ofSize: sz, weight: .semibold)
+            // Flag as an image with a baked black outline (emoji ignore text stroke).
+            let att = NSTextAttachment()
+            let img = Self.outlinedFlagImage(flag, pointSize: sz * 0.92)
+            att.image = img
+            att.bounds = NSRect(x: 0, y: (timeFont.capHeight - img.size.height) / 2,
+                                width: img.size.width, height: img.size.height)
+            let m = NSMutableAttributedString(attributedString: NSAttributedString(attachment: att))
+            // Center the arrow in the whitespace between the flag and the first digit:
+            // equal whitespace on both sides (accounting for the flag image's border).
+            let spaceAdv = (" " as NSString).size(withAttributes: [.font: timeFont]).width
+            let flagBorder = max(1.5, (sz * 0.92) * 0.07)     // matches outlinedFlagImage's border
+            let leftAdv = max(0, (spaceAdv - flagBorder) / 2)
+            let rightAdv = (spaceAdv + flagBorder) / 2
+            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: leftAdv - spaceAdv]))
+            m.append(NSAttributedString(string: "→", attributes: [.font: timeFont, .foregroundColor: color]))
+            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: rightAdv - spaceAdv, .foregroundColor: color]))
+            m.append(NSAttributedString(string: time, attributes: [.font: timeFont, .foregroundColor: color]))
+            return m
         }
-        drawGlyphCentered(f1.full, x: area.minX, bottomY: topBottom,
-                          cellH: lineH, font: f1.font, fill: Self.lit)
-        drawGlyphCentered(f2.full, x: area.minX, bottomY: area.minY,
-                          cellH: lineH, font: f2.font, fill: Self.lit.withAlphaComponent(0.78))
+        var size = 1.02 * lineH / capRatio             // end-time font (+20%)
+        var attr = build(size)
+        let w = attr.size().width
+        if w > maxW { size *= maxW / w; attr = build(size) }
+        return attr
     }
 
-    /// The view-space ink rectangle of one finish line, matching how
-    /// `drawGlyphCentered` positions it (ink centered in the line slot).
-    private func lineInkRect(_ full: String, font: NSFont, x: CGFloat, slotBottom: CGFloat, lineH: CGFloat) -> NSRect {
-        let ink = NSAttributedString(string: full, attributes: [.font: font])
-            .boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
-        return NSRect(x: x + ink.minX, y: slotBottom + (lineH - ink.height) / 2,
-                      width: ink.width, height: ink.height)
+    /// Draw an attributed line left-aligned at `x`, centering its ink in the slot.
+    private func drawAttrCentered(_ attr: NSAttributedString, x: CGFloat, bottomY: CGFloat, cellH: CGFloat) {
+        let ink = attr.boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
+        drawOutlinedAttr(attr, at: NSPoint(x: x, y: bottomY + (cellH - ink.height) / 2 - ink.minY))
     }
 
-    /// A finish-time line "→ HH:MM TZ" in a normal font: sized so its caps fill the
-    /// line height, then reduced 30%, and clamped so it never exceeds the width.
-    private func finishFont(_ s: String, lineH: CGFloat, maxW: CGFloat) -> (font: NSFont, full: String, width: CGFloat) {
-        let full = "→ " + s
-        func width(_ sz: CGFloat) -> CGFloat {
-            NSAttributedString(string: full, attributes: [.font: Self.labelFont(size: sz, weight: .semibold)]).size().width
-        }
-        let capRatio = Self.labelFont(size: 100, weight: .semibold).capHeight / 100
-        var size = 0.7 * lineH / capRatio          // 30% smaller than the digit cell height
-        let w = width(size)
-        if w > maxW { size *= maxW / w }
-        return (Self.labelFont(size: size, weight: .semibold), full, width(size))
-    }
-
-    /// Draw `s` left-aligned at `x`, vertically centering its ink in [bottomY, bottomY+cellH].
-    private func drawGlyphCentered(_ s: String, x: CGFloat, bottomY: CGFloat, cellH: CGFloat,
-                                   font: NSFont, fill: NSColor) {
-        let ink = NSAttributedString(string: s, attributes: [.font: font])
-            .boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
-        drawOutlinedText(s, at: NSPoint(x: x, y: bottomY + (cellH - ink.height) / 2 - ink.minY),
-                         font: font, fill: fill)
+    /// Attributed text with a black 50% OUTER border (stroke pass beneath the fill).
+    /// Flags carry their own baked outline, so only the text needs the stroke.
+    private func drawOutlinedAttr(_ attr: NSAttributedString, at p: NSPoint) {
+        let stroke = NSMutableAttributedString(attributedString: attr)
+        stroke.addAttributes([.foregroundColor: NSColor.clear,
+                              .strokeColor: NSColor.black.withAlphaComponent(0.5),
+                              .strokeWidth: 7.0],
+                             range: NSRange(location: 0, length: stroke.length))
+        stroke.draw(at: p)
+        attr.draw(at: p)
     }
 
     /// Render the blinking "BREAK" title onto its own layer, centered (by ink) in
@@ -696,26 +752,29 @@ final class BreakTimerView: NSView {
         let bandH = b.height - bandBottom
         guard bandH > 4 else { titleLayer.isHidden = true; return }
         titleLayer.isHidden = !digitsVisible
-        let font = Self.labelFont(size: bandH * 0.86, weight: .heavy)
-        let fontSize = font.pointSize
-        let kern = fontSize * 0.0            // tight letter spacing
-        let str = NSAttributedString(string: "BREAK", attributes: [.font: font, .kern: kern])
-        let ink = str.boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
-        let pad: CGFloat = max(2, fontSize * 0.10)   // headroom for the outline stroke
-        let imgSize = NSSize(width: ceil(ink.width + pad * 2), height: ceil(ink.height + pad * 2))
-        guard imgSize.width > 1, imgSize.height > 1 else { titleLayer.isHidden = true; return }
-        // Drawing-handler image re-renders at the layer's scale → crisp on retina.
-        let img = NSImage(size: imgSize, flipped: false) { [weak self] _ in
-            self?.drawOutlinedText("BREAK", at: NSPoint(x: pad - ink.minX, y: pad - ink.minY),
-                                   font: font, fill: Self.lit, kern: kern)
+        let font = Self.labelFont(size: bandH * 0.96, weight: .heavy)   // +20%
+        let pad: CGFloat = max(2, font.pointSize * 0.14)   // headroom for the outline stroke
+        let str = NSAttributedString(string: "BREAK", attributes: [.font: font])
+        // Size the image from FONT metrics (ascender..descender) so the glyphs can
+        // never overflow it — drawing at (pad, pad) puts the line box inside, and
+        // the visible caps sit a known distance up from the bottom.
+        let imgW = ceil(str.size().width + pad * 2)
+        let imgH = ceil(font.ascender - font.descender + pad * 2)   // descender is negative
+        guard imgW > 1, imgH > 1 else { titleLayer.isHidden = true; return }
+        let img = NSImage(size: NSSize(width: imgW, height: imgH), flipped: false) { [weak self] _ in
+            self?.drawOutlinedText("BREAK", at: NSPoint(x: pad, y: pad), font: font, fill: Self.lit)
             return true
         }
+        // Caps occupy [baseline, baseline+capHeight] within the image; anchor that
+        // cap-top a fixed margin below the panel edge so it's never clipped.
+        let capsTopInImg = (pad - font.descender) + font.capHeight   // baseline + capHeight
+        let topGap = bandH * 0.16
         CATransaction.begin(); CATransaction.setDisableActions(true)
         titleLayer.contents = img
         titleLayer.contentsScale = window?.backingScaleFactor ?? 2
-        titleLayer.frame = NSRect(x: b.midX - imgSize.width / 2,
-                                  y: bandBottom + (bandH - imgSize.height) / 2,
-                                  width: imgSize.width, height: imgSize.height)
+        titleLayer.frame = NSRect(x: b.midX - imgW / 2,
+                                  y: (b.height - topGap) - capsTopInImg,
+                                  width: imgW, height: imgH)
         CATransaction.commit()
     }
 
@@ -991,6 +1050,9 @@ final class BreakTimerView: NSView {
         window?.makeKey()
         window?.invalidateCursorRects(for: self)
         mouseInside = true
+        cornerHoldTimer?.invalidate(); cornerHoldTimer = nil
+        cornerFadeTimer?.invalidate(); cornerFadeTimer = nil
+        cornerAlpha = 1
         needsDisplay = true
         updateHover(event)
     }
@@ -998,7 +1060,28 @@ final class BreakTimerView: NSView {
     override func mouseExited(with event: NSEvent) {
         mouseInside = false
         hoveredButton = nil
+        cornerAlpha = 1
         needsDisplay = true
+        // Stay fully visible for 2s, then fade out over 1s.
+        cornerHoldTimer?.invalidate(); cornerFadeTimer?.invalidate()
+        let hold = Timer(timeInterval: 2.0, repeats: false) { [weak self] _ in self?.startCornerFade() }
+        RunLoop.main.add(hold, forMode: .common)
+        cornerHoldTimer = hold
+    }
+
+    private func startCornerFade() {
+        cornerFadeTimer?.invalidate()
+        let duration = 1.0, step = 1.0 / 30.0
+        var elapsed = 0.0
+        let t = Timer(timeInterval: step, repeats: true) { [weak self] tm in
+            guard let self else { tm.invalidate(); return }
+            elapsed += step
+            self.cornerAlpha = max(0, 1 - CGFloat(elapsed / duration))
+            self.needsDisplay = true
+            if elapsed >= duration { tm.invalidate(); self.cornerFadeTimer = nil }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        cornerFadeTimer = t
     }
 
     override func mouseMoved(with event: NSEvent) {
