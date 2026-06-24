@@ -2487,7 +2487,7 @@ class EmojiAnimator {
         _heartCursorActiveUntil = CACurrentMediaTime() + seconds
         guard _heartCursorLayer == nil else { return }  // already running; deadline extended above
 
-        let size: CGFloat = 54
+        let size: CGFloat = 108      // 2× the original cursor heart
         let box = size * 1.2         // headroom so the heart's bottom tip isn't clipped
         let liftAbove = size * 0.55  // sit above the pointer tip so the cursor shows
         let heart = CATextLayer()
