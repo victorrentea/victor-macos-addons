@@ -47,7 +47,7 @@ final class BottomLeftBanner {
         static let hintGap: CGFloat = 8
         static let hintHPadding: CGFloat = 10
         static let hintBackground: NSColor = NSColor.black.withAlphaComponent(0.6)
-        static func hintFont() -> NSFont { NSFont.boldSystemFont(ofSize: hintFontSize) }
+        static func hintFont() -> NSFont { NSFont.systemFont(ofSize: hintFontSize) }
 
         // MARK: Hover-countdown bar (a thin orange strip along the bottom edge
         // that grows left→right over the window during which the banner can
