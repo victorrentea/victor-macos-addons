@@ -48,6 +48,7 @@ enum SoundEffectMap {
     /// Effect to stop when a sound finishes / is stopped (looping effects only).
     static let onStop: [String: String] = [
         "15_flatline.mp3":       "pulse/stop",
+        "41_love_hearts.mp3":    "love-hands/stop",
         "37_rainbow.mp3":        "rainbow/stop",
         "67_sfx_109.mp3":        "brother/stop",
         "29_gangnam_style.mp3":  "gangnam/stop",

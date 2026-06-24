@@ -2080,7 +2080,8 @@ class EmojiAnimator {
     // spiral up out of the meeting point.
 
     func showLoveHands(playSound: Bool = true) {
-        if cancelIfRunning("love-hands", sound: playSound ? "41_love_hearts.mp3" : nil) { return }
+        // Re-pressing toggles off — but with a fade-out, not an instant cut.
+        if activeEffects["love-hands"] != nil { stopLoveHands(); return }
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
@@ -2107,24 +2108,28 @@ class EmojiAnimator {
         let leftStartX  = -handWidth
         let rightStartX = bounds.width
 
+        // The container is added to the layer tree and OWNS both hands, so every
+        // teardown path (cancelIfRunning, stopAllActiveEffects, the scheduled
+        // fade below) removes the hands with it — they can't be left orphaned on
+        // screen (the previous design tracked an empty off-tree wrapper while the
+        // hands lived as siblings under host, so a stop cleared the tracker but
+        // not the hands).
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+        activeEffects["love-hands"] = container
+
         let leftLayer = CALayer()
         leftLayer.frame = CGRect(x: leftEndX, y: handY, width: handWidth, height: handHeight)
         leftLayer.contents = leftCG
         leftLayer.contentsGravity = .resizeAspect
-        hostLayer.addSublayer(leftLayer)
+        container.addSublayer(leftLayer)
 
         let rightLayer = CALayer()
         rightLayer.frame = CGRect(x: rightEndX, y: handY, width: handWidth, height: handHeight)
         rightLayer.contents = rightCG
         rightLayer.contentsGravity = .resizeAspect
-        hostLayer.addSublayer(rightLayer)
-
-        // Use a wrapper layer in activeEffects so cancelIfRunning can tear down both hands.
-        let container = CALayer()
-        container.bounds = bounds
-        // Container is just a tracker — both hand layers are real siblings under host,
-        // so we manually remove them when the effect ends.
-        activeEffects["love-hands"] = container
+        container.addSublayer(rightLayer)
 
         let converge: CFTimeInterval = 2.7          // 3× slower than the original 0.9s
         let slideLeft = CABasicAnimation(keyPath: "position.x")
@@ -2141,32 +2146,30 @@ class EmojiAnimator {
         slideRight.timingFunction = CAMediaTimingFunction(name: .easeOut)
         rightLayer.add(slideRight, forKey: "slide")
 
-        // When the hands touch, spawn the heart spiral; then fade everything out.
+        // When the hands touch, spawn the heart burst.
         let meetingPoint = CGPoint(x: bounds.midX, y: bounds.midY - bounds.height * 0.20)
-        let riseDuration: CFTimeInterval = 2.0      // user spec: 2s of rising, then fade
+        let riseDuration: CFTimeInterval = 2.0
         let fadeDuration: CFTimeInterval = 0.6
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + converge) { [weak self, weak leftLayer, weak rightLayer, weak container] in
-            guard let self = self, let container = container else { return }
-            // Don't proceed if the effect was cancelled mid-converge.
-            guard self.activeEffects["love-hands"] === container else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + converge) { [weak self, weak container] in
+            guard let self = self, let container = container,
+                  self.activeEffects["love-hands"] === container else { return }
             self.spawnLoveHearts(center: meetingPoint, rise: riseDuration, fadeOver: fadeDuration)
-            // After the hearts have fully risen and faded, sweep the hands offscreen too.
-            DispatchQueue.main.asyncAfter(deadline: .now() + riseDuration + fadeDuration) { [weak self, weak leftLayer, weak rightLayer, weak container] in
-                guard let self = self else { return }
-                CATransaction.begin()
-                CATransaction.setAnimationDuration(0.5)
-                leftLayer?.opacity = 0
-                rightLayer?.opacity = 0
-                CATransaction.commit()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    leftLayer?.removeFromSuperlayer()
-                    rightLayer?.removeFromSuperlayer()
-                    if let container = container, self.activeEffects["love-hands"] === container {
-                        self.activeEffects.removeValue(forKey: "love-hands")
-                    }
-                }
-            }
+        }
+
+        // The hands now linger until the sfx (41_love_hearts.mp3) is almost over,
+        // then fade out so they disappear together with the sound instead of on a
+        // fixed timeline. An explicit/early tablet stop also clears them via
+        // onStop → love-hands/stop → stopLoveHands.
+        var soundDuration = 6.0
+        if let url = SoundManager.shared.soundURL(for: "41_love_hearts.mp3") {
+            let d = AVURLAsset(url: url).duration
+            if d.isNumeric { soundDuration = CMTimeGetSeconds(d) }
+        }
+        let handsFadeAt = max(converge + 0.5, soundDuration - fadeDuration)
+        DispatchQueue.main.asyncAfter(deadline: .now() + handsFadeAt) { [weak self, weak container] in
+            guard let self = self, let container = container,
+                  self.activeEffects["love-hands"] === container else { return }
+            self.fadeOutLoveHands(container, over: fadeDuration)
         }
 
         if playSound {
@@ -2175,7 +2178,27 @@ class EmojiAnimator {
     }
 
     func stopLoveHands() {
-        _ = cancelIfRunning("love-hands", sound: "41_love_hearts.mp3")
+        SoundManager.shared.stop("41_love_hearts.mp3")
+        if let container = activeEffects["love-hands"] {
+            fadeOutLoveHands(container)
+        }
+    }
+
+    /// Fade the hands out (never an instant cut) and remove them once faded.
+    /// Clears the tracker up front so a re-trigger can't be removed by an old
+    /// timer, and so the disappearance is idempotent across the natural-end
+    /// timer, an explicit tablet stop, and a re-press toggle.
+    private func fadeOutLoveHands(_ container: CALayer, over fadeDuration: CFTimeInterval = 0.6) {
+        if activeEffects["love-hands"] === container {
+            activeEffects.removeValue(forKey: "love-hands")
+        }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(fadeDuration)
+        container.opacity = 0
+        CATransaction.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration) { [weak container] in
+            container?.removeFromSuperlayer()
+        }
     }
 
     /// 7 red hearts rise gently from `center` and diverge outward — modelled on
@@ -2341,15 +2364,21 @@ class EmojiAnimator {
         let bounds = hostLayer.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
 
-        let total = 30
-        let spawnWindow = 5.0  // seconds across which hearts are spawned
-        let maxRise = 4.5      // longest single-heart rise (see spawnSpiralHeart)
+        // Emit hearts for as long as the tablet's sfx (42_saxophone.mp3) plays,
+        // so the animation lasts exactly the length of the sound.
+        var sfxDuration = 5.0
+        if let url = SoundManager.shared.soundURL(for: "42_saxophone.mp3") {
+            let d = AVURLAsset(url: url).duration
+            if d.isNumeric { sfxDuration = CMTimeGetSeconds(d) }
+        }
+        let spawnRate = 6.0  // hearts per second (matches the original 30 over 5s)
+        let total = max(1, Int((spawnRate * sfxDuration).rounded()))
 
-        // Replace the cursor with a pulsing red heart for the life of the effect.
-        startHeartCursor(activeFor: spawnWindow + maxRise + 0.5)
+        // The cursor stays a pulsing red heart for the whole emission.
+        startHeartCursor(activeFor: sfxDuration)
 
         for i in 0..<total {
-            let delay = (Double(i) / Double(total)) * spawnWindow
+            let delay = (Double(i) / Double(total)) * sfxDuration
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.spawnSpiralHeart()
             }
