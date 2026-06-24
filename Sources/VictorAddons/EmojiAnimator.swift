@@ -1839,6 +1839,10 @@ class EmojiAnimator {
         let layerW = bounds.width
         let layerH = layerW * (gifH / gifW)
         let gifLayer = CALayer()
+        // Pivot at the TOP edge so the vertical-scale reveal grows DOWNWARD from
+        // the top of the screen (anchorPoint y=1 = top edge in this non-flipped
+        // layer). Set before .frame so position is derived from this anchor.
+        gifLayer.anchorPoint = CGPoint(x: 0.5, y: 1.0)
         gifLayer.frame = CGRect(x: 0, y: bounds.height - layerH, width: layerW, height: layerH)
         gifLayer.contentsGravity = .resize
         if let first = images.first { gifLayer.contents = first }
@@ -1851,12 +1855,15 @@ class EmojiAnimator {
         anim.repeatCount = .infinity
         gifLayer.add(anim, forKey: "bloodFrames")
 
-        // Quick fade-in at the head, fade-out over the last 0.6s.
-        let fadeIn = CABasicAnimation(keyPath: "opacity")
-        fadeIn.fromValue = 0.0
-        fadeIn.toValue = 1.0
-        fadeIn.duration = 0.25
-        gifLayer.add(fadeIn, forKey: "bloodFadeIn")
+        // Reveal: scale vertically from 0 → full height over 1.5s so the blood
+        // appears to grow downward from the top of the screen (the contents keep
+        // dripping while it unfurls). Settles at the layer's model scale of 1.
+        let grow = CABasicAnimation(keyPath: "transform.scale.y")
+        grow.fromValue = 0.0
+        grow.toValue = 1.0
+        grow.duration = 1.5
+        grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        gifLayer.add(grow, forKey: "bloodGrow")
 
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
