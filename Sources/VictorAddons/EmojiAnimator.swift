@@ -1814,11 +1814,9 @@ class EmojiAnimator {
 
         var images: [CGImage] = []
         var sourceDuration: Double = 0
-        var gifW: CGFloat = 430, gifH: CGFloat = 240
         for i in 0..<count {
             guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
             images.append(cg)
-            if i == 0 { gifW = CGFloat(cg.width); gifH = CGFloat(cg.height) }
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
             let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
             let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
@@ -1834,10 +1832,13 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        // Full screen width, aspect-preserved height (no distortion), pinned to
-        // the TOP edge — y = 0 is the bottom in this layer's geometry.
+        // Full screen width; height stretched to ~1.8× the screen so the blood —
+        // whose dense band/drips only occupy the upper third of the source art —
+        // runs much further down and the falling droplets reach the BOTTOM. Pinned
+        // to the TOP edge (y = 0 is the bottom here), so the extra height thickens
+        // the band/drips up top and pushes the lowest droplets off the bottom edge.
         let layerW = bounds.width
-        let layerH = layerW * (gifH / gifW)
+        let layerH = bounds.height * 1.8
         let gifLayer = CALayer()
         // Pivot at the TOP edge so the vertical-scale reveal grows DOWNWARD from
         // the top of the screen (anchorPoint y=1 = top edge in this non-flipped
