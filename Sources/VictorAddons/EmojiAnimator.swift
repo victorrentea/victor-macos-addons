@@ -39,11 +39,10 @@ class EmojiAnimator {
     private var _pulseGridLayer: CALayer?
     private var _pulseEcgLayer: CALayer?
 
-    // Spiral hearts: a pulsing red heart that follows / replaces the cursor while the effect runs
+    // Spiral hearts: a pulsing red heart that floats just above the cursor while the effect runs
     private var _heartCursorLayer: CALayer?
     private var _heartCursorTimer: Timer?
     private var _heartCursorActiveUntil: CFTimeInterval = 0
-    private var _heartCursorHidden = false
 
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
@@ -2030,7 +2029,10 @@ class EmojiAnimator {
         let tmpPath = NSTemporaryDirectory() + "victor-heartbeat-\(getpid()).png"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-x", "-t", "png", "-C", "-D", String(builtInDisplayNumber()), tmpPath]
+        // No -C: the cursor is intentionally excluded from the captured image, so
+        // the zoom pulses the desktop only. The live OS cursor stays visible and
+        // movable on top of the overlay, never baked into the zoomed screenshot.
+        process.arguments = ["-x", "-t", "png", "-D", String(builtInDisplayNumber()), tmpPath]
         do {
             try process.run()
             process.waitUntilExit()
@@ -2356,21 +2358,24 @@ class EmojiAnimator {
 
     private func spawnSpiralHeart() {
         let bounds = hostLayer.bounds
-        let size: CGFloat = CGFloat.random(in: 44...80)
+        let fontSize: CGFloat = CGFloat.random(in: 44...80)
+        // The layer box must be taller than the glyph or CATextLayer clips the
+        // heart's bottom tip (the emoji line box is ~1.18× the font size).
+        let box = fontSize * 1.2
         let origin = mousePointInHostLayer()  // spawn where the cursor currently is
         let duration = Double.random(in: 3.2...4.5)
 
         let layer = CATextLayer()
         layer.string = "❤️"
-        layer.fontSize = size
+        layer.fontSize = fontSize
         layer.alignmentMode = .center
         // anchorPoint stays at its (0.5, 0.5) default, so position == centre.
-        layer.frame = CGRect(x: origin.x - size / 2, y: origin.y - size / 2, width: size, height: size)
+        layer.frame = CGRect(x: origin.x - box / 2, y: origin.y - box / 2, width: box, height: box)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         hostLayer.addSublayer(layer)
 
         // Travel from the spawn point up to (just past) the top edge.
-        let riseHeight = (bounds.height - origin.y) + size * 1.5
+        let riseHeight = (bounds.height - origin.y) + box * 1.5
         // A per-heart net sideways drift fans the hearts out in various
         // directions — mostly up, some up-left, some up-right — while the
         // sine term layered on top gives each one its vertical spiral.
@@ -2445,27 +2450,26 @@ class EmojiAnimator {
         return CGPoint(x: anchor.x * bounds.width, y: anchor.y * bounds.height)
     }
 
-    /// Turn the cursor into a pulsing red heart that follows the mouse, for
-    /// `seconds`. Re-calling while active just extends the deadline. The real
-    /// system cursor is hidden best-effort (only takes effect while this app is
-    /// the active app) and always restored when the heart is removed.
+    /// Float a pulsing red heart just above the mouse cursor for `seconds`.
+    /// Re-calling while active just extends the deadline. The real system cursor
+    /// stays visible and usable underneath — the heart never obscures it, it
+    /// hovers above the pointer tip and tracks it.
     private func startHeartCursor(activeFor seconds: CFTimeInterval) {
         _heartCursorActiveUntil = CACurrentMediaTime() + seconds
         guard _heartCursorLayer == nil else { return }  // already running; deadline extended above
 
-        NSCursor.hide()
-        _heartCursorHidden = true
-
         let size: CGFloat = 54
+        let box = size * 1.2         // headroom so the heart's bottom tip isn't clipped
+        let liftAbove = size * 0.55  // sit above the pointer tip so the cursor shows
         let heart = CATextLayer()
         heart.string = "❤️"
         heart.fontSize = size
         heart.alignmentMode = .center
-        heart.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        heart.bounds = CGRect(x: 0, y: 0, width: box, height: box)
         heart.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        heart.position = mousePointInHostLayer()
+        heart.position = Self.offsetUp(mousePointInHostLayer(), by: liftAbove)
         CATransaction.commit()
         hostLayer.addSublayer(heart)
         _heartCursorLayer = heart
@@ -2489,10 +2493,15 @@ class EmojiAnimator {
             }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            self._heartCursorLayer?.position = self.mousePointInHostLayer()
+            self._heartCursorLayer?.position = Self.offsetUp(self.mousePointInHostLayer(), by: liftAbove)
             CATransaction.commit()
         }
         _heartCursorTimer = timer
+    }
+
+    /// Lift a point upward on screen (host-layer y grows upward).
+    private static func offsetUp(_ p: CGPoint, by dy: CGFloat) -> CGPoint {
+        CGPoint(x: p.x, y: p.y + dy)
     }
 
     private func stopHeartCursor() {
@@ -2500,10 +2509,6 @@ class EmojiAnimator {
         _heartCursorTimer = nil
         _heartCursorLayer?.removeFromSuperlayer()
         _heartCursorLayer = nil
-        if _heartCursorHidden {
-            NSCursor.unhide()
-            _heartCursorHidden = false
-        }
     }
 
     private static func latestDownloadsPNG() -> URL? {
@@ -2895,15 +2900,17 @@ class EmojiAnimator {
 
         let bounds = hostLayer.bounds
         let container = CALayer()
-        // Shifted right by 1/5 of the screen width (otherwise unchanged).
-        container.frame = bounds.offsetBy(dx: bounds.width / 5.0, dy: 0)
+        container.frame = bounds
         hostLayer.addSublayer(container)
         activeEffects["rainbow"] = container
 
-        // Semicircle anchored at the bottom: the tail starts at the
-        // bottom-left foot and sweeps over the top; the right side runs off
-        // the screen edge (center is right of middle, radius > half-width).
-        let center = CGPoint(x: bounds.width * 0.55, y: 0)
+        // Semicircle anchored at the bottom, same size as before, but with the
+        // circle's centre pushed all the way to the right screen edge so only
+        // the left quarter-arc is visible. The visible box is then square: its
+        // width  W - (cx - R) and height min(R, screenH) are both R when cx == W
+        // (R = 0.52·W < screenH on this display), i.e. a quarter-rainbow tucked
+        // into the bottom-right corner.
+        let center = CGPoint(x: bounds.width, y: 0)
         let outerRadius = bounds.width * 0.52
         let bandWidth = outerRadius * 0.035
         let colors: [NSColor] = [
@@ -2934,17 +2941,19 @@ class EmojiAnimator {
             band.add(draw, forKey: "draw")
         }
 
+        // Auto fade-out so the rainbow never stays stuck on screen: it lingers
+        // for the sound's length (or a default when triggered silently), then
+        // stopRainbow() fades it to 0 and removes it.
+        var visibleFor = 5.0
         if playSound {
             SoundManager.shared.play("37_rainbow.mp3")
             if let soundURL = SoundManager.shared.soundURL(for: "37_rainbow.mp3") {
-                let asset = AVURLAsset(url: soundURL)
-                let d = asset.duration
-                if d.isNumeric {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + CMTimeGetSeconds(d)) { [weak self] in
-                        self?.stopRainbow()
-                    }
-                }
+                let d = AVURLAsset(url: soundURL).duration
+                if d.isNumeric { visibleFor = CMTimeGetSeconds(d) }
             }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + visibleFor) { [weak self] in
+            self?.stopRainbow()
         }
     }
 
