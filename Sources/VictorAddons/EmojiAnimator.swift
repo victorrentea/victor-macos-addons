@@ -39,6 +39,12 @@ class EmojiAnimator {
     private var _pulseGridLayer: CALayer?
     private var _pulseEcgLayer: CALayer?
 
+    // Spiral hearts: a pulsing red heart that follows / replaces the cursor while the effect runs
+    private var _heartCursorLayer: CALayer?
+    private var _heartCursorTimer: Timer?
+    private var _heartCursorActiveUntil: CFTimeInterval = 0
+    private var _heartCursorHidden = false
+
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
         Self.warmBrotherCache()
@@ -1894,9 +1900,10 @@ class EmojiAnimator {
         // capture, so leave enough margin that cleanup never clips the last cycle.
         let totalDuration = lastBeat + 1.0
 
-        // Capture mouse anchor *now*, before any async work (the user expects
-        // the pivot to be wherever the cursor was at trigger time, even if
-        // they move the mouse during the animation).
+        // Initial pivot = where the cursor is now (a sensible default for the
+        // first beat). The pivot is NOT frozen, though: scheduleHeartbeatPulses
+        // re-centres it on the live mouse position before every lub-dub, so the
+        // heart "beats" wherever the cursor currently rests.
         let mouseGlobal = NSEvent.mouseLocation
         let panelOriginGlobal = hostLayer.bounds.origin  // contentView bounds: (0,0)
         // Convert global mouse to layer-local coords. The overlay panel's
@@ -1932,11 +1939,13 @@ class EmojiAnimator {
 
     private func scheduleHeartbeatPulses(layer: CALayer, beats: [Double]) {
         // A heartbeat is a lub-dub: two quick zoom-in-outs close together, then a
-        // rest, repeated at a steady rate. Instead of firing one animation per beat
-        // (which jitters on the main thread and inherits any drift in the recorded
-        // beat times), build ONE canonical lub-dub cycle and let Core Animation
-        // repeat it on the render server — every cycle is pixel-identical and the
-        // cadence is perfectly regular for the whole clip.
+        // rest, repeated at a steady rate. We fire ONE self-contained lub-dub
+        // animation per cycle (rather than a single render-server repeat) so that
+        // during the rest gap before each cycle we can re-centre the zoom pivot on
+        // the live mouse position — the heart "beats" wherever the cursor rests.
+        // At the cycle boundary the scale is back to 1.0 (full-screen), so moving
+        // the anchorPoint there causes no visible jump. The cadence is driven by
+        // absolute dispatch deadlines off one base time, so it does not drift.
         //
         // Timing comes from heartbeat_beats.json, laid out as [lub, dub, lub, dub …]:
         //   firstLub  = beats[0]              (when the first lub lands)
@@ -1965,22 +1974,47 @@ class EmojiAnimator {
             dubOffset + pulseDur,   // dub: back to rest
             period,                 // rest until next cycle
         ]
-        let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-        pulse.values   = [1.0, 1.30, 1.0, 1.0, 1.30, 1.0, 1.0]
-        pulse.keyTimes = times.map { NSNumber(value: $0 / period) }
-        pulse.timingFunctions = [
-            CAMediaTimingFunction(name: .easeInEaseOut), // lub rise
-            CAMediaTimingFunction(name: .easeInEaseOut), // lub fall
-            CAMediaTimingFunction(name: .linear),        // rest between lub and dub
-            CAMediaTimingFunction(name: .easeInEaseOut), // dub rise
-            CAMediaTimingFunction(name: .easeInEaseOut), // dub fall
-            CAMediaTimingFunction(name: .linear),        // rest until cycle end
-        ]
-        pulse.duration    = period
-        pulse.repeatCount = Float(cycles)
-        pulse.beginTime   = CACurrentMediaTime() + firstLub
-        pulse.fillMode    = .forwards
-        layer.add(pulse, forKey: "heartbeatPulse")
+        // One self-contained lub-dub, rebuilt per cycle (CAKeyframeAnimation is
+        // single-use once added, so we make a fresh instance each time).
+        func makeCyclePulse() -> CAKeyframeAnimation {
+            let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
+            pulse.values   = [1.0, 1.30, 1.0, 1.0, 1.30, 1.0, 1.0]
+            pulse.keyTimes = times.map { NSNumber(value: $0 / period) }
+            pulse.timingFunctions = [
+                CAMediaTimingFunction(name: .easeInEaseOut), // lub rise
+                CAMediaTimingFunction(name: .easeInEaseOut), // lub fall
+                CAMediaTimingFunction(name: .linear),        // rest between lub and dub
+                CAMediaTimingFunction(name: .easeInEaseOut), // dub rise
+                CAMediaTimingFunction(name: .easeInEaseOut), // dub fall
+                CAMediaTimingFunction(name: .linear),        // rest until cycle end
+            ]
+            pulse.duration = period
+            return pulse
+        }
+
+        let bounds = layer.bounds
+        // Absolute deadlines off one base => no per-cycle accumulation drift.
+        let base = DispatchTime.now()
+        for i in 0..<cycles {
+            let deadline = base + firstLub + Double(i) * period
+            DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self, weak layer] in
+                guard let self = self, let layer = layer,
+                      self.activeEffects["heartbeat"] === layer else { return }
+                // Re-centre the pivot on the current mouse before this beat.
+                let anchor = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
+                                              panelOrigin: self.hostLayer.bounds.origin,
+                                              hostLayer: self.hostLayer)
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)   // move anchor instantly, no slide
+                layer.anchorPoint = anchor
+                layer.position = CGPoint(x: anchor.x * bounds.width,
+                                         y: anchor.y * bounds.height)
+                CATransaction.commit()
+                let pulse = makeCyclePulse()
+                pulse.beginTime = CACurrentMediaTime()
+                layer.add(pulse, forKey: "heartbeatPulse")
+            }
+        }
     }
 
     private static func loadHeartbeatBeats() -> [Double] {
@@ -2307,6 +2341,10 @@ class EmojiAnimator {
 
         let total = 30
         let spawnWindow = 5.0  // seconds across which hearts are spawned
+        let maxRise = 4.5      // longest single-heart rise (see spawnSpiralHeart)
+
+        // Replace the cursor with a pulsing red heart for the life of the effect.
+        startHeartCursor(activeFor: spawnWindow + maxRise + 0.5)
 
         for i in 0..<total {
             let delay = (Double(i) / Double(total)) * spawnWindow
@@ -2318,36 +2356,39 @@ class EmojiAnimator {
 
     private func spawnSpiralHeart() {
         let bounds = hostLayer.bounds
-        let size: CGFloat = CGFloat.random(in: 60...110)
-        let startX = CGFloat.random(in: size...(bounds.width - size))
-        let startY: CGFloat = -size  // just below the bottom edge
-        let riseHeight = bounds.height + size * 2
+        let size: CGFloat = CGFloat.random(in: 44...80)
+        let origin = mousePointInHostLayer()  // spawn where the cursor currently is
         let duration = Double.random(in: 3.2...4.5)
 
         let layer = CATextLayer()
         layer.string = "❤️"
         layer.fontSize = size
         layer.alignmentMode = .center
-        layer.frame = CGRect(x: startX - size / 2, y: startY, width: size, height: size)
+        // anchorPoint stays at its (0.5, 0.5) default, so position == centre.
+        layer.frame = CGRect(x: origin.x - size / 2, y: origin.y - size / 2, width: size, height: size)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         hostLayer.addSublayer(layer)
 
-        // Build a sinusoidal upward path. Each heart picks a random amplitude,
-        // frequency, and phase so they don't move in lockstep.
-        let amplitude = CGFloat.random(in: 40...110)
+        // Travel from the spawn point up to (just past) the top edge.
+        let riseHeight = (bounds.height - origin.y) + size * 1.5
+        // A per-heart net sideways drift fans the hearts out in various
+        // directions — mostly up, some up-left, some up-right — while the
+        // sine term layered on top gives each one its vertical spiral.
+        let drift = CGFloat.random(in: -0.18...0.18) * bounds.width
+        let amplitude = CGFloat.random(in: 24...60)
         let frequency = Double.random(in: 1.5...3.0)  // full sine cycles over the rise
         let phase = Double.random(in: 0...(2 * .pi))
         let direction: CGFloat = Bool.random() ? 1 : -1
 
         let steps = 60
         let path = CGMutablePath()
-        let startPoint = CGPoint(x: startX, y: startY + size / 2)
-        path.move(to: startPoint)
+        path.move(to: origin)
         for step in 1...steps {
             let t = Double(step) / Double(steps)
-            let y = startPoint.y + riseHeight * CGFloat(t)
+            let y = origin.y + riseHeight * CGFloat(t)
+            let xBase = origin.x + drift * CGFloat(t)
             let xWobble = direction * amplitude * CGFloat(sin(phase + t * frequency * 2 * .pi))
-            path.addLine(to: CGPoint(x: startPoint.x + xWobble, y: y))
+            path.addLine(to: CGPoint(x: xBase + xWobble, y: y))
         }
 
         var animations: [CAAnimation] = []
@@ -2356,6 +2397,16 @@ class EmojiAnimator {
         pathAnim.path = path
         pathAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
         animations.append(pathAnim)
+
+        // Pop in at the cursor, then grow 50% larger before/while it lifts off.
+        let grow = CAKeyframeAnimation(keyPath: "transform.scale")
+        grow.values = [0.6, 1.5, 1.5]
+        grow.keyTimes = [0.0, 0.18, 1.0]
+        grow.timingFunctions = [
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .linear),
+        ]
+        animations.append(grow)
 
         // Slight rotation wobble — adds to the spiral feel.
         let rotate = CABasicAnimation(keyPath: "transform.rotation")
@@ -2366,13 +2417,10 @@ class EmojiAnimator {
         rotate.duration = Double.random(in: 0.5...0.9)
         animations.append(rotate)
 
-        // Fade out: opaque for first 50% of the rise, then fade to 0.
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1.0
-        fade.toValue = 0.0
-        fade.beginTime = duration * 0.5
-        fade.duration = duration * 0.5
-        fade.fillMode = .forwards
+        // Quick fade-in at the cursor, hold, then fade out as it nears the top.
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.0, 1.0, 1.0, 0.0]
+        fade.keyTimes = [0.0, 0.08, 0.55, 1.0]
         animations.append(fade)
 
         let group = CAAnimationGroup()
@@ -2385,6 +2433,77 @@ class EmojiAnimator {
         CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
         layer.add(group, forKey: "spiralHeart")
         CATransaction.commit()
+    }
+
+    /// Current mouse position expressed in hostLayer-local coordinates,
+    /// clamped to the built-in screen (reuses the heartbeat anchor mapping).
+    private func mousePointInHostLayer() -> CGPoint {
+        let bounds = hostLayer.bounds
+        let anchor = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
+                                      panelOrigin: hostLayer.bounds.origin,
+                                      hostLayer: hostLayer)
+        return CGPoint(x: anchor.x * bounds.width, y: anchor.y * bounds.height)
+    }
+
+    /// Turn the cursor into a pulsing red heart that follows the mouse, for
+    /// `seconds`. Re-calling while active just extends the deadline. The real
+    /// system cursor is hidden best-effort (only takes effect while this app is
+    /// the active app) and always restored when the heart is removed.
+    private func startHeartCursor(activeFor seconds: CFTimeInterval) {
+        _heartCursorActiveUntil = CACurrentMediaTime() + seconds
+        guard _heartCursorLayer == nil else { return }  // already running; deadline extended above
+
+        NSCursor.hide()
+        _heartCursorHidden = true
+
+        let size: CGFloat = 54
+        let heart = CATextLayer()
+        heart.string = "❤️"
+        heart.fontSize = size
+        heart.alignmentMode = .center
+        heart.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        heart.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        heart.position = mousePointInHostLayer()
+        CATransaction.commit()
+        hostLayer.addSublayer(heart)
+        _heartCursorLayer = heart
+
+        // Beat: scale big↔small forever (until the heart is removed).
+        let pulse = CABasicAnimation(keyPath: "transform.scale")
+        pulse.fromValue = 0.8
+        pulse.toValue = 1.35
+        pulse.duration = 0.45
+        pulse.autoreverses = true
+        pulse.repeatCount = .greatestFiniteMagnitude
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        heart.add(pulse, forKey: "cursorPulse")
+
+        // Follow the mouse; auto-stop once the deadline passes.
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self = self else { t.invalidate(); return }
+            if CACurrentMediaTime() >= self._heartCursorActiveUntil {
+                self.stopHeartCursor()
+                return
+            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self._heartCursorLayer?.position = self.mousePointInHostLayer()
+            CATransaction.commit()
+        }
+        _heartCursorTimer = timer
+    }
+
+    private func stopHeartCursor() {
+        _heartCursorTimer?.invalidate()
+        _heartCursorTimer = nil
+        _heartCursorLayer?.removeFromSuperlayer()
+        _heartCursorLayer = nil
+        if _heartCursorHidden {
+            NSCursor.unhide()
+            _heartCursorHidden = false
+        }
     }
 
     private static func latestDownloadsPNG() -> URL? {
@@ -2776,7 +2895,8 @@ class EmojiAnimator {
 
         let bounds = hostLayer.bounds
         let container = CALayer()
-        container.frame = bounds
+        // Shifted right by 1/5 of the screen width (otherwise unchanged).
+        container.frame = bounds.offsetBy(dx: bounds.width / 5.0, dy: 0)
         hostLayer.addSublayer(container)
         activeEffects["rainbow"] = container
 
