@@ -129,6 +129,8 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`
 - `GET /test/break/<minutes>` — start/reset the ☕️ Break countdown overlay for N minutes
 - `GET /test/break/close` — close the Break overlay
+- `GET /test/tile` — tile Terminal windows (same action as ⌘⌃A); headless way to exercise `TerminalTiler`
+- `GET /test/whip` — fire the 🔥 WIP Agent whip overlay (same action as ⌃W); NB leaves the overlay up until Esc
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 - `GET /sound/pressed/<file>`, `GET /sound/stopped/<file>` — tablet reports a sound press/stop; the Mac maps it to an overlay effect via `SoundEffectMap` (e.g. `/sound/pressed/40_joker.mp3` → blood drip). `GET /effect/blood-drip` triggers the blood overlay directly.
 
@@ -153,6 +155,10 @@ For local E2E checks without stealing focus:
 - New-instance grace timeout extended from 200ms to ~1s before falling back to SIGKILL on the previous instance.
 - On launch, if stderr is not already a regular file (i.e. not piped by `start.sh`), `main.swift` redirects stdout/stderr to `/tmp/victor-macos-addons.log` itself — so launching via `open` (Spotlight, Login Items) logs to the same file as a LaunchAgent boot.
 - Result: `pkill -f "Victor Addons"; open "/Applications/Victor Addons.app"` and `launchctl kickstart -k gui/$UID/ro.victorrentea.macos-addons` are now behavioral equivalents.
+
+**Operational note (2026-06):** `TerminalTiler` reads/writes Terminal window geometry through the in-process **Accessibility API** (`AXUIElement`), relying only on this app's own Accessibility grant (the same one behind the global event tap). It previously shelled out to `osascript` + "System Events" UI scripting, which needs a *separate* Automation (Apple Events) grant; after a re-sign that grant's stored code requirement no longer matched the running binary, so the Apple Event blocked on a consent prompt a headless `osascript` subprocess can't surface and tiling silently hit the 5s timeout (symptom: `AppleScript failed: Timed out after 5.0s` in the log; ⌘⌃A and the menu item both no-op). The AX path needs no Automation permission and never spawns a subprocess.
+
+**Shortcuts/menu (2026-06):** The 🔥 menu item is **WIP Agent** (formerly "Whip Claude"), bound to **⌃W** globally (event tap, suppressed) and shown as ⌃W in the menu. NB ⌃W globally shadows the usual "delete word backwards" in terminals/editors. The bottom-left notification pill (`BottomLeftBanner`) now renders the hover-hint chip ("Hover to undo/snooze/continue/Send") **riding the orange countdown bar's fill edge**, gliding left→right with it (replaces the static chip to the pill's right); reusable across every banner caller.
 
 ## AI Instructions
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.

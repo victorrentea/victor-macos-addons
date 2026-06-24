@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 24, 01:08"
+    static let BUILD_TIME = "Jun 24, 15:39"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -271,9 +271,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
-        // 🔥 Whip Claude — crack a whip to interrupt Claude. Plain action (no checkbox); Esc dismisses.
+        // 🔥 WIP Agent — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
         menu.addItem(.separator())
-        addItem("🔥 Whip Claude", action: #selector(whipAction))
+        let wipItem = addItem("🔥 WIP Agent", action: #selector(whipAction))
+        wipItem.keyEquivalent = "w"
+        wipItem.keyEquivalentModifierMask = .control
 
         // Quit (build timestamp inlined to save a menu line)
         let quitItem = addItem("⏻ Quit – " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))

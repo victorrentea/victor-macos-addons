@@ -434,6 +434,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestBreakClose = { [weak self] in
             DispatchQueue.main.async { self?.breakTimer.close() }
         }
+        tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
+        tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -669,6 +671,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
+        eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         eventTap.onToggleTranscription = { [weak sm] in
             guard let sm else { return }
             switch sm.state {

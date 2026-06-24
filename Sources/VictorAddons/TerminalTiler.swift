@@ -1,12 +1,22 @@
-import Foundation
+import AppKit
 import CoreGraphics
+import ApplicationServices
 
 /// Snaps each Terminal window to the nearest free quadrant of its current monitor.
 /// Minimizes total movement (brute-force permutations — fine for ≤4 windows per monitor).
 /// Windows stay on whichever display they currently occupy.
+///
+/// Window geometry is read/written through the in-process **Accessibility API**
+/// (`AXUIElement`), which relies only on this app's own Accessibility grant — the
+/// same one that powers the global event tap. The previous implementation shelled
+/// out to `osascript` + "System Events" UI scripting, which needs a *separate*
+/// Automation (Apple Events) grant; after any re-sign that grant's code requirement
+/// no longer matched the running binary, so the Apple Event blocked on a consent
+/// prompt that a headless subprocess can't surface and tiling silently timed out.
 enum TerminalTiler {
 
     private static let MARGIN = 2
+    private static let terminalBundleID = "com.apple.Terminal"
 
     private struct Rect {
         let x: Int, y: Int, w: Int, h: Int
@@ -20,34 +30,22 @@ enum TerminalTiler {
         let wins = getTerminalWindows()
         guard !displays.isEmpty, !wins.isEmpty else { return }
 
-        var groups: [Int: [(idx: Int, rect: Rect)]] = [:]
+        var groups: [Int: [(win: AXUIElement, rect: Rect)]] = [:]
         for w in wins {
             let (cx, cy) = w.rect.center
             let di = displayFor(cx: cx, cy: cy, displays: displays)
             groups[di, default: []].append(w)
         }
 
-        var commands: [String] = []
         for (di, var ws) in groups {
             let quads = quadrants(of: displays[di])
             ws = Array(ws.prefix(quads.count))
-            let assignment = assignOptimally(windows: ws, quads: quads)
+            let assignment = assignOptimally(windowRects: ws.map { $0.rect }, quads: quads)
             for (i, w) in ws.enumerated() {
                 let q = quads[assignment[i]]
-                commands.append("tell window \(w.idx) to set position to {\(q.x), \(q.y)}")
-                commands.append("tell window \(w.idx) to set size to {\(q.w), \(q.h)}")
+                setWindowFrame(w.win, x: q.x, y: q.y, w: q.w, h: q.h)
             }
         }
-
-        guard !commands.isEmpty else { return }
-        let apple = """
-        tell application "System Events"
-            tell process "Terminal"
-        \(commands.joined(separator: "\n"))
-            end tell
-        end tell
-        """
-        _ = AppleScriptRunner.run(apple)
     }
 
     // MARK: - Displays
@@ -72,35 +70,58 @@ enum TerminalTiler {
         return 0
     }
 
-    // MARK: - Terminal windows
+    // MARK: - Terminal windows (Accessibility API)
 
-    private static func getTerminalWindows() -> [(idx: Int, rect: Rect)] {
-        // System Events is the only reliable way to read/write Terminal window geometry
-        // (Terminal's own AppleScript bounds setter silently refuses some moves).
-        let script = """
-        tell application "System Events"
-            tell process "Terminal"
-                set out to ""
-                set i to 0
-                repeat with w in windows
-                    set i to i + 1
-                    set p to position of w
-                    set s to size of w
-                    set out to out & i & "," & (item 1 of p) & "," & (item 2 of p) & "," & (item 1 of s) & "," & (item 2 of s) & linefeed
-                end repeat
-                return out
-            end tell
-        end tell
-        """
-        guard let output = AppleScriptRunner.run(script) else { return [] }
-        return output
-            .split(separator: "\n")
-            .compactMap { line in
-                let parts = line.split(separator: ",").compactMap { Int($0) }
-                guard parts.count == 5 else { return nil }
-                return (idx: parts[0],
-                        rect: Rect(x: parts[1], y: parts[2], w: parts[3], h: parts[4]))
+    /// Read every Terminal window's frame via AX. Position/size are in the global
+    /// top-left-origin point space — the same space as `CGDisplayBounds`, so the
+    /// quadrant math below needs no conversion. Returns the live `AXUIElement` for
+    /// each window so we can write the new frame straight back to it.
+    private static func getTerminalWindows() -> [(win: AXUIElement, rect: Rect)] {
+        guard let app = NSRunningApplication
+            .runningApplications(withBundleIdentifier: terminalBundleID).first else {
+            return []
+        }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        var windowsValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+              let windows = windowsValue as? [AXUIElement] else {
+            return []
+        }
+        return windows.compactMap { win in
+            guard let pos = axValue(of: win, kAXPositionAttribute, type: .cgPoint, as: CGPoint.self),
+                  let size = axValue(of: win, kAXSizeAttribute, type: .cgSize, as: CGSize.self) else {
+                return nil
             }
+            return (win: win,
+                    rect: Rect(x: Int(pos.x), y: Int(pos.y),
+                               w: Int(size.width), h: Int(size.height)))
+        }
+    }
+
+    private static func setWindowFrame(_ win: AXUIElement, x: Int, y: Int, w: Int, h: Int) {
+        var point = CGPoint(x: x, y: y)
+        if let posValue = AXValueCreate(.cgPoint, &point) {
+            AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, posValue)
+        }
+        var size = CGSize(width: w, height: h)
+        if let sizeValue = AXValueCreate(.cgSize, &size) {
+            AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, sizeValue)
+        }
+    }
+
+    /// Read an `AXValue`-wrapped struct (CGPoint/CGSize) attribute off `el`.
+    private static func axValue<T>(of el: AXUIElement, _ attr: String,
+                                   type: AXValueType, as _: T.Type) -> T? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
+              let value = raw, CFGetTypeID(value) == AXValueGetTypeID() else {
+            return nil
+        }
+        let axValue = value as! AXValue
+        let out = UnsafeMutablePointer<T>.allocate(capacity: 1)
+        defer { out.deallocate() }
+        guard AXValueGetValue(axValue, type, out) else { return nil }
+        return out.pointee
     }
 
     // MARK: - Quadrants & assignment
@@ -131,12 +152,12 @@ enum TerminalTiler {
         return result
     }
 
-    private static func assignOptimally(windows: [(idx: Int, rect: Rect)], quads: [Rect]) -> [Int] {
+    private static func assignOptimally(windowRects: [Rect], quads: [Rect]) -> [Int] {
         var bestPerm: [Int] = []
         var bestCost = Double.infinity
-        for perm in permutations(of: quads.count, choose: windows.count) {
-            let cost = (0..<windows.count).reduce(0.0) { acc, i in
-                acc + dist2(windows[i].rect.center, quads[perm[i]].center)
+        for perm in permutations(of: quads.count, choose: windowRects.count) {
+            let cost = (0..<windowRects.count).reduce(0.0) { acc, i in
+                acc + dist2(windowRects[i].center, quads[perm[i]].center)
             }
             if cost < bestCost { bestCost = cost; bestPerm = perm }
         }

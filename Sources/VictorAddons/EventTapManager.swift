@@ -30,6 +30,7 @@ class EventTapManager {
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
+    var onWhip: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -38,6 +39,7 @@ class EventTapManager {
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
     private let VK_T: CGKeyCode = 0x11
+    private let VK_W: CGKeyCode = 0x0D
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
     private let MOUSE_BUTTON_3: Int64 = 2  // wheel click
@@ -179,6 +181,13 @@ class EventTapManager {
         // Cmd+Ctrl+T → toggle transcription (suppress)
         if keyCode == VK_T && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onToggleTranscription?() }
+            return nil
+        }
+
+        // Ctrl+W → 🔥 WIP Agent (whip Claude) (suppress). NB: this globally
+        // shadows Ctrl+W's usual "delete word backwards" in terminals/editors.
+        if keyCode == VK_W && hasCtrl && !hasCmd && !hasOpt && !hasShift {
+            DispatchQueue.global().async { [weak self] in self?.onWhip?() }
             return nil
         }
 

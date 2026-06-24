@@ -33,6 +33,10 @@ class TabletHttpServer {
         case testBreakStart(Int)
         /// Close the Break countdown overlay (test hook).
         case testBreakClose
+        /// Tile Terminal windows — same action as ⌘⌃A (test hook).
+        case testTile
+        /// Fire the 🔥 WIP Agent whip overlay — same action as ⌃W (test hook).
+        case testWhip
         case promptCapture
         case intellijFileOpened
         case unknown
@@ -71,6 +75,8 @@ class TabletHttpServer {
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
     var onTestBreakClose: (() -> Void)?
+    var onTestTile: (() -> Void)?
+    var onTestWhip: (() -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -174,6 +180,10 @@ class TabletHttpServer {
                     self?.onTestBreakStart?(minutes)
                 case .testBreakClose:
                     self?.onTestBreakClose?()
+                case .testTile:
+                    self?.onTestTile?()
+                case .testWhip:
+                    self?.onTestWhip?()
                 case .promptCapture:
                     contentType = "application/json"
                     let promptBody = Self.extractBody(raw)
@@ -239,6 +249,10 @@ class TabletHttpServer {
             return .testWisprRecording
         case "/test/break/close":
             return .testBreakClose
+        case "/test/tile":
+            return .testTile
+        case "/test/whip":
+            return .testWhip
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":

@@ -107,6 +107,14 @@ final class BottomLeftBanner {
     private var countdownDuration: TimeInterval = 0
     private var countdownElapsed: TimeInterval = 0
 
+    /// When true, the hint chip rides the progress-bar fill edge (gliding
+    /// left→right with the countdown) instead of sitting fixed to the right of
+    /// the pill. Set per `show()` — true whenever a hover countdown accompanies
+    /// the hint, which every current caller does. `hintRideProgress` caches the
+    /// latest fill fraction so a pill resize can re-place the chip without a tick.
+    private var hintRiding = false
+    private var hintRideProgress: CGFloat = 0
+
     /// Final window opacity when visible. Below 1.0 to add an extra layer
     /// of see-through on top of the NSVisualEffectView glass.
     private static let visibleAlpha: CGFloat = 0.75
@@ -144,7 +152,7 @@ final class BottomLeftBanner {
         if isVisible {
             updateText(text)
             updateBackgroundColor(backgroundColor)
-            applyHint(hoverHint)
+            applyHint(hoverHint, riding: hoverCountdown != nil)
             applyHoverCountdown(hoverCountdown)
             return
         }
@@ -162,7 +170,7 @@ final class BottomLeftBanner {
             ctx.duration = 0.3
             for entry in panels { entry.panel.animator().alphaValue = Self.visibleAlpha }
         }
-        applyHint(hoverHint)
+        applyHint(hoverHint, riding: hoverCountdown != nil)
         applyHoverCountdown(hoverCountdown)
     }
 
@@ -329,15 +337,20 @@ final class BottomLeftBanner {
     /// `hint` is non-empty — fades a small label in to the right of each pill,
     /// glued to its bottom edge. Built off the live pill frames (not the screen
     /// list) so the hint hugs the pill's actual right edge as it resizes.
-    private func applyHint(_ hint: String?) {
+    private func applyHint(_ hint: String?, riding: Bool) {
         clearHint()
         guard hoverable, onHover != nil, let hint = hint, !hint.isEmpty else { return }
+        hintRiding = riding
+        hintRideProgress = 0
         for entry in panels {
             let panel = buildHintPanel(pillFrame: entry.panel.frame, text: hint)
             panel.alphaValue = 0
             panel.orderFrontRegardless()
             hintPanels.append(panel)
         }
+        // Riding chips start glued to the pill's left edge (fill = 0) and travel
+        // right with the bar; fixed chips sit to the right of the pill.
+        if riding { positionHintsForProgress(0) } else { repositionHints() }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.3
             for panel in hintPanels { panel.animator().alphaValue = 1.0 }
@@ -348,17 +361,37 @@ final class BottomLeftBanner {
     func clearHint() {
         for panel in hintPanels { panel.orderOut(nil) }
         hintPanels.removeAll()
+        hintRiding = false
+        hintRideProgress = 0
     }
 
-    /// Keep each hint glued to the right edge of its pill at the bottom edge.
-    /// Called after the pill resizes (`updateText`) so the gap stays constant
-    /// as the box grows/shrinks to hug new text. No-op when no hint is showing.
+    /// Re-place every hint chip after a pill move/resize. Delegates to the
+    /// riding layout while a countdown is driving the chip, else the fixed
+    /// to-the-right layout. No-op when no hint is showing.
     private func repositionHints() {
         guard hintPanels.count == panels.count else { return }
+        if hintRiding { positionHintsForProgress(hintRideProgress); return }
         for (entry, hint) in zip(panels, hintPanels) {
             let pill = entry.panel.frame
             var f = hint.frame
             f.origin.x = pill.maxX + Style.hintGap
+            f.origin.y = pill.minY
+            hint.setFrame(f, display: true)
+        }
+    }
+
+    /// Slide each hint chip so its left edge tracks the progress-bar fill edge
+    /// (`pill.minX + progress · pillWidth`), gliding left→right in lockstep with
+    /// the orange bar. At `progress == 1` the chip lands exactly where the fixed
+    /// hint used to sit — just past the pill's right edge — so the motion ends on
+    /// the familiar spot. Sits flush to the pill's bottom edge, over the bar.
+    private func positionHintsForProgress(_ progress: CGFloat) {
+        guard hintPanels.count == panels.count else { return }
+        hintRideProgress = progress
+        for (entry, hint) in zip(panels, hintPanels) {
+            let pill = entry.panel.frame
+            var f = hint.frame
+            f.origin.x = pill.minX + progress * pill.width
             f.origin.y = pill.minY
             hint.setFrame(f, display: true)
         }
@@ -388,6 +421,7 @@ final class BottomLeftBanner {
             entry.progressBar.isHidden = false
             setBarWidth(entry.progressBar, 0)
         }
+        positionHintsForProgress(0)
         countdownTimer = Timer.scheduledTimer(withTimeInterval: Self.countdownTick, repeats: true) { [weak self] _ in
             self?.tickCountdown()
         }
@@ -403,6 +437,7 @@ final class BottomLeftBanner {
         for entry in panels {
             setBarWidth(entry.progressBar, CGFloat(progress) * entry.panel.frame.width)
         }
+        positionHintsForProgress(CGFloat(progress))
         if countdownElapsed >= countdownDuration {
             countdownTimer?.invalidate(); countdownTimer = nil
             onHoverCountdownExpired?()
