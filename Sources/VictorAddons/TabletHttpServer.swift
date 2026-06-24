@@ -16,6 +16,12 @@ class TabletHttpServer {
         case soundPlay(String, Int?)
         case soundVolume(Int)
         case soundStop
+        /// Tablet reports a sound button was pressed; the Mac decides (via
+        /// SoundEffectMap) whether to trigger a paired overlay effect.
+        case soundPressed(String)
+        /// Tablet reports a sound finished/stopped; the Mac decides whether to
+        /// stop a paired (looping) overlay effect.
+        case soundStopped(String)
         case testTranscriptionStart
         case testTranscriptionStop
         case testTranscriptionToggle
@@ -50,6 +56,12 @@ class TabletHttpServer {
     /// play a feedback click at the new level.
     var onSoundVolume: ((Int) -> Void)?
     var onSoundStop: (() -> Void)?
+    /// Tablet reports a sound press by bare filename; the Mac maps it to a
+    /// paired overlay effect (or ignores it). Mapping lives on the Mac.
+    var onSoundPressed: ((String) -> Void)?
+    /// Tablet reports a sound stop by bare filename; the Mac maps it to a
+    /// paired effect-stop (or ignores it).
+    var onSoundStopped: ((String) -> Void)?
     var onTestTranscriptionStart: (() -> Void)?
     var onTestTranscriptionStop: (() -> Void)?
     var onTestTranscriptionToggle: (() -> Void)?
@@ -128,6 +140,10 @@ class TabletHttpServer {
                     self?.onSoundVolume?(pct)
                 case .soundStop:
                     self?.onSoundStop?()
+                case .soundPressed(let name):
+                    self?.onSoundPressed?(name)
+                case .soundStopped(let name):
+                    self?.onSoundStopped?(name)
                 case .testTranscriptionStart:
                     self?.onTestTranscriptionStart?()
                 case .testTranscriptionStop:
@@ -240,6 +256,14 @@ class TabletHttpServer {
                 let name = String(pathOnly.dropFirst("/sound/play/".count))
                 let vol = queryItems.first(where: { $0.name == "vol" })?.value.flatMap(Int.init)
                 if !name.isEmpty { return .soundPlay(name, vol) }
+            }
+            if pathOnly.hasPrefix("/sound/pressed/") {
+                let name = String(pathOnly.dropFirst("/sound/pressed/".count))
+                if !name.isEmpty { return .soundPressed(name) }
+            }
+            if pathOnly.hasPrefix("/sound/stopped/") {
+                let name = String(pathOnly.dropFirst("/sound/stopped/".count))
+                if !name.isEmpty { return .soundStopped(name) }
             }
             if pathOnly.hasPrefix("/sound/volume/") {
                 if let pct = Int(pathOnly.dropFirst("/sound/volume/".count)) {

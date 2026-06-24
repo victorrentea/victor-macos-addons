@@ -21,4 +21,24 @@ final class TabletHttpServerTests: XCTestCase {
     func testRouteUnknownForUnsupportedPath() {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/unknown"), .unknown)
     }
+
+    func testRouteMapsSoundPressedAndStopped() {
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/sound/pressed/40_joker.mp3"), .soundPressed("40_joker.mp3"))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/sound/stopped/37_rainbow.mp3"), .soundStopped("37_rainbow.mp3"))
+    }
+
+    func testSoundStopExactStillDistinctFromStopped() {
+        // "/sound/stop" preempts tablet-routed playback; it must NOT be parsed
+        // as a "/sound/stopped/<file>" report.
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/sound/stop"), .soundStop)
+    }
+
+    func testSoundEffectMapDrivesBloodAndKeepsSirenSpecial() {
+        XCTAssertEqual(SoundEffectMap.pressEffect(for: "40_joker.mp3"), "blood-drip")
+        XCTAssertEqual(SoundEffectMap.pressEffect(for: "03_explosion.mp3"), "explosion")
+        XCTAssertEqual(SoundEffectMap.stopEffect(for: "37_rainbow.mp3"), "rainbow/stop")
+        // Siren stays special-cased on the tablet (alarm overlay) — not mapped here.
+        XCTAssertNil(SoundEffectMap.pressEffect(for: "02_siren.mp3"))
+        XCTAssertNil(SoundEffectMap.pressEffect(for: "99_nonexistent.mp3"))
+    }
 }

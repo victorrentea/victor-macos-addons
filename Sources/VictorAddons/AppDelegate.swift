@@ -170,6 +170,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "fireworks":     self?.animator.showFireworks(playSound: false)
             case "fear":          self?.animator.showFear(playSound: false)
             case "fail":          self?.animator.showFail(playSound: false)
+            case "blood-drip":    self?.animator.showBloodDrip(playSound: false)
             case "sepia":         self?.animator.showSepia(playSound: false)
             case "fire-alarm":      self?.animator.showFireAlarm(playSound: false)
             case "bullet-holes":    self?.animator.showBulletHoles(playSound: false)
@@ -219,6 +220,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             } else {
                 fire()
             }
+        }
+        // Tablet reports EVERY sound press/stop by bare filename; the Mac owns
+        // the sound→effect mapping (SoundEffectMap) and dispatches through the
+        // same onEffect path so all sync/compensation logic is reused. Changing
+        // a mapping needs only a Mac rebuild — no tablet redeploy.
+        tabletServer?.onSoundPressed = { [weak self] file in
+            guard let effect = SoundEffectMap.pressEffect(for: file) else { return }
+            self?.tabletServer?.onEffect?(effect)
+        }
+        tabletServer?.onSoundStopped = { [weak self] file in
+            guard let effect = SoundEffectMap.stopEffect(for: file) else { return }
+            self?.tabletServer?.onEffect?(effect)
         }
         tabletServer?.onOpenUrl = { [weak self] url in
             self?.openUrlInChrome(url)

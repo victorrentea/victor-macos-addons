@@ -1794,6 +1794,83 @@ class EmojiAnimator {
         imgLayer.add(fadeOut, forKey: "failFade")
     }
 
+    // MARK: - Blood drip overlay (sfx #40, 40_joker.mp3)
+
+    /// Blood band pinned to the TOP of the screen at full width, drips hanging
+    /// down with droplets falling onto the (transparent) live screen below.
+    /// The source loop (~1.6s) plays ~1.5x slower and repeats for the joker
+    /// sound's duration, fading in at the head and out at the tail.
+    func showBloodDrip(playSound: Bool = true) {
+        if cancelIfRunning("blood-drip", sound: playSound ? "40_joker.mp3" : nil) { return }
+
+        guard let url = Bundle.module.url(forResource: "blood-drip", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("blood-drip.gif not found")
+            return
+        }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var sourceDuration: Double = 0
+        var gifW: CGFloat = 430, gifH: CGFloat = 240
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            if i == 0 { gifW = CGFloat(cg.width); gifH = CGFloat(cg.height) }
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
+            sourceDuration += delay
+        }
+        guard !images.isEmpty, sourceDuration > 0 else { return }
+
+        // Linger exactly as long as the joker track; fall back to its measured 9.0s.
+        var duration: Double = 9.0
+        if let soundURL = SoundManager.shared.soundURL(for: "40_joker.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
+
+        let bounds = hostLayer.bounds
+        // Full screen width, aspect-preserved height (no distortion), pinned to
+        // the TOP edge — y = 0 is the bottom in this layer's geometry.
+        let layerW = bounds.width
+        let layerH = layerW * (gifH / gifW)
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: 0, y: bounds.height - layerH, width: layerW, height: layerH)
+        gifLayer.contentsGravity = .resize
+        if let first = images.first { gifLayer.contents = first }
+        hostLayer.addSublayer(gifLayer)
+
+        // ~1.5x slower than the source loop ("slow it down a bit"), repeating.
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = sourceDuration * 1.5
+        anim.repeatCount = .infinity
+        gifLayer.add(anim, forKey: "bloodFrames")
+
+        // Quick fade-in at the head, fade-out over the last 0.6s.
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = 0.25
+        gifLayer.add(fadeIn, forKey: "bloodFadeIn")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.6)
+        fadeOut.duration = 0.6
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        gifLayer.add(fadeOut, forKey: "bloodFadeOut")
+
+        if playSound { SoundManager.shared.play("40_joker.mp3") }
+        trackEffect("blood-drip", layer: gifLayer, duration: duration, sound: playSound ? "40_joker.mp3" : nil)
+    }
+
     func showHeartbeat() {
         guard activeEffects["heartbeat"] == nil else { return }
         let bounds = hostLayer.bounds

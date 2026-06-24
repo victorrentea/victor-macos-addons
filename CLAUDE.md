@@ -75,6 +75,25 @@ Fullscreen overlay and WebSocket integration for live sessions:
 Connects to the training-assistant backend via WebSocket at `/ws/__overlay__`.
 Receives session lifecycle events (`session_started`, `session_ended`) to enable/disable join link menu item.
 
+**Sound → overlay-effect mapping (Mac-owned).** The tablet no longer decides
+which sound triggers which visual effect. On every sound press it fires
+`GET /sound/pressed/<file>` and on every stop `GET /sound/stopped/<file>` (bare
+filenames), and the Mac looks the effect up in `SoundEffectMap.swift` — the
+single source of truth (`onPress: [file → effect]`, `onStop: [file →
+effect/stop]`) — then dispatches through the existing `onEffect` switch (reusing
+all BT visual-compensation/sync logic). **Changing a mapping or adding a new
+effect needs only a Mac rebuild — no tablet redeploy.** The siren
+(`02_siren.mp3`) is the one exception: it drives the alarm overlay
+(`/alarm/start`,`/alarm/stop`) and stays special-cased on the tablet. Effects
+are CALayers on the overlay's `hostLayer`, animated via `CAKeyframeAnimation`
+on `contents` from bundled gif frames (`Bundle.module`).
+- **🩸 Blood drip** (sfx #40 `40_joker.mp3` → `blood-drip`): `blood-drip.gif`
+  (white bg made transparent via ImageMagick `-coalesce -fuzz 20% -transparent`,
+  full-canvas frames) shown as a blood band pinned to the **top of the screen**
+  at full width (aspect-preserved, transparent backdrop over the live screen),
+  drips/droplets falling; the ~1.6s loop plays **~1.5× slower**, repeating for
+  the joker track (~9.0s) with a 0.25s fade-in and 0.6s fade-out tail.
+
 ### Tablet sound routing (tablet → Mac playback)
 The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash`).
 When the tablet has no BT speaker / wired headphones and the Mac answers, the tablet routes
@@ -111,6 +130,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/break/<minutes>` — start/reset the ☕️ Break countdown overlay for N minutes
 - `GET /test/break/close` — close the Break overlay
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
+- `GET /sound/pressed/<file>`, `GET /sound/stopped/<file>` — tablet reports a sound press/stop; the Mac maps it to an overlay effect via `SoundEffectMap` (e.g. `/sound/pressed/40_joker.mp3` → blood drip). `GET /effect/blood-drip` triggers the blood overlay directly.
 
 For local E2E checks without stealing focus:
 
