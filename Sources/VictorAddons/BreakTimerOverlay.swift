@@ -172,22 +172,37 @@ final class BreakTimerController {
 
     // MARK: - Activity-driven backdrop
 
-    /// While the user is active (mouse/keyboard within the last 5s) the opaque
-    /// backdrop fades fully away — only the outlined digits remain. After 5s
+    /// While the user is active (mouse/keyboard within the last 3s) the opaque
+    /// backdrop fades fully away — only the outlined digits remain. After 3s
     /// idle it fades back to fully opaque. One smooth fade per transition, so
-    /// it never flickers.
+    /// it never flickers. Exception: while zooming with the wheel the backdrop is
+    /// forced on (so the body stays solid under the cursor mid-zoom).
     private func startActivityMonitor() {
         activityTimer?.invalidate()
         // Start with NO backdrop — the timer just appeared because the user acted,
-        // so the mouse is active; the backdrop fades in only after 30s idle.
+        // so the mouse is active; the backdrop fades in only after 3s idle.
         bgOpaque = false
         bgView?.alphaValue = 0
         let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.setBackgroundOpaque(Self.systemIdleSeconds() >= 30.0)
+            let zoomHold = self.zoomBackdropUntil.map { Date() < $0 } ?? false
+            self.setBackgroundOpaque(zoomHold || Self.systemIdleSeconds() >= 3.0)
         }
         RunLoop.main.add(t, forMode: .common)
         activityTimer = t
+    }
+
+    /// Wheel-zoom forces the backdrop on instantly and holds it briefly after the
+    /// last scroll; when this deadline passes the activity monitor fades it back
+    /// out (same smooth fade as the rest), unless the user has since gone idle.
+    private var zoomBackdropUntil: Date?
+
+    func showBackdropForZoom() {
+        zoomBackdropUntil = Date().addingTimeInterval(0.6)
+        guard let bgView, !bgOpaque else { return }
+        bgOpaque = true
+        bgView.layer?.removeAllAnimations()   // cancel any in-flight fade
+        bgView.alphaValue = 1                  // instant — visible from the first notch
     }
 
     private func setBackgroundOpaque(_ opaque: Bool) {
@@ -230,6 +245,7 @@ final class BreakTimerController {
         view.onClose = { [weak self] in self?.close() }
         view.onTogglePause = { [weak self] in self?.togglePause() }
         view.onAdd = { [weak self] m in self?.addMinutes(m) }
+        view.onZoom = { [weak self] in self?.showBackdropForZoom() }
         container.addSubview(view)
 
         panel.contentView = container
@@ -345,6 +361,7 @@ final class BreakTimerView: NSView {
     var onClose: (() -> Void)?
     var onTogglePause: (() -> Void)?
     var onAdd: ((Int) -> Void)?
+    var onZoom: (() -> Void)?                 // wheel-zoom in progress → show the backdrop
 
     private var digits = "00:00"
     private var finishLocal = ""
@@ -639,11 +656,7 @@ final class BreakTimerView: NSView {
         }
         guard !combined.isEmpty else { return }
         combined.lineJoinStyle = .round
-        NSGraphicsContext.saveGraphicsState()
-        glyphShadow().set()
-        Self.lit.setFill()
-        combined.fill()
-        NSGraphicsContext.restoreGraphicsState()
+        withDenseShadow { Self.lit.setFill(); combined.fill() }
     }
 
     private func updateColonLayer(cx: CGFloat, originY: CGFloat, scale: CGFloat) {
@@ -654,11 +667,19 @@ final class BreakTimerView: NSView {
         colonLayer.shadowRadius = shadowBlur()  // same soft halo weight as every element
         let r = Self.dotR * scale
         let path = CGMutablePath()
+        // Spread shadowPath: the shadow is cast from dots expanded by `spread`, so
+        // there's a solid (≈100%) black ring hugging each dot before the blur fades
+        // — matching the stacked dense shadow the drawn elements carry.
+        let spread = shadowBlur() * 0.7
+        let shadowPath = CGMutablePath()
         for yl in Self.dotCy {
             let cy = originY + (Self.cellH - yl) * scale
             path.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
+            shadowPath.addEllipse(in: CGRect(x: cx - r - spread, y: cy - r - spread,
+                                             width: 2 * (r + spread), height: 2 * (r + spread)))
         }
         colonLayer.path = path
+        colonLayer.shadowPath = shadowPath
         CATransaction.commit()
     }
 
@@ -721,6 +742,21 @@ final class BreakTimerView: NSView {
         return sh
     }
 
+    /// Stacked shadow passes. A single blurred shadow only reaches ~50% black at
+    /// the element's very edge; stacking N passes compounds toward solid black
+    /// hugging the element while the blur still fades out beyond — i.e. an opaque
+    /// near-edge with a gradient tail.
+    private static let shadowPasses = 4
+
+    /// Draw `body` repeatedly under the shared shadow so the halo is dense
+    /// (near-100% black) right next to the element and fades out beyond it.
+    private func withDenseShadow(_ body: () -> Void) {
+        NSGraphicsContext.saveGraphicsState()
+        glyphShadow().set()
+        for _ in 0..<Self.shadowPasses { body() }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
     private func drawLabels(in area: NSRect) {
         guard area.height > 0, area.width > 0 else { return }
         let lineH = area.height * 0.46
@@ -775,10 +811,7 @@ final class BreakTimerView: NSView {
     /// Attributed text (incl. the flag attachment) drawn under the shared soft
     /// shadow, so the whole finish-time line carries one even halo.
     private func drawOutlinedAttr(_ attr: NSAttributedString, at p: NSPoint) {
-        NSGraphicsContext.saveGraphicsState()
-        glyphShadow().set()
-        attr.draw(at: p)
-        NSGraphicsContext.restoreGraphicsState()
+        withDenseShadow { attr.draw(at: p) }
     }
 
     /// Render the blinking "BREAK" title onto its own layer, centered (by ink) in
@@ -824,12 +857,10 @@ final class BreakTimerView: NSView {
     /// Text with the shared soft drop-shadow under the fill (no stroke), so BREAK
     /// carries the same even halo as every other element.
     private func drawOutlinedText(_ s: String, at p: NSPoint, font: NSFont, fill: NSColor, kern: CGFloat = 0) {
-        NSGraphicsContext.saveGraphicsState()
-        glyphShadow().set()
-        NSAttributedString(string: s, attributes: [
+        let attr = NSAttributedString(string: s, attributes: [
             .font: font, .foregroundColor: fill, .kern: kern,
-        ]).draw(at: p)
-        NSGraphicsContext.restoreGraphicsState()
+        ])
+        withDenseShadow { attr.draw(at: p) }
     }
 
     private func drawButton(_ kind: BreakButtonKind, rect r: NSRect) {
@@ -1067,6 +1098,7 @@ final class BreakTimerView: NSView {
             guard dy != 0 else { return }
             let factor = CGFloat(exp(Double(-dy) * 0.0035))
             zoomWindow(by: factor, around: NSEvent.mouseLocation)
+            onZoom?()   // show the opaque backdrop while zooming (fades out shortly after)
         } else {
             // Dragging → adjust minutes (up adds, down subtracts; up is a negative
             // delta). Accumulate precise deltas so a trackpad isn't hyper-sensitive.
