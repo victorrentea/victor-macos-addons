@@ -65,6 +65,18 @@ cp "$ICNS_FILE" "$RESOURCES/AppIcon.icns"
 # Avoids relying on debug-run artifacts that can create separate TCC entries.
 cp "$DIR/.build/arm64-apple-macosx/$BUILD_CONFIG/VictorAddons" "$MACOS/$APP_NAME"
 
+# Make the app self-contained: copy the (symlink-dereferenced) SwiftPM resource
+# bundle INTO the .app so Bundle.module resolves it via Bundle.main.bundleURL
+# (i.e. "$APP_DIR/VictorAddons_VictorAddons.bundle") instead of falling back to
+# the absolute "$DIR/.build/..." path baked into the generated accessor. Without
+# this the installed app silently depends on this source tree's .build/ dir
+# persisting — which breaks if it's built from a transient worktree.
+BUILD_BUNDLE="$DIR/.build/arm64-apple-macosx/$BUILD_CONFIG/VictorAddons_VictorAddons.bundle"
+if [ -d "$BUILD_BUNDLE" ]; then
+    rm -rf "$APP_DIR/VictorAddons_VictorAddons.bundle"
+    cp -RL "$BUILD_BUNDLE" "$APP_DIR/VictorAddons_VictorAddons.bundle"
+fi
+
 # Info.plist (must be written before signing)
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
