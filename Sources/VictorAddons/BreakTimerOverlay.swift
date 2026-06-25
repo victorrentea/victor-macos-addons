@@ -88,6 +88,10 @@ final class BreakTimerController {
         panel = nil
         view = nil
         bgView = nil
+        // The view sets custom cursors (open-hand to move, pointer over buttons,
+        // resize at corners) imperatively; restore the standard arrow so closing
+        // the timer never leaves a hand/resize cursor stuck on screen.
+        NSCursor.arrow.set()
         clearPersisted()
     }
 
@@ -310,11 +314,11 @@ final class BreakTimerController {
     }
 
     private static func defaultFrame() -> NSRect {
-        // "Main screen" = the primary display (menu-bar screen, origin .zero) —
-        // NSScreen.main is the *focused* screen, which may be an external monitor.
-        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
-            ?? NSScreen.main ?? NSScreen.screens.first
-        let f = screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        // Always the laptop's built-in retina display — that's what's projected to
+        // the room. The macOS *primary* display (origin .zero) or NSScreen.main (the
+        // focused screen) may be an external monitor when one is set as main during
+        // a course, which would open the timer on the wrong screen.
+        let f = AppDelegate.findRetinaScreen().frame
         // Default placement/size measured from the reference: ~29% of screen
         // width, top-right with a 6.4% right gap and 15% top gap.
         let w = f.width * 0.29
@@ -351,7 +355,7 @@ final class BreakTimerPanel: NSPanel {
 
 // MARK: - Buttons / corners
 
-enum BreakButtonKind { case close, pause, add1, add3, add5 }
+enum BreakButtonKind { case close, pause }
 private enum ResizeCorner { case bottomLeft, bottomRight, topLeft, topRight }
 private enum DragMode { case none, move, resize(ResizeCorner), button(BreakButtonKind) }
 
@@ -498,18 +502,22 @@ final class BreakTimerView: NSView {
         let label = NSRect(x: digitsLeftX, y: bottomY,
                            width: max(0, labelRight - digitsLeftX), height: bottomH)
 
-        // Buttons end exactly at the digits' right edge.
+        // Buttons end exactly at the digits' right edge. Only ⏸ pause and ✕ close
+        // remain (time is adjusted by holding the mouse and scrolling), so size them
+        // as squares and right-align them rather than stretching across the row.
         let btnLeft = label.maxX
         let btnRight = digitsRightX
-        let kinds: [BreakButtonKind] = [.add1, .add3, .add5, .pause, .close]
+        let kinds: [BreakButtonKind] = [.pause, .close]
         var buttons: [(NSRect, BreakButtonKind)] = []
         let areaW = max(0, btnRight - btnLeft)
         let gap = areaW * 0.03
-        let bw = (areaW - gap * CGFloat(kinds.count - 1)) / CGFloat(kinds.count)
-        let bh = min(bottomH, bw)
+        let maxBw = (areaW - gap * CGFloat(kinds.count - 1)) / CGFloat(kinds.count)
+        let side = min(bottomH, maxBw)
+        let totalW = side * CGFloat(kinds.count) + gap * CGFloat(kinds.count - 1)
+        let startX = btnRight - totalW
         for (i, k) in kinds.enumerated() {
-            let x = btnLeft + CGFloat(i) * (bw + gap)
-            buttons.append((NSRect(x: x, y: bottomY + (bottomH - bh) / 2, width: bw, height: bh), k))
+            let x = startX + CGFloat(i) * (side + gap)
+            buttons.append((NSRect(x: x, y: bottomY + (bottomH - side) / 2, width: side, height: side), k))
         }
 
         let corners: [(NSRect, ResizeCorner)] = [
@@ -908,22 +916,6 @@ final class BreakTimerView: NSView {
                 NSBezierPath(rect: NSRect(x: inset.minX, y: inset.minY, width: barW, height: inset.height)).fill()
                 NSBezierPath(rect: NSRect(x: inset.maxX - barW, y: inset.minY, width: barW, height: inset.height)).fill()
             }
-        case .add1, .add3, .add5:
-            let text = kind == .add1 ? "+1" : (kind == .add3 ? "+3" : "+5")
-            // Size the text to fill the button (≈86% of it).
-            let base: CGFloat = 100
-            let probe = NSAttributedString(string: text, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: base, weight: .regular)])
-            let psz = probe.size()
-            let scale = min(r.width * 0.86 / psz.width, r.height * 0.86 / psz.height)
-            let fontSize = max(7, base * scale)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
-                .foregroundColor: Self.lit,
-            ]
-            let s = NSAttributedString(string: text, attributes: attrs)
-            let sz = s.size()
-            s.draw(at: NSPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2))
         }
     }
 
@@ -1050,9 +1042,6 @@ final class BreakTimerView: NSView {
         switch kind {
         case .close: onClose?()
         case .pause: onTogglePause?()
-        case .add1: onAdd?(1)
-        case .add3: onAdd?(3)
-        case .add5: onAdd?(5)
         }
     }
 
@@ -1193,6 +1182,11 @@ final class BreakTimerView: NSView {
         hoveredButton = nil
         cornerAlpha = 1
         needsDisplay = true
+        // updateHover sets cursors imperatively (open-hand on the body, pointer on
+        // buttons), which bypasses AppKit's cursor-rect restoration. Without this,
+        // leaving the timer after a hover/move leaves the open-hand cursor stuck.
+        // While a drag is in progress keep the drag cursor; mouseUp restores it.
+        if case .none = dragMode { NSCursor.arrow.set() }
         // Stay fully visible for 1s, then fade out over 300ms.
         cornerHoldTimer?.invalidate(); cornerFadeTimer?.invalidate()
         let hold = Timer(timeInterval: 1.0, repeats: false) { [weak self] _ in self?.startCornerFade() }

@@ -15,15 +15,33 @@ class LocalWebSocketServer {
     private var connections: [UUID: NWConnection] = [:]
     private var lastSlide: [String: Any]? = nil
     private let queue = DispatchQueue(label: "ws-server", qos: .utility)
+    private var stopped = false
+    private var bindAttempts = 0
 
     func start() {
+        // Funnel the whole listener lifecycle (first start, retries, and the
+        // listener's own state callbacks) onto `queue` so there are no
+        // cross-thread races on `listener`.
+        queue.async { [weak self] in self?.startListener() }
+    }
+
+    private func startListener() {
+        stopped = false
+        guard listener == nil else { return }   // already listening or a retry pending
+
         let params = NWParameters.tcp
+        // SO_REUSEADDR: rebind across a lingering TIME_WAIT socket. Without this a
+        // quick app restart — or restarting right after a port squatter was killed —
+        // fails with EADDRINUSE and leaves the daemon link dead until the *next*
+        // manual restart.
+        params.allowLocalEndpointReuse = true
         let wsOptions = NWProtocolWebSocket.Options()
         wsOptions.autoReplyPing = true
         params.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)
 
         guard let listener = try? NWListener(using: params, on: NWEndpoint.Port(rawValue: Self.port)!) else {
-            overlayInfo("Failed to create WS listener")
+            overlayInfo("Failed to create WS listener — retrying")
+            scheduleRetry()
             return
         }
         self.listener = listener
@@ -31,12 +49,20 @@ class LocalWebSocketServer {
         listener.newConnectionHandler = { [weak self] conn in
             self?.handleNewConnection(conn)
         }
-        listener.stateUpdateHandler = { state in
+        listener.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
+                self?.bindAttempts = 0
                 overlayInfo("WS server listening on ws://127.0.0.1:\(Self.port)")
             case .failed(let error):
-                overlayInfo("WS server failed: \(error)")
+                // Usually EADDRINUSE: another process holds 8765 (e.g. a stray
+                // `python -m http.server 8765`) or a previous instance is still
+                // exiting. Drop the dead listener and retry so the daemon link
+                // self-heals once the port frees — no manual restart needed.
+                overlayInfo("WS server failed: \(error) — retrying")
+                self?.listener?.cancel()
+                self?.listener = nil
+                self?.scheduleRetry()
             default:
                 break
             }
@@ -44,13 +70,27 @@ class LocalWebSocketServer {
         listener.start(queue: queue)
     }
 
-    func stop() {
-        listener?.cancel()
-        listener = nil
-        for (_, conn) in connections {
-            conn.cancel()
+    // Re-attempt binding with a short backoff (capped at 15s) until it succeeds,
+    // so the daemon link recovers automatically. Runs on `queue`.
+    private func scheduleRetry() {
+        guard !stopped, listener == nil else { return }
+        bindAttempts += 1
+        let delay = Double(min(2 + bindAttempts, 15))
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, !self.stopped, self.listener == nil else { return }
+            self.startListener()
         }
-        connections.removeAll()
+    }
+
+    func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.stopped = true
+            self.listener?.cancel()
+            self.listener = nil
+            for (_, conn) in self.connections { conn.cancel() }
+            self.connections.removeAll()
+        }
     }
 
     func pushSlide(_ event: [String: Any]) {

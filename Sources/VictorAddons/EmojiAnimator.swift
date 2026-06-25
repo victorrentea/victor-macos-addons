@@ -262,12 +262,21 @@ class EmojiAnimator {
         let bounds = hostLayer.bounds
         let totalDuration = 4.5
 
-        // Capture screenshot
-        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-              let screenshot = CGDisplayCreateImage(
-                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
-              ) else { return }
+        // Capture the built-in (retina) display off the main thread (the
+        // screencapture subprocess takes ~hundreds of ms), then build the shatter on
+        // main. Same path as the heartbeat: it grabs the currently-visible space —
+        // including a fullscreen app — on the screen the overlay sits on, never the
+        // wrong (primary) display nor the desktop behind a fullscreen window.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let screenshot = Self.captureBuiltInDisplay()
+            DispatchQueue.main.async {
+                guard let self, let screenshot else { return }
+                self.renderBrokenGlass(screenshot: screenshot, bounds: bounds, totalDuration: totalDuration)
+            }
+        }
+    }
 
+    private func renderBrokenGlass(screenshot: CGImage, bounds: CGRect, totalDuration: Double) {
         let container = CALayer()
         container.frame = bounds
         hostLayer.addSublayer(container)
@@ -2026,7 +2035,10 @@ class EmojiAnimator {
     }
 
     private static func captureBuiltInDisplay() -> CGImage? {
-        let tmpPath = NSTemporaryDirectory() + "victor-heartbeat-\(getpid()).png"
+        // Unique per call: several capture effects (heartbeat, broken glass, FBI,
+        // phone) can now run this concurrently — a pid-only path would let them
+        // clobber each other's file.
+        let tmpPath = NSTemporaryDirectory() + "victor-capture-\(getpid())-\(UUID().uuidString).png"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         // No -C: the cursor is intentionally excluded from the captured image, so
@@ -2153,7 +2165,7 @@ class EmojiAnimator {
         DispatchQueue.main.asyncAfter(deadline: .now() + converge) { [weak self, weak container] in
             guard let self = self, let container = container,
                   self.activeEffects["love-hands"] === container else { return }
-            self.spawnLoveHearts(center: meetingPoint, rise: riseDuration, fadeOver: fadeDuration)
+            self.spawnLoveHearts(center: meetingPoint, rise: riseDuration, fadeOver: fadeDuration, parent: container)
         }
 
         // The hands now linger until the sfx (41_love_hearts.mp3) is almost over,
@@ -2208,7 +2220,7 @@ class EmojiAnimator {
     /// the swarm fans out without repeating the same arc.
     /// Parameters `rise`/`fadeOver` set the *target* duration; per-heart life
     /// is randomized ±15% around `rise + fadeOver` for organic spread.
-    private func spawnLoveHearts(center: CGPoint, rise: CFTimeInterval, fadeOver: CFTimeInterval) {
+    private func spawnLoveHearts(center: CGPoint, rise: CFTimeInterval, fadeOver: CFTimeInterval, parent: CALayer) {
         let bounds = hostLayer.bounds
         let heartCount = 7
         let baseSize: CGFloat = 70
@@ -2232,14 +2244,19 @@ class EmojiAnimator {
             let wobbleAmp = bounds.width * CGFloat.random(in: 0.010...0.025)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + spawnDelay) { [weak self] in
-                guard let self = self else { return }
+                // Don't spawn into a love-hands burst that was already stopped/faded
+                // (the tracker is cleared up-front by fadeOutLoveHands).
+                guard let self = self, self.activeEffects["love-hands"] === parent else { return }
                 let layer = CATextLayer()
                 layer.string = "❤️"
                 layer.fontSize = baseSize
                 layer.alignmentMode = .center
                 layer.frame = CGRect(x: center.x - baseSize, y: center.y - baseSize, width: baseSize * 2, height: baseSize * 2)
                 layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-                self.hostLayer.addSublayer(layer)
+                // Parent the heart to the tracked love-hands container (not hostLayer)
+                // so stopping the effect fades/removes the hearts with the hands —
+                // otherwise they keep rising after the sound stops.
+                parent.addSublayer(layer)
 
                 let dirCos = CGFloat(cos(direction))
                 let path = CGMutablePath()
@@ -2760,11 +2777,18 @@ class EmojiAnimator {
         let bounds = hostLayer.bounds
         let totalDuration = 3.3
 
-        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-              let screenshot = CGDisplayCreateImage(
-                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
-              ) else { return }
+        // Retina capture off-main (see showBrokenGlass); play + build on main so the
+        // knock zoom stays synced with the sound.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let screenshot = Self.captureBuiltInDisplay()
+            DispatchQueue.main.async {
+                guard let self, let screenshot else { return }
+                self.renderFbiKnock(screenshot: screenshot, bounds: bounds, totalDuration: totalDuration, playSound: playSound)
+            }
+        }
+    }
 
+    private func renderFbiKnock(screenshot: CGImage, bounds: CGRect, totalDuration: Double, playSound: Bool) {
         if playSound { SoundManager.shared.play("64_fbi.mp3") }
 
         let imgLayer = CALayer()
@@ -2812,11 +2836,17 @@ class EmojiAnimator {
         let bounds = hostLayer.bounds
         let totalDuration = 2.29
 
-        guard let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-              let screenshot = CGDisplayCreateImage(
-                  (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
-              ) else { return }
+        // Retina capture off-main (see showBrokenGlass); play + build on main.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let screenshot = Self.captureBuiltInDisplay()
+            DispatchQueue.main.async {
+                guard let self, let screenshot else { return }
+                self.renderPhoneRing(screenshot: screenshot, bounds: bounds, totalDuration: totalDuration, playSound: playSound)
+            }
+        }
+    }
 
+    private func renderPhoneRing(screenshot: CGImage, bounds: CGRect, totalDuration: Double, playSound: Bool) {
         if playSound { SoundManager.shared.play("10_red_phone.mp3") }
 
         let imgLayer = CALayer()
