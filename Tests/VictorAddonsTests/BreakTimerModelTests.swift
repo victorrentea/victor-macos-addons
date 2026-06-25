@@ -63,4 +63,12 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertEqual(BreakTimerModel.finishLabel(now: now, remaining: 0, timeZone: tz),
                        "02:00 EET")
     }
+
+    func testFinishLabelAfternoonUses24Hour() {
+        // 15:00 must render as "15:00 …", not "03:00 …" (would be 12-hour format).
+        let now = Date(timeIntervalSince1970: 15 * 3600)
+        let tz = TimeZone(identifier: "UTC")!
+        XCTAssertEqual(BreakTimerModel.finishLabel(now: now, remaining: 0, timeZone: tz),
+                       "15:00 GMT")
+    }
 }
