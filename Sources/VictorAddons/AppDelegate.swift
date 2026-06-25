@@ -44,6 +44,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var powerMonitor: PowerMonitor?
     private var transcriptionStateMachine: TranscriptionStateMachine?
     private var transcriptionScheduler: TranscriptionScheduler?
+    /// Fires the daily 13:00 "Group Photo" prompt (gated on `daemonConnected`).
+    private var groupPhotoScheduler: GroupPhotoScheduler?
+    /// True while the training-assistant daemon is connected to our local WS
+    /// server (≥1 client). The gate for the 13:00 Group Photo prompt.
+    private var daemonConnected = false
     private var transcriptionCountdownOverlay: TranscriptionCountdownOverlay?
     private var statusBanner: StatusBanner?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
@@ -123,6 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
         wsServer.onClientCountChanged = { [weak self] count in
+            self?.daemonConnected = (count > 0)
             self?.menuBarManager.updateWsStatus(count > 0)
             if count == 0 { self?.handleSessionEnded() }
         }
@@ -401,6 +407,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         scheduler.onHeartbeat = { [weak sm] in sm?.heartbeat() }
         scheduler.start()
         self.transcriptionScheduler = scheduler
+
+        // Daily 13:00 "Group Photo" prompt — only when the daemon is connected.
+        let groupPhoto = GroupPhotoScheduler()
+        groupPhoto.onTrigger = { [weak self] in
+            guard let self else { return }
+            guard self.daemonConnected else {
+                overlayInfo("📸 Group Photo skipped — training assistant not connected")
+                return
+            }
+            self.postGroupPhotoNotification()
+        }
+        groupPhoto.start()
+        self.groupPhotoScheduler = groupPhoto
+        tabletServer?.onTestGroupPhoto = { [weak self] in
+            DispatchQueue.main.async { self?.postGroupPhotoNotification() }
+        }
 
         tabletServer?.onTestTranscriptionStart = { [weak sm] in
             sm?.userClickStart()
@@ -1280,6 +1302,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
         }
+    }
+
+    /// Daily 13:00 "Group Photo" prompt. Deliberately **persistent**: unlike the
+    /// transient notifications above, it is never auto-removed — it stays in
+    /// Notification Center until the user dismisses it (the ✕). To make it remain
+    /// on screen until dismissed rather than slide away, set the app's notification
+    /// style to "Alerts" (System Settings → Notifications → Victor Addons).
+    /// A stable per-day identifier keeps a re-fire from stacking duplicates.
+    private func postGroupPhotoNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "📸 Group Photo"
+        content.subtitle = "Let's make some memories? :D"
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        let day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd"
+        let identifier = "group-photo:\(day.string(from: Date()))"
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Group Photo notification error: \(err)") }
+        }
+        overlayInfo("📸 Group Photo notification posted")
     }
 
     private func postInvalidURLNotification(_ clipboardPreview: String) {

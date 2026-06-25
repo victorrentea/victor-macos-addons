@@ -37,6 +37,9 @@ class TabletHttpServer {
         case testTile
         /// Fire the 🔥 WIP Agent whip overlay — same action as ⌃W (test hook).
         case testWhip
+        /// Post the 13:00 "Group Photo" notification now, bypassing the time +
+        /// connection gates (test hook).
+        case testGroupPhoto
         case promptCapture
         case intellijFileOpened
         case unknown
@@ -77,6 +80,7 @@ class TabletHttpServer {
     var onTestBreakClose: (() -> Void)?
     var onTestTile: (() -> Void)?
     var onTestWhip: (() -> Void)?
+    var onTestGroupPhoto: (() -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -184,6 +188,8 @@ class TabletHttpServer {
                     self?.onTestTile?()
                 case .testWhip:
                     self?.onTestWhip?()
+                case .testGroupPhoto:
+                    self?.onTestGroupPhoto?()
                 case .promptCapture:
                     contentType = "application/json"
                     let promptBody = Self.extractBody(raw)
@@ -253,6 +259,8 @@ class TabletHttpServer {
             return .testTile
         case "/test/whip":
             return .testWhip
+        case "/test/group-photo":
+            return .testGroupPhoto
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":

@@ -101,7 +101,7 @@ enum SessionNotesAppender {
             pendingPrompt = nil
             banner?.dismiss()
         }
-        banner.show(text: display, font: promptFont, hoverHint: "Hover to Send",
+        banner.show(text: display, font: promptFont, hoverHint: "Send prompt to notes?",
                     hoverCountdown: hoverActionDuration)
     }
 
