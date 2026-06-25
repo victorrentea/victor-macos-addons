@@ -94,12 +94,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             fatalError("Content view has no layer")
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
-        if let contentView = overlayPanel.contentView {
-            progressBarOverlay = ProgressBarOverlay(hostView: contentView)
-            // When the tablet timer fills to the right edge, pop confetti out
-            // of that bottom-right corner with a short sound.
-            progressBarOverlay?.onComplete = { [weak self] in self?.animator.spawnCornerConfetti() }
-        }
+        // Render the progress bar as a CALayer on the same host layer as the emoji
+        // effects (built-in Retina overlay) — a plain subview on this
+        // manually-populated layer-backed view does not composite.
+        progressBarOverlay = ProgressBarOverlay(hostLayer: hostLayer)
+        // When the tablet timer fills to the right edge, pop confetti out
+        // of that bottom-right corner with a short sound.
+        progressBarOverlay?.onComplete = { [weak self] in self?.animator.spawnCornerConfetti() }
 
         // No outbound WebSocket: the addon only runs LocalWebSocketServer on
         // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro

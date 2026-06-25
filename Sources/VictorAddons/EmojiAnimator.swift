@@ -1175,7 +1175,7 @@ class EmojiAnimator {
     /// out of the corner, then arc back down under gravity. Pairs with the
     /// short confetti pop to signal the end of the interval.
     func spawnCornerConfetti(count: Int = 70) {
-        SoundManager.shared.playOverlapping("confetti.mp3")
+        SoundManager.shared.playOverlapping("confetti.mp3", volume: 0.5)   // half volume
         let bounds = hostLayer.bounds
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         let origin = CGPoint(x: bounds.width, y: 0) // bottom-right corner
