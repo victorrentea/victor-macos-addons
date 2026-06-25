@@ -35,7 +35,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var pptMonitor: PowerPointMonitor?
     private var driveShareCache: GoogleDriveShareCache?
     private var ijMonitor: IntelliJMonitor?
-    private var rhTimerMonitor: RHTimerMonitor?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
     private var transcriptionWatcher: TranscriptionWatcher?
@@ -629,15 +628,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         meetingDetector = detector
         detector.checkInitialState()
 
-        let rhMonitor = RHTimerMonitor()
-        rhMonitor.onBreakEnded = { [weak self] in
+        // The "Resumed Xm ago" menu clock now tracks OUR break timer — the ✕ button
+        // or the countdown expiring — not the external Timer RH app. breakEndedAt is
+        // persisted (UserDefaults), so it survives an app restart.
+        breakTimer.onEnded = { [weak self] in
             DispatchQueue.main.async {
                 self?.menuBarManager.breakEndedAt = Date()
                 self?.scheduleBreakReminder()
             }
         }
-        rhMonitor.start()
-        self.rhTimerMonitor = rhMonitor
         ScreenshotManager.onScreenshotTaken = { [weak menuBarManager] in
             DispatchQueue.main.async {
                 menuBarManager?.flashScreenshotIcon()

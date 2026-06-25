@@ -31,6 +31,13 @@ final class BreakTimerController {
 
     private let cetZone = TimeZone(identifier: "Europe/Paris") ?? .current
 
+    /// Fired when a break *ends* — i.e. whenever the window is closed: the ✕
+    /// button, the countdown expiring (which auto-closes after the gong), or a
+    /// programmatic stop. NOT fired by re-opening or +minutes (those reuse the
+    /// window via start(), never close()). Drives the menu's "Resumed Xm ago"
+    /// clock (time since the last break ended).
+    var onEnded: (() -> Void)?
+
     /// (Re)start the countdown at `minutes`. Reuses the existing window in place
     /// (keeping its position & size); a fresh window opens top-right at 25% width.
     func start(minutes: Int) {
@@ -80,6 +87,7 @@ final class BreakTimerController {
 
     func close() {
         epoch += 1                                       // cancels pending gong/expiry blocks
+        if panel != nil { onEnded?() }                   // a break was showing → (re)start the "resumed" clock
         SoundManager.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil

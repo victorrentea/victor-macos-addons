@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 24, 15:39"
+    static let BUILD_TIME = "Jun 25, 20:39"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -37,7 +37,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var transcribeSubmenu: NSMenu!
 
     private(set) var resumeItem: NSMenuItem!
-    var breakEndedAt: Date?
+
+    /// When the last break ended (✕ or expiry). Persisted so the "Resumed Xm ago"
+    /// clock survives an app restart mid-workshop.
+    private static let kBreakEndedAt = "BreakTimer.lastEndedAt"
+    var breakEndedAt: Date? {
+        get {
+            let t = UserDefaults.standard.double(forKey: Self.kBreakEndedAt)
+            return t > 0 ? Date(timeIntervalSince1970: t) : nil
+        }
+        set {
+            if let d = newValue {
+                UserDefaults.standard.set(d.timeIntervalSince1970, forKey: Self.kBreakEndedAt)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.kBreakEndedAt)
+            }
+        }
+    }
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
@@ -347,7 +363,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         if let endedAt = breakEndedAt {
             let elapsed = Int(Date().timeIntervalSince(endedAt))
-            resumeItem.title = elapsed < 3 * 3600 ? RHTimerMonitor.formatElapsed(elapsed) : "⏱️ Resumed -"
+            // Show up to 12h (a full workshop day); beyond that the value is stale.
+            resumeItem.title = (0...(12 * 3600)).contains(elapsed) ? RHTimerMonitor.formatElapsed(elapsed) : "⏱️ Resumed -"
         } else {
             resumeItem.title = "⏱️ Resumed -"
         }
