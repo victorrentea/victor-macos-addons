@@ -94,6 +94,26 @@ on `contents` from bundled gif frames (`Bundle.module`).
   at full width (aspect-preserved, transparent backdrop over the live screen),
   drips/droplets falling; the ~1.6s loop plays **~1.5× slower**, repeating for
   the joker track (~9.0s) with a 0.25s fade-in and 0.6s fade-out tail.
+- **🛰️ Sonar** (sfx #23 `23_radar.mp3` → `sonar`, `showSonar`): a full-screen
+  black wash fades in (0→45% over 1s; darker **70% disc** inside the radar
+  circle), then a phosphor-green radar **drawn entirely as CALayers** (no gif):
+  muted-grey concentric rings + radial spokes; a **conic-gradient sweep arc**
+  (bright +x leading edge, fading 100%→0% behind it, masked to the circle) that
+  rotates **clockwise**. The sweep carries **ultrasound-style "reception noise"**
+  (flickering green/black speckle frames generated in `makeSonarNoiseFrames`,
+  masked to the wedge), and a fainter copy of the same noise covers the circle
+  interior (background static; outside the circle is just the dark wash). A
+  **💩 blip** (3× emoji, green glow) sits at the front's detection angle, hidden
+  until found. The rotation is **keyframed** (not constant): ~0.5s beep-free
+  lead-in, then the front sweeps over the 💩 on **three radar beeps** in the clip
+  (clip times 0.104/2.211/3.879s; one full turn between detections). The Mac
+  **owns the audio** here — `showSonar(playSound:true)` plays `23_radar.mp3`
+  delayed (`soundStartRel` + 0.1s) so the beeps land on the three detections; the
+  effect ends (fading out **while still rotating**) the moment the 3rd detection's
+  1s fade finishes, so the front never sweeps the 💩 a 4th time unshown. Pure
+  formatting/timing is derived up-front from `beepClip`/`detT`/`animEnd`. ⚠️ The
+  tablet must **not** also play `23_radar.mp3` locally (double audio) — it should
+  special-case it (press-only) like the siren.
 
 ### Tablet sound routing (tablet → Mac playback)
 The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash`).
@@ -133,6 +153,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/tile` — tile Terminal windows (same action as ⌘⌃A); headless way to exercise `TerminalTiler`
 - `GET /test/whip` — fire the 🔥 WIP Agent whip overlay (same action as ⌃W); NB leaves the overlay up until Esc
 - `GET /test/group-photo` — post the 📸 Group Photo notification now, bypassing the 13:00 + daemon-connected gates
+- `GET /test/sonar` — fire the 🛰️ Sonar overlay now (visual + synced `23_radar.mp3`); same as `/effect/sonar` and tablet press of `23_radar.mp3`
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 - `GET /sound/pressed/<file>`, `GET /sound/stopped/<file>` — tablet reports a sound press/stop; the Mac maps it to an overlay effect via `SoundEffectMap` (e.g. `/sound/pressed/40_joker.mp3` → blood drip). `GET /effect/blood-drip` triggers the blood overlay directly.
 
@@ -160,7 +181,7 @@ For local E2E checks without stealing focus:
 
 **Operational note (2026-06):** `TerminalTiler` reads/writes Terminal window geometry through the in-process **Accessibility API** (`AXUIElement`), relying only on this app's own Accessibility grant (the same one behind the global event tap). It previously shelled out to `osascript` + "System Events" UI scripting, which needs a *separate* Automation (Apple Events) grant; after a re-sign that grant's stored code requirement no longer matched the running binary, so the Apple Event blocked on a consent prompt a headless `osascript` subprocess can't surface and tiling silently hit the 5s timeout (symptom: `AppleScript failed: Timed out after 5.0s` in the log; ⌘⌃A and the menu item both no-op). The AX path needs no Automation permission and never spawns a subprocess.
 
-**Shortcuts/menu (2026-06):** The 🔥 menu item is **WIP Agent** (formerly "Whip Claude"), bound to **⌃W** globally (event tap, suppressed) and shown as ⌃W in the menu. NB ⌃W globally shadows the usual "delete word backwards" in terminals/editors. The bottom-left notification pill (`BottomLeftBanner`) now renders the hover-hint chip ("Hover to undo/snooze/continue/Send") **riding the orange countdown bar's fill edge**, gliding left→right with it (replaces the static chip to the pill's right); reusable across every banner caller.
+**Shortcuts/menu (2026-06):** The 🔥 menu item is **WIP Agent** (formerly "Whip Claude"), bound to **⌃W** globally (event tap, suppressed) and shown as ⌃W in the menu. NB ⌃W globally shadows the usual "delete word backwards" in terminals/editors. The bottom-left notification pill (`BottomLeftBanner`) renders the hover-hint chip ("Hover to undo/snooze/continue/Send") **pinned to the pill's bottom-left corner** (fixed — no longer riding/moving), with the **orange countdown bar filling the region to the right of the chip** (from the chip's right edge to the pill's right edge) left→right. Countdown banners are floored at **30% of the screen width** (`countdownMinWidthFraction`) so the fixed chip and the bar to its right always fit; plain (non-countdown) banners still hug their text. Reusable across every banner caller.
 
 ## AI Instructions
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.

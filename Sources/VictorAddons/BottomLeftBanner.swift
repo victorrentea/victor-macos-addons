@@ -26,6 +26,11 @@ final class BottomLeftBanner {
         /// Hard cap as a fraction of the screen width — past this the text
         /// truncates with an ellipsis instead of the box growing further.
         static let maxWidthFraction: CGFloat = 0.5
+        /// Minimum box width (as a fraction of the screen width) for banners
+        /// that show a hover-countdown bar, so there's always room for the
+        /// fixed hint chip on the left plus the bar filling to the right edge.
+        /// Only applied when a countdown is present; well under `maxWidthFraction`.
+        static let countdownMinWidthFraction: CGFloat = 0.30
         static let boxHeight: CGFloat = 80
         /// No extra tint by default — the NSVisualEffectView glass handles
         /// the gray-translucent look on its own. Callers that need a
@@ -107,13 +112,17 @@ final class BottomLeftBanner {
     private var countdownDuration: TimeInterval = 0
     private var countdownElapsed: TimeInterval = 0
 
-    /// When true, the hint chip rides the progress-bar fill edge (gliding
-    /// left→right with the countdown) instead of sitting fixed to the right of
-    /// the pill. Set per `show()` — true whenever a hover countdown accompanies
-    /// the hint, which every current caller does. `hintRideProgress` caches the
-    /// latest fill fraction so a pill resize can re-place the chip without a tick.
-    private var hintRiding = false
-    private var hintRideProgress: CGFloat = 0
+    /// True while the active presentation includes a hover countdown — widens
+    /// the pill to at least `countdownMinWidthFraction` of the screen so the
+    /// fixed hint chip and the progress bar to its right both fit. Set in
+    /// `show()` from whether `hoverCountdown` was non-nil; read by `panelWidth`.
+    private var hasCountdown = false
+
+    /// When true, the hint chip is pinned to the pill's bottom-left corner
+    /// (and the progress bar fills the region to its right) instead of sitting
+    /// fixed to the right of the pill. Set per `show()` — true whenever a hover
+    /// countdown accompanies the hint, which every current caller does.
+    private var hintFixedLeft = false
 
     /// Final window opacity when visible. Below 1.0 to add an extra layer
     /// of see-through on top of the NSVisualEffectView glass.
@@ -149,10 +158,12 @@ final class BottomLeftBanner {
         // dwell whitening (e.g. after a previous fire on a banner being reused).
         cancelHoverDwell()
         hoverFired = false
+        // Drives the 30% min width (panelWidth) and the fixed-left chip layout.
+        hasCountdown = hoverCountdown != nil
         if isVisible {
             updateText(text)
             updateBackgroundColor(backgroundColor)
-            applyHint(hoverHint, riding: hoverCountdown != nil)
+            applyHint(hoverHint, fixedLeft: hasCountdown)
             applyHoverCountdown(hoverCountdown)
             return
         }
@@ -170,7 +181,7 @@ final class BottomLeftBanner {
             ctx.duration = 0.3
             for entry in panels { entry.panel.animator().alphaValue = Self.visibleAlpha }
         }
-        applyHint(hoverHint, riding: hoverCountdown != nil)
+        applyHint(hoverHint, fixedLeft: hasCountdown)
         applyHoverCountdown(hoverCountdown)
     }
 
@@ -197,7 +208,12 @@ final class BottomLeftBanner {
         probe.sizeToFit()
         let content = ceil(probe.frame.width) + Style.leftPadding + Style.rightPadding
         let maxWidth = screen.frame.width * Style.maxWidthFraction
-        return min(max(content, Style.minBoxWidth), maxWidth)
+        // Countdown banners get a 30%-screen floor so the fixed hint chip and
+        // the progress bar to its right both fit; plain banners hug their text.
+        let minWidth = hasCountdown
+            ? max(Style.minBoxWidth, screen.frame.width * Style.countdownMinWidthFraction)
+            : Style.minBoxWidth
+        return min(max(content, minWidth), maxWidth)
     }
 
     /// Resize a panel (anchored bottom-left) and its label to `width` in place.
@@ -337,20 +353,17 @@ final class BottomLeftBanner {
     /// `hint` is non-empty — fades a small label in to the right of each pill,
     /// glued to its bottom edge. Built off the live pill frames (not the screen
     /// list) so the hint hugs the pill's actual right edge as it resizes.
-    private func applyHint(_ hint: String?, riding: Bool) {
+    private func applyHint(_ hint: String?, fixedLeft: Bool) {
         clearHint()
         guard hoverable, onHover != nil, let hint = hint, !hint.isEmpty else { return }
-        hintRiding = riding
-        hintRideProgress = 0
+        hintFixedLeft = fixedLeft
         for entry in panels {
             let panel = buildHintPanel(pillFrame: entry.panel.frame, text: hint)
             panel.alphaValue = 0
             panel.orderFrontRegardless()
             hintPanels.append(panel)
         }
-        // Riding chips start glued to the pill's left edge (fill = 0) and travel
-        // right with the bar; fixed chips sit to the right of the pill.
-        if riding { positionHintsForProgress(0) } else { repositionHints() }
+        repositionHints()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.3
             for panel in hintPanels { panel.animator().alphaValue = 1.0 }
@@ -361,37 +374,19 @@ final class BottomLeftBanner {
     func clearHint() {
         for panel in hintPanels { panel.orderOut(nil) }
         hintPanels.removeAll()
-        hintRiding = false
-        hintRideProgress = 0
+        hintFixedLeft = false
     }
 
-    /// Re-place every hint chip after a pill move/resize. Delegates to the
-    /// riding layout while a countdown is driving the chip, else the fixed
-    /// to-the-right layout. No-op when no hint is showing.
+    /// Re-place every hint chip after a pill move/resize, or on (re)show. With a
+    /// countdown the chip is pinned to the pill's bottom-left corner (the bar
+    /// then fills the region to its right); without one it sits just past the
+    /// pill's right edge. No-op when no hint is showing.
     private func repositionHints() {
         guard hintPanels.count == panels.count else { return }
-        if hintRiding { positionHintsForProgress(hintRideProgress); return }
         for (entry, hint) in zip(panels, hintPanels) {
             let pill = entry.panel.frame
             var f = hint.frame
-            f.origin.x = pill.maxX + Style.hintGap
-            f.origin.y = pill.minY
-            hint.setFrame(f, display: true)
-        }
-    }
-
-    /// Slide each hint chip so its left edge tracks the progress-bar fill edge
-    /// (`pill.minX + progress · pillWidth`), gliding left→right in lockstep with
-    /// the orange bar. At `progress == 1` the chip lands exactly where the fixed
-    /// hint used to sit — just past the pill's right edge — so the motion ends on
-    /// the familiar spot. Sits flush to the pill's bottom edge, over the bar.
-    private func positionHintsForProgress(_ progress: CGFloat) {
-        guard hintPanels.count == panels.count else { return }
-        hintRideProgress = progress
-        for (entry, hint) in zip(panels, hintPanels) {
-            let pill = entry.panel.frame
-            var f = hint.frame
-            f.origin.x = pill.minX + progress * pill.width
+            f.origin.x = hintFixedLeft ? pill.minX : pill.maxX + Style.hintGap
             f.origin.y = pill.minY
             hint.setFrame(f, display: true)
         }
@@ -417,11 +412,11 @@ final class BottomLeftBanner {
         guard hoverable, onHover != nil, duration > 0 else { return }
         countdownDuration = duration
         countdownElapsed = 0
-        for entry in panels {
+        repositionHints()
+        for (i, entry) in panels.enumerated() {
             entry.progressBar.isHidden = false
-            setBarWidth(entry.progressBar, 0)
+            setBar(entry.progressBar, x: barStartX(at: i), width: 0)
         }
-        positionHintsForProgress(0)
         countdownTimer = Timer.scheduledTimer(withTimeInterval: Self.countdownTick, repeats: true) { [weak self] _ in
             self?.tickCountdown()
         }
@@ -434,23 +429,33 @@ final class BottomLeftBanner {
             countdownElapsed += Self.countdownTick
         }
         let progress = countdownDuration > 0 ? min(1.0, countdownElapsed / countdownDuration) : 1.0
-        for entry in panels {
-            setBarWidth(entry.progressBar, CGFloat(progress) * entry.panel.frame.width)
+        for (i, entry) in panels.enumerated() {
+            let startX = barStartX(at: i)
+            let track = max(0, entry.panel.frame.width - startX)
+            setBar(entry.progressBar, x: startX, width: CGFloat(progress) * track)
         }
-        positionHintsForProgress(CGFloat(progress))
         if countdownElapsed >= countdownDuration {
             countdownTimer?.invalidate(); countdownTimer = nil
             onHoverCountdownExpired?()
         }
     }
 
-    /// Set the bar width with implicit animation disabled. At the 20 fps tick
-    /// the steps are imperceptible, and an implicit ~0.25s animation would lag
-    /// the freeze the instant the cursor lands on the pill.
-    private func setBarWidth(_ bar: NSView, _ width: CGFloat) {
+    /// Left edge (in pill-content coordinates) where the progress bar begins:
+    /// just past the fixed hint chip (its width + a gap) so the bar fills the
+    /// region to the right of the text. Falls back to 0 (full width) when the
+    /// chip isn't fixed-left or no hint is showing.
+    private func barStartX(at index: Int) -> CGFloat {
+        guard hintFixedLeft, index < hintPanels.count else { return 0 }
+        return hintPanels[index].frame.width + Style.hintGap
+    }
+
+    /// Position the bar at `x` with `width`, implicit animation disabled. At the
+    /// 20 fps tick the steps are imperceptible, and an implicit ~0.25s animation
+    /// would lag the freeze the instant the cursor lands on the pill.
+    private func setBar(_ bar: NSView, x: CGFloat, width: CGFloat) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        bar.frame = NSRect(x: 0, y: 0, width: max(0, width), height: Style.progressBarHeight)
+        bar.frame = NSRect(x: x, y: 0, width: max(0, width), height: Style.progressBarHeight)
         CATransaction.commit()
     }
 
@@ -462,7 +467,7 @@ final class BottomLeftBanner {
         countdownTimer?.invalidate(); countdownTimer = nil
         countdownElapsed = 0
         for entry in panels {
-            setBarWidth(entry.progressBar, 0)
+            setBar(entry.progressBar, x: 0, width: 0)
             entry.progressBar.isHidden = true
         }
     }
