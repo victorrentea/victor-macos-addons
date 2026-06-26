@@ -432,6 +432,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async { self?.postGroupPhotoNotification() }
         }
 
+        tabletServer?.onTestWisprOutputDrift = { [weak self] in
+            DispatchQueue.main.async {
+                let name = self?.coreAudioManager?.currentDefaultOutputName() ?? "?"
+                self?.postWisprOutputDriftNotification(output: name)
+            }
+        }
+
         tabletServer?.onTestTranscriptionStart = { [weak sm] in
             sm?.userClickStart()
         }
@@ -684,6 +691,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         let audioManager = CoreAudioManager()
         self.coreAudioManager = audioManager
+        audioManager.onWisprOutputDrift = { [weak self] outputName in
+            DispatchQueue.main.async { self?.postWisprOutputDriftNotification(output: outputName) }
+        }
         audioManager.start()
 
         let btKeepAlive = BluetoothKeepAlive()
@@ -1306,6 +1316,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req) { err in
             if let err { overlayInfo("Slides not-shared notification error: \(err)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+        }
+    }
+
+    /// "Wispr started but the system output isn't 🔊OS Output" warning, fired from
+    /// `CoreAudioManager` on a Wispr-start drift. Transient: auto-removed after 6s
+    /// (like the other non-persistent notifications). A stable identifier means a
+    /// re-fire replaces rather than stacks.
+    func postWisprOutputDriftNotification(output: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "🔇 Mute inactiv la dictare"
+        content.body = "Output = «\(output)», nu 🔊OS Output — muzica nu se va reduce. Schimbă ieșirea pe 🔊OS Output."
+        content.sound = .default
+        let identifier = "wispr-output-drift"
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Wispr output-drift notification error: \(err)") }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])

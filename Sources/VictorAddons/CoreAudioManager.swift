@@ -34,6 +34,11 @@ class CoreAudioManager {
     // restoring. Cancels audible flicker when Wispr's isRunningInput cycles.
     private static let restoreDebounceDuration: TimeInterval = 1.0
 
+    /// Fired on a Wispr-start when the macOS default output is NOT the monitored
+    /// loopback — the music-mute path is silently inert. Carries the wrong
+    /// output's name. Invoked on `pollQueue`; the handler must hop to main for UI.
+    var onWisprOutputDrift: ((String) -> Void)?
+
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
     private var lastWisprRecording = false
@@ -42,6 +47,10 @@ class CoreAudioManager {
     // Timestamp of the first "recording=false" read since the current mute.
     // Cleared on any "recording=true" read or after a successful restore.
     private var firstNotRecordingAt: Date?
+
+    // Latch for the output-route drift alert (see OutputDriftPolicy). Alert once
+    // per drift episode, re-arm when a Wispr-start sees the correct output again.
+    private var outputDriftAlerted = false
 
     // Boost window: while Date() < boostedUntil, the next tick is scheduled
     // 100ms out instead of 300ms. Mouse-5 (Wispr push-to-talk) press extends
@@ -123,6 +132,12 @@ class CoreAudioManager {
         lastWisprRecording = recording
 
         if recording {
+            // On the Wispr-start edge, verify the music-mute path is actually
+            // wired: it only works if the system output is the monitored
+            // loopback. Warn (once per drift) if it has drifted elsewhere.
+            if !prev {
+                checkOutputRouteOnWisprStart()
+            }
             // Any "recording" read cancels a pending restore: this covers both
             // (a) Wispr confirming a speculative Mouse-5 mute, and
             // (b) sub-500ms isRunningInput flicker after a real stop.
@@ -294,6 +309,45 @@ class CoreAudioManager {
 
     // MARK: - CoreAudio device helpers
 
+    /// Warn when Wispr starts but the system output isn't the monitored loopback
+    /// — the mute path is inert. Pure latch logic lives in `OutputDriftPolicy`.
+    /// Runs on pollQueue; the callback hops to main for the notification.
+    private func checkOutputRouteOnWisprStart() {
+        let output = currentDefaultOutputName()
+        let decision = OutputDriftPolicy.evaluate(output: output, alerted: outputDriftAlerted)
+        outputDriftAlerted = decision.alerted
+        if decision.alert {
+            let name = output ?? "?"
+            overlayInfo("⚠️ Wispr started but output=\(name) ≠ \(Self.monitoredOutputName) → music won't duck")
+            onWisprOutputDrift?(name)
+        }
+    }
+
+    /// Current macOS default-output device name, or nil if unreadable.
+    func currentDefaultOutputName() -> String? {
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &id) == noErr,
+              id != 0 else { return nil }
+        return deviceName(id)
+    }
+
+    private func deviceName(_ id: AudioDeviceID) -> String? {
+        var nameAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var nameSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &nameAddr, 0, nil, &nameSize) == noErr else { return nil }
+        var n: Unmanaged<CFString>?
+        guard AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSize, &n) == noErr else { return nil }
+        return n?.takeRetainedValue() as String?
+    }
+
     private func findAudioDevice(named target: String) -> AudioDeviceID? {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
@@ -305,17 +359,7 @@ class CoreAudioManager {
         let count = Int(size) / MemoryLayout<AudioDeviceID>.size
         var ids = [AudioDeviceID](repeating: 0, count: count)
         guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &size, &ids) == noErr else { return nil }
-        for id in ids {
-            var nameAddr = AudioObjectPropertyAddress(
-                mSelector: kAudioObjectPropertyName,
-                mScope: kAudioObjectPropertyScopeGlobal,
-                mElement: kAudioObjectPropertyElementMain)
-            var nameSize: UInt32 = 0
-            guard AudioObjectGetPropertyDataSize(id, &nameAddr, 0, nil, &nameSize) == noErr else { continue }
-            var n: Unmanaged<CFString>?
-            guard AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSize, &n) == noErr else { continue }
-            if (n?.takeRetainedValue() as String?) == target { return id }
-        }
+        for id in ids where deviceName(id) == target { return id }
         return nil
     }
 
