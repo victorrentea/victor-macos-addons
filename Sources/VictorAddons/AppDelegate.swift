@@ -1202,16 +1202,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         rebuildAuxOverlayPanels()
     }
 
-    /// Show the 🔥 Whip Claude overlay, returning keyboard focus to the terminal
-    /// that was frontmost when the menu opened (so the click macro's Ctrl+C lands
-    /// there). Esc dismisses the overlay.
+    /// Show the 🔥 Whip Claude overlay on the screen under the cursor. The whip's
+    /// Ctrl+C + scold macro lands in whatever app currently has keyboard focus
+    /// (keep Claude focused). Esc dismisses the overlay.
     private func showWhip() {
         let controller = whipController ?? WhipController()
         whipController = controller
         controller.onEscape = { [weak self] in
             self?.whipController?.hide()
         }
-        controller.show(returnFocusTo: menuBarManager.frontmostAppAtMenuOpen)
+        controller.show()
     }
 
     /// Always resolve the laptop's retina display when (re-)showing the banner,

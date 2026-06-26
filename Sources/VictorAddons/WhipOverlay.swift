@@ -26,7 +26,6 @@ final class WhipController {
     private var physics: WhipPhysics?
     private var displayTimer: Timer?
     private var screenFrame: NSRect = .zero
-    private var targetApp: NSRunningApplication?
 
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
@@ -40,24 +39,15 @@ final class WhipController {
 
     // MARK: - Show / hide
 
-    /// Show the whip overlay. `returnFocusTo` is the app that was frontmost when
-    /// the menu opened (the terminal) — we re-activate it so the click macro's
-    /// Ctrl+C lands there rather than in our menu-bar app.
-    func show(returnFocusTo returnApp: NSRunningApplication?) {
+    /// Show the whip overlay on the screen under the cursor. Keystrokes are sent
+    /// to whatever app currently has keyboard focus at click time — the panel is
+    /// non-activating, so showing it never steals focus and there is no app to
+    /// re-activate (and no stale menu-open snapshot to chase).
+    func show() {
         guard panel == nil else { return }
 
         let screen = screenUnderMouse()
         screenFrame = screen.frame
-
-        // Resolve the terminal to send keystrokes to. Never target ourselves.
-        // (Compare by PID — NSRunningApplication instance identity is unreliable.)
-        let myPid = NSRunningApplication.current.processIdentifier
-        if let returnApp, returnApp.processIdentifier != myPid {
-            targetApp = returnApp
-        } else {
-            let front = NSWorkspace.shared.frontmostApplication
-            targetApp = (front?.processIdentifier != myPid) ? front : nil
-        }
 
         let p = WhipPanel(screenFrame: screenFrame)
         let v = WhipView(frame: NSRect(origin: .zero, size: screenFrame.size))
@@ -74,9 +64,6 @@ final class WhipController {
         physics = sim
 
         p.orderFrontRegardless()
-        // Return keyboard focus to the terminal (our panel is non-activating, and
-        // is at maximumWindow level so it stays visually on top regardless).
-        targetApp?.activate(options: .activateIgnoringOtherApps)
 
         installEscMonitors()
         startTimer()
@@ -117,8 +104,10 @@ final class WhipController {
     // MARK: - Input
 
     private func handleClick() {
-        // A click = interrupt: Ctrl+C + a scolding phrase + Return at the terminal.
-        WhipMacro.sendCrackMacro(reactivating: targetApp)
+        // A click = interrupt: Ctrl+C + a scolding phrase + Return, delivered to
+        // whatever app currently has keyboard focus (no focus stealing, no stale
+        // target — the user keeps Claude focused; the keys land there).
+        WhipMacro.sendCrackMacro()
     }
 
     private func installEscMonitors() {
