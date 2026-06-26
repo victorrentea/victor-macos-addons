@@ -267,6 +267,8 @@ class TabletHttpServer {
             return .testWhip
         case "/test/sonar":
             return .effect("sonar")
+        case "/test/phoenix":
+            return .effect("phoenix")
         case "/test/group-photo":
             return .testGroupPhoto
         case "/test/wispr-output-drift":

@@ -198,6 +198,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "wrong-x":         self?.animator.showWrongX(playSound: false)
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
+            case "phoenix":         self?.animator.showPhoenix()
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -559,6 +560,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "cavalry":         self?.animator.showCavalry()
                 case "wrong-x":         self?.animator.showWrongX()
                 case "drum-roll":       self?.animator.showDrumRoll()
+                case "phoenix":         self?.animator.showPhoenix()
                 case "laugh":           self?.animator.showLaugh()
                 case "corner-confetti": self?.animator.spawnCornerConfetti()
                 case "green-flash":

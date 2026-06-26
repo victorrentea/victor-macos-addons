@@ -18,6 +18,13 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/pulse/stop"), .effect("pulse/stop"))
     }
 
+    func testRoutePhoenixTestAndEffectEndpoints() {
+        // Both the headless test hook and the generic /effect/ path dispatch the
+        // phoenix overlay through onEffect("phoenix").
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/phoenix"), .effect("phoenix"))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/phoenix"), .effect("phoenix"))
+    }
+
     func testRouteUnknownForUnsupportedPath() {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/unknown"), .unknown)
     }

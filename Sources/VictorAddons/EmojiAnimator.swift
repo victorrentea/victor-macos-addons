@@ -1893,6 +1893,77 @@ class EmojiAnimator {
         trackEffect("blood-drip", layer: gifLayer, duration: duration, sound: playSound ? "40_joker.mp3" : nil)
     }
 
+    // MARK: - Phoenix overlay (🔥 fire-phoenix, menu-triggered)
+
+    /// A fiery phoenix rising, centered and large on the screen. Purely a desktop
+    /// visual — no sound. The source art is a black-background GIF whose flames
+    /// were keyed to transparency via luminance→alpha (bright fire opaque, dark
+    /// glow fading smoothly out) and shipped as a transparent multi-frame APNG
+    /// (`phoenix.png`); a GIF would 1-bit-quantize the alpha and bring the black
+    /// halo back. Frames load through the same `CGImageSource` path as the other
+    /// gif effects, looped for a few seconds with a short fade-in and fade-out
+    /// tail, then removed. Drawn as a CALayer on the overlay's hostLayer.
+    /// Decode the bundled transparent phoenix APNG into its frames. Static +
+    /// internal so a headless test can assert the asset bundles and decodes
+    /// (28 transparent 506×506 frames) without firing the on-screen effect.
+    static func loadPhoenixFrames() -> [CGImage] {
+        guard let url = Bundle.module.url(forResource: "phoenix", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("phoenix.png not found")
+            return []
+        }
+        let count = CGImageSourceGetCount(source)
+        var images: [CGImage] = []
+        for i in 0..<count {
+            if let cg = CGImageSourceCreateImageAtIndex(source, i, nil) { images.append(cg) }
+        }
+        return images
+    }
+
+    func showPhoenix() {
+        if cancelIfRunning("phoenix") { return }
+
+        let images = Self.loadPhoenixFrames()
+        guard !images.isEmpty else { return }
+
+        let bounds = hostLayer.bounds
+        // Large, aspect-preserved square (source is 506×506) — ~70% of the screen
+        // height, centered.
+        let size = bounds.height * 0.7
+        let layer = CALayer()
+        layer.frame = CGRect(x: (bounds.width - size) / 2,
+                             y: (bounds.height - size) / 2,
+                             width: size, height: size)
+        layer.contentsGravity = .resizeAspect
+        if let first = images.first { layer.contents = first }
+        hostLayer.addSublayer(layer)
+
+        // Loop the 28 source frames (~0.05s each → ~1.4s/cycle) for the effect's life.
+        let frames = CAKeyframeAnimation(keyPath: "contents")
+        frames.values = images
+        frames.duration = Double(images.count) * 0.05
+        frames.repeatCount = .infinity
+        layer.add(frames, forKey: "phoenixFrames")
+
+        let duration: Double = 4.5
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = 0.4
+        layer.add(fadeIn, forKey: "phoenixFadeIn")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.7)
+        fadeOut.duration = 0.7
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        layer.add(fadeOut, forKey: "phoenixFadeOut")
+
+        trackEffect("phoenix", layer: layer, duration: duration)
+    }
+
     /// Random green/black speckle frames for the sonar's "reception noise" —
     /// sparse bright-green specks + dark dropouts on a clear field, premultiplied.
     private static func makeSonarNoiseFrames(count: Int, size: Int) -> [CGImage] {
