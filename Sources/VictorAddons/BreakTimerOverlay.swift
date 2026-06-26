@@ -16,6 +16,13 @@ final class BreakTimerController {
 
     static let minWidth: CGFloat = 180
 
+    // Idle thresholds & geometry for the activity-driven backdrop and the
+    // fullscreen-on-idle behavior.
+    private static let backdropIdleSeconds: CFTimeInterval = 3.0      // mouse-on-timer-screen idle → backdrop opaque
+    private static let fullscreenIdleSeconds: CFTimeInterval = 120    // total (mouse+keyboard) idle → enlarge
+    private static let enlargeFraction: CGFloat = 0.85               // big frame fills 85% of the screen
+    private static let enlargeAnimationDuration: TimeInterval = 0.3   // enlarge/restore animation
+
     private var panel: BreakTimerPanel?
     private var view: BreakTimerView?
 
@@ -28,6 +35,17 @@ final class BreakTimerController {
     private var bgView: NSView?              // opaque backdrop, faded in/out
     private var bgOpaque = true              // current backdrop state
     private var epoch = 0                      // invalidates in-flight expiry blocks
+
+    // Backdrop is driven ONLY by mouse movement on the timer's OWN screen (not
+    // keyboard, not the other monitor): we sample the cursor each tick and stamp
+    // `mouseActiveOnTimerScreenAt` whenever it MOVED while on the timer's screen.
+    private var lastCursorPos: NSPoint?
+    private var mouseActiveOnTimerScreenAt: Date?
+
+    // Fullscreen-on-idle: after `fullscreenIdleSeconds` of total inactivity the
+    // panel grows to `enlargeFraction` of its screen; any input restores it.
+    private var isEnlarged = false
+    private var savedFrame: NSRect?           // the user's frame, restored on enlarge → normal
 
     private let cetZone = TimeZone(identifier: "Europe/Paris") ?? .current
 
@@ -96,6 +114,11 @@ final class BreakTimerController {
         panel = nil
         view = nil
         bgView = nil
+        // Reset idle-driven state so a future open starts normal-sized.
+        isEnlarged = false
+        savedFrame = nil
+        lastCursorPos = nil
+        mouseActiveOnTimerScreenAt = nil
         // The view sets custom cursors (open-hand to move, pointer over buttons,
         // resize at corners) imperatively; restore the standard arrow so closing
         // the timer never leaves a hand/resize cursor stuck on screen.
@@ -184,24 +207,93 @@ final class BreakTimerController {
 
     // MARK: - Activity-driven backdrop
 
-    /// While the user is active (mouse/keyboard within the last 3s) the opaque
-    /// backdrop fades fully away — only the outlined digits remain. After 3s
-    /// idle it fades back to fully opaque. One smooth fade per transition, so
-    /// it never flickers. Exception: while zooming with the wheel the backdrop is
-    /// forced on (so the body stays solid under the cursor mid-zoom).
+    /// The opaque backdrop is driven ONLY by mouse movement on the timer's OWN
+    /// screen: while the cursor has moved on that screen within the last
+    /// `backdropIdleSeconds` the backdrop fades fully away (only the outlined
+    /// digits remain); otherwise it fades back to fully opaque. Keyboard never
+    /// counts (typing leaves the backdrop black), and mouse movement on another
+    /// monitor never counts. One smooth fade per transition, so it never flickers.
+    /// Exception: while zooming with the wheel the backdrop is forced on (so the
+    /// body stays solid under the cursor mid-zoom).
+    ///
+    /// The same 0.4s tick also drives the fullscreen-on-idle behavior, but from
+    /// TOTAL inactivity (`systemIdleSeconds`, mouse+keyboard), so any input — even
+    /// keystrokes or a mouse move on another screen — restores the original size.
     private func startActivityMonitor() {
         activityTimer?.invalidate()
         // Start with NO backdrop — the timer just appeared because the user acted,
-        // so the mouse is active; the backdrop fades in only after 3s idle.
+        // so treat the mouse as active on the timer's screen; the backdrop fades
+        // in only after the idle window elapses.
         bgOpaque = false
         bgView?.alphaValue = 0
-        let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let zoomHold = self.zoomBackdropUntil.map { Date() < $0 } ?? false
-            self.setBackgroundOpaque(zoomHold || Self.systemIdleSeconds() >= 3.0)
-        }
+        mouseActiveOnTimerScreenAt = Date()
+        lastCursorPos = NSEvent.mouseLocation
+        let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in self?.activityTick() }
         RunLoop.main.add(t, forMode: .common)
         activityTimer = t
+    }
+
+    private func activityTick() {
+        // --- Backdrop: mouse movement on the timer's own screen only ---
+        let cursor = NSEvent.mouseLocation
+        let moved = lastCursorPos.map { $0 != cursor } ?? true
+        lastCursorPos = cursor
+        let timerScreen = panelScreen()
+        if moved, let cursorScreen = Self.screen(containing: cursor),
+           cursorScreen.frame == timerScreen.frame {
+            mouseActiveOnTimerScreenAt = Date()
+        }
+        let zoomHold = zoomBackdropUntil.map { Date() < $0 } ?? false
+        let onScreenIdle = mouseActiveOnTimerScreenAt.map { Date().timeIntervalSince($0) } ?? 999
+        setBackgroundOpaque(zoomHold || onScreenIdle >= Self.backdropIdleSeconds)
+
+        // --- Fullscreen on total inactivity; any input restores ---
+        if Self.systemIdleSeconds() >= Self.fullscreenIdleSeconds {
+            enlargeIfNeeded(on: timerScreen)
+        } else {
+            restoreIfNeeded()
+        }
+    }
+
+    /// The screen the timer panel is currently on. `panel.screen` is the most-
+    /// overlapping screen; if it's nil (panel dragged off-screen) fall back to the
+    /// screen containing the panel's center, then to the retina/built-in display.
+    private func panelScreen() -> NSScreen {
+        if let s = panel?.screen { return s }
+        if let f = panel?.frame,
+           let s = Self.screen(containing: NSPoint(x: f.midX, y: f.midY)) { return s }
+        return AppDelegate.findRetinaScreen()
+    }
+
+    private static func screen(containing point: NSPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) }
+    }
+
+    /// Grow the panel to a centered ~85% frame on its screen (saving the user's
+    /// current frame first). Idempotent — does nothing while already enlarged.
+    private func enlargeIfNeeded(on screen: NSScreen) {
+        guard !isEnlarged, let panel else { return }
+        isEnlarged = true
+        savedFrame = panel.frame
+        let aspect = panel.frame.height > 0 ? panel.frame.width / panel.frame.height : Self.aspect
+        let big = BreakTimerModel.enlargedFrame(in: screen.frame, aspect: aspect, fraction: Self.enlargeFraction)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.enlargeAnimationDuration
+            panel.animator().setFrame(big, display: true)
+        }
+    }
+
+    /// Shrink back to the user's saved frame. Idempotent — does nothing unless
+    /// currently enlarged.
+    private func restoreIfNeeded() {
+        guard isEnlarged, let panel else { return }
+        isEnlarged = false
+        let target = savedFrame ?? Self.defaultFrame()
+        savedFrame = nil
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.enlargeAnimationDuration
+            panel.animator().setFrame(target, display: true)
+        }
     }
 
     /// Wheel-zoom forces the backdrop on instantly and holds it briefly after the

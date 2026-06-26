@@ -71,4 +71,47 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertEqual(BreakTimerModel.finishLabel(now: now, remaining: 0, timeZone: tz),
                        "15:00 GMT")
     }
+
+    // MARK: - enlargedFrame(in:aspect:fraction:)
+
+    func testEnlargedFrameWideScreenFitsByHeight() {
+        // Wide screen: 85% width (1700) would make the aspect-1.85 rect 919 tall,
+        // which exceeds 85% height (850) → must fit by height instead.
+        let f = BreakTimerModel.enlargedFrame(in: CGRect(x: 0, y: 0, width: 2000, height: 1000),
+                                              aspect: 1.85, fraction: 0.85)
+        XCTAssertEqual(f.height, 850, accuracy: 0.001)            // height-constrained
+        XCTAssertEqual(f.width, 850 * 1.85, accuracy: 0.001)
+        XCTAssertEqual(f.width / f.height, 1.85, accuracy: 0.0001) // aspect preserved
+        XCTAssertEqual(f.midX, 1000, accuracy: 0.001)             // centered
+        XCTAssertEqual(f.midY, 500, accuracy: 0.001)
+    }
+
+    func testEnlargedFrameTallScreenFitsByWidth() {
+        // Tall screen: 85% width (850) gives a rect only 459 tall, well within the
+        // 85% height (1700) → fits by width.
+        let f = BreakTimerModel.enlargedFrame(in: CGRect(x: 0, y: 0, width: 1000, height: 2000),
+                                              aspect: 1.85, fraction: 0.85)
+        XCTAssertEqual(f.width, 850, accuracy: 0.001)             // width-constrained
+        XCTAssertEqual(f.height, 850 / 1.85, accuracy: 0.001)
+        XCTAssertEqual(f.midX, 500, accuracy: 0.001)
+        XCTAssertEqual(f.midY, 1000, accuracy: 0.001)
+    }
+
+    func testEnlargedFrameClampsWithinFractionOnBothAxes() {
+        // For any screen/aspect the result must never exceed `fraction` of either
+        // dimension (so it stays "big but not the whole desktop").
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let f = BreakTimerModel.enlargedFrame(in: screen, aspect: 1.63, fraction: 0.85)
+        XCTAssertLessThanOrEqual(f.width, screen.width * 0.85 + 0.001)
+        XCTAssertLessThanOrEqual(f.height, screen.height * 0.85 + 0.001)
+    }
+
+    func testEnlargedFrameRespectsScreenOrigin() {
+        // A non-zero screen origin (a secondary display) must be honored in the
+        // centering math, not assumed to start at (0,0).
+        let screen = CGRect(x: 100, y: 200, width: 1600, height: 1000)
+        let f = BreakTimerModel.enlargedFrame(in: screen, aspect: 1.63, fraction: 0.85)
+        XCTAssertEqual(f.midX, screen.midX, accuracy: 0.001)
+        XCTAssertEqual(f.midY, screen.midY, accuracy: 0.001)
+    }
 }
