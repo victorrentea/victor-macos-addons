@@ -252,7 +252,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\"}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
-        tabletServer?.onSoundPlay = { name, volumePct in
+        tabletServer?.onSoundPlay = { [weak self] name, volumePct in
+            // The radar sound drives the full 🛰️ Sonar effect (animation + its own
+            // beep-synced audio) instead of plain routed playback — the Mac owns
+            // this one, so we don't ALSO play it via playTabletSound.
+            if name == "23_radar.mp3" {
+                self?.animator.showSonar(playSound: true)
+                return "{\"ok\":true,\"durationMs\":5459}"
+            }
             let volume = volumePct.map { Float($0) / 100 }
             guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }
             return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"

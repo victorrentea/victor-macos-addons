@@ -43,7 +43,10 @@ enum SoundEffectMap {
         "26_drum.mp3":           "drum-roll",
         "44_laugh_emoji.mp3":    "laugh",
         "40_joker.mp3":          "blood-drip",
-        "23_radar.mp3":          "sonar",
+        // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
+        // effect is driven from the routed /sound/play path (onSoundPlay),
+        // which plays the beep-synced audio itself — mapping the press too
+        // would double-trigger it.
     ]
 
     /// Effect to stop when a sound finishes / is stopped (looping effects only).

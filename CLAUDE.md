@@ -111,9 +111,14 @@ on `contents` from bundled gif frames (`Bundle.module`).
   delayed (`soundStartRel` + 0.1s) so the beeps land on the three detections; the
   effect ends (fading out **while still rotating**) the moment the 3rd detection's
   1s fade finishes, so the front never sweeps the 💩 a 4th time unshown. Pure
-  formatting/timing is derived up-front from `beepClip`/`detT`/`animEnd`. ⚠️ The
-  tablet must **not** also play `23_radar.mp3` locally (double audio) — it should
-  special-case it (press-only) like the siren.
+  formatting/timing is derived up-front from `beepClip`/`detT`/`animEnd`.
+  **Trigger:** the effect is driven from the **routed `/sound/play/23_radar.mp3`**
+  path (`onSoundPlay` special-cases it → `showSonar(playSound:true)` instead of
+  `playTabletSound`), so when the tablet routes its soundboard audio to the Mac,
+  the radar press plays the synced SFX **and** the visual with no double audio and
+  **no tablet change**. `23_radar.mp3` is therefore intentionally **absent from
+  `SoundEffectMap`** (the press path would otherwise double-trigger it). `/test/sonar`
+  and `/effect/sonar` call `showSonar` directly for headless testing.
 
 ### Tablet sound routing (tablet → Mac playback)
 The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash`).
@@ -153,7 +158,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/tile` — tile Terminal windows (same action as ⌘⌃A); headless way to exercise `TerminalTiler`
 - `GET /test/whip` — fire the 🔥 WIP Agent whip overlay (same action as ⌃W); NB leaves the overlay up until Esc
 - `GET /test/group-photo` — post the 📸 Group Photo notification now, bypassing the 13:00 + daemon-connected gates
-- `GET /test/sonar` — fire the 🛰️ Sonar overlay now (visual + synced `23_radar.mp3`); same as `/effect/sonar` and tablet press of `23_radar.mp3`
+- `GET /test/sonar` — fire the 🛰️ Sonar overlay now (visual + synced `23_radar.mp3`); same as `/effect/sonar`. The tablet drives it by routing `GET /sound/play/23_radar.mp3` to the Mac (handled in `onSoundPlay`)
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 - `GET /sound/pressed/<file>`, `GET /sound/stopped/<file>` — tablet reports a sound press/stop; the Mac maps it to an overlay effect via `SoundEffectMap` (e.g. `/sound/pressed/40_joker.mp3` → blood drip). `GET /effect/blood-drip` triggers the blood overlay directly.
 
