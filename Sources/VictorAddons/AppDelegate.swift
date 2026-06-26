@@ -102,9 +102,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // effects (built-in Retina overlay) — a plain subview on this
         // manually-populated layer-backed view does not composite.
         progressBarOverlay = ProgressBarOverlay(hostLayer: hostLayer)
-        // When the tablet timer fills to the right edge, pop confetti out
-        // of that bottom-right corner with a short sound.
-        progressBarOverlay?.onComplete = { [weak self] in self?.animator.spawnCornerConfetti() }
+        // No completion celebration: this bar is a neutral break/warm-up
+        // countdown the trainer may cancel mid-run (someone interrupts), so a
+        // confetti "reward" at the end is misleading. The bar just fills, then
+        // fades out (ProgressBarOverlay.fadeOut) — onComplete stays unset.
 
         // No outbound WebSocket: the addon only runs LocalWebSocketServer on
         // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro
