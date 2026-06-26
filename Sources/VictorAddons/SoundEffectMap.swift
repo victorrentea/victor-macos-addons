@@ -49,9 +49,12 @@ enum SoundEffectMap {
         // would double-trigger it.
     ]
 
-    /// Effect to stop when a sound finishes / is stopped (looping effects only).
+    /// Effect to stop when a sound finishes / is stopped (long-running effects:
+    /// looping overlays, or emissions like spiral-hearts that otherwise keep
+    /// spawning/lingering past the sound).
     static let onStop: [String: String] = [
         "15_flatline.mp3":       "pulse/stop",
+        "42_saxophone.mp3":      "spiral-hearts/stop",
         "41_love_hearts.mp3":    "love-hands/stop",
         "37_rainbow.mp3":        "rainbow/stop",
         "67_sfx_109.mp3":        "brother/stop",

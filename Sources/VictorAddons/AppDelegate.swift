@@ -174,6 +174,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "applause/stop": self?.animator.stopApplause()
             case "heartbeat":     self?.animator.showHeartbeat()
             case "spiral-hearts": self?.animator.showSpiralHearts()
+            case "spiral-hearts/stop": self?.animator.stopSpiralHearts()
             case "fireworks":     self?.animator.showFireworks(playSound: false)
             case "fear":          self?.animator.showFear(playSound: false)
             case "fail":          self?.animator.showFail(playSound: false)

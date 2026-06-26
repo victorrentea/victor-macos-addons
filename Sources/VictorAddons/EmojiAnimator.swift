@@ -2815,9 +2815,18 @@ class EmojiAnimator {
         _ = cancelIfRunning("star-wars", sound: "55_star_wars.mp3")
     }
 
+    // Pending spawn (and cleanup) work items for the current spiral-hearts
+    // emission, kept so an explicit stop — the saxophone sound stopped on the
+    // tablet — can cancel the not-yet-fired ones. Without this, hearts keep
+    // appearing for the full sound length even after it's silenced.
+    private var spiralHeartSpawns: [DispatchWorkItem] = []
+
     func showSpiralHearts() {
         let bounds = hostLayer.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
+
+        // Re-press: clear any in-flight emission so containers don't stack.
+        clearSpiralHearts(fadeDuration: 0)
 
         // Emit hearts for as long as the tablet's sfx (42_saxophone.mp3) plays,
         // so the animation lasts exactly the length of the sound.
@@ -2829,18 +2838,61 @@ class EmojiAnimator {
         let spawnRate = 6.0  // hearts per second (matches the original 30 over 5s)
         let total = max(1, Int((spawnRate * sfxDuration).rounded()))
 
+        // All hearts live in one container so a stop can fade them out together
+        // and drop them wholesale.
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+        activeEffects["spiral-hearts"] = container
+
         // The cursor stays a pulsing red heart for the whole emission.
         startHeartCursor(activeFor: sfxDuration)
 
+        spiralHeartSpawns = []
         for i in 0..<total {
             let delay = (Double(i) / Double(total)) * sfxDuration
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.spawnSpiralHeart()
+            let work = DispatchWorkItem { [weak self] in self?.spawnSpiralHeart(into: container) }
+            spiralHeartSpawns.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+
+        // After the last heart has finished rising (~4.5s max life) drop the
+        // now-empty container so it doesn't accumulate across re-presses.
+        let cleanup = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if self.activeEffects["spiral-hearts"] === container {
+                self.activeEffects.removeValue(forKey: "spiral-hearts")
             }
+            container.removeFromSuperlayer()
+        }
+        spiralHeartSpawns.append(cleanup)
+        DispatchQueue.main.asyncAfter(deadline: .now() + sfxDuration + 5.0, execute: cleanup)
+    }
+
+    /// Stop the spiral-hearts emission now: cancel pending spawns, drop the
+    /// heart cursor, and fade out the hearts already on screen. Wired to
+    /// "spiral-hearts/stop" (the saxophone sound stopped on the tablet).
+    func stopSpiralHearts() {
+        clearSpiralHearts(fadeDuration: 0.5)
+    }
+
+    private func clearSpiralHearts(fadeDuration: CFTimeInterval) {
+        spiralHeartSpawns.forEach { $0.cancel() }
+        spiralHeartSpawns = []
+        stopHeartCursor()
+        guard let container = activeEffects["spiral-hearts"] else { return }
+        activeEffects.removeValue(forKey: "spiral-hearts")
+        guard fadeDuration > 0 else { container.removeFromSuperlayer(); return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(fadeDuration)
+        container.opacity = 0
+        CATransaction.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration) { [weak container] in
+            container?.removeFromSuperlayer()
         }
     }
 
-    private func spawnSpiralHeart() {
+    private func spawnSpiralHeart(into container: CALayer) {
         let bounds = hostLayer.bounds
         let fontSize: CGFloat = CGFloat.random(in: 44...80)
         // The layer box must be taller than the glyph or CATextLayer clips the
@@ -2856,7 +2908,7 @@ class EmojiAnimator {
         // anchorPoint stays at its (0.5, 0.5) default, so position == centre.
         layer.frame = CGRect(x: origin.x - box / 2, y: origin.y - box / 2, width: box, height: box)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        hostLayer.addSublayer(layer)
+        container.addSublayer(layer)
 
         // Travel from the spawn point up to (just past) the top edge.
         let riseHeight = (bounds.height - origin.y) + box * 1.5
