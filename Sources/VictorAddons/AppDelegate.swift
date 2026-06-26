@@ -641,10 +641,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
 
-        // 🔥 Whip Claude — show the playful "interrupt Claude" overlay (Esc dismisses).
+        // 🔥 Whip Claude — toggle the playful "interrupt Claude" overlay. ⌃W shows
+        // it; a second ⌃W (or Esc) dismisses it.
         menuBarManager.onWhip = { [weak self] in
             DispatchQueue.main.async {
-                self?.showWhip()
+                self?.toggleWhip()
             }
         }
 
@@ -1219,10 +1220,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         rebuildAuxOverlayPanels()
     }
 
-    /// Show the 🔥 Whip Claude overlay on the screen under the cursor. The whip's
-    /// Ctrl+C + scold macro lands in whatever app currently has keyboard focus
-    /// (keep Claude focused). Esc dismisses the overlay.
-    private func showWhip() {
+    /// Toggle the 🔥 Whip Claude overlay on the screen under the cursor. ⌃W is a
+    /// toggle: a first press shows it, a second press dismisses it via the exact
+    /// same path as Esc — handy when you can't reach Esc mid-whip. The show edge
+    /// never types; the whip's Ctrl+C + scold macro only fires on a mouse click
+    /// while the overlay is up (WhipController.handleClick), and it lands in
+    /// whatever app currently has keyboard focus (keep Claude focused). So
+    /// dismissing never types — only the show→click flow does.
+    private func toggleWhip() {
+        if let controller = whipController, controller.isShowing {
+            controller.hide()   // same dismiss path as Esc — no typing on this edge
+            return
+        }
         let controller = whipController ?? WhipController()
         whipController = controller
         controller.onEscape = { [weak self] in
