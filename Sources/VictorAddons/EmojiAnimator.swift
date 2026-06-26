@@ -1893,6 +1893,373 @@ class EmojiAnimator {
         trackEffect("blood-drip", layer: gifLayer, duration: duration, sound: playSound ? "40_joker.mp3" : nil)
     }
 
+    /// Random green/black speckle frames for the sonar's "reception noise" —
+    /// sparse bright-green specks + dark dropouts on a clear field, premultiplied.
+    private static func makeSonarNoiseFrames(count: Int, size: Int) -> [CGImage] {
+        var frames: [CGImage] = []
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let bytesPerRow = size * 4
+        for _ in 0..<count {
+            guard let ctx = CGContext(data: nil, width: size, height: size,
+                                      bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: cs,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let buf = ctx.data else { continue }
+            let p = buf.bindMemory(to: UInt8.self, capacity: size * size * 4)
+            for idx in 0..<(size * size) {
+                let r = Double.random(in: 0...1)
+                let o = idx * 4
+                if r > 0.62 {                       // bright green speck
+                    let a = (r - 0.62) / 0.38 * 255.0
+                    p[o] = UInt8(0.40 * a); p[o + 1] = UInt8(a); p[o + 2] = UInt8(0.55 * a); p[o + 3] = UInt8(a)
+                } else if r < 0.20 {                // dark dropout
+                    let a = (0.20 - r) / 0.20 * 220.0
+                    p[o] = 0; p[o + 1] = 0; p[o + 2] = 0; p[o + 3] = UInt8(a)
+                } else {                            // clear
+                    p[o] = 0; p[o + 1] = 0; p[o + 2] = 0; p[o + 3] = 0
+                }
+            }
+            if let img = ctx.makeImage() { frames.append(img) }
+        }
+        return frames
+    }
+
+    // MARK: - Sonar radar sweep (sfx #23, 23_radar.mp3)
+
+    /// A black 30%-opacity wash fades in over 1s, THEN a phosphor-green radar
+    /// appears on it: concentric rings + a radial grid + a sweep line that
+    /// rotates clockwise trailing a comet tail with a green glow. One-shot —
+    /// runs ~6s (matching 23_radar.mp3 ~5.5s) then fades out and is removed.
+    /// Drawn entirely as CALayers/CAShapeLayers on the overlay's hostLayer.
+    func showSonar(playSound: Bool = true) {
+        let soundKey: String? = playSound ? "23_radar.mp3" : nil
+        if cancelIfRunning("sonar", sound: soundKey) { return }
+
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        let green = NSColor(red: 0.10, green: 1.0, blue: 0.30, alpha: 1.0).cgColor
+        let gridGrey = NSColor(white: 0.5, alpha: 1.0).cgColor   // muted grey radar lines
+
+        let fadeIn: Double = 1.0       // black overlay fade-in duration
+        let fadeOut: Double = 0.6
+        let sectorFrac: Double = 0.32  // visible sweep sector width, as a fraction of a full turn
+
+        // --- Detection timing: ~0.5s beep-free lead-in, then the front sweeps
+        //     over the 💩 on three radar beeps in 23_radar.mp3. The effect ENDS
+        //     (fully faded, while still rotating) the moment the 3rd detection's
+        //     1s fade finishes — < one interval after det3, so the front never
+        //     sweeps over the 💩 a 4th time unshown. ---
+        let sweepStartRel = fadeIn * 0.9               // when the sweep appears (rel. to effect start)
+        let leadIn = 0.5                               // beep-free rotation before the first detection
+        let beepClip = [0.104, 2.211, 3.879]           // detection beep times within the clip
+        let soundStartRel = sweepStartRel + leadIn - beepClip[0]
+        let detT = beepClip.map { $0 + soundStartRel - sweepStartRel }   // detections, rel. to sweepStart
+        let i1 = detT[1] - detT[0]
+        let i2 = detT[2] - detT[1]
+        let animEnd = detT[2] + sectorFrac * i2 + 1.0  // end when the last 💩 flash's 1s fade completes
+        let active = sweepStartRel + animEnd - fadeOut // fade-out starts here (rotation still going)
+        let total  = sweepStartRel + animEnd           // full removal
+
+        // Everything lives under one container so the end fade-out is a single op.
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+
+        // 1) Black backdrop — fades 0 → 0.45 opacity over 1s (darker outside the
+        //    circle; inside is darker still under the 70% disc).
+        let backdrop = CALayer()
+        backdrop.frame = bounds
+        backdrop.backgroundColor = NSColor.black.cgColor
+        backdrop.opacity = 0.45
+        let backdropFade = CABasicAnimation(keyPath: "opacity")
+        backdropFade.fromValue = 0.0
+        backdropFade.toValue = 0.45
+        backdropFade.duration = fadeIn
+        backdrop.add(backdropFade, forKey: "backdropFadeIn")
+        container.addSublayer(backdrop)
+
+        // Radar geometry: centered, radius ~42% of the smaller screen side.
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let radius = min(bounds.width, bounds.height) * 0.42
+
+        // 2) Static radar grid (rings + radial spokes + center dot). Fades in
+        //    AFTER the backdrop so the sonar "appears" on the dark wash.
+        let grid = CALayer()
+        grid.frame = bounds
+        grid.opacity = 1.0
+
+        // Black disc filling the radar circle — black at 70% opacity (under the
+        // grid lines), a darker background inside the circle than the 30% wash.
+        let disc = CAShapeLayer()
+        disc.path = CGPath(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius), transform: nil)
+        disc.fillColor = NSColor(white: 0.0, alpha: 0.7).cgColor
+        grid.addSublayer(disc)
+
+        let ringsPath = CGMutablePath()
+        let ringCount = 4
+        for i in 1...ringCount {
+            let r = radius * CGFloat(i) / CGFloat(ringCount)
+            ringsPath.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
+        }
+        let rings = CAShapeLayer()
+        rings.path = ringsPath
+        rings.fillColor = NSColor.clear.cgColor
+        rings.strokeColor = gridGrey
+        rings.opacity = 0.7
+        rings.lineWidth = 3.0
+        rings.contentsScale = scale
+        grid.addSublayer(rings)
+
+        let outer = CAShapeLayer()
+        outer.path = CGPath(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius), transform: nil)
+        outer.fillColor = NSColor.clear.cgColor
+        outer.strokeColor = gridGrey
+        outer.opacity = 0.85
+        outer.lineWidth = 4.0
+        outer.contentsScale = scale
+        grid.addSublayer(outer)
+
+        let spokesPath = CGMutablePath()
+        var ang: CGFloat = 0
+        while ang < .pi * 2 - 0.001 {
+            spokesPath.move(to: center)
+            spokesPath.addLine(to: CGPoint(x: center.x + radius * cos(ang), y: center.y + radius * sin(ang)))
+            ang += .pi / 6   // every 30°
+        }
+        let spokes = CAShapeLayer()
+        spokes.path = spokesPath
+        spokes.strokeColor = gridGrey
+        spokes.opacity = 0.5
+        spokes.lineWidth = 2.0
+        spokes.contentsScale = scale
+        grid.addSublayer(spokes)
+
+        let dotR: CGFloat = 4
+        let dot = CAShapeLayer()
+        dot.path = CGPath(ellipseIn: CGRect(x: center.x - dotR, y: center.y - dotR, width: 2 * dotR, height: 2 * dotR), transform: nil)
+        dot.fillColor = green
+        dot.contentsScale = scale
+        grid.addSublayer(dot)
+
+        let gridFade = CABasicAnimation(keyPath: "opacity")
+        gridFade.fromValue = 0.0
+        gridFade.toValue = 1.0
+        gridFade.beginTime = CACurrentMediaTime() + fadeIn * 0.6
+        gridFade.duration = 0.6
+        gridFade.fillMode = .both
+        grid.add(gridFade, forKey: "gridFadeIn")
+        container.addSublayer(grid)
+
+        // Faint "background reception noise" flickering inside the radar circle —
+        // the sonar screen is never perfectly black.
+        let bgNoiseFrames = Self.makeSonarNoiseFrames(count: 10, size: 240)
+        if let firstBg = bgNoiseFrames.first {
+            let bgNoise = CALayer()
+            bgNoise.frame = bounds
+            bgNoise.contents = firstBg
+            bgNoise.contentsGravity = .resize
+            bgNoise.opacity = 0.16
+            let bgMask = CAShapeLayer()
+            bgMask.path = CGPath(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: 2 * radius, height: 2 * radius), transform: nil)
+            bgMask.fillColor = NSColor.black.cgColor
+            bgNoise.mask = bgMask
+            let bgFade = CABasicAnimation(keyPath: "opacity")
+            bgFade.fromValue = 0.0
+            bgFade.toValue = 0.16
+            bgFade.duration = fadeIn
+            bgNoise.add(bgFade, forKey: "bgNoiseFadeIn")
+            let bgFlick = CAKeyframeAnimation(keyPath: "contents")
+            bgFlick.values = bgNoiseFrames
+            bgFlick.calculationMode = .discrete
+            bgFlick.duration = 0.7
+            bgFlick.repeatCount = .infinity
+            bgNoise.add(bgFlick, forKey: "bgNoiseFlicker")
+            container.addSublayer(bgNoise)
+        }
+
+        // 3) Rotating sweep: a conic-gradient arc that fades from a bright
+        //    leading edge to transparent over ~90° → the classic radar comet
+        //    tail. Masked to the radar circle; spins about the screen center.
+        let sweepSide = radius * 2
+        let sweep = CAGradientLayer()
+        sweep.type = .conic
+        sweep.frame = CGRect(x: center.x - radius, y: center.y - radius, width: sweepSide, height: sweepSide)
+        sweep.opacity = 1.0
+        sweep.startPoint = CGPoint(x: 0.5, y: 0.5) // cone center
+        sweep.endPoint = CGPoint(x: 1.0, y: 0.5)   // location-0 points +x (the bright leading edge)
+        let sweepBright = NSColor(red: 0.30, green: 1.0, blue: 0.45, alpha: 0.9).cgColor
+        let sweepClear  = NSColor(red: 0.10, green: 1.0, blue: 0.30, alpha: 0.0).cgColor
+        // Front of attack = the bright +x leading edge at full opacity; the
+        // gradient then fades 100% → 0% BEHIND it as the sweep rotates clockwise.
+        sweep.colors    = [sweepBright, sweepClear, NSColor.clear.cgColor, NSColor.clear.cgColor]
+        sweep.locations = [0.0, NSNumber(value: sectorFrac), NSNumber(value: sectorFrac), 1.0]
+
+        // Clip the square gradient to the radar circle.
+        let sweepMask = CAShapeLayer()
+        sweepMask.path = CGPath(ellipseIn: sweep.bounds, transform: nil)
+        sweepMask.fillColor = NSColor.black.cgColor
+        sweep.mask = sweepMask
+
+        // Crisp bright leading edge (local +x) with a green glow.
+        let localCenter = CGPoint(x: radius, y: radius)
+        let lead = CAShapeLayer()
+        let leadPath = CGMutablePath()
+        leadPath.move(to: localCenter)
+        leadPath.addLine(to: CGPoint(x: localCenter.x + radius, y: localCenter.y))
+        lead.path = leadPath
+        lead.strokeColor = green
+        lead.lineWidth = 2.0
+        lead.lineCap = .round
+        lead.contentsScale = scale
+        lead.shadowColor = green
+        lead.shadowRadius = 8
+        lead.shadowOpacity = 0.9
+        lead.shadowOffset = .zero
+        sweep.addSublayer(lead)
+
+        // Ultrasound-style "reception noise": flickering green/black speckle over
+        // the wedge — imperfect sonar reception, not crisp pixels. Masked by a
+        // copy of the gradient so it fades with the signal, and it rides the spin.
+        let noiseFrames = Self.makeSonarNoiseFrames(count: 10, size: 240)
+        if let firstNoise = noiseFrames.first {
+            let noise = CALayer()
+            noise.frame = sweep.bounds
+            noise.contents = firstNoise
+            noise.contentsGravity = .resize
+            noise.opacity = 0.95
+            let noiseMask = CAGradientLayer()
+            noiseMask.type = .conic
+            noiseMask.frame = sweep.bounds
+            noiseMask.startPoint = CGPoint(x: 0.5, y: 0.5)
+            noiseMask.endPoint = CGPoint(x: 1.0, y: 0.5)
+            noiseMask.colors = [sweepBright, sweepClear, NSColor.clear.cgColor, NSColor.clear.cgColor]
+            noiseMask.locations = [0.0, NSNumber(value: sectorFrac), NSNumber(value: sectorFrac), 1.0]
+            noise.mask = noiseMask
+            let flick = CAKeyframeAnimation(keyPath: "contents")
+            flick.values = noiseFrames
+            flick.calculationMode = .discrete
+            flick.duration = 0.6
+            flick.repeatCount = .infinity
+            noise.add(flick, forKey: "noiseFlicker")
+            sweep.addSublayer(noise)
+        }
+
+        let sweepStart = CACurrentMediaTime() + fadeIn * 0.9
+        let sweepFade = CABasicAnimation(keyPath: "opacity")
+        sweepFade.fromValue = 0.0
+        sweepFade.toValue = 1.0
+        sweepFade.beginTime = sweepStart
+        sweepFade.duration = 0.4
+        sweepFade.fillMode = .both
+        sweep.add(sweepFade, forKey: "sweepFadeIn")
+
+        // 3a) Keyframed clockwise rotation (negative z): one full turn between
+        //     detections so the front lands on the 💩 exactly on each beep.
+        //     Lead-in and interval 1 share a speed so the lead-in looks continuous.
+        let blipAngle: CGFloat = 0.6                    // 💩 world angle (y-up); front is here at each detection
+        let phi = Double(blipAngle)
+        let speed1 = 2 * Double.pi / i1
+        let speed2 = 2 * Double.pi / i2
+        let rotKeyT: [Double] = [0, detT[0], detT[1], detT[2], animEnd]
+        let rotVal: [Double] = [
+            phi + speed1 * detT[0],                     // lead-in start → rotates down to phi by detT[0]
+            phi,                                        // detection 1
+            phi - 2 * Double.pi,                        // detection 2 (one CW turn later)
+            phi - 4 * Double.pi,                        // detection 3
+            phi - 4 * Double.pi - speed2 * (animEnd - detT[2]),  // keep spinning to the end
+        ]
+        let spin = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+        spin.keyTimes = rotKeyT.map { NSNumber(value: $0 / animEnd) }
+        spin.values = rotVal
+        spin.calculationMode = .linear
+        spin.duration = animEnd
+        spin.beginTime = sweepStart
+        spin.fillMode = .both
+        spin.isRemovedOnCompletion = false
+        sweep.add(spin, forKey: "sweepSpin")
+        container.addSublayer(sweep)
+
+        // 3b) The 💩 the radar "finds": fixed on the map at the front's detection
+        //     angle, flashing each time the front sweeps over it.
+        let blipRadius = radius * 0.62
+        let blipPos = CGPoint(x: center.x + blipRadius * cos(blipAngle),
+                              y: center.y + blipRadius * sin(blipAngle))
+        let blipSize: CGFloat = 144               // 3× the original 48
+        let blip = CATextLayer()
+        blip.string = "💩"
+        blip.fontSize = blipSize * 0.8
+        blip.alignmentMode = .center
+        blip.frame = CGRect(x: blipPos.x - blipSize / 2, y: blipPos.y - blipSize / 2, width: blipSize, height: blipSize)
+        blip.contentsScale = scale
+        // Green glow behind the 💩 so it reads clearly (fades with the layer opacity).
+        blip.shadowColor = NSColor(red: 0.20, green: 1.0, blue: 0.35, alpha: 1.0).cgColor
+        blip.shadowRadius = 16
+        blip.shadowOpacity = 1.0
+        blip.shadowOffset = .zero
+        blip.masksToBounds = false
+        blip.opacity = 0
+        // Below the green sweep (so the radar's green washes over it) but above
+        // the grid lines.
+        container.insertSublayer(blip, below: sweep)
+
+        // Blip lifecycle: invisible until a detection, then FULLY lit while the
+        // sector passes over it, then a 1s fade-out. Three detections, each
+        // phase-locked to the rotation above (and thus to the beeps).
+        let coverT = [sectorFrac * i1, sectorFrac * i2, sectorFrac * i2]   // sector-pass time per detection
+        let fadeT = 1.0
+        var blipKeyTimes: [NSNumber] = []
+        var blipValues: [NSNumber] = []
+        let blipSamples = 240
+        for k in 0...blipSamples {
+            let tau = Double(k) / Double(blipSamples) * animEnd
+            var v = 0.0
+            for di in 0..<3 {
+                let x = tau - detT[di]
+                if x < 0 { continue }
+                if x <= coverT[di] {
+                    v = max(v, 1.0)                  // sector still passing over it → fully lit
+                } else if x <= coverT[di] + fadeT {
+                    v = max(v, 1.0 - (x - coverT[di]) / fadeT)   // 1s fade-out
+                }
+            }
+            blipKeyTimes.append(NSNumber(value: tau / animEnd))
+            blipValues.append(NSNumber(value: v))
+        }
+        let blipFlash = CAKeyframeAnimation(keyPath: "opacity")
+        blipFlash.keyTimes = blipKeyTimes
+        blipFlash.values = blipValues
+        blipFlash.calculationMode = .linear
+        blipFlash.duration = animEnd
+        blipFlash.beginTime = sweepStart
+        blipFlash.fillMode = .both
+        blipFlash.isRemovedOnCompletion = false
+        blip.add(blipFlash, forKey: "blipFlash")
+
+        // 4) End: fade the whole container out, then trackEffect removes it.
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.beginTime = CACurrentMediaTime() + active
+        fade.duration = fadeOut
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        container.add(fade, forKey: "sonarFadeOut")
+
+        // Play the radar SFX (when this path owns the audio), delayed by
+        // `soundStartRel` so its three detection beeps land on the three 💩
+        // detections (first ~0.5s stays beep-free rotation). The extra +0.1s
+        // nudges the whole soundtrack slightly behind the visuals.
+        if playSound {
+            DispatchQueue.main.asyncAfter(deadline: .now() + soundStartRel + 0.1) { [weak self, weak container] in
+                guard let self = self, let container = container,
+                      self.activeEffects["sonar"] === container else { return }   // dropped/retriggered
+                SoundManager.shared.play("23_radar.mp3")
+            }
+        }
+        trackEffect("sonar", layer: container, duration: total, sound: soundKey)
+    }
+
     func showHeartbeat() {
         guard activeEffects["heartbeat"] == nil else { return }
         let bounds = hostLayer.bounds

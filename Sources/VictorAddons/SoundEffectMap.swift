@@ -43,6 +43,7 @@ enum SoundEffectMap {
         "26_drum.mp3":           "drum-roll",
         "44_laugh_emoji.mp3":    "laugh",
         "40_joker.mp3":          "blood-drip",
+        "23_radar.mp3":          "sonar",
     ]
 
     /// Effect to stop when a sound finishes / is stopped (looping effects only).

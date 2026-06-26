@@ -177,6 +177,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "fear":          self?.animator.showFear(playSound: false)
             case "fail":          self?.animator.showFail(playSound: false)
             case "blood-drip":    self?.animator.showBloodDrip(playSound: false)
+            case "sonar":         self?.animator.showSonar(playSound: true)
             case "sepia":         self?.animator.showSepia(playSound: false)
             case "fire-alarm":      self?.animator.showFireAlarm(playSound: false)
             case "bullet-holes":    self?.animator.showBulletHoles(playSound: false)

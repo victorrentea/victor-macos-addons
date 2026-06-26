@@ -259,6 +259,8 @@ class TabletHttpServer {
             return .testTile
         case "/test/whip":
             return .testWhip
+        case "/test/sonar":
+            return .effect("sonar")
         case "/test/group-photo":
             return .testGroupPhoto
         case "/training/prompt-capture":
