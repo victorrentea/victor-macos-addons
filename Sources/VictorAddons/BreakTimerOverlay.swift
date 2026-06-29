@@ -388,6 +388,10 @@ final class BreakTimerController {
             beginExpiry()
         } else {
             refresh()
+            // Re-persist every ~5s so a hard kill always leaves a fresh snapshot to
+            // resume from. (The absolute finishAt is stable, but this also keeps the
+            // store warm and covers any future per-tick state.)
+            if remaining % 5 == 0 { persist() }
         }
     }
 
