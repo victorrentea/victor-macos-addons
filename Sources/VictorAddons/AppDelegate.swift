@@ -207,6 +207,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
             case "phoenix":         self?.animator.showPhoenix()
             case "money":           self?.animator.showMoneyRise()
+            case "iris":            self?.animator.showIrisClose()
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -530,6 +531,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "drum-roll":       self.animator.showDrumRoll(playSound: false); stopAfter { self.animator.stopDrumRoll() }
                 case "phoenix":         self.animator.showPhoenix()
                 case "money":           self.animator.showMoneyRise()
+                case "iris":            self.animator.showIrisClose()
                 case "laugh":           self.animator.showLaugh()
                 case "corner-confetti": self.animator.spawnCornerConfetti()
                 case "green-flash":

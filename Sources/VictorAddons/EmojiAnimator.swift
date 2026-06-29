@@ -61,6 +61,14 @@ class EmojiAnimator {
     private var _bombLastSample: CGPoint?             // previous sample (global coords) for delta
     private var _bombArmed = false                    // crossed the shake threshold → lock on cursor
 
+    // 🕳️ Iris close: a black radial overlay (transparent centre, opaque edges)
+    // whose clear hole shrinks from the screen-circumscribing circle down to
+    // nothing over ~5s — a cinematic "iris out" blackout. NO sound. Kept OUTSIDE
+    // `activeEffects` on purpose: the tablet fires /effect/stop-all before every
+    // tile press, so for a SECOND press of the same tile to *cancel* (not
+    // restart) the iris, it must survive stop-all and toggle itself here.
+    private var _irisLayer: CAGradientLayer?
+
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
         Self.warmBrotherCache()
@@ -1342,6 +1350,110 @@ class EmojiAnimator {
                 CATransaction.commit()
             }
         }
+    }
+
+    // MARK: - 🕳️ Iris close (toggle: press to close the screen into black, press again to fade it back)
+
+    private static let irisCloseDuration: CFTimeInterval = 5.0   // corners → full black
+    private static let irisHoldDuration: CFTimeInterval = 1.0    // dwell on full black before revealing
+    private static let irisRevealDuration: CFTimeInterval = 1.0  // auto fade-out back to the screen
+
+    /// Cinematic "iris out": a full-screen black overlay that is transparent in
+    /// the centre and opaque at the edges, with a soft transition band. The clear
+    /// hole starts as the circle circumscribing the screen (its rim passing
+    /// through the corners, so nothing is hidden yet) and shrinks to nothing over
+    /// ~5s — black creeps in from the corners and swallows the screen. SILENT; the
+    /// shrinking-circle visual is the whole effect.
+    ///
+    /// Once fully black it dwells for ~1s, then automatically fades the black back
+    /// out over ~1s to reveal whatever is underneath — no second press needed.
+    ///
+    /// Pressing the tile again at any point before that auto-reveal (during the
+    /// close or the dwell) cancels it early with a quick fade. Because the tablet
+    /// fires /effect/stop-all right before each tile press, this effect is
+    /// deliberately kept out of `activeEffects` (so stopAllActiveEffects leaves it
+    /// alone) — that lets the second press reach here and toggle instead of being
+    /// wiped and restarted.
+    func showIrisClose() {
+        // Already running → second press cancels with a quick fade-out.
+        if let existing = _irisLayer {
+            cancelIris(existing)
+            return
+        }
+
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        // A square large enough to cover the screen, centred on it. Keeping the
+        // gradient layer square makes the radial gradient a TRUE circle (on a
+        // non-square layer it would distort into an ellipse). Side = the screen
+        // diagonal, so the gradient's location 1.0 lands exactly on the screen
+        // corners.
+        let diag = (bounds.width * bounds.width + bounds.height * bounds.height).squareRoot()
+        let layer = CAGradientLayer()
+        layer.type = .radial
+        layer.frame = CGRect(x: bounds.midX - diag / 2, y: bounds.midY - diag / 2, width: diag, height: diag)
+        layer.startPoint = CGPoint(x: 0.5, y: 0.5)
+        layer.endPoint = CGPoint(x: 1.0, y: 1.0)   // ellipse corner → radius = diag/2 → reaches the screen corners
+        let clear = NSColor(white: 0, alpha: 0).cgColor
+        let opaque = NSColor(white: 0, alpha: 1).cgColor
+        layer.colors = [clear, clear, opaque, opaque]
+
+        // `locations` for a normalised hole radius r∈[0,1]: [0 … r-band] is the
+        // fully-clear visible hole, [r-band … r] the soft transition band, and
+        // [r … 1] solid black. Animating r from 1→0 shrinks the hole to nothing.
+        let band: CGFloat = 0.06
+        func locs(_ r: CGFloat) -> [NSNumber] {
+            let r1 = max(0, min(1, r))
+            let r0 = max(0, r1 - band)
+            return [0, NSNumber(value: Double(r0)), NSNumber(value: Double(r1)), 1]
+        }
+
+        // Settle the model fully black; suppress the implicit animation so the
+        // explicit close below drives the whole transition from the open state.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.locations = locs(0.0)
+        hostLayer.addSublayer(layer)
+        CATransaction.commit()
+        _irisLayer = layer
+
+        let anim = CABasicAnimation(keyPath: "locations")
+        anim.fromValue = locs(1.0)             // hole circumscribes the screen → nothing hidden
+        anim.toValue = locs(0.0)               // hole gone → full black
+        anim.duration = Self.irisCloseDuration
+        anim.timingFunction = CAMediaTimingFunction(name: .easeIn)  // creeps from the corners, then collapses
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false     // hold full black through the dwell below
+        layer.add(anim, forKey: "irisClose")
+
+        // After it settles full black + a short dwell, auto-reveal: fade the black
+        // out to show the screen again. Guarded so a manual cancel (or a later
+        // re-trigger) makes this a no-op.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.irisCloseDuration + Self.irisHoldDuration) { [weak self, weak layer] in
+            guard let self = self, let layer = layer, self._irisLayer === layer else { return }
+            self.cancelIris(layer, fadeDuration: Self.irisRevealDuration)
+        }
+    }
+
+    /// Fade the black iris back to transparent and remove it. `fadeDuration` is
+    /// short for a manual interrupt (snappy) and ~1s for the gentle auto-reveal.
+    private func cancelIris(_ layer: CAGradientLayer, fadeDuration: CFTimeInterval = 0.35) {
+        _irisLayer = nil
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = layer.presentation()?.opacity ?? 1.0
+        fade.toValue = 0.0
+        fade.duration = fadeDuration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        layer.opacity = 0
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak layer] in
+            layer?.removeFromSuperlayer()
+        }
+        layer.add(fade, forKey: "irisFade")
+        CATransaction.commit()
     }
 
     // MARK: - Applause (toggleable: click to start, click again to stop)

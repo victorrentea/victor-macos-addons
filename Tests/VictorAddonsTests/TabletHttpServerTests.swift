@@ -27,6 +27,15 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/phoenix"), .effect("phoenix"))
     }
 
+    func testRouteIrisTestAndEffectEndpoints() {
+        // The 🕳️ iris-close blackout: both the headless test hook and the generic
+        // /effect/ path dispatch through onEffect("iris"). The tablet itself
+        // drives it via /sound/pressed/31_tarzan.mp3 (mapped to "iris" in
+        // SoundEffectMap).
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/iris"), .effect("iris"))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/iris"), .effect("iris"))
+    }
+
     func testRouteUnknownForUnsupportedPath() {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/unknown"), .unknown)
     }
