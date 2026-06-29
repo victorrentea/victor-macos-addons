@@ -74,16 +74,17 @@ echo
 HEARTBEAT=$!
 trap 'kill "$HEARTBEAT" 2>/dev/null; rm -f "$LOCK"' EXIT
 
-PROMPT='Use the training-summarizer skill (victor-skills:training-summarizer) in HEADLESS BREAK-DELTA mode — an unattended run triggered by a coffee-break timer.
+PROMPT="Use the training-summarizer skill (victor-skills:training-summarizer) in HEADLESS BREAK-DELTA mode — an unattended run triggered by a coffee-break timer.
 
 Do EXACTLY this and nothing else:
 - Auto-detect the newest training transcription and its session folder (Step 0). If you cannot resolve them, print one line saying why and exit WITHOUT writing anything.
 - Read ONLY the transcript after the Discussion.md last_processed watermark (or from the start if Discussion.md does not exist yet).
-- Append the new first-level-synthesis section(s) to Discussion.md ONLY (with inline 🤖 / ❌ per the skill), and advance the Discussion.md watermark to the last section you actually wrote (so a closed/killed window never loses or skips unprocessed transcript — the next run re-reads the gap).
+- Append the new first-level-synthesis section(s) to Discussion.md ONLY (with inline 🤖 / ❌ per the skill).
+- WATERMARK ANCHORED TO THE START OF THIS RUN: the transcript had exactly ${LINES} lines when this run started. When you set the Discussion.md watermark, lines_through MUST be <= ${LINES}, AND no further than the last section you actually committed. Any line beyond ${LINES} landed DURING this (possibly multi-minute) run — e.g. break-time chats spoken during the break — and MUST be left for the next run. Do NOT re-count the file at the end. This way break-time chatter and a closed/killed window are never lost or skipped; the next run re-reads from the watermark.
 - Do NOT create or modify ai-summary.md (the participant brief) — it is built only at wrap-up from the complete Discussion.md.
 - Do NOT run any Step 8 background streams: no link verification, no wiki builds (A/B), no image captions (D), no Obsidian, no relay listener.
 - Never ask questions; this is unattended.
-First print the [HH:MM]–[HH:MM] transcript range you are about to process, then do the work and stop.'
+First print the [HH:MM]–[HH:MM] transcript range you are about to process, then do the work and stop."
 
 cd "$HOME" || true
 # Use Victor's Claude subscription (Keychain OAuth), NOT the ANTHROPIC_API_KEY the
