@@ -47,7 +47,18 @@ final class BreakTimerController {
     private var isEnlarged = false
     private var savedFrame: NSRect?           // the user's frame, restored on enlarge → normal
 
-    private let ptZone = TimeZone(identifier: "Europe/Lisbon") ?? .current
+    // The second finish-time line shows a user-pickable country (default Portugal),
+    // remembered across launches. Clicking its flag opens the dropdown.
+    private var selectedCountry = BreakCountry.loadSelected()
+
+    /// Apply a dropdown pick: persist it and repaint the second line in the new
+    /// country's flag + timezone.
+    private func selectCountry(_ c: BreakCountry) {
+        selectedCountry = c
+        c.saveSelected()
+        view?.selectedCountryTZ = c.tz
+        refresh()
+    }
 
     /// Fired when a break *ends* — i.e. whenever the window is closed: the ✕
     /// button, the countdown expiring (which auto-closes after the gong), or a
@@ -350,6 +361,8 @@ final class BreakTimerController {
         view.onTogglePause = { [weak self] in self?.togglePause() }
         view.onAdd = { [weak self] m in self?.addMinutes(m) }
         view.onZoom = { [weak self] in self?.showBackdropForZoom() }
+        view.selectedCountryTZ = selectedCountry.tz
+        view.onSelectCountry = { [weak self] c in self?.selectCountry(c) }
         container.addSubview(view)
 
         panel.contentView = container
@@ -384,7 +397,8 @@ final class BreakTimerController {
         view.update(
             digits: BreakTimerModel.format(remaining: remaining),
             finishLocal: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: .current),
-            finishPT: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: ptZone),
+            finishOther: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: selectedCountry.timeZone),
+            otherFlag: selectedCountry.flag,
             paused: paused
         )
     }
@@ -469,9 +483,16 @@ final class BreakTimerView: NSView {
 
     private var digits = "00:00"
     private var finishLocal = ""
-    private var finishPT = ""
+    private var finishOther = ""
+    private var otherFlag = BreakCountry.portugal.flag    // 2nd-line flag, set on update
     private var paused = false
     private var digitsVisible = true
+
+    // Country dropdown: the 2nd finish line's flag is a click target. The hit rect
+    // is recomputed each draw; selecting from the popped-up menu calls back out.
+    var selectedCountryTZ = BreakCountry.portugal.tz      // checkmarked in the menu
+    var onSelectCountry: ((BreakCountry) -> Void)?
+    private var otherFlagRect: NSRect = .zero
 
     private var dragMode: DragMode = .none
     private var dragStartMouse = NSPoint.zero
@@ -540,10 +561,11 @@ final class BreakTimerView: NSView {
         CATransaction.commit()
     }
 
-    func update(digits: String, finishLocal: String, finishPT: String, paused: Bool) {
+    func update(digits: String, finishLocal: String, finishOther: String, otherFlag: String, paused: Bool) {
         self.digits = digits
         self.finishLocal = finishLocal
-        self.finishPT = finishPT
+        self.finishOther = finishOther
+        self.otherFlag = otherFlag
         self.paused = paused
         setBlinkingPaused(paused)
         needsDisplay = true
@@ -872,12 +894,16 @@ final class BreakTimerView: NSView {
         let gap: CGFloat = 5                                  // extra space between the two lines
         // Both lines at the SAME opacity; no background — just the black outline.
         let a1 = finishAttr(finishLocal, flag: "🇷🇴", lineH: lineH, maxW: area.width, color: Self.lit)
-        let a2 = finishAttr(finishPT, flag: "🇵🇹", lineH: lineH, maxW: area.width, color: Self.lit)
+        let a2 = finishAttr(finishOther, flag: otherFlag, lineH: lineH, maxW: area.width, color: Self.lit)
         drawAttrCentered(a1, x: area.minX, bottomY: topBottom + gap / 2, cellH: lineH)
         drawAttrCentered(a2, x: area.minX, bottomY: area.minY - gap / 2, cellH: lineH)
+        // The 2nd line's flag (left edge, its own line slot) is the click target for
+        // the country dropdown — make it a generous, easy-to-hit square.
+        otherFlagRect = NSRect(x: area.minX, y: area.minY - gap / 2, width: lineH * 1.25, height: lineH)
     }
 
-    /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, PT Lisbon),
+    /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, then the
+    /// user-picked country),
     /// then the arrow and time in a MONOSPACED font so the two lines' columns align.
     /// Sized to the line, clamped to width.
     private func finishAttr(_ s: String, flag: String, lineH: CGFloat, maxW: CGFloat, color: NSColor) -> NSAttributedString {
@@ -1043,6 +1069,10 @@ final class BreakTimerView: NSView {
             dragMode = .button(kind)
             pressedButton = kind
             needsDisplay = true
+        } else if otherFlagRect.contains(p) {
+            dragMode = .none
+            showCountryMenu(at: NSPoint(x: otherFlagRect.minX, y: otherFlagRect.minY))
+            return
         } else {
             dragMode = .move
             NSCursor.closedHand.set()
@@ -1143,6 +1173,33 @@ final class BreakTimerView: NSView {
         case .close: onClose?()
         case .pause: onTogglePause?()
         }
+    }
+
+    /// Pop up the country dropdown anchored at the 2nd-line flag. Each item shows
+    /// the flag, name and the country's CURRENT local time; the selected one is
+    /// checkmarked. Picking fires `onSelectCountry`.
+    private func showCountryMenu(at point: NSPoint) {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "HH:mm"
+        let now = Date()
+        let menu = NSMenu()
+        menu.font = .menuFont(ofSize: 13)
+        for c in BreakCountry.all {
+            df.timeZone = c.timeZone
+            let item = NSMenuItem(title: "\(c.flag)  \(c.name) — \(df.string(from: now))",
+                                  action: #selector(countryPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = c
+            item.state = (c.tz == selectedCountryTZ) ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+
+    @objc private func countryPicked(_ sender: NSMenuItem) {
+        guard let c = sender.representedObject as? BreakCountry else { return }
+        onSelectCountry?(c)
     }
 
     private func performResize(_ corner: ResizeCorner) {
