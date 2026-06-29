@@ -43,6 +43,7 @@ class EmojiAnimator {
     private var _heartCursorLayer: CALayer?
     private var _heartCursorTimer: Timer?
     private var _heartCursorActiveUntil: CFTimeInterval = 0
+    private var _heartCursorHidSystemCursor = false   // balance hide/unhide of the real cursor
 
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
@@ -3065,17 +3066,40 @@ class EmojiAnimator {
         return CGPoint(x: anchor.x * bounds.width, y: anchor.y * bounds.height)
     }
 
-    /// Float a pulsing red heart just above the mouse cursor for `seconds`.
-    /// Re-calling while active just extends the deadline. The real system cursor
-    /// stays visible and usable underneath — the heart never obscures it, it
-    /// hovers above the pointer tip and tracks it.
+    /// `CGDisplayHideCursor` normally takes effect only while the calling app is
+    /// frontmost. Our overlay floats over whatever app the user is actually in,
+    /// so by default the real arrow keeps showing next to the heart. The window
+    /// server has long honoured a per-connection `SetsCursorInBackground` flag
+    /// that lifts that restriction; it's private/undocumented but has been stable
+    /// for ~15 years and this app isn't sandboxed. Resolved via dlsym so a future
+    /// macOS that drops the symbols degrades to "cursor visible" rather than
+    /// failing to launch. Runs once (lazy static); the flag never needs clearing
+    /// — it only changes what hide/show mean, and a process exit/crash releases
+    /// the hide automatically with the window-server connection.
+    private static let _backgroundCursorHidingArmed: Bool = {
+        typealias DefaultConnFn = @convention(c) () -> Int32
+        typealias SetPropFn = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> Int32
+        let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2)  // RTLD_DEFAULT
+        guard let connSym = dlsym(rtldDefault, "_CGSDefaultConnection"),
+              let propSym = dlsym(rtldDefault, "CGSSetConnectionProperty") else { return false }
+        let defaultConnection = unsafeBitCast(connSym, to: DefaultConnFn.self)
+        let setConnectionProperty = unsafeBitCast(propSym, to: SetPropFn.self)
+        let cid = defaultConnection()
+        _ = setConnectionProperty(cid, cid, "SetsCursorInBackground" as CFString, kCFBooleanTrue)
+        return true
+    }()
+
+    private static func armBackgroundCursorHiding() { _ = _backgroundCursorHidingArmed }
+
+    /// Float a pulsing red heart centred ON the mouse cursor for `seconds`,
+    /// hiding the real system cursor so only the heart marks the pointer.
+    /// Re-calling while active just extends the deadline.
     private func startHeartCursor(activeFor seconds: CFTimeInterval) {
         _heartCursorActiveUntil = CACurrentMediaTime() + seconds
         guard _heartCursorLayer == nil else { return }  // already running; deadline extended above
 
         let size: CGFloat = 108      // 2× the original cursor heart
         let box = size * 1.2         // headroom so the heart's bottom tip isn't clipped
-        let liftAbove = size * 0.55  // sit above the pointer tip so the cursor shows
         let heart = CATextLayer()
         heart.string = "❤️"
         heart.fontSize = size
@@ -3084,10 +3108,23 @@ class EmojiAnimator {
         heart.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        heart.position = Self.offsetUp(mousePointInHostLayer(), by: liftAbove)
+        heart.position = mousePointInHostLayer()   // centred on the pointer, not above it
         CATransaction.commit()
         hostLayer.addSublayer(heart)
         _heartCursorLayer = heart
+
+        // The heart now sits ON the pointer, so hide the real cursor for the
+        // emission — only the beating heart marks where the mouse is. The arm
+        // step lifts the "frontmost app only" restriction so the hide also works
+        // while the user is in another app (the common case for our overlay).
+        // NSCursor covers the case where we ARE the active app. Balanced in
+        // stopHeartCursor.
+        if !_heartCursorHidSystemCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _heartCursorHidSystemCursor = true
+        }
 
         // Beat: scale big↔small forever (until the heart is removed).
         let pulse = CABasicAnimation(keyPath: "transform.scale")
@@ -3108,15 +3145,10 @@ class EmojiAnimator {
             }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            self._heartCursorLayer?.position = Self.offsetUp(self.mousePointInHostLayer(), by: liftAbove)
+            self._heartCursorLayer?.position = self.mousePointInHostLayer()
             CATransaction.commit()
         }
         _heartCursorTimer = timer
-    }
-
-    /// Lift a point upward on screen (host-layer y grows upward).
-    private static func offsetUp(_ p: CGPoint, by dy: CGFloat) -> CGPoint {
-        CGPoint(x: p.x, y: p.y + dy)
     }
 
     private func stopHeartCursor() {
@@ -3124,6 +3156,13 @@ class EmojiAnimator {
         _heartCursorTimer = nil
         _heartCursorLayer?.removeFromSuperlayer()
         _heartCursorLayer = nil
+        // Restore the real cursor (balances the hide in startHeartCursor). Guarded
+        // so a spurious stop can't unbalance the hide count and force-show it.
+        if _heartCursorHidSystemCursor {
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            _heartCursorHidSystemCursor = false
+        }
     }
 
     private static func latestDownloadsPNG() -> URL? {
@@ -4306,6 +4345,11 @@ class EmojiAnimator {
     // MARK: - Stop all active effects (called when tablet stops any sound)
 
     func stopAllActiveEffects() {
+        // The spiral-hearts beating cursor lives OUTSIDE activeEffects (it's a
+        // standalone hostLayer sublayer with its own follow timer), so the loop
+        // below would drop the rising hearts but leave it beating forever. Tear
+        // it (and any pending spawns) down explicitly.
+        clearSpiralHearts(fadeDuration: 0)
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()
