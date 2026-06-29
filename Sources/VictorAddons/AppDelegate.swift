@@ -282,6 +282,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 guard let duration = SoundManager.shared.playTabletSound("57_checkmark.mp3", volume: volume) else { return nil }
                 return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
+            // Tile #31 (🕳️ iris close) is SILENT — play nothing at all on the
+            // routed path (not even its silent placeholder clip). The visual is
+            // driven from the press path (SoundEffectMap: 31_tarzan.mp3 → "iris"),
+            // so we just acknowledge with a ~0ms duration and skip playback.
+            if name == "31_tarzan.mp3" {
+                return "{\"ok\":true,\"durationMs\":1}"
+            }
             let volume = volumePct.map { Float($0) / 100 }
             guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }
             return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"

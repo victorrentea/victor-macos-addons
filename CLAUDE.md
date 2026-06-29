@@ -132,12 +132,15 @@ on `contents` from bundled gif frames (`Bundle.module`).
   **absent from `SoundEffectMap`** so a press = a single ching + single round (no
   double-trigger). `/test/money` and `/effect/money` call `showMoneyRise` directly.
 - **🕳️ Iris close** (tile #31, repurposed from Tarzan): a cinematic "iris out"
-  blackout — **NO sound**. The Android tile #31 is redrawn as a **white ring with
-  four inward-pointing arrows on black** (vector `sfx_31_iris.xml`); its mp3 is
-  swapped for a **silent clip** but keeps the asset id `31_tarzan.mp3` (protocol/
-  manifest stable). Unlike money/radar it **stays in `SoundEffectMap`**
-  (`31_tarzan.mp3` → `iris`): the press path drives it, so `onSoundPlay` is *not*
-  special-cased (no double-trigger). `showIrisClose` overlays a **radial
+  blackout — **NO sound**. The Android tile #31 is redrawn as a **black circle
+  with a white centre and four inward-pointing arrows** (vector `sfx_31_iris.xml`);
+  its mp3 is a **silent clip** but keeps the asset id `31_tarzan.mp3` (protocol/
+  manifest stable). It **stays in `SoundEffectMap`** (`31_tarzan.mp3` → `iris`):
+  the **press path** drives the visual, so it isn't double-triggered. To make it
+  truly soundless, `onSoundPlay` is special-cased to **play nothing** for
+  `31_tarzan.mp3` (returns a ~0ms duration, not even the silent placeholder) —
+  unlike radar/money, that branch does *not* trigger the effect (the press path
+  already does). `showIrisClose` overlays a **radial
   `CAGradientLayer`** (square, side = screen diagonal, so the gradient is a true
   circle and location 1.0 lands on the corners) — transparent centre, opaque
   black edge, with a soft transition band. Animating the gradient `locations`
