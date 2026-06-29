@@ -33,7 +33,7 @@ enum SessionNotesAppender {
             showResult("(empty clipboard)")
             return
         }
-        appendAndReport(text: text)
+        pasteAndOfferUndo(text: text)
     }
 
     /// Copy the current selection in the frontmost app (simulated Cmd+C), then
@@ -65,7 +65,7 @@ enum SessionNotesAppender {
             showResult("(empty selection)")
             return
         }
-        appendAndReport(text: text)
+        pasteAndOfferUndo(text: text)
     }
 
     /// Offer to append `text` to the current session notes via the bottom-left
@@ -87,11 +87,15 @@ enum SessionNotesAppender {
         banner.onHover = { [weak banner] in
             guard let captured = pendingPrompt else { return }
             pendingPrompt = nil
-            banner?.dismiss()
-            // Hovering the offer is itself the explicit confirmation, so the
-            // follow-up banner is a plain non-hoverable "pasted in notes" flash
-            // — no hover-to-undo (there's nothing left to cancel).
-            appendAndReport(text: captured, offerUndo: false)
+            // Hovering the offer is the explicit confirmation. Accepting a
+            // proposed action floats the pill up into the notes — the rising
+            // fade *is* the "sent" feedback, so there's no follow-up flash.
+            do {
+                _ = try writeNotes(captured)
+                banner?.dismissRisingFade()
+            } catch {
+                reportWriteFailure(error)
+            }
         }
         // Auto-dismiss when the hover window closes. Driven by the banner's
         // countdown (which pauses while the cursor is on the pill) rather than a
@@ -121,32 +125,43 @@ enum SessionNotesAppender {
         return "⬆️ " + singleLine(text)
     }
 
-    /// Append `text` to the session notes and flash a confirmation. When
-    /// `offerUndo` is true (direct clipboard / selection paste, triggered by a
-    /// keypress) the confirmation is hoverable to undo. When false (a prompt
-    /// the user already confirmed by hovering the offer) it's a plain
-    /// non-cancellable "pasted in notes" flash.
-    private static func appendAndReport(text: String, offerUndo: Bool = true) {
-        guard let folder = ScreenshotManager.sessionFolder else {
-            showResult("(no active session)")
-            return
-        }
-        guard let notes = findNotesFile(in: folder) else {
-            showResult("(no notes file)")
-            return
-        }
-        do {
-            let offset = try appendLine(text, to: notes)
-            overlayInfo("Appended \(text.count) chars to \(notes.path)")
-            if offerUndo {
-                showUndoable("⬆️ Pasted: " + singleLine(text),
-                             undo: { undoAppend(file: notes, toOffset: offset) })
-            } else {
-                showResult("⬆️ pasted in notes")
-            }
-        } catch {
+    enum NotesError: Error { case noSession, noNotesFile }
+
+    /// Write a "- text" line to the active notes file, returning the file URL
+    /// and the byte offset *before* the write (for undo). Throws on any failure.
+    /// Banner-free: callers decide the visual feedback (rising-fade, undo offer,
+    /// or an error flash) so the same write powers every entry point.
+    @discardableResult
+    private static func writeNotes(_ text: String) throws -> (file: URL, offset: UInt64) {
+        guard let folder = ScreenshotManager.sessionFolder else { throw NotesError.noSession }
+        guard let notes = findNotesFile(in: folder) else { throw NotesError.noNotesFile }
+        let offset = try appendLine(text, to: notes)
+        overlayInfo("Appended \(text.count) chars to \(notes.path)")
+        return (notes, offset)
+    }
+
+    /// Map a `writeNotes` failure to the right bottom-left flash.
+    private static func reportWriteFailure(_ error: Error) {
+        switch error {
+        case NotesError.noSession:   showResult("(no active session)")
+        case NotesError.noNotesFile: showResult("(no notes file)")
+        default:
             showResult("⚠️ Append failed")
             overlayError("Append to notes failed: \(error)")
+        }
+    }
+
+    /// Direct keypress paste: write the line immediately, then show the
+    /// hoverable "Hover to undo" banner. This is an *already-done* action — the
+    /// user can cancel it (hover → glass shatter) or let it stand (countdown
+    /// expires → rising fade).
+    private static func pasteAndOfferUndo(text: String) {
+        do {
+            let (notes, offset) = try writeNotes(text)
+            showUndoable("⬆️ Pasted: " + singleLine(text),
+                         undo: { performUndo(file: notes, toOffset: offset) })
+        } catch {
+            reportWriteFailure(error)
         }
     }
 
@@ -154,30 +169,39 @@ enum SessionNotesAppender {
     /// byte offset captured just before the line was written — removing the
     /// "- …" line and any newline we inserted, and nothing else. If the file
     /// shrank since (shorter than the offset), there is nothing of ours left
-    /// to remove, so we leave it untouched.
-    private static func undoAppend(file: URL, toOffset offset: UInt64) {
+    /// to remove, so we leave it untouched. Returns whether the undo succeeded:
+    /// on success the caller shatters the banner (that *is* the "undone"
+    /// feedback); on failure it has already flashed the reason.
+    @discardableResult
+    private static func performUndo(file: URL, toOffset offset: UInt64) -> Bool {
         do {
             let handle = try FileHandle(forWritingTo: file)
             defer { try? handle.close() }
             let currentEnd = try handle.seekToEnd()
             guard currentEnd >= offset else {
                 showResult("(nothing to undo)")
-                return
+                return false
             }
             try handle.truncate(atOffset: offset)
             overlayInfo("Undid append; truncated \(file.lastPathComponent) to \(offset) bytes")
-            showResult("↩️ Undone")
+            return true
         } catch {
             showResult("⚠️ Undo failed")
             overlayError("Undo append failed: \(error)")
+            return false
         }
     }
 
     /// Show an append confirmation that stays up for `hoverActionDuration` and
     /// can be hovered to undo the append. `undo` runs on the main thread when
-    /// the hover fires; the captured file/offset live in the closure, so no
-    /// shared undo state can race with a concurrent append.
-    private static func showUndoable(_ text: String, undo: @escaping () -> Void) {
+    /// the hover fires and returns whether it succeeded; the captured
+    /// file/offset live in the closure, so no shared undo state can race with a
+    /// concurrent append.
+    ///
+    /// The two exits are visually distinct:
+    ///   • hover-to-undo succeeds → the banner shatters like glass (cancelled).
+    ///   • the countdown expires un-hovered → the banner floats up (committed).
+    private static func showUndoable(_ text: String, undo: @escaping () -> Bool) {
         DispatchQueue.main.async {
             guard let banner = promptBanner else {
                 overlayInfo("Result banner unset; would have shown: \(text)")
@@ -185,12 +209,15 @@ enum SessionNotesAppender {
             }
             pendingPrompt = nil
             resultDismissWork?.cancel(); resultDismissWork = nil
-            banner.onHover = { undo() }
-            // Auto-dismiss when the undo window closes; pauses while hovered, so
-            // the bar and the window both freeze under the cursor.
+            banner.onHover = { [weak banner] in
+                // Cancelling a done action: shatter only if the undo actually
+                // landed (otherwise the failure flash from `undo` stays up).
+                if undo() { banner?.dismissShatter() }
+            }
+            // Window closed un-hovered → the paste stands; float it up.
             banner.onHoverCountdownExpired = { [weak banner] in
                 banner?.onHover = nil
-                banner?.dismiss()
+                banner?.dismissRisingFade()
             }
             banner.show(text: text, font: promptFont, hoverHint: "Hover to undo",
                         hoverCountdown: hoverActionDuration)
