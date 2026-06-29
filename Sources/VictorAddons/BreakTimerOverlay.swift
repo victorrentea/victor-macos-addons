@@ -60,6 +60,12 @@ final class BreakTimerController {
         refresh()
     }
 
+    /// Headless test hook (`/test/break/picker`): open the country picker on the
+    /// live overlay, optionally pre-filtered. No-op if no break is showing.
+    func openCountryPicker(query: String?) {
+        view?.openPickerForTest(query: query)
+    }
+
     /// Fired when a break *ends* — i.e. whenever the window is closed: the ✕
     /// button, the countdown expiring (which auto-closes after the gong), or a
     /// programmatic stop. NOT fired by re-opening or +minutes (those reuse the
@@ -494,9 +500,10 @@ final class BreakTimerView: NSView {
 
     // Country dropdown: the 2nd finish line's flag is a click target. The hit rect
     // is recomputed each draw; selecting from the popped-up menu calls back out.
-    var selectedCountryTZ = BreakCountry.portugal.tz      // checkmarked in the menu
+    var selectedCountryTZ = BreakCountry.portugal.tz      // preselected in the picker
     var onSelectCountry: ((BreakCountry) -> Void)?
     private var otherFlagRect: NSRect = .zero
+    private let countryPicker = CountryPicker()
 
     private var dragMode: DragMode = .none
     private var dragStartMouse = NSPoint.zero
@@ -901,9 +908,9 @@ final class BreakTimerView: NSView {
         let a2 = finishAttr(finishOther, flag: otherFlag, lineH: lineH, maxW: area.width, color: Self.lit)
         drawAttrCentered(a1, x: area.minX, bottomY: topBottom + gap / 2, cellH: lineH)
         drawAttrCentered(a2, x: area.minX, bottomY: area.minY - gap / 2, cellH: lineH)
-        // The 2nd line's flag (left edge, its own line slot) is the click target for
-        // the country dropdown — make it a generous, easy-to-hit square.
-        otherFlagRect = NSRect(x: area.minX, y: area.minY - gap / 2, width: lineH * 1.25, height: lineH)
+        // The WHOLE 2nd line (flag + time) is the click target for the country
+        // dropdown — a big, discoverable hit area rather than just the flag glyph.
+        otherFlagRect = NSRect(x: area.minX, y: area.minY - gap / 2, width: area.width, height: lineH)
     }
 
     /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, then the
@@ -1075,7 +1082,7 @@ final class BreakTimerView: NSView {
             needsDisplay = true
         } else if otherFlagRect.contains(p) {
             dragMode = .none
-            showCountryMenu(at: NSPoint(x: otherFlagRect.minX, y: otherFlagRect.minY))
+            showCountryPicker()
             return
         } else {
             dragMode = .move
@@ -1179,31 +1186,21 @@ final class BreakTimerView: NSView {
         }
     }
 
-    /// Pop up the country dropdown anchored at the 2nd-line flag. Each item shows
-    /// the flag, name and the country's CURRENT local time; the selected one is
-    /// checkmarked. Picking fires `onSelectCountry`.
-    private func showCountryMenu(at point: NSPoint) {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "HH:mm"
-        let now = Date()
-        let menu = NSMenu()
-        menu.font = .menuFont(ofSize: 13)
-        for c in BreakCountry.all {
-            df.timeZone = c.timeZone
-            let item = NSMenuItem(title: "\(c.flag)  \(c.name) — \(df.string(from: now))",
-                                  action: #selector(countryPicked(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = c
-            item.state = (c.tz == selectedCountryTZ) ? .on : .off
-            menu.addItem(item)
+    /// Open the searchable country dropdown anchored under the 2nd-line flag.
+    /// Typing filters by name (contains); picking fires `onSelectCountry`.
+    private func showCountryPicker() {
+        let flagInWindow = convert(otherFlagRect, to: nil)                  // view → window
+        let flagOnScreen = window?.convertToScreen(flagInWindow) ?? flagInWindow
+        countryPicker.present(below: flagOnScreen, selectedTZ: selectedCountryTZ) { [weak self] c in
+            self?.onSelectCountry?(c)
         }
-        menu.popUp(positioning: nil, at: point, in: self)
     }
 
-    @objc private func countryPicked(_ sender: NSMenuItem) {
-        guard let c = sender.representedObject as? BreakCountry else { return }
-        onSelectCountry?(c)
+    /// Headless test entry point (`/test/break/picker`): open the picker without a
+    /// click and optionally pre-fill the filter query.
+    func openPickerForTest(query: String?) {
+        showCountryPicker()
+        if let q = query, !q.isEmpty { countryPicker.applyQuery(q) }
     }
 
     private func performResize(_ corner: ResizeCorner) {

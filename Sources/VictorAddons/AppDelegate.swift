@@ -479,6 +479,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestBreakClose = { [weak self] in
             DispatchQueue.main.async { self?.breakTimer.close() }
         }
+        tabletServer?.onTestBreakPicker = { [weak self] q in
+            DispatchQueue.main.async { self?.breakTimer.openCountryPicker(query: q) }
+        }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         tabletServer?.onTestAudioPlaying = { [weak self] in

@@ -33,6 +33,8 @@ class TabletHttpServer {
         case testBreakStart(Int)
         /// Close the Break countdown overlay (test hook).
         case testBreakClose
+        /// Open the country picker on the Break overlay, optionally pre-filtered (test hook).
+        case testBreakPicker(String?)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
         case testTile
         /// Fire the 🔥 WIP Agent whip overlay — same action as ⌃W (test hook).
@@ -81,6 +83,7 @@ class TabletHttpServer {
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
     var onTestBreakClose: (() -> Void)?
+    var onTestBreakPicker: ((String?) -> Void)?
     var onTestTile: (() -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
@@ -188,6 +191,8 @@ class TabletHttpServer {
                     self?.onTestBreakStart?(minutes)
                 case .testBreakClose:
                     self?.onTestBreakClose?()
+                case .testBreakPicker(let q):
+                    self?.onTestBreakPicker?(q)
                 case .testTile:
                     self?.onTestTile?()
                 case .testWhip:
@@ -261,6 +266,8 @@ class TabletHttpServer {
             return .testWisprRecording
         case "/test/break/close":
             return .testBreakClose
+        case "/test/break/picker":
+            return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/tile":
             return .testTile
         case "/test/whip":
