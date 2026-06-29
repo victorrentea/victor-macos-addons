@@ -50,14 +50,14 @@ class EmojiAnimator {
     private var _fearTimer: Timer?
     private var _fearHidCursor = false                // balance hide/unhide of the real cursor
 
-    // ☢️ Nuke targeting: during the explosion fuse a 🎯 reticle follows the mouse
-    // (real cursor hidden). If the user "aims" — moves the mouse for ≥50% of the
-    // fuse — the bomb drops 4× smaller exactly where the cursor ended up.
-    private var _bombTargetLayer: CATextLayer?
+    // ☢️ Nuke targeting: during the explosion fuse a sniper crosshair follows the
+    // mouse (real cursor hidden). If the user moves the mouse at all during the
+    // fuse, the bomb drops 4× smaller exactly where the cursor ended up; if they
+    // leave it still, it falls in the centre as before.
+    private var _bombTargetLayer: CALayer?
     private var _bombTargetTimer: Timer?
     private var _bombTargetHidCursor = false          // balance hide/unhide of the real cursor
-    private var _bombMovingTicks = 0                  // 60fps samples where the mouse moved
-    private var _bombTotalTicks = 0                   // 60fps samples taken during the fuse
+    private var _bombMoveDistance: CGFloat = 0        // total cursor travel during the fuse (px)
     private var _bombLastSample: CGPoint?             // previous sample (global coords) for delta
 
     init(hostLayer: CALayer) {
@@ -1732,21 +1732,26 @@ class EmojiAnimator {
     // MARK: - Explosion GIF overlay
 
     /// Seconds between the nuke press (sound starts on the tablet) and the bomb
-    /// landing — the fuse during which the 🎯 targeting reticle is shown.
+    /// landing — the fuse during which the sniper crosshair is shown.
     private static let explosionFuse: Double = 1.5
+
+    /// Total cursor travel (px) during the fuse above which we treat it as a
+    /// deliberate aim (vs. a perfectly still hand). A nudge clears this easily;
+    /// a resting mouse reports exactly 0 travel.
+    private static let bombAimTravelThreshold: CGFloat = 8
 
     func showExplosionGif(playSound: Bool = true) {
         // `_bombTargetTimer != nil` covers a second press *during* the fuse
         // (activeEffects["explosion"] isn't set until the bomb actually lands).
         guard activeEffects["explosion"] == nil, _bombTargetTimer == nil else { return }
-        // Hide the real cursor and float a 🎯 reticle that tracks the mouse for
-        // the whole fuse, measuring how much of it the user spends aiming.
+        // Hide the real cursor and float a crosshair that tracks the mouse for
+        // the whole fuse, accumulating how far the user drags it.
         startBombTargeting()
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionFuse) { [weak self] in
             guard let self else { return }
             let (aimed, center) = self.endBombTargeting()
             if aimed {
-                // Aimed for ≥50% of the fuse → a small, precise strike on the cursor.
+                // Moved the mouse → a small, precise strike on the cursor.
                 self._showExplosionGif(playSound: playSound, scaleDivisor: 4, center: center)
             } else {
                 self._showExplosionGif(playSound: playSound)
@@ -1754,21 +1759,14 @@ class EmojiAnimator {
         }
     }
 
-    /// Show the 🎯 reticle on the mouse, hide the real cursor, and start sampling
-    /// mouse movement at 60fps so `endBombTargeting()` can tell whether the user aimed.
+    /// Show the sniper crosshair on the mouse, hide the real cursor, and start
+    /// sampling cursor travel at 60fps so `endBombTargeting()` can tell whether
+    /// the user aimed.
     private func startBombTargeting() {
-        _bombMovingTicks = 0
-        _bombTotalTicks = 0
+        _bombMoveDistance = 0
         _bombLastSample = nil
 
-        let size: CGFloat = 96
-        let box = size * 1.3            // headroom so the emoji isn't clipped
-        let target = CATextLayer()
-        target.string = "🎯"
-        target.fontSize = size
-        target.alignmentMode = .center
-        target.bounds = CGRect(x: 0, y: 0, width: box, height: box)
-        target.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        let target = Self.makeSniperReticle()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         target.position = mousePointInHostLayer()   // centred on the live cursor
@@ -1776,8 +1774,8 @@ class EmojiAnimator {
         hostLayer.addSublayer(target)
         _bombTargetLayer = target
 
-        // Reticle stands in for the pointer → hide the real cursor (also while we
-        // aren't the frontmost app, via the background-cursor-hiding arm).
+        // Crosshair stands in for the pointer → hide the real cursor (also while
+        // we aren't the frontmost app, via the background-cursor-hiding arm).
         if !_bombTargetHidCursor {
             Self.armBackgroundCursorHiding()
             NSCursor.hide()
@@ -1785,17 +1783,13 @@ class EmojiAnimator {
             _bombTargetHidCursor = true
         }
 
-        // A sample counts as "moving" if the cursor shifted >0.5px since the last
-        // tick; a resting hand reports the exact same point (delta 0), so jitter
-        // never registers as movement.
-        let moveThresholdSq: CGFloat = 0.5 * 0.5
+        // Accumulate total cursor travel; a resting hand reports the exact same
+        // point each tick (delta 0), so only deliberate movement adds distance.
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self, self._bombTargetTimer === t else { t.invalidate(); return }
             let global = NSEvent.mouseLocation
             if let last = self._bombLastSample {
-                let dx = global.x - last.x, dy = global.y - last.y
-                if dx * dx + dy * dy > moveThresholdSq { self._bombMovingTicks += 1 }
-                self._bombTotalTicks += 1
+                self._bombMoveDistance += hypot(global.x - last.x, global.y - last.y)
             }
             self._bombLastSample = global
             CATransaction.begin()
@@ -1806,8 +1800,8 @@ class EmojiAnimator {
         _bombTargetTimer = timer
     }
 
-    /// Tear down the reticle, restore the cursor, and report whether the user
-    /// aimed (moved for ≥50% of the fuse) plus the final cursor point in
+    /// Tear down the crosshair, restore the cursor, and report whether the user
+    /// aimed (moved the mouse during the fuse) plus the final cursor point in
     /// hostLayer coords (where a precise strike should land).
     private func endBombTargeting() -> (aimed: Bool, center: CGPoint) {
         _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
@@ -1818,8 +1812,54 @@ class EmojiAnimator {
             _bombTargetHidCursor = false
         }
         let center = mousePointInHostLayer()
-        let aimed = _bombTotalTicks > 0 && Double(_bombMovingTicks) / Double(_bombTotalTicks) >= 0.5
+        let aimed = _bombMoveDistance > Self.bombAimTravelThreshold
         return (aimed, center)
+    }
+
+    /// A sniper-scope reticle drawn as CALayers: a thin red ring, four crosshair
+    /// arms with a small central gap, and a centre dot — with a soft dark shadow
+    /// so the red reads on any desktop backdrop.
+    private static func makeSniperReticle() -> CALayer {
+        let d: CGFloat = 130
+        let lineW: CGFloat = 2
+        let c = d / 2
+        let r = c - lineW                 // ring radius (kept inside the bounds)
+        let gap: CGFloat = 14             // half-length of the empty centre
+        let red = NSColor.systemRed.cgColor
+
+        let container = CALayer()
+        container.bounds = CGRect(x: 0, y: 0, width: d, height: d)
+        container.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        let ring = CAShapeLayer()
+        ring.path = CGPath(ellipseIn: CGRect(x: c - r, y: c - r, width: 2 * r, height: 2 * r), transform: nil)
+        ring.fillColor = NSColor.clear.cgColor
+        ring.strokeColor = red
+        ring.lineWidth = lineW
+        container.addSublayer(ring)
+
+        let arms = CAShapeLayer()
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: c));     path.addLine(to: CGPoint(x: c - gap, y: c))   // left
+        path.move(to: CGPoint(x: c + gap, y: c)); path.addLine(to: CGPoint(x: d, y: c))       // right
+        path.move(to: CGPoint(x: c, y: 0));     path.addLine(to: CGPoint(x: c, y: c - gap))   // bottom
+        path.move(to: CGPoint(x: c, y: c + gap)); path.addLine(to: CGPoint(x: c, y: d))       // top
+        arms.path = path
+        arms.strokeColor = red
+        arms.lineWidth = lineW
+        container.addSublayer(arms)
+
+        let dotR: CGFloat = 2.5
+        let dot = CAShapeLayer()
+        dot.path = CGPath(ellipseIn: CGRect(x: c - dotR, y: c - dotR, width: 2 * dotR, height: 2 * dotR), transform: nil)
+        dot.fillColor = red
+        container.addSublayer(dot)
+
+        container.shadowColor = NSColor.black.cgColor
+        container.shadowOpacity = 0.6
+        container.shadowRadius = 1.5
+        container.shadowOffset = .zero
+        return container
     }
 
     private func _showExplosionGif(playSound: Bool = true, scaleDivisor: CGFloat = 1, center: CGPoint? = nil) {
