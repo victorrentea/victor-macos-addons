@@ -85,10 +85,6 @@ final class BottomLeftBanner {
     /// independently of `panels` since the hint is optional. Empty unless the
     /// banner is hoverable with an active `onHover` and a non-nil hint.
     private var hintPanels: [NSPanel] = []
-    /// Short-lived fullscreen overlays that host the glass-shatter shards during
-    /// a `dismissShatter()`. Held only for the animation's lifetime, then torn
-    /// down — they outlive the pill panels they replace.
-    private var shatterPanels: [NSPanel] = []
 
     /// Fires once per `show()` after the cursor has *dwelled* inside the
     /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
@@ -284,13 +280,14 @@ final class BottomLeftBanner {
     // MARK: - Outcome-flavored dismissals
     //
     // Every interactive banner ends one of two ways, and the exit animation
-    // tells the user *which*:
+    // tells the user *which* — the direction matches the gesture:
     //   • dismissRisingFade — they ACCEPTED / COMMITTED a proposed action
-    //     (confirm "send to notes", or let a paste stand). The pill lifts up
+    //     (confirm "send to notes", or let a paste stand). The pill lifts UP
     //     and fades, as if the content floated off into the notes.
-    //   • dismissShatter — they CANCELLED an action that had already happened
-    //     (hover-to-undo a paste). The pill breaks like glass and the shards
-    //     spray outward, falling and fading — the action is visibly destroyed.
+    //   • dismissSinking — they CANCELLED an action that had already happened
+    //     (hover-to-undo a paste). The pill slides straight DOWN off the bottom
+    //     of the screen, as if rolled back / "put away" — the opposite of the
+    //     rising "accept", so the motion alone reads as "undone".
 
     /// Dismiss by floating the pill (and any hint) straight up while fading to
     /// transparent over ~1s. The "accepted / committed" gesture.
@@ -324,11 +321,14 @@ final class BottomLeftBanner {
         })
     }
 
-    /// Dismiss by shattering the pill like glass. The pill (and hint) vanish
-    /// instantly and a fullscreen overlay sprays glass shards outward from an
-    /// impact point — each spinning and falling under gravity as it fades. The
-    /// "cancel a done action" gesture.
-    func dismissShatter() {
+    /// Dismiss by sliding the pill (and any hint) straight DOWN off the bottom
+    /// of the screen — the "cancelled / rolled back" gesture, the mirror image of
+    /// `dismissRisingFade`'s lift. The pill is anchored at the screen's bottom
+    /// edge, so dropping it by a bit more than its own height carries it fully
+    /// out of view; the downward motion alone reads as "undone — put back". No
+    /// fade: it simply leaves the screen (accelerating with `.easeIn`, like
+    /// being pulled back down), then the off-screen panels are torn down.
+    func dismissSinking() {
         guard isVisible else { return }
         cancelHoverDwell()
         clearHoverCountdown()
@@ -336,161 +336,27 @@ final class BottomLeftBanner {
         panels.removeAll()
         let hints = hintPanels
         hintPanels.removeAll()
-        for hint in hints { hint.orderOut(nil) }
-        for entry in toRemove {
-            spawnShatter(pillFrameScreen: entry.panel.frame, on: entry.screen)
-            entry.panel.orderOut(nil)
-        }
-    }
-
-    /// Build a transparent fullscreen panel over `screen` and fan glass shards
-    /// out of the pill's footprint. Fullscreen (not pill-sized) so shards can
-    /// fly past the pill's tiny bounds before fading. Auto-removed once the
-    /// longest shard animation finishes.
-    private func spawnShatter(pillFrameScreen: NSRect, on screen: NSScreen) {
-        let panel = NSPanel(contentRect: screen.frame,
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
-        panel.level = .statusBar
-        panel.isFloatingPanel = true
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-
-        let content = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
-        content.wantsLayer = true
-        panel.contentView = content
-        guard let host = content.layer else { return }
-
-        // Pill rect in panel-local coords (panel frame == screen frame).
-        let pill = NSRect(x: pillFrameScreen.minX - screen.frame.minX,
-                          y: pillFrameScreen.minY - screen.frame.minY,
-                          width: pillFrameScreen.width,
-                          height: pillFrameScreen.height)
-
-        // Impact point, biased toward the pill center: shards fan out from here.
-        let impact = CGPoint(x: pill.midX + CGFloat.random(in: -0.18...0.18) * pill.width,
-                             y: pill.midY + CGFloat.random(in: -0.12...0.12) * pill.height)
-
-        let count = min(22, max(10, Int(pill.width / 34)))
-        let rim = perimeterPoints(pill, count: count)
-        let fill = NSColor(srgbRed: 0.86, green: 0.94, blue: 1.0, alpha: 0.16).cgColor
-        let stroke = NSColor(white: 1.0, alpha: 0.66).cgColor
-
-        var maxDur: TimeInterval = 0
-        for i in 0..<rim.count {
-            let a = rim[i]
-            let b = rim[(i + 1) % rim.count]
-            let bbox = boundingBox([impact, a, b]).insetBy(dx: -1, dy: -1)
-
-            let shard = CAShapeLayer()
-            shard.frame = bbox
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: impact.x - bbox.minX, y: impact.y - bbox.minY))
-            path.addLine(to: CGPoint(x: a.x - bbox.minX, y: a.y - bbox.minY))
-            path.addLine(to: CGPoint(x: b.x - bbox.minX, y: b.y - bbox.minY))
-            path.closeSubpath()
-            shard.path = path
-            shard.fillColor = fill
-            shard.strokeColor = stroke
-            shard.lineWidth = 0.8
-            shard.lineJoin = .miter
-            host.addSublayer(shard)
-
-            // Velocity: outward from the impact (centroid direction) + a downward
-            // gravity bias (down = −y in this bottom-left-origin layer space).
-            let centroid = CGPoint(x: (impact.x + a.x + b.x) / 3,
-                                   y: (impact.y + a.y + b.y) / 3)
-            var dx = centroid.x - impact.x
-            var dy = centroid.y - impact.y
-            let len = max(1, hypot(dx, dy))
-            let speed = CGFloat.random(in: 70...240)
-            dx = dx / len * speed + CGFloat.random(in: -25...25)
-            dy = dy / len * speed - CGFloat.random(in: 30...130)
-            let from = CGPoint(x: bbox.midX, y: bbox.midY)
-            let to = CGPoint(x: from.x + dx, y: from.y + dy)
-            let dur = TimeInterval(CGFloat.random(in: 0.6...0.85))
-            maxDur = max(maxDur, dur)
-
-            let move = CABasicAnimation(keyPath: "position")
-            move.fromValue = from
-            move.toValue = to
-            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-            spin.fromValue = 0
-            spin.toValue = CGFloat.random(in: -2.4...2.4)
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1
-            fade.toValue = 0
-            let group = CAAnimationGroup()
-            group.animations = [move, spin, fade]
-            group.duration = dur
-            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            group.fillMode = .forwards
-            group.isRemovedOnCompletion = false
-            shard.opacity = 0
-            shard.add(group, forKey: "shatter")
-        }
-
-        // A quick white pop at the impact point to read as the "crack".
-        let flash = CALayer()
-        let fs: CGFloat = 26
-        flash.frame = NSRect(x: impact.x - fs / 2, y: impact.y - fs / 2, width: fs, height: fs)
-        flash.cornerRadius = fs / 2
-        flash.backgroundColor = NSColor(white: 1.0, alpha: 0.9).cgColor
-        host.addSublayer(flash)
-        let fScale = CABasicAnimation(keyPath: "transform.scale")
-        fScale.fromValue = 0.3
-        fScale.toValue = 5.0
-        let fFade = CABasicAnimation(keyPath: "opacity")
-        fFade.fromValue = 0.9
-        fFade.toValue = 0
-        let fGroup = CAAnimationGroup()
-        fGroup.animations = [fScale, fFade]
-        fGroup.duration = 0.3
-        fGroup.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        fGroup.fillMode = .forwards
-        fGroup.isRemovedOnCompletion = false
-        flash.opacity = 0
-        flash.add(fGroup, forKey: "flash")
-
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
-        shatterPanels.append(panel)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + maxDur + 0.1) { [weak self] in
-            panel.orderOut(nil)
-            self?.shatterPanels.removeAll { $0 === panel }
-        }
-    }
-
-    /// `count` points spaced evenly around the rectangle's perimeter, starting at
-    /// the bottom-left and walking counter-clockwise. Used as the outer vertices
-    /// of the shard fan.
-    private func perimeterPoints(_ rect: CGRect, count: Int) -> [CGPoint] {
-        guard count > 0 else { return [] }
-        let w = rect.width, h = rect.height
-        let perim = 2 * (w + h)
-        var pts: [CGPoint] = []
-        for i in 0..<count {
-            var d = perim * CGFloat(i) / CGFloat(count)
-            if d < w { pts.append(CGPoint(x: rect.minX + d, y: rect.minY)); continue }
-            d -= w
-            if d < h { pts.append(CGPoint(x: rect.maxX, y: rect.minY + d)); continue }
-            d -= h
-            if d < w { pts.append(CGPoint(x: rect.maxX - d, y: rect.maxY)); continue }
-            d -= w
-            pts.append(CGPoint(x: rect.minX, y: rect.maxY - d))
-        }
-        return pts
-    }
-
-    private func boundingBox(_ pts: [CGPoint]) -> CGRect {
-        let xs = pts.map { $0.x }, ys = pts.map { $0.y }
-        let minX = xs.min() ?? 0, maxX = xs.max() ?? 0
-        let minY = ys.min() ?? 0, maxY = ys.max() ?? 0
-        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        // Both the pill and the hint are anchored at the screen's bottom edge, so
+        // one drop distance — a bit past the (taller) pill's height — carries
+        // them both fully off-screen.
+        let sink: CGFloat = Style.boxHeight + 60
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.7
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            for entry in toRemove {
+                var f = entry.panel.frame
+                f.origin.y -= sink
+                entry.panel.animator().setFrame(f, display: true)
+            }
+            for hint in hints {
+                var f = hint.frame
+                f.origin.y -= sink
+                hint.animator().setFrame(f, display: true)
+            }
+        }, completionHandler: {
+            for entry in toRemove { entry.panel.orderOut(nil) }
+            for hint in hints { hint.orderOut(nil) }
+        })
     }
 
     fileprivate func startHoverDwell() {

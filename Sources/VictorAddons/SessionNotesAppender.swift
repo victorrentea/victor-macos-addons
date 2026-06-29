@@ -153,7 +153,7 @@ enum SessionNotesAppender {
 
     /// Direct keypress paste: write the line immediately, then show the
     /// hoverable "Hover to undo" banner. This is an *already-done* action — the
-    /// user can cancel it (hover → glass shatter) or let it stand (countdown
+    /// user can cancel it (hover → pill sinks off-screen) or let it stand (countdown
     /// expires → rising fade).
     private static func pasteAndOfferUndo(text: String) {
         do {
@@ -170,7 +170,7 @@ enum SessionNotesAppender {
     /// "- …" line and any newline we inserted, and nothing else. If the file
     /// shrank since (shorter than the offset), there is nothing of ours left
     /// to remove, so we leave it untouched. Returns whether the undo succeeded:
-    /// on success the caller shatters the banner (that *is* the "undone"
+    /// on success the caller sinks the banner off-screen (that *is* the "undone"
     /// feedback); on failure it has already flashed the reason.
     @discardableResult
     private static func performUndo(file: URL, toOffset offset: UInt64) -> Bool {
@@ -199,7 +199,7 @@ enum SessionNotesAppender {
     /// concurrent append.
     ///
     /// The two exits are visually distinct:
-    ///   • hover-to-undo succeeds → the banner shatters like glass (cancelled).
+    ///   • hover-to-undo succeeds → the banner sinks down off-screen (cancelled).
     ///   • the countdown expires un-hovered → the banner floats up (committed).
     private static func showUndoable(_ text: String, undo: @escaping () -> Bool) {
         DispatchQueue.main.async {
@@ -210,9 +210,10 @@ enum SessionNotesAppender {
             pendingPrompt = nil
             resultDismissWork?.cancel(); resultDismissWork = nil
             banner.onHover = { [weak banner] in
-                // Cancelling a done action: shatter only if the undo actually
-                // landed (otherwise the failure flash from `undo` stays up).
-                if undo() { banner?.dismissShatter() }
+                // Cancelling a done action: sink the pill off the bottom only if
+                // the undo actually landed (otherwise the failure flash from
+                // `undo` stays up).
+                if undo() { banner?.dismissSinking() }
             }
             // Window closed un-hovered → the paste stands; float it up.
             banner.onHoverCountdownExpired = { [weak banner] in
