@@ -1809,17 +1809,20 @@ class EmojiAnimator {
         _bombTargetTimer = timer
     }
 
-    /// Flip the crosshair from red to green and give it a quick scale pulse —
-    /// the visual "locked on target" reward once the user has shaken enough.
+    /// Flip the crosshair from thin grey to thick red and give it a quick scale
+    /// pulse — the visual "locked on target" reward once the user has shaken enough.
     private func armReticle() {
         guard let container = _bombTargetLayer else { return }
-        let green = NSColor.systemGreen.cgColor
+        let red = NSColor.systemRed.cgColor
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for layer in container.sublayers ?? [] {
             guard let shape = layer as? CAShapeLayer else { continue }
-            if shape.strokeColor != nil { shape.strokeColor = green }
-            if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = green }
+            if shape.strokeColor != nil {
+                shape.strokeColor = red
+                shape.lineWidth = Self.bombReticleLineWidthArmed   // thicken on lock
+            }
+            if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = red }
         }
         CATransaction.commit()
         let pulse = CABasicAnimation(keyPath: "transform.scale")
@@ -1849,16 +1852,21 @@ class EmojiAnimator {
         return (aimed, center)
     }
 
-    /// A sniper-scope reticle drawn as CALayers: a thin red ring, four crosshair
-    /// arms with a small central gap, and a centre dot — with a soft dark shadow
-    /// so the red reads on any desktop backdrop.
+    /// Idle (un-aimed) vs armed (shaken-enough) crosshair styling: the idle
+    /// reticle is thin + grey; once locked it turns red and thickens.
+    private static let bombReticleLineWidthIdle: CGFloat = 1.0
+    private static let bombReticleLineWidthArmed: CGFloat = 2.5
+
+    /// A sniper-scope reticle drawn as CALayers: a ring, four crosshair arms with
+    /// a small central gap, and a centre dot — with a soft dark shadow so it reads
+    /// on any desktop backdrop. Starts thin + grey; `armReticle()` recolours it red.
     private static func makeSniperReticle() -> CALayer {
         let d: CGFloat = 65               // 50% smaller than the original reticle
-        let lineW: CGFloat = 1.5
+        let lineW = bombReticleLineWidthIdle
         let c = d / 2
-        let r = c - lineW                 // ring radius (kept inside the bounds)
+        let r = c - bombReticleLineWidthArmed  // leave room for the thicker armed stroke
         let gap: CGFloat = 7              // half-length of the empty centre
-        let red = NSColor.systemRed.cgColor
+        let grey = NSColor.systemGray.cgColor
 
         let container = CALayer()
         container.bounds = CGRect(x: 0, y: 0, width: d, height: d)
@@ -1867,7 +1875,7 @@ class EmojiAnimator {
         let ring = CAShapeLayer()
         ring.path = CGPath(ellipseIn: CGRect(x: c - r, y: c - r, width: 2 * r, height: 2 * r), transform: nil)
         ring.fillColor = NSColor.clear.cgColor
-        ring.strokeColor = red
+        ring.strokeColor = grey
         ring.lineWidth = lineW
         container.addSublayer(ring)
 
@@ -1878,14 +1886,14 @@ class EmojiAnimator {
         path.move(to: CGPoint(x: c, y: 0));     path.addLine(to: CGPoint(x: c, y: c - gap))   // bottom
         path.move(to: CGPoint(x: c, y: c + gap)); path.addLine(to: CGPoint(x: c, y: d))       // top
         arms.path = path
-        arms.strokeColor = red
+        arms.strokeColor = grey
         arms.lineWidth = lineW
         container.addSublayer(arms)
 
-        let dotR: CGFloat = 2.5
+        let dotR: CGFloat = 2.0
         let dot = CAShapeLayer()
         dot.path = CGPath(ellipseIn: CGRect(x: c - dotR, y: c - dotR, width: 2 * dotR, height: 2 * dotR), transform: nil)
-        dot.fillColor = red
+        dot.fillColor = grey
         container.addSublayer(dot)
 
         container.shadowColor = NSColor.black.cgColor
