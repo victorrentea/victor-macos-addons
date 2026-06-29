@@ -1956,7 +1956,9 @@ class EmojiAnimator {
         // zone the user marked (head/wings reach up toward the X at ~30%; with a
         // 2× flame the tallest tips just kiss the top edge).
         let flameCenterFromTop: CGFloat = 0.40
-        let stopCenterY = H * (1.0 - flameCenterFromTop)
+        // Settle 100px lower than the framed position (hostLayer is bottom-origin,
+        // so "lower on screen" = smaller y).
+        let stopCenterY = H * (1.0 - flameCenterFromTop) - 100
         // Start well below the bottom edge so the bird enters from low down and
         // climbs the full screen into view.
         let startCenterY = -flameHeight * 0.80
