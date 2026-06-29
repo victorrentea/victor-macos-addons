@@ -12,7 +12,7 @@ enum SessionNotesAppender {
     /// How long any *actionable* (hoverable) banner stays up so the user has a
     /// uniform window to react — hover-to-Send on a prompt offer, hover-to-undo
     /// after an append. Kept equal to the countdown's window for consistency.
-    private static let hoverActionDuration: TimeInterval = 5
+    private static let hoverActionDuration: TimeInterval = 7.5
     /// Non-actionable flashes (errors, "Undone" confirmation) clear faster.
     private static let resultVisibleDuration: TimeInterval = 2.0
     private static var resultDismissWork: DispatchWorkItem?
