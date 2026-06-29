@@ -12,6 +12,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var menuBarManager: MenuBarManager!
     private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
     private let breakTimer = BreakTimerController()  // ☕️ Break countdown watch overlay
+    /// Menu-triggered desktop effects run for this fixed, sound-independent
+    /// duration (looping effects are stopped after it; one-shots keep their own
+    /// natural length). The tablet path keeps its sound-driven durations — see
+    /// `onEffect`. Arbitrary; tune freely.
+    private let menuEffectDuration: TimeInterval = 5.0
     private let serverURL: String
     private var wsTask: URLSessionWebSocketTask?
     private var session: URLSession!
@@ -525,46 +530,54 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onDesktopEffect = { [weak self] name in
             DispatchQueue.main.async {
+                guard let self = self else { return }
                 // When the Mac's own output is Bluetooth, warm the A2DP link and
-                // shift the WHOLE effect (its sound AND its animation) later by
-                // the compensation, so the leading edge isn't clipped and every
-                // internal sound↔animation delta is preserved. Zero on
-                // non-Bluetooth output → fires immediately, exactly as before.
+                // shift the WHOLE effect later by the compensation, so the
+                // leading edge isn't clipped. Zero on non-Bluetooth output →
+                // fires immediately, exactly as before.
                 let comp = SoundTimingConfig.shared.currentBluetoothCompensation
                 if comp > 0 { BluetoothOutput.playWakeTone(seconds: comp) }
                 let fire = {
-                self?.overlayPanel?.refreshScreenFrame()
+                self.overlayPanel?.refreshScreenFrame()
+                // Menu-triggered effects are SILENT (`playSound: false`) and run
+                // for a fixed, sound-independent duration: looping effects are
+                // stopped after `menuEffectDuration`; one-shots keep their own
+                // natural length. (The tablet path — onEffect — still derives
+                // duration from the routed sound.)
+                let stopAfter: (@escaping () -> Void) -> Void = { stop in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + self.menuEffectDuration, execute: stop)
+                }
                 switch name {
-                case "heart":        self?.animator.spawnEmoji("❤️")
-                case "confetti":     self?.animator.spawnConfetti()
-                case "zorro":        self?.animator.showZorro()
-                case "fear":         self?.animator.showFear()
-                case "fail":         self?.animator.showFail()
-                case "sepia":        self?.animator.showSepia()
-                case "fireworks":    self?.animator.showFireworks()
-                case "applause":     self?.animator.showApplause()
-                case "heartbeat":    self?.animator.showHeartbeat()
-                case "spiral-hearts": self?.animator.showSpiralHearts()
-                case "explosion":    self?.animator.showExplosionGif()
-                case "broken-glass": self?.animator.showBrokenGlass()
-                case "game-over":    self?.animator.showGameOver()
-                case "pulse":        self?.animator.startPulseOverlay()
-                case "fire-alarm":       self?.animator.showFireAlarm()
-                case "bullet-holes":    self?.animator.showBulletHoles()
-                case "phone-ring":      self?.animator.showPhoneRing()
-                case "fbi-knock":       self?.animator.showFbiKnock()
-                case "brother":         self?.animator.showBrother()
-                case "gangnam":         self?.animator.showGangnam()
-                case "love-hands":      self?.animator.showLoveHands()
-                case "star-wars":       self?.animator.showStarWars()
-                case "gong":            self?.animator.showGong()
-                case "rainbow":         self?.animator.showRainbow()
-                case "cavalry":         self?.animator.showCavalry()
-                case "wrong-x":         self?.animator.showWrongX()
-                case "drum-roll":       self?.animator.showDrumRoll()
-                case "phoenix":         self?.animator.showPhoenix()
-                case "laugh":           self?.animator.showLaugh()
-                case "corner-confetti": self?.animator.spawnCornerConfetti()
+                case "heart":        self.animator.spawnEmoji("❤️")
+                case "confetti":     self.animator.spawnConfetti()
+                case "zorro":        self.animator.showZorro()
+                case "fear":         self.animator.showFear(playSound: false)
+                case "fail":         self.animator.showFail(playSound: false)
+                case "sepia":        self.animator.showSepia(playSound: false)
+                case "fireworks":    self.animator.showFireworks(playSound: false)
+                case "applause":     self.animator.showApplause(playSound: false); stopAfter { self.animator.stopApplause() }
+                case "heartbeat":    self.animator.showHeartbeat()
+                case "spiral-hearts": self.animator.showSpiralHearts(); stopAfter { self.animator.stopSpiralHearts() }
+                case "explosion":    self.animator.showExplosionGif(playSound: false)
+                case "broken-glass": self.animator.showBrokenGlass(playSound: false)
+                case "game-over":    self.animator.showGameOver(playSound: false); stopAfter { self.animator.stopGameOver() }
+                case "pulse":        self.animator.startPulseOverlay(playSound: false); stopAfter { self.animator.stopPulseOverlay() }
+                case "fire-alarm":       self.animator.showFireAlarm(playSound: false)
+                case "bullet-holes":    self.animator.showBulletHoles(playSound: false)
+                case "phone-ring":      self.animator.showPhoneRing(playSound: false)
+                case "fbi-knock":       self.animator.showFbiKnock(playSound: false)
+                case "brother":         self.animator.showBrother(playSound: false); stopAfter { self.animator.stopBrother() }
+                case "gangnam":         self.animator.showGangnam(playSound: false); stopAfter { self.animator.stopGangnam() }
+                case "love-hands":      self.animator.showLoveHands(playSound: false); stopAfter { self.animator.stopLoveHands() }
+                case "star-wars":       self.animator.showStarWars(playSound: false); stopAfter { self.animator.stopStarWars() }
+                case "gong":            self.animator.showGong(playSound: false)
+                case "rainbow":         self.animator.showRainbow(playSound: false); stopAfter { self.animator.stopRainbow() }
+                case "cavalry":         self.animator.showCavalry(playSound: false)
+                case "wrong-x":         self.animator.showWrongX(playSound: false)
+                case "drum-roll":       self.animator.showDrumRoll(playSound: false); stopAfter { self.animator.stopDrumRoll() }
+                case "phoenix":         self.animator.showPhoenix()
+                case "laugh":           self.animator.showLaugh()
+                case "corner-confetti": self.animator.spawnCornerConfetti()
                 case "green-flash":
                     if let screen = ScreenCaptureFlash.builtInScreen {
                         ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
