@@ -24,8 +24,8 @@ final class SilentTranscriptionWarning {
     }
 
     /// Reset snooze and (re)arm the 5-minute check timer. Call on every
-    /// transcription start path: user click, 09:00 workday entry, AC
-    /// resume, heartbeat-detected auto-restart.
+    /// transcription start path: launch on AC, AC resume, or a
+    /// heartbeat-detected auto-restart.
     func transcriptionStarted() {
         notificationEnabled = true
         isStale = false

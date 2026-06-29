@@ -3,11 +3,12 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 29, 18:43"
+    static let BUILD_TIME = "Jun 29, 20:05"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
         let isStale: Bool
+        let isPausedByBattery: Bool
         let source: String
         let menuTitle: String
         let iconMode: String
@@ -57,7 +58,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
-    var onToggleTranscribe: (() -> Void)?
     var onCopyGit: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
@@ -141,10 +141,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Resume item
         resumeItem = addItem("⏱️ Resumed -", action: nil)
         resumeItem.isEnabled = false
-        // Transcribe toggle
-        transcribeItem = addItem("Start", action: #selector(toggleTranscribe))
-        transcribeItem.keyEquivalent = "t"
-        transcribeItem.keyEquivalentModifierMask = [.command, .control]
+        // Transcribe status row (read-only; opens the mic-source submenu).
+        // Transcription runs automatically on AC — no manual start/stop here.
+        transcribeItem = addItem("Transcribing", action: nil)
         transcribeSubmenu = NSMenu()
         transcribeSubmenu.autoenablesItems = false
 
@@ -425,10 +424,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onOpenCalendar?()
     }
 
-    @objc private func toggleTranscribe() {
-        onToggleTranscribe?()
-    }
-
     @objc private func monitorAction() {
         onMonitor?()
     }
@@ -647,18 +642,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateStopBlinkTimer() {
+        // "Stopped" here means on AC but Whisper isn't running — an error
+        // state in the auto-on model (it should always run on AC). Blink the
+        // red stop icon to flag it, at any hour. On battery we show the leaf
+        // instead, so this never fires there.
         let isStopped = !isTranscribing && !isTranscriptionPausedByBattery
         if isStopped {
             if stopBlinkTimer == nil {
                 let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
                     guard let self = self else { return }
-                    if MenuBarManager.isWorkingHours() {
-                        self.stopBlinkAlt.toggle()
-                        self.refreshMenuIcon()
-                    } else if self.stopBlinkAlt {
-                        self.stopBlinkAlt = false
-                        self.refreshMenuIcon()
-                    }
+                    self.stopBlinkAlt.toggle()
+                    self.refreshMenuIcon()
                 }
                 RunLoop.main.add(timer, forMode: .common)
                 stopBlinkTimer = timer
@@ -668,14 +662,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             stopBlinkTimer = nil
             stopBlinkAlt = false
         }
-    }
-
-    /// Mon–Fri, 09:00–17:59 local time.
-    private static func isWorkingHours(_ date: Date = Date()) -> Bool {
-        let cal = Calendar.current
-        let weekday = cal.component(.weekday, from: date)  // 1=Sun … 7=Sat
-        let hour = cal.component(.hour, from: date)
-        return (2...6).contains(weekday) && (9..<18).contains(hour)
     }
 
     /// Resource PNG composited with a badge in the bottom-right quadrant.
@@ -755,7 +741,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateTranscribeTitle() {
-        let locked = TranscriptionScheduler.isLockedOn()
+        // Read-only status row. Transcription runs automatically on AC and
+        // pauses on battery — there is no manual start/stop. The only
+        // interaction is picking which mic captures your voice (submenu).
 
         // Reset everything; configure per-state below.
         transcribeItem.image = nil
@@ -773,18 +761,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
 
         if isTranscribing {
-            let suffix = locked ? " 🔒" : ""
-            transcribeItem.title = "Stop\(suffix)"
+            transcribeItem.title = "Transcribing"
             transcribeItem.image = transcribeSource.isEmpty ? nil : emojiAsIcon(transcribeSource)
             transcribeItem.submenu = transcribeSubmenu
             transcribeItem.isEnabled = true
-            rebuildTranscribeSubmenu(locked: locked)
+            rebuildTranscribeSubmenu()
         } else {
-            transcribeItem.title = locked ? "Start 🔒" : "Start"
-            transcribeItem.action = #selector(toggleTranscribe)
-            transcribeItem.keyEquivalent = "t"
-            transcribeItem.keyEquivalentModifierMask = [.command, .control]
-            transcribeItem.isEnabled = true
+            // On AC but momentarily down (starting up, or a crash before the
+            // heartbeat restart). Auto-recovers; nothing for the user to do.
+            transcribeItem.title = "Transcribing (off)"
+            transcribeItem.isEnabled = false
         }
     }
 
@@ -798,7 +784,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         ("MacBook",          "💻",  "MacBook"),
     ]
 
-    private func rebuildTranscribeSubmenu(locked: Bool) {
+    private func rebuildTranscribeSubmenu() {
         transcribeSubmenu.removeAllItems()
         for src in Self.knownSources {
             let item = NSMenuItem(title: "\(src.emoji) \(src.name)",
@@ -811,13 +797,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             item.state = (src.emoji == transcribeSource) ? .on : .off
             transcribeSubmenu.addItem(item)
         }
-        transcribeSubmenu.addItem(.separator())
-        let stop = NSMenuItem(title: locked ? "Stop 🔒" : "Stop",
-                              action: locked ? nil : #selector(toggleTranscribe),
-                              keyEquivalent: "")
-        stop.target = self
-        stop.isEnabled = !locked
-        transcribeSubmenu.addItem(stop)
     }
 
     @objc private func pickSource(_ sender: NSMenuItem) {
@@ -872,6 +851,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return TranscriptionDebugState(
             isTranscribing: isTranscribing,
             isStale: isTranscriptionStale,
+            isPausedByBattery: isTranscriptionPausedByBattery,
             source: transcribeSource,
             menuTitle: transcribeItem.title,
             iconMode: iconMode

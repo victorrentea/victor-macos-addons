@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# Transcription is driven solely by AC/battery now — there is no start/stop/
+# toggle. The only headless hook left is a force-(re)start of Whisper, used
+# here to confirm the pipeline comes up. Snapshot → start → re-snapshot.
+
 BASE_URL="${BASE_URL:-http://127.0.0.1:55123}"
-ACTION="${1:-toggle}"
-WAIT_SECONDS="${WAIT_SECONDS:-1.0}"
+WAIT_SECONDS="${WAIT_SECONDS:-1.5}"
 
 fetch_state() {
     curl -fsS "$BASE_URL/test/state"
@@ -19,57 +22,37 @@ import sys
 label = sys.argv[1]
 state = json.loads(sys.argv[2])
 
-print(f"{label} running={state.get('running')} enabled_pref={state.get('enabled_preference')} ui_transcribing={state.get('ui_transcribing')} icon={state.get('icon_mode')} menu=\"{state.get('menu_title')}\"")
+print(f"{label} running={state.get('running')} on_ac={state.get('on_ac')} "
+      f"paused_battery={state.get('paused_battery')} "
+      f"ui_transcribing={state.get('ui_transcribing')} "
+      f"icon={state.get('icon_mode')} menu=\"{state.get('menu_title')}\"")
 PY
 }
 
 before="$(fetch_state)"
 print_state "before" "$before"
 
-case "$ACTION" in
-    start)
-        curl -fsS "$BASE_URL/test/transcription/start" >/dev/null
-        ;;
-    stop)
-        curl -fsS "$BASE_URL/test/transcription/stop" >/dev/null
-        ;;
-    toggle)
-        curl -fsS "$BASE_URL/test/transcription/toggle" >/dev/null
-        ;;
-    *)
-        echo "Usage: $0 [start|stop|toggle]" >&2
-        exit 2
-        ;;
-esac
+curl -fsS "$BASE_URL/test/transcription/start" >/dev/null
 
 sleep "$WAIT_SECONDS"
 
 after="$(fetch_state)"
 print_state "after " "$after"
 
-python3 - "$ACTION" "$before" "$after" <<'PY'
+python3 - "$after" <<'PY'
 import json
 import sys
 
-action = sys.argv[1]
-before = json.loads(sys.argv[2])
-after = json.loads(sys.argv[3])
+after = json.loads(sys.argv[1])
 
 ok = True
 messages = []
 
-if action == "toggle":
-    if before.get("ui_transcribing") == after.get("ui_transcribing"):
-        ok = False
-        messages.append("ui_transcribing did not change")
-elif action == "start":
-    if not after.get("enabled_preference"):
-        ok = False
-        messages.append("enabled_preference is false after start")
-elif action == "stop":
-    if after.get("enabled_preference"):
-        ok = False
-        messages.append("enabled_preference is true after stop")
+# On AC, a force-start must bring Whisper up. On battery it stays paused
+# (the controller refuses to run on battery), which is also correct.
+if after.get("on_ac") and not after.get("running"):
+    ok = False
+    messages.append("on AC but not running after force-start")
 
 if after.get("running") != after.get("ui_transcribing"):
     ok = False

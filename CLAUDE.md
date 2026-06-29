@@ -15,7 +15,7 @@ Single menu bar app (💬 icon) provides all functionality.
 Menu bar app (💬 icon) with the following features:
 
 **Active features:**
-- **💬 Transcribing** — starts/stops Whisper live transcription; toggles icon to 💬-crossed when stopped. Schedule (`TranscriptionScheduler`): Mon–Fri 09:00 auto-starts and **locks** the toggle until 18:00 (during the lock, a stop click is dropped with a `🔒` banner; a start click is honored as recovery — useful after a crash or battery pause). 18:00 fires an unconditional auto-stop. Outside the window the user has full control; a manual ON persists until the next 18:00 weekday (e.g. Friday 19:00 → Monday 18:00). A 60s heartbeat inside the window restarts Whisper if the process died. Battery pauses transcription regardless of schedule; AC restoration does **not** auto-resume — the user must restart manually.
+- **💬 Transcribing** — Whisper live transcription runs **automatically whenever the Mac is on AC power, and pauses on battery**. There is no schedule, no workday window, and **no manual start/stop** — the only input that matters is the power source. The single, tiny `TranscriptionController` owns this: on AC it starts Whisper (if not already running) and a **60s heartbeat** restarts it if the process died (crash/OOM) while still plugged in; on battery it stops Whisper. On AC→battery it shows a "paused on battery" banner; on battery→AC a "resumed on AC" banner and Whisper restarts automatically (unlike the old model, AC restoration **does** auto-resume). It captures **two channels at once** (`whisper_runner.py`): your mic (the "selected device", auto-picked by priority Wireless Mic → Room Speakerphone → XLR → Bose → MacBook, overridable in the menu submenu) written as `Victor:`, and the **audience from the `From Zoom` loopback** written as `Audience:`. The menu item is a **read-only status row** (💬 Transcribing / Off – On Battery / Transcribing (off) while momentarily down) that opens the **mic-source picker submenu** — no Start/Stop, no ⌘⌃T hotkey, no 🔒 lock. The menu-bar icon is the live status: source emoji while running, leaf on battery, blinking red stop icon when on AC but Whisper isn't running (an error worth flagging, at any hour).
 - **Emotional 🥹 Paste (⌘⌃V)** — AI-powered text cleanup via Claude Haiku; intercepts Cmd+V to capture clipboard, Cmd+Ctrl+V cleans and re-pastes
 - **Toggle Dark Mode (⌘⌃⌥D)** — toggles macOS dark/light mode via AppleScript
 - **Mute 🎶 (auto)** — drops `🔊OS Output` device volume to 1% during Wispr Flow dictation, restores on stop. `CoreAudioManager` runs a single self-rescheduling `DispatchSourceTimer` on a serial `pollQueue`: normal cadence is 300ms; each Mouse 5 press extends a `boostedUntil` deadline by 1s during which the next ticks are scheduled 100ms apart. The Mouse 5 click handler also probes the loopback immediately (~150ms RMS/peak window, thresholds RMS 0.0002 / peak 0.0005) and — if music is playing — does a **speculative mute** without waiting for Wispr's recording state, capturing the current volume into `originalVolume` and setting `kAudioDevicePropertyVolumeScalar` to 0.01. Polls then confirm via `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`. Restore is debounced: on Wispr `1→0` (or on a speculative mute that Wispr never confirms) we wait 1000ms of stable `recording=false` before restoring `originalVolume`; any `recording=true` read inside that window cancels the pending restore (`firstNotRecordingAt = nil`). The loopback check is **not** consulted on restore (a muted device reads silent and would falsely cancel restore). All state (`volumePushedDown`, `originalVolume`, `firstNotRecordingAt`, `boostedUntil`, `nextDeadline`) lives entirely on `pollQueue`, so reads/writes are sequential. Mouse 5 is observed via the event tap and passed through (Wispr still sees it); behavior on other triggers (right Opt-Cmd, hotkey, UI button, VAD, ESC) falls back to the boosted-or-normal poll alone. Caveats: an app crash mid-mute leaves the volume at 1% until next Wispr cycle; a manual volume-slider tweak during dictation is overwritten on restore. **Output-route guard:** the whole feature only works while the macOS default output is `🔊OS Output` (the loopback the app taps *and* whose volume it drops); if it drifts elsewhere (e.g. macOS resets to the built-in speakers after sleep), music bypasses the loopback and never ducks. On each Wispr-start edge `CoreAudioManager` reads the default-output name and, via the pure `OutputDriftPolicy`, posts a **transient native notification** ("🔇 Mute inactiv la dictare — Output = «…», nu 🔊OS Output") when it has drifted. Alerts **once per drift episode** and re-arms when a later Wispr-start sees `🔊OS Output` again (no spam). Not a permissions issue — Microphone TCC stays granted and the loopback tap still succeeds; it reads all-zero silence purely because nothing is routed through the device.
@@ -30,7 +30,7 @@ Menu bar app (💬 icon) with the following features:
 **Tech**: Swift, AppKit, Anthropic API (Haiku)
 **Secrets**: `WISPR_CLEANUP_ANTHROPIC_API_KEY` in `~/.training-assistants-secrets.env`
 
-**Operational note (2026-04):** On app launch, transcribing UI state is derived from actual Whisper process state (not just persisted defaults) to avoid stale "Stop Transcribing" menu state when the process failed to start.
+**Operational note (2026-06):** Transcription control was simplified to a single power-driven rule (on AC → run, on battery → pause) in `TranscriptionController`. The former `TranscriptionStateMachine` (off/on/onWorkday/battery + persisted UserDefaults state), `TranscriptionScheduler` (Mon–Fri 09:00–18:00 window + hard lock), the 18:00 `TranscriptionCountdownOverlay`, the ⌘⌃T toggle, and the menu Start/Stop were all removed. There is no persisted on/off state anymore; the launch UI starts not-running and the controller reflects the real process/power state.
 
 ### whisper-transcribe
 Live dual-channel Whisper transcription engine (extracted from training-assistant daemon):
@@ -147,10 +147,8 @@ Mac bundle — the tablet plays the differing files locally and shows an amber d
 
 Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:55123` so tests do not need UI focus or menu clicking:
 
-- `GET /test/state` — JSON snapshot of transcription state (`running`, preference flag, UI/menu/icon state)
-- `GET /test/transcription/start`
-- `GET /test/transcription/stop`
-- `GET /test/transcription/toggle`
+- `GET /test/state` — JSON snapshot of transcription state (`running`, `on_ac`, `paused_battery`, UI/menu/icon state)
+- `GET /test/transcription/start` — force-(re)start Whisper for E2E checks (no-op if already running). There is no stop/toggle hook — transcription is driven solely by AC/battery
 - `GET /test/audio/playing` — taps `🔊OS Output` loopback for ~150ms, returns `{playing, rms, peak, ...}`
 - `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`
 - `GET /test/break/<minutes>` — start/reset the ☕️ Break countdown overlay for N minutes
@@ -166,8 +164,8 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 
 For local E2E checks without stealing focus:
 
-- `./test-transcription-control.sh [start|stop|toggle]`
-- Uses only local HTTP control endpoints and validates runtime state transitions.
+- `./test-transcription-control.sh` — snapshots `/test/state`, force-(re)starts Whisper via `/test/transcription/start`, and re-snapshots to confirm it came up.
+- Uses only local HTTP endpoints; no UI focus needed.
 
 ## Deployment
 - **App bundle**: `./build-app.sh` creates `/Applications/Victor Addons.app` (Spotlight-searchable)

@@ -1,5 +1,13 @@
 # Transcription Schedule — Hard Lock + Notifications
 
+> ⚠️ **SUPERSEDED (2026-06).** This entire feature was removed. Transcription is
+> no longer scheduled, lockable, or manually controllable. It now runs purely on
+> a power rule — **on AC → run, on battery → pause** — owned by the tiny
+> `TranscriptionController`. The `TranscriptionScheduler`, `TranscriptionStateMachine`,
+> the 09:00/18:00 window, the hard lock, boundary notifications, the 18:00
+> countdown overlay, the ⌘⌃T toggle, and the menu Start/Stop no longer exist.
+> Kept only as design history; **do not implement from this doc.**
+
 **Date:** 2026-05-06
 **Component:** `MenuBarManager`, `AppDelegate`, `TranscriptionScheduler`
 

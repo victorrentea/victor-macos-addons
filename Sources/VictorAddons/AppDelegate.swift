@@ -47,14 +47,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var joinLinkBanner: JoinLinkBanner?
     private var promptCaptureBanner: BottomLeftBanner?
     private var powerMonitor: PowerMonitor?
-    private var transcriptionStateMachine: TranscriptionStateMachine?
-    private var transcriptionScheduler: TranscriptionScheduler?
+    /// Drives Whisper purely off the power source: on AC → transcribe, on
+    /// battery → pause. No schedule, no manual start/stop.
+    private var transcriptionController: TranscriptionController?
     /// Fires the daily 13:00 "Group Photo" prompt (gated on `daemonConnected`).
     private var groupPhotoScheduler: GroupPhotoScheduler?
     /// True while the training-assistant daemon is connected to our local WS
     /// server (≥1 client). The gate for the 13:00 Group Photo prompt.
     private var daemonConnected = false
-    private var transcriptionCountdownOverlay: TranscriptionCountdownOverlay?
     private var statusBanner: StatusBanner?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
     private var meetingDetector: MeetingDetector?
@@ -345,84 +345,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             whisperManager?.stop()
         }
 
-        // State machine owns the persisted (state, wasOn) pair and decides
-        // whisper start/stop. See docs/transcription-state.puml.
-        let sm = TranscriptionStateMachine(isWhisperRunning: { [weak whisperManager] in
+        // Whisper runs whenever we're on AC and pauses on battery — nothing
+        // else. The controller owns that decision plus a 60s heartbeat that
+        // restarts Whisper if it died while still plugged in.
+        let controller = TranscriptionController(isWhisperRunning: { [weak whisperManager] in
             whisperManager?.isRunning == true
         })
-        sm.onStartWhisper = startWhisper
-        sm.onStopWhisper = stopWhisper
-        sm.onAutoRestart = { [weak self] in
-            // Whisper died inside the workday window — heartbeat is bringing
-            // it back. Arm the "started" banner; it fires once whisper is
-            // actually confirmed running.
+        controller.onStart = startWhisper
+        controller.onStop = stopWhisper
+        controller.onAutoRestart = { [weak self] in
+            // Whisper died while on AC — the heartbeat is bringing it back.
+            // Arm the "started" banner; it fires once whisper is confirmed running.
             self?.pendingAutoRestartBanner = true
         }
-        sm.onStateChanged = { [weak self] state, _ in
-            DispatchQueue.main.async {
-                self?.menuBarManager.setTranscriptionPausedByBattery(state == .battery)
-            }
+        controller.onPausedByBatteryChanged = { [weak self] paused in
+            self?.menuBarManager.setTranscriptionPausedByBattery(paused)
         }
-        self.transcriptionStateMachine = sm
-
-        menuBarManager.onToggleTranscribe = { [weak sm] in
-            guard let sm else { return }
-            switch sm.state {
-            case .off: sm.userClickStart()
-            case .on:  sm.userClickStop()
-            case .onWorkday, .battery: break  // menu disabled in these states
-            }
-        }
+        self.transcriptionController = controller
 
         let pm = PowerMonitor()
-        pm.onSwitchToBattery = { [weak self, weak sm] in
-            guard let sm else { return }
-            let wasRunning = sm.state == .on || sm.state == .onWorkday
-            sm.switchToBattery()
-            if wasRunning {
-                self?.statusBanner?.showOnPresence(text: "paused on battery", sound: StatusBannerSound.stop)
-            }
+        pm.onSwitchToBattery = { [weak self, weak controller] in
+            controller?.powerDidChange()
+            self?.statusBanner?.showOnPresence(text: "paused on battery", sound: StatusBannerSound.stop)
         }
-        pm.onSwitchToAC = { [weak self, weak sm] in
-            guard let sm else { return }
-            let wasPaused = sm.state == .battery
-            sm.switchToAC()
-            if wasPaused, sm.state == .on || sm.state == .onWorkday {
-                self?.statusBanner?.showOnPresence(text: "resumed on AC", sound: StatusBannerSound.start)
-            }
+        pm.onSwitchToAC = { [weak self, weak controller] in
+            controller?.powerDidChange()
+            self?.statusBanner?.showOnPresence(text: "resumed on AC", sound: StatusBannerSound.start)
         }
         pm.start()
         self.powerMonitor = pm
-
-        let scheduler = TranscriptionScheduler()
-        scheduler.onEnterWindow = { [weak self, weak sm] in
-            guard let sm else { return }
-            sm.enterWorkday()
-            if sm.state == .onWorkday {
-                self?.statusBanner?.showOnPresence(text: "started", sound: StatusBannerSound.start)
-            }
-        }
-        let exitWindowAction: () -> Void = { [weak self, weak sm] in
-            guard let self = self, let sm = sm else { return }
-
-            if self.transcriptionCountdownOverlay == nil {
-                self.transcriptionCountdownOverlay = TranscriptionCountdownOverlay(screensProvider: { NSScreen.screens })
-            }
-
-            self.transcriptionCountdownOverlay?.startCountdown(
-                onContinue: {
-                    overlayInfo("Transcription continues beyond 6pm (user hovered)")
-                },
-                onStop: {
-                    sm.exitWorkday()
-                    overlayInfo("Transcription stopped at 6pm (countdown finished)")
-                }
-            )
-        }
-        scheduler.onExitWindow = exitWindowAction
-        scheduler.onHeartbeat = { [weak sm] in sm?.heartbeat() }
-        scheduler.start()
-        self.transcriptionScheduler = scheduler
 
         // Daily 13:00 "Group Photo" prompt — only when the daemon is connected.
         let groupPhoto = GroupPhotoScheduler()
@@ -447,25 +398,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
 
-        tabletServer?.onTestTranscriptionStart = { [weak sm] in
-            sm?.userClickStart()
+        tabletServer?.onTestTranscriptionStart = {
+            // Headless force-(re)start of Whisper for E2E checks. The start
+            // call is a no-op if it's already running.
+            startWhisper()
         }
-        tabletServer?.onTestTranscriptionStop = { [weak sm] in
-            if TranscriptionScheduler.isLockedOn() {
-                overlayInfo("🔒 /test/transcription/stop ignored — locked until 18:00")
-                return
-            }
-            sm?.userClickStop()
-        }
-        tabletServer?.onTestTranscriptionToggle = { [weak sm] in
-            guard let sm else { return }
-            switch sm.state {
-            case .off: sm.userClickStart()
-            case .on:  sm.userClickStop()
-            case .onWorkday, .battery: break
-            }
-        }
-        tabletServer?.onTestExitWindow = exitWindowAction
         tabletServer?.onTestWisprRecording = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -516,8 +453,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let ui = menuBarManager.transcriptionDebugState()
             let payload: [String: Any] = [
                 "running": whisperManager?.isRunning == true,
-                "state": self.transcriptionStateMachine?.state.rawValue ?? "unknown",
-                "wasOn": self.transcriptionStateMachine?.wasOn ?? false,
+                "on_ac": PowerMonitor.isOnAC(),
+                "paused_battery": ui.isPausedByBattery,
                 "ui_transcribing": ui.isTranscribing,
                 "ui_stale": ui.isStale,
                 "menu_title": ui.menuTitle,
@@ -679,7 +616,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         DispatchQueue.main.async { [weak self] in self?.breakTimer.resumeIfNeeded() }
 
         menuBarManager.setup()
-        // Reflect real process state on startup to avoid stale "Stop Transcribing" UI.
+        // Start from a not-running UI; the controller flips it on once Whisper
+        // is actually up (or shows the battery-paused state).
         menuBarManager.setTranscribing(false)
 
         let detector = MeetingDetector()
@@ -700,10 +638,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 menuBarManager?.flashScreenshotIcon()
             }
         }
-        // Settle the persisted state against the current hour / battery.
-        // This is the single launch entry point — see Restore + Settle in
-        // docs/transcription-state.puml.
-        sm.settle()
+        // Apply the current power state (start Whisper if on AC) and arm the
+        // crash-recovery heartbeat. Single launch entry point.
+        controller.start()
 
         let secrets = SecretsLoader.load()
         let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
@@ -733,14 +670,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
-        eventTap.onToggleTranscription = { [weak sm] in
-            guard let sm else { return }
-            switch sm.state {
-            case .off: sm.userClickStart()
-            case .on:  sm.userClickStop()
-            case .onWorkday, .battery: break
-            }
-        }
         eventTap.onRepaste = {
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
         }
@@ -887,12 +816,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     @objc private func handleDidWake() {
         guard wasTranscribingBeforeSleep else { return }
         wasTranscribingBeforeSleep = false
-        let st = transcriptionStateMachine?.state
-        guard st == .on || st == .onWorkday else { return }
+        guard PowerMonitor.isOnAC() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self else { return }
-            let s = self.transcriptionStateMachine?.state
-            guard s == .on || s == .onWorkday, self.whisperManager?.isRunning != true else { return }
+            guard PowerMonitor.isOnAC(), self.whisperManager?.isRunning != true else { return }
             overlayInfo("System woke — restarting whisper")
             let env: [String: String] = [
                 "TRANSCRIPTION_FOLDER": self.transcriptionFolder.path,

@@ -3,14 +3,16 @@ import XCTest
 
 final class TabletHttpServerTests: XCTestCase {
     func testParsePathExtractsPathFromHttpRequestLine() {
-        let request = "GET /test/transcription/toggle HTTP/1.1\r\nHost: localhost\r\n\r\n"
-        XCTAssertEqual(TabletHttpServer.parsePath(request), "/test/transcription/toggle")
+        let request = "GET /test/transcription/start HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        XCTAssertEqual(TabletHttpServer.parsePath(request), "/test/transcription/start")
     }
 
     func testRouteMapsTranscriptionControlEndpoints() {
+        // Transcription runs automatically on AC; the only headless hook left is
+        // a force-(re)start for E2E checks. Stop/toggle/exit-window were removed.
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/transcription/start"), .testTranscriptionStart)
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/transcription/stop"), .testTranscriptionStop)
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/transcription/toggle"), .testTranscriptionToggle)
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/transcription/stop"), .unknown)
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/transcription/toggle"), .unknown)
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/state"), .testState)
     }
 

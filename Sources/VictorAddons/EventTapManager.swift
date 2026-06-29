@@ -24,7 +24,6 @@ class EventTapManager {
     var onRepaste: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onTileTerminals: (() -> Void)?
-    var onToggleTranscription: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
@@ -38,7 +37,6 @@ class EventTapManager {
     private let VK_D: CGKeyCode = 0x02
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
-    private let VK_T: CGKeyCode = 0x11
     private let VK_W: CGKeyCode = 0x0D
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
@@ -175,12 +173,6 @@ class EventTapManager {
         // Cmd+Ctrl+A → tile Terminal windows (suppress)
         if keyCode == VK_A && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onTileTerminals?() }
-            return nil
-        }
-
-        // Cmd+Ctrl+T → toggle transcription (suppress)
-        if keyCode == VK_T && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onToggleTranscription?() }
             return nil
         }
 

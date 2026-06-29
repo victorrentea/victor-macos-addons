@@ -1,10 +1,10 @@
 import Foundation
 
 /// Fires `onTrigger` once a day, the moment local wall-clock time reaches
-/// **13:00**. Mirrors `TranscriptionScheduler`: a 60s repeating
-/// `DispatchSourceTimer` polls the clock, and exactly one tick lands inside the
-/// 13:00 minute. A per-day guard (`lastFiredYMD`) makes the fire idempotent so
-/// it cannot double-trigger within the same calendar day.
+/// **13:00**. A 60s repeating `DispatchSourceTimer` polls the clock, and
+/// exactly one tick lands inside the 13:00 minute. A per-day guard
+/// (`lastFiredYMD`) makes the fire idempotent so it cannot double-trigger
+/// within the same calendar day.
 ///
 /// The caller decides whether to act on the trigger (e.g. only when the
 /// training-assistant daemon is connected). A trigger missed because the app
