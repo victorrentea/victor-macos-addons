@@ -258,6 +258,8 @@ class TabletHttpServer {
             return .effect("sonar")
         case "/test/phoenix":
             return .effect("phoenix")
+        case "/test/money":
+            return .effect("money")
         case "/test/group-photo":
             return .testGroupPhoto
         case "/test/wispr-output-drift":

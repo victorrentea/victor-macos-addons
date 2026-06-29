@@ -206,6 +206,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
             case "phoenix":         self?.animator.showPhoenix()
+            case "money":           self?.animator.showMoneyRise()
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -267,6 +268,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if name == "23_radar.mp3" {
                 self?.animator.showSonar(playSound: true)
                 return "{\"ok\":true,\"durationMs\":5459}"
+            }
+            // Tile #53 ("53_rain.mp3") was repurposed into 💸 Money: every press
+            // fires one round of dollars rising up the screen and plays the
+            // checkmark "ching" (#57) instead of the original rain. Driven from
+            // the routed play path (like the radar) and kept OUT of
+            // SoundEffectMap so a single press = a single ching + a single round
+            // (no double-trigger); repeated presses stack overlapping rounds.
+            if name == "53_rain.mp3" {
+                self?.animator.showMoneyRise()
+                let volume = volumePct.map { Float($0) / 100 }
+                guard let duration = SoundManager.shared.playTabletSound("57_checkmark.mp3", volume: volume) else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
             let volume = volumePct.map { Float($0) / 100 }
             guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }
@@ -516,6 +529,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "wrong-x":         self.animator.showWrongX(playSound: false)
                 case "drum-roll":       self.animator.showDrumRoll(playSound: false); stopAfter { self.animator.stopDrumRoll() }
                 case "phoenix":         self.animator.showPhoenix()
+                case "money":           self.animator.showMoneyRise()
                 case "laugh":           self.animator.showLaugh()
                 case "corner-confetti": self.animator.spawnCornerConfetti()
                 case "green-flash":

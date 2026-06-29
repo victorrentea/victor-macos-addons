@@ -1265,6 +1265,85 @@ class EmojiAnimator {
         }
     }
 
+    // MARK: - Money rain (sfx #53, one rising round per "ching")
+
+    /// Money-flying emojis that swarm UP from the bottom edge to the top while
+    /// fading out — one "round" per call. It is intentionally NOT a tracked /
+    /// toggleable effect: every call spawns an independent, self-removing burst,
+    /// so pressing the soundboard tile repeatedly stacks multiple overlapping
+    /// rounds of rising dollars (one round per "ching"). Modeled on `spawnEmoji`
+    /// (rise + sway + fade) but full-width and bottom→top across the screen.
+    private static let moneyEmojis = ["💸", "💵", "💰", "🤑"]
+
+    func showMoneyRise(count: Int = 16) {
+        let bounds = hostLayer.bounds
+        let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        for _ in 0..<count {
+            // Stagger the burst over ~0.5s so the round reads as a swarm, not a row.
+            let delay = Double.random(in: 0...0.5)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self else { return }
+
+                let size = CGFloat.random(in: 64...104)
+                let startX = CGFloat.random(in: size...(bounds.width - size))
+                let startY = -size                              // just below the bottom edge
+
+                let layer = CATextLayer()
+                layer.string = EmojiAnimator.moneyEmojis.randomElement()!
+                layer.fontSize = size * 0.86
+                layer.alignmentMode = .center
+                layer.frame = CGRect(x: startX - size / 2, y: startY, width: size, height: size)
+                layer.contentsScale = scale
+                self.hostLayer.addSublayer(layer)
+
+                let duration = Double.random(in: 2.4...3.6)
+                // Rise clear off the top edge, swaying left↔right like fluttering cash.
+                let topY = bounds.height + size
+                let sway = CGFloat.random(in: 60...140) * (Bool.random() ? 1 : -1)
+                let path = CGMutablePath()
+                let start = layer.position
+                path.move(to: start)
+                let steps = 24
+                for s in 1...steps {
+                    let t = CGFloat(s) / CGFloat(steps)
+                    let y = start.y + (topY - start.y) * t
+                    let x = start.x + sway * sin(t * .pi * 2)   // one full wobble over the climb
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+                let rise = CAKeyframeAnimation(keyPath: "position")
+                rise.path = path
+                rise.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+                // Gentle tumble so the bills look like they're flying, not sliding up.
+                let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+                spin.fromValue = 0
+                spin.toValue = Double.random(in: -0.6...0.6) * .pi
+
+                // Hold fully opaque for the first half, then fade out as it nears the top.
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 1.0
+                fade.toValue = 0.0
+                fade.beginTime = duration * 0.5
+                fade.duration = duration * 0.5
+                fade.fillMode = .forwards
+
+                let group = CAAnimationGroup()
+                group.animations = [rise, spin, fade]
+                group.duration = duration
+                group.fillMode = .forwards
+                group.isRemovedOnCompletion = false
+
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { [weak layer] in
+                    layer?.removeFromSuperlayer()
+                }
+                layer.add(group, forKey: "moneyRise")
+                CATransaction.commit()
+            }
+        }
+    }
+
     // MARK: - Applause (toggleable: click to start, click again to stop)
 
     func showApplause(playSound: Bool = true) {
