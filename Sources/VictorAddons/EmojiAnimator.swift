@@ -59,6 +59,7 @@ class EmojiAnimator {
     private var _bombTargetHidCursor = false          // balance hide/unhide of the real cursor
     private var _bombMoveDistance: CGFloat = 0        // total cursor travel during the fuse (px)
     private var _bombLastSample: CGPoint?             // previous sample (global coords) for delta
+    private var _bombArmed = false                    // crossed the shake threshold → lock on cursor
 
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
@@ -1736,9 +1737,10 @@ class EmojiAnimator {
     private static let explosionFuse: Double = 1.5
 
     /// Total cursor travel (px) during the fuse above which we treat it as a
-    /// deliberate aim (vs. a perfectly still hand). A nudge clears this easily;
-    /// a resting mouse reports exactly 0 travel.
-    private static let bombAimTravelThreshold: CGFloat = 8
+    /// deliberate aim. Set high enough that an accidental nudge won't arm it —
+    /// you have to actually *shake* the crosshair. Crossing it flips the
+    /// crosshair from red to green so you know the strike is locked.
+    private static let bombAimTravelThreshold: CGFloat = 300
 
     func showExplosionGif(playSound: Bool = true) {
         // `_bombTargetTimer != nil` covers a second press *during* the fuse
@@ -1765,6 +1767,7 @@ class EmojiAnimator {
     private func startBombTargeting() {
         _bombMoveDistance = 0
         _bombLastSample = nil
+        _bombArmed = false
 
         let target = Self.makeSniperReticle()
         CATransaction.begin()
@@ -1792,12 +1795,40 @@ class EmojiAnimator {
                 self._bombMoveDistance += hypot(global.x - last.x, global.y - last.y)
             }
             self._bombLastSample = global
+            // First time we cross the shake threshold: lock on — turn the
+            // crosshair green + a quick pulse so the user knows it'll land here.
+            if !self._bombArmed && self._bombMoveDistance > Self.bombAimTravelThreshold {
+                self._bombArmed = true
+                self.armReticle()
+            }
             CATransaction.begin()
             CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
             self._bombTargetLayer?.position = self.mousePointInHostLayer()
             CATransaction.commit()
         }
         _bombTargetTimer = timer
+    }
+
+    /// Flip the crosshair from red to green and give it a quick scale pulse —
+    /// the visual "locked on target" reward once the user has shaken enough.
+    private func armReticle() {
+        guard let container = _bombTargetLayer else { return }
+        let green = NSColor.systemGreen.cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in container.sublayers ?? [] {
+            guard let shape = layer as? CAShapeLayer else { continue }
+            if shape.strokeColor != nil { shape.strokeColor = green }
+            if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = green }
+        }
+        CATransaction.commit()
+        let pulse = CABasicAnimation(keyPath: "transform.scale")
+        pulse.fromValue = 1.0
+        pulse.toValue = 1.4
+        pulse.duration = 0.18
+        pulse.autoreverses = true
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        container.add(pulse, forKey: "lockPulse")
     }
 
     /// Tear down the crosshair, restore the cursor, and report whether the user
@@ -1812,7 +1843,9 @@ class EmojiAnimator {
             _bombTargetHidCursor = false
         }
         let center = mousePointInHostLayer()
-        let aimed = _bombMoveDistance > Self.bombAimTravelThreshold
+        let aimed = _bombArmed
+        NSLog("☢️ nuke fuse ended: travel=%.0fpx threshold=%.0f aimed=%@ center=(%.0f,%.0f)",
+              _bombMoveDistance, Self.bombAimTravelThreshold, aimed ? "YES" : "no", center.x, center.y)
         return (aimed, center)
     }
 
@@ -1820,11 +1853,11 @@ class EmojiAnimator {
     /// arms with a small central gap, and a centre dot — with a soft dark shadow
     /// so the red reads on any desktop backdrop.
     private static func makeSniperReticle() -> CALayer {
-        let d: CGFloat = 130
-        let lineW: CGFloat = 2
+        let d: CGFloat = 65               // 50% smaller than the original reticle
+        let lineW: CGFloat = 1.5
         let c = d / 2
         let r = c - lineW                 // ring radius (kept inside the bounds)
-        let gap: CGFloat = 14             // half-length of the empty centre
+        let gap: CGFloat = 7              // half-length of the empty centre
         let red = NSColor.systemRed.cgColor
 
         let container = CALayer()
@@ -1881,9 +1914,18 @@ class EmojiAnimator {
             totalDuration += delay
         }
 
-        let size = min(hostLayer.bounds.width, hostLayer.bounds.height) * 1.2
-        let x = (hostLayer.bounds.width - size) / 2
-        let y = (hostLayer.bounds.height - size) / 2 + hostLayer.bounds.height / 6 - hostLayer.bounds.height * 0.1
+        let size = min(hostLayer.bounds.width, hostLayer.bounds.height) * 1.2 / scaleDivisor
+        let x: CGFloat
+        let y: CGFloat
+        if let center = center {
+            // Aimed strike: centre the (smaller) blast on the cursor.
+            x = center.x - size / 2
+            y = center.y - size / 2
+        } else {
+            // Default: centred, nudged up a touch from dead-centre.
+            x = (hostLayer.bounds.width - size) / 2
+            y = (hostLayer.bounds.height - size) / 2 + hostLayer.bounds.height / 6 - hostLayer.bounds.height * 0.1
+        }
 
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
