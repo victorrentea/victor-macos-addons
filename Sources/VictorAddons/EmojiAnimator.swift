@@ -50,6 +50,16 @@ class EmojiAnimator {
     private var _fearTimer: Timer?
     private var _fearHidCursor = false                // balance hide/unhide of the real cursor
 
+    // ☢️ Nuke targeting: during the explosion fuse a 🎯 reticle follows the mouse
+    // (real cursor hidden). If the user "aims" — moves the mouse for ≥50% of the
+    // fuse — the bomb drops 4× smaller exactly where the cursor ended up.
+    private var _bombTargetLayer: CATextLayer?
+    private var _bombTargetTimer: Timer?
+    private var _bombTargetHidCursor = false          // balance hide/unhide of the real cursor
+    private var _bombMovingTicks = 0                  // 60fps samples where the mouse moved
+    private var _bombTotalTicks = 0                   // 60fps samples taken during the fuse
+    private var _bombLastSample: CGPoint?             // previous sample (global coords) for delta
+
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
         Self.warmBrotherCache()
@@ -1721,12 +1731,98 @@ class EmojiAnimator {
 
     // MARK: - Explosion GIF overlay
 
+    /// Seconds between the nuke press (sound starts on the tablet) and the bomb
+    /// landing — the fuse during which the 🎯 targeting reticle is shown.
+    private static let explosionFuse: Double = 1.5
+
     func showExplosionGif(playSound: Bool = true) {
-        guard activeEffects["explosion"] == nil else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?._showExplosionGif(playSound: playSound) }
+        // `_bombTargetTimer != nil` covers a second press *during* the fuse
+        // (activeEffects["explosion"] isn't set until the bomb actually lands).
+        guard activeEffects["explosion"] == nil, _bombTargetTimer == nil else { return }
+        // Hide the real cursor and float a 🎯 reticle that tracks the mouse for
+        // the whole fuse, measuring how much of it the user spends aiming.
+        startBombTargeting()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionFuse) { [weak self] in
+            guard let self else { return }
+            let (aimed, center) = self.endBombTargeting()
+            if aimed {
+                // Aimed for ≥50% of the fuse → a small, precise strike on the cursor.
+                self._showExplosionGif(playSound: playSound, scaleDivisor: 4, center: center)
+            } else {
+                self._showExplosionGif(playSound: playSound)
+            }
+        }
     }
 
-    private func _showExplosionGif(playSound: Bool = true) {
+    /// Show the 🎯 reticle on the mouse, hide the real cursor, and start sampling
+    /// mouse movement at 60fps so `endBombTargeting()` can tell whether the user aimed.
+    private func startBombTargeting() {
+        _bombMovingTicks = 0
+        _bombTotalTicks = 0
+        _bombLastSample = nil
+
+        let size: CGFloat = 96
+        let box = size * 1.3            // headroom so the emoji isn't clipped
+        let target = CATextLayer()
+        target.string = "🎯"
+        target.fontSize = size
+        target.alignmentMode = .center
+        target.bounds = CGRect(x: 0, y: 0, width: box, height: box)
+        target.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        target.position = mousePointInHostLayer()   // centred on the live cursor
+        CATransaction.commit()
+        hostLayer.addSublayer(target)
+        _bombTargetLayer = target
+
+        // Reticle stands in for the pointer → hide the real cursor (also while we
+        // aren't the frontmost app, via the background-cursor-hiding arm).
+        if !_bombTargetHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _bombTargetHidCursor = true
+        }
+
+        // A sample counts as "moving" if the cursor shifted >0.5px since the last
+        // tick; a resting hand reports the exact same point (delta 0), so jitter
+        // never registers as movement.
+        let moveThresholdSq: CGFloat = 0.5 * 0.5
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self, self._bombTargetTimer === t else { t.invalidate(); return }
+            let global = NSEvent.mouseLocation
+            if let last = self._bombLastSample {
+                let dx = global.x - last.x, dy = global.y - last.y
+                if dx * dx + dy * dy > moveThresholdSq { self._bombMovingTicks += 1 }
+                self._bombTotalTicks += 1
+            }
+            self._bombLastSample = global
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
+            self._bombTargetLayer?.position = self.mousePointInHostLayer()
+            CATransaction.commit()
+        }
+        _bombTargetTimer = timer
+    }
+
+    /// Tear down the reticle, restore the cursor, and report whether the user
+    /// aimed (moved for ≥50% of the fuse) plus the final cursor point in
+    /// hostLayer coords (where a precise strike should land).
+    private func endBombTargeting() -> (aimed: Bool, center: CGPoint) {
+        _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
+        _bombTargetLayer?.removeFromSuperlayer(); _bombTargetLayer = nil
+        if _bombTargetHidCursor {
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            _bombTargetHidCursor = false
+        }
+        let center = mousePointInHostLayer()
+        let aimed = _bombTotalTicks > 0 && Double(_bombMovingTicks) / Double(_bombTotalTicks) >= 0.5
+        return (aimed, center)
+    }
+
+    private func _showExplosionGif(playSound: Bool = true, scaleDivisor: CGFloat = 1, center: CGPoint? = nil) {
         guard activeEffects["explosion"] == nil else { return }
         guard let url = Bundle.module.url(forResource: "explosion", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
