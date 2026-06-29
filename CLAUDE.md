@@ -119,6 +119,18 @@ on `contents` from bundled gif frames (`Bundle.module`).
   **no tablet change**. `23_radar.mp3` is therefore intentionally **absent from
   `SoundEffectMap`** (the press path would otherwise double-trigger it). `/test/sonar`
   and `/effect/sonar` call `showSonar` directly for headless testing.
+- **💸 Money** (tile #53, repurposed from rain): the Android tile #53 now shows
+  a plain **💸 emoji on white** but keeps its asset id `53_rain.mp3` (so the
+  routing protocol/manifest are unchanged). `onSoundPlay` **special-cases
+  `53_rain.mp3`** (like the radar): it fires `showMoneyRise()` and plays the
+  **#57 checkmark "ching"** (`57_checkmark.mp3`) instead of the original rain,
+  returning the checkmark's duration. `showMoneyRise` swarms ~16 money emojis
+  (`💸💵💰🤑`) **up from the bottom edge to off the top**, swaying + tumbling
+  while fading out — **one round per press ("ching")**. It is a fire-and-forget,
+  **non-tracked** burst (each emoji layer self-removes), so pressing the tile
+  repeatedly **stacks overlapping rounds**. `53_rain.mp3` is intentionally
+  **absent from `SoundEffectMap`** so a press = a single ching + single round (no
+  double-trigger). `/test/money` and `/effect/money` call `showMoneyRise` directly.
 
 ### Tablet sound routing (tablet → Mac playback)
 The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash`).
@@ -159,6 +171,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/group-photo` — post the 📸 Group Photo notification now, bypassing the 13:00 + daemon-connected gates
 - `GET /test/wispr-output-drift` — post the 🔇 "Mute inactiv la dictare" output-route warning now, using the real current default-output name (bypasses the Wispr-start + drift-latch gates)
 - `GET /test/sonar` — fire the 🛰️ Sonar overlay now (visual + synced `23_radar.mp3`); same as `/effect/sonar`. The tablet drives it by routing `GET /sound/play/23_radar.mp3` to the Mac (handled in `onSoundPlay`)
+- `GET /test/money` — fire one round of the 💸 Money rising-dollars overlay now; same as `/effect/money`. The tablet drives it by routing `GET /sound/play/53_rain.mp3` to the Mac (handled in `onSoundPlay`), which also plays the #57 checkmark "ching"
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 - `GET /sound/pressed/<file>`, `GET /sound/stopped/<file>` — tablet reports a sound press/stop; the Mac maps it to an overlay effect via `SoundEffectMap` (e.g. `/sound/pressed/40_joker.mp3` → blood drip). `GET /effect/blood-drip` triggers the blood overlay directly.
 
