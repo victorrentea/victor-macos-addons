@@ -77,7 +77,11 @@ cd "$HOME" || true
 # shell exports from ~/.training-assistants-secrets.env — that key shadows the
 # subscription and fails "Credit balance is too low". Unsetting it lets claude fall
 # back to the logged-in account (verified 2026-06-29: unset → auth OK on opus).
-env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$PROMPT" --model opus --dangerously-skip-permissions
+# --strict-mcp-config + empty config: break-delta only reads the transcript and
+# writes Discussion.md, so skip loading the claude.ai connectors (serena,
+# codegraph, playwright, …) — they're pure startup overhead + context bloat here.
+env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$PROMPT" --model opus --dangerously-skip-permissions \
+  --strict-mcp-config --mcp-config '{"mcpServers":{}}'
 STATUS=$?
 
 kill "$HEARTBEAT" 2>/dev/null
