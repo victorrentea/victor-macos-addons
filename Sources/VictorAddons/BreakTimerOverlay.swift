@@ -47,7 +47,7 @@ final class BreakTimerController {
     private var isEnlarged = false
     private var savedFrame: NSRect?           // the user's frame, restored on enlarge → normal
 
-    private let cetZone = TimeZone(identifier: "Europe/Paris") ?? .current
+    private let ptZone = TimeZone(identifier: "Europe/Lisbon") ?? .current
 
     /// Fired when a break *ends* — i.e. whenever the window is closed: the ✕
     /// button, the countdown expiring (which auto-closes after the gong), or a
@@ -384,7 +384,7 @@ final class BreakTimerController {
         view.update(
             digits: BreakTimerModel.format(remaining: remaining),
             finishLocal: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: .current),
-            finishCET: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: cetZone),
+            finishPT: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: ptZone),
             paused: paused
         )
     }
@@ -469,7 +469,7 @@ final class BreakTimerView: NSView {
 
     private var digits = "00:00"
     private var finishLocal = ""
-    private var finishCET = ""
+    private var finishPT = ""
     private var paused = false
     private var digitsVisible = true
 
@@ -540,10 +540,10 @@ final class BreakTimerView: NSView {
         CATransaction.commit()
     }
 
-    func update(digits: String, finishLocal: String, finishCET: String, paused: Bool) {
+    func update(digits: String, finishLocal: String, finishPT: String, paused: Bool) {
         self.digits = digits
         self.finishLocal = finishLocal
-        self.finishCET = finishCET
+        self.finishPT = finishPT
         self.paused = paused
         setBlinkingPaused(paused)
         needsDisplay = true
@@ -872,12 +872,12 @@ final class BreakTimerView: NSView {
         let gap: CGFloat = 5                                  // extra space between the two lines
         // Both lines at the SAME opacity; no background — just the black outline.
         let a1 = finishAttr(finishLocal, flag: "🇷🇴", lineH: lineH, maxW: area.width, color: Self.lit)
-        let a2 = finishAttr(finishCET, flag: "🇪🇺", lineH: lineH, maxW: area.width, color: Self.lit)
+        let a2 = finishAttr(finishPT, flag: "🇵🇹", lineH: lineH, maxW: area.width, color: Self.lit)
         drawAttrCentered(a1, x: area.minX, bottomY: topBottom + gap / 2, cellH: lineH)
         drawAttrCentered(a2, x: area.minX, bottomY: area.minY - gap / 2, cellH: lineH)
     }
 
-    /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, EU CET),
+    /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, PT Lisbon),
     /// then the arrow and time in a MONOSPACED font so the two lines' columns align.
     /// Sized to the line, clamped to width.
     private func finishAttr(_ s: String, flag: String, lineH: CGFloat, maxW: CGFloat, color: NSColor) -> NSAttributedString {
