@@ -1895,17 +1895,18 @@ class EmojiAnimator {
 
     // MARK: - Phoenix overlay (🔥 fire-phoenix, menu-triggered)
 
-    /// A fiery phoenix rising, centered and large on the screen. Purely a desktop
-    /// visual — no sound. The source art is a black-background GIF whose flames
-    /// were keyed to transparency via luminance→alpha (bright fire opaque, dark
-    /// glow fading smoothly out) and shipped as a transparent multi-frame APNG
-    /// (`phoenix.png`); a GIF would 1-bit-quantize the alpha and bring the black
-    /// halo back. Frames load through the same `CGImageSource` path as the other
-    /// gif effects, looped for a few seconds with a short fade-in and fade-out
-    /// tail, then removed. Drawn as a CALayer on the overlay's hostLayer.
+    /// A fiery phoenix that *rises up from the bottom of the screen* in the
+    /// rhythm of its own wing beats and settles in the upper-middle. Purely a
+    /// desktop visual — no sound. The source art is a black-background GIF whose
+    /// flames were keyed to transparency via luminance→alpha (bright fire opaque,
+    /// dark glow fading smoothly out), **cropped tight to the changing-pixel
+    /// bounding box** (so the asset is the flame and nothing else), and shipped as
+    /// a transparent multi-frame APNG (`phoenix.png`); a GIF would 1-bit-quantize
+    /// the alpha and bring the black halo back. Frames load through the same
+    /// `CGImageSource` path as the other gif effects.
     /// Decode the bundled transparent phoenix APNG into its frames. Static +
     /// internal so a headless test can assert the asset bundles and decodes
-    /// (28 transparent 506×506 frames) without firing the on-screen effect.
+    /// (28 transparent 226×340 frames) without firing the on-screen effect.
     static func loadPhoenixFrames() -> [CGImage] {
         guard let url = Bundle.module.url(forResource: "phoenix", withExtension: "png"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
@@ -1927,25 +1928,103 @@ class EmojiAnimator {
         guard !images.isEmpty else { return }
 
         let bounds = hostLayer.bounds
-        // Large, aspect-preserved square (source is 506×506) — ~70% of the screen
-        // height, centered.
-        let size = bounds.height * 0.7
+        let H = bounds.height
+        let W = bounds.width
+
+        // --- Tunables -------------------------------------------------------
+        // Asset is cropped tight to the flame AND vertically registered — every
+        // frame's flame is centred in the 226×340 sprite, so the bird doesn't
+        // slide up/down inside the layer as it flaps; only the wings/shape
+        // animate. That makes the hover position exact. hostLayer is
+        // bottom-origin (y grows upward). Size is 2× the original on-screen
+        // footprint, per request (the original drew the flame at ~0.46·H tall).
+        let assetAspect: CGFloat = 226.0 / 340.0
+        let originalFlameFrac: CGFloat = 0.46      // pre-change on-screen height
+        let sizeMultiplier: CGFloat = 2.0          // "2x size"
+        let flameHeight = min(H * 0.96, H * originalFlameFrac * sizeMultiplier)
+        let flameWidth = flameHeight * assetAspect
+        let centerX = W * 0.5
+        // The flame is centred in its sprite, so the layer centre IS the flame
+        // body. It settles with that body at ~40% from the top — the upper-centre
+        // zone the user marked (head/wings reach up toward the X at ~30%; with a
+        // 2× flame the tallest tips just kiss the top edge).
+        let flameCenterFromTop: CGFloat = 0.40
+        let stopCenterY = H * (1.0 - flameCenterFromTop)
+        // Start well below the bottom edge so the bird enters from low down and
+        // climbs the full screen into view.
+        let startCenterY = -flameHeight * 0.80
+
         let layer = CALayer()
-        layer.frame = CGRect(x: (bounds.width - size) / 2,
-                             y: (bounds.height - size) / 2,
-                             width: size, height: size)
+        layer.bounds = CGRect(x: 0, y: 0, width: flameWidth, height: flameHeight)
+        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        layer.position = CGPoint(x: centerX, y: stopCenterY)   // model = settle point
         layer.contentsGravity = .resizeAspect
-        if let first = images.first { layer.contents = first }
+        layer.contents = images.first
         hostLayer.addSublayer(layer)
 
-        // Loop the 28 source frames (~0.05s each → ~1.4s/cycle) for the effect's life.
-        let frames = CAKeyframeAnimation(keyPath: "contents")
-        frames.values = images
-        frames.duration = Double(images.count) * 0.05
-        frames.repeatCount = .infinity
-        layer.add(frames, forKey: "phoenixFrames")
+        // Loop the 28 source frames (~0.05s each → ~1.4s/cycle) — one full wing
+        // beat per cycle. Discrete so frames switch crisply (no cross-fade).
+        let frameDt = 0.05
+        let cycleDur = Double(images.count) * frameDt
+        let framesAnim = CAKeyframeAnimation(keyPath: "contents")
+        framesAnim.values = images
+        framesAnim.duration = cycleDur
+        framesAnim.calculationMode = .discrete
+        framesAnim.repeatCount = .infinity
+        layer.add(framesAnim, forKey: "phoenixFrames")
 
-        let duration: Double = 4.5
+        // --- Rise synced to the wing beat -----------------------------------
+        // The flame gathers low & wide (downbeat) then launches tall & upward
+        // each cycle. We drive the whole bird up in one strong surge per cycle,
+        // timed to that launch sub-phase (frames ~8→24 of each loop), holding
+        // (gliding) between beats. The per-beat distance decreases so it decel-
+        // erates into a hover at the settle point.
+        let beats = 3
+        let riseDur = cycleDur * Double(beats)
+        let riseDist = stopCenterY - startCenterY
+        let surgeStartFrac = 0.30   // within a cycle: launch begins (~frame 8/28)
+        let surgeEndFrac = 0.88     // launch ends (~frame 24/28)
+        let cum: [CGFloat] = [0.0, 0.52, 0.83, 1.0]   // cumulative rise per beat
+
+        func point(_ d: CGFloat) -> NSValue {
+            NSValue(point: CGPoint(x: centerX, y: startCenterY + riseDist * d))
+        }
+        let linear = CAMediaTimingFunction(name: .linear)
+        let surge = CAMediaTimingFunction(name: .easeOut)   // snappy launch, then glide
+
+        var keyTimes: [NSNumber] = [0.0]
+        var values: [NSValue] = [point(cum[0])]
+        var tfs: [CAMediaTimingFunction] = []
+        let span = 1.0 / Double(beats)
+        for k in 0..<beats {
+            let base = Double(k) * span
+            // hold (glide) until this beat's launch begins
+            keyTimes.append(NSNumber(value: base + surgeStartFrac * span))
+            values.append(point(cum[k]))
+            tfs.append(linear)
+            // launch up to the next cumulative height
+            keyTimes.append(NSNumber(value: base + surgeEndFrac * span))
+            values.append(point(cum[k + 1]))
+            tfs.append(surge)
+        }
+        keyTimes.append(1.0); values.append(point(cum[beats])); tfs.append(linear)
+
+        let rise = CAKeyframeAnimation(keyPath: "position")
+        rise.keyTimes = keyTimes
+        rise.values = values
+        rise.timingFunctions = tfs
+        rise.calculationMode = .linear
+        rise.duration = riseDur
+        rise.fillMode = .forwards
+        rise.isRemovedOnCompletion = false
+        layer.add(rise, forKey: "phoenixRise")
+
+        // After arriving, hover-and-flap in place for ~3s before leaving, THEN
+        // fade out (the fade follows the hover — it must not eat into it).
+        let holdAtTop = 3.0
+        let fadeOutDur = 0.7
+        let totalLife = riseDur + holdAtTop + fadeOutDur
+
         let fadeIn = CABasicAnimation(keyPath: "opacity")
         fadeIn.fromValue = 0.0
         fadeIn.toValue = 1.0
@@ -1955,13 +2034,13 @@ class EmojiAnimator {
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.7)
-        fadeOut.duration = 0.7
+        fadeOut.beginTime = CACurrentMediaTime() + (riseDur + holdAtTop)
+        fadeOut.duration = fadeOutDur
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
         layer.add(fadeOut, forKey: "phoenixFadeOut")
 
-        trackEffect("phoenix", layer: layer, duration: duration)
+        trackEffect("phoenix", layer: layer, duration: totalLife)
     }
 
     /// Random green/black speckle frames for the sonar's "reception noise" —

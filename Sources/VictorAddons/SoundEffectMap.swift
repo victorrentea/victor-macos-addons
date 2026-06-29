@@ -43,6 +43,9 @@ enum SoundEffectMap {
         "26_drum.mp3":           "drum-roll",
         "44_laugh_emoji.mp3":    "laugh",
         "40_joker.mp3":          "blood-drip",
+        // Tile 34: a phoenix rises up the desktop. Its paired mp3 is silent (no
+        // wing-beat sound in the library) — the visual is the whole effect.
+        "34_phoenix.mp3":        "phoenix",
         // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
         // effect is driven from the routed /sound/play path (onSoundPlay),
         // which plays the beep-synced audio itself — mapping the press too
