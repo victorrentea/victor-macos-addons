@@ -37,19 +37,32 @@ if [ -z "$TX" ]; then
   sleep 3
   exit 0
 fi
+# human-readable byte size: "850 B" / "41.2 KB" / "1.3 MB"
+hsize() { awk -v b="$1" 'BEGIN{ if(b<1024) printf "%d B",b; else if(b<1048576) printf "%.1f KB",b/1024; else printf "%.1f MB",b/1048576 }'; }
+
 LINES="$(wc -l < "$TX" | tr -d ' ')"
+BYTES="$(wc -c < "$TX" | tr -d ' ')"
 DATE="$(basename "$TX" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}')"
 FOLDER="$(ls -dt "$SESSIONS_DIR"/*/ 2>/dev/null | grep -- "$DATE" | head -1)"
-echo "  Transcript : $(basename "$TX")  ($LINES lines)"
+echo "  Transcript : $(basename "$TX")  ($LINES lines, $(hsize "$BYTES") total)"
 if [ -n "$FOLDER" ] && [ -f "${FOLDER}Discussion.md" ]; then
-  WM="$(grep -oE 'last_processed=[^ ]+' "${FOLDER}Discussion.md" 2>/dev/null | head -1 | cut -d= -f2)"
-  if [ -n "$WM" ]; then
-    echo "  Processing : everything AFTER $WM  (delta)"
+  WM_TS="$(grep -oE 'last_processed=[^ ]+' "${FOLDER}Discussion.md" 2>/dev/null | head -1 | cut -d= -f2)"
+  WM_LINES="$(grep -oE 'lines_through=[0-9]+' "${FOLDER}Discussion.md" 2>/dev/null | head -1 | cut -d= -f2)"
+  if [ -n "$WM_LINES" ] && [ "$WM_LINES" -gt 0 ] 2>/dev/null; then
+    DELTA_LINES=$(( LINES - WM_LINES ))
+    DELTA_BYTES="$(tail -n +$((WM_LINES + 1)) "$TX" | wc -c | tr -d ' ')"
+    if [ "$DELTA_LINES" -le 0 ]; then
+      echo "  Processing : NOTHING NEW — watermark ($WM_LINES) is already at/after the last line ($LINES)"
+    else
+      echo "  Processing : $DELTA_LINES new lines ($(hsize "$DELTA_BYTES")) — lines $((WM_LINES + 1))–$LINES, everything AFTER ${WM_TS:-the watermark}  (delta)"
+    fi
+  elif [ -n "$WM_TS" ]; then
+    echo "  Processing : everything AFTER $WM_TS  (delta; watermark has no line count, size unknown)"
   else
-    echo "  Processing : whole transcript so far  (Discussion.md has no watermark yet)"
+    echo "  Processing : whole transcript — $LINES lines, $(hsize "$BYTES")  (Discussion.md has no watermark yet)"
   fi
 else
-  echo "  Processing : fresh — first run today (Discussion.md not created yet)"
+  echo "  Processing : ALL $LINES lines ($(hsize "$BYTES")) — fresh, first run today"
 fi
 echo "  Session    : ${FOLDER:-<auto-detect inside claude>}"
 echo "════════════════════════════════════════════════════════════════"
