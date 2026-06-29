@@ -1942,8 +1942,14 @@ class EmojiAnimator {
         let assetAspect: CGFloat = 226.0 / 340.0
         let originalFlameFrac: CGFloat = 0.46      // pre-change on-screen height
         let sizeMultiplier: CGFloat = 2.0          // "2x size"
+        // Horizontal stretch: make the bird 30% wider on the X axis without
+        // touching its height. We widen the layer bounds by 1.3× and use a
+        // fill-both contentsGravity (.resize) below so the sprite actually
+        // stretches to fill the wider box (rather than .resizeAspect, which
+        // would preserve aspect and just letterbox the extra width).
+        let stretchX: CGFloat = 1.30
         let flameHeight = min(H * 0.96, H * originalFlameFrac * sizeMultiplier)
-        let flameWidth = flameHeight * assetAspect
+        let flameWidth = flameHeight * assetAspect * stretchX
         let centerX = W * 0.5
         // The flame is centred in its sprite, so the layer centre IS the flame
         // body. It settles with that body at ~40% from the top — the upper-centre
@@ -1959,7 +1965,7 @@ class EmojiAnimator {
         layer.bounds = CGRect(x: 0, y: 0, width: flameWidth, height: flameHeight)
         layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         layer.position = CGPoint(x: centerX, y: stopCenterY)   // model = settle point
-        layer.contentsGravity = .resizeAspect
+        layer.contentsGravity = .resize   // fill both axes → real horizontal stretch
         layer.contents = images.first
         hostLayer.addSublayer(layer)
 
