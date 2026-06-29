@@ -1994,6 +1994,11 @@ class EmojiAnimator {
         let surgeStartFrac = 0.30   // within a cycle: launch begins (~frame 8/28)
         let surgeEndFrac = 0.88     // launch ends (~frame 24/28)
         let cum: [CGFloat] = [0.0, 0.52, 0.83, 1.0]   // cumulative rise per beat
+        // Soften the per-wing-beat OY bob by 20%: instead of gliding dead-flat
+        // and then surging the whole beat's travel in one punch, let the glide
+        // ease up 20% of the beat first, so the surge only covers the remaining
+        // 80%. Same beat checkpoints & total rise — just a 20% gentler up-down.
+        let beatBobReduce: CGFloat = 0.20
 
         func point(_ d: CGFloat) -> NSValue {
             NSValue(point: CGPoint(x: centerX, y: startCenterY + riseDist * d))
@@ -2007,9 +2012,11 @@ class EmojiAnimator {
         let span = 1.0 / Double(beats)
         for k in 0..<beats {
             let base = Double(k) * span
-            // hold (glide) until this beat's launch begins
+            // glide up the first 20% of this beat's travel (was a flat hold),
+            // shrinking the punchy surge that follows
+            let glideTo = cum[k] + beatBobReduce * (cum[k + 1] - cum[k])
             keyTimes.append(NSNumber(value: base + surgeStartFrac * span))
-            values.append(point(cum[k]))
+            values.append(point(glideTo))
             tfs.append(linear)
             // launch up to the next cumulative height
             keyTimes.append(NSNumber(value: base + surgeEndFrac * span))
