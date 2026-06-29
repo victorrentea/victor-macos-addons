@@ -45,6 +45,11 @@ class EmojiAnimator {
     private var _heartCursorActiveUntil: CFTimeInterval = 0
     private var _heartCursorHidSystemCursor = false   // balance hide/unhide of the real cursor
 
+    // Fear 😱: the scared face follows the live mouse (cursor hidden) while it grows + fades
+    private var _fearLayer: CATextLayer?
+    private var _fearTimer: Timer?
+    private var _fearHidCursor = false                // balance hide/unhide of the real cursor
+
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
         Self.warmBrotherCache()
@@ -1609,34 +1614,47 @@ class EmojiAnimator {
 
     func showFear(playSound: Bool = true) {
         if playSound { SoundManager.shared.play("08_scream_man.mp3") }
-        let bounds = hostLayer.bounds
 
         let initialSize: CGFloat = 200
         let growPhaseDuration: Double = 3.0    // grow 200→600px at 100% opacity
         let fadePhaseDuration: Double = 1.75   // fade out + continue scaling
         let totalDuration = growPhaseDuration + fadePhaseDuration
 
-        // Anchor at the mouse cursor (captured at trigger time, so a user
-        // moving the mouse after pressing #8 won't drag the emoji).
-        let mouseGlobal = NSEvent.mouseLocation
-        let anchor = Self.layerAnchor(forGlobalMouse: mouseGlobal,
-                                      panelOrigin: hostLayer.bounds.origin,
-                                      hostLayer: hostLayer)
-        let cx = anchor.x * bounds.width
-        let cy = anchor.y * bounds.height
+        // Re-trigger while a fear is already on screen: drop the in-flight layer
+        // + its follow timer, but KEEP the cursor hidden (we'll keep driving the
+        // new face from the same mouse — no hide/show flicker between presses).
+        _fearTimer?.invalidate(); _fearTimer = nil
+        _fearLayer?.removeFromSuperlayer(); _fearLayer = nil
 
         let layer = CATextLayer()
         layer.string = "😱"
         layer.fontSize = initialSize * 0.83
         layer.alignmentMode = .center
-        layer.frame = CGRect(x: cx - initialSize / 2, y: cy - initialSize / 2,
-                             width: initialSize, height: initialSize)
+        // anchorPoint .5,.5 so transform.scale grows around the centre AND so
+        // updating `position` each frame keeps that centre pinned to the mouse.
+        layer.bounds = CGRect(x: 0, y: 0, width: initialSize, height: initialSize)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.position = mousePointInHostLayer()   // start centred on the live cursor
+        CATransaction.commit()
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         layer.opacity = 0.3   // start faded (matches opacityAnim) so no full-opacity flash
         hostLayer.addSublayer(layer)
+        _fearLayer = layer
+
+        // The face now stands in for the pointer — hide the real cursor so the
+        // user "moves the scared face" with the mouse. Arm lifts the
+        // "frontmost-app-only" restriction (our overlay floats over other apps);
+        // NSCursor covers the case where we ARE frontmost. Balanced in stopFear.
+        if !_fearHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _fearHidCursor = true
+        }
 
         let growEndFrac = growPhaseDuration / totalDuration
-        let finalScale = 3.0 * bounds.height / initialSize
+        let finalScale = 3.0 * hostLayer.bounds.height / initialSize
 
         // Scale: 1.0 → 3.0 over first 3s (200→600px), then continue to giant.
         let scaleAnim = CAKeyframeAnimation(keyPath: "transform.scale")
@@ -1664,9 +1682,41 @@ class EmojiAnimator {
         group.isRemovedOnCompletion = false
 
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
+        // Only tear down if THIS layer is still the active one (a re-trigger
+        // installed a newer layer → let its own completion own the teardown).
+        CATransaction.setCompletionBlock { [weak self, weak layer] in
+            guard let self, self._fearLayer === layer else { return }
+            self.stopFear()
+        }
         layer.add(group, forKey: "fear")
         CATransaction.commit()
+
+        // Follow the mouse at 60fps so the growing face stays centred on the
+        // cursor; a deadline backstop restores the cursor even if the CA
+        // completion block is ever missed.
+        let endTime = CACurrentMediaTime() + totalDuration
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self, weak layer] t in
+            guard let self, let layer, self._fearLayer === layer else { t.invalidate(); return }
+            if CACurrentMediaTime() >= endTime { self.stopFear(); return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)   // move instantly, no implicit position animation
+            layer.position = self.mousePointInHostLayer()
+            CATransaction.commit()
+        }
+        _fearTimer = timer
+    }
+
+    /// Tear down the fear effect: stop following, remove the face, and restore
+    /// the real cursor. Idempotent — safe to call from both the CA completion
+    /// block and the follow timer's deadline backstop.
+    private func stopFear() {
+        _fearTimer?.invalidate(); _fearTimer = nil
+        _fearLayer?.removeFromSuperlayer(); _fearLayer = nil
+        if _fearHidCursor {
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            _fearHidCursor = false
+        }
     }
 
     // MARK: - Explosion GIF overlay
