@@ -73,7 +73,11 @@ Do EXACTLY this and nothing else:
 First print the [HH:MM]–[HH:MM] transcript range you are about to process, then do the work and stop.'
 
 cd "$HOME" || true
-"$CLAUDE" -p "$PROMPT" --model opus --dangerously-skip-permissions
+# Use Victor's Claude subscription (Keychain OAuth), NOT the ANTHROPIC_API_KEY the
+# shell exports from ~/.training-assistants-secrets.env — that key shadows the
+# subscription and fails "Credit balance is too low". Unsetting it lets claude fall
+# back to the logged-in account (verified 2026-06-29: unset → auth OK on opus).
+env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$PROMPT" --model opus --dangerously-skip-permissions
 STATUS=$?
 
 kill "$HEARTBEAT" 2>/dev/null
