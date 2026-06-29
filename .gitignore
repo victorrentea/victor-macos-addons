@@ -12,3 +12,6 @@ addons-output/
 
 # Claude Code git worktrees (transient)
 .claude/worktrees/
+
+# Serena MCP tooling metadata (not project source)
+.serena/

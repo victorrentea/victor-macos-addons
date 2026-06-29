@@ -4043,10 +4043,9 @@ class EmojiAnimator {
         hostLayer.addSublayer(container)
         activeEffects["wrong-x"] = container
 
-        let drawEach: TimeInterval = 0.5
-        let visibleDuration: TimeInterval = 2.04   // 2× 49_wrong.mp3 duration
+        let drawEach: TimeInterval = 0.25          // 2× faster strike (was 0.5 per stroke)
         let totalDraw = 2 * drawEach
-        let holdAfterDraw = max(0.3, visibleDuration - totalDraw)
+        let holdAfterDraw: TimeInterval = 1.04     // hold after the X is drawn, unchanged by the faster strike
         let fadeDuration: TimeInterval = 1.2
 
         func makeLeg(flipped: Bool) -> (CALayer, CALayer) {
