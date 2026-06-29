@@ -20,8 +20,9 @@ struct BreakCountry: Equatable {
 }
 
 extension BreakCountry {
-    /// The fallback / first-run selection (matches the static default we shipped).
-    static let portugal = BreakCountry(name: "Portugal", iso: "PT", tz: "Europe/Lisbon")
+    /// The home default: every morning the selection resets to Romania (Romanian
+    /// time), and it's pinned at the top of the picker for a quick "back home".
+    static let romania = BreakCountry(name: "Romania", iso: "RO", tz: "Europe/Bucharest")
 
     /// A broad global list spanning the major timezones, sorted alphabetically by
     /// name for the dropdown. Extend by adding a line here — no other change needed.
@@ -70,7 +71,7 @@ extension BreakCountry {
         BreakCountry(name: "Peru", iso: "PE", tz: "America/Lima"),
         BreakCountry(name: "Philippines", iso: "PH", tz: "Asia/Manila"),
         BreakCountry(name: "Poland", iso: "PL", tz: "Europe/Warsaw"),
-        BreakCountry.portugal,
+        BreakCountry(name: "Portugal", iso: "PT", tz: "Europe/Lisbon"),
         BreakCountry(name: "Romania", iso: "RO", tz: "Europe/Bucharest"),
         BreakCountry(name: "Russia (Moscow)", iso: "RU", tz: "Europe/Moscow"),
         BreakCountry(name: "Saudi Arabia", iso: "SA", tz: "Asia/Riyadh"),
@@ -94,17 +95,32 @@ extension BreakCountry {
         BreakCountry(name: "Vietnam", iso: "VN", tz: "Asia/Ho_Chi_Minh"),
     ].sorted { $0.name < $1.name }
 
-    // MARK: - Persistence (remember the last pick across launches)
+    // MARK: - Persistence (remember today's pick; reset to Romania each new day)
 
     private static let kSelectedTZ = "BreakTimer.country.tz"
+    private static let kSelectedDay = "BreakTimer.country.day"
 
-    /// The last-picked country, or Portugal on first run / unknown stored value.
+    /// The local calendar day, `yyyy-MM-dd`, used to scope a pick to one day.
+    private static func todayKey() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
+    }
+
+    /// The country picked **today**, or Romania. The selection is intentionally
+    /// day-scoped: every morning it resets to Romania (Romanian time).
     static func loadSelected() -> BreakCountry {
-        let tz = UserDefaults.standard.string(forKey: kSelectedTZ)
-        return all.first { $0.tz == tz } ?? portugal
+        guard UserDefaults.standard.string(forKey: kSelectedDay) == todayKey(),
+              let tz = UserDefaults.standard.string(forKey: kSelectedTZ),
+              let c = all.first(where: { $0.tz == tz }) else {
+            return romania
+        }
+        return c
     }
 
     func saveSelected() {
         UserDefaults.standard.set(tz, forKey: Self.kSelectedTZ)
+        UserDefaults.standard.set(Self.todayKey(), forKey: Self.kSelectedDay)
     }
 }

@@ -20,11 +20,14 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         override func resignKey() { super.resignKey(); onResignKey?() }
     }
 
+    /// A row is either a pickable country or the divider under the pinned Romania.
+    private enum Row { case country(BreakCountry); case separator }
+
     private var panel: PickerPanel?
     private let searchField = NSSearchField()
     private let tableView = NSTableView()
     private let scroll = NSScrollView()
-    private var filtered: [BreakCountry] = BreakCountry.all
+    private var rows: [Row] = []
     private var onSelect: ((BreakCountry) -> Void)?
 
     private let df: DateFormatter = {
@@ -37,6 +40,7 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     private let width: CGFloat = 320
     private let rowH: CGFloat = 26
+    private let sepH: CGFloat = 11
     private let pad: CGFloat = 8
     private let fieldH: CGFloat = 26
     private let gap: CGFloat = 6
@@ -50,7 +54,8 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         close()
         self.onSelect = onSelect
         self.now = Date()
-        self.filtered = BreakCountry.all
+        searchField.stringValue = ""        // fresh & unfiltered on each open
+        rebuildRows()
 
         let content = NSView()
         content.wantsLayer = true
@@ -99,7 +104,7 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
         tableView.reloadData()   // populate rows before layout forces a table pass
         layout(below: flagScreenRect)
-        selectRow(indexForTZ(selectedTZ))
+        selectRow(rowIndexForTZ(selectedTZ))
 
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
@@ -112,8 +117,8 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         panel = nil
     }
 
-    /// Size the panel to the current filtered count (capped) and pin its TOP just
-    /// under the flag, so it grows/shrinks downward as the list filters.
+    /// Size the panel to the current row count (capped) and pin its TOP just under
+    /// the flag, so it grows/shrinks downward as the list filters.
     private func layout(below flagRect: NSRect) {
         guard let panel else { return }
         let h = contentHeight()
@@ -126,9 +131,19 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         applyFrame(top: origin.y + h, x: origin.x, height: h)
     }
 
+    private func height(of row: Row) -> CGFloat {
+        if case .separator = row { return sepH }
+        return rowH
+    }
+
+    /// List height = sum of the row heights, capped so it scrolls past ~12 rows.
+    private func listHeight() -> CGFloat {
+        let total = rows.reduce(0) { $0 + height(of: $1) }
+        return max(rowH, min(total, rowH * CGFloat(maxVisibleRows)))
+    }
+
     private func contentHeight() -> CGFloat {
-        let rows = max(1, min(maxVisibleRows, filtered.count))
-        return pad + fieldH + gap + rowH * CGFloat(rows) + pad
+        pad + fieldH + gap + listHeight() + pad
     }
 
     /// Place the panel with its TOP edge fixed, laying out the field + list inside.
@@ -144,16 +159,27 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     func controlTextDidChange(_ obj: Notification) { refilter() }
 
-    /// Re-run the contains-filter from the search field's current text, resize the
-    /// panel to fit, and highlight the first match.
-    private func refilter() {
+    /// Rebuild `rows` from the search text. With no query, Romania is pinned at the
+    /// top with a divider, then the rest of the list alphabetically — a one-click
+    /// "back to Romania". While filtering, only the contains-matches are shown.
+    private func rebuildRows() {
         let q = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        filtered = q.isEmpty
-            ? BreakCountry.all
-            : BreakCountry.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
-        tableView.reloadData()   // sync the row count to `filtered` BEFORE any layout-forcing resize
+        if q.isEmpty {
+            rows = [.country(.romania), .separator]
+                + BreakCountry.all.filter { $0.tz != BreakCountry.romania.tz }.map { Row.country($0) }
+        } else {
+            rows = BreakCountry.all
+                .filter { $0.name.localizedCaseInsensitiveContains(q) }
+                .map { Row.country($0) }
+        }
+    }
+
+    /// Re-run the filter, resize the panel to fit, and highlight the first match.
+    private func refilter() {
+        rebuildRows()
+        tableView.reloadData()   // sync the row count to `rows` BEFORE any layout-forcing resize
         if let panel { applyFrame(top: panel.frame.maxY, x: panel.frame.minX, height: contentHeight()) }
-        selectRow(filtered.isEmpty ? -1 : 0)
+        selectRow(firstSelectableRow())
     }
 
     /// Headless test hook: type `q` into the search field and apply the filter.
@@ -174,43 +200,65 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         }
     }
 
-    // MARK: Selection
+    // MARK: Selection (separators are never selectable)
 
-    private func indexForTZ(_ tz: String) -> Int { filtered.firstIndex { $0.tz == tz } ?? 0 }
+    private func country(at row: Int) -> BreakCountry? {
+        guard row >= 0, row < rows.count, case .country(let c) = rows[row] else { return nil }
+        return c
+    }
+
+    /// Indices of the country rows (skips the separator), in order.
+    private var selectableRows: [Int] {
+        rows.indices.filter { if case .country = rows[$0] { return true }; return false }
+    }
+
+    private func firstSelectableRow() -> Int { selectableRows.first ?? -1 }
+
+    private func rowIndexForTZ(_ tz: String) -> Int {
+        rows.firstIndex { if case .country(let c) = $0 { return c.tz == tz }; return false } ?? firstSelectableRow()
+    }
 
     private func selectRow(_ row: Int) {
-        guard row >= 0, row < filtered.count else {
-            tableView.deselectAll(nil); return
-        }
+        guard country(at: row) != nil else { tableView.deselectAll(nil); return }
         tableView.selectRowIndexes([row], byExtendingSelection: false)
         tableView.scrollRowToVisible(row)
     }
 
     private func moveSelection(_ delta: Int) {
-        guard !filtered.isEmpty else { return }
-        let cur = tableView.selectedRow
-        let next = min(max(0, (cur < 0 ? 0 : cur) + delta), filtered.count - 1)
-        selectRow(next)
+        let sel = selectableRows
+        guard !sel.isEmpty else { return }
+        let pos = sel.firstIndex(of: tableView.selectedRow) ?? (delta > 0 ? -1 : sel.count)
+        let next = min(max(0, pos + delta), sel.count - 1)
+        selectRow(sel[next])
     }
 
     @objc private func rowClicked() {
-        let r = tableView.clickedRow
-        if r >= 0 { confirm(r) }
+        confirm(tableView.clickedRow)
     }
 
     private func confirm(_ row: Int) {
-        guard row >= 0, row < filtered.count else { return }
-        let c = filtered[row]
+        guard let c = country(at: row) else { return }
         close()
         onSelect?(c)
     }
 
     // MARK: Table data
 
-    func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        guard row >= 0, row < rows.count else { return rowH }
+        return height(of: rows[row])
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        country(at: row) != nil
+    }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard row >= 0, row < filtered.count else { return nil }   // defend against stale layout rows
+        guard row >= 0, row < rows.count else { return nil }   // defend against stale layout rows
+        if case .separator = rows[row] { return separatorView() }
+        guard case .country(let c) = rows[row] else { return nil }
         let id = NSUserInterfaceItemIdentifier("cell")
         let tf = (tableView.makeView(withIdentifier: id, owner: self) as? NSTextField) ?? {
             let f = NSTextField(labelWithString: "")
@@ -221,10 +269,19 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
             f.drawsBackground = false
             return f
         }()
-        let c = filtered[row]
         df.timeZone = c.timeZone
         tf.stringValue = "\(c.flag)  \(c.name) — \(df.string(from: now))"
         tf.textColor = .white
         return tf
+    }
+
+    /// A thin horizontal divider under the pinned Romania row.
+    private func separatorView() -> NSView {
+        let id = NSUserInterfaceItemIdentifier("sep")
+        if let v = tableView.makeView(withIdentifier: id, owner: self) { return v }
+        let box = NSBox()
+        box.identifier = id
+        box.boxType = .separator
+        return box
     }
 }

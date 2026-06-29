@@ -47,8 +47,8 @@ final class BreakTimerController {
     private var isEnlarged = false
     private var savedFrame: NSRect?           // the user's frame, restored on enlarge → normal
 
-    // The second finish-time line shows a user-pickable country (default Portugal),
-    // remembered across launches. Clicking its flag opens the dropdown.
+    // The single finish-time line shows a user-pickable country; the pick is
+    // day-scoped (resets to Romania each new day). Clicking the flag opens the picker.
     private var selectedCountry = BreakCountry.loadSelected()
 
     /// Apply a dropdown pick: persist it and repaint the second line in the new
@@ -81,8 +81,10 @@ final class BreakTimerController {
         remaining = max(0, minutes) * 60
         paused = false
         freezeNow = nil
+        selectedCountry = BreakCountry.loadSelected()    // day-scoped: resets to Romania each morning
 
         let view = ensureWindow()
+        view.selectedCountryTZ = selectedCountry.tz
         view.setDigitsVisible(true)
         panel?.alphaValue = 1
         panel?.orderFrontRegardless()
@@ -406,9 +408,8 @@ final class BreakTimerController {
         let basis = (paused ? freezeNow : nil) ?? Date()
         view.update(
             digits: BreakTimerModel.format(remaining: remaining),
-            finishLocal: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: .current),
-            finishOther: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: selectedCountry.timeZone),
-            otherFlag: selectedCountry.flag,
+            finishText: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: selectedCountry.timeZone),
+            flag: selectedCountry.flag,
             paused: paused
         )
     }
@@ -492,17 +493,16 @@ final class BreakTimerView: NSView {
     var onZoom: (() -> Void)?                 // wheel-zoom in progress → show the backdrop
 
     private var digits = "00:00"
-    private var finishLocal = ""
-    private var finishOther = ""
-    private var otherFlag = BreakCountry.portugal.flag    // 2nd-line flag, set on update
+    private var finishText = ""
+    private var flag = BreakCountry.romania.flag          // the single finish line's flag
     private var paused = false
     private var digitsVisible = true
 
-    // Country dropdown: the 2nd finish line's flag is a click target. The hit rect
-    // is recomputed each draw; selecting from the popped-up menu calls back out.
-    var selectedCountryTZ = BreakCountry.portugal.tz      // preselected in the picker
+    // Country dropdown: the finish line's flag is a click target. The hit rect is
+    // recomputed each draw; picking from the dropdown calls back out.
+    var selectedCountryTZ = BreakCountry.romania.tz       // preselected in the picker
     var onSelectCountry: ((BreakCountry) -> Void)?
-    private var otherFlagRect: NSRect = .zero
+    private var flagRect: NSRect = .zero
     private let countryPicker = CountryPicker()
 
     private var dragMode: DragMode = .none
@@ -572,11 +572,10 @@ final class BreakTimerView: NSView {
         CATransaction.commit()
     }
 
-    func update(digits: String, finishLocal: String, finishOther: String, otherFlag: String, paused: Bool) {
+    func update(digits: String, finishText: String, flag: String, paused: Bool) {
         self.digits = digits
-        self.finishLocal = finishLocal
-        self.finishOther = finishOther
-        self.otherFlag = otherFlag
+        self.finishText = finishText
+        self.flag = flag
         self.paused = paused
         setBlinkingPaused(paused)
         needsDisplay = true
@@ -900,23 +899,18 @@ final class BreakTimerView: NSView {
 
     private func drawLabels(in area: NSRect) {
         guard area.height > 0, area.width > 0 else { return }
-        let lineH = area.height * 0.46
-        let topBottom = area.minY + area.height - lineH      // top line slot bottom
-        let gap: CGFloat = 5                                  // extra space between the two lines
-        // Both lines at the SAME opacity; no background — just the black outline.
-        let a1 = finishAttr(finishLocal, flag: "🇷🇴", lineH: lineH, maxW: area.width, color: Self.lit)
-        let a2 = finishAttr(finishOther, flag: otherFlag, lineH: lineH, maxW: area.width, color: Self.lit)
-        drawAttrCentered(a1, x: area.minX, bottomY: topBottom + gap / 2, cellH: lineH)
-        drawAttrCentered(a2, x: area.minX, bottomY: area.minY - gap / 2, cellH: lineH)
-        // The WHOLE 2nd line (flag + time) is the click target for the country
-        // dropdown — a big, discoverable hit area rather than just the flag glyph.
-        otherFlagRect = NSRect(x: area.minX, y: area.minY - gap / 2, width: area.width, height: lineH)
+        // ONE finish-time line (the picked country, default Romania), sized to fill
+        // the label band — noticeably larger than the old two-line layout.
+        let lineH = area.height * 0.82
+        let a = finishAttr(finishText, flag: flag, lineH: lineH, maxW: area.width, color: Self.lit)
+        drawAttrCentered(a, x: area.minX, bottomY: area.minY, cellH: area.height)
+        // The WHOLE line (flag + time) is the click target for the country dropdown
+        // — a big, discoverable hit area rather than just the flag glyph.
+        flagRect = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height)
     }
 
-    /// A finish-time line "🏳 → HH:MM": the region flag FIRST (RO local, then the
-    /// user-picked country),
-    /// then the arrow and time in a MONOSPACED font so the two lines' columns align.
-    /// Sized to the line, clamped to width.
+    /// The finish-time line "🏳 → HH:MM": the picked country's flag FIRST, then the
+    /// arrow and time in a MONOSPACED font. Sized to the line, clamped to width.
     private func finishAttr(_ s: String, flag: String, lineH: CGFloat, maxW: CGFloat, color: NSColor) -> NSAttributedString {
         let time = s.split(separator: " ").first.map(String.init) ?? s
         let capRatio = Self.monoCapRatio
@@ -1080,7 +1074,7 @@ final class BreakTimerView: NSView {
             dragMode = .button(kind)
             pressedButton = kind
             needsDisplay = true
-        } else if otherFlagRect.contains(p) {
+        } else if flagRect.contains(p) {
             dragMode = .none
             showCountryPicker()
             return
@@ -1189,7 +1183,7 @@ final class BreakTimerView: NSView {
     /// Open the searchable country dropdown anchored under the 2nd-line flag.
     /// Typing filters by name (contains); picking fires `onSelectCountry`.
     private func showCountryPicker() {
-        let flagInWindow = convert(otherFlagRect, to: nil)                  // view → window
+        let flagInWindow = convert(flagRect, to: nil)                       // view → window
         let flagOnScreen = window?.convertToScreen(flagInWindow) ?? flagInWindow
         countryPicker.present(below: flagOnScreen, selectedTZ: selectedCountryTZ) { [weak self] c in
             self?.onSelectCountry?(c)
