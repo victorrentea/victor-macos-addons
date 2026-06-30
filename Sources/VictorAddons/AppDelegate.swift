@@ -279,7 +279,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if name == "53_rain.mp3" {
                 self?.animator.showMoneyRise()
                 let volume = volumePct.map { Float($0) / 100 }
-                guard let duration = SoundManager.shared.playTabletSound("57_checkmark.mp3", volume: volume) else { return nil }
+                // Layer the ching (overlapping pool) instead of preempting, so
+                // hammering the tile STACKS overlapping chings to match the
+                // stacking rounds of rising dollars — rather than each press
+                // cutting the previous sound off.
+                guard let duration = SoundManager.shared.playOverlappingTabletSound("57_checkmark.mp3", volume: volume) else { return nil }
                 return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
             // Tile #31 (🕳️ iris close) is SILENT — play nothing at all on the

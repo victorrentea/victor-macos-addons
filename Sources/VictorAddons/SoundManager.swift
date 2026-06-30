@@ -237,6 +237,41 @@ class SoundManager {
         }
     }
 
+    /// Play a tablet-routed sound that LAYERS over its previous copies instead
+    /// of preempting them — used by the 💸 Money tile (53_rain.mp3 →
+    /// 57_checkmark.mp3) so rapid repeated presses STACK overlapping "ching"s
+    /// (matching the stacking rounds of rising dollars) rather than cutting the
+    /// previous sound off. Honours/remembers the tablet volume like
+    /// playTabletSound, but routes through the overlapping-players pool — never
+    /// the single `tabletPlayer` — so it neither preempts nor is wiped by
+    /// stopTabletSound / `/effect/stop-all` (which the tablet fires before every
+    /// press). Returns the clip duration for the tablet's effect-stop chain.
+    /// Synchronous — main thread only (TabletHttpServer handlers run on it).
+    @discardableResult
+    func playOverlappingTabletSound(_ filename: String, volume: Float? = nil) -> TimeInterval? {
+        if let volume { tabletVolume = max(0.0, min(1.0, volume)) }
+        guard let url = soundURL(for: filename) else {
+            overlayError("Tablet sound not found: \(filename)")
+            return nil
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.volume = tabletVolume
+            player.prepareToPlay()
+            overlappingPlayers.append(player)
+            player.play()
+            let duration = player.duration
+            // Release finished players after this one ends (same cleanup as playOverlapping).
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak self] in
+                self?.overlappingPlayers.removeAll { !$0.isPlaying }
+            }
+            return duration
+        } catch {
+            overlayError("Tablet sound play failed \(filename): \(error)")
+            return nil
+        }
+    }
+
     /// Live-adjust the tablet-routed volume (applies to the sound currently
     /// playing too) and play the tablet's click tone at the new level as
     /// audible feedback — the same generated 1800Hz tap the tablet uses.
