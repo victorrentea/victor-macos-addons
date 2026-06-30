@@ -77,6 +77,41 @@ class EmojiAnimator {
     // restart) the iris, it must survive stop-all and toggle itself here.
     private var _irisLayer: CAGradientLayer?
 
+    // 🪚 Saw cut (sound #52): a hand saw enters from the top of the screen and the
+    // user "cuts" the screen by moving the mouse. The saw is NOT pinned to the
+    // cursor — it advances by the *relative* movement of the mouse (capped to a
+    // slow speed so it feels like sawing through material), and the teeth leave a
+    // black kerf trail along the path they travelled. Lives OUTSIDE activeEffects
+    // (its own follow timer + hidden cursor), so it's torn down explicitly in
+    // stopAllActiveEffects. One cut at a time.
+    private var _sawLayer: CALayer?
+    private var _sawTrailLayer: CAShapeLayer?
+    private var _sawTrailPath: CGMutablePath?
+    private var _sawTimer: Timer?
+    private var _sawCutPoint: CGPoint = .zero        // current tooth position (hostLayer coords)
+    private var _sawLastMouse: CGPoint?              // previous global-mouse sample, for the delta
+    private var _sawTravel: CGFloat = 0              // total cut length so far (drives the saw wiggle)
+    private var _sawHidCursor = false                // balance hide/unhide of the real cursor
+
+    // Saw display size as a fraction of screen width; teeth/tooth-tip anchor in
+    // the saw image's unit square (y-up: the leading tooth sits low-left).
+    private static let sawWidthFraction: CGFloat = 0.20
+    private static let sawAnchor = CGPoint(x: 0.11, y: 0.12)
+    private static let sawTopMargin: CGFloat = 64     // where the cut starts, below the top edge
+    private static let sawEntryDuration: Double = 0.5 // slide-in from above
+    private static let sawCutActiveDuration: Double = 5.0  // interactive cutting window
+    // The mouse only *guides* the saw: each frame the saw advances by the mouse
+    // delta scaled by `sawGain` and clamped to `sawMaxSpeed` px/frame, so even a
+    // fast flick crawls — that's the "cutting through" resistance.
+    private static let sawGain: CGFloat = 0.85
+    private static let sawMaxSpeed: CGFloat = 6.0     // px per 1/60s frame ≈ 360 px/s
+    private static let sawTrailWidth: CGFloat = 14
+    private static let sawWiggleAmp: CGFloat = 0.05   // rad (~2.9°) saw rock while cutting
+    private static let sawWiggleFreq: CGFloat = 0.06  // per px of travel
+    private static let sawExitDuration: Double = 0.45
+    private static let sawTrailHold: Double = 0.8     // black gash lingers, then heals
+    private static let sawTrailFade: Double = 1.2
+
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
         Self.warmBrotherCache()
@@ -1462,6 +1497,185 @@ class EmojiAnimator {
         }
         layer.add(fade, forKey: "irisFade")
         CATransaction.commit()
+    }
+
+    // MARK: - Saw cut (sound #52) — saw the screen open by moving the mouse
+
+    /// Drop a hand saw in from the top of the screen, hide the real cursor, and let
+    /// the user "cut" the screen by moving the mouse. The saw is driven by the
+    /// *relative* mouse movement (not pinned to the cursor) and capped to a slow
+    /// speed, so it feels like sawing through the image; the teeth leave a black
+    /// kerf trail along their path. After `sawCutActiveDuration` the saw lifts away
+    /// and the gash heals. One cut at a time.
+    func showSawCut() {
+        // Already cutting (or mid-entry, before the timer exists) → ignore.
+        guard _sawLayer == nil, _sawTimer == nil else { return }
+
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        guard let url = Bundle.module.url(forResource: "saw", withExtension: "png"),
+              let nsImage = NSImage(contentsOf: url),
+              let cg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            overlayError("saw.png not found in Resources")
+            return
+        }
+
+        let sawW = bounds.width * Self.sawWidthFraction
+        let sawH = sawW * (CGFloat(cg.height) / CGFloat(cg.width))
+
+        // Cut starts at the top of the screen, horizontally near where the mouse is
+        // pointing (a light tie to the cursor without "landing on" it), then the
+        // relative-movement drag takes over from there.
+        let mouseLayer = mousePointInHostLayer()
+        let startX = min(max(mouseLayer.x, sawW * 0.25), bounds.width - sawW * 0.25)
+        let startPoint = CGPoint(x: startX, y: bounds.height - Self.sawTopMargin)
+        _sawCutPoint = startPoint
+        _sawTravel = 0
+        _sawLastMouse = nil
+
+        // Black kerf trail (under the saw): a polyline the teeth carve as they move.
+        let trail = CAShapeLayer()
+        trail.strokeColor = NSColor.black.cgColor
+        trail.fillColor = nil
+        trail.lineWidth = Self.sawTrailWidth
+        trail.lineCap = .round
+        trail.lineJoin = .round
+        let path = CGMutablePath()
+        path.move(to: startPoint)
+        trail.path = path
+        hostLayer.addSublayer(trail)
+        _sawTrailLayer = trail
+        _sawTrailPath = path
+
+        // The saw itself, pivoting on its leading tooth so `position` == cut point.
+        let saw = CALayer()
+        saw.contents = cg
+        saw.contentsGravity = .resizeAspect
+        saw.bounds = CGRect(x: 0, y: 0, width: sawW, height: sawH)
+        saw.anchorPoint = Self.sawAnchor
+        saw.position = startPoint
+        hostLayer.addSublayer(saw)
+        _sawLayer = saw
+
+        // Enter: slide down from above the top edge + fade in.
+        let slide = CABasicAnimation(keyPath: "position.y")
+        slide.fromValue = bounds.height + sawH
+        slide.toValue = startPoint.y
+        slide.duration = Self.sawEntryDuration
+        slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        saw.add(slide, forKey: "sawEntry")
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = Self.sawEntryDuration * 0.6
+        saw.add(fadeIn, forKey: "sawFadeIn")
+
+        // The saw stands in for the pointer → hide the real cursor (also while we
+        // aren't frontmost, via the background-cursor-hiding arm).
+        if !_sawHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _sawHidCursor = true
+        }
+
+        // Start tracking the mouse once the saw has slid in (fresh mouse sample so
+        // the first delta is 0), and schedule the end of the cutting window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sawEntryDuration) { [weak self, weak saw] in
+            guard let self = self, let saw = saw, self._sawLayer === saw else { return }
+            self._sawLastMouse = NSEvent.mouseLocation
+            let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+                guard let self = self, self._sawTimer === t else { t.invalidate(); return }
+                self.sawTick()
+            }
+            self._sawTimer = timer
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.sawCutActiveDuration) { [weak self, weak saw] in
+                guard let self = self, let saw = saw, self._sawLayer === saw else { return }
+                self.endSawCut()
+            }
+        }
+    }
+
+    /// One 60fps step: advance the saw by the *capped, scaled* mouse delta, extend
+    /// the kerf, and rock the saw a touch (the wiggle tracks total cut length, so a
+    /// resting hand holds still).
+    private func sawTick() {
+        guard let saw = _sawLayer, let trail = _sawTrailLayer, let path = _sawTrailPath else { return }
+        let bounds = hostLayer.bounds
+
+        let global = NSEvent.mouseLocation
+        var dx: CGFloat = 0, dy: CGFloat = 0
+        if let last = _sawLastMouse {
+            dx = (global.x - last.x) * Self.sawGain
+            dy = (global.y - last.y) * Self.sawGain
+        }
+        _sawLastMouse = global
+
+        // Slow cut: clamp the per-frame step so even a fast flick crawls.
+        let step = hypot(dx, dy)
+        if step > Self.sawMaxSpeed {
+            let s = Self.sawMaxSpeed / step
+            dx *= s; dy *= s
+        }
+
+        var p = _sawCutPoint
+        p.x = min(max(p.x + dx, 0), bounds.width)
+        p.y = min(max(p.y + dy, 0), bounds.height)
+        _sawTravel += hypot(p.x - _sawCutPoint.x, p.y - _sawCutPoint.y)
+        _sawCutPoint = p
+
+        path.addLine(to: p)
+        let wiggle = sin(_sawTravel * Self.sawWiggleFreq) * Self.sawWiggleAmp
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
+        trail.path = path.copy()                // refresh the stroked kerf
+        saw.position = p
+        saw.transform = CATransform3DMakeRotation(wiggle, 0, 0, 1)
+        CATransaction.commit()
+    }
+
+    /// Stop the cut: lift the saw away (fade) and let the black gash linger then
+    /// heal. Idempotent — the natural end, a re-trigger, and stop-all all funnel
+    /// through here.
+    private func endSawCut() {
+        _sawTimer?.invalidate(); _sawTimer = nil
+        if _sawHidCursor {
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            _sawHidCursor = false
+        }
+
+        if let saw = _sawLayer {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = saw.presentation()?.opacity ?? 1.0
+            fade.toValue = 0.0
+            fade.duration = Self.sawExitDuration
+            fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak saw] in saw?.removeFromSuperlayer() }
+            saw.add(fade, forKey: "sawExit")
+            CATransaction.commit()
+        }
+        if let trail = _sawTrailLayer {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1.0
+            fade.toValue = 0.0
+            fade.beginTime = CACurrentMediaTime() + Self.sawTrailHold
+            fade.duration = Self.sawTrailFade
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            CATransaction.begin()
+            CATransaction.setCompletionBlock { [weak trail] in trail?.removeFromSuperlayer() }
+            trail.add(fade, forKey: "sawTrailFade")
+            CATransaction.commit()
+        }
+        _sawLayer = nil
+        _sawTrailLayer = nil
+        _sawTrailPath = nil
     }
 
     // MARK: - Applause (toggleable: click to start, click again to stop)
@@ -4996,6 +5210,10 @@ class EmojiAnimator {
         // follow timer + hidden cursor), so tear it down explicitly or it would
         // keep tracking forever after a stop-all.
         stopMinigunReticle()
+        // The saw cut likewise has its own follow timer + hidden cursor outside
+        // activeEffects — end it so a stop-all doesn't leave the saw tracking and
+        // the cursor hidden forever.
+        endSawCut()
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()
