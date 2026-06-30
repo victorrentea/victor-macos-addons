@@ -1933,9 +1933,13 @@ class EmojiAnimator {
     /// so the blast appears to fall onto the cursor rather than be centred on it.
     private static let bombImpactFractionFromBottom: CGFloat = 0.25
 
-    /// How long the locked crosshair takes to fade out once the bomb fires,
-    /// overlapping the first moments of the blast before the real cursor returns.
-    private static let bombReticleFadeOut: Double = 0.5
+    /// The lock-in flourish, played the instant the fuse ends: the red crosshair
+    /// punches up to `bombReticleLockGrow`× its size while holding full opacity,
+    /// then fades out over the tail of `bombReticleLockDuration`s. The bomb
+    /// animation is held back until this finishes — the reticle vanishes on the
+    /// exact frame the blast begins, and the real cursor returns at that moment.
+    private static let bombReticleLockDuration: Double = 0.4
+    private static let bombReticleLockGrow: CGFloat = 1.7
 
     /// Total cursor travel (px) during the fuse above which we treat it as a
     /// deliberate aim. Set high enough that an accidental nudge won't arm it —
@@ -1953,11 +1957,16 @@ class EmojiAnimator {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionFuse) { [weak self] in
             guard let self else { return }
             let (aimed, center) = self.endBombTargeting()
-            if aimed {
-                // Moved the mouse → a small, precise strike on the cursor.
-                self._showExplosionGif(playSound: playSound, scaleDivisor: 4, center: center)
-            } else {
-                self._showExplosionGif(playSound: playSound)
+            // Lock + grow + fade the crosshair first; the blast lands the instant
+            // it vanishes.
+            self.lockGrowFadeReticle(at: center) { [weak self] in
+                guard let self else { return }
+                if aimed {
+                    // Moved the mouse → a small, precise strike on the cursor.
+                    self._showExplosionGif(playSound: playSound, scaleDivisor: 4, center: center)
+                } else {
+                    self._showExplosionGif(playSound: playSound)
+                }
             }
         }
     }
@@ -2010,10 +2019,9 @@ class EmojiAnimator {
         _bombTargetTimer = timer
     }
 
-    /// Flip the crosshair from thin grey to thick red and give it a quick scale
-    /// pulse — the visual "locked on target" reward once the user has shaken enough.
-    private func armReticle() {
-        guard let container = _bombTargetLayer else { return }
+    /// Recolour the reticle's strokes/fills red and thicken them — the "locked on
+    /// target" look. Shared by the in-fuse shake-arm and the fire-instant lock.
+    private func paintReticleArmed(_ container: CALayer) {
         let red = NSColor.systemRed.cgColor
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -2026,6 +2034,13 @@ class EmojiAnimator {
             if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = red }
         }
         CATransaction.commit()
+    }
+
+    /// Flip the crosshair from thin grey to thick red and give it a quick scale
+    /// pulse — the visual "locked on target" reward once the user has shaken enough.
+    private func armReticle() {
+        guard let container = _bombTargetLayer else { return }
+        paintReticleArmed(container)
         let pulse = CABasicAnimation(keyPath: "transform.scale")
         pulse.fromValue = 1.0
         pulse.toValue = 1.4
@@ -2037,53 +2052,70 @@ class EmojiAnimator {
 
     /// Stop tracking the mouse and report whether the user aimed (moved the mouse
     /// during the fuse) plus the final cursor point in hostLayer coords (where a
-    /// precise strike should land). The crosshair is *not* torn down here — it
-    /// locks at the firing point and fades over the blast (`lockAndFadeReticle`);
-    /// the real cursor returns only once that fade finishes.
+    /// precise strike should land). The crosshair is *not* torn down here — the
+    /// caller hands it to `lockGrowFadeReticle` which plays the lock flourish and
+    /// only then fires the bomb.
     private func endBombTargeting() -> (aimed: Bool, center: CGPoint) {
         _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
         let center = mousePointInHostLayer()
         let aimed = _bombArmed
         NSLog("☢️ nuke fuse ended: travel=%.0fpx threshold=%.0f aimed=%@ center=(%.0f,%.0f)",
               _bombMoveDistance, Self.bombAimTravelThreshold, aimed ? "YES" : "no", center.x, center.y)
-        lockAndFadeReticle(at: center)
         return (aimed, center)
     }
 
-    /// Freeze the crosshair where it locked (it stops following the mouse), pin it
-    /// above the blast, and fade it out over `bombReticleFadeOut`s. Only when the
-    /// fade completes do we drop the layer and restore the real cursor — so the
-    /// locked-on reticle dissolves into the explosion instead of snapping away the
-    /// instant the bomb lands, and the pointer never reappears mid-blast.
-    private func lockAndFadeReticle(at point: CGPoint) {
-        guard let target = _bombTargetLayer else { restoreBombCursor(); return }
+    /// Lock the crosshair at the firing point and play the fire flourish: it stops
+    /// following the mouse, snaps to the red "locked on target" look, then punches
+    /// up to `bombReticleLockGrow`× its size while fading out over the tail. The
+    /// bomb (`fire`) is deferred until that finishes — so the reticle vanishes on
+    /// the exact frame the blast begins, and the real cursor returns at the same
+    /// moment (never reappearing mid-flourish).
+    private func lockGrowFadeReticle(at point: CGPoint, then fire: @escaping () -> Void) {
+        guard let target = _bombTargetLayer else { restoreBombCursor(); fire(); return }
         _bombTargetLayer = nil   // detach: the tracking timer is already gone
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         target.position = point      // pin exactly at the firing point
-        target.zPosition = 10_000    // above the blast so the fade stays visible
+        target.zPosition = 10_000    // above everything while the flourish plays
+        target.removeAnimation(forKey: "lockPulse")   // drop any in-flight arm pulse
         CATransaction.commit()
+        paintReticleArmed(target)    // always read as locked-on at the moment of fire
 
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1.0
-        fade.toValue = 0.0
-        fade.duration = Self.bombReticleFadeOut
-        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        let dur = Self.bombReticleLockDuration
+
+        // Punch up in size, anchored on the firing point.
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = 1.0
+        grow.toValue = Self.bombReticleLockGrow
+        grow.duration = dur
+        grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        grow.fillMode = .forwards
+        grow.isRemovedOnCompletion = false
+
+        // Hold full opacity through most of the grow, then fade out over the tail
+        // — "increase in size and, at the end, before it disappears, fade out".
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1.0, 1.0, 0.0]
+        fade.keyTimes = [0.0, 0.55, 1.0]
+        fade.duration = dur
         fade.fillMode = .forwards
         fade.isRemovedOnCompletion = false
+
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak target] in
             target?.removeFromSuperlayer()
             self?.restoreBombCursor()
+            fire()   // the blast begins exactly as the reticle vanishes
         }
-        target.add(fade, forKey: "reticleFadeOut")
+        target.add(grow, forKey: "reticleLockGrow")
+        target.add(fade, forKey: "reticleLockFade")
         CATransaction.commit()
     }
 
-    /// Restore the real cursor hidden for the nuke fuse + reticle fade — but only
-    /// if no fresh targeting pass has started meanwhile, so a stale fade
-    /// completion can't unhide the pointer mid-aim of the next bomb.
+    /// Restore the real cursor hidden for the nuke fuse + lock flourish — but only
+    /// if no fresh targeting pass has started meanwhile, so a stale completion
+    /// can't unhide the pointer mid-aim of the next bomb.
     private func restoreBombCursor() {
         guard _bombTargetTimer == nil, _bombTargetLayer == nil else { return }
         if _bombTargetHidCursor {
@@ -2094,19 +2126,21 @@ class EmojiAnimator {
     }
 
     /// Idle (un-aimed) vs armed (shaken-enough) crosshair styling: the idle
-    /// reticle is thin + grey; once locked it turns red and thickens.
-    private static let bombReticleLineWidthIdle: CGFloat = 1.0
-    private static let bombReticleLineWidthArmed: CGFloat = 2.5
+    /// reticle is thin + grey; once locked it turns red and thickens. Widths are
+    /// 1.5× the original to match the 1.5×-larger reticle geometry.
+    private static let bombReticleLineWidthIdle: CGFloat = 1.5
+    private static let bombReticleLineWidthArmed: CGFloat = 3.75
 
     /// A sniper-scope reticle drawn as CALayers: a ring, four crosshair arms with
     /// a small central gap, and a centre dot — with a soft dark shadow so it reads
     /// on any desktop backdrop. Starts thin + grey; `armReticle()` recolours it red.
     private static func makeSniperReticle() -> CALayer {
-        let d: CGFloat = 65               // 50% smaller than the original reticle
+        let scale: CGFloat = 1.5          // 1.5× larger than the previous reticle
+        let d: CGFloat = 65 * scale       // overall reticle box
         let lineW = bombReticleLineWidthIdle
         let c = d / 2
         let r = c - bombReticleLineWidthArmed  // leave room for the thicker armed stroke
-        let gap: CGFloat = 7              // half-length of the empty centre
+        let gap: CGFloat = 7 * scale      // half-length of the empty centre
         let grey = NSColor.systemGray.cgColor
 
         let container = CALayer()
@@ -2131,7 +2165,7 @@ class EmojiAnimator {
         arms.lineWidth = lineW
         container.addSublayer(arms)
 
-        let dotR: CGFloat = 2.0
+        let dotR: CGFloat = 2.0 * scale
         let dot = CAShapeLayer()
         dot.path = CGPath(ellipseIn: CGRect(x: c - dotR, y: c - dotR, width: 2 * dotR, height: 2 * dotR), transform: nil)
         dot.fillColor = grey
@@ -2139,7 +2173,7 @@ class EmojiAnimator {
 
         container.shadowColor = NSColor.black.cgColor
         container.shadowOpacity = 0.6
-        container.shadowRadius = 1.5
+        container.shadowRadius = 1.5 * scale
         container.shadowOffset = .zero
         return container
     }
