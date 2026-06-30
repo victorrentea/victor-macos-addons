@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 30, 13:25"
+    static let BUILD_TIME = "Jun 30, 19:54"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -123,6 +123,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         breakItem.isEnabled = true
         let breakSubmenu = NSMenu()
         let breakDurations: [(String, Int)] = [
+            ("1 minute", 1), ("2 minutes", 2),
             ("5 minutes", 5), ("7 minutes", 7), ("10 minutes", 10),
             ("12 minutes", 12), ("15 minutes", 15), ("45 minutes", 45), ("1 hour", 60),
         ]
