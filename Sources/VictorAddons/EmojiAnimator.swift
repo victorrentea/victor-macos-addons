@@ -65,6 +65,7 @@ class EmojiAnimator {
     private var _bombStartTime: CFTimeInterval = 0    // press time, to size the lock→strike grow
     private var _bombStrikeLayer: CALayer?            // the detached crosshair mid strike-pop/fade (for interrupt teardown)
     private var _bombEpoch: Int = 0                   // bumped on every (re)press; stale strike continuations bail
+    private var _bombInitialMouse: CGPoint = .zero    // press-time cursor; crosshair appears only on the FIRST move away from it
 
     // 🔫 Minigun aiming reticle: during the bullet-holes (#22) burst a bigger,
     // always-red copy of the sniper crosshair tracks the cursor (where the
@@ -2009,9 +2010,9 @@ class EmojiAnimator {
     /// Tear down any nuke already in flight so a fresh press starts clean: stop the
     /// fuse timer + crosshair, drop a mid-strike pop/fade crosshair, and cancel a
     /// running explosion gif (and its sound). Bumping `_bombEpoch` makes any
-    /// already-scheduled strike continuation bail when it fires. The hidden cursor
-    /// is left hidden on purpose — `startBombTargeting` keeps it hidden, so the
-    /// pointer never flashes between the old and new crosshair.
+    /// already-scheduled strike continuation bail when it fires. The real cursor is
+    /// restored so the new press shows the normal pointer until its first move
+    /// re-arms the crosshair.
     private func interruptNuke() {
         _bombEpoch &+= 1
         _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
@@ -2023,33 +2024,20 @@ class EmojiAnimator {
         _bombStrikeLayer = nil
         cancelIfRunning("explosion")
         SoundManager.shared.stop("03_explosion.mp3")
+        restoreBombCursor()   // back to the real pointer; next first-move re-arms the crosshair
     }
 
-    /// Show the sniper crosshair on the mouse, hide the real cursor, and start
-    /// sampling cursor travel at 60fps so `endBombTargeting()` can tell whether
-    /// the user aimed.
+    /// Begin nuke targeting: sample cursor travel at 60fps. The crosshair does
+    /// NOT appear yet — the real pointer stays until the user's FIRST mouse move,
+    /// at which point `revealBombReticle()` swaps it for the crosshair and hides
+    /// the real cursor. `endBombTargeting()` then knows whether they aimed.
     private func startBombTargeting() {
         _bombMoveDistance = 0
         _bombLastSample = nil
         _bombArmed = false
         _bombStartTime = CACurrentMediaTime()
-
-        let target = Self.makeSniperReticle()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        target.position = mousePointInHostLayer()   // centred on the live cursor
-        CATransaction.commit()
-        hostLayer.addSublayer(target)
-        _bombTargetLayer = target
-
-        // Crosshair stands in for the pointer → hide the real cursor (also while
-        // we aren't the frontmost app, via the background-cursor-hiding arm).
-        if !_bombTargetHidCursor {
-            Self.armBackgroundCursorHiding()
-            NSCursor.hide()
-            CGDisplayHideCursor(CGMainDisplayID())
-            _bombTargetHidCursor = true
-        }
+        _bombInitialMouse = NSEvent.mouseLocation   // baseline to detect the first move
+        _bombTargetLayer = nil                       // no crosshair until that first move
 
         // Accumulate total cursor travel; a resting hand reports the exact same
         // point each tick (delta 0), so only deliberate movement adds distance.
@@ -2059,6 +2047,12 @@ class EmojiAnimator {
             // entirely (it "stays put despite my mouse move").
             if self._bombArmed { return }
             let global = NSEvent.mouseLocation
+            // First move turns the real pointer into the crosshair; until then the
+            // normal cursor stays and no travel is counted.
+            if self._bombTargetLayer == nil {
+                guard global != self._bombInitialMouse else { return }
+                self.revealBombReticle()
+            }
             if let last = self._bombLastSample {
                 self._bombMoveDistance += hypot(global.x - last.x, global.y - last.y)
             }
@@ -2078,6 +2072,26 @@ class EmojiAnimator {
             CATransaction.commit()
         }
         _bombTargetTimer = timer
+    }
+
+    /// Swap the real pointer for the sniper crosshair at the current cursor — done
+    /// on the FIRST mouse move after a nuke press — and hide the real cursor (also
+    /// while we aren't frontmost, via the background-cursor-hiding arm).
+    private func revealBombReticle() {
+        let target = Self.makeSniperReticle()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        target.position = mousePointInHostLayer()
+        CATransaction.commit()
+        hostLayer.addSublayer(target)
+        _bombTargetLayer = target
+
+        if !_bombTargetHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _bombTargetHidCursor = true
+        }
     }
 
     /// Recolour the reticle's strokes/fills red and thicken them — the "locked on
@@ -2136,18 +2150,18 @@ class EmojiAnimator {
         return (aimed, center)
     }
 
-    /// At the strike: the crosshair — already grown to `bombReticleLockGrow`× if it
-    /// locked, or still full-size if the user never aimed — gives one last outward
-    /// pop and fades out as the blast lands ("increase in size until the nuke
-    /// strikes, after which it fades out when it's bigger"). The real cursor
+    /// At the strike the crosshair fades out as the blast lands. It only grows +
+    /// reddens if it actually LOCKED on a target: a locked reticle is already red
+    /// and grown to `bombReticleLockGrow`×, and gives one last outward pop; an
+    /// un-locked one stays grey at full size and simply fades. The real cursor
     /// returns once the fade completes.
     private func strikeFadeReticle() {
         guard let target = _bombTargetLayer else { restoreBombCursor(); return }
         _bombTargetLayer = nil   // detach: the tracking timer is already gone
         _bombStrikeLayer = target   // but keep a handle so a re-press can tear it down
 
-        // Pin the current (possibly grown) scale as the model value so the pop
-        // starts from there with no jump, and drop the held grow animation.
+        // Pin the current scale as the model value so the pop (if any) starts from
+        // there with no jump, and drop the held grow animation.
         let base = _bombArmed ? Self.bombReticleLockGrow : 1.0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -2155,20 +2169,23 @@ class EmojiAnimator {
         target.setValue(base, forKeyPath: "transform.scale")
         target.zPosition = 10_000
         CATransaction.commit()
-        if !_bombArmed { paintReticleArmed(target) }   // un-aimed: read as locked-on at the moment of fire
 
         let dur = Self.bombReticleStrikeFade
 
-        // A final outward pop as the blast lands.
-        let pop = CABasicAnimation(keyPath: "transform.scale")
-        pop.fromValue = base
-        pop.toValue = base * Self.bombReticleStrikePop
-        pop.duration = dur
-        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        pop.fillMode = .forwards
-        pop.isRemovedOnCompletion = false
+        // Only a locked-on reticle gets the final outward pop; an un-locked one
+        // just fades at its grey, full size (it never grows or reddens).
+        if _bombArmed {
+            let pop = CABasicAnimation(keyPath: "transform.scale")
+            pop.fromValue = base
+            pop.toValue = base * Self.bombReticleStrikePop
+            pop.duration = dur
+            pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            pop.fillMode = .forwards
+            pop.isRemovedOnCompletion = false
+            target.add(pop, forKey: "reticleStrikePop")
+        }
 
-        // Fade out while it's at its biggest.
+        // Fade out as the blast lands.
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 1.0
         fade.toValue = 0.0
@@ -2183,7 +2200,6 @@ class EmojiAnimator {
             if self?._bombStrikeLayer === target { self?._bombStrikeLayer = nil }
             self?.restoreBombCursor()
         }
-        target.add(pop, forKey: "reticleStrikePop")
         target.add(fade, forKey: "reticleStrikeFade")
         CATransaction.commit()
     }
