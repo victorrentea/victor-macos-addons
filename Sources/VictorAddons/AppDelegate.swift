@@ -208,7 +208,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "phoenix":         self?.animator.showPhoenix()
             case "money":           self?.animator.showMoneyRise()
             case "iris":            self?.animator.showIrisClose()
-            case "saw":             self?.animator.showSawCut()
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -558,7 +557,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "phoenix":         self.animator.showPhoenix()
                 case "money":           self.animator.showMoneyRise()
                 case "iris":            self.animator.showIrisClose()
-                case "saw":             self.animator.showSawCut()
                 case "laugh":           self.animator.showLaugh()
                 case "corner-confetti": self.animator.spawnCornerConfetti()
                 case "green-flash":

@@ -56,13 +56,11 @@ enum SoundEffectMap {
         // which is why it stays out of onSoundPlay's special cases (no
         // double-trigger).
         "31_tarzan.mp3":         "iris",
-        // Tile 52: 🪚 saw the screen open. The press drives the visual (a saw
-        // drops in and follows the mouse's *relative* movement, leaving a black
-        // kerf); the real saw SFX (`52_saw.mp3`) plays normally on the routed
-        // /sound/play path — so it's NOT special-cased in onSoundPlay (that would
-        // double-trigger). Same press-drives-visual / play-plays-sound split as
-        // blood-drip (40_joker.mp3).
-        "52_saw.mp3":            "saw",
+        // Tile 52 (🪚 saw) is intentionally absent: the desktop saw animation was
+        // removed, leaving only the sound. The real saw SFX (`52_saw.mp3`) still
+        // plays normally on the routed /sound/play path (it was never special-cased
+        // in onSoundPlay), so dropping the press→visual mapping here keeps the
+        // sound but fires no overlay.
         // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
         // effect is driven from the routed /sound/play path (onSoundPlay),
         // which plays the beep-synced audio itself — mapping the press too
