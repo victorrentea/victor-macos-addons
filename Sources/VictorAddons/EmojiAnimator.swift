@@ -2498,8 +2498,9 @@ class EmojiAnimator {
         // `totalLife - fadeOutDur` (== riseDur + holdAtTop, the visual fade's
         // begin time) and lasts `fadeOutDur` — same window, same length. The
         // 63s source is clipped to the animation's life; on early cancel
-        // (re-press) the overlapping player is stopped above.
-        SoundManager.shared.playClip("phoenix.mp3", seconds: totalLife, fade: fadeOutDur)
+        // (re-press) the overlapping player is stopped above. Played at 70%
+        // (the raw cry was too loud at full volume).
+        SoundManager.shared.playClip("phoenix.mp3", seconds: totalLife, fade: fadeOutDur, volume: 0.7)
 
         trackEffect("phoenix", layer: layer, duration: totalLife)
     }

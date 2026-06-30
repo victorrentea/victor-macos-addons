@@ -160,7 +160,8 @@ class SoundManager {
 
     /// Play a sound as a fixed-length "clip": it plays for `seconds`, fading out
     /// over the final `fade` seconds so the cut is clean. Layers over other sounds.
-    func playClip(_ filename: String, seconds: TimeInterval, fade: TimeInterval = 0.6) {
+    /// `volume` (0..1) sets the playback level; the fade-out goes from it to 0.
+    func playClip(_ filename: String, seconds: TimeInterval, fade: TimeInterval = 0.6, volume: Float = 1.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             guard let url = self.soundURL(for: filename) else {
@@ -169,7 +170,7 @@ class SoundManager {
             }
             do {
                 let player = try AVAudioPlayer(contentsOf: url)
-                player.volume = 1.0
+                player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.overlappingPlayers.append(player)
                 player.play()
