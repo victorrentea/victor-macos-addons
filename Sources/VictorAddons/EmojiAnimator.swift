@@ -93,7 +93,9 @@ class EmojiAnimator {
     private var _sawHeading: CGVector = .zero        // current per-frame velocity (one of 8 dirs), held for a section
     private var _sawEvalMouse: CGPoint?              // mouse sample at the last section re-evaluation
     private var _sawFrameCount: Int = 0              // ticks since tracking began (drives section re-eval cadence)
-    private var _sawTravel: CGFloat = 0              // total cut length so far (drives the saw wiggle + plunge bob)
+    private var _sawAngle: CGFloat = 0               // current saw orientation (rad), eased toward the target
+    private var _sawTargetAngle: CGFloat = 0         // orientation sampled from the cut direction (every 0.25s)
+    private var _sawBobPhase: CGFloat = 0            // time-based plunge phase (bobs even while the mouse is still)
     private var _sawMaskLayer: CALayer?             // clips the saw below the cut "surface" (the submerged part)
     private var _sawHidCursor = false                // balance hide/unhide of the real cursor
 
@@ -104,10 +106,12 @@ class EmojiAnimator {
     private static let sawEntryDrop: CGFloat = 150    // how far above the cursor the saw drops in from
     private static let sawEntryDuration: Double = 0.35
     private static let sawCutActiveDuration: Double = 5.0  // interactive cutting window
-    // Short "sections": every `sawSectionFrames` ticks (~at 60fps) the saw re-aims
-    // toward the mouse's recent movement, quantized to 8 directions. Small/frequent
-    // so it's responsive to drive; within a section the saw holds one direction.
-    private static let sawSectionFrames: Int = 5      // ~83ms per section (re-aim cadence)
+    // Sampling: every `sawSectionFrames` ticks (~0.25s) the saw samples the mouse's
+    // recent movement, snaps it to one of 8 compass directions, and uses that for
+    // BOTH the motion heading and the saw's target orientation (so the blade points
+    // along the cut). Within a section the saw holds that heading and eases its
+    // rotation toward the new orientation.
+    private static let sawSectionFrames: Int = 15     // ~0.25s per sample (re-aim + re-orient cadence)
     private static let sawDeadzone: CGFloat = 1.5      // scaled mouse travel below which the saw holds still
     // The mouse only *guides* the saw: the (scaled, capped) section travel is spread
     // across the section's frames, so even a fast flick crawls — the "cutting
@@ -115,15 +119,19 @@ class EmojiAnimator {
     private static let sawGain: CGFloat = 0.9
     private static let sawMaxSpeed: CGFloat = 6.0     // px per 1/60s frame ≈ 360 px/s
     private static let sawTrailWidth: CGFloat = 14
-    private static let sawWiggleAmp: CGFloat = 0.05   // rad (~2.9°) saw rock while cutting
-    private static let sawWiggleFreq: CGFloat = 0.06  // per px of travel
-    // The saw sinks into the cut: a mask hides everything below the kerf surface
-    // and the saw bobs in/out (the plunge) as it travels, so the visible amount
-    // oscillates between `sawPlungeMinFrac` (shallow — most of the saw shows) and
+    // Orientation: the saw image's "forward" (tip/teeth) points down-left ≈ 224°
+    // in the layer's y-up frame, so to aim the blade along a heading θ we rotate by
+    // (θ − sawImageForward). `sawTurnEase` is the per-frame ease toward the target.
+    private static let sawImageForward: CGFloat = 3.91  // rad (~224°): tip direction in the source art
+    private static let sawTurnEase: CGFloat = 0.18
+    // The saw sinks into the cut: a mask hides everything below the kerf surface and
+    // the saw bobs in/out (the plunge). The bob is driven by TIME (not travel), so it
+    // keeps gently sawing even when the mouse is still; `sawBobSpeed` is rad/s. The
+    // visible amount oscillates between `sawPlungeMinFrac` (shallow — most shows) and
     // `sawPlungeMaxFrac` (deep — only the handle shows; never fully submerged).
-    private static let sawPlungeMinFrac: CGFloat = 0.08  // of saw height
-    private static let sawPlungeMaxFrac: CGFloat = 0.48
-    private static let sawPlungeFreq: CGFloat = 0.09    // per px of travel (saw-stroke bob rate)
+    private static let sawPlungeMinFrac: CGFloat = 0.12  // of saw height
+    private static let sawPlungeMaxFrac: CGFloat = 0.40
+    private static let sawBobSpeed: CGFloat = 6.0       // rad/s ≈ 0.95 Hz — a gentle, unhurried stroke
     private static let sawExitDuration: Double = 0.45
     private static let sawTrailHold: Double = 0.8     // black gash lingers, then heals
     private static let sawTrailFade: Double = 1.2
@@ -1551,10 +1559,12 @@ class EmojiAnimator {
         // it and the relative-movement steering takes over from there.
         let startPoint = mousePointInHostLayer()
         _sawCutPoint = startPoint
-        _sawTravel = 0
         _sawHeading = .zero
         _sawEvalMouse = nil
         _sawFrameCount = 0
+        _sawAngle = 0
+        _sawTargetAngle = 0
+        _sawBobPhase = 0
 
         // Black kerf trail (under the saw): a polyline the teeth carve as they move.
         let trail = CAShapeLayer()
@@ -1626,16 +1636,17 @@ class EmojiAnimator {
         }
     }
 
-    /// One 60fps step. At the start of each section (`sawSectionFrames` apart) the
-    /// saw re-aims: it reads how the mouse moved over the last section, snaps that to
-    /// one of 8 directions, and sets a held per-frame velocity (the scaled, capped
-    /// section travel spread across the section). Every tick it then advances by that
-    /// velocity, extends the kerf, and rocks a touch.
+    /// One 60fps step. Every `sawSectionFrames` ticks (~0.25s) the saw samples the
+    /// mouse's recent movement, snaps it to one of 8 directions, and uses that both
+    /// to set the held motion heading AND to aim the blade (target orientation).
+    /// Every tick it then advances along the heading, eases its rotation toward the
+    /// target, bobs gently in/out of the cut (time-driven, so it keeps sawing even at
+    /// rest), and extends the kerf.
     private func sawTick() {
         guard let saw = _sawLayer, let trail = _sawTrailLayer, let path = _sawTrailPath else { return }
         let bounds = hostLayer.bounds
 
-        // Section boundary → re-evaluate the heading from the mouse's recent move.
+        // Sample boundary (~0.25s) → re-aim heading + re-orient toward the cut direction.
         if _sawFrameCount % Self.sawSectionFrames == 0 {
             let global = NSEvent.mouseLocation
             var heading = CGVector.zero
@@ -1647,6 +1658,7 @@ class EmojiAnimator {
                     let frames = CGFloat(Self.sawSectionFrames)
                     let perFrame = min(travel / frames, Self.sawMaxSpeed)  // spread across the section, capped
                     heading = CGVector(dx: cos(dir) * perFrame, dy: sin(dir) * perFrame)
+                    _sawTargetAngle = dir - Self.sawImageForward  // aim the blade along the cut
                 }
             }
             _sawEvalMouse = global
@@ -1660,35 +1672,39 @@ class EmojiAnimator {
         p.y = min(max(p.y + _sawHeading.dy, 0), bounds.height)
         let moved = hypot(p.x - _sawCutPoint.x, p.y - _sawCutPoint.y)
         _sawCutPoint = p
-        _sawTravel += moved
 
-        // Plunge: the saw sinks below the kerf surface and bobs in/out as it travels.
-        // `plunge` is how far the leading tooth sits BELOW the cut point; the mask
-        // then hides everything under the surface, so the visible blade oscillates
-        // (shallow → deep → shallow) but the handle never fully submerges. `-cos`
-        // starts the bob shallow right after the drop-in.
+        // Ease the orientation toward the sampled target along the shortest arc.
+        let delta = atan2(sin(_sawTargetAngle - _sawAngle), cos(_sawTargetAngle - _sawAngle))
+        _sawAngle += delta * Self.sawTurnEase
+        let phi = _sawAngle
+
+        // Plunge: a gentle, TIME-driven bob (keeps sawing even when the mouse rests).
+        // `plunge` is how far the leading tooth sits below the cut surface; the mask
+        // hides everything under the surface, so the visible blade oscillates between
+        // shallow and deep but the handle never fully submerges. `-cos` starts shallow.
+        _sawBobPhase += Self.sawBobSpeed / 60.0
         let sawH = saw.bounds.height
         let plungeMin = Self.sawPlungeMinFrac * sawH
         let plungeMax = Self.sawPlungeMaxFrac * sawH
         let plungeMid = (plungeMin + plungeMax) / 2
         let plungeAmp = (plungeMax - plungeMin) / 2
-        let plunge = plungeMid - plungeAmp * cos(_sawTravel * Self.sawPlungeFreq)
+        let plunge = plungeMid - plungeAmp * cos(_sawBobPhase)
         // Local y (in the saw's bounds) that maps to the surface = anchor + plunge.
         let surfaceLocalY = Self.sawAnchor.y * sawH + plunge
         let revealH = max(2, sawH - surfaceLocalY)
 
-        let wiggle = sin(_sawTravel * Self.sawWiggleFreq) * Self.sawWiggleAmp
         CATransaction.begin()
         CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
         if moved > 0 {
             path.addLine(to: p)
             trail.path = path.copy()             // refresh the stroked kerf
         }
-        // Sink the saw by `plunge` (kerf stays at the cut point) and raise the mask
-        // floor to the surface so the submerged part is clipped.
-        saw.position = CGPoint(x: p.x, y: p.y - plunge)
+        // Sink the saw by `plunge` along its (rotated) local-down axis so the surface
+        // point stays at the cut point regardless of orientation; clip the submerged
+        // part with the mask; orient the blade along the cut.
+        saw.position = CGPoint(x: p.x + plunge * sin(phi), y: p.y - plunge * cos(phi))
+        saw.transform = CATransform3DMakeRotation(phi, 0, 0, 1)
         _sawMaskLayer?.frame = CGRect(x: 0, y: surfaceLocalY, width: saw.bounds.width, height: revealH)
-        saw.transform = CATransform3DMakeRotation(wiggle, 0, 0, 1)
         CATransaction.commit()
     }
 
