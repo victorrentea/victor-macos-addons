@@ -61,6 +61,14 @@ class EmojiAnimator {
     private var _bombLastSample: CGPoint?             // previous sample (global coords) for delta
     private var _bombArmed = false                    // crossed the shake threshold → lock on cursor
 
+    // 🔫 Minigun aiming reticle: during the bullet-holes (#22) burst a bigger,
+    // always-red copy of the sniper crosshair tracks the cursor (where the
+    // bullets cluster), real cursor hidden. No arming/fuse — it's red from the
+    // first frame and just follows until the burst ends.
+    private var _minigunReticleLayer: CALayer?
+    private var _minigunReticleTimer: Timer?
+    private var _minigunReticleHidCursor = false      // balance hide/unhide of the real cursor
+
     // 🕳️ Iris close: a black radial overlay (transparent centre, opaque edges)
     // whose clear hole shrinks from the screen-circumscribing circle down to
     // nothing over ~5s — a cinematic "iris out" blackout. NO sound. Kept OUTSIDE
@@ -1923,9 +1931,20 @@ class EmojiAnimator {
 
     // MARK: - Explosion GIF overlay
 
-    /// Seconds between the nuke press (sound starts on the tablet) and the bomb
-    /// landing — the fuse during which the sniper crosshair is shown.
-    private static let explosionFuse: Double = 1.5
+    /// Top volume peak of `03_explosion.mp3`, measured at ~2.10s into the clip:
+    /// the boom is a slow rumble that builds from ~0.75s and crescendos to its
+    /// loudest sample at 2.10s (loudest 20ms RMS window at 2.22s). The blast gif
+    /// opens on its bright flash (frame 0), so we show that frame exactly this
+    /// many seconds after the boom sound starts — flash lands on the peak.
+    private static let explosionSoundPeakOffset: Double = 2.10
+
+    /// Seconds the sniper crosshair tracks the mouse before the lock flourish.
+    /// Derived so `fuse + lock-flourish == explosionSoundPeakOffset`: the bomb
+    /// (gif frame 0 = the flash) appears the instant the boom peaks. The sound
+    /// starts at the head of the fuse (see `showExplosionGif`), and in production
+    /// the tablet routes it at the same press instant, so the peak still lands on
+    /// the flash even though the Mac itself doesn't play it there.
+    private static let explosionFuse: Double = explosionSoundPeakOffset - bombReticleLockDuration
 
     /// Where, inside the square explosion gif, the bomb actually *lands* —
     /// expressed as a fraction up from the bottom of the frame (the OY centre
@@ -1951,6 +1970,10 @@ class EmojiAnimator {
         // `_bombTargetTimer != nil` covers a second press *during* the fuse
         // (activeEffects["explosion"] isn't set until the bomb actually lands).
         guard activeEffects["explosion"] == nil, _bombTargetTimer == nil else { return }
+        // Start the boom NOW, at the head of the fuse, so its top volume peak
+        // (~explosionSoundPeakOffset s in) lands exactly when the blast gif's
+        // flash appears — the fuse + lock flourish are sized to that offset.
+        if playSound { SoundManager.shared.play("03_explosion.mp3") }
         // Hide the real cursor and float a crosshair that tracks the mouse for
         // the whole fuse, accumulating how far the user drags it.
         startBombTargeting()
@@ -1958,14 +1981,15 @@ class EmojiAnimator {
             guard let self else { return }
             let (aimed, center) = self.endBombTargeting()
             // Lock + grow + fade the crosshair first; the blast lands the instant
-            // it vanishes.
+            // it vanishes — which is also when the boom peaks.
             self.lockGrowFadeReticle(at: center) { [weak self] in
                 guard let self else { return }
+                // Sound already started at the fuse head; don't replay it here.
                 if aimed {
                     // Moved the mouse → a small, precise strike on the cursor.
-                    self._showExplosionGif(playSound: playSound, scaleDivisor: 4, center: center)
+                    self._showExplosionGif(playSound: false, scaleDivisor: 4, center: center)
                 } else {
-                    self._showExplosionGif(playSound: playSound)
+                    self._showExplosionGif(playSound: false)
                 }
             }
         }
@@ -2133,15 +2157,21 @@ class EmojiAnimator {
 
     /// A sniper-scope reticle drawn as CALayers: a ring, four crosshair arms with
     /// a small central gap, and a centre dot — with a soft dark shadow so it reads
-    /// on any desktop backdrop. Starts thin + grey; `armReticle()` recolours it red.
-    private static func makeSniperReticle() -> CALayer {
-        let scale: CGFloat = 1.5          // 1.5× larger than the previous reticle
+    /// on any desktop backdrop. By default it starts thin + grey (the nuke fuse;
+    /// `armReticle()` later recolours it red). Pass `armed: true` to build it red
+    /// + thick from the first frame (the minigun reticle, which is never grey).
+    /// `scale` sizes the whole reticle (nuke 1.5×; the minigun passes a bigger
+    /// value) and the stroke widths scale with it so the lines stay proportional.
+    private static func makeSniperReticle(scale: CGFloat = 1.5, armed: Bool = false) -> CALayer {
+        let canonical: CGFloat = 1.5      // the scale at which the width constants are defined
         let d: CGFloat = 65 * scale       // overall reticle box
-        let lineW = bombReticleLineWidthIdle
+        let idleW = bombReticleLineWidthIdle * (scale / canonical)
+        let armedW = bombReticleLineWidthArmed * (scale / canonical)
+        let lineW = armed ? armedW : idleW
         let c = d / 2
-        let r = c - bombReticleLineWidthArmed  // leave room for the thicker armed stroke
+        let r = c - armedW                // leave room for the thicker armed stroke
         let gap: CGFloat = 7 * scale      // half-length of the empty centre
-        let grey = NSColor.systemGray.cgColor
+        let stroke = (armed ? NSColor.systemRed : NSColor.systemGray).cgColor
 
         let container = CALayer()
         container.bounds = CGRect(x: 0, y: 0, width: d, height: d)
@@ -2150,7 +2180,7 @@ class EmojiAnimator {
         let ring = CAShapeLayer()
         ring.path = CGPath(ellipseIn: CGRect(x: c - r, y: c - r, width: 2 * r, height: 2 * r), transform: nil)
         ring.fillColor = NSColor.clear.cgColor
-        ring.strokeColor = grey
+        ring.strokeColor = stroke
         ring.lineWidth = lineW
         container.addSublayer(ring)
 
@@ -2161,14 +2191,14 @@ class EmojiAnimator {
         path.move(to: CGPoint(x: c, y: 0));     path.addLine(to: CGPoint(x: c, y: c - gap))   // bottom
         path.move(to: CGPoint(x: c, y: c + gap)); path.addLine(to: CGPoint(x: c, y: d))       // top
         arms.path = path
-        arms.strokeColor = grey
+        arms.strokeColor = stroke
         arms.lineWidth = lineW
         container.addSublayer(arms)
 
         let dotR: CGFloat = 2.0 * scale
         let dot = CAShapeLayer()
         dot.path = CGPath(ellipseIn: CGRect(x: c - dotR, y: c - dotR, width: 2 * dotR, height: 2 * dotR), transform: nil)
-        dot.fillColor = grey
+        dot.fillColor = stroke
         container.addSublayer(dot)
 
         container.shadowColor = NSColor.black.cgColor
@@ -2176,6 +2206,61 @@ class EmojiAnimator {
         container.shadowRadius = 1.5 * scale
         container.shadowOffset = .zero
         return container
+    }
+
+    /// How much bigger the minigun aiming reticle is than the 1.5× nuke reticle —
+    /// the bullet-spray crosshair reads as a heftier "machine-gun sight".
+    private static let minigunReticleScale: CGFloat = 2.5
+
+    /// Float a bigger, always-red sniper crosshair on the cursor and follow it at
+    /// 60fps for the whole minigun burst (the real cursor is hidden, the crosshair
+    /// stands in). Tears itself down `duration`s later — keyed to this exact
+    /// reticle so a re-press (fresh reticle) isn't torn down by an old schedule.
+    private func startMinigunReticle(autoStopAfter duration: Double) {
+        stopMinigunReticle()   // never leak a previous burst's reticle
+
+        let reticle = Self.makeSniperReticle(scale: Self.minigunReticleScale, armed: true)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        reticle.position = mousePointInHostLayer()
+        reticle.zPosition = 9_000   // ride above the bullet holes
+        CATransaction.commit()
+        hostLayer.addSublayer(reticle)
+        _minigunReticleLayer = reticle
+
+        if !_minigunReticleHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _minigunReticleHidCursor = true
+        }
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self, self._minigunReticleTimer === t else { t.invalidate(); return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
+            self._minigunReticleLayer?.position = self.mousePointInHostLayer()
+            CATransaction.commit()
+        }
+        _minigunReticleTimer = timer
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self, weak reticle] in
+            guard let self, self._minigunReticleLayer === reticle else { return }
+            self.stopMinigunReticle()
+        }
+    }
+
+    /// Stop following the cursor, remove the minigun reticle, and restore the real
+    /// cursor. Idempotent — safe to call when nothing is running (toggle-off,
+    /// stop-all, or the natural end-of-burst all funnel through here).
+    private func stopMinigunReticle() {
+        _minigunReticleTimer?.invalidate(); _minigunReticleTimer = nil
+        _minigunReticleLayer?.removeFromSuperlayer(); _minigunReticleLayer = nil
+        if _minigunReticleHidCursor {
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            _minigunReticleHidCursor = false
+        }
     }
 
     private func _showExplosionGif(playSound: Bool = true, scaleDivisor: CGFloat = 1, center: CGPoint? = nil) {
@@ -3833,7 +3918,9 @@ class EmojiAnimator {
     }
 
     func showBulletHoles(playSound: Bool = true) {
-        if cancelIfRunning("bullet-holes") { return }
+        // Toggle-off: a re-press while the burst runs cancels it — take the
+        // aiming reticle down with it.
+        if cancelIfRunning("bullet-holes") { stopMinigunReticle(); return }
 
         let bounds = hostLayer.bounds
         let totalDuration = 6.37  // matches minigun.mp3
@@ -3927,6 +4014,10 @@ class EmojiAnimator {
         }
 
         trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: "22_minigun.mp3")
+
+        // A bigger, always-red sniper crosshair tracks the cursor for the whole
+        // burst (where the bullets cluster) and tears down with the effect.
+        startMinigunReticle(autoStopAfter: resorbStart + resorbDuration + 0.1)
     }
 
     // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)
@@ -4901,6 +4992,10 @@ class EmojiAnimator {
         // below would drop the rising hearts but leave it beating forever. Tear
         // it (and any pending spawns) down explicitly.
         clearSpiralHearts(fadeDuration: 0)
+        // The minigun aiming reticle also lives OUTSIDE activeEffects (its own
+        // follow timer + hidden cursor), so tear it down explicitly or it would
+        // keep tracking forever after a stop-all.
+        stopMinigunReticle()
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()
