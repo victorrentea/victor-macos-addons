@@ -648,13 +648,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
 
         // ☕️ Break — start/reset the countdown watch overlay for the chosen duration.
+        // (The break no longer auto-launches the training-summary delta; that run is
+        // now only triggered manually via the /test/break-summary hook.)
         menuBarManager.onBreak = { [weak self] minutes in
             DispatchQueue.main.async {
                 self?.breakTimer.start(minutes: minutes)
             }
-            // A break >= 5 min = "a section just ended, slack now" → advance the
-            // training-summary delta in a self-closing Terminal (Discussion.md only).
-            BreakSummaryLauncher.launchIfDue(minutes: minutes)
         }
         // Resume an in-progress break after a redeploy/restart.
         DispatchQueue.main.async { [weak self] in self?.breakTimer.resumeIfNeeded() }

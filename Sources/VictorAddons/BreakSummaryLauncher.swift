@@ -1,45 +1,25 @@
 import Foundation
 
-/// Fires the incremental training-summary delta when a >= 5 min ☕️ break starts.
+/// Fires the incremental training-summary delta on demand (manual trigger only).
 ///
-/// A coffee break is the "a section just ended, I have slack now" signal, so we
-/// use it to amortize the expensive transcript read across the day: each break
-/// opens a self-closing Terminal window running `summarize-on-break.sh`, which
-/// runs an unattended `claude` that appends the new section(s) to Discussion.md
-/// ONLY. By wrap-up Discussion.md is ~complete, so the manual summary run is a
-/// tiny delta + a cheap distill instead of reading the whole day at once.
+/// A coffee break is the "a section just ended, I have slack now" signal, and this
+/// amortizes the expensive transcript read across the day: it opens a self-closing
+/// Terminal window running `summarize-on-break.sh`, which runs an unattended
+/// `claude` that appends the new section(s) to Discussion.md ONLY. By wrap-up
+/// Discussion.md is ~complete, so the manual summary run is a tiny delta + a cheap
+/// distill instead of reading the whole day at once.
+///
+/// Note: this used to auto-fire whenever a >= 5 min break started; that hook was
+/// removed, so the only entry point now is `launchNow` (the /test/break-summary
+/// HTTP hook).
 enum BreakSummaryLauncher {
-    /// Skip re-launching within this window — re-clicking a break duration just
-    /// resets the timer in place, and we don't want a second Terminal window for it.
-    private static let cooldown: TimeInterval = 90
-    private static var lastLaunch: Date?
-
-    /// Call from the break handler. No-op for sub-5-min breaks or within cooldown.
-    static func launchIfDue(minutes: Int) {
-        guard minutes >= 5 else { return }
-        if let last = lastLaunch, Date().timeIntervalSince(last) < cooldown {
-            overlayInfo("break-summary: within \(Int(cooldown))s cooldown — skipping relaunch")
-            return
-        }
-        guard let script = findScript() else {
-            overlayError("break-summary: summarize-on-break.sh not found — skipping")
-            return
-        }
-        lastLaunch = Date()
-        launchTerminal(script: script)
-        overlayInfo("break-summary: launched delta run for \(minutes)-min break (\(script))")
-    }
-
-    /// Force a delta run NOW, bypassing the >= 5 min and cooldown gates. Backs the
-    /// `/test/break-summary` hook so the run can be triggered on the live app
-    /// without clicking the ☕️ menu. Still records `lastLaunch` so a real break
-    /// immediately after doesn't double-fire.
+    /// Force a delta run NOW. Backs the `/test/break-summary` hook so the run can
+    /// be triggered on the live app without clicking the ☕️ menu.
     static func launchNow(reason: String) {
         guard let script = findScript() else {
             overlayError("break-summary: summarize-on-break.sh not found — skipping")
             return
         }
-        lastLaunch = Date()
         launchTerminal(script: script)
         overlayInfo("break-summary: \(reason) — launched delta run (\(script))")
     }
