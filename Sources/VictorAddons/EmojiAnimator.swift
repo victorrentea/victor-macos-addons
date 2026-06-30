@@ -1927,6 +1927,12 @@ class EmojiAnimator {
     /// landing — the fuse during which the sniper crosshair is shown.
     private static let explosionFuse: Double = 1.5
 
+    /// Where, inside the square explosion gif, the bomb actually *lands* —
+    /// expressed as a fraction up from the bottom of the frame (the OY centre
+    /// horizontally). An aimed strike anchors this point to the cursor crosshair
+    /// so the blast appears to fall onto the cursor rather than be centred on it.
+    private static let bombImpactFractionFromBottom: CGFloat = 0.25
+
     /// Total cursor travel (px) during the fuse above which we treat it as a
     /// deliberate aim. Set high enough that an accidental nudge won't arm it —
     /// you have to actually *shake* the crosshair. Crossing it flips the
@@ -2117,9 +2123,13 @@ class EmojiAnimator {
         let x: CGFloat
         let y: CGFloat
         if let center = center {
-            // Aimed strike: centre the (smaller) blast on the cursor.
+            // Aimed strike: land the bomb *tip* on the cursor crosshair, not the
+            // frame centre. Within the square gif the bomb impacts at ~25% up
+            // from the bottom, horizontally centred (on the OY axis) — so anchor
+            // that point (0.5, 0.25) to the cursor. The frame then sits a touch
+            // above the crosshair and the bomb appears to fall exactly onto it.
             x = center.x - size / 2
-            y = center.y - size / 2
+            y = center.y - size * Self.bombImpactFractionFromBottom
         } else {
             // Default: centred, nudged up a touch from dead-centre.
             x = (hostLayer.bounds.width - size) / 2
