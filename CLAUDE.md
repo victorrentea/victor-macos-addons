@@ -235,6 +235,7 @@ For local E2E checks without stealing focus:
 ## AI Instructions
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.
 - After any code change in this project, always: push to master (`git push`), run `./build-app.sh`, then restart the app (`pkill -f "Victor Addons"; open "/Applications/Victor Addons.app"`).
+- **Testing during a live workshop is fine — don't hold back.** Victor doesn't mind app restarts or transcription gaps mid-session. The only constraint: the **built-in retina display is what's projected to the room**, so do any *visual* testing (overlays, screenshots) on the **right-hand external screen** instead — never put test UI on the projected retina display. (Note: the ☕️ Break overlay's `defaultFrame()` always opens on the retina by design; drag it to the right monitor, or screenshot the right screen, when verifying during a session.)
 
 ## Related
 - Backend repo: `training-assistant` (FastAPI, provides WebSocket server)
