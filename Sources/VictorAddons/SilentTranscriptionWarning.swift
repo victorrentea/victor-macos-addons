@@ -6,7 +6,9 @@ import Cocoa
 /// has been stale (no new lines for ~3 min as reported by
 /// `TranscriptionWatcher`), briefly shows a "😶" pill in the bottom-left
 /// of every screen for 5 seconds. Hovering snoozes the warning until the
-/// next transcription start.
+/// next transcription start — the pill then slides straight DOWN off the
+/// bottom of the screen ("no / stop"), distinct from the plain fade used
+/// when transcription stops or the un-hovered countdown lapses.
 final class SilentTranscriptionWarning {
     private let banner: BottomLeftBanner
     private var checkTimer: Timer?
@@ -64,7 +66,12 @@ final class SilentTranscriptionWarning {
     private func snooze() {
         notificationEnabled = false
         overlayInfo("Silent warning snoozed until next transcription start")
-        dismiss()
+        // Snooze is a "no / stop bugging me" gesture, so the pill slides straight
+        // DOWN off the bottom of the screen (dismissSinking) rather than just
+        // fading — the downward motion alone reads as "dismissed / put away".
+        // The plain dismiss() stays for the non-gesture exits (transcription
+        // stopped, or the un-hovered countdown lapsing).
+        banner.dismissSinking()
     }
 
     private func dismiss() {
