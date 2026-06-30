@@ -2475,7 +2475,10 @@ class EmojiAnimator {
         // After arriving, hover-and-flap in place for ~3s before leaving, THEN
         // fade out (the fade follows the hover — it must not eat into it).
         let holdAtTop = 3.0
-        let fadeOutDur = 0.7
+        // Fade-out is 2× the original 0.7s — a slower, gentler dissolve. It
+        // drives BOTH the visual opacity fade and the audio fade (playClip
+        // below uses fadeOutDur), so they stay in unison at the longer length.
+        let fadeOutDur = 1.4
         let totalLife = riseDur + holdAtTop + fadeOutDur
 
         let fadeIn = CABasicAnimation(keyPath: "opacity")
