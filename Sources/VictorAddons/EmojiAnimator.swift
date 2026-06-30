@@ -63,6 +63,8 @@ class EmojiAnimator {
     private var _bombArmed = false                    // crossed the shake threshold → locked + frozen
     private var _bombLockPoint: CGPoint = .zero       // frozen strike point captured at the lock instant
     private var _bombStartTime: CFTimeInterval = 0    // press time, to size the lock→strike grow
+    private var _bombStrikeLayer: CALayer?            // the detached crosshair mid strike-pop/fade (for interrupt teardown)
+    private var _bombEpoch: Int = 0                   // bumped on every (re)press; stale strike continuations bail
 
     // 🔫 Minigun aiming reticle: during the bullet-holes (#22) burst a bigger,
     // always-red copy of the sniper crosshair tracks the cursor (where the
@@ -1974,9 +1976,11 @@ class EmojiAnimator {
     private static let bombAimTravelThreshold: CGFloat = 300
 
     func showExplosionGif(playSound: Bool = true) {
-        // `_bombTargetTimer != nil` covers a second press *during* the fuse
-        // (activeEffects["explosion"] isn't set until the bomb actually lands).
-        guard activeEffects["explosion"] == nil, _bombTargetTimer == nil else { return }
+        // A second press INTERRUPTS whatever is already in flight — the fuse +
+        // crosshair, the strike pop/fade, or a running explosion gif — and
+        // restarts the sequence from scratch (clicking the nuke always re-arms it).
+        interruptNuke()
+        let epoch = _bombEpoch   // captured post-bump; stale continuations bail below
         // Start the boom NOW, at the head of the sequence. The blast lands at
         // `explosionStrikeDelay` — 1s earlier than the sound's 2.10s peak (by
         // request), so the flash leads the loudest moment rather than landing on it.
@@ -1986,7 +1990,8 @@ class EmojiAnimator {
         // and grows until the strike (startBombTargeting → lockReticle).
         startBombTargeting()
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionStrikeDelay) { [weak self] in
-            guard let self else { return }
+            // A re-press during the fuse bumped the epoch → this stale strike bails.
+            guard let self, self._bombEpoch == epoch else { return }
             let (aimed, center) = self.endBombTargeting()
             // Strike: the (already-grown, if locked) crosshair pops out + fades
             // away exactly as the blast lands.
@@ -1999,6 +2004,25 @@ class EmojiAnimator {
                 self._showExplosionGif(playSound: false)
             }
         }
+    }
+
+    /// Tear down any nuke already in flight so a fresh press starts clean: stop the
+    /// fuse timer + crosshair, drop a mid-strike pop/fade crosshair, and cancel a
+    /// running explosion gif (and its sound). Bumping `_bombEpoch` makes any
+    /// already-scheduled strike continuation bail when it fires. The hidden cursor
+    /// is left hidden on purpose — `startBombTargeting` keeps it hidden, so the
+    /// pointer never flashes between the old and new crosshair.
+    private func interruptNuke() {
+        _bombEpoch &+= 1
+        _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
+        _bombTargetLayer?.removeAllAnimations()
+        _bombTargetLayer?.removeFromSuperlayer()
+        _bombTargetLayer = nil
+        _bombStrikeLayer?.removeAllAnimations()
+        _bombStrikeLayer?.removeFromSuperlayer()
+        _bombStrikeLayer = nil
+        cancelIfRunning("explosion")
+        SoundManager.shared.stop("03_explosion.mp3")
     }
 
     /// Show the sniper crosshair on the mouse, hide the real cursor, and start
@@ -2120,6 +2144,7 @@ class EmojiAnimator {
     private func strikeFadeReticle() {
         guard let target = _bombTargetLayer else { restoreBombCursor(); return }
         _bombTargetLayer = nil   // detach: the tracking timer is already gone
+        _bombStrikeLayer = target   // but keep a handle so a re-press can tear it down
 
         // Pin the current (possibly grown) scale as the model value so the pop
         // starts from there with no jump, and drop the held grow animation.
@@ -2155,6 +2180,7 @@ class EmojiAnimator {
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak target] in
             target?.removeFromSuperlayer()
+            if self?._bombStrikeLayer === target { self?._bombStrikeLayer = nil }
             self?.restoreBombCursor()
         }
         target.add(pop, forKey: "reticleStrikePop")
