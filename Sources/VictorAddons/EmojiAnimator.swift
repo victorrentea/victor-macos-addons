@@ -2327,6 +2327,9 @@ class EmojiAnimator {
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
         gifLayer.contentsGravity = .resizeAspect
+        // Render the blast IN FRONT of the targeting crosshair (which sits at
+        // zPosition 10_000 while it grows + fades), so the explosion engulfs it.
+        gifLayer.zPosition = 11_000
         if let first = images.first { gifLayer.contents = first }
         hostLayer.addSublayer(gifLayer)
         if playSound { SoundManager.shared.play("03_explosion.mp3") }
