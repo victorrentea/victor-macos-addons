@@ -289,6 +289,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if name == "31_tarzan.mp3" {
                 return "{\"ok\":true,\"durationMs\":1}"
             }
+            // Tile #34 (🔥 Phoenix): the Mac owns the phoenix cry (`phoenix.mp3`,
+            // played inside showPhoenix, faded in unison with the visual). The
+            // tablet's `34_phoenix.mp3` is a silent placeholder, so skip routed
+            // playback here — the press path (SoundEffectMap: 34_phoenix.mp3 →
+            // "phoenix") drives both the visual and the real sound.
+            if name == "34_phoenix.mp3" {
+                return "{\"ok\":true,\"durationMs\":1}"
+            }
             let volume = volumePct.map { Float($0) / 100 }
             guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }
             return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"

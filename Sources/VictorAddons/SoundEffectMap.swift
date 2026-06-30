@@ -43,8 +43,11 @@ enum SoundEffectMap {
         "26_drum.mp3":           "drum-roll",
         "44_laugh_emoji.mp3":    "laugh",
         "40_joker.mp3":          "blood-drip",
-        // Tile 34: a phoenix rises up the desktop. Its paired mp3 is silent (no
-        // wing-beat sound in the library) — the visual is the whole effect.
+        // Tile 34: a phoenix rises up the desktop with its cry. The tablet's
+        // paired `34_phoenix.mp3` is silent; the real sound (`phoenix.mp3`) is a
+        // Mac-owned resource played inside showPhoenix and faded out in unison
+        // with the visual fade. The routed /sound/play path is neutralized in
+        // onSoundPlay (like iris) so the silent clip isn't played.
         "34_phoenix.mp3":        "phoenix",
         // Tile 31 repurposed (was Tarzan): 🕳️ iris close. The paired mp3 keeps
         // its id "31_tarzan.mp3" for protocol/manifest stability but is now a

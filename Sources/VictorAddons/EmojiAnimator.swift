@@ -2324,8 +2324,12 @@ class EmojiAnimator {
     // MARK: - Phoenix overlay (🔥 fire-phoenix, menu-triggered)
 
     /// A fiery phoenix that *rises up from the bottom of the screen* in the
-    /// rhythm of its own wing beats and settles in the upper-middle. Purely a
-    /// desktop visual — no sound. The source art is a black-background GIF whose
+    /// rhythm of its own wing beats and settles in the upper-middle, paired with
+    /// the phoenix cry (`phoenix.mp3`, a Mac-owned resource — the tablet's
+    /// `34_phoenix.mp3` stays silent). The cry plays for the **whole** animation
+    /// and fades out **in unison** with the visual fade (same tail window), via
+    /// `playClip(seconds: totalLife, fade: fadeOutDur)`. The source art is a
+    /// black-background GIF whose
     /// flames were keyed to transparency via luminance→alpha (bright fire opaque,
     /// dark glow fading smoothly out), **cropped tight to the changing-pixel
     /// bounding box** (so the asset is the flame and nothing else), and shipped as
@@ -2350,7 +2354,13 @@ class EmojiAnimator {
     }
 
     func showPhoenix() {
-        if cancelIfRunning("phoenix") { return }
+        // Re-press cancels: tear down the visual AND silence the cry. The sound
+        // rides playClip's overlapping player (not the `players` dict cancelIfRunning
+        // touches), so stop it explicitly here.
+        if cancelIfRunning("phoenix") {
+            SoundManager.shared.stopOverlapping("phoenix.mp3")
+            return
+        }
 
         let images = Self.loadPhoenixFrames()
         guard !images.isEmpty else { return }
@@ -2482,6 +2492,14 @@ class EmojiAnimator {
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
         layer.add(fadeOut, forKey: "phoenixFadeOut")
+
+        // The phoenix cry plays for the WHOLE animation and fades the audio out
+        // in unison with the visual fade: playClip's fade starts at
+        // `totalLife - fadeOutDur` (== riseDur + holdAtTop, the visual fade's
+        // begin time) and lasts `fadeOutDur` — same window, same length. The
+        // 63s source is clipped to the animation's life; on early cancel
+        // (re-press) the overlapping player is stopped above.
+        SoundManager.shared.playClip("phoenix.mp3", seconds: totalLife, fade: fadeOutDur)
 
         trackEffect("phoenix", layer: layer, duration: totalLife)
     }
