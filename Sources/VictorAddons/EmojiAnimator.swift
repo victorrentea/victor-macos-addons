@@ -93,7 +93,8 @@ class EmojiAnimator {
     private var _sawHeading: CGVector = .zero        // current per-frame velocity (one of 8 dirs), held for a section
     private var _sawEvalMouse: CGPoint?              // mouse sample at the last section re-evaluation
     private var _sawFrameCount: Int = 0              // ticks since tracking began (drives section re-eval cadence)
-    private var _sawTravel: CGFloat = 0              // total cut length so far (drives the saw wiggle)
+    private var _sawTravel: CGFloat = 0              // total cut length so far (drives the saw wiggle + plunge bob)
+    private var _sawMaskLayer: CALayer?             // clips the saw below the cut "surface" (the submerged part)
     private var _sawHidCursor = false                // balance hide/unhide of the real cursor
 
     // Saw display size as a fraction of screen width; teeth/tooth-tip anchor in
@@ -116,6 +117,13 @@ class EmojiAnimator {
     private static let sawTrailWidth: CGFloat = 14
     private static let sawWiggleAmp: CGFloat = 0.05   // rad (~2.9°) saw rock while cutting
     private static let sawWiggleFreq: CGFloat = 0.06  // per px of travel
+    // The saw sinks into the cut: a mask hides everything below the kerf surface
+    // and the saw bobs in/out (the plunge) as it travels, so the visible amount
+    // oscillates between `sawPlungeMinFrac` (shallow — most of the saw shows) and
+    // `sawPlungeMaxFrac` (deep — only the handle shows; never fully submerged).
+    private static let sawPlungeMinFrac: CGFloat = 0.08  // of saw height
+    private static let sawPlungeMaxFrac: CGFloat = 0.48
+    private static let sawPlungeFreq: CGFloat = 0.09    // per px of travel (saw-stroke bob rate)
     private static let sawExitDuration: Double = 0.45
     private static let sawTrailHold: Double = 0.8     // black gash lingers, then heals
     private static let sawTrailFade: Double = 1.2
@@ -1569,6 +1577,14 @@ class EmojiAnimator {
         saw.bounds = CGRect(x: 0, y: 0, width: sawW, height: sawH)
         saw.anchorPoint = Self.sawAnchor
         saw.position = startPoint
+        // Mask that clips the saw below the cut surface (so the blade can sink in).
+        // Starts revealing the whole saw — the plunge bob in sawTick narrows it once
+        // the saw has dropped onto the cut.
+        let mask = CALayer()
+        mask.backgroundColor = NSColor.black.cgColor   // only the alpha matters
+        mask.frame = saw.bounds
+        saw.mask = mask
+        _sawMaskLayer = mask
         hostLayer.addSublayer(saw)
         _sawLayer = saw
 
@@ -1646,6 +1662,21 @@ class EmojiAnimator {
         _sawCutPoint = p
         _sawTravel += moved
 
+        // Plunge: the saw sinks below the kerf surface and bobs in/out as it travels.
+        // `plunge` is how far the leading tooth sits BELOW the cut point; the mask
+        // then hides everything under the surface, so the visible blade oscillates
+        // (shallow → deep → shallow) but the handle never fully submerges. `-cos`
+        // starts the bob shallow right after the drop-in.
+        let sawH = saw.bounds.height
+        let plungeMin = Self.sawPlungeMinFrac * sawH
+        let plungeMax = Self.sawPlungeMaxFrac * sawH
+        let plungeMid = (plungeMin + plungeMax) / 2
+        let plungeAmp = (plungeMax - plungeMin) / 2
+        let plunge = plungeMid - plungeAmp * cos(_sawTravel * Self.sawPlungeFreq)
+        // Local y (in the saw's bounds) that maps to the surface = anchor + plunge.
+        let surfaceLocalY = Self.sawAnchor.y * sawH + plunge
+        let revealH = max(2, sawH - surfaceLocalY)
+
         let wiggle = sin(_sawTravel * Self.sawWiggleFreq) * Self.sawWiggleAmp
         CATransaction.begin()
         CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
@@ -1653,7 +1684,10 @@ class EmojiAnimator {
             path.addLine(to: p)
             trail.path = path.copy()             // refresh the stroked kerf
         }
-        saw.position = p
+        // Sink the saw by `plunge` (kerf stays at the cut point) and raise the mask
+        // floor to the surface so the submerged part is clipped.
+        saw.position = CGPoint(x: p.x, y: p.y - plunge)
+        _sawMaskLayer?.frame = CGRect(x: 0, y: surfaceLocalY, width: saw.bounds.width, height: revealH)
         saw.transform = CATransform3DMakeRotation(wiggle, 0, 0, 1)
         CATransaction.commit()
     }
@@ -1697,6 +1731,7 @@ class EmojiAnimator {
             CATransaction.commit()
         }
         _sawLayer = nil
+        _sawMaskLayer = nil    // owned by the saw layer; fades + removes with it
         _sawTrailLayer = nil
         _sawTrailPath = nil
     }
