@@ -30,6 +30,20 @@ enum BreakSummaryLauncher {
         overlayInfo("break-summary: launched delta run for \(minutes)-min break (\(script))")
     }
 
+    /// Force a delta run NOW, bypassing the >= 5 min and cooldown gates. Backs the
+    /// `/test/break-summary` hook so the run can be triggered on the live app
+    /// without clicking the ☕️ menu. Still records `lastLaunch` so a real break
+    /// immediately after doesn't double-fire.
+    static func launchNow(reason: String) {
+        guard let script = findScript() else {
+            overlayError("break-summary: summarize-on-break.sh not found — skipping")
+            return
+        }
+        lastLaunch = Date()
+        launchTerminal(script: script)
+        overlayInfo("break-summary: \(reason) — launched delta run (\(script))")
+    }
+
     /// Resolve the launcher script next to the source tree — same strategy as
     /// `WhisperProcessManager.whisperScriptCandidates` (env root, then the
     /// canonical workspace path, then cwd).
@@ -52,21 +66,45 @@ enum BreakSummaryLauncher {
         return nil
     }
 
-    /// Open a NEW Terminal window running the script, and auto-close it once the
-    /// script finishes. The osascript polls `busy` itself, so we fire it
-    /// detached (no waitUntilExit) — that means it also survives an app redeploy
-    /// (Terminal is its own process tree).
+    /// Open a NEW Terminal window running the script, and auto-close it ONLY when
+    /// the run succeeded.
+    ///
+    /// We do NOT poll Terminal's `busy` flag anymore: for a `do script` tab it
+    /// reads false during the command's startup, so the old `repeat while busy …
+    /// close` loop fell straight through and closed the window ~1s in — SIGHUP-
+    /// killing claude before it wrote anything (the 2026-06-30 "terminal
+    /// immediately exited" bug). Instead the script writes a unique SENTINEL file
+    /// with "ok"/"fail" when it truly finishes, and we wait on THAT. On "ok" we
+    /// close the window; on "fail" (or timeout) we leave it open so the failure is
+    /// readable. Fired detached (no waitUntilExit) so it survives an app redeploy.
     private static func launchTerminal(script: String) {
+        let sentinel = "/tmp/break-summary-\(Int(Date().timeIntervalSince1970)).done"
         let osa = """
+        set sentinel to "\(sentinel)"
+        do shell script "rm -f " & quoted form of sentinel
+        set verdict to ""
         tell application "Terminal"
             activate
-            set t to do script "bash '\(script)'"
-            repeat while busy of t
-                delay 1
-            end repeat
-            delay 2
-            close (every window whose tabs contains t) saving no
+            set t to do script "bash '\(script)' '\(sentinel)'"
         end tell
+        -- Wait up to ~30 min for the script to report its verdict.
+        repeat 900 times
+            delay 2
+            try
+                set verdict to (do shell script "cat " & quoted form of sentinel & " 2>/dev/null")
+            end try
+            if verdict is not "" then exit repeat
+        end repeat
+        -- Auto-close only on success; leave failures (and timeouts) on screen.
+        if verdict is "ok" then
+            delay 3
+            try
+                tell application "Terminal" to close (every window whose tabs contains t) saving no
+            end try
+        end if
+        try
+            do shell script "rm -f " & quoted form of sentinel
+        end try
         """
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

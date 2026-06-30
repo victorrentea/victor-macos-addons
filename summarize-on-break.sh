@@ -8,7 +8,11 @@
 # section(s) to Discussion.md ONLY. This amortizes the expensive transcript read
 # across the day so the wrap-up run is a tiny delta + a cheap distill.
 #
-# This window auto-closes when done (the osascript caller polls `busy`).
+# The launcher passes a unique SENTINEL path as $1. We write "ok" to it when the
+# run succeeds (the launcher then auto-closes this window) or "fail" when it
+# doesn't (the launcher leaves the window open AND we block so it stays for
+# inspection). Output is also tee'd to a per-day log so a closed window is never
+# a lost post-mortem.
 
 set -uo pipefail
 
@@ -16,16 +20,32 @@ CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 OUTPUT_DIR="/Users/victorrentea/workspace/victor-macos-addons/addons-output"
 SESSIONS_DIR="/Users/victorrentea/My Drive/Cursuri/###sesiuni"
 LOCK="/tmp/training-summarizer-break.lock"
+SENTINEL="${1:-}"          # launcher-provided; written at the end (ok|fail)
+VERDICT="fail"             # pessimistic default: any unexpected exit keeps the window open
+
+# --- persistent post-mortem ------------------------------------------------
+# Tee EVERYTHING to a per-day log. The 2026-06-30 "terminal immediately exited"
+# bug was undebuggable precisely because the window (and its output) vanished;
+# never again.
+LOG="$OUTPUT_DIR/break-summary-$(date +%F).log"
+exec > >(tee -a "$LOG") 2>&1
+echo
+echo "########## $(date '+%F %T')  break-summary run (pid $$, sentinel=${SENTINEL:-none}) ##########"
+
+# Always tell the launcher how it went so its waiter never hangs.
+finish() { [ -n "$SENTINEL" ] && printf '%s' "$VERDICT" > "$SENTINEL"; }
 
 # --- single-instance guard -------------------------------------------------
 # Never run two summary deltas at once (they would race on Discussion.md).
 if [ -e "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
   echo "⏳ A summary delta is already running (pid $(cat "$LOCK")). Skipping."
+  VERDICT="ok"            # benign skip → let the window close
+  finish
   sleep 2
   exit 0
 fi
 echo $$ > "$LOCK"
-trap 'rm -f "$LOCK"' EXIT
+trap 'rm -f "$LOCK"; finish' EXIT
 
 # --- "since when" banner (best-effort; claude does the authoritative detect) -
 TX="$(ls -t "$OUTPUT_DIR"/*-transcription.txt 2>/dev/null | head -1)"
@@ -34,6 +54,7 @@ echo "  ☕️  Training-summary delta — processing during the break"
 echo "════════════════════════════════════════════════════════════════"
 if [ -z "$TX" ]; then
   echo "  ⚠️  No *-transcription.txt found in $OUTPUT_DIR — nothing to do."
+  VERDICT="ok"           # benign
   sleep 3
   exit 0
 fi
@@ -44,6 +65,13 @@ LINES="$(wc -l < "$TX" | tr -d ' ')"
 BYTES="$(wc -c < "$TX" | tr -d ' ')"
 DATE="$(basename "$TX" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}')"
 FOLDER="$(ls -dt "$SESSIONS_DIR"/*/ 2>/dev/null | grep -- "$DATE" | head -1)"
+# Multi-day sessions are named like "2026-06-29..30 Topic" — on the 2nd+ day the
+# literal date (e.g. 2026-06-30) is NOT a substring, so the grep misses. Fall
+# back to the most-recently-modified session folder (the one being worked today).
+if [ -z "$FOLDER" ]; then
+  FOLDER="$(ls -dt "$SESSIONS_DIR"/*/ 2>/dev/null | head -1)"
+  [ -n "$FOLDER" ] && echo "  (no folder literally matched $DATE — using newest by mtime, likely a multi-day session)"
+fi
 echo "  Transcript : $(basename "$TX")  ($LINES lines, $(hsize "$BYTES") total)"
 if [ -n "$FOLDER" ] && [ -f "${FOLDER}Discussion.md" ]; then
   WM_TS="$(grep -oE 'last_processed=[^ ]+' "${FOLDER}Discussion.md" 2>/dev/null | head -1 | cut -d= -f2)"
@@ -72,7 +100,7 @@ echo
 # Heartbeat so the window doesn't look hung while claude reads the transcript.
 ( while true; do sleep 15; printf '  … still processing (%s)\n' "$(date +%H:%M:%S)"; done ) &
 HEARTBEAT=$!
-trap 'kill "$HEARTBEAT" 2>/dev/null; rm -f "$LOCK"' EXIT
+trap 'kill "$HEARTBEAT" 2>/dev/null; rm -f "$LOCK"; finish' EXIT
 
 PROMPT="Use the training-summarizer skill (victor-skills:training-summarizer) in HEADLESS BREAK-DELTA mode — an unattended run triggered by a coffee-break timer.
 
@@ -102,8 +130,16 @@ kill "$HEARTBEAT" 2>/dev/null
 echo
 if [ "$STATUS" -eq 0 ]; then
   echo "✅ done — Discussion.md is up to date through this break."
+  echo "   (full log: $LOG — this window closes in a few seconds)"
+  VERDICT="ok"           # → launcher auto-closes this window
+  sleep 6                # ...but pause first so a glance still catches the result
+  exit 0
 else
-  echo "⚠️ claude exited with status $STATUS."
+  echo "⚠️ claude exited with status $STATUS — leaving this window OPEN so you can read what happened."
+  echo "   (full log: $LOG)"
+  VERDICT="fail"         # → launcher leaves the window open
+  # Block so the window definitely survives (independent of Terminal's
+  # "close on clean exit" pref); Enter or 30 min closes it.
+  read -r -t 1800 _ || true
+  exit 0
 fi
-sleep 2
-exit 0
