@@ -77,19 +77,22 @@ class EmojiAnimator {
     // restart) the iris, it must survive stop-all and toggle itself here.
     private var _irisLayer: CAGradientLayer?
 
-    // 🪚 Saw cut (sound #52): a hand saw enters from the top of the screen and the
-    // user "cuts" the screen by moving the mouse. The saw is NOT pinned to the
-    // cursor — it advances by the *relative* movement of the mouse (capped to a
-    // slow speed so it feels like sawing through material), and the teeth leave a
-    // black kerf trail along the path they travelled. Lives OUTSIDE activeEffects
-    // (its own follow timer + hidden cursor), so it's torn down explicitly in
-    // stopAllActiveEffects. One cut at a time.
+    // 🪚 Saw cut (sound #52): a hand saw drops onto the cursor and the user "cuts"
+    // the screen by moving the mouse. The saw is NOT pinned to the cursor — it
+    // advances in short *sections*: every few frames it re-evaluates the mouse's
+    // recent movement, snaps that to one of 8 compass directions (the 45°
+    // diagonals), and glides that way (capped to a slow speed so it feels like
+    // sawing through material). The teeth leave a black kerf trail along the path.
+    // Lives OUTSIDE activeEffects (its own follow timer + hidden cursor), so it's
+    // torn down explicitly in stopAllActiveEffects. One cut at a time.
     private var _sawLayer: CALayer?
     private var _sawTrailLayer: CAShapeLayer?
     private var _sawTrailPath: CGMutablePath?
     private var _sawTimer: Timer?
     private var _sawCutPoint: CGPoint = .zero        // current tooth position (hostLayer coords)
-    private var _sawLastMouse: CGPoint?              // previous global-mouse sample, for the delta
+    private var _sawHeading: CGVector = .zero        // current per-frame velocity (one of 8 dirs), held for a section
+    private var _sawEvalMouse: CGPoint?              // mouse sample at the last section re-evaluation
+    private var _sawFrameCount: Int = 0              // ticks since tracking began (drives section re-eval cadence)
     private var _sawTravel: CGFloat = 0              // total cut length so far (drives the saw wiggle)
     private var _sawHidCursor = false                // balance hide/unhide of the real cursor
 
@@ -97,13 +100,18 @@ class EmojiAnimator {
     // the saw image's unit square (y-up: the leading tooth sits low-left).
     private static let sawWidthFraction: CGFloat = 0.20
     private static let sawAnchor = CGPoint(x: 0.11, y: 0.12)
-    private static let sawTopMargin: CGFloat = 64     // where the cut starts, below the top edge
-    private static let sawEntryDuration: Double = 0.5 // slide-in from above
+    private static let sawEntryDrop: CGFloat = 150    // how far above the cursor the saw drops in from
+    private static let sawEntryDuration: Double = 0.35
     private static let sawCutActiveDuration: Double = 5.0  // interactive cutting window
-    // The mouse only *guides* the saw: each frame the saw advances by the mouse
-    // delta scaled by `sawGain` and clamped to `sawMaxSpeed` px/frame, so even a
-    // fast flick crawls — that's the "cutting through" resistance.
-    private static let sawGain: CGFloat = 0.85
+    // Short "sections": every `sawSectionFrames` ticks (~at 60fps) the saw re-aims
+    // toward the mouse's recent movement, quantized to 8 directions. Small/frequent
+    // so it's responsive to drive; within a section the saw holds one direction.
+    private static let sawSectionFrames: Int = 5      // ~83ms per section (re-aim cadence)
+    private static let sawDeadzone: CGFloat = 1.5      // scaled mouse travel below which the saw holds still
+    // The mouse only *guides* the saw: the (scaled, capped) section travel is spread
+    // across the section's frames, so even a fast flick crawls — the "cutting
+    // through" resistance — and `sawMaxSpeed` is the hard per-frame ceiling.
+    private static let sawGain: CGFloat = 0.9
     private static let sawMaxSpeed: CGFloat = 6.0     // px per 1/60s frame ≈ 360 px/s
     private static let sawTrailWidth: CGFloat = 14
     private static let sawWiggleAmp: CGFloat = 0.05   // rad (~2.9°) saw rock while cutting
@@ -111,6 +119,12 @@ class EmojiAnimator {
     private static let sawExitDuration: Double = 0.45
     private static let sawTrailHold: Double = 0.8     // black gash lingers, then heals
     private static let sawTrailFade: Double = 1.2
+
+    /// Snap an angle (radians) to the nearest of 8 compass directions (45° apart).
+    private static func quantizeTo8(_ angle: CGFloat) -> CGFloat {
+        let oct = CGFloat.pi / 4
+        return (angle / oct).rounded() * oct
+    }
 
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
@@ -1501,12 +1515,13 @@ class EmojiAnimator {
 
     // MARK: - Saw cut (sound #52) — saw the screen open by moving the mouse
 
-    /// Drop a hand saw in from the top of the screen, hide the real cursor, and let
-    /// the user "cut" the screen by moving the mouse. The saw is driven by the
-    /// *relative* mouse movement (not pinned to the cursor) and capped to a slow
-    /// speed, so it feels like sawing through the image; the teeth leave a black
-    /// kerf trail along their path. After `sawCutActiveDuration` the saw lifts away
-    /// and the gash heals. One cut at a time.
+    /// Drop a hand saw onto the cursor, hide the real cursor, and let the user "cut"
+    /// the screen by moving the mouse. The cut starts exactly where the cursor was;
+    /// from there the saw advances in short *sections* — every `sawSectionFrames`
+    /// ticks it re-reads the mouse's recent movement, snaps it to one of 8 compass
+    /// directions, and glides that way (capped to a slow speed), so you can steer it
+    /// like driving. The teeth leave a black kerf trail along their path. After
+    /// `sawCutActiveDuration` the saw lifts away and the gash heals. One cut at a time.
     func showSawCut() {
         // Already cutting (or mid-entry, before the timer exists) → ignore.
         guard _sawLayer == nil, _sawTimer == nil else { return }
@@ -1524,15 +1539,14 @@ class EmojiAnimator {
         let sawW = bounds.width * Self.sawWidthFraction
         let sawH = sawW * (CGFloat(cg.height) / CGFloat(cg.width))
 
-        // Cut starts at the top of the screen, horizontally near where the mouse is
-        // pointing (a light tie to the cursor without "landing on" it), then the
-        // relative-movement drag takes over from there.
-        let mouseLayer = mousePointInHostLayer()
-        let startX = min(max(mouseLayer.x, sawW * 0.25), bounds.width - sawW * 0.25)
-        let startPoint = CGPoint(x: startX, y: bounds.height - Self.sawTopMargin)
+        // The cut begins exactly where the cursor is right now; the saw drops onto
+        // it and the relative-movement steering takes over from there.
+        let startPoint = mousePointInHostLayer()
         _sawCutPoint = startPoint
         _sawTravel = 0
-        _sawLastMouse = nil
+        _sawHeading = .zero
+        _sawEvalMouse = nil
+        _sawFrameCount = 0
 
         // Black kerf trail (under the saw): a polyline the teeth carve as they move.
         let trail = CAShapeLayer()
@@ -1558,9 +1572,9 @@ class EmojiAnimator {
         hostLayer.addSublayer(saw)
         _sawLayer = saw
 
-        // Enter: slide down from above the top edge + fade in.
+        // Enter: drop straight down onto the cursor + fade in.
         let slide = CABasicAnimation(keyPath: "position.y")
-        slide.fromValue = bounds.height + sawH
+        slide.fromValue = startPoint.y + Self.sawEntryDrop
         slide.toValue = startPoint.y
         slide.duration = Self.sawEntryDuration
         slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -1580,11 +1594,10 @@ class EmojiAnimator {
             _sawHidCursor = true
         }
 
-        // Start tracking the mouse once the saw has slid in (fresh mouse sample so
-        // the first delta is 0), and schedule the end of the cutting window.
+        // Start tracking the mouse once the saw has dropped in, and schedule the end
+        // of the cutting window.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.sawEntryDuration) { [weak self, weak saw] in
             guard let self = self, let saw = saw, self._sawLayer === saw else { return }
-            self._sawLastMouse = NSEvent.mouseLocation
             let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
                 guard let self = self, self._sawTimer === t else { t.invalidate(); return }
                 self.sawTick()
@@ -1597,39 +1610,49 @@ class EmojiAnimator {
         }
     }
 
-    /// One 60fps step: advance the saw by the *capped, scaled* mouse delta, extend
-    /// the kerf, and rock the saw a touch (the wiggle tracks total cut length, so a
-    /// resting hand holds still).
+    /// One 60fps step. At the start of each section (`sawSectionFrames` apart) the
+    /// saw re-aims: it reads how the mouse moved over the last section, snaps that to
+    /// one of 8 directions, and sets a held per-frame velocity (the scaled, capped
+    /// section travel spread across the section). Every tick it then advances by that
+    /// velocity, extends the kerf, and rocks a touch.
     private func sawTick() {
         guard let saw = _sawLayer, let trail = _sawTrailLayer, let path = _sawTrailPath else { return }
         let bounds = hostLayer.bounds
 
-        let global = NSEvent.mouseLocation
-        var dx: CGFloat = 0, dy: CGFloat = 0
-        if let last = _sawLastMouse {
-            dx = (global.x - last.x) * Self.sawGain
-            dy = (global.y - last.y) * Self.sawGain
+        // Section boundary → re-evaluate the heading from the mouse's recent move.
+        if _sawFrameCount % Self.sawSectionFrames == 0 {
+            let global = NSEvent.mouseLocation
+            var heading = CGVector.zero
+            if let last = _sawEvalMouse {
+                let dx = global.x - last.x, dy = global.y - last.y
+                let travel = hypot(dx, dy) * Self.sawGain   // scaled mouse travel this section
+                if travel >= Self.sawDeadzone {
+                    let dir = Self.quantizeTo8(atan2(dy, dx))  // snap to one of 8 compass dirs
+                    let frames = CGFloat(Self.sawSectionFrames)
+                    let perFrame = min(travel / frames, Self.sawMaxSpeed)  // spread across the section, capped
+                    heading = CGVector(dx: cos(dir) * perFrame, dy: sin(dir) * perFrame)
+                }
+            }
+            _sawEvalMouse = global
+            _sawHeading = heading
         }
-        _sawLastMouse = global
+        _sawFrameCount += 1
 
-        // Slow cut: clamp the per-frame step so even a fast flick crawls.
-        let step = hypot(dx, dy)
-        if step > Self.sawMaxSpeed {
-            let s = Self.sawMaxSpeed / step
-            dx *= s; dy *= s
-        }
-
+        // Advance along the held heading (clamped to screen).
         var p = _sawCutPoint
-        p.x = min(max(p.x + dx, 0), bounds.width)
-        p.y = min(max(p.y + dy, 0), bounds.height)
-        _sawTravel += hypot(p.x - _sawCutPoint.x, p.y - _sawCutPoint.y)
+        p.x = min(max(p.x + _sawHeading.dx, 0), bounds.width)
+        p.y = min(max(p.y + _sawHeading.dy, 0), bounds.height)
+        let moved = hypot(p.x - _sawCutPoint.x, p.y - _sawCutPoint.y)
         _sawCutPoint = p
+        _sawTravel += moved
 
-        path.addLine(to: p)
         let wiggle = sin(_sawTravel * Self.sawWiggleFreq) * Self.sawWiggleAmp
         CATransaction.begin()
         CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
-        trail.path = path.copy()                // refresh the stroked kerf
+        if moved > 0 {
+            path.addLine(to: p)
+            trail.path = path.copy()             // refresh the stroked kerf
+        }
         saw.position = p
         saw.transform = CATransform3DMakeRotation(wiggle, 0, 0, 1)
         CATransaction.commit()
