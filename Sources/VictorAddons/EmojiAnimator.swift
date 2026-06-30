@@ -1933,6 +1933,10 @@ class EmojiAnimator {
     /// so the blast appears to fall onto the cursor rather than be centred on it.
     private static let bombImpactFractionFromBottom: CGFloat = 0.25
 
+    /// How long the locked crosshair takes to fade out once the bomb fires,
+    /// overlapping the first moments of the blast before the real cursor returns.
+    private static let bombReticleFadeOut: Double = 0.5
+
     /// Total cursor travel (px) during the fuse above which we treat it as a
     /// deliberate aim. Set high enough that an accidental nudge won't arm it —
     /// you have to actually *shake* the crosshair. Crossing it flips the
@@ -2031,22 +2035,62 @@ class EmojiAnimator {
         container.add(pulse, forKey: "lockPulse")
     }
 
-    /// Tear down the crosshair, restore the cursor, and report whether the user
-    /// aimed (moved the mouse during the fuse) plus the final cursor point in
-    /// hostLayer coords (where a precise strike should land).
+    /// Stop tracking the mouse and report whether the user aimed (moved the mouse
+    /// during the fuse) plus the final cursor point in hostLayer coords (where a
+    /// precise strike should land). The crosshair is *not* torn down here — it
+    /// locks at the firing point and fades over the blast (`lockAndFadeReticle`);
+    /// the real cursor returns only once that fade finishes.
     private func endBombTargeting() -> (aimed: Bool, center: CGPoint) {
         _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
-        _bombTargetLayer?.removeFromSuperlayer(); _bombTargetLayer = nil
+        let center = mousePointInHostLayer()
+        let aimed = _bombArmed
+        NSLog("☢️ nuke fuse ended: travel=%.0fpx threshold=%.0f aimed=%@ center=(%.0f,%.0f)",
+              _bombMoveDistance, Self.bombAimTravelThreshold, aimed ? "YES" : "no", center.x, center.y)
+        lockAndFadeReticle(at: center)
+        return (aimed, center)
+    }
+
+    /// Freeze the crosshair where it locked (it stops following the mouse), pin it
+    /// above the blast, and fade it out over `bombReticleFadeOut`s. Only when the
+    /// fade completes do we drop the layer and restore the real cursor — so the
+    /// locked-on reticle dissolves into the explosion instead of snapping away the
+    /// instant the bomb lands, and the pointer never reappears mid-blast.
+    private func lockAndFadeReticle(at point: CGPoint) {
+        guard let target = _bombTargetLayer else { restoreBombCursor(); return }
+        _bombTargetLayer = nil   // detach: the tracking timer is already gone
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        target.position = point      // pin exactly at the firing point
+        target.zPosition = 10_000    // above the blast so the fade stays visible
+        CATransaction.commit()
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.duration = Self.bombReticleFadeOut
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak target] in
+            target?.removeFromSuperlayer()
+            self?.restoreBombCursor()
+        }
+        target.add(fade, forKey: "reticleFadeOut")
+        CATransaction.commit()
+    }
+
+    /// Restore the real cursor hidden for the nuke fuse + reticle fade — but only
+    /// if no fresh targeting pass has started meanwhile, so a stale fade
+    /// completion can't unhide the pointer mid-aim of the next bomb.
+    private func restoreBombCursor() {
+        guard _bombTargetTimer == nil, _bombTargetLayer == nil else { return }
         if _bombTargetHidCursor {
             NSCursor.unhide()
             CGDisplayShowCursor(CGMainDisplayID())
             _bombTargetHidCursor = false
         }
-        let center = mousePointInHostLayer()
-        let aimed = _bombArmed
-        NSLog("☢️ nuke fuse ended: travel=%.0fpx threshold=%.0f aimed=%@ center=(%.0f,%.0f)",
-              _bombMoveDistance, Self.bombAimTravelThreshold, aimed ? "YES" : "no", center.x, center.y)
-        return (aimed, center)
     }
 
     /// Idle (un-aimed) vs armed (shaken-enough) crosshair styling: the idle

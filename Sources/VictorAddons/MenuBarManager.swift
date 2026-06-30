@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 30, 13:06"
+    static let BUILD_TIME = "Jun 30, 13:19"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -493,10 +493,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     @objc func openDreamPlainWorkspace() {
+        // ⌘⌥⌃C global hotkey lands here. `do script` already spawns a NEW window
+        // (not a tab), but without an explicit `set bounds` Terminal reopens it on
+        // whichever display it last had a window on (often an external monitor).
+        // Pin it to a quarter of the built-in Retina screen, like the other
+        // openDream* items. bottomLeft is the only quarter not used elsewhere.
+        let screen = NSScreen.screens.first(where: { $0.localizedName.localizedCaseInsensitiveContains("built-in") })
+            ?? NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.main ?? NSScreen.screens[0]
+        let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: .bottomLeft)
         let script = """
         tell application "Terminal"
             do script "cd ~/workspace && claude"
             activate
+            set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
         """
         DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
