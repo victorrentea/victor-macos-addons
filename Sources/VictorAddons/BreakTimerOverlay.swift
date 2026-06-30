@@ -16,9 +16,8 @@ final class BreakTimerController {
 
     static let minWidth: CGFloat = 180
 
-    // Idle thresholds & geometry for the activity-driven backdrop and the
-    // fullscreen-on-idle behavior.
-    private static let backdropIdleSeconds: CFTimeInterval = 3.0      // mouse-on-timer-screen idle → backdrop opaque
+    // Geometry for the fullscreen-on-idle behavior. (The backdrop is hover-driven,
+    // not idle-driven — see `activityTick`.)
     private static let fullscreenIdleSeconds: CFTimeInterval = 120    // total (mouse+keyboard) idle → enlarge
     private static let enlargeFraction: CGFloat = 0.85               // big frame fills 85% of the screen
     private static let enlargeAnimationDuration: TimeInterval = 0.3   // enlarge/restore animation
@@ -35,12 +34,6 @@ final class BreakTimerController {
     private var bgView: NSView?              // opaque backdrop, faded in/out
     private var bgOpaque = true              // current backdrop state
     private var epoch = 0                      // invalidates in-flight expiry blocks
-
-    // Backdrop is driven ONLY by mouse movement on the timer's OWN screen (not
-    // keyboard, not the other monitor): we sample the cursor each tick and stamp
-    // `mouseActiveOnTimerScreenAt` whenever it MOVED while on the timer's screen.
-    private var lastCursorPos: NSPoint?
-    private var mouseActiveOnTimerScreenAt: Date?
 
     // Fullscreen-on-idle: after `fullscreenIdleSeconds` of total inactivity the
     // panel grows to `enlargeFraction` of its screen; any input restores it.
@@ -136,8 +129,6 @@ final class BreakTimerController {
         // Reset idle-driven state so a future open starts normal-sized.
         isEnlarged = false
         savedFrame = nil
-        lastCursorPos = nil
-        mouseActiveOnTimerScreenAt = nil
         // The view sets custom cursors (open-hand to move, pointer over buttons,
         // resize at corners) imperatively; restore the standard arrow so closing
         // the timer never leaves a hand/resize cursor stuck on screen.
@@ -226,49 +217,34 @@ final class BreakTimerController {
 
     // MARK: - Activity-driven backdrop
 
-    /// The opaque backdrop is driven ONLY by mouse movement on the timer's OWN
-    /// screen: while the cursor has moved on that screen within the last
-    /// `backdropIdleSeconds` the backdrop fades fully away (only the outlined
-    /// digits remain); otherwise it fades back to fully opaque. Keyboard never
-    /// counts (typing leaves the backdrop black), and mouse movement on another
-    /// monitor never counts. One smooth fade per transition, so it never flickers.
-    /// Exception: while zooming with the wheel the backdrop is forced on (so the
-    /// body stays solid under the cursor mid-zoom).
+    /// The opaque black backdrop is shown by DEFAULT and clears ONLY while the
+    /// cursor is hovering over the timer panel: hover in → it fades fully away (so
+    /// you can see the screen underneath, only the outlined digits remain), hover
+    /// out → it fades back to fully opaque. One smooth fade per transition, so it
+    /// never flickers.
     ///
-    /// The same 0.4s tick also drives the fullscreen-on-idle behavior, but from
-    /// TOTAL inactivity (`systemIdleSeconds`, mouse+keyboard), so any input — even
+    /// The same tick also drives the fullscreen-on-idle behavior, but from TOTAL
+    /// inactivity (`systemIdleSeconds`, mouse+keyboard), so any input — even
     /// keystrokes or a mouse move on another screen — restores the original size.
     private func startActivityMonitor() {
         activityTimer?.invalidate()
-        // Start with NO backdrop — the timer just appeared because the user acted,
-        // so treat the mouse as active on the timer's screen; the backdrop fades
-        // in only after the idle window elapses.
-        bgOpaque = false
-        bgView?.alphaValue = 0
-        mouseActiveOnTimerScreenAt = Date()
-        lastCursorPos = NSEvent.mouseLocation
-        let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in self?.activityTick() }
+        // Default state: opaque black backdrop. It only clears while the cursor
+        // hovers over the panel (handled per-tick below).
+        bgOpaque = true
+        bgView?.alphaValue = 1
+        let t = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in self?.activityTick() }
         RunLoop.main.add(t, forMode: .common)
         activityTimer = t
     }
 
     private func activityTick() {
-        // --- Backdrop: mouse movement on the timer's own screen only ---
-        let cursor = NSEvent.mouseLocation
-        let moved = lastCursorPos.map { $0 != cursor } ?? true
-        lastCursorPos = cursor
-        let timerScreen = panelScreen()
-        if moved, let cursorScreen = Self.screen(containing: cursor),
-           cursorScreen.frame == timerScreen.frame {
-            mouseActiveOnTimerScreenAt = Date()
-        }
-        let zoomHold = zoomBackdropUntil.map { Date() < $0 } ?? false
-        let onScreenIdle = mouseActiveOnTimerScreenAt.map { Date().timeIntervalSince($0) } ?? 999
-        setBackgroundOpaque(zoomHold || onScreenIdle >= Self.backdropIdleSeconds)
+        // --- Backdrop: black by default, transparent only while hovering the panel ---
+        let hovering = panel?.frame.contains(NSEvent.mouseLocation) ?? false
+        setBackgroundOpaque(!hovering)
 
         // --- Fullscreen on total inactivity; any input restores ---
         if Self.systemIdleSeconds() >= Self.fullscreenIdleSeconds {
-            enlargeIfNeeded(on: timerScreen)
+            enlargeIfNeeded(on: panelScreen())
         } else {
             restoreIfNeeded()
         }
@@ -315,19 +291,6 @@ final class BreakTimerController {
         }
     }
 
-    /// Wheel-zoom forces the backdrop on instantly and holds it briefly after the
-    /// last scroll; when this deadline passes the activity monitor fades it back
-    /// out (same smooth fade as the rest), unless the user has since gone idle.
-    private var zoomBackdropUntil: Date?
-
-    func showBackdropForZoom() {
-        zoomBackdropUntil = Date().addingTimeInterval(0.6)
-        guard let bgView, !bgOpaque else { return }
-        bgOpaque = true
-        bgView.layer?.removeAllAnimations()   // cancel any in-flight fade
-        bgView.alphaValue = 1                  // instant — visible from the first notch
-    }
-
     private func setBackgroundOpaque(_ opaque: Bool) {
         guard let bgView, opaque != bgOpaque else { return }
         bgOpaque = opaque
@@ -368,7 +331,6 @@ final class BreakTimerController {
         view.onClose = { [weak self] in self?.close() }
         view.onTogglePause = { [weak self] in self?.togglePause() }
         view.onAdd = { [weak self] m in self?.addMinutes(m) }
-        view.onZoom = { [weak self] in self?.showBackdropForZoom() }
         view.selectedCountryTZ = selectedCountry.tz
         view.onSelectCountry = { [weak self] c in self?.selectCountry(c) }
         container.addSubview(view)
@@ -490,7 +452,6 @@ final class BreakTimerView: NSView {
     var onClose: (() -> Void)?
     var onTogglePause: (() -> Void)?
     var onAdd: ((Int) -> Void)?
-    var onZoom: (() -> Void)?                 // wheel-zoom in progress → show the backdrop
 
     private var digits = "00:00"
     private var finishText = ""
@@ -1239,7 +1200,6 @@ final class BreakTimerView: NSView {
             guard dy != 0 else { return }
             let factor = CGFloat(exp(Double(-dy) * 0.0035))
             zoomWindow(by: factor, around: NSEvent.mouseLocation)
-            onZoom?()   // show the opaque backdrop while zooming (fades out shortly after)
         } else {
             // Dragging → adjust minutes (up adds, down subtracts; up is a negative
             // delta). Accumulate precise deltas so a trackpad isn't hyper-sensitive.
