@@ -36,6 +36,12 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/iris"), .effect("iris"))
     }
 
+    func testRouteMapsBreakSummaryTestHook() {
+        // Fires the ☕️ break-summary delta run now, bypassing the >= 5 min +
+        // cooldown gates (same Terminal flow a real break triggers).
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/break-summary"), .testBreakSummary)
+    }
+
     func testRouteUnknownForUnsupportedPath() {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/unknown"), .unknown)
     }

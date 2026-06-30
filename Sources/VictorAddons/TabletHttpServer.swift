@@ -42,6 +42,9 @@ class TabletHttpServer {
         /// Post the "Wispr started but output ≠ 🔊OS Output" notification now,
         /// using the real current default-output name (test hook).
         case testWisprOutputDrift
+        /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
+        /// cooldown gates — same Terminal flow a real break triggers (test hook).
+        case testBreakSummary
         case promptCapture
         case intellijFileOpened
         case unknown
@@ -82,6 +85,7 @@ class TabletHttpServer {
     var onTestWhip: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestWisprOutputDrift: (() -> Void)?
+    var onTestBreakSummary: (() -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -189,6 +193,8 @@ class TabletHttpServer {
                     self?.onTestGroupPhoto?()
                 case .testWisprOutputDrift:
                     self?.onTestWisprOutputDrift?()
+                case .testBreakSummary:
+                    self?.onTestBreakSummary?()
                 case .promptCapture:
                     contentType = "application/json"
                     let promptBody = Self.extractBody(raw)
@@ -266,6 +272,8 @@ class TabletHttpServer {
             return .testGroupPhoto
         case "/test/wispr-output-drift":
             return .testWisprOutputDrift
+        case "/test/break-summary":
+            return .testBreakSummary
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":

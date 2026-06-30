@@ -431,6 +431,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
 
+        tabletServer?.onTestBreakSummary = {
+            // Headless trigger of the ☕️ break-summary delta — same Terminal flow
+            // a real >= 5 min break fires, but bypassing the minutes + cooldown gates.
+            BreakSummaryLauncher.launchNow(reason: "/test/break-summary")
+        }
+
         tabletServer?.onTestTranscriptionStart = {
             // Headless force-(re)start of Whisper for E2E checks. The start
             // call is a no-op if it's already running.
