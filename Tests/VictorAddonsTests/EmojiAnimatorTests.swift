@@ -27,8 +27,9 @@ final class EmojiAnimatorTests: XCTestCase {
         let rotate = animations.rotate
         XCTAssertEqual(rotate.keyPath, "transform.rotation.z")
         XCTAssertEqual(rotate.fromValue as? Double, 0.0)
-        XCTAssertEqual(rotate.toValue as? Double ?? 0, -Double.pi / 8, accuracy: 0.001)
+        XCTAssertEqual(rotate.toValue as? Double ?? 0, EmojiAnimator.bombReticleRotationSpeed * 0.75, accuracy: 0.001)
         XCTAssertEqual(rotate.duration, grow.duration, accuracy: 0.001)
+        XCTAssertEqual(rotate.timingFunction, CAMediaTimingFunction(name: .linear))
         XCTAssertEqual(rotate.fillMode, CAMediaTimingFillMode.forwards)
         XCTAssertFalse(rotate.isRemovedOnCompletion)
     }
@@ -53,7 +54,7 @@ final class EmojiAnimatorTests: XCTestCase {
         let center = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
 
         XCTAssertEqual(ringSegments.count, 3)
-        XCTAssertTrue(ringSegments.allSatisfy { abs($0.lineWidth - 5.5) < 0.001 })
+        XCTAssertTrue(ringSegments.allSatisfy { abs($0.lineWidth - 3.85) < 0.001 })
         XCTAssertEqual(triangles.count, 3)
         for triangle in triangles {
             let points = triangle.path?.testPoints() ?? []
@@ -64,6 +65,7 @@ final class EmojiAnimatorTests: XCTestCase {
             )
             let distances = points.map { hypot($0.x - center.x, $0.y - center.y) }
             XCTAssertEqual(hypot(centroid.x - center.x, centroid.y - center.y), 54, accuracy: 0.001)
+            XCTAssertEqual((distances.max() ?? 0) - (distances.min() ?? 0), 28.834, accuracy: 0.001)
             XCTAssertEqual(distances.min() ?? 0, distances[0], accuracy: 0.001, "the triangle tip should point inward")
         }
     }
@@ -83,8 +85,9 @@ final class EmojiAnimatorTests: XCTestCase {
 
         XCTAssertEqual(rotate.keyPath, "transform.rotation.z")
         XCTAssertEqual(rotate.fromValue as? Double ?? 0, -0.2, accuracy: 0.001)
-        XCTAssertLessThan(rotate.toValue as? Double ?? 0, -0.2)
+        XCTAssertEqual(rotate.toValue as? Double ?? 0, -0.2 + EmojiAnimator.bombReticleRotationSpeed * 0.45, accuracy: 0.001)
         XCTAssertEqual(rotate.duration, 0.45, accuracy: 0.001)
+        XCTAssertEqual(rotate.timingFunction, CAMediaTimingFunction(name: .linear))
         XCTAssertEqual(rotate.fillMode, CAMediaTimingFillMode.forwards)
         XCTAssertFalse(rotate.isRemovedOnCompletion)
     }

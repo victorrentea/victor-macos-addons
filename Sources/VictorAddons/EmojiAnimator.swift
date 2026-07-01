@@ -1967,8 +1967,7 @@ class EmojiAnimator {
     /// the strike, then — at the blast — pops out by `bombReticleStrikePop`× more
     /// and fades away over `bombReticleStrikeFade`s ("fades out when it's bigger").
     private static let bombReticleLockGrow: CGFloat = 2.2
-    private static let bombReticleLockRotation: Double = -.pi / 8
-    private static let bombReticleStrikeRotation: Double = -.pi / 14
+    static let bombReticleRotationSpeed: Double = -.pi / 8
     private static let bombReticleStrikePop: CGFloat = 1.5
     private static let bombReticleStrikeFade: Double = 0.45
 
@@ -1996,9 +1995,6 @@ class EmojiAnimator {
             // A re-press during the fuse bumped the epoch → this stale strike bails.
             guard let self, self._bombEpoch == epoch else { return }
             let (aimed, center) = self.endBombTargeting()
-            // Strike: the (already-grown, if locked) crosshair pops out + fades
-            // away exactly as the blast lands.
-            self.strikeFadeReticle()
             // Sound already started; don't replay it here.
             if aimed {
                 // Locked an aim → a small, precise strike on the locked point.
@@ -2006,6 +2002,9 @@ class EmojiAnimator {
             } else {
                 self._showExplosionGif(playSound: false)
             }
+            // Strike: the crosshair starts fading at the same moment the nuke
+            // animation starts, while preserving its current rotation.
+            self.strikeFadeReticle()
         }
     }
 
@@ -2145,9 +2144,9 @@ class EmojiAnimator {
 
         let rotate = CABasicAnimation(keyPath: "transform.rotation.z")
         rotate.fromValue = 0.0
-        rotate.toValue = Self.bombReticleLockRotation
+        rotate.toValue = Self.bombReticleRotationSpeed * remaining
         rotate.duration = remaining
-        rotate.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        rotate.timingFunction = CAMediaTimingFunction(name: .linear)
         rotate.fillMode = .forwards
         rotate.isRemovedOnCompletion = false
 
@@ -2157,7 +2156,7 @@ class EmojiAnimator {
     static func makeBombReticleStrikeRotateAnimation(from currentRotation: Double, duration: CFTimeInterval) -> CABasicAnimation {
         let rotate = CABasicAnimation(keyPath: "transform.rotation.z")
         rotate.fromValue = currentRotation
-        rotate.toValue = currentRotation + Self.bombReticleStrikeRotation
+        rotate.toValue = currentRotation + Self.bombReticleRotationSpeed * duration
         rotate.duration = duration
         rotate.timingFunction = CAMediaTimingFunction(name: .linear)
         rotate.fillMode = .forwards
@@ -2260,7 +2259,7 @@ class EmojiAnimator {
         let size: CGFloat = 180
         let center = CGPoint(x: size / 2, y: size / 2)
         let radius: CGFloat = 54
-        let strokeWidth: CGFloat = 5.5
+        let strokeWidth: CGFloat = 3.85
         let color = (armed ? NSColor.systemRed : NSColor.systemGray).cgColor
 
         let container = CALayer()
@@ -2308,9 +2307,9 @@ class EmojiAnimator {
     private static func bombReticleTrianglePath(center: CGPoint, angle: CGFloat, ringRadius: CGFloat) -> CGPath {
         let outward = CGVector(dx: cos(angle), dy: sin(angle))
         let tangent = CGVector(dx: -sin(angle), dy: cos(angle))
-        let tipDistance = ringRadius - 26
-        let baseDistance = ringRadius + 13
-        let halfBase: CGFloat = 20
+        let tipDistance = ringRadius - 18.2
+        let baseDistance = ringRadius + 9.1
+        let halfBase: CGFloat = 14
 
         let tip = CGPoint(x: center.x + outward.dx * tipDistance, y: center.y + outward.dy * tipDistance)
         let baseCenter = CGPoint(x: center.x + outward.dx * baseDistance, y: center.y + outward.dy * baseDistance)
