@@ -53,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
-    /// Fires the daily 13:00 "Group Photo" prompt (gated on `daemonConnected`).
+    /// Fires the daily 11:15 "Group Photo" prompt (gated on `daemonConnected`).
     private var groupPhotoScheduler: GroupPhotoScheduler?
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
@@ -434,7 +434,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         pm.start()
         self.powerMonitor = pm
 
-        // Daily 13:00 "Group Photo" prompt — only when the daemon is connected.
+        // Daily 11:15 "Group Photo" prompt — only when the daemon is connected.
         let groupPhoto = GroupPhotoScheduler()
         groupPhoto.onTrigger = { [weak self] in
             guard let self else { return }
@@ -1388,7 +1388,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    /// Daily 13:00 "Group Photo" prompt. Deliberately **persistent**: unlike the
+    /// Daily 11:15 "Group Photo" prompt. Deliberately **persistent**: unlike the
     /// transient notifications above, it is never auto-removed — it stays in
     /// Notification Center until the user dismisses it (the ✕). To make it remain
     /// on screen until dismissed rather than slide away, set the app's notification

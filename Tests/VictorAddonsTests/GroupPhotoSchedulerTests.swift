@@ -16,27 +16,28 @@ final class GroupPhotoSchedulerTests: XCTestCase {
         return Calendar(identifier: .gregorian).date(from: comps)!
     }
 
-    func testFiresAtExactlyThirteenHundred() {
-        XCTAssertTrue(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 13, minute: 0)))
+    func testFiresAtExactlyElevenFifteen() {
+        XCTAssertTrue(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 11, minute: 15)))
     }
 
     func testFiresAnySecondWithinTheTriggerMinute() {
-        // Whichever second a tick lands on inside 13:00, it must still match.
-        XCTAssertTrue(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 13, minute: 0, second: 1)))
-        XCTAssertTrue(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 13, minute: 0, second: 59)))
+        // Whichever second a tick lands on inside 11:15, it must still match.
+        XCTAssertTrue(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 11, minute: 15, second: 1)))
+        XCTAssertTrue(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 11, minute: 15, second: 59)))
     }
 
     func testDoesNotFireOneMinuteBefore() {
-        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 12, minute: 59)))
+        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 11, minute: 14)))
     }
 
     func testDoesNotFireOneMinuteAfter() {
-        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 13, minute: 1)))
+        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 11, minute: 16)))
     }
 
     func testDoesNotFireOtherHourSameMinute() {
-        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 14, minute: 0)))
-        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 1, minute: 0)))
+        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 12, minute: 15)))
+        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 10, minute: 15)))
+        XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 13, minute: 0)))
         XCTAssertFalse(GroupPhotoScheduler.isTriggerMinute(at: localDate(hour: 0, minute: 0)))
     }
 }

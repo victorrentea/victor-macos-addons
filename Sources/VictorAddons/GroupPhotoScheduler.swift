@@ -1,17 +1,19 @@
 import Foundation
 
 /// Fires `onTrigger` once a day, the moment local wall-clock time reaches
-/// **13:00**. A 60s repeating `DispatchSourceTimer` polls the clock, and
-/// exactly one tick lands inside the 13:00 minute. A per-day guard
+/// **11:15**. A 60s repeating `DispatchSourceTimer` polls the clock, and
+/// exactly one tick lands inside the 11:15 minute. A per-day guard
 /// (`lastFiredYMD`) makes the fire idempotent so it cannot double-trigger
 /// within the same calendar day.
 ///
 /// The caller decides whether to act on the trigger (e.g. only when the
 /// training-assistant daemon is connected). A trigger missed because the app
-/// was launched after 13:00 is intentionally *not* replayed.
+/// was launched after 11:15 is intentionally *not* replayed.
 final class GroupPhotoScheduler {
-    /// Local hour the prompt fires at (13:00).
-    static let triggerHour = 13
+    /// Local hour the prompt fires at (11:15).
+    static let triggerHour = 11
+    /// Local minute the prompt fires at (11:15).
+    static let triggerMinute = 15
 
     var onTrigger: (() -> Void)?
 
@@ -21,12 +23,12 @@ final class GroupPhotoScheduler {
     /// `queue`, so reads/writes are sequential.
     private var lastFiredYMD: DateComponents?
 
-    /// True when `date` falls inside the trigger minute (hour == 13, minute == 0)
+    /// True when `date` falls inside the trigger minute (hour == 11, minute == 15)
     /// in the local calendar. Pure + side-effect free for unit testing.
     static func isTriggerMinute(at date: Date) -> Bool {
         let cal = Calendar(identifier: .gregorian)
         let comps = cal.dateComponents([.hour, .minute], from: date)
-        return comps.hour == triggerHour && comps.minute == 0
+        return comps.hour == triggerHour && comps.minute == triggerMinute
     }
 
     func start() {
