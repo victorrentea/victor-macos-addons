@@ -53,11 +53,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
-    /// On-screen "📸 Group Photo" overlay, shown at the start of a qualifying
-    /// break (lunch, or an afternoon break ≥ 10 min). Draws the app's own panel
-    /// so it shows even while PowerPoint is presenting fullscreen (which makes
-    /// macOS suppress normal notification banners into Notification Center).
-    private var groupPhotoOverlay: GroupPhotoOverlay?
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
@@ -437,10 +432,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         pm.start()
         self.powerMonitor = pm
-
-        // "📸 Group Photo" overlay — fired from break starts (see onBreak), not a
-        // fixed clock time. Draws on the projected (retina) screen so the room sees it.
-        groupPhotoOverlay = GroupPhotoOverlay(screenProvider: { AppDelegate.findRetinaScreen() })
 
         // Keep the wired USB backup armed: re-run `adb reverse` on a timer so
         // plugging the tablet in mid-session restores the no-WiFi path within
@@ -1392,37 +1383,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    /// Prompt Victor to take a group photo: the on-screen overlay (guaranteed
-    /// visible even mid-presentation) **plus** a persistent Notification-Center
-    /// record as a fallback. Called from break starts (gated) and `/test/group-photo`.
+    /// Prompt Victor to take a group photo using the app's standard bottom-left
+    /// status banner — the same overlay as "started" / "paused on battery" / etc.
+    /// Presence-gated, so if he stepped away it fades in the moment he's back at
+    /// the Mac. Being the app's own always-on-top panel, it shows even while
+    /// PowerPoint is presenting fullscreen (unlike a macOS notification, which
+    /// gets suppressed into Notification Center). Called from break starts (gated)
+    /// and `/test/group-photo`.
     private func promptGroupPhoto() {
-        groupPhotoOverlay?.show()
-        postGroupPhotoNotification()
-    }
-
-    /// "📸 Group Photo" native notification. Deliberately **persistent**: unlike the
-    /// transient notifications above, it is never auto-removed — it stays in
-    /// Notification Center until the user dismisses it (the ✕). To make it remain
-    /// on screen until dismissed rather than slide away, set the app's notification
-    /// style to "Alerts" (System Settings → Notifications → Victor Addons). NB the
-    /// on-screen overlay is the primary channel; this native banner is a fallback
-    /// that macOS may suppress into Notification Center while presenting fullscreen.
-    /// The identifier includes the minute so multiple breaks in a day each record
-    /// their own prompt instead of overwriting one another.
-    private func postGroupPhotoNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "📸 Group Photo"
-        content.subtitle = "Let's make some memories? :D"
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        let stamp = DateFormatter()
-        stamp.dateFormat = "yyyy-MM-dd-HHmm"
-        let identifier = "group-photo:\(stamp.string(from: Date()))"
-        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Group Photo notification error: \(err)") }
-        }
-        overlayInfo("📸 Group Photo notification posted")
+        statusBanner?.showOnPresence(
+            text: "📸 Group Photo — Let's make some memories? :D",
+            sound: StatusBannerSound.start,
+            visibleDuration: 12.0
+        )
+        overlayInfo("📸 Group Photo prompt shown")
     }
 
     private func postInvalidURLNotification(_ clipboardPreview: String) {
