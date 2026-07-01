@@ -560,6 +560,20 @@ final class KeymapOverlayWindow: NSPanel {
             animator().alphaValue = Self.visibleOpacity
         }
     }
+
+    func display(image: NSImage, frame: NSRect, animated: Bool) {
+        let imageView = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
+        imageView.image = image
+        imageView.imageScaling = .scaleAxesIndependently
+        contentView = imageView
+        setFrame(frame, display: true)
+        orderFrontRegardless()
+        if animated {
+            fadeIn()
+        } else {
+            alphaValue = Self.visibleOpacity
+        }
+    }
 }
 
 final class KeymapOverlayController {
@@ -602,13 +616,7 @@ final class KeymapOverlayController {
         let externals = screensProvider().filter { screenID($0) != retinaID }.map(\.frame)
         let frame = KeymapOverlayPlacement.frame(retinaFrame: retina.frame, externalFrames: externals, imageAspectRatio: KeymapOverlayRenderer.imageAspectRatio)
 
-        let imageView = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
-        imageView.image = image
-        imageView.imageScaling = .scaleAxesIndependently
-        window.contentView = imageView
-        window.setFrame(frame, display: true)
-        window.orderFrontRegardless()
-        window.fadeIn()
+        window.display(image: image, frame: frame, animated: !window.isVisible)
     }
 
     func hide() {

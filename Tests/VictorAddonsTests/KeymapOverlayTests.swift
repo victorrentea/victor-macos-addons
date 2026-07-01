@@ -218,6 +218,16 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(KeymapOverlayWindow.visibleOpacity, 0.8, accuracy: 0.001)
     }
 
+    func testOverlayWindowCanSwapImageWithoutFadeAtVisibleOpacity() {
+        let window = KeymapOverlayWindow()
+        let image = NSImage(size: NSSize(width: 10, height: 10))
+        let frame = NSRect(x: 0, y: 0, width: 10, height: 10)
+
+        window.display(image: image, frame: frame, animated: false)
+
+        XCTAssertEqual(window.alphaValue, KeymapOverlayWindow.visibleOpacity, accuracy: 0.001)
+    }
+
     func testRenderedImageKeepsBackgroundAndKeyGapsTransparent() throws {
         let image = KeymapOverlayRenderer().render(outputs: [:], scale: 1.0)
         guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {
