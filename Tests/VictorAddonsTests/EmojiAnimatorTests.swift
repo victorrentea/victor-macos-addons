@@ -27,10 +27,35 @@ final class EmojiAnimatorTests: XCTestCase {
         let rotate = animations.rotate
         XCTAssertEqual(rotate.keyPath, "transform.rotation.z")
         XCTAssertEqual(rotate.fromValue as? Double, 0.0)
-        XCTAssertLessThan(rotate.toValue as? Double ?? 0, 0, "negative z is clockwise in the overlay layer")
+        XCTAssertEqual(rotate.toValue as? Double ?? 0, -Double.pi / 8, accuracy: 0.001)
         XCTAssertEqual(rotate.duration, grow.duration, accuracy: 0.001)
         XCTAssertEqual(rotate.fillMode, CAMediaTimingFillMode.forwards)
         XCTAssertFalse(rotate.isRemovedOnCompletion)
+    }
+
+    func testBombCrosshairAssetBundlesWithTransparentBackground() {
+        let image = EmojiAnimator.loadBombCrosshairImage()
+        XCTAssertEqual(image.width, 360)
+        XCTAssertEqual(image.height, 360)
+
+        let alpha = image.alphaInfo
+        XCTAssertNotEqual(alpha, CGImageAlphaInfo.none)
+        XCTAssertNotEqual(alpha, CGImageAlphaInfo.noneSkipLast)
+        XCTAssertNotEqual(alpha, CGImageAlphaInfo.noneSkipFirst)
+    }
+
+    func testBombReticleUsesBitmapCrosshairAsset() {
+        let layer = EmojiAnimator.makeBombReticleLayer()
+
+        XCTAssertNotNil(layer.contents)
+        XCTAssertTrue(layer.sublayers?.isEmpty ?? true)
+        XCTAssertEqual(layer.bounds.width, 180, accuracy: 0.001)
+        XCTAssertEqual(layer.bounds.height, 180, accuracy: 0.001)
+    }
+
+    func testMinigunAllowsHalfSecondAimLeadInAndSmallerBulletHoles() {
+        XCTAssertEqual(EmojiAnimator.minigunAimLeadIn, 0.5, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.minigunBulletHoleScale, 0.7, accuracy: 0.001)
     }
 
     /// The 🔥 Phoenix asset must bundle into the app AND decode as the full

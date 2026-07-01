@@ -31,6 +31,7 @@ class EventTapManager {
     var onOpenCalendar: (() -> Void)?
     var onWhip: (() -> Void)?
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool) -> Void)?
+    var onKeyDownWhileOptionHeld: (() -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -140,6 +141,10 @@ class EventTapManager {
         let hasCtrl  = flags.contains(.maskControl)
         let hasOpt   = flags.contains(.maskAlternate)
         let hasShift = flags.contains(.maskShift)
+
+        if hasOpt {
+            DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileOptionHeld?() }
+        }
 
         // Ctrl+P → screenshot to clipboard, Ctrl+Shift+P → screenshot to file (suppress)
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt {

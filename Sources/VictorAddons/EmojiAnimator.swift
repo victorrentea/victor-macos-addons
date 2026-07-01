@@ -1967,7 +1967,7 @@ class EmojiAnimator {
     /// the strike, then — at the blast — pops out by `bombReticleStrikePop`× more
     /// and fades away over `bombReticleStrikeFade`s ("fades out when it's bigger").
     private static let bombReticleLockGrow: CGFloat = 2.2
-    private static let bombReticleLockRotation: Double = -.pi / 3
+    private static let bombReticleLockRotation: Double = -.pi / 8
     private static let bombReticleStrikePop: CGFloat = 1.5
     private static let bombReticleStrikeFade: Double = 0.45
 
@@ -2079,7 +2079,7 @@ class EmojiAnimator {
     /// on the FIRST mouse move after a nuke press — and hide the real cursor (also
     /// while we aren't frontmost, via the background-cursor-hiding arm).
     private func revealBombReticle() {
-        let target = Self.makeSniperReticle()
+        let target = Self.makeBombReticleLayer()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         target.position = mousePointInHostLayer()
@@ -2239,6 +2239,29 @@ class EmojiAnimator {
     private static let bombReticleLineWidthIdle: CGFloat = 1.5
     private static let bombReticleLineWidthArmed: CGFloat = 3.75
 
+    static func loadBombCrosshairImage() -> CGImage {
+        guard let url = Bundle.module.url(forResource: "bomb_crosshair", withExtension: "png"),
+              let image = NSImage(contentsOf: url),
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            fatalError("bomb_crosshair.png missing or unreadable")
+        }
+        return cg
+    }
+
+    static func makeBombReticleLayer() -> CALayer {
+        let size: CGFloat = 180
+        let layer = CALayer()
+        layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        layer.contents = loadBombCrosshairImage()
+        layer.contentsGravity = .resizeAspect
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        layer.shadowColor = NSColor.black.cgColor
+        layer.shadowOpacity = 0.45
+        layer.shadowRadius = 2
+        layer.shadowOffset = .zero
+        return layer
+    }
+
     /// A sniper-scope reticle drawn as CALayers: a ring, four crosshair arms with
     /// a small central gap, and a centre dot — with a soft dark shadow so it reads
     /// on any desktop backdrop. By default it starts thin + grey (the nuke fuse;
@@ -2295,6 +2318,8 @@ class EmojiAnimator {
     /// How much bigger the minigun aiming reticle is than the 1.5× nuke reticle —
     /// the bullet-spray crosshair reads as a heftier "machine-gun sight".
     private static let minigunReticleScale: CGFloat = 2.5
+    static let minigunAimLeadIn: Double = 0.5
+    static let minigunBulletHoleScale: CGFloat = 0.7
 
     /// Float a bigger, always-red sniper crosshair on the cursor and follow it at
     /// 60fps for the whole minigun burst (the real cursor is hidden, the crosshair
@@ -4023,16 +4048,14 @@ class EmojiAnimator {
             return
         }
 
-        if playSound { SoundManager.shared.play("22_minigun.mp3") }
-
         let container = CALayer()
         container.frame = bounds
         hostLayer.addSublayer(container)
 
         let interval = (spawnEnd - spawnStart) / Double(count - 1)
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        let holeW: CGFloat = image.size.width
-        let holeH: CGFloat = image.size.height
+        let holeW: CGFloat = image.size.width * Self.minigunBulletHoleScale
+        let holeH: CGFloat = image.size.height * Self.minigunBulletHoleScale
 
         // Mouse-follow state shared across the spawn closures (main thread only).
         // Bullets cluster around the cursor only while it is actually MOVING on
@@ -4041,10 +4064,17 @@ class EmojiAnimator {
         var lastMouse: CGPoint?
         var lastMoveAt: CFTimeInterval = 0  // distant past → start in full-screen mode
 
+        if playSound {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.minigunAimLeadIn) { [weak container] in
+                guard container?.superlayer != nil else { return }
+                SoundManager.shared.play("22_minigun.mp3")
+            }
+        }
+
         for i in 0..<count {
-            let delay = spawnStart + Double(i) * interval
+            let delay = Self.minigunAimLeadIn + spawnStart + Double(i) * interval
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
-                guard let self, let container else { return }
+                guard let self, let container, container.superlayer != nil else { return }
                 let now = CACurrentMediaTime()
                 let mouse = self.mouseInHostLayer()
                 if let prev = lastMouse, hypot(mouse.x - prev.x, mouse.y - prev.y) > 2 {
@@ -4085,7 +4115,7 @@ class EmojiAnimator {
         // At the tail, each hole shrinks to nothing over 1s — the bullets get
         // "resorbed" instead of fading out.
         let resorbDuration = 1.0
-        let resorbStart = spawnEnd + 0.05  // just after the last bullet lands
+        let resorbStart = Self.minigunAimLeadIn + spawnEnd + 0.05  // just after the last bullet lands
         DispatchQueue.main.asyncAfter(deadline: .now() + resorbStart) { [weak container] in
             guard let holes = container?.sublayers else { return }
             for hole in holes {
@@ -4100,10 +4130,10 @@ class EmojiAnimator {
             }
         }
 
-        trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: "22_minigun.mp3")
+        trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: playSound ? "22_minigun.mp3" : nil)
 
-        // A bigger, always-red sniper crosshair tracks the cursor for the whole
-        // burst (where the bullets cluster) and tears down with the effect.
+        // A bigger, always-red sniper crosshair appears immediately, giving the
+        // trainer a short aiming window before sound + bullets start.
         startMinigunReticle(autoStopAfter: resorbStart + resorbDuration + 0.1)
     }
 

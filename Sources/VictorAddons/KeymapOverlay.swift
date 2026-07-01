@@ -259,6 +259,32 @@ enum KeymapLayoutLocator {
     }
 }
 
+enum KeymapOverlayOutputFilter {
+    // Standard macOS U.S./ABC Option outputs for the physical keys drawn by
+    // KeymapOverlayRenderer. Values matching these are baseline characters, not
+    // explicit emoji bindings, so the overlay leaves those keys blank.
+    private static let optionDefaults: [Int: String] = [
+        18: "¡", 19: "™", 20: "£", 21: "¢", 23: "∞", 22: "§", 26: "¶", 28: "•", 25: "ª", 29: "º", 27: "–", 24: "≠",
+        12: "œ", 13: "∑", 14: "dead ´", 15: "®", 17: "†", 16: "¥", 32: "dead ¨", 34: "dead ˆ", 31: "ø", 35: "π", 33: "“", 30: "‘", 42: "«",
+        0: "å", 1: "ß", 2: "∂", 3: "ƒ", 5: "©", 4: "dead ˙", 38: "∆", 40: "dead ˚", 37: "¬", 41: "…", 39: "æ",
+        6: "Ω", 7: "≈", 8: "ç", 9: "√", 11: "∫", 45: "dead ˜", 46: "µ", 43: "≤", 47: "≥", 44: "÷",
+    ]
+
+    private static let optionShiftDefaults: [Int: String] = [
+        18: "⁄", 19: "€", 20: "‹", 21: "›", 23: "ﬁ", 22: "ﬂ", 26: "‡", 28: "°", 25: "·", 29: "‚", 27: "—", 24: "±",
+        12: "Œ", 13: "„", 14: "dead ´", 15: "‰", 17: "dead ˇ", 16: "Á", 32: "dead ¨", 34: "dead ˆ", 31: "Ø", 35: "∏", 33: "”", 30: "’", 42: "»",
+        0: "Å", 1: "Í", 2: "Î", 3: "Ï", 5: "dead ˝", 4: "Ó", 38: "Ô", 40: "", 37: "Ò", 41: "Ú", 39: "Æ",
+        6: "dead ¸", 7: "dead ˛", 8: "Ç", 9: "◊", 11: "ı", 45: "dead ˜", 46: "Â", 43: "dead ¯", 47: "dead ˘", 44: "¿",
+    ]
+
+    static func customOutputs(from outputs: [Int: String], modifier: KeymapModifier) -> [Int: String] {
+        let defaults = modifier == .option ? optionDefaults : optionShiftDefaults
+        return outputs.filter { code, output in
+            output != defaults[code]
+        }
+    }
+}
+
 enum KeymapOverlayPlacement {
     static func frame(retinaFrame: NSRect, externalFrames: [NSRect], imageAspectRatio: CGFloat) -> NSRect {
         guard let external = closestExternal(to: retinaFrame, externalFrames: externalFrames) else {
@@ -354,6 +380,14 @@ final class KeymapHoldCoordinator {
         }
     }
 
+    func keyDownWhileOptionHeld() {
+        let hadOverlayState = pendingModifier != nil || visibleModifier != nil
+        cancelScheduled()
+        pendingModifier = nil
+        visibleModifier = nil
+        if hadOverlayState { hide() }
+    }
+
     func reset() {
         cancelScheduled()
         pendingModifier = nil
@@ -427,6 +461,10 @@ final class KeymapOverlayRenderer {
         KeyDef(row: 3, x: 1130, width: 96, label: "/", code: 44),
     ]
 
+    static func visibleBaseLabel(_ label: String) -> String {
+        [";", "'", "\\", "[", "]"].contains(label) ? "" : label.uppercased()
+    }
+
     func render(outputs: [Int: String], scale: CGFloat = 2.0) -> NSImage {
         let pixelSize = NSSize(width: Self.logicalSize.width * scale, height: Self.logicalSize.height * scale)
         guard let bitmap = NSBitmapImageRep(
@@ -475,8 +513,11 @@ final class KeymapOverlayRenderer {
             NSColor(calibratedRed: 215 / 255, green: 222 / 255, blue: 254 / 255, alpha: 1).setStroke()
             path.stroke()
 
-            let baseFrame = rect(key.x + 10, y - 1, key.width * 0.5, 58)
-            drawText(key.label.uppercased(), in: baseFrame, fontSize: 58, color: NSColor(calibratedRed: 64 / 255, green: 68 / 255, blue: 77 / 255, alpha: 1), alignment: .left)
+            let baseLabel = Self.visibleBaseLabel(key.label)
+            if !baseLabel.isEmpty {
+                let baseFrame = rect(key.x + 10, y - 1, key.width * 0.5, 58)
+                drawText(baseLabel, in: baseFrame, fontSize: 58, color: NSColor(calibratedRed: 64 / 255, green: 68 / 255, blue: 77 / 255, alpha: 1), alignment: .left)
+            }
 
             let output = compactOutput(outputs[key.code] ?? "")
             guard !output.isEmpty else { continue }
@@ -534,8 +575,10 @@ final class KeymapOverlayController {
             return
         }
         do {
-            images[.option] = renderer.render(outputs: try KeymapLayoutParser.outputs(in: text, modifier: .option))
-            images[.optionShift] = renderer.render(outputs: try KeymapLayoutParser.outputs(in: text, modifier: .optionShift))
+            let optionOutputs = try KeymapLayoutParser.outputs(in: text, modifier: .option)
+            let optionShiftOutputs = try KeymapLayoutParser.outputs(in: text, modifier: .optionShift)
+            images[.option] = renderer.render(outputs: KeymapOverlayOutputFilter.customOutputs(from: optionOutputs, modifier: .option))
+            images[.optionShift] = renderer.render(outputs: KeymapOverlayOutputFilter.customOutputs(from: optionShiftOutputs, modifier: .optionShift))
             let elapsed = CFAbsoluteTimeGetCurrent() - started
             overlayInfo(String(format: "KeymapOverlay: regenerated active layout images in %.3fs", elapsed))
         } catch {

@@ -148,6 +148,54 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(shown, [.option, .optionShift])
     }
 
+    func testHoldCoordinatorCancelsAndHidesWhenKeyPressedWhileOptionHeld() {
+        var didCancel = false
+        var hideCount = 0
+        var scheduled: (() -> Void)?
+        let coordinator = KeymapHoldCoordinator(
+            delay: 1.0,
+            schedule: { _, fire in scheduled = fire },
+            cancelScheduled: { didCancel = true },
+            show: { _ in },
+            hide: { hideCount += 1 }
+        )
+
+        coordinator.modifierFlagsChanged(option: true, shift: false)
+        coordinator.keyDownWhileOptionHeld()
+        scheduled?()
+
+        XCTAssertTrue(didCancel)
+        XCTAssertEqual(hideCount, 1)
+    }
+
+    func testOptionOutputsKeepOnlyValuesDifferentFromStoredMacDefaults() {
+        let outputs = [
+            21: "¢",
+            0: "😀",
+            41: "…",
+        ]
+
+        XCTAssertEqual(KeymapOverlayOutputFilter.customOutputs(from: outputs, modifier: .option), [0: "😀"])
+    }
+
+    func testOptionShiftOutputsKeepOnlyValuesDifferentFromStoredMacDefaults() {
+        let outputs = [
+            21: "›",
+            0: "😀",
+        ]
+
+        XCTAssertEqual(KeymapOverlayOutputFilter.customOutputs(from: outputs, modifier: .optionShift), [0: "😀"])
+    }
+
+    func testRendererSuppressesRequestedPunctuationBaseLabels() {
+        XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel(";"), "")
+        XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("'"), "")
+        XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("\\"), "")
+        XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("["), "")
+        XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("]"), "")
+        XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("a"), "A")
+    }
+
     func testRenderedImageKeepsBackgroundAndKeyGapsTransparent() throws {
         let image = KeymapOverlayRenderer().render(outputs: [:], scale: 1.0)
         guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {

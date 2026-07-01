@@ -766,6 +766,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
             self?.keymapHoldCoordinator?.modifierFlagsChanged(option: option, shift: shift)
         }
+        eventTap.onKeyDownWhileOptionHeld = { [weak self] in
+            self?.keymapHoldCoordinator?.keyDownWhileOptionHeld()
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 
