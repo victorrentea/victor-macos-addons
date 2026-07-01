@@ -434,8 +434,6 @@ final class KeymapOverlayRenderer {
         KeyDef(row: 1, x: 750, width: 96, label: "i", code: 34),
         KeyDef(row: 1, x: 850, width: 96, label: "o", code: 31),
         KeyDef(row: 1, x: 950, width: 96, label: "p", code: 35),
-        KeyDef(row: 1, x: 1050, width: 96, label: "[", code: 33),
-        KeyDef(row: 1, x: 1150, width: 96, label: "]", code: 30),
         KeyDef(row: 2, x: 90, width: 96, label: "a", code: 0),
         KeyDef(row: 2, x: 190, width: 96, label: "s", code: 1),
         KeyDef(row: 2, x: 290, width: 96, label: "d", code: 2),
@@ -445,9 +443,6 @@ final class KeymapOverlayRenderer {
         KeyDef(row: 2, x: 690, width: 96, label: "j", code: 38),
         KeyDef(row: 2, x: 790, width: 96, label: "k", code: 40),
         KeyDef(row: 2, x: 890, width: 96, label: "l", code: 37),
-        KeyDef(row: 2, x: 990, width: 96, label: ";", code: 41),
-        KeyDef(row: 2, x: 1090, width: 96, label: "'", code: 39),
-        KeyDef(row: 2, x: 1190, width: 96, label: "\\", code: 42),
         KeyDef(row: 3, x: 130, width: 96, label: "`", code: 50),
         KeyDef(row: 3, x: 230, width: 96, label: "z", code: 6),
         KeyDef(row: 3, x: 330, width: 96, label: "x", code: 7),
@@ -542,14 +537,28 @@ final class KeymapOverlayRenderer {
 }
 
 final class KeymapOverlayWindow: NSPanel {
+    static let initialOpacity: CGFloat = 0.2
+    static let visibleOpacity: CGFloat = 0.8
+    static let fadeInDuration: TimeInterval = 1.0
+
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
+        alphaValue = Self.initialOpacity
         level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+    }
+
+    func fadeIn() {
+        alphaValue = Self.initialOpacity
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.fadeInDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().alphaValue = Self.visibleOpacity
+        }
     }
 }
 
@@ -599,10 +608,12 @@ final class KeymapOverlayController {
         window.contentView = imageView
         window.setFrame(frame, display: true)
         window.orderFrontRegardless()
+        window.fadeIn()
     }
 
     func hide() {
         window.orderOut(nil)
+        window.alphaValue = KeymapOverlayWindow.initialOpacity
     }
 
     private func screenID(_ screen: NSScreen) -> CGDirectDisplayID? {

@@ -196,6 +196,28 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("a"), "A")
     }
 
+    func testRenderedImageOmitsRomanianDiacriticKeyButtonsEntirely() throws {
+        let image = KeymapOverlayRenderer().render(outputs: [:], scale: 1.0)
+        guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {
+            XCTFail("Could not inspect rendered image")
+            return
+        }
+
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1098, y: 148)?.alphaComponent ?? 1, 0, accuracy: 0.001, "[ key should be transparent")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1198, y: 148)?.alphaComponent ?? 1, 0, accuracy: 0.001, "] key should be transparent")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1038, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "; key should be transparent")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1138, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "' key should be transparent")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1238, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "\\ key should be transparent")
+    }
+
+    func testOverlayWindowFadeConfiguration() {
+        let window = KeymapOverlayWindow()
+
+        XCTAssertEqual(window.alphaValue, 0.2, accuracy: 0.001)
+        XCTAssertEqual(KeymapOverlayWindow.fadeInDuration, 1.0, accuracy: 0.001)
+        XCTAssertEqual(KeymapOverlayWindow.visibleOpacity, 0.8, accuracy: 0.001)
+    }
+
     func testRenderedImageKeepsBackgroundAndKeyGapsTransparent() throws {
         let image = KeymapOverlayRenderer().render(outputs: [:], scale: 1.0)
         guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {
@@ -252,5 +274,11 @@ final class KeymapOverlayTests: XCTestCase {
             throw NSError(domain: "KeymapOverlayTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not encode PNG"])
         }
         try png.write(to: url)
+    }
+}
+
+private extension NSBitmapImageRep {
+    func colorAtLogicalPoint(x: Int, y: Int) -> NSColor? {
+        colorAt(x: x, y: y)
     }
 }
