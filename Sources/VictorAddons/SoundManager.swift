@@ -82,6 +82,28 @@ class SoundManager {
         return try? AVAudioPlayer(contentsOf: url).duration
     }
 
+    /// Start `player` with the same Bluetooth latency compensation the
+    /// tablet-routed path (`playTabletSound`) already applies: when the Mac's
+    /// default output is Bluetooth, warm the A2DP link with an inaudible wake
+    /// tone and shift the start by the configured compensation
+    /// (`sound-timing.json` → `bluetoothCompensationMs`, mirroring the tablet's
+    /// `BT_WAKE_MS`) so the leading edge isn't clipped during codec/amp
+    /// spin-up. On built-in/wired output it starts immediately — a no-op that
+    /// leaves the previous behaviour untouched. Returns the applied delay
+    /// (seconds) so callers can shift any follow-up timers (fade-out, stop,
+    /// cleanup) to match. Main thread only (AVAudioPlayer is not thread-safe).
+    @discardableResult
+    private func startWithBluetoothCompensation(_ player: AVAudioPlayer) -> TimeInterval {
+        let comp = SoundTimingConfig.shared.currentBluetoothCompensation
+        if comp > 0 {
+            BluetoothOutput.playWakeTone(seconds: comp)
+            player.play(atTime: player.deviceCurrentTime + comp)
+        } else {
+            player.play()
+        }
+        return comp
+    }
+
     /// Play a sound from the bundle Resources folder, looping indefinitely.
     /// If the same sound is already playing, does nothing.
     func playLooping(_ filename: String) {
@@ -98,7 +120,7 @@ class SoundManager {
                 player.volume = 1.0
                 player.prepareToPlay()
                 self.players[filename] = player
-                player.play()
+                self.startWithBluetoothCompensation(player)
             } catch {
                 overlayError("Sound play failed \(filename): \(error)")
             }
@@ -126,7 +148,7 @@ class SoundManager {
                 player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.players[filename] = player
-                player.play()
+                self.startWithBluetoothCompensation(player)
             } catch {
                 overlayError("Sound play failed \(filename): \(error)")
             }
@@ -147,9 +169,9 @@ class SoundManager {
                 player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.overlappingPlayers.append(player)
-                player.play()
+                let comp = self.startWithBluetoothCompensation(player)
                 // Clean up finished players after this one ends
-                DispatchQueue.main.asyncAfter(deadline: .now() + player.duration + 0.1) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + comp + player.duration + 0.1) { [weak self] in
                     self?.overlappingPlayers.removeAll { !$0.isPlaying }
                 }
             } catch {
@@ -173,12 +195,12 @@ class SoundManager {
                 player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.overlappingPlayers.append(player)
-                player.play()
-                let fadeStart = max(0, seconds - fade)
+                let comp = self.startWithBluetoothCompensation(player)
+                let fadeStart = comp + max(0, seconds - fade)
                 DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart) {
                     if player.isPlaying { player.setVolume(0, fadeDuration: fade) }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + comp + seconds + 0.05) { [weak self] in
                     player.stop()
                     self?.overlappingPlayers.removeAll { !$0.isPlaying }
                 }
