@@ -41,18 +41,19 @@ final class EmojiAnimatorTests: XCTestCase {
 
         XCTAssertEqual(layer.bounds.width, 180, accuracy: 0.001)
         XCTAssertEqual(layer.bounds.height, 180, accuracy: 0.001)
-        XCTAssertEqual(stroked.count, 1)
+        XCTAssertEqual(stroked.count, 3)
         XCTAssertEqual(filled.count, 3)
     }
 
-    func testBombReticleRingIsThinAndTriangleCentersSitOnCirclePointingInward() {
+    func testBombReticleRingIsThinSegmentedAndTriangleCentersSitOnCirclePointingInward() {
         let layer = EmojiAnimator.makeBombReticleLayer()
         let shapes = layer.sublayers?.compactMap { $0 as? CAShapeLayer } ?? []
-        let ring = shapes.first { $0.strokeColor != nil }
+        let ringSegments = shapes.filter { $0.strokeColor != nil }
         let triangles = shapes.filter { ($0.fillColor?.alpha ?? 0) > 0 }
         let center = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
 
-        XCTAssertEqual(ring?.lineWidth ?? 0, 5.5, accuracy: 0.001)
+        XCTAssertEqual(ringSegments.count, 3)
+        XCTAssertTrue(ringSegments.allSatisfy { abs($0.lineWidth - 5.5) < 0.001 })
         XCTAssertEqual(triangles.count, 3)
         for triangle in triangles {
             let points = triangle.path?.testPoints() ?? []

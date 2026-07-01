@@ -2267,18 +2267,24 @@ class EmojiAnimator {
         container.bounds = CGRect(x: 0, y: 0, width: size, height: size)
         container.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
 
-        let ring = CAShapeLayer()
-        ring.path = CGPath(
-            ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2),
-            transform: nil
-        )
-        ring.fillColor = NSColor.clear.cgColor
-        ring.strokeColor = color
-        ring.lineWidth = strokeWidth
-        ring.lineCap = .round
-        container.addSublayer(ring)
+        let markerAngles = [CGFloat.pi / 2, CGFloat.pi / 2 - 2 * .pi / 3, CGFloat.pi / 2 - 4 * .pi / 3]
+        let gapHalfAngle: CGFloat = 0.34
+        let ringArcRanges: [(CGFloat, CGFloat)] = [
+            (-5 * .pi / 6 + gapHalfAngle, -1 * .pi / 6 - gapHalfAngle),
+            (-1 * .pi / 6 + gapHalfAngle, .pi / 2 - gapHalfAngle),
+            (.pi / 2 + gapHalfAngle, 7 * .pi / 6 - gapHalfAngle),
+        ]
+        for (startAngle, endAngle) in ringArcRanges {
+            let ring = CAShapeLayer()
+            ring.path = Self.bombReticleRingArcPath(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle)
+            ring.fillColor = NSColor.clear.cgColor
+            ring.strokeColor = color
+            ring.lineWidth = strokeWidth
+            ring.lineCap = .round
+            container.addSublayer(ring)
+        }
 
-        for angle in [CGFloat.pi / 2, CGFloat.pi / 2 - 2 * .pi / 3, CGFloat.pi / 2 - 4 * .pi / 3] {
+        for angle in markerAngles {
             let marker = CAShapeLayer()
             marker.path = Self.bombReticleTrianglePath(center: center, angle: angle, ringRadius: radius)
             marker.fillColor = color
@@ -2291,6 +2297,12 @@ class EmojiAnimator {
         container.shadowRadius = 2.5
         container.shadowOffset = .zero
         return container
+    }
+
+    private static func bombReticleRingArcPath(center: CGPoint, radius: CGFloat, startAngle: CGFloat, endAngle: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: false)
+        return path
     }
 
     private static func bombReticleTrianglePath(center: CGPoint, angle: CGFloat, ringRadius: CGFloat) -> CGPath {
