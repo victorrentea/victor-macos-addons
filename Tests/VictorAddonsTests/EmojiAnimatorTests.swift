@@ -1,5 +1,6 @@
 import XCTest
 import ImageIO
+import QuartzCore
 @testable import VictorAddons
 
 final class EmojiAnimatorTests: XCTestCase {
@@ -12,6 +13,24 @@ final class EmojiAnimatorTests: XCTestCase {
     func testBreakingGlassResourceIsBundled() {
         let url = Bundle.module.url(forResource: "breaking-glass.mp3", withExtension: nil, subdirectory: "Resources")
         XCTAssertNotNil(url)
+    }
+
+    func testNukeLockedReticleGrowsAndRotatesSlowlyUntilStrike() {
+        let animations = EmojiAnimator.makeBombReticleLockAnimations(remaining: 0.75)
+
+        let grow = animations.grow
+        XCTAssertEqual(grow.keyPath, "transform.scale")
+        XCTAssertEqual(grow.fromValue as? Double, 1.0)
+        XCTAssertEqual(grow.toValue as? Double, 2.2)
+        XCTAssertEqual(grow.duration, 0.75, accuracy: 0.001)
+
+        let rotate = animations.rotate
+        XCTAssertEqual(rotate.keyPath, "transform.rotation.z")
+        XCTAssertEqual(rotate.fromValue as? Double, 0.0)
+        XCTAssertLessThan(rotate.toValue as? Double ?? 0, 0, "negative z is clockwise in the overlay layer")
+        XCTAssertEqual(rotate.duration, grow.duration, accuracy: 0.001)
+        XCTAssertEqual(rotate.fillMode, CAMediaTimingFillMode.forwards)
+        XCTAssertFalse(rotate.isRemovedOnCompletion)
     }
 
     /// The 🔥 Phoenix asset must bundle into the app AND decode as the full

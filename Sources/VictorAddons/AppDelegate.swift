@@ -29,6 +29,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var pidCheckTimer: Timer?
     private var controlsVisible = false
     private var eventTapManager: EventTapManager?
+    private var keymapOverlayController: KeymapOverlayController?
+    private var keymapHoldCoordinator: KeymapHoldCoordinator?
+    private var keymapHoldWorkItem: DispatchWorkItem?
     private var emotionalPasteHandler: EmotionalPasteHandler?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
@@ -92,6 +95,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         overlayPanel = OverlayPanel(screen: builtInScreen)
         overlayPanel.orderFrontRegardless()
         rebuildAuxOverlayPanels()
+        let keymapOverlay = KeymapOverlayController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
+        keymapOverlayController = keymapOverlay
+        keymapHoldCoordinator = KeymapHoldCoordinator(
+            schedule: { [weak self] delay, fire in
+                self?.keymapHoldWorkItem?.cancel()
+                let work = DispatchWorkItem(block: fire)
+                self?.keymapHoldWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            },
+            cancelScheduled: { [weak self] in
+                self?.keymapHoldWorkItem?.cancel()
+                self?.keymapHoldWorkItem = nil
+            },
+            show: { [weak keymapOverlay] modifier in
+                keymapOverlay?.show(modifier)
+            },
+            hide: { [weak keymapOverlay] in
+                keymapOverlay?.hide()
+            }
+        )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleScreensChanged),
@@ -631,6 +654,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
+        menuBarManager.onEmojiOverlayEnabledChanged = { [weak self] enabled in
+            if !enabled {
+                self?.keymapHoldCoordinator?.reset()
+            }
+        }
 
         let portKiller = PortKiller()
         self.portKiller = portKiller
@@ -730,6 +758,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onOpenCalendar = { [weak menuBarManager] in
             menuBarManager?.onOpenCalendar?()
+        }
+        eventTap.onModifierFlagsChanged = { [weak self] option, shift in
+            guard KeymapOverlaySettings.isEnabled else {
+                self?.keymapHoldCoordinator?.reset()
+                return
+            }
+            self?.keymapHoldCoordinator?.modifierFlagsChanged(option: option, shift: shift)
         }
         eventTap.start()
         self.eventTapManager = eventTap

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jun 30, 20:56"
+    static let BUILD_TIME = "Jul 1, 06:22"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -18,6 +18,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var menu: NSMenu!
 
     private(set) var darkModeItem: NSMenuItem!
+    private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
     private var killSubmenu: NSMenu!
@@ -76,6 +77,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onAppendClipboardToNotes: (() -> Void)?
     var onWhip: (() -> Void)?
     var onBreak: ((Int) -> Void)?
+    var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
 
     // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
 
@@ -242,6 +244,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         copySelectionItem.keyEquivalentModifierMask = [.control, .option]
         copySelectionItem.isEnabled = false
         extraSubmenu.addItem(copySelectionItem)
+
+        emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
+        emojiOverlayItem.target = self
+        emojiOverlayItem.isEnabled = true
+        emojiOverlayItem.state = KeymapOverlaySettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(emojiOverlayItem)
 
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
@@ -432,6 +440,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func toggleDarkModeAction() {
         onToggleDarkMode?()
+    }
+
+    @objc private func toggleEmojiOverlayAction() {
+        let enabled = !KeymapOverlaySettings.isEnabled
+        KeymapOverlaySettings.isEnabled = enabled
+        emojiOverlayItem.state = enabled ? .on : .off
+        onEmojiOverlayEnabledChanged?(enabled)
     }
 
     @objc private func takeScreenshotClipboardAction() {

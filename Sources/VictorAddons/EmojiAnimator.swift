@@ -1967,6 +1967,7 @@ class EmojiAnimator {
     /// the strike, then — at the blast — pops out by `bombReticleStrikePop`× more
     /// and fades away over `bombReticleStrikeFade`s ("fades out when it's bigger").
     private static let bombReticleLockGrow: CGFloat = 2.2
+    private static let bombReticleLockRotation: Double = -.pi / 3
     private static let bombReticleStrikePop: CGFloat = 1.5
     private static let bombReticleStrikeFade: Double = 0.45
 
@@ -2113,9 +2114,9 @@ class EmojiAnimator {
 
     /// Lock the crosshair the instant the user shakes it past the aim threshold:
     /// pin it at `_bombLockPoint`, snap it to the thick-red "locked on" look, and
-    /// grow it steadily from 1× to `bombReticleLockGrow`× over the remaining time
-    /// until the strike (so it keeps growing right up to the blast). The follow
-    /// timer has already stopped touching its position, so it "stays put".
+    /// grow + slowly rotate it over the remaining time until the strike (so it
+    /// keeps building right up to the blast). The follow timer has already
+    /// stopped touching its position, so it "stays put".
     private func lockReticle() {
         guard let target = _bombTargetLayer else { return }
         CATransaction.begin()
@@ -2125,8 +2126,14 @@ class EmojiAnimator {
         CATransaction.commit()
         paintReticleArmed(target)
 
-        // Grow from now until the strike, ending right as the blast lands.
+        // Grow + rotate from now until the strike, ending right as the blast lands.
         let remaining = max(0.1, Self.explosionStrikeDelay - (CACurrentMediaTime() - _bombStartTime))
+        let animations = Self.makeBombReticleLockAnimations(remaining: remaining)
+        target.add(animations.grow, forKey: "reticleLockGrow")
+        target.add(animations.rotate, forKey: "reticleLockRotate")
+    }
+
+    static func makeBombReticleLockAnimations(remaining: CFTimeInterval) -> (grow: CABasicAnimation, rotate: CABasicAnimation) {
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = 1.0
         grow.toValue = Self.bombReticleLockGrow
@@ -2134,7 +2141,16 @@ class EmojiAnimator {
         grow.timingFunction = CAMediaTimingFunction(name: .easeIn)   // accelerate toward the strike
         grow.fillMode = .forwards
         grow.isRemovedOnCompletion = false
-        target.add(grow, forKey: "reticleLockGrow")
+
+        let rotate = CABasicAnimation(keyPath: "transform.rotation.z")
+        rotate.fromValue = 0.0
+        rotate.toValue = Self.bombReticleLockRotation
+        rotate.duration = remaining
+        rotate.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        rotate.fillMode = .forwards
+        rotate.isRemovedOnCompletion = false
+
+        return (grow, rotate)
     }
 
     /// Stop tracking the mouse and report whether the user aimed. If they locked,
@@ -2166,6 +2182,7 @@ class EmojiAnimator {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         target.removeAnimation(forKey: "reticleLockGrow")
+        target.removeAnimation(forKey: "reticleLockRotate")
         target.setValue(base, forKeyPath: "transform.scale")
         target.zPosition = 10_000
         CATransaction.commit()

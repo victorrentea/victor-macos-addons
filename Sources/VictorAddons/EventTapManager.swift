@@ -30,6 +30,7 @@ class EventTapManager {
     var onCopySelectionToNotes: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
     var onWhip: (() -> Void)?
+    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool) -> Void)?
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -57,6 +58,7 @@ class EventTapManager {
     func start() {
         let eventsOfInterest: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
+            CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
 
@@ -97,6 +99,14 @@ class EventTapManager {
         }
 
         guard let event = event else { return nil }
+
+        if type == .flagsChanged {
+            let flags = event.flags
+            let hasOpt = flags.contains(.maskAlternate)
+            let hasShift = flags.contains(.maskShift)
+            DispatchQueue.main.async { [weak self] in self?.onModifierFlagsChanged?(hasOpt, hasShift) }
+            return Unmanaged.passUnretained(event)
+        }
 
         // Mouse events
         if type == .otherMouseDown {
