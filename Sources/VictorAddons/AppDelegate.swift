@@ -239,7 +239,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "green-flash":
                 // Tablet → Mac connectivity confirmation: green screenshot-style border
                 if let screen = ScreenCaptureFlash.builtInScreen {
-                    ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
+                    ScreenCaptureFlash.flash(on: screen, duration: 4.5, color: .systemGreen)
                 }
             case "stop-all":
                 SoundManager.shared.stopTabletSound()
@@ -594,7 +594,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "corner-confetti": self.animator.spawnCornerConfetti()
                 case "green-flash":
                     if let screen = ScreenCaptureFlash.builtInScreen {
-                        ScreenCaptureFlash.flash(on: screen, color: .systemGreen)
+                        ScreenCaptureFlash.flash(on: screen, duration: 4.5, color: .systemGreen)
                     }
                 default: break
                 }
