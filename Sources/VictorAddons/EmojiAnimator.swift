@@ -1968,6 +1968,7 @@ class EmojiAnimator {
     /// and fades away over `bombReticleStrikeFade`s ("fades out when it's bigger").
     private static let bombReticleLockGrow: CGFloat = 2.2
     private static let bombReticleLockRotation: Double = -.pi / 8
+    private static let bombReticleStrikeRotation: Double = -.pi / 14
     private static let bombReticleStrikePop: CGFloat = 1.5
     private static let bombReticleStrikeFade: Double = 0.45
 
@@ -2105,7 +2106,7 @@ class EmojiAnimator {
             guard let shape = layer as? CAShapeLayer else { continue }
             if shape.strokeColor != nil {
                 shape.strokeColor = red
-                shape.lineWidth = Self.bombReticleLineWidthArmed   // thicken on lock
+                shape.lineWidth = max(shape.lineWidth, Self.bombReticleLineWidthArmed)
             }
             if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = red }
         }
@@ -2153,6 +2154,17 @@ class EmojiAnimator {
         return (grow, rotate)
     }
 
+    static func makeBombReticleStrikeRotateAnimation(from currentRotation: Double, duration: CFTimeInterval) -> CABasicAnimation {
+        let rotate = CABasicAnimation(keyPath: "transform.rotation.z")
+        rotate.fromValue = currentRotation
+        rotate.toValue = currentRotation + Self.bombReticleStrikeRotation
+        rotate.duration = duration
+        rotate.timingFunction = CAMediaTimingFunction(name: .linear)
+        rotate.fillMode = .forwards
+        rotate.isRemovedOnCompletion = false
+        return rotate
+    }
+
     /// Stop tracking the mouse and report whether the user aimed. If they locked,
     /// the strike point is the FROZEN `_bombLockPoint` (not wherever the mouse
     /// drifted afterwards); otherwise it's the live cursor. The crosshair is *not*
@@ -2176,13 +2188,17 @@ class EmojiAnimator {
         _bombTargetLayer = nil   // detach: the tracking timer is already gone
         _bombStrikeLayer = target   // but keep a handle so a re-press can tear it down
 
-        // Pin the current scale as the model value so the pop (if any) starts from
-        // there with no jump, and drop the held grow animation.
+        // Pin the current transform values so the pop + fade starts with no jump,
+        // and keep a little clockwise rotation moving through the fade.
         let base = _bombArmed ? Self.bombReticleLockGrow : 1.0
+        let currentRotation = (target.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double)
+            ?? (target.value(forKeyPath: "transform.rotation.z") as? Double)
+            ?? 0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         target.removeAnimation(forKey: "reticleLockGrow")
         target.removeAnimation(forKey: "reticleLockRotate")
+        target.setValue(currentRotation, forKeyPath: "transform.rotation.z")
         target.setValue(base, forKeyPath: "transform.scale")
         target.zPosition = 10_000
         CATransaction.commit()
@@ -2200,6 +2216,7 @@ class EmojiAnimator {
             pop.fillMode = .forwards
             pop.isRemovedOnCompletion = false
             target.add(pop, forKey: "reticleStrikePop")
+            target.add(Self.makeBombReticleStrikeRotateAnimation(from: currentRotation, duration: dur), forKey: "reticleStrikeRotate")
         }
 
         // Fade out as the blast lands.
@@ -2239,27 +2256,61 @@ class EmojiAnimator {
     private static let bombReticleLineWidthIdle: CGFloat = 1.5
     private static let bombReticleLineWidthArmed: CGFloat = 3.75
 
-    static func loadBombCrosshairImage() -> CGImage {
-        guard let url = Bundle.module.url(forResource: "bomb_crosshair", withExtension: "png"),
-              let image = NSImage(contentsOf: url),
-              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            fatalError("bomb_crosshair.png missing or unreadable")
+    static func makeBombReticleLayer(armed: Bool = false) -> CALayer {
+        let size: CGFloat = 180
+        let center = CGPoint(x: size / 2, y: size / 2)
+        let radius: CGFloat = 54
+        let strokeWidth: CGFloat = 11
+        let color = (armed ? NSColor.systemRed : NSColor.systemGray).cgColor
+
+        let container = CALayer()
+        container.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        container.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        let ring = CAShapeLayer()
+        ring.path = CGPath(
+            ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2),
+            transform: nil
+        )
+        ring.fillColor = NSColor.clear.cgColor
+        ring.strokeColor = color
+        ring.lineWidth = strokeWidth
+        ring.lineCap = .round
+        container.addSublayer(ring)
+
+        for angle in [CGFloat.pi / 2, CGFloat.pi / 2 - 2 * .pi / 3, CGFloat.pi / 2 - 4 * .pi / 3] {
+            let marker = CAShapeLayer()
+            marker.path = Self.bombReticleTrianglePath(center: center, angle: angle, ringRadius: radius)
+            marker.fillColor = color
+            marker.strokeColor = nil
+            container.addSublayer(marker)
         }
-        return cg
+
+        container.shadowColor = NSColor.black.cgColor
+        container.shadowOpacity = 0.55
+        container.shadowRadius = 2.5
+        container.shadowOffset = .zero
+        return container
     }
 
-    static func makeBombReticleLayer() -> CALayer {
-        let size: CGFloat = 180
-        let layer = CALayer()
-        layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
-        layer.contents = loadBombCrosshairImage()
-        layer.contentsGravity = .resizeAspect
-        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = 0.45
-        layer.shadowRadius = 2
-        layer.shadowOffset = .zero
-        return layer
+    private static func bombReticleTrianglePath(center: CGPoint, angle: CGFloat, ringRadius: CGFloat) -> CGPath {
+        let outward = CGVector(dx: cos(angle), dy: sin(angle))
+        let tangent = CGVector(dx: -sin(angle), dy: cos(angle))
+        let tipDistance = ringRadius + 43
+        let baseDistance = ringRadius + 3
+        let halfBase: CGFloat = 22
+
+        let tip = CGPoint(x: center.x + outward.dx * tipDistance, y: center.y + outward.dy * tipDistance)
+        let baseCenter = CGPoint(x: center.x + outward.dx * baseDistance, y: center.y + outward.dy * baseDistance)
+        let left = CGPoint(x: baseCenter.x + tangent.dx * halfBase, y: baseCenter.y + tangent.dy * halfBase)
+        let right = CGPoint(x: baseCenter.x - tangent.dx * halfBase, y: baseCenter.y - tangent.dy * halfBase)
+
+        let path = CGMutablePath()
+        path.move(to: tip)
+        path.addLine(to: left)
+        path.addLine(to: right)
+        path.closeSubpath()
+        return path
     }
 
     /// A sniper-scope reticle drawn as CALayers: a ring, four crosshair arms with

@@ -33,24 +33,37 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertFalse(rotate.isRemovedOnCompletion)
     }
 
-    func testBombCrosshairAssetBundlesWithTransparentBackground() {
-        let image = EmojiAnimator.loadBombCrosshairImage()
-        XCTAssertEqual(image.width, 360)
-        XCTAssertEqual(image.height, 360)
-
-        let alpha = image.alphaInfo
-        XCTAssertNotEqual(alpha, CGImageAlphaInfo.none)
-        XCTAssertNotEqual(alpha, CGImageAlphaInfo.noneSkipLast)
-        XCTAssertNotEqual(alpha, CGImageAlphaInfo.noneSkipFirst)
-    }
-
-    func testBombReticleUsesBitmapCrosshairAsset() {
+    func testBombReticleUsesThreeFilledTrianglesOnCircle() {
         let layer = EmojiAnimator.makeBombReticleLayer()
+        let shapes = layer.sublayers?.compactMap { $0 as? CAShapeLayer } ?? []
+        let stroked = shapes.filter { $0.strokeColor != nil }
+        let filled = shapes.filter { ($0.fillColor?.alpha ?? 0) > 0 }
 
-        XCTAssertNotNil(layer.contents)
-        XCTAssertTrue(layer.sublayers?.isEmpty ?? true)
         XCTAssertEqual(layer.bounds.width, 180, accuracy: 0.001)
         XCTAssertEqual(layer.bounds.height, 180, accuracy: 0.001)
+        XCTAssertEqual(stroked.count, 1)
+        XCTAssertEqual(filled.count, 3)
+    }
+
+    func testBombReticleIsGrayWhenAimingAndRedWhenLocked() {
+        let aiming = EmojiAnimator.makeBombReticleLayer()
+        let locked = EmojiAnimator.makeBombReticleLayer(armed: true)
+        let aimingRing = aiming.sublayers?.compactMap { $0 as? CAShapeLayer }.first { $0.strokeColor != nil }
+        let lockedRing = locked.sublayers?.compactMap { $0 as? CAShapeLayer }.first { $0.strokeColor != nil }
+
+        XCTAssertEqual(aimingRing?.strokeColor, NSColor.systemGray.cgColor)
+        XCTAssertEqual(lockedRing?.strokeColor, NSColor.systemRed.cgColor)
+    }
+
+    func testBombStrikeContinuesRotationFromCurrentAngleDuringFade() {
+        let rotate = EmojiAnimator.makeBombReticleStrikeRotateAnimation(from: -0.2, duration: 0.45)
+
+        XCTAssertEqual(rotate.keyPath, "transform.rotation.z")
+        XCTAssertEqual(rotate.fromValue as? Double ?? 0, -0.2, accuracy: 0.001)
+        XCTAssertLessThan(rotate.toValue as? Double ?? 0, -0.2)
+        XCTAssertEqual(rotate.duration, 0.45, accuracy: 0.001)
+        XCTAssertEqual(rotate.fillMode, CAMediaTimingFillMode.forwards)
+        XCTAssertFalse(rotate.isRemovedOnCompletion)
     }
 
     func testMinigunAllowsHalfSecondAimLeadInAndSmallerBulletHoles() {
