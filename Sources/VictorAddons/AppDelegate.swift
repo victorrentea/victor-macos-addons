@@ -55,6 +55,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionController: TranscriptionController?
     /// Fires the daily 13:00 "Group Photo" prompt (gated on `daemonConnected`).
     private var groupPhotoScheduler: GroupPhotoScheduler?
+    /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
+    /// the Mac at `localhost:55123` when there's no shared WiFi.
+    private var usbTunnelKeeper: UsbTunnelKeeper?
     /// True while the training-assistant daemon is connected to our local WS
     /// server (≥1 client). The gate for the 13:00 Group Photo prompt.
     private var daemonConnected = false
@@ -443,6 +446,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         groupPhoto.start()
         self.groupPhotoScheduler = groupPhoto
+
+        // Keep the wired USB backup armed: re-run `adb reverse` on a timer so
+        // plugging the tablet in mid-session restores the no-WiFi path within
+        // ~20s (start.sh only arms it once, at launch).
+        let usbTunnel = UsbTunnelKeeper()
+        usbTunnel.start()
+        self.usbTunnelKeeper = usbTunnel
         tabletServer?.onTestGroupPhoto = { [weak self] in
             DispatchQueue.main.async { self?.postGroupPhotoNotification() }
         }
