@@ -1,4 +1,5 @@
 import Foundation
+import IOKit
 
 /// Keeps the tablet⇄Mac **USB tunnel** armed so the Android LaunchBreak tablet
 /// can reach the Mac's HTTP server at `localhost:55123` even with **no shared
@@ -11,20 +12,37 @@ import Foundation
 /// arming the reverse rule whenever the cable is plugged in is free and gives a
 /// transparent, always-ready backup.
 ///
-/// `start.sh` runs `adb reverse` once at app launch, which only helps if the
-/// tablet happens to be plugged in at that exact moment. This re-runs it on a
-/// short timer — idempotent, and a harmless no-op when no device is connected —
-/// so plugging the cable in mid-session restores the backup within ~20s,
-/// hands-off. Logs only on armed↔down transitions (no per-tick spam).
+/// **Cheap poll.** Presence is checked *in-process* via IOKit — we match an
+/// `IOUSBHostInterface` carrying the ADB class triplet (class 255 / subclass 66
+/// / protocol 1), a Mach call that costs microseconds and spawns nothing. The
+/// (relatively) expensive `adb reverse` process is spawned **only on the plug-in
+/// edge** (absent→present), and retried on later ticks until it sticks (USB
+/// enumerates before adbd finishes its handshake). While the tablet sits
+/// plugged in and armed, each tick is just a free IOKit read — zero `adb`
+/// spawns. `start.sh` still arms it once at launch; this keeps it armed when the
+/// cable is plugged in mid-session.
+///
+/// **Power-aware cadence:** a lazy **30s heartbeat on AC** (a stable venue with
+/// working WiFi rarely needs the wired path) tightening to **5s on battery**
+/// (mobile/travel, where WiFi is likelier to drop and the USB backup must come
+/// up fast). The interval is re-read from the power source every tick, so it
+/// adapts the instant the charger is plugged/unplugged.
+///
+/// Caveat: if the adb *server* restarts mid-session without a USB replug, the
+/// reverse rule can drop while we still believe we're armed — re-plugging the
+/// cable or restarting the app re-arms it. Rare, and not worth a periodic `adb`
+/// probe to cover.
 final class UsbTunnelKeeper {
     private static let port = 55123
-    private static let pollInterval = 20  // seconds
+    private static let acInterval = 30       // seconds, on AC power
+    private static let batteryInterval = 5   // seconds, on battery
 
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.usb-tunnel-keeper", qos: .utility)
-    /// Last observed armed state — logged only when it flips. Lives only on
-    /// `queue`, so reads/writes are sequential.
-    private var lastArmed: Bool?
+    /// Whether the reverse rule is set for the *current* USB connection. Reset
+    /// when the tablet unplugs. Lives only on `queue`, so reads/writes are
+    /// sequential. Logged only when it flips (no per-tick spam).
+    private var armed = false
 
     /// First adb binary that exists among the known install locations. Prefers
     /// the Android SDK copy `start.sh` uses, so the app and its own startup
@@ -44,47 +62,81 @@ final class UsbTunnelKeeper {
             NSLog("[UsbTunnelKeeper] adb not found — USB backup disabled")
             return
         }
+        scheduleNext(after: 2)
+    }
+
+    /// Self-rescheduling one-shot so the cadence can change with the power
+    /// source between ticks (a fixed `repeating:` timer can't).
+    private func scheduleNext(after seconds: Int) {
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + 2, repeating: .seconds(Self.pollInterval))
-        t.setEventHandler { [weak self] in self?.tick() }
+        t.schedule(deadline: .now() + .seconds(seconds))
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.tick()
+            let next = PowerMonitor.isOnAC() ? Self.acInterval : Self.batteryInterval
+            self.scheduleNext(after: next)
+        }
         t.resume()
         timer = t
     }
 
     private func tick() {
-        guard let adb = Self.adbPath else { return }
-        // Already armed? `adb reverse --list` prints "... tcp:55123 tcp:55123".
-        // Cheap steady-state check that avoids re-registering the rule each tick.
-        let list = Self.run(adb, ["reverse", "--list"])
-        if list.status == 0 && list.output.contains("tcp:\(Self.port)") {
-            report(armed: true)
+        // Free, in-process presence check — no process spawn.
+        guard Self.adbDevicePresent() else {
+            setArmed(false)
             return
         }
-        // Rule missing, or no device attached. Try to (re)establish it — a
-        // harmless failure when no tablet is on USB.
-        let res = Self.run(adb, ["reverse", "tcp:\(Self.port)", "tcp:\(Self.port)"])
-        report(armed: res.status == 0)
+        // Tablet is on USB. Nothing to do if the rule is already in place.
+        if armed { return }
+        // Plug-in edge (or a retry after adbd wasn't ready yet): (re)establish
+        // the reverse rule. A failure here just leaves us disarmed to retry on
+        // the next tick.
+        guard let adb = Self.adbPath else { return }
+        let status = Self.run(adb, ["reverse", "tcp:\(Self.port)", "tcp:\(Self.port)"])
+        if status == 0 { setArmed(true) }
     }
 
-    private func report(armed: Bool) {
-        guard lastArmed != armed else { return }
-        lastArmed = armed
-        NSLog(armed
+    private func setArmed(_ value: Bool) {
+        guard armed != value else { return }
+        armed = value
+        NSLog(value
             ? "[UsbTunnelKeeper] USB tunnel armed — tablet reachable at localhost:\(Self.port)"
-            : "[UsbTunnelKeeper] USB tunnel down — no tablet on USB")
+            : "[UsbTunnelKeeper] USB tunnel down — tablet unplugged")
+    }
+
+    /// True when an ADB-capable device is on USB, detected purely from the IO
+    /// registry (no `adb` spawn). Matches the standard Android ADB interface:
+    /// bInterfaceClass 255 (vendor-specific) / subclass 66 / protocol 1.
+    private static func adbDevicePresent() -> Bool {
+        guard let matching = IOServiceMatching("IOUSBHostInterface") as NSMutableDictionary? else {
+            return false
+        }
+        matching["bInterfaceClass"] = 255
+        matching["bInterfaceSubClass"] = 66
+        matching["bInterfaceProtocol"] = 1
+        var iter: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching as CFDictionary, &iter) == KERN_SUCCESS else {
+            return false
+        }
+        var service = IOIteratorNext(iter)
+        let present = service != 0
+        while service != 0 {
+            IOObjectRelease(service)
+            service = IOIteratorNext(iter)
+        }
+        IOObjectRelease(iter)
+        return present
     }
 
     @discardableResult
-    private static func run(_ path: String, _ args: [String]) -> (status: Int32, output: String) {
+    private static func run(_ path: String, _ args: [String]) -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
+        p.standardOutput = Pipe()
         p.standardError = Pipe()
-        do { try p.run() } catch { return (-1, "") }
+        do { try p.run() } catch { return -1 }
         p.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return (p.terminationStatus, out)
+        return p.terminationStatus
     }
 }
