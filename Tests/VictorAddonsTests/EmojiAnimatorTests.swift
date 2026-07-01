@@ -45,6 +45,28 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertEqual(filled.count, 3)
     }
 
+    func testBombReticleRingIsThinAndTriangleCentersSitOnCirclePointingInward() {
+        let layer = EmojiAnimator.makeBombReticleLayer()
+        let shapes = layer.sublayers?.compactMap { $0 as? CAShapeLayer } ?? []
+        let ring = shapes.first { $0.strokeColor != nil }
+        let triangles = shapes.filter { ($0.fillColor?.alpha ?? 0) > 0 }
+        let center = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+
+        XCTAssertEqual(ring?.lineWidth ?? 0, 5.5, accuracy: 0.001)
+        XCTAssertEqual(triangles.count, 3)
+        for triangle in triangles {
+            let points = triangle.path?.testPoints() ?? []
+            XCTAssertEqual(points.count, 3)
+            let centroid = CGPoint(
+                x: points.map(\.x).reduce(0, +) / 3,
+                y: points.map(\.y).reduce(0, +) / 3
+            )
+            let distances = points.map { hypot($0.x - center.x, $0.y - center.y) }
+            XCTAssertEqual(hypot(centroid.x - center.x, centroid.y - center.y), 54, accuracy: 0.001)
+            XCTAssertEqual(distances.min() ?? 0, distances[0], accuracy: 0.001, "the triangle tip should point inward")
+        }
+    }
+
     func testBombReticleIsGrayWhenAimingAndRedWhenLocked() {
         let aiming = EmojiAnimator.makeBombReticleLayer()
         let locked = EmojiAnimator.makeBombReticleLayer(armed: true)
@@ -116,5 +138,20 @@ final class EmojiAnimatorTests: XCTestCase {
             let maxAlpha = stride(from: 3, to: px.count, by: 4).map { px[$0] }.max() ?? 0
             XCTAssertGreaterThan(maxAlpha, 200, "frame \(i) has no opaque flame pixels")
         }
+    }
+}
+
+private extension CGPath {
+    func testPoints() -> [CGPoint] {
+        var points: [CGPoint] = []
+        applyWithBlock { element in
+            switch element.pointee.type {
+            case .moveToPoint, .addLineToPoint:
+                points.append(element.pointee.points[0])
+            default:
+                break
+            }
+        }
+        return points
     }
 }

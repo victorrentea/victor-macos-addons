@@ -2260,7 +2260,7 @@ class EmojiAnimator {
         let size: CGFloat = 180
         let center = CGPoint(x: size / 2, y: size / 2)
         let radius: CGFloat = 54
-        let strokeWidth: CGFloat = 11
+        let strokeWidth: CGFloat = 5.5
         let color = (armed ? NSColor.systemRed : NSColor.systemGray).cgColor
 
         let container = CALayer()
@@ -2296,9 +2296,9 @@ class EmojiAnimator {
     private static func bombReticleTrianglePath(center: CGPoint, angle: CGFloat, ringRadius: CGFloat) -> CGPath {
         let outward = CGVector(dx: cos(angle), dy: sin(angle))
         let tangent = CGVector(dx: -sin(angle), dy: cos(angle))
-        let tipDistance = ringRadius + 43
-        let baseDistance = ringRadius + 3
-        let halfBase: CGFloat = 22
+        let tipDistance = ringRadius - 26
+        let baseDistance = ringRadius + 13
+        let halfBase: CGFloat = 20
 
         let tip = CGPoint(x: center.x + outward.dx * tipDistance, y: center.y + outward.dy * tipDistance)
         let baseCenter = CGPoint(x: center.x + outward.dx * baseDistance, y: center.y + outward.dy * baseDistance)
