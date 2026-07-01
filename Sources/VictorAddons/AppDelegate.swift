@@ -53,13 +53,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
-    /// Fires the daily 11:15 "Group Photo" prompt (gated on `daemonConnected`).
-    private var groupPhotoScheduler: GroupPhotoScheduler?
+    /// On-screen "📸 Group Photo" overlay, shown at the start of a qualifying
+    /// break (lunch, or an afternoon break ≥ 10 min). Draws the app's own panel
+    /// so it shows even while PowerPoint is presenting fullscreen (which makes
+    /// macOS suppress normal notification banners into Notification Center).
+    private var groupPhotoOverlay: GroupPhotoOverlay?
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
     /// True while the training-assistant daemon is connected to our local WS
-    /// server (≥1 client). The gate for the 13:00 Group Photo prompt.
+    /// server (≥1 client). Gates the Group Photo prompt so it only fires when
+    /// there's an audience to photograph.
     private var daemonConnected = false
     private var statusBanner: StatusBanner?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
@@ -434,18 +438,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         pm.start()
         self.powerMonitor = pm
 
-        // Daily 11:15 "Group Photo" prompt — only when the daemon is connected.
-        let groupPhoto = GroupPhotoScheduler()
-        groupPhoto.onTrigger = { [weak self] in
-            guard let self else { return }
-            guard self.daemonConnected else {
-                overlayInfo("📸 Group Photo skipped — training assistant not connected")
-                return
-            }
-            self.postGroupPhotoNotification()
-        }
-        groupPhoto.start()
-        self.groupPhotoScheduler = groupPhoto
+        // "📸 Group Photo" overlay — fired from break starts (see onBreak), not a
+        // fixed clock time. Draws on the projected (retina) screen so the room sees it.
+        groupPhotoOverlay = GroupPhotoOverlay(screenProvider: { AppDelegate.findRetinaScreen() })
 
         // Keep the wired USB backup armed: re-run `adb reverse` on a timer so
         // plugging the tablet in mid-session restores the no-WiFi path within
@@ -453,8 +448,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let usbTunnel = UsbTunnelKeeper()
         usbTunnel.start()
         self.usbTunnelKeeper = usbTunnel
+        // /test/group-photo — show the overlay now, bypassing the break + daemon gates.
         tabletServer?.onTestGroupPhoto = { [weak self] in
-            DispatchQueue.main.async { self?.postGroupPhotoNotification() }
+            DispatchQueue.main.async { self?.promptGroupPhoto() }
         }
 
         tabletServer?.onTestWisprOutputDrift = { [weak self] in
@@ -690,7 +686,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // now only triggered manually via the /test/break-summary hook.)
         menuBarManager.onBreak = { [weak self] minutes in
             DispatchQueue.main.async {
-                self?.breakTimer.start(minutes: minutes)
+                guard let self else { return }
+                self.breakTimer.start(minutes: minutes)
+                // A group photo makes sense during a longer break: the 1h lunch
+                // (any time) or an afternoon (≥13:00) break of ≥10 min — and only
+                // when there's an audience connected to gather for the shot.
+                if self.daemonConnected,
+                   GroupPhotoBreakPolicy.shouldPrompt(breakMinutes: minutes, at: Date()) {
+                    self.promptGroupPhoto()
+                }
             }
         }
         // Resume an in-progress break after a redeploy/restart.
@@ -1388,21 +1392,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    /// Daily 11:15 "Group Photo" prompt. Deliberately **persistent**: unlike the
+    /// Prompt Victor to take a group photo: the on-screen overlay (guaranteed
+    /// visible even mid-presentation) **plus** a persistent Notification-Center
+    /// record as a fallback. Called from break starts (gated) and `/test/group-photo`.
+    private func promptGroupPhoto() {
+        groupPhotoOverlay?.show()
+        postGroupPhotoNotification()
+    }
+
+    /// "📸 Group Photo" native notification. Deliberately **persistent**: unlike the
     /// transient notifications above, it is never auto-removed — it stays in
     /// Notification Center until the user dismisses it (the ✕). To make it remain
     /// on screen until dismissed rather than slide away, set the app's notification
-    /// style to "Alerts" (System Settings → Notifications → Victor Addons).
-    /// A stable per-day identifier keeps a re-fire from stacking duplicates.
+    /// style to "Alerts" (System Settings → Notifications → Victor Addons). NB the
+    /// on-screen overlay is the primary channel; this native banner is a fallback
+    /// that macOS may suppress into Notification Center while presenting fullscreen.
+    /// The identifier includes the minute so multiple breaks in a day each record
+    /// their own prompt instead of overwriting one another.
     private func postGroupPhotoNotification() {
         let content = UNMutableNotificationContent()
         content.title = "📸 Group Photo"
         content.subtitle = "Let's make some memories? :D"
         content.sound = .default
         content.interruptionLevel = .timeSensitive
-        let day = DateFormatter()
-        day.dateFormat = "yyyy-MM-dd"
-        let identifier = "group-photo:\(day.string(from: Date()))"
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd-HHmm"
+        let identifier = "group-photo:\(stamp.string(from: Date()))"
         let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req) { err in
             if let err { overlayInfo("Group Photo notification error: \(err)") }
