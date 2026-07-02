@@ -259,6 +259,56 @@ class SoundManager {
         }
     }
 
+    /// Like `playTabletSound`, but plays only the first `fraction` (0..1) of the
+    /// clip — fading the tail out over `fade` seconds, then stopping — so a routed
+    /// sound can be trimmed shorter than its file. Used by the 👏 Applause tile
+    /// (`27_clapping.mp3`, clipped to 70% so the clapping runs 30% shorter and
+    /// matches the trimmed GIF visual). Routes through the single `tabletPlayer`
+    /// like `playTabletSound` (preempts, honours tablet volume, is stopped by
+    /// stop-all) and returns the clipped duration (incl. any BT lead) for the
+    /// tablet's effect-stop chain. Main thread only.
+    func playTabletSoundClipped(_ filename: String, fraction: Double, fade: TimeInterval = 0.6, volume: Float? = nil) -> TimeInterval? {
+        if let volume { tabletVolume = max(0.0, min(1.0, volume)) }
+        tabletPlayer?.stop()
+        tabletPlayer = nil
+        guard let url = soundURL(for: filename) else {
+            overlayError("Tablet sound not found: \(filename)")
+            return nil
+        }
+        do {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.volume = tabletVolume
+            player.prepareToPlay()
+            tabletPlayer = player
+            let lead = Self.pairedEffectStartDelays[filename] ?? 0
+            let btComp = SoundTimingConfig.shared.currentBluetoothCompensation
+            let total = lead + btComp
+            if btComp > 0 {
+                BluetoothOutput.playWakeTone(seconds: total)
+                Self.pendingVisualCompensation = btComp
+                Self.pendingVisualCompensationAt = Date()
+            }
+            if total > 0 {
+                player.play(atTime: player.deviceCurrentTime + total)
+            } else {
+                player.play()
+            }
+            let clipped = player.duration * max(0.0, min(1.0, fraction))
+            let fadeStart = total + max(0, clipped - fade)
+            DispatchQueue.main.asyncAfter(deadline: .now() + fadeStart) { [weak player] in
+                if player?.isPlaying == true { player?.setVolume(0, fadeDuration: fade) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + total + clipped + 0.05) { [weak self, weak player] in
+                player?.stop()
+                if self?.tabletPlayer === player { self?.tabletPlayer = nil }
+            }
+            return clipped + total
+        } catch {
+            overlayError("Tablet sound play failed \(filename): \(error)")
+            return nil
+        }
+    }
+
     /// Play a tablet-routed sound that LAYERS over its previous copies instead
     /// of preempting them — used by the 💸 Money tile (53_rain.mp3 →
     /// 57_checkmark.mp3) so rapid repeated presses STACK overlapping "ching"s

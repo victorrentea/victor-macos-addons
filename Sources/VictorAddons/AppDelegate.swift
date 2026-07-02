@@ -198,10 +198,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "broken-glass":  self?.animator.showBrokenGlass(playSound: false)
             case "pulse":         self?.animator.startPulseOverlay(playSound: false)
             case "pulse/stop":    self?.animator.stopPulseOverlay()
-            case "applause":
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                    self?.animator.showApplause(playSound: false)
-                }
+            case "applause":      self?.animator.showApplause(playSound: false)
             case "applause/stop": self?.animator.stopApplause()
             case "heartbeat":     self?.animator.showHeartbeat()
             case "spiral-hearts": self?.animator.showSpiralHearts()
@@ -330,6 +327,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // "phoenix") drives both the visual and the real sound.
             if name == "34_phoenix.mp3" {
                 return "{\"ok\":true,\"durationMs\":1}"
+            }
+            // Tile #27 (👏 Applause): play the clapping clip 30% SHORTER — the Mac
+            // clips `27_clapping.mp3` to 70% of its length (fading the tail out)
+            // so the audible clapping matches the trimmed GIF visual. Return the
+            // clipped duration so the tablet's effect-stop chain lines up. The
+            // visual is still driven by the press path (SoundEffectMap → "applause").
+            if name == "27_clapping.mp3" {
+                let volume = volumePct.map { Float($0) / 100 }
+                guard let duration = SoundManager.shared.playTabletSoundClipped("27_clapping.mp3", fraction: 0.7, volume: volume) else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
             let volume = volumePct.map { Float($0) / 100 }
             guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }

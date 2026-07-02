@@ -30,9 +30,6 @@ class EmojiAnimator {
     // Track active toggleable effects (danger, sepia, zorro) so clicking again cancels them
     private var activeEffects: [String: CALayer] = [:]
 
-    // Applause: persistent timer for emoji spawning
-    private var applauseTimer: Timer?
-
     // Pulse: layers stored so clicking again can stop it
     private var pulseRunning = false
     private var _pulseDimLayer: CALayer?
@@ -1470,90 +1467,96 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
-    // MARK: - Applause (toggleable: click to start, click again to stop)
+    // MARK: - Applause (👏 clapping-hands GIF, centered, half the screen height)
 
+    /// The clapping sound (`27_clapping.mp3`) trimmed to **70%** — i.e. 30%
+    /// shorter — used as the length of BOTH the applause GIF and the Mac-owned
+    /// routed sound, so the visual and the audio run together and end together.
+    /// Computed once from the bundled clip; falls back to its measured ~10.1s.
+    static let applauseDuration: Double = {
+        var natural = 10.1
+        if let url = SoundManager.shared.soundURL(for: "27_clapping.mp3") {
+            let d = AVURLAsset(url: url).duration
+            if d.isNumeric { natural = CMTimeGetSeconds(d) }
+        }
+        return natural * 0.7
+    }()
+
+    /// Tile #27 👏 — a clapping-hands animation. Replaces the old 👏-emoji stream
+    /// with the bundled `applause-hands.gif` (4 transparent full-canvas frames,
+    /// ~0.4s loop) shown at HALF the screen height, centered, looping for the
+    /// trimmed length of the clapping sound (`applauseDuration`). Toggleable via
+    /// `activeEffects`, so a stop-all / second press tears it down.
     func showApplause(playSound: Bool = true) {
-        guard applauseTimer == nil else { return }   // already running — ignore
+        if cancelIfRunning("applause", sound: playSound ? "27_clapping.mp3" : nil) { return }
 
-        if playSound { SoundManager.shared.play("applause.mp3") }
-        let duration = 6.0
-
-        // Initial burst, then steady stream
-        for i in 0..<10 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.05) { [weak self] in self?.spawnApplauseClap() } }
-        applauseTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            self?.spawnApplauseClap()
+        guard let url = Bundle.module.url(forResource: "applause-hands", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("applause-hands.gif not found")
+            return
         }
 
-        // Auto-stop after duration
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-            self?.applauseTimer?.invalidate()
-            self?.applauseTimer = nil
-            SoundManager.shared.stop("applause.mp3")
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var sourceDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
+            sourceDuration += delay
         }
-    }
+        guard let first = images.first, sourceDuration > 0 else { return }
 
-    func stopApplause() {
-        applauseTimer?.invalidate()
-        applauseTimer = nil
-        SoundManager.shared.stop("applause.mp3")
-    }
+        let duration = Self.applauseDuration
 
-    private func spawnApplauseClap() {
+        // Half the screen height, aspect-preserved width, centered on screen.
         let bounds = hostLayer.bounds
-        let isBig = Int.random(in: 0..<4) == 0   // ~25% chance of giant clap
-        let size: CGFloat = isBig ? CGFloat.random(in: 108...216) : CGFloat.random(in: 36...72)
-        // Spawn from random position across the bottom third, fly upward
-        let spawnX = CGFloat.random(in: size ... bounds.width - size)
-        let spawnY = CGFloat.random(in: 0 ... bounds.height * 0.35)
+        let aspect = CGFloat(first.width) / CGFloat(first.height)
+        let layerH = bounds.height * 0.5
+        let layerW = layerH * aspect
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: (bounds.width - layerW) / 2,
+                                y: (bounds.height - layerH) / 2,
+                                width: layerW, height: layerH)
+        gifLayer.contentsGravity = .resizeAspect
+        gifLayer.contents = first
+        hostLayer.addSublayer(gifLayer)
 
-        let layer = CATextLayer()
-        layer.string = "👏"
-        layer.fontSize = size * 0.8
-        layer.alignmentMode = .center
-        layer.frame = CGRect(x: spawnX - size / 2, y: spawnY, width: size, height: size)
-        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        hostLayer.addSublayer(layer)
+        // Loop the clap for the whole duration.
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = sourceDuration
+        anim.repeatCount = .infinity
+        gifLayer.add(anim, forKey: "applauseFrames")
 
-        let duration = Double.random(in: 1.8...2.8)
-        let riseHeight = bounds.height * CGFloat.random(in: 0.55...0.85)
-        let drift = CGFloat.random(in: -80...80)
-
-        // Rise path with wobble
-        let path = CGMutablePath()
-        let steps = 12
-        let start = CGPoint(x: spawnX, y: spawnY + size / 2)
-        path.move(to: start)
-        for i in 1...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let wobble = sin(t * 3 * .pi) * 20 * (1 - t)
-            path.addLine(to: CGPoint(x: start.x + drift * t + wobble, y: start.y + riseHeight * t))
-        }
-
-        let pathAnim = CAKeyframeAnimation(keyPath: "position")
-        pathAnim.path = path
-        pathAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-
-        let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
-        scaleAnim.fromValue = 0.6
-        scaleAnim.toValue = 1.1
+        // Gentle fade in/out so it doesn't pop on/off.
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = 0.25
+        gifLayer.add(fadeIn, forKey: "applauseFadeIn")
 
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = duration * 0.45
-        fadeOut.duration = duration * 0.55
+        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.6)
+        fadeOut.duration = 0.6
         fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        gifLayer.add(fadeOut, forKey: "applauseFadeOut")
 
-        let group = CAAnimationGroup()
-        group.animations = [pathAnim, scaleAnim, fadeOut]
-        group.duration = duration
-        group.fillMode = .forwards
-        group.isRemovedOnCompletion = false
+        // Only the direct (playSound:true) path owns the clipped sound; the
+        // tablet/menu paths pass false — the routed sound is clipped in AppDelegate.
+        if playSound { SoundManager.shared.playClip("27_clapping.mp3", seconds: duration) }
+        trackEffect("applause", layer: gifLayer, duration: duration, sound: playSound ? "27_clapping.mp3" : nil)
+    }
 
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
-        layer.add(group, forKey: "applauseClap")
-        CATransaction.commit()
+    func stopApplause() {
+        _ = cancelIfRunning("applause", sound: "27_clapping.mp3")
     }
 
     // MARK: - Pulse / heartbeat (one-shot: 2 QRS cycles then flatline)
