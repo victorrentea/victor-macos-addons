@@ -111,9 +111,14 @@ final class UsbTunnelKeeper {
         guard let matching = IOServiceMatching("IOUSBHostInterface") as NSMutableDictionary? else {
             return false
         }
-        matching["bInterfaceClass"] = 255
-        matching["bInterfaceSubClass"] = 66
-        matching["bInterfaceProtocol"] = 1
+        // Property criteria must be nested under kIOPropertyMatchKey — top-level
+        // keys are NOT applied by IOServiceGetMatchingServices (they silently
+        // yield zero matches).
+        matching[kIOPropertyMatchKey] = [
+            "bInterfaceClass": 255,    // vendor-specific
+            "bInterfaceSubClass": 66,  // ADB
+            "bInterfaceProtocol": 1,
+        ]
         var iter: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, matching as CFDictionary, &iter) == KERN_SUCCESS else {
             return false
