@@ -56,6 +56,12 @@ enum SoundEffectMap {
         // which is why it stays out of onSoundPlay's special cases (no
         // double-trigger).
         "31_tarzan.mp3":         "iris",
+        // Tile 80 (🍌 badumtss): 🟡 animated minion FACE, SILENT. The press path
+        // drives the looping face; onSoundPlay neutralizes the routed clip (plays
+        // nothing) and returns the effect's duration so the NON-restartable tile
+        // stays "playing" — a re-tap within that window fires /effect/stop-all,
+        // which stops the tracked minion layer (stop-on-re-tap).
+        "80_badumtss.mp3":       "minion",
         // Tile 52 (🪚 saw) is intentionally absent: the desktop saw animation was
         // removed, leaving only the sound. The real saw SFX (`52_saw.mp3`) still
         // plays normally on the routed /sound/play path (it was never special-cased

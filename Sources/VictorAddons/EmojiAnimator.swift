@@ -1564,6 +1564,88 @@ class EmojiAnimator {
         _ = cancelIfRunning("applause", sound: "27_clapping.mp3")
     }
 
+    // MARK: - Minion (tile #80 `80_badumtss.mp3` — silent animated minion face)
+
+    /// How long the minion face lingers on screen, and — mirrored by
+    /// AppDelegate's onSoundPlay `durationMs` — how long the tablet keeps the tile
+    /// in its "playing" state, i.e. the window during which a re-tap STOPS it.
+    static let minionDuration: Double = 6.0
+
+    /// Tile #80 (`80_badumtss.mp3`) — a looping animated minion FACE, centered,
+    /// with NO sound. The asset (`minion.gif`, 30 transparent full-canvas frames,
+    /// ~1.8s loop) is a tight crop of the central laughing minion from a group GIF.
+    /// It loops for `minionDuration`, tracked in `activeEffects` so the tablet's
+    /// pre-press /effect/stop-all tears it down — which is what makes the
+    /// NON-restartable tile STOP (not restart) when pressed again. A direct
+    /// re-trigger (/test/minion, /effect/minion) also toggles it off via
+    /// cancelIfRunning.
+    func showMinion() {
+        if cancelIfRunning("minion") { return }
+
+        guard let url = Bundle.module.url(forResource: "minion", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("minion.gif not found")
+            return
+        }
+
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var sourceDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
+            sourceDuration += delay
+        }
+        guard let first = images.first, sourceDuration > 0 else { return }
+
+        let duration = Self.minionDuration
+
+        // ~35% of the screen height, aspect-preserved width, centered on screen.
+        let bounds = hostLayer.bounds
+        let aspect = CGFloat(first.width) / CGFloat(first.height)
+        let layerH = bounds.height * 0.35
+        let layerW = layerH * aspect
+        let gifLayer = CALayer()
+        gifLayer.frame = CGRect(x: (bounds.width - layerW) / 2,
+                                y: (bounds.height - layerH) / 2,
+                                width: layerW, height: layerH)
+        gifLayer.contentsGravity = .resizeAspect
+        gifLayer.contents = first
+        hostLayer.addSublayer(gifLayer)
+
+        // Loop the minion face for the whole duration.
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = sourceDuration
+        anim.repeatCount = .infinity
+        gifLayer.add(anim, forKey: "minionFrames")
+
+        // Gentle fade in/out so it doesn't pop on/off.
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = 0.25
+        gifLayer.add(fadeIn, forKey: "minionFadeIn")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.6)
+        fadeOut.duration = 0.6
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        gifLayer.add(fadeOut, forKey: "minionFadeOut")
+
+        // No sound by design — the tile is silent; onSoundPlay neutralizes the
+        // routed clip and returns just the duration so the tile stays "playing".
+        trackEffect("minion", layer: gifLayer, duration: duration, sound: nil)
+    }
+
     // MARK: - Pulse / heartbeat (one-shot: 2 QRS cycles then flatline)
 
     func showPulse(playSound: Bool = false) {

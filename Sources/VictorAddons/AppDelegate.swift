@@ -237,6 +237,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "phoenix":         self?.animator.showPhoenix()
             case "money":           self?.animator.showMoneyRise()
             case "iris":            self?.animator.showIrisClose()
+            case "minion":          self?.animator.showMinion()
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -335,6 +336,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // "phoenix") drives both the visual and the real sound.
             if name == "34_phoenix.mp3" {
                 return "{\"ok\":true,\"durationMs\":1}"
+            }
+            // Tile #80 (🍌 badumtss → animated minion face): SILENT by design —
+            // play NOTHING here. The looping minion face is driven by the press
+            // path (SoundEffectMap: 80_badumtss.mp3 → "minion"). Return the minion's
+            // on-screen duration so the NON-restartable tile stays "playing" for that
+            // window: a re-tap within it fires /effect/stop-all (which tears the
+            // tracked minion layer down) instead of restarting — that's the
+            // "stop when pressed again". Unlike radar/money, this branch does NOT
+            // trigger the effect (the press path already does).
+            if name == "80_badumtss.mp3" {
+                return "{\"ok\":true,\"durationMs\":\(Int(EmojiAnimator.minionDuration * 1000))}"
             }
             // Tile #27 (👏 Applause): play the clapping clip 30% SHORTER — the Mac
             // clips `27_clapping.mp3` to 70% of its length (fading the tail out)

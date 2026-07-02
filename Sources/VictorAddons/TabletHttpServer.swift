@@ -279,6 +279,8 @@ class TabletHttpServer {
             return .effect("money")
         case "/test/iris":
             return .effect("iris")
+        case "/test/minion":
+            return .effect("minion")
         case "/test/group-photo":
             return .testGroupPhoto
         case "/test/wispr-output-drift":
