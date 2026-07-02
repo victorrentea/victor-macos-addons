@@ -241,6 +241,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 if let screen = ScreenCaptureFlash.builtInScreen {
                     ScreenCaptureFlash.flash(on: screen, duration: 4.5, color: .systemGreen)
                 }
+            case "click":
+                // Audible tap — e.g. the tablet's ⟳ reconnect button, paired with
+                // the green-flash as "the link works" feedback.
+                SoundManager.shared.playOverlapping("click.wav", volume: 0.7)
             case "stop-all":
                 SoundManager.shared.stopTabletSound()
                 self?.animator.stopAllActiveEffects()
