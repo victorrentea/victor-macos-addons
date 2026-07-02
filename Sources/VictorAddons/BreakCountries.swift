@@ -20,8 +20,8 @@ struct BreakCountry: Equatable {
 }
 
 extension BreakCountry {
-    /// The home default: every morning the selection resets to Romania (Romanian
-    /// time), and it's pinned at the top of the picker for a quick "back home".
+    /// The home fallback, pinned at the top of the picker for a quick "back home".
+    /// Used when the live timezone can't be matched to a country in `all`.
     static let romania = BreakCountry(name: "Romania", iso: "RO", tz: "Europe/Bucharest")
 
     /// A broad global list spanning the major timezones, sorted alphabetically by
@@ -95,7 +95,23 @@ extension BreakCountry {
         BreakCountry(name: "Vietnam", iso: "VN", tz: "Asia/Ho_Chi_Minh"),
     ].sorted { $0.name < $1.name }
 
-    // MARK: - Persistence (remember today's pick; reset to Romania each new day)
+    // MARK: - "Where am I now?" (live timezone → country)
+
+    /// The country in `all` whose IANA zone equals `id`, if any. Pure so it can be
+    /// unit-tested without touching the system clock/timezone.
+    static func country(forTimeZoneIdentifier id: String) -> BreakCountry? {
+        all.first(where: { $0.tz == id })
+    }
+
+    /// The country matching the Mac's **current system timezone**. macOS
+    /// auto-updates that zone by location (when "Set time zone automatically" is
+    /// on), so this tracks where Victor actually is. Falls back to Romania when
+    /// the live zone isn't one we list.
+    static func currentByTimeZone() -> BreakCountry {
+        country(forTimeZoneIdentifier: TimeZone.current.identifier) ?? romania
+    }
+
+    // MARK: - Persistence (auto-pick "here" once a day; keep it fixed all day)
 
     private static let kSelectedTZ = "BreakTimer.country.tz"
     private static let kSelectedDay = "BreakTimer.country.day"
@@ -108,14 +124,33 @@ extension BreakCountry {
         return f.string(from: Date())
     }
 
-    /// The country picked **today**, or Romania. The selection is intentionally
-    /// day-scoped: every morning it resets to Romania (Romanian time).
-    static func loadSelected() -> BreakCountry {
+    /// The country stored for **today** (a manual dropdown pick, or the auto-pick
+    /// locked in at the day's first timer start), or nil if nothing is stored yet
+    /// today. Read-only — no side effects.
+    private static func savedToday() -> BreakCountry? {
         guard UserDefaults.standard.string(forKey: kSelectedDay) == todayKey(),
               let tz = UserDefaults.standard.string(forKey: kSelectedTZ),
               let c = all.first(where: { $0.tz == tz }) else {
-            return romania
+            return nil
         }
+        return c
+    }
+
+    /// Read-only view of today's selection, falling back to Romania when nothing
+    /// is stored yet. Used for pre-start display; does NOT auto-detect or persist.
+    static func loadSelected() -> BreakCountry {
+        savedToday() ?? romania
+    }
+
+    /// The country to show when a Break timer starts. On the **first start of the
+    /// day** it auto-picks the country of the Mac's current timezone and persists
+    /// it, so it stays fixed for the rest of the day (even if the zone later
+    /// shifts) — and later starts that day just reuse it. A manual dropdown pick
+    /// made earlier today is respected (it was persisted the same way).
+    static func autoSelectForToday() -> BreakCountry {
+        if let c = savedToday() { return c }
+        let c = currentByTimeZone()
+        c.saveSelected()
         return c
     }
 

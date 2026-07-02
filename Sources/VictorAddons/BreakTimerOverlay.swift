@@ -74,7 +74,9 @@ final class BreakTimerController {
         remaining = max(0, minutes) * 60
         paused = false
         freezeNow = nil
-        selectedCountry = BreakCountry.loadSelected()    // day-scoped: resets to Romania each morning
+        // Day-scoped: first start of the day auto-picks "where I am now" (by the
+        // Mac's live timezone) and locks it in; later starts today reuse it.
+        selectedCountry = BreakCountry.autoSelectForToday()
 
         let view = ensureWindow()
         view.selectedCountryTZ = selectedCountry.tz
