@@ -1449,8 +1449,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return
         }
         let content = UNMutableNotificationContent()
-        content.title = "🚨 PDF export FAILING"
-        content.body = "Google can't export «\(deck)» to PDF\(detail.isEmpty ? "" : " (\(detail))"). Participants can't open the slides — shrink the deck."
+        content.title = "GDrive PDF Export failed for:"
+        content.body = deck
         content.sound = .default
         content.userInfo = ["purpose": "pdf-export-alarm", "slug": slug]
         if #available(macOS 12.0, *) {
