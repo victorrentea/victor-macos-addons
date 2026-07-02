@@ -331,9 +331,17 @@ enum KeymapOverlayPlacement {
 }
 
 final class KeymapHoldCoordinator {
-    static let defaultDelay: TimeInterval = 0.7
+    // The overlay lands on a secondary screen when one exists, so it's
+    // unobtrusive there and can appear quickly; on a single monitor it
+    // covers the only screen, so require a longer hold before showing it.
+    static let multiMonitorDelay: TimeInterval = 0.3
+    static let singleMonitorDelay: TimeInterval = 1.0
 
-    private let delay: TimeInterval
+    static func delay(monitorCount: Int) -> TimeInterval {
+        monitorCount > 1 ? multiMonitorDelay : singleMonitorDelay
+    }
+
+    private let delayProvider: () -> TimeInterval
     private let schedule: (TimeInterval, @escaping () -> Void) -> Void
     private let cancelScheduled: () -> Void
     private let show: (KeymapModifier) -> Void
@@ -342,13 +350,13 @@ final class KeymapHoldCoordinator {
     private var visibleModifier: KeymapModifier?
 
     init(
-        delay: TimeInterval = KeymapHoldCoordinator.defaultDelay,
+        delayProvider: @escaping () -> TimeInterval,
         schedule: @escaping (TimeInterval, @escaping () -> Void) -> Void,
         cancelScheduled: @escaping () -> Void,
         show: @escaping (KeymapModifier) -> Void,
         hide: @escaping () -> Void
     ) {
-        self.delay = delay
+        self.delayProvider = delayProvider
         self.schedule = schedule
         self.cancelScheduled = cancelScheduled
         self.show = show
@@ -373,7 +381,7 @@ final class KeymapHoldCoordinator {
         if pendingModifier == modifier { return }
         cancelScheduled()
         pendingModifier = modifier
-        schedule(delay) { [weak self] in
+        schedule(delayProvider()) { [weak self] in
             guard let self, self.pendingModifier == modifier, self.visibleModifier == nil else { return }
             self.visibleModifier = modifier
             self.show(modifier)
@@ -537,42 +545,28 @@ final class KeymapOverlayRenderer {
 }
 
 final class KeymapOverlayWindow: NSPanel {
-    static let initialOpacity: CGFloat = 0.2
     static let visibleOpacity: CGFloat = 0.8
-    static let fadeInDuration: TimeInterval = 1.0
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        alphaValue = Self.initialOpacity
+        alphaValue = Self.visibleOpacity
         level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
     }
 
-    func fadeIn() {
-        alphaValue = Self.initialOpacity
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.fadeInDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            animator().alphaValue = Self.visibleOpacity
-        }
-    }
-
-    func display(image: NSImage, frame: NSRect, animated: Bool) {
+    func display(image: NSImage, frame: NSRect) {
         let imageView = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
         imageView.image = image
         imageView.imageScaling = .scaleAxesIndependently
         contentView = imageView
         setFrame(frame, display: true)
+        // Appear at full opacity immediately — no initial fade-in.
+        alphaValue = Self.visibleOpacity
         orderFrontRegardless()
-        if animated {
-            fadeIn()
-        } else {
-            alphaValue = Self.visibleOpacity
-        }
     }
 }
 
@@ -616,12 +610,11 @@ final class KeymapOverlayController {
         let externals = screensProvider().filter { screenID($0) != retinaID }.map(\.frame)
         let frame = KeymapOverlayPlacement.frame(retinaFrame: retina.frame, externalFrames: externals, imageAspectRatio: KeymapOverlayRenderer.imageAspectRatio)
 
-        window.display(image: image, frame: frame, animated: !window.isVisible)
+        window.display(image: image, frame: frame)
     }
 
     func hide() {
         window.orderOut(nil)
-        window.alphaValue = KeymapOverlayWindow.initialOpacity
     }
 
     private func screenID(_ screen: NSScreen) -> CGDirectDisplayID? {

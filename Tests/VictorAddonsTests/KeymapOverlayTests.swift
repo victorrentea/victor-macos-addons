@@ -104,7 +104,7 @@ final class KeymapOverlayTests: XCTestCase {
         var shown: [KeymapModifier] = []
         var hideCount = 0
         let coordinator = KeymapHoldCoordinator(
-            delay: 1.0,
+            delayProvider: { 1.0 },
             schedule: { _, fire in fire() },
             cancelScheduled: {},
             show: { shown.append($0) },
@@ -118,9 +118,18 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(hideCount, 1)
     }
 
-    func testHoldCoordinatorDefaultDelayIsSevenTenthsOfASecond() {
+    func testDelayIsShorterWithMultipleMonitors() {
+        // Single monitor: overlay covers the only screen → longer hold.
+        XCTAssertEqual(KeymapHoldCoordinator.delay(monitorCount: 1), 1.0, accuracy: 0.001)
+        // Multi-monitor: overlay lands on a secondary screen → quicker.
+        XCTAssertEqual(KeymapHoldCoordinator.delay(monitorCount: 2), 0.3, accuracy: 0.001)
+        XCTAssertEqual(KeymapHoldCoordinator.delay(monitorCount: 3), 0.3, accuracy: 0.001)
+    }
+
+    func testHoldCoordinatorSchedulesUsingDelayProvider() {
         var scheduledDelay: TimeInterval?
         let coordinator = KeymapHoldCoordinator(
+            delayProvider: { 0.3 },
             schedule: { delay, _ in scheduledDelay = delay },
             cancelScheduled: {},
             show: { _ in },
@@ -129,13 +138,13 @@ final class KeymapOverlayTests: XCTestCase {
 
         coordinator.modifierFlagsChanged(option: true, shift: false)
 
-        XCTAssertEqual(scheduledDelay ?? -1, 0.7, accuracy: 0.001)
+        XCTAssertEqual(scheduledDelay ?? -1, 0.3, accuracy: 0.001)
     }
 
     func testHoldCoordinatorSwitchesVisibleLayerWhenShiftChanges() {
         var shown: [KeymapModifier] = []
         let coordinator = KeymapHoldCoordinator(
-            delay: 1.0,
+            delayProvider: { 1.0 },
             schedule: { _, fire in fire() },
             cancelScheduled: {},
             show: { shown.append($0) },
@@ -153,7 +162,7 @@ final class KeymapOverlayTests: XCTestCase {
         var hideCount = 0
         var scheduled: (() -> Void)?
         let coordinator = KeymapHoldCoordinator(
-            delay: 1.0,
+            delayProvider: { 1.0 },
             schedule: { _, fire in scheduled = fire },
             cancelScheduled: { didCancel = true },
             show: { _ in },
@@ -210,20 +219,20 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1238, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "\\ key should be transparent")
     }
 
-    func testOverlayWindowFadeConfiguration() {
+    func testOverlayWindowStartsAtVisibleOpacityWithNoFade() {
         let window = KeymapOverlayWindow()
 
-        XCTAssertEqual(window.alphaValue, 0.2, accuracy: 0.001)
-        XCTAssertEqual(KeymapOverlayWindow.fadeInDuration, 1.0, accuracy: 0.001)
+        // No initial fade — the window is at full visible opacity from creation.
+        XCTAssertEqual(window.alphaValue, KeymapOverlayWindow.visibleOpacity, accuracy: 0.001)
         XCTAssertEqual(KeymapOverlayWindow.visibleOpacity, 0.8, accuracy: 0.001)
     }
 
-    func testOverlayWindowCanSwapImageWithoutFadeAtVisibleOpacity() {
+    func testOverlayWindowDisplaysAtVisibleOpacityWithNoFade() {
         let window = KeymapOverlayWindow()
         let image = NSImage(size: NSSize(width: 10, height: 10))
         let frame = NSRect(x: 0, y: 0, width: 10, height: 10)
 
-        window.display(image: image, frame: frame, animated: false)
+        window.display(image: image, frame: frame)
 
         XCTAssertEqual(window.alphaValue, KeymapOverlayWindow.visibleOpacity, accuracy: 0.001)
     }

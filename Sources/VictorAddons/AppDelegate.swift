@@ -100,6 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let keymapOverlay = KeymapOverlayController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
         keymapOverlayController = keymapOverlay
         keymapHoldCoordinator = KeymapHoldCoordinator(
+            delayProvider: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.screens.count) },
             schedule: { [weak self] delay, fire in
                 self?.keymapHoldWorkItem?.cancel()
                 let work = DispatchWorkItem(block: fire)
