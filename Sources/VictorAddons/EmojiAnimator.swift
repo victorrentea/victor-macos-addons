@@ -5191,5 +5191,17 @@ class EmojiAnimator {
         stopApplause()
         if pulseRunning { _stopPulse() }
         stopAlarmOverlay()
+        // 🕳️ Iris also lives OUTSIDE activeEffects (it survives stop-all so a
+        // direct /effect/iris re-press can toggle it), but a NON-restartable tile
+        // re-tap fires /effect/stop-all expecting the effect to STOP — so tear the
+        // iris down here too.
+        if let iris = _irisLayer { cancelIris(iris, fadeDuration: 0.2) }
+        // Silence Mac-OWNED effect sounds that don't ride the tablet-routed player
+        // (stopTabletSound misses them), so a non-restartable re-tap stops the
+        // animation AND the sound: the 🛰️ sonar beeps (play() pool) and the 🔥
+        // phoenix cry (overlapping pool). The money "ching" is intentionally left
+        // (it's a restartable, stacking clip).
+        SoundManager.shared.stopAllPlayers()
+        SoundManager.shared.stopOverlapping("phoenix.mp3")
     }
 }

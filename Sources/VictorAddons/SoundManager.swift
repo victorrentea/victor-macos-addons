@@ -381,6 +381,20 @@ class SoundManager {
         }
     }
 
+    /// Immediately stop EVERY one-shot `play()` sound (the `players` pool). Used
+    /// by the desktop `/effect/stop-all` so a non-restartable re-tap silences any
+    /// Mac-owned effect audio (e.g. the 🛰️ sonar beeps `23_radar.mp3`) that plays
+    /// through this pool rather than the tablet-routed player. The money "ching"
+    /// and other stacking clips ride the SEPARATE overlapping pool and are left
+    /// alone (stop those by name via `stopOverlapping`).
+    func stopAllPlayers() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for (_, p) in self.players { p.stop() }
+            self.players.removeAll()
+        }
+    }
+
     /// Fade out over 300ms then stop. Called when the animation finishes —
     /// the sound continues playing (fading) for 300ms after the visual ends.
     func stop(_ filename: String) {
