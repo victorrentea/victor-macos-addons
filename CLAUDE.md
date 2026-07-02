@@ -133,15 +133,17 @@ on `contents` from bundled gif frames (`Bundle.module`).
   **absent from `SoundEffectMap`** so a press = a single ching + single round (no
   double-trigger). `/test/money` and `/effect/money` call `showMoneyRise` directly.
 - **🕳️ Iris close** (tile #31, repurposed from Tarzan): a cinematic "iris out"
-  blackout — **NO sound**. The Android tile #31 is redrawn as a **black circle
+  blackout. The Android tile #31 is redrawn as a **black circle
   with a white centre and four inward-pointing arrows** (vector `sfx_31_iris.xml`);
-  its mp3 is a **silent clip** but keeps the asset id `31_tarzan.mp3` (protocol/
+  its own mp3 is a **silent clip** but keeps the asset id `31_tarzan.mp3` (protocol/
   manifest stable). It **stays in `SoundEffectMap`** (`31_tarzan.mp3` → `iris`):
-  the **press path** drives the visual, so it isn't double-triggered. To make it
-  truly soundless, `onSoundPlay` is special-cased to **play nothing** for
-  `31_tarzan.mp3` (returns a ~0ms duration, not even the silent placeholder) —
-  unlike radar/money, that branch does *not* trigger the effect (the press path
-  already does). `showIrisClose` overlays a **radial
+  the **press path** drives the visual, so it isn't double-triggered. **Paired
+  sound:** the iris was originally soundless, but to keep **every** tablet
+  thumbnail audible on the Mac, `onSoundPlay` now special-cases `31_tarzan.mp3` to
+  play the **dramatic gong** (`50_gong.mp3`, ~8.6s ≈ the iris length) — like
+  radar/money, the routed play path owns the sound while the press path owns the
+  visual. `showIrisClose` itself stays silent (the CALayer effect plays no audio).
+  `showIrisClose` overlays a **radial
   `CAGradientLayer`** (square, side = screen diagonal, so the gradient is a true
   circle and location 1.0 lands on the corners) — transparent centre, opaque
   black edge, with a soft transition band. Animating the gradient `locations`
@@ -197,7 +199,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/wispr-output-drift` — post the 🔇 "Mute inactiv la dictare" output-route warning now, using the real current default-output name (bypasses the Wispr-start + drift-latch gates)
 - `GET /test/sonar` — fire the 🛰️ Sonar overlay now (visual + synced `23_radar.mp3`); same as `/effect/sonar`. The tablet drives it by routing `GET /sound/play/23_radar.mp3` to the Mac (handled in `onSoundPlay`)
 - `GET /test/money` — fire one round of the 💸 Money rising-dollars overlay now; same as `/effect/money`. The tablet drives it by routing `GET /sound/play/53_rain.mp3` to the Mac (handled in `onSoundPlay`), which also plays the #57 checkmark "ching"
-- `GET /test/iris` — fire the 🕳️ Iris-close blackout now (5s close → 1s hold → auto fade-out reveal); same as `/effect/iris`. The tablet drives it via `GET /sound/pressed/31_tarzan.mp3` (mapped to `iris` in `SoundEffectMap`); a second press before the auto-reveal cancels it early. Silent — no paired sound
+- `GET /test/iris` — fire the 🕳️ Iris-close blackout now (5s close → 1s hold → auto fade-out reveal); same as `/effect/iris`. The tablet drives it via `GET /sound/pressed/31_tarzan.mp3` (mapped to `iris` in `SoundEffectMap`); a second press before the auto-reveal cancels it early. The `/test/iris` visual itself is silent; the tablet-routed press pairs it with the gong (`50_gong.mp3`) via `onSoundPlay`
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 - `GET /sound/pressed/<file>`, `GET /sound/stopped/<file>` — tablet reports a sound press/stop; the Mac maps it to an overlay effect via `SoundEffectMap` (e.g. `/sound/pressed/40_joker.mp3` → blood drip). `GET /effect/blood-drip` triggers the blood overlay directly.
 

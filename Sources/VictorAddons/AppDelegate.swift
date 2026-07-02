@@ -313,12 +313,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 guard let duration = SoundManager.shared.playOverlappingTabletSound("57_checkmark.mp3", volume: volume) else { return nil }
                 return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
-            // Tile #31 (🕳️ iris close) is SILENT — play nothing at all on the
-            // routed path (not even its silent placeholder clip). The visual is
-            // driven from the press path (SoundEffectMap: 31_tarzan.mp3 → "iris"),
-            // so we just acknowledge with a ~0ms duration and skip playback.
+            // Tile #31 (🕳️ iris close): formerly silent by design — now plays the
+            // dramatic gong (`50_gong.mp3`, ~8.6s ≈ the iris length) so EVERY
+            // tablet thumbnail is audible on the Mac. The blackout visual is still
+            // driven by the press path (SoundEffectMap: 31_tarzan.mp3 → "iris").
             if name == "31_tarzan.mp3" {
-                return "{\"ok\":true,\"durationMs\":1}"
+                let volume = volumePct.map { Float($0) / 100 }
+                guard let duration = SoundManager.shared.playTabletSound("50_gong.mp3", volume: volume) else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
             // Tile #34 (🔥 Phoenix): the Mac owns the phoenix cry (`phoenix.mp3`,
             // played inside showPhoenix, faded in unison with the visual). The
