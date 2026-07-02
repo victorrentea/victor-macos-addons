@@ -10,6 +10,9 @@ class LocalWebSocketServer {
     var onClientCountChanged: ((Int) -> Void)?
     // Called when session_started or session_ended message received
     var onSessionMessage: (([String: Any]) -> Void)?
+    // Called when the daemon reports a deck's Google PDF export is failing
+    // (failing=true) or has recovered (failing=false).
+    var onPdfExportAlarm: ((_ deck: String, _ slug: String, _ failing: Bool, _ detail: String) -> Void)?
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
@@ -200,6 +203,14 @@ class LocalWebSocketServer {
             // Forward session lifecycle events to AppDelegate
             DispatchQueue.main.async { [weak self] in
                 self?.onSessionMessage?(json)
+            }
+        case "pdf_export_alarm":
+            let deck = json["deck"] as? String ?? "a deck"
+            let slug = json["slug"] as? String ?? ""
+            let failing = json["failing"] as? Bool ?? false
+            let detail = json["detail"] as? String ?? ""
+            DispatchQueue.main.async { [weak self] in
+                self?.onPdfExportAlarm?(deck, slug, failing, detail)
             }
         case "ping":
             break  // ignore keep-alive

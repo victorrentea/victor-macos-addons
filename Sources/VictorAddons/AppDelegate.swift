@@ -173,6 +173,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.handleSessionEnded()
             }
         }
+        wsServer.onPdfExportAlarm = { [weak self] deck, slug, failing, detail in
+            self?.postPdfExportAlarm(deck: deck, slug: slug, failing: failing, detail: detail)
+        }
         wsServer.start()
         self.wsServer = wsServer
 
@@ -1376,6 +1379,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
         }
+    }
+
+    /// Persistent "Google can no longer export this deck to PDF" alarm, driven by
+    /// the daemon's `pdf_export_alarm` message. Unlike the transient notifications
+    /// above, this one is NOT auto-removed: it stays in Notification Center until
+    /// the daemon reports recovery (failing=false), which clears it. A stable
+    /// per-slug identifier means a re-fire replaces rather than stacks.
+    /// Note: while PowerPoint is presenting fullscreen macOS suppresses the banner
+    /// into Notification Center (same caveat as the other notifications here).
+    private func postPdfExportAlarm(deck: String, slug: String, failing: Bool, detail: String) {
+        let identifier = "pdf-export-alarm:\(slug)"
+        let center = UNUserNotificationCenter.current()
+        guard failing else {
+            // Recovered — clear the persistent alarm.
+            center.removeDeliveredNotifications(withIdentifiers: [identifier])
+            center.removePendingNotificationRequests(withIdentifiers: [identifier])
+            overlayInfo("✅ PDF export recovered: \(deck)")
+            return
+        }
+        let content = UNMutableNotificationContent()
+        content.title = "🚨 PDF export FAILING"
+        content.body = "Google can't export «\(deck)» to PDF\(detail.isEmpty ? "" : " (\(detail))"). Participants can't open the slides — shrink the deck."
+        content.sound = .default
+        content.userInfo = ["purpose": "pdf-export-alarm", "slug": slug]
+        if #available(macOS 12.0, *) {
+            content.interruptionLevel = .timeSensitive
+        }
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        center.add(req) { err in
+            if let err { overlayInfo("PDF export alarm notification error: \(err)") }
+        }
+        overlayInfo("🚨 PDF export alarm raised: \(deck)")
     }
 
     /// "Wispr started but the system output isn't 🔊OS Output" warning, fired from
