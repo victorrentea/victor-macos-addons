@@ -12,6 +12,20 @@ import IOKit
 /// arming the reverse rule whenever the cable is plugged in is free and gives a
 /// transparent, always-ready backup.
 ///
+/// **Two mechanisms, one goal.** The reverse rule is (re)armed by
+/// *both* an OS-level USB-attach hook and a periodic poll:
+///
+/// 1. **USB-attach hook (fast path).** An IOKit `kIOFirstMatchNotification`
+///    fires the instant a matching ADB interface enumerates — the moment the
+///    cable is plugged in. On that edge we immediately (re)run `adb reverse`
+///    with a short retry burst (adbd is usually mid-handshake right after
+///    enumeration), so a mid-talk replug is armed in well under a second
+///    instead of waiting up to a full poll interval.
+/// 2. **Poll (healing path).** A power-aware timer that catches everything the
+///    edge hook can miss: the adb *server* restarting under us, a
+///    notification we didn't get, or arming a device that was already plugged
+///    in at launch.
+///
 /// **Cheap poll.** Presence is checked *in-process* via IOKit — we match an
 /// `IOUSBHostInterface` carrying the ADB class triplet (class 255 / subclass 66
 /// / protocol 1), a Mach call that costs microseconds and spawns nothing. The
@@ -29,16 +43,25 @@ import IOKit
 /// adapts the instant the charger is plugged/unplugged.
 ///
 /// Caveat: if the adb *server* restarts mid-session without a USB replug, the
-/// reverse rule can drop while we still believe we're armed — re-plugging the
-/// cable or restarting the app re-arms it. Rare, and not worth a periodic `adb`
-/// probe to cover.
+/// reverse rule can drop while we still believe we're armed — the poll re-arms
+/// it (within one interval), or re-plugging the cable / restarting the app does.
 final class UsbTunnelKeeper {
     private static let port = 55123
     private static let acInterval = 30       // seconds, on AC power
     private static let batteryInterval = 5   // seconds, on battery
+    /// Fast-retry burst fired on the USB-attach edge, to beat the adbd
+    /// handshake without waiting for the next poll: attempts spaced `retryStep`
+    /// apart, up to `attachRetries` total.
+    private static let attachRetries = 8
+    private static let retryStep = 400       // milliseconds between edge retries
 
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.usb-tunnel-keeper", qos: .utility)
+    /// IOKit device-attach notification plumbing. The port delivers callbacks on
+    /// `queue` (via `IONotificationPortSetDispatchQueue`), so the callback shares
+    /// the same serial queue as everything else — no extra locking.
+    private var notifyPort: IONotificationPortRef?
+    private var matchIterator: io_iterator_t = 0
     /// Whether the reverse rule is set for the *current* USB connection. Reset
     /// when the tablet unplugs. Lives only on `queue`, so reads/writes are
     /// sequential. Logged only when it flips (no per-tick spam).
@@ -63,6 +86,16 @@ final class UsbTunnelKeeper {
             return
         }
         scheduleNext(after: 2)
+        // Register the USB-attach hook on `queue` so its initial drain (and every
+        // later callback) touches `armed` on the same serial queue as the poll.
+        queue.async { [weak self] in self?.registerUsbMatchNotification() }
+    }
+
+    /// Force an immediate (re)arm of the reverse tunnel now — the same work the
+    /// USB-attach hook does. Safe to call from any thread. This is the "reconnect
+    /// now" entry point; the tablet's own re-probe complements it from its side.
+    func forceReconnectNow() {
+        queue.async { [weak self] in self?.forceReconnect() }
     }
 
     /// Self-rescheduling one-shot so the cadence can change with the power
@@ -91,9 +124,99 @@ final class UsbTunnelKeeper {
         // Plug-in edge (or a retry after adbd wasn't ready yet): (re)establish
         // the reverse rule. A failure here just leaves us disarmed to retry on
         // the next tick.
-        guard let adb = Self.adbPath else { return }
+        attemptArm()
+    }
+
+    /// Run `adb reverse` once; on success flip `armed` true. Assumes the caller
+    /// already confirmed the device is present. Returns whether it stuck.
+    @discardableResult
+    private func attemptArm() -> Bool {
+        guard let adb = Self.adbPath else { return false }
         let status = Self.run(adb, ["reverse", "tcp:\(Self.port)", "tcp:\(Self.port)"])
-        if status == 0 { setArmed(true) }
+        if status == 0 {
+            setArmed(true)
+            return true
+        }
+        return false
+    }
+
+    /// The USB-attach fast path: a fresh cable means the old reverse rule is gone
+    /// with the old connection, so drop `armed` and re-arm now with a short retry
+    /// burst (adbd is typically still handshaking right after enumeration). If it
+    /// still won't stick, we stop and let the poll heal it. Runs on `queue`.
+    private func forceReconnect() {
+        guard Self.adbDevicePresent() else {
+            setArmed(false)
+            return
+        }
+        armed = false
+        armWithRetries(attemptsLeft: Self.attachRetries)
+    }
+
+    private func armWithRetries(attemptsLeft: Int) {
+        guard Self.adbDevicePresent() else {
+            setArmed(false)
+            return
+        }
+        if armed || attemptArm() { return }
+        guard attemptsLeft > 1 else {
+            NSLog("[UsbTunnelKeeper] USB attach: adb reverse not ready yet — poll will retry")
+            return
+        }
+        queue.asyncAfter(deadline: .now() + .milliseconds(Self.retryStep)) { [weak self] in
+            self?.armWithRetries(attemptsLeft: attemptsLeft - 1)
+        }
+    }
+
+    // MARK: - USB-attach notification (fast path)
+
+    private static let matchCallback: IOServiceMatchingCallback = { refcon, iterator in
+        guard let refcon else { return }
+        let keeper = Unmanaged<UsbTunnelKeeper>.fromOpaque(refcon).takeUnretainedValue()
+        keeper.handleUsbMatch(iterator: iterator)
+    }
+
+    /// Register a `kIOFirstMatchNotification` for the ADB interface so an attach
+    /// re-arms the tunnel immediately, instead of waiting for the next poll.
+    /// Called on `queue`; the port delivers later callbacks on `queue` too.
+    private func registerUsbMatchNotification() {
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else {
+            NSLog("[UsbTunnelKeeper] could not create IONotificationPort — attach hook disabled")
+            return
+        }
+        notifyPort = port
+        IONotificationPortSetDispatchQueue(port, queue)
+        guard let matching = Self.adbInterfaceMatchingDict() else { return }
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let kr = IOServiceAddMatchingNotification(
+            port,
+            kIOFirstMatchNotification,
+            matching,
+            Self.matchCallback,
+            refcon,
+            &matchIterator
+        )
+        guard kr == KERN_SUCCESS else {
+            NSLog("[UsbTunnelKeeper] IOServiceAddMatchingNotification failed: \(kr) — attach hook disabled")
+            return
+        }
+        // Draining the iterator both arms the notification and reports any device
+        // already attached at launch (which we then arm right away).
+        handleUsbMatch(iterator: matchIterator)
+    }
+
+    /// Drain the iterator (required to re-arm the notification) and, if any ADB
+    /// interface appeared, immediately (re)arm the reverse tunnel. Runs on `queue`.
+    private func handleUsbMatch(iterator: io_iterator_t) {
+        var appeared = false
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            appeared = true
+            IOObjectRelease(service)
+            service = IOIteratorNext(iterator)
+        }
+        guard appeared else { return }
+        forceReconnect()
     }
 
     private func setArmed(_ value: Bool) {
@@ -104,12 +227,13 @@ final class UsbTunnelKeeper {
             : "[UsbTunnelKeeper] USB tunnel down — tablet unplugged")
     }
 
-    /// True when an ADB-capable device is on USB, detected purely from the IO
-    /// registry (no `adb` spawn). Matches the standard Android ADB interface:
-    /// bInterfaceClass 255 (vendor-specific) / subclass 66 / protocol 1.
-    private static func adbDevicePresent() -> Bool {
+    /// A fresh matching dictionary for the standard Android ADB interface:
+    /// bInterfaceClass 255 (vendor-specific) / subclass 66 (ADB) / protocol 1.
+    /// A new one is built per call because both `IOServiceGetMatchingServices`
+    /// and `IOServiceAddMatchingNotification` consume (release) the dictionary.
+    private static func adbInterfaceMatchingDict() -> CFDictionary? {
         guard let matching = IOServiceMatching("IOUSBHostInterface") as NSMutableDictionary? else {
-            return false
+            return nil
         }
         // Property criteria must be nested under kIOPropertyMatchKey — top-level
         // keys are NOT applied by IOServiceGetMatchingServices (they silently
@@ -119,8 +243,15 @@ final class UsbTunnelKeeper {
             "bInterfaceSubClass": 66,  // ADB
             "bInterfaceProtocol": 1,
         ]
+        return matching as CFDictionary
+    }
+
+    /// True when an ADB-capable device is on USB, detected purely from the IO
+    /// registry (no `adb` spawn).
+    private static func adbDevicePresent() -> Bool {
+        guard let matching = adbInterfaceMatchingDict() else { return false }
         var iter: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching as CFDictionary, &iter) == KERN_SUCCESS else {
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter) == KERN_SUCCESS else {
             return false
         }
         var service = IOIteratorNext(iter)
