@@ -545,7 +545,7 @@ final class KeymapOverlayRenderer {
 }
 
 final class KeymapOverlayWindow: NSPanel {
-    static let visibleOpacity: CGFloat = 0.8
+    static let visibleOpacity: CGFloat = 1.0
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

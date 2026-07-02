@@ -224,7 +224,7 @@ final class KeymapOverlayTests: XCTestCase {
 
         // No initial fade — the window is at full visible opacity from creation.
         XCTAssertEqual(window.alphaValue, KeymapOverlayWindow.visibleOpacity, accuracy: 0.001)
-        XCTAssertEqual(KeymapOverlayWindow.visibleOpacity, 0.8, accuracy: 0.001)
+        XCTAssertEqual(KeymapOverlayWindow.visibleOpacity, 1.0, accuracy: 0.001)
     }
 
     func testOverlayWindowDisplaysAtVisibleOpacityWithNoFade() {
