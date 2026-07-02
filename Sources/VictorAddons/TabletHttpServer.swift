@@ -50,6 +50,12 @@ class TabletHttpServer {
         case testBreakSummary
         case promptCapture
         case intellijFileOpened
+        /// Video page (tablet): list downloaded videos.
+        case videos
+        /// Play a downloaded video by id, with an optional "?t=" start-second override.
+        case videoPlay(String, Int?)
+        /// Stop / close the video player.
+        case videoStop
         case unknown
     }
 
@@ -95,6 +101,13 @@ class TabletHttpServer {
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
     var onIntellijFileOpened: ((String) -> String)?
+    /// Video page: manifest JSON of downloaded videos, for the tablet to build tiles.
+    var onVideos: (() -> String)?
+    /// Play a downloaded video by id (optional start-second override); returns
+    /// JSON, or nil if the id is unknown / not downloaded (→ 404).
+    var onVideoPlay: ((String, Int?) -> String?)?
+    /// Stop / close the video player.
+    var onVideoStop: (() -> Void)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -214,6 +227,19 @@ class TabletHttpServer {
                     contentType = "application/json"
                     let fileBody = Self.extractBody(raw)
                     body = self?.onIntellijFileOpened?(fileBody) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+                case .videos:
+                    contentType = "application/json"
+                    body = self?.onVideos?() ?? "{\"videos\":[]}"
+                case .videoPlay(let id, let t):
+                    contentType = "application/json"
+                    if let json = self?.onVideoPlay?(id, t) {
+                        body = json
+                    } else {
+                        statusCode = 404
+                        body = "{\"ok\":false,\"reason\":\"unknown-video\"}"
+                    }
+                case .videoStop:
+                    self?.onVideoStop?()
                 case .unknown:
                     statusCode = 404
                     body = "not found"
@@ -255,6 +281,12 @@ class TabletHttpServer {
             return .soundsManifest
         case "/sound/stop":
             return .soundStop
+        case "/videos":
+            return .videos
+        case "/video/stop":
+            return .videoStop
+        case "/test/video/stop":
+            return .videoStop
         case "/test/transcription/start":
             return .testTranscriptionStart
         case "/test/state":
@@ -319,6 +351,17 @@ class TabletHttpServer {
                 if let pct = Int(pathOnly.dropFirst("/sound/volume/".count)) {
                     return .soundVolume(pct)
                 }
+            }
+            if pathOnly.hasPrefix("/video/play/") {
+                let id = String(pathOnly.dropFirst("/video/play/".count))
+                let t = queryItems.first(where: { $0.name == "t" })?.value.flatMap(Int.init)
+                if !id.isEmpty { return .videoPlay(id, t) }
+            }
+            // Headless test hook: /test/video/<id> plays it (start second from the
+            // manifest). /test/video/stop is handled by the exact-match case above.
+            if pathOnly.hasPrefix("/test/video/") {
+                let id = String(pathOnly.dropFirst("/test/video/".count))
+                if !id.isEmpty { return .videoPlay(id, nil) }
             }
             if pathOnly.hasPrefix("/test/break/") {
                 if let minutes = Int(pathOnly.dropFirst("/test/break/".count)) {

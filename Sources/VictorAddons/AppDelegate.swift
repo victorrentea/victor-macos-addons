@@ -287,6 +287,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onOpenUrl = { [weak self] url in
             self?.openUrlInChrome(url)
         }
+        // Tablet video page: list downloaded videos, and play one fullscreen in
+        // IINA seeking to its manifest start-second (a new play replaces the
+        // previous player; VideoPlayer auto-kills it ~60s after start).
+        tabletServer?.onVideos = { VideoLibrary.manifestJSON() }
+        tabletServer?.onVideoPlay = { id, tOverride in
+            guard let entry = VideoLibrary.entry(id: id) else { return nil }
+            let start = tOverride ?? entry.startSeconds
+            let ok = VideoPlayer.shared.play(fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start)
+            guard ok else { return nil }
+            return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start)}"
+        }
+        tabletServer?.onVideoStop = { VideoPlayer.shared.stop() }
         // Tablet → Mac sound routing: the tablet pings every 5s to detect the
         // Mac and compares soundsHash to detect a stale Mac bundle; when its
         // "MAC" toggle is pressed it routes soundboard playback here instead

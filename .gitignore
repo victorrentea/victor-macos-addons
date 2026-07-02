@@ -10,6 +10,10 @@ secrets.env
 ports-to-kill.txt
 addons-output/
 
+# Downloaded training videos + their manifest (local runtime data, regenerated
+# by the add-training-video skill; large binaries, never committed)
+videos/
+
 # Claude Code git worktrees (transient)
 .claude/worktrees/
 
