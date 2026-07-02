@@ -42,6 +42,9 @@ class TabletHttpServer {
         /// Post the "Wispr started but output ≠ 🔊OS Output" notification now,
         /// using the real current default-output name (test hook).
         case testWisprOutputDrift
+        /// Force-apply the projector/standard display arrangement now and return
+        /// a JSON snapshot of the detected displays + applied scene (test hook).
+        case testProjector
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
         /// cooldown gates — same Terminal flow a real break triggers (test hook).
         case testBreakSummary
@@ -85,6 +88,8 @@ class TabletHttpServer {
     var onTestWhip: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestWisprOutputDrift: (() -> Void)?
+    /// Force-apply the display arrangement now; returns a JSON snapshot.
+    var onTestProjector: (() -> String)?
     var onTestBreakSummary: (() -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
@@ -193,6 +198,12 @@ class TabletHttpServer {
                     self?.onTestGroupPhoto?()
                 case .testWisprOutputDrift:
                     self?.onTestWisprOutputDrift?()
+                case .testProjector:
+                    contentType = "application/json"
+                    body = self?.onTestProjector?() ?? "{\"error\":\"display manager unavailable\"}"
+                    if self?.onTestProjector == nil {
+                        statusCode = 503
+                    }
                 case .testBreakSummary:
                     self?.onTestBreakSummary?()
                 case .promptCapture:
@@ -272,6 +283,8 @@ class TabletHttpServer {
             return .testGroupPhoto
         case "/test/wispr-output-drift":
             return .testWisprOutputDrift
+        case "/test/projector":
+            return .testProjector
         case "/test/break-summary":
             return .testBreakSummary
         case "/training/prompt-capture":

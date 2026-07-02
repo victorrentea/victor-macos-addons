@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 2, 10:47"
+    static let BUILD_TIME = "Jul 2, 22:31"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -71,6 +71,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onOpenCalendar: (() -> Void)?
     var onDesktopEffect: ((String) -> Void)?
     var onTileTerminals: (() -> Void)?
+    var onFixDisplayLayout: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
@@ -279,6 +280,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         tileItem.isEnabled = true
         extraSubmenu.addItem(tileItem)
 
+        // 🖥️ Fix display layout — force the projector/standard arrangement now
+        // (manual fallback for a venue projector that came up wrong).
+        let fixDisplayItem = NSMenuItem(title: "🖥️ Fix display layout", action: #selector(fixDisplayLayoutAction), keyEquivalent: "")
+        fixDisplayItem.target = self
+        fixDisplayItem.isEnabled = true
+        extraSubmenu.addItem(fixDisplayItem)
+
         // Flattened Dream entries
         let dreamEntries: [(String, Selector)] = [
             ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
@@ -300,8 +308,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         wipItem.keyEquivalent = "w"
         wipItem.keyEquivalentModifierMask = .control
 
-        // Quit (build timestamp inlined to save a menu line)
-        let quitItem = addItem("⏻ Quit – " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
+        // Quit (build timestamp inlined to save a menu line). Uses a full-width
+        // emoji (🔴) instead of the narrow ⏻ power glyph so it lines up with the
+        // other menu items' emojis.
+        let quitItem = addItem("🔴 Quit - built " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
         quitItem.keyEquivalent = "q"
         quitItem.keyEquivalentModifierMask = .command
 
@@ -468,6 +478,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func tileTerminalsAction() {
         onTileTerminals?()
+    }
+
+    @objc private func fixDisplayLayoutAction() {
+        onFixDisplayLayout?()
     }
 
     @objc private func killHistoricalPort(_ sender: NSMenuItem) {

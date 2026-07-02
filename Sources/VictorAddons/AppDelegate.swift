@@ -61,6 +61,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// there's an audience to photograph.
     private var daemonConnected = false
     private var statusBanner: StatusBanner?
+    /// Auto-arranges displays for the projector workflow (mirror Retina@1080p +
+    /// ASUS-primary on connect; revert to Retina-main + ASUS-right on disconnect).
+    private var displayArrangementManager: DisplayArrangementManager?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
     private var meetingDetector: MeetingDetector?
     private var breakReminderTimer: Timer?
@@ -450,6 +453,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         pm.start()
         self.powerMonitor = pm
 
+        // Auto display arrangement for the projector workflow. On projector
+        // connect: mirror the Retina at 1080p + make the ASUS primary; on
+        // disconnect: revert to Retina-main + ASUS-right. Fires only on changes
+        // (never on launch); the 🖥️ menu item + /test/projector force it.
+        let displayMgr = DisplayArrangementManager()
+        displayMgr.onArrangementApplied = { [weak self] banner in
+            self?.statusBanner?.showOnPresence(text: banner, sound: StatusBannerSound.start)
+        }
+        displayMgr.start()
+        self.displayArrangementManager = displayMgr
+
         // Keep the wired USB backup armed: re-run `adb reverse` on a timer so
         // plugging the tablet in mid-session restores the no-WiFi path within
         // ~20s (start.sh only arms it once, at launch).
@@ -497,6 +511,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
+        // /test/projector — force-apply the display arrangement now and return a
+        // JSON snapshot of what was detected + applied. The HTTP route switch
+        // already runs inside `DispatchQueue.main.sync`, so this callback is
+        // already on the main thread — call directly (a nested main.sync would
+        // deadlock), which is also where Quartz reconfiguration must happen.
+        tabletServer?.onTestProjector = { [weak self] in
+            self?.displayArrangementManager?.forceApplyAndSnapshot()
+                ?? "{\"error\":\"display manager unavailable\"}"
+        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -632,6 +655,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onTileTerminals = {
             DispatchQueue.global(qos: .userInitiated).async { TerminalTiler.tile() }
+        }
+        menuBarManager.onFixDisplayLayout = { [weak self] in
+            self?.displayArrangementManager?.applyNow()
         }
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
