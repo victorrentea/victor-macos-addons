@@ -293,28 +293,11 @@ enum KeymapOverlayPlacement {
             return NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height)
         }
 
-        let width = external.width * 0.5
-        let height = width / imageAspectRatio
-        let dx = external.midX - retinaFrame.midX
-        let dy = external.midY - retinaFrame.midY
-        let useHorizontalEdge = abs(dx) >= abs(dy)
-        let x: CGFloat
-        if useHorizontalEdge, dx < 0 {
-            x = external.maxX - width
-        } else if useHorizontalEdge, dx > 0 {
-            x = external.minX
-        } else {
-            x = external.minX + (external.width - width) / 2
-        }
-        let y: CGFloat
-        if !useHorizontalEdge, dy < 0 {
-            y = external.maxY - height
-        } else if !useHorizontalEdge, dy > 0 {
-            y = external.minY
-        } else {
-            y = external.midY - height / 2
-        }
-        return NSRect(x: x, y: y, width: width, height: height)
+        // When a second monitor is present, occupy the ENTIRE external screen.
+        // The window covers the whole monitor; the keyboard image is scaled to
+        // fit (aspect-preserved, centered) by the image view. Single-monitor
+        // placement above is unchanged.
+        return external
     }
 
     private static func closestExternal(to retina: NSRect, externalFrames: [NSRect]) -> NSRect? {
@@ -561,7 +544,11 @@ final class KeymapOverlayWindow: NSPanel {
     func display(image: NSImage, frame: NSRect) {
         let imageView = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
         imageView.image = image
-        imageView.imageScaling = .scaleAxesIndependently
+        // Scale the keyboard image up to fill the window, preserving its aspect
+        // ratio and centering it. On a single monitor the frame already matches
+        // the image aspect (fills exactly); on a full external monitor the wider
+        // keyboard fits to width and is centered vertically over the desktop.
+        imageView.imageScaling = .scaleProportionallyUpOrDown
         contentView = imageView
         setFrame(frame, display: true)
         // Appear at full opacity immediately — no initial fade-in.

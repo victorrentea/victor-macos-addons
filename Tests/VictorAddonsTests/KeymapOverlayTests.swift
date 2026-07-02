@@ -33,7 +33,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(try KeymapLayoutParser.modifierMapIndex(in: keylayout, modifier: .optionShift), "4")
     }
 
-    func testExternalScreenToRightUsesLeftEdgeAtHalfWidth() {
+    func testExternalScreenToRightFillsEntireExternalScreen() {
         let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
         let external = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
         let frame = KeymapOverlayPlacement.frame(
@@ -42,12 +42,10 @@ final class KeymapOverlayTests: XCTestCase {
             imageAspectRatio: 1298.0 / 398.0
         )
 
-        XCTAssertEqual(frame.minX, external.minX, accuracy: 0.001)
-        XCTAssertEqual(frame.width, external.width * 0.5, accuracy: 0.001)
-        XCTAssertEqual(frame.midY, external.midY, accuracy: 0.001)
+        XCTAssertEqual(frame, external)
     }
 
-    func testExternalScreenToLeftUsesRightEdge() {
+    func testExternalScreenToLeftFillsEntireExternalScreen() {
         let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
         let external = NSRect(x: -1920, y: 0, width: 1920, height: 1080)
         let frame = KeymapOverlayPlacement.frame(
@@ -56,9 +54,7 @@ final class KeymapOverlayTests: XCTestCase {
             imageAspectRatio: 1298.0 / 398.0
         )
 
-        XCTAssertEqual(frame.maxX, external.maxX, accuracy: 0.001)
-        XCTAssertEqual(frame.width, external.width * 0.5, accuracy: 0.001)
-        XCTAssertEqual(frame.midY, external.midY, accuracy: 0.001)
+        XCTAssertEqual(frame, external)
     }
 
     func testNoExternalScreenUsesRetinaBottomRightAtOneThirdWidth() {
@@ -74,7 +70,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(frame.width, retina.width / 3.0, accuracy: 0.001)
     }
 
-    func testExternalScreenAboveUsesBottomEdge() {
+    func testExternalScreenAboveFillsEntireExternalScreen() {
         let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
         let external = NSRect(x: 0, y: 1117, width: 1920, height: 1080)
         let frame = KeymapOverlayPlacement.frame(
@@ -83,11 +79,10 @@ final class KeymapOverlayTests: XCTestCase {
             imageAspectRatio: 1298.0 / 398.0
         )
 
-        XCTAssertEqual(frame.minY, external.minY, accuracy: 0.001)
-        XCTAssertEqual(frame.midX, external.midX, accuracy: 0.001)
+        XCTAssertEqual(frame, external)
     }
 
-    func testExternalScreenBelowUsesTopEdge() {
+    func testExternalScreenBelowFillsEntireExternalScreen() {
         let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
         let external = NSRect(x: 0, y: -1080, width: 1920, height: 1080)
         let frame = KeymapOverlayPlacement.frame(
@@ -96,8 +91,7 @@ final class KeymapOverlayTests: XCTestCase {
             imageAspectRatio: 1298.0 / 398.0
         )
 
-        XCTAssertEqual(frame.maxY, external.maxY, accuracy: 0.001)
-        XCTAssertEqual(frame.midX, external.midX, accuracy: 0.001)
+        XCTAssertEqual(frame, external)
     }
 
     func testHoldCoordinatorShowsAfterDelayAndHidesOnOptionRelease() {
