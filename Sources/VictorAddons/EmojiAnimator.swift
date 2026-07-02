@@ -82,12 +82,6 @@ class EmojiAnimator {
     // restart) the iris, it must survive stop-all and toggle itself here.
     private var _irisLayer: CAGradientLayer?
 
-    // 👏 Applause is a NON-REPEATABLE one-shot: kept OUTSIDE `activeEffects` (like
-    // the iris) so the tablet's pre-press /effect/stop-all leaves it alone, and
-    // guarded on this layer so a re-press while it's still playing is IGNORED (no
-    // restart, no stacking). It self-clears after `applauseDuration`.
-    private var _applauseLayer: CALayer?
-
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
         Self.warmBrotherCache()
@@ -1493,11 +1487,11 @@ class EmojiAnimator {
     /// Tile #27 👏 — a clapping-hands animation. Replaces the old 👏-emoji stream
     /// with the bundled `applause-hands.gif` (4 transparent full-canvas frames,
     /// ~0.4s loop) shown at HALF the screen height, centered, looping for the
-    /// trimmed length of the clapping sound (`applauseDuration`). NON-REPEATABLE:
-    /// a press while it's already playing is ignored (no restart/stacking) and it
-    /// survives the tablet's pre-press stop-all, so it always plays through once.
+    /// trimmed length of the clapping sound (`applauseDuration`). Tracked in
+    /// `activeEffects`, so the tablet's pre-press /effect/stop-all tears it down —
+    /// which is what makes the NON-restartable tile stop (not restart) on re-click.
     func showApplause(playSound: Bool = true) {
-        guard _applauseLayer == nil else { return }   // already playing — ignore re-press
+        if cancelIfRunning("applause", sound: playSound ? "27_clapping.mp3" : nil) { return }
 
         guard let url = Bundle.module.url(forResource: "applause-hands", withExtension: "gif"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
@@ -1562,20 +1556,11 @@ class EmojiAnimator {
         // tablet/menu paths pass false — the routed sound is clipped in AppDelegate.
         if playSound { SoundManager.shared.playClip("27_clapping.mp3", seconds: duration) }
 
-        // Self-clear after the full duration (NOT via trackEffect/activeEffects,
-        // so stop-all can't wipe it and re-presses stay ignored until it ends).
-        _applauseLayer = gifLayer
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self, weak gifLayer] in
-            guard let self = self, self._applauseLayer === gifLayer else { return }
-            self._applauseLayer = nil
-            gifLayer?.removeFromSuperlayer()
-        }
+        trackEffect("applause", layer: gifLayer, duration: duration, sound: playSound ? "27_clapping.mp3" : nil)
     }
 
     func stopApplause() {
-        _applauseLayer?.removeFromSuperlayer()
-        _applauseLayer = nil
-        SoundManager.shared.stop("27_clapping.mp3")
+        _ = cancelIfRunning("applause", sound: "27_clapping.mp3")
     }
 
     // MARK: - Pulse / heartbeat (one-shot: 2 QRS cycles then flatline)
@@ -5202,9 +5187,7 @@ class EmojiAnimator {
             layer.removeFromSuperlayer()
         }
         activeEffects.removeAll()
-        // NB: applause is deliberately NOT stopped here — it's a non-repeatable
-        // one-shot that must survive the tablet's pre-press stop-all so a repeat
-        // press stays ignored; it self-clears after `applauseDuration`.
+        stopApplause()
         if pulseRunning { _stopPulse() }
         stopAlarmOverlay()
     }
