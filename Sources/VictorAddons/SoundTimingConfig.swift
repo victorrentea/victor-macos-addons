@@ -36,6 +36,12 @@ final class SoundTimingConfig {
             if let ms = obj["bluetoothCompensationMs"] as? NSNumber {
                 comp = ms.doubleValue / 1000.0
             }
+            // Mac-only override: the Mac's BT output needs a longer warm-up than
+            // the tablet's own BT speaker. Prefer macBluetoothCompensationMs when
+            // present; the tablet ignores this key.
+            if let ms = obj["macBluetoothCompensationMs"] as? NSNumber {
+                comp = ms.doubleValue / 1000.0
+            }
             if let sounds = obj["sounds"] as? [String: Any] {
                 var parsed: [String: TimeInterval] = [:]
                 for (file, raw) in sounds {

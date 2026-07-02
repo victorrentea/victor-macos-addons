@@ -1516,10 +1516,11 @@ class EmojiAnimator {
 
         let duration = Self.applauseDuration
 
-        // Half the screen height, aspect-preserved width, centered on screen.
+        // 35% of the screen height (0.7× the former 50%), aspect-preserved
+        // width, centered on screen.
         let bounds = hostLayer.bounds
         let aspect = CGFloat(first.width) / CGFloat(first.height)
-        let layerH = bounds.height * 0.5
+        let layerH = bounds.height * 0.35
         let layerW = layerH * aspect
         let gifLayer = CALayer()
         gifLayer.frame = CGRect(x: (bounds.width - layerW) / 2,
