@@ -23,7 +23,11 @@ final class SilentTranscriptionWarning {
     private var presenting = false
     private var snoozed = false
 
-    private static let warningText = "🔴 Transcription silent!"
+    // Emoji-only on purpose: this banner shows on the Retina, which is mirrored
+    // to the room during a presentation. Explicit words ("Transcription silent!")
+    // read as an alarming failure to the audience; three silence faces on red are
+    // meaningful to Victor and innocuous/cryptic to everyone else.
+    private static let warningText = "😶😶😶"
     private static let warningColor = NSColor.systemRed.withAlphaComponent(0.85)
     private static let chime = NSSound(named: NSSound.Name("Basso"))
 
@@ -87,12 +91,13 @@ final class SilentTranscriptionWarning {
     private func show() {
         overlayInfo("🔴 Aggressive silent-transcription warning shown (presenting)")
         Self.chime?.play()
-        // No hover-countdown → the pill is persistent: it stays until transcription
-        // recovers, the presentation ends, or Victor hovers to snooze. The `.down`
-        // nudge previews the sinking "put away" exit that snoozing triggers.
+        // No hover-hint text (it'd be projected to the room too) and no
+        // hover-countdown → the pill is persistent: it stays until transcription
+        // recovers, the presentation ends, or Victor hovers to snooze. Hover-to-
+        // snooze still works without the label; the `.down` nudge previews the
+        // sinking "put away" exit that snoozing triggers.
         banner.show(text: Self.warningText,
                     backgroundColor: Self.warningColor,
-                    hoverHint: "Hover to snooze",
                     hoverNudge: .down)
     }
 
