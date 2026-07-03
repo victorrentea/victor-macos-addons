@@ -55,24 +55,24 @@ final class BottomLeftBanner {
             NSFont.boldSystemFont(ofSize: fontSize)
         }
 
-        // MARK: Hover hint (small label to the right of the pill, sitting at the
-        // bottom edge, explaining what hovering does). Its text is tinted to
-        // match the hover-countdown bar (progressBarColor). Only shown when the
-        // banner is hoverable AND has an active onHover action.
-        static let hintFontSize: CGFloat = 22
-        static let hintHeight: CGFloat = 39
-        static let hintTextHeight: CGFloat = 27
-        /// Horizontal gap between the right edge of the pill and the hint.
+        // MARK: Bottom band — a solid black strip across the pill's bottom edge,
+        // overlapping the glass. The hover hint sits on the LEFT and the orange
+        // countdown bar fills the RIGHT, both the same height. The main text is
+        // vertically centered in the gray area *above* this band.
+        static let bottomBandHeight: CGFloat = 26
+        static let bottomBandColor: NSColor = NSColor.black.withAlphaComponent(0.9)
+        /// Hint text — orange, left of the band, sitting on the bottom edge next
+        /// to the bar (same height). 20% smaller than before.
+        static let hintFontSize: CGFloat = 13
+        static let hintTextHeight: CGFloat = 18
+        /// Horizontal gap between the hint text and the start of the bar.
         static let hintGap: CGFloat = 12
-        static let hintHPadding: CGFloat = 15
-        static let hintBackground: NSColor = NSColor.black.withAlphaComponent(0.6)
-        static func hintFont() -> NSFont { NSFont.systemFont(ofSize: hintFontSize) }
+        static let hintHPadding: CGFloat = 14
+        static func hintFont() -> NSFont { NSFont.boldSystemFont(ofSize: hintFontSize) }
 
-        // MARK: Hover-countdown bar (a thin orange strip along the bottom edge
-        // that grows left→right over the window during which the banner can
-        // still be hovered to act). Only shown when the banner is hoverable
-        // AND has an active onHover.
-        static let progressBarHeight: CGFloat = 8
+        // MARK: Hover-countdown bar — orange strip sitting exactly on the pill's
+        // bottom edge, right of the hint text, same height as it.
+        static let progressBarHeight: CGFloat = 18
         static let progressBarColor: NSColor = .systemOrange
 
         // MARK: Hover nudge — how far (points) the pill drifts up/down at full
@@ -89,8 +89,13 @@ final class BottomLeftBanner {
         /// White overlay above the tint that ramps up during the hover
         /// dwell. Alpha 0 at rest, alpha 1 the instant `onHover` fires.
         let whitenTint: NSView
-        /// Thin orange strip along the bottom edge whose width animates from 0
-        /// to the full box width over the hover window. Hidden at rest.
+        /// Solid black band across the pill's bottom edge, hosting the hint text
+        /// (left) and the progress bar (right). Hidden unless a hint is shown.
+        let bottomBand: NSView
+        /// Hint text ("Hover to …") on the left of the band. Hidden at rest.
+        let hintLabel: NSTextField
+        /// Orange strip on the right of the band whose width animates from 0
+        /// to fill the band over the hover window. Hidden at rest.
         let progressBar: NSView
         let label: NSTextField
         /// Kept so `updateText` can re-measure and resize the box to hug the
@@ -99,10 +104,6 @@ final class BottomLeftBanner {
         let screen: NSScreen
     }
     private var panels: [PanelEntry] = []
-    /// Small "Hover to …" hint panels above the pill, one per screen. Managed
-    /// independently of `panels` since the hint is optional. Empty unless the
-    /// banner is hoverable with an active `onHover` and a non-nil hint.
-    private var hintPanels: [NSPanel] = []
 
     /// Fires once per `show()` after the cursor has *dwelled* inside the
     /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
@@ -114,7 +115,8 @@ final class BottomLeftBanner {
     private var hoverFired = false
 
     private static let hoverDwellInterval: TimeInterval = 0.1
-    private static let hoverDwellRequiredSamples = 10
+    // Hold-to-confirm dwell: 2.0s (was 1.0s) — +1s so a confirm is deliberate.
+    private static let hoverDwellRequiredSamples = 20
     private var hoverDwellTimer: Timer?
     private var hoverDwellCount = 0
 
@@ -247,12 +249,7 @@ final class BottomLeftBanner {
         let f = entry.screen.frame
         entry.panel.setFrame(NSRect(x: f.minX, y: f.minY, width: width, height: Style.boxHeight),
                              display: true)
-        entry.label.frame = NSRect(
-            x: Style.leftPadding,
-            y: (Style.boxHeight - Style.textRenderHeight) / 2,
-            width: width - Style.leftPadding - Style.rightPadding,
-            height: Style.textRenderHeight
-        )
+        entry.label.frame = Self.mainLabelFrame(pillWidth: width)
     }
 
     /// Update the gray-tint color over the glass. When `animated`, the
@@ -285,20 +282,15 @@ final class BottomLeftBanner {
         clearHoverCountdown()
         let toRemove = panels
         panels.removeAll()
-        let hints = hintPanels
-        hintPanels.removeAll()
         if animated {
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.3
                 for entry in toRemove { entry.panel.animator().alphaValue = 0 }
-                for hint in hints { hint.animator().alphaValue = 0 }
             }, completionHandler: {
                 for entry in toRemove { entry.panel.orderOut(nil) }
-                for hint in hints { hint.orderOut(nil) }
             })
         } else {
             for entry in toRemove { entry.panel.orderOut(nil) }
-            for hint in hints { hint.orderOut(nil) }
         }
     }
 
@@ -322,8 +314,6 @@ final class BottomLeftBanner {
         clearHoverCountdown()
         let toRemove = panels
         panels.removeAll()
-        let hints = hintPanels
-        hintPanels.removeAll()
         let rise: CGFloat = 140
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 1.0
@@ -334,15 +324,8 @@ final class BottomLeftBanner {
                 entry.panel.animator().setFrame(f, display: true)
                 entry.panel.animator().alphaValue = 0
             }
-            for hint in hints {
-                var f = hint.frame
-                f.origin.y += rise
-                hint.animator().setFrame(f, display: true)
-                hint.animator().alphaValue = 0
-            }
         }, completionHandler: {
             for entry in toRemove { entry.panel.orderOut(nil) }
-            for hint in hints { hint.orderOut(nil) }
         })
     }
 
@@ -359,11 +342,9 @@ final class BottomLeftBanner {
         clearHoverCountdown()
         let toRemove = panels
         panels.removeAll()
-        let hints = hintPanels
-        hintPanels.removeAll()
-        // Both the pill and the hint are anchored at the screen's bottom edge, so
-        // one drop distance — a bit past the (taller) pill's height — carries
-        // them both fully off-screen.
+        // The pill is anchored at the screen's bottom edge, so one drop distance —
+        // a bit past the pill's height — carries it (and its in-pill band) fully
+        // off-screen.
         let sink: CGFloat = Style.boxHeight + 60
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.7
@@ -373,14 +354,8 @@ final class BottomLeftBanner {
                 f.origin.y -= sink
                 entry.panel.animator().setFrame(f, display: true)
             }
-            for hint in hints {
-                var f = hint.frame
-                f.origin.y -= sink
-                hint.animator().setFrame(f, display: true)
-            }
         }, completionHandler: {
             for entry in toRemove { entry.panel.orderOut(nil) }
-            for hint in hints { hint.orderOut(nil) }
         })
     }
 
@@ -446,9 +421,9 @@ final class BottomLeftBanner {
         }
     }
 
-    /// Slide the pill (and its hint chip) `progress × hoverNudgeDistance` points
-    /// up (`.up`) or down (`.down`) from the resting bottom-left position — a
-    /// subtle preview of which exit hovering triggers. No-op for `.none`. The
+    /// Slide the pill (with its in-pill band) `progress × hoverNudgeDistance`
+    /// points up (`.up`) or down (`.down`) from the resting bottom-left position —
+    /// a subtle preview of which exit hovering triggers. No-op for `.none`. The
     /// resting y is always the screen's bottom edge, so progress 0 restores it
     /// exactly; the dismiss animations read the current (nudged) frame, so a
     /// fired hover continues smoothly into the rising/sinking exit.
@@ -463,11 +438,6 @@ final class BottomLeftBanner {
                 var f = entry.panel.frame
                 f.origin.y = entry.screen.frame.minY + dy
                 entry.panel.animator().setFrame(f, display: true)
-            }
-            for (entry, hint) in zip(panels, hintPanels) {
-                var f = hint.frame
-                f.origin.y = entry.screen.frame.minY + dy
-                hint.animator().setFrame(f, display: true)
             }
         }
     }
@@ -487,49 +457,42 @@ final class BottomLeftBanner {
         onHover?()
     }
 
-    /// (Re)build the "Hover to …" hint panels. Tears down any existing ones,
-    /// then — only when the banner is hoverable, has an active `onHover`, and
-    /// `hint` is non-empty — fades a small label in to the right of each pill,
-    /// glued to its bottom edge. Built off the live pill frames (not the screen
-    /// list) so the hint hugs the pill's actual right edge as it resizes.
+    /// Show the "Hover to …" hint text on the left of each pill's in-pill black
+    /// band (revealing the band), or hide it. Only when the banner is hoverable,
+    /// has an active `onHover`, and `hint` is non-empty. `fixedLeft` is retained
+    /// for the call site but no longer meaningful — the band is always the full
+    /// bottom strip.
     private func applyHint(_ hint: String?, fixedLeft: Bool) {
         clearHint()
         guard hoverable, onHover != nil, let hint = hint, !hint.isEmpty else { return }
-        hintFixedLeft = fixedLeft
         for entry in panels {
-            let panel = buildHintPanel(pillFrame: entry.panel.frame, text: hint)
-            panel.alphaValue = 0
-            panel.orderFrontRegardless()
-            hintPanels.append(panel)
-        }
-        repositionHints()
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.3
-            for panel in hintPanels { panel.animator().alphaValue = 1.0 }
+            entry.hintLabel.stringValue = hint
+            let probe = NSTextField(labelWithString: hint)
+            probe.font = Style.hintFont()
+            probe.maximumNumberOfLines = 1
+            probe.lineBreakMode = .byClipping
+            probe.sizeToFit()
+            let w = ceil(probe.frame.width)
+            // Sit on the bottom edge, same height as the bar to its right.
+            entry.hintLabel.frame = NSRect(
+                x: Style.hintHPadding, y: 0, width: w, height: Style.hintTextHeight)
+            entry.hintLabel.isHidden = false
+            entry.bottomBand.isHidden = false
         }
     }
 
-    /// Immediately remove all hint panels (no fade).
+    /// Hide the band + hint text on every pill.
     func clearHint() {
-        for panel in hintPanels { panel.orderOut(nil) }
-        hintPanels.removeAll()
-        hintFixedLeft = false
-    }
-
-    /// Re-place every hint chip after a pill move/resize, or on (re)show. With a
-    /// countdown the chip is pinned to the pill's bottom-left corner (the bar
-    /// then fills the region to its right); without one it sits just past the
-    /// pill's right edge. No-op when no hint is showing.
-    private func repositionHints() {
-        guard hintPanels.count == panels.count else { return }
-        for (entry, hint) in zip(panels, hintPanels) {
-            let pill = entry.panel.frame
-            var f = hint.frame
-            f.origin.x = hintFixedLeft ? pill.minX : pill.maxX + Style.hintGap
-            f.origin.y = pill.minY
-            hint.setFrame(f, display: true)
+        for entry in panels {
+            entry.hintLabel.isHidden = true
+            entry.hintLabel.stringValue = ""
+            entry.bottomBand.isHidden = true
         }
     }
+
+    /// The band + hint are in-pill subviews (the band auto-stretches width), so a
+    /// pill move/resize carries them for free — nothing to reposition.
+    private func repositionHints() {}
 
     private func applyHoverCountdown(_ duration: TimeInterval?) {
         if let duration = duration {
@@ -551,8 +514,8 @@ final class BottomLeftBanner {
         guard hoverable, onHover != nil, duration > 0 else { return }
         countdownDuration = duration
         countdownElapsed = 0
-        repositionHints()
         for (i, entry) in panels.enumerated() {
+            entry.bottomBand.isHidden = false
             entry.progressBar.isHidden = false
             setBar(entry.progressBar, x: barStartX(at: i), width: 0)
         }
@@ -570,7 +533,7 @@ final class BottomLeftBanner {
         let progress = countdownDuration > 0 ? min(1.0, countdownElapsed / countdownDuration) : 1.0
         for (i, entry) in panels.enumerated() {
             let startX = barStartX(at: i)
-            let track = max(0, entry.panel.frame.width - startX)
+            let track = max(0, entry.panel.frame.width - startX - Style.hintHPadding)
             setBar(entry.progressBar, x: startX, width: CGFloat(progress) * track)
         }
         if countdownElapsed >= countdownDuration {
@@ -579,18 +542,18 @@ final class BottomLeftBanner {
         }
     }
 
-    /// Left edge (in pill-content coordinates) where the progress bar begins:
-    /// just past the fixed hint chip (its width + a gap) so the bar fills the
-    /// region to the right of the text. Falls back to 0 (full width) when the
-    /// chip isn't fixed-left or no hint is showing.
+    /// Left edge (in band coordinates) where the progress bar begins: just past
+    /// the hint text (its right edge + a gap) so the bar fills the rest of the
+    /// band to the right. Falls back to the left padding when no hint is showing.
     private func barStartX(at index: Int) -> CGFloat {
-        guard hintFixedLeft, index < hintPanels.count else { return 0 }
-        return hintPanels[index].frame.width + Style.hintGap
+        guard index < panels.count, !panels[index].hintLabel.isHidden else { return Style.hintHPadding }
+        return panels[index].hintLabel.frame.maxX + Style.hintGap
     }
 
-    /// Position the bar at `x` with `width`, implicit animation disabled. At the
-    /// 20 fps tick the steps are imperceptible, and an implicit ~0.25s animation
-    /// would lag the freeze the instant the cursor lands on the pill.
+    /// Position the bar at `x` with `width`, sitting exactly on the pill's bottom
+    /// edge (y = 0). Implicit animation disabled: at the 20 fps tick the steps are
+    /// imperceptible, and an implicit ~0.25s animation would lag the freeze the
+    /// instant the cursor lands.
     private func setBar(_ bar: NSView, x: CGFloat, width: CGFloat) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -611,55 +574,6 @@ final class BottomLeftBanner {
         }
     }
 
-    private func buildHintPanel(pillFrame: NSRect, text: String) -> NSPanel {
-        let font = Style.hintFont()
-        let probe = NSTextField(labelWithString: text)
-        probe.font = font
-        probe.maximumNumberOfLines = 1
-        probe.lineBreakMode = .byClipping
-        probe.sizeToFit()
-        let width = ceil(probe.frame.width) + Style.hintHPadding * 2
-
-        // To the right of the pill, glued to its (and the screen's) bottom edge.
-        let rect = NSRect(x: pillFrame.maxX + Style.hintGap,
-                          y: pillFrame.minY,
-                          width: width,
-                          height: Style.hintHeight)
-        let panel = NSPanel(contentRect: rect,
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered,
-                            defer: false)
-        panel.level = .statusBar
-        panel.isFloatingPanel = true
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        panel.ignoresMouseEvents = true
-
-        let content = NSView(frame: NSRect(origin: .zero, size: rect.size))
-        content.wantsLayer = true
-        content.layer?.backgroundColor = Style.hintBackground.cgColor
-        content.layer?.cornerRadius = 6
-
-        let label = NSTextField(labelWithString: text)
-        label.font = font
-        // Same color as the hover-countdown progress bar.
-        label.textColor = Style.progressBarColor
-        label.alignment = .left
-        label.isBezeled = false
-        label.isEditable = false
-        label.drawsBackground = false
-        label.lineBreakMode = .byClipping
-        label.frame = NSRect(x: Style.hintHPadding,
-                             y: (Style.hintHeight - Style.hintTextHeight) / 2,
-                             width: width - Style.hintHPadding * 2,
-                             height: Style.hintTextHeight)
-        content.addSubview(label)
-
-        panel.contentView = content
-        return panel
-    }
 
     private func buildPanel(on screen: NSScreen,
                             text: String,
@@ -712,7 +626,6 @@ final class BottomLeftBanner {
         whitenTint.layer?.backgroundColor = NSColor.white.withAlphaComponent(0).cgColor
         content.addSubview(whitenTint)
 
-        let textWidth = width - Style.leftPadding - Style.rightPadding
         let label = NSTextField(labelWithString: text)
         label.font = font
         label.textColor = Style.textColor
@@ -721,18 +634,32 @@ final class BottomLeftBanner {
         label.isEditable = false
         label.drawsBackground = false
         label.lineBreakMode = .byTruncatingTail
-        label.frame = NSRect(
-            x: Style.leftPadding,
-            y: (Style.boxHeight - Style.textRenderHeight) / 2,
-            width: textWidth,
-            height: Style.textRenderHeight
-        )
+        label.frame = Self.mainLabelFrame(pillWidth: width)
         label.autoresizingMask = [.width]
         content.addSubview(label)
 
-        // Topmost so it stays visible over the glass, tint, text, and the
-        // dwell whitening. Width is driven manually by the hover countdown;
-        // no autoresizing so a panel resize never stretches it on its own.
+        // Black bottom band across the pill, overlapping the glass; hosts the
+        // hint text (left) + progress bar (right). Hidden until a hint is shown.
+        let band = NSView(frame: NSRect(x: 0, y: 0, width: width, height: Style.bottomBandHeight))
+        band.wantsLayer = true
+        band.layer?.backgroundColor = Style.bottomBandColor.cgColor
+        band.autoresizingMask = [.width] // stretch width, stay pinned to the bottom
+        band.isHidden = true
+        content.addSubview(band)
+
+        let hintLabel = NSTextField(labelWithString: "")
+        hintLabel.font = Style.hintFont()
+        hintLabel.textColor = Style.progressBarColor // orange, matching the bar
+        hintLabel.alignment = .left
+        hintLabel.isBezeled = false
+        hintLabel.isEditable = false
+        hintLabel.drawsBackground = false
+        hintLabel.lineBreakMode = .byClipping
+        hintLabel.isHidden = true
+        content.addSubview(hintLabel)
+
+        // Orange countdown bar on the right of the band. Width + x driven by the
+        // countdown; no autoresizing so a panel resize never stretches it.
         let progressBar = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight))
         progressBar.wantsLayer = true
         progressBar.layer?.backgroundColor = Style.progressBarColor.cgColor
@@ -742,8 +669,20 @@ final class BottomLeftBanner {
 
         panel.contentView = content
         return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint,
+                          bottomBand: band, hintLabel: hintLabel,
                           progressBar: progressBar, label: label,
                           font: font, screen: screen)
+    }
+
+    /// Main-text frame: left-aligned, vertically centered in the **whole** pill —
+    /// deliberately ignoring the black bottom band, which just overlaps the
+    /// text's bottom edge. Shared by build + resize.
+    private static func mainLabelFrame(pillWidth: CGFloat) -> NSRect {
+        NSRect(
+            x: Style.leftPadding,
+            y: (Style.boxHeight - Style.textRenderHeight) / 2,
+            width: pillWidth - Style.leftPadding - Style.rightPadding,
+            height: Style.textRenderHeight)
     }
 }
 
