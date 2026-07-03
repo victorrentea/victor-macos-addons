@@ -64,6 +64,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Auto-arranges displays for the projector workflow (mirror Retina@1080p +
     /// ASUS-primary on connect; revert to Retina-main + ASUS-right on disconnect).
     private var displayArrangementManager: DisplayArrangementManager?
+    /// Victor's own displays ("mine / not presenting"): ASUS + trusted home
+    /// monitors / TV. An external NOT in here = presenting (venue projector/TV).
+    private let knownDisplays = KnownDisplays()
+    /// Am I presenting? OR of (unknown external display) and (live meeting).
+    /// Gates the aggressive silent-transcription warning.
+    private var presentationDetector: PresentationDetector?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
     private var meetingDetector: MeetingDetector?
     private var breakReminderTimer: Timer?
@@ -481,9 +487,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // connect: mirror the Retina at 1080p + make the ASUS primary; on
         // disconnect: revert to Retina-main + ASUS-right. Fires only on changes
         // (never on launch); the 🖥️ menu item + /test/projector force it.
-        let displayMgr = DisplayArrangementManager()
+        // Presentation detector: OR of (unknown external display) + (live
+        // meeting). Gates the aggressive silent-transcription warning.
+        let presentation = PresentationDetector()
+        presentation.onPresentingChanged = { [weak self] presenting in
+            self?.silentTranscriptionWarning?.setPresenting(presenting)
+        }
+        self.presentationDetector = presentation
+
+        let displayMgr = DisplayArrangementManager(knownDisplays: knownDisplays)
+        // Show the monitor-change notification immediately (not presence-gated):
+        // the user is looking at the screen the instant the layout reconfigures.
         displayMgr.onArrangementApplied = { [weak self] banner in
-            self?.statusBanner?.showOnPresence(text: banner, sound: StatusBannerSound.start)
+            self?.statusBanner?.showNow(text: banner, sound: StatusBannerSound.start, visibleDuration: 8.0)
+        }
+        // A venue projector / room TV (unknown external) → presenting.
+        displayMgr.onUnknownExternalChanged = { [weak presentation] present in
+            presentation?.setUnknownDisplayPresent(present)
         }
         displayMgr.start()
         self.displayArrangementManager = displayMgr
@@ -543,6 +563,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestProjector = { [weak self] in
             self?.displayArrangementManager?.forceApplyAndSnapshot()
                 ?? "{\"error\":\"display manager unavailable\"}"
+        }
+        // /test/presentation — JSON snapshot of the presenting state + detection.
+        tabletServer?.onTestPresentation = { [weak self] in
+            self?.presentationSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
+        }
+        // /test/presentation/warn — force-show the aggressive silent warning now.
+        tabletServer?.onTestPresentationWarn = { [weak self] in
+            self?.silentTranscriptionWarning?.forceShow()
+        }
+        // /test/known-displays/trust — whitelist the currently-connected externals.
+        tabletServer?.onTestTrustDisplays = { [weak self] in
+            self?.trustCurrentDisplays() ?? "{\"error\":\"unavailable\"}"
         }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
@@ -683,6 +715,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onFixDisplayLayout = { [weak self] in
             self?.displayArrangementManager?.applyNow()
         }
+        menuBarManager.onTrustDisplays = { [weak self] in
+            _ = self?.trustCurrentDisplays()
+        }
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
         }
@@ -764,6 +799,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.setTranscribing(false)
 
         let detector = MeetingDetector()
+        // A live Zoom/Teams/Webex/Meet call (an app driving the 🎙️TO Zoom
+        // virtual device) → presenting.
+        detector.onMeetingChanged = { [weak self] active in
+            self?.presentationDetector?.setMeetingActive(active)
+        }
         meetingDetector = detector
         detector.checkInitialState()
 
@@ -1496,6 +1536,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             visibleDuration: 12.0
         )
         overlayInfo("📸 Group Photo prompt shown")
+    }
+
+    /// Trust every currently-connected external display (they become "mine"),
+    /// re-evaluate the presentation signal, and flash a confirmation banner.
+    /// Backs the "🖥️ Trust current external displays" menu item + test hook.
+    @discardableResult
+    private func trustCurrentDisplays() -> String {
+        let added = knownDisplays.trustCurrentExternals()
+        displayArrangementManager?.refreshPresentationSignal()
+        let list = added.isEmpty ? "none" : added.joined(separator: ", ")
+        DispatchQueue.main.async { [weak self] in
+            self?.statusBanner?.showOnPresence(
+                text: "🖥️ Trusted: \(list)", sound: StatusBannerSound.start)
+        }
+        overlayInfo("🖥️ Trusted current external displays: \(list)")
+        let json = added.map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ",")
+        return "{\"trusted\":[\(json)]}"
+    }
+
+    /// JSON snapshot of the presenting state + how each connected external is
+    /// classified. Backs `GET /test/presentation`.
+    private func presentationSnapshotJSON() -> String {
+        let p = presentationDetector
+        var externals: [String] = []
+        for id in KnownDisplays.onlineDisplayIDs() where CGDisplayIsBuiltin(id) == 0 {
+            let name = KnownDisplays.name(for: id) ?? "display \(id)"
+            let known = knownDisplays.isKnown(id)
+            externals.append("{\"name\":\"\(name)\",\"known\":\(known)}")
+        }
+        let rules = knownDisplays.nameRules.map { "\"\($0)\"" }.joined(separator: ",")
+        return "{"
+            + "\"presenting\":\(p?.isPresenting ?? false),"
+            + "\"meetingActive\":\(p?.meetingActive ?? false),"
+            + "\"unknownDisplayPresent\":\(p?.unknownDisplayPresent ?? false),"
+            + "\"externals\":[\(externals.joined(separator: ","))],"
+            + "\"knownNameRules\":[\(rules)],"
+            + "\"trustedIdentityCount\":\(knownDisplays.identities.count)"
+            + "}"
     }
 
     private func postInvalidURLNotification(_ clipboardPreview: String) {

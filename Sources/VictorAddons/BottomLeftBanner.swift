@@ -28,13 +28,15 @@ final class BottomLeftBanner {
     enum HoverNudge { case none, up, down }
 
     enum Style {
-        static let fontSize: CGFloat = 36
-        static let leftPadding: CGFloat = 20
-        static let rightPadding: CGFloat = 12
-        static let textRenderHeight: CGFloat = 50
+        // Bottom-left overlay geometry, scaled ×1.5 from the original (font +
+        // box) for presentation visibility.
+        static let fontSize: CGFloat = 54
+        static let leftPadding: CGFloat = 30
+        static let rightPadding: CGFloat = 18
+        static let textRenderHeight: CGFloat = 75
         /// Lower bound so a single glyph (e.g. a lone emoji) never collapses to
         /// a sliver. The box hugs the text above this and caps at `maxWidthFraction`.
-        static let minBoxWidth: CGFloat = 80
+        static let minBoxWidth: CGFloat = 120
         /// Hard cap as a fraction of the screen width — past this the text
         /// truncates with an ellipsis instead of the box growing further.
         static let maxWidthFraction: CGFloat = 0.5
@@ -43,7 +45,7 @@ final class BottomLeftBanner {
         /// fixed hint chip on the left plus the bar filling to the right edge.
         /// Only applied when a countdown is present; well under `maxWidthFraction`.
         static let countdownMinWidthFraction: CGFloat = 0.30
-        static let boxHeight: CGFloat = 80
+        static let boxHeight: CGFloat = 120
         /// No extra tint by default — the NSVisualEffectView glass handles
         /// the gray-translucent look on its own. Callers that need a
         /// specific color (e.g. countdown red) pass their own NSColor.
@@ -57,12 +59,12 @@ final class BottomLeftBanner {
         // bottom edge, explaining what hovering does). Its text is tinted to
         // match the hover-countdown bar (progressBarColor). Only shown when the
         // banner is hoverable AND has an active onHover action.
-        static let hintFontSize: CGFloat = 15
-        static let hintHeight: CGFloat = 26
-        static let hintTextHeight: CGFloat = 18
+        static let hintFontSize: CGFloat = 22
+        static let hintHeight: CGFloat = 39
+        static let hintTextHeight: CGFloat = 27
         /// Horizontal gap between the right edge of the pill and the hint.
-        static let hintGap: CGFloat = 8
-        static let hintHPadding: CGFloat = 10
+        static let hintGap: CGFloat = 12
+        static let hintHPadding: CGFloat = 15
         static let hintBackground: NSColor = NSColor.black.withAlphaComponent(0.6)
         static func hintFont() -> NSFont { NSFont.systemFont(ofSize: hintFontSize) }
 
@@ -70,7 +72,7 @@ final class BottomLeftBanner {
         // that grows left→right over the window during which the banner can
         // still be hovered to act). Only shown when the banner is hoverable
         // AND has an active onHover.
-        static let progressBarHeight: CGFloat = 5
+        static let progressBarHeight: CGFloat = 8
         static let progressBarColor: NSColor = .systemOrange
 
         // MARK: Hover nudge — how far (points) the pill drifts up/down at full

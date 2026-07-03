@@ -31,11 +31,26 @@ final class DisplayArrangementManager {
     /// human banner string (e.g. "🖥️ Projector: mirrored + ASUS primary").
     var onArrangementApplied: ((String) -> Void)?
 
+    /// Fired (deduped) whenever the "an unknown external display is connected"
+    /// signal flips — i.e. a venue projector / room TV appeared or went away.
+    /// Drives `PresentationDetector`. Called on the main queue.
+    var onUnknownExternalChanged: ((Bool) -> Void)?
+
+    private let knownDisplays: KnownDisplays
+
+    init(knownDisplays: KnownDisplays) {
+        self.knownDisplays = knownDisplays
+    }
+
     /// A resolved set of the displays we care about at one instant.
     private struct DisplaySet {
         var retina: CGDirectDisplayID?
         var asus: CGDirectDisplayID?
+        /// First unknown external (venue projector / room TV), if any.
         var projector: CGDirectDisplayID?
+        /// A known non-ASUS external (home monitor / TV) is connected → we're at
+        /// home / a familiar rig, so auto-arrange keeps its hands off.
+        var hasKnownExternal = false
     }
 
     /// The decision key: re-apply only when this changes.
@@ -48,16 +63,13 @@ final class DisplayArrangementManager {
     private var debounce: DispatchWorkItem?
     private var isApplying = false
     private var lastScene: Scene?
+    /// Deduplicates the unknown-external (presentation) signal.
+    private var lastUnknownExternal: Bool?
 
     /// The Retina's user-normal (native HiDPI) mode, captured the first time we
     /// observe a projector-free state. Restored verbatim when reverting, so we
     /// never guess the scaled resolution the user actually runs.
     private var standardRetinaMode: CGDisplayMode?
-
-    /// Identity of the ASUS captured by name the first time we see it, so we can
-    /// still recognise it by (vendor, model) if a later relaunch finds it in a
-    /// mirror set where `NSScreen.localizedName` isn't exposed.
-    private var asusVendorModel: (vendor: UInt32, model: UInt32)?
 
     // MARK: - Lifecycle
 
@@ -80,6 +92,9 @@ final class DisplayArrangementManager {
         lastScene = scene(for: displays)
         overlayInfo("DisplayArrangementManager started (registered=\(reconfigureRegistered)); "
             + "baseline scene=\(describe(lastScene)); \(describe(displays))")
+        // Propagate the initial presentation signal (e.g. launched at a venue
+        // with the projector already plugged in).
+        notifyUnknownExternal(displays.projector != nil)
     }
 
     // MARK: - Detection
@@ -100,15 +115,48 @@ final class DisplayArrangementManager {
     private func evaluateAndApply(force: Bool) {
         let displays = resolveDisplays()
         captureStandardRetinaModeIfNeeded(displays)
-        let target = scene(for: displays)
+        // Always refresh the presentation signal first — even when the arrange
+        // scene is unchanged or suppressed below.
+        notifyUnknownExternal(displays.projector != nil)
 
+        let target = scene(for: displays)
         if !force, target == lastScene {
             overlayInfo("Display change ignored (scene unchanged: \(describe(target)))")
             return
         }
+        lastScene = target
+
+        // Hands off a familiar multi-display rig: when a KNOWN non-ASUS external
+        // (home monitor / TV) is present we assume Victor's own layout is set up
+        // the way he wants, so we don't reshuffle it. A venue (unknown projector)
+        // never has these connected. The manual "🖥️ Fix display layout" (force)
+        // still overrides.
+        if displays.hasKnownExternal && !force {
+            overlayInfo("Auto-arrange suppressed (known external present — familiar rig)")
+            return
+        }
 
         apply(scene: target, displays: displays)
-        lastScene = target
+    }
+
+    /// Notify the presentation layer (deduped) that the unknown-external signal
+    /// flipped. `notifyUnknownExternal(present)` runs on the main queue already
+    /// (start / debounced evaluate / refresh all do).
+    private func notifyUnknownExternal(_ present: Bool) {
+        guard present != lastUnknownExternal else { return }
+        lastUnknownExternal = present
+        onUnknownExternalChanged?(present)
+    }
+
+    /// Re-evaluate just the presentation signal (no arrangement change). Call
+    /// after trusting displays, so a just-trusted external flips unknown→known.
+    func refreshPresentationSignal() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let displays = self.resolveDisplays()
+            self.lastUnknownExternal = nil // force a re-notify at the new value
+            self.notifyUnknownExternal(displays.projector != nil)
+        }
     }
 
     // MARK: - Public triggers
@@ -159,30 +207,27 @@ final class DisplayArrangementManager {
         var set = DisplaySet()
         for id in onlineDisplayIDs() {
             switch role(of: id) {
-            case .retina:    if set.retina == nil { set.retina = id }
-            case .asus:      if set.asus == nil { set.asus = id }
-            case .projector: if set.projector == nil { set.projector = id }
+            case .retina:        if set.retina == nil { set.retina = id }
+            case .asus:          if set.asus == nil { set.asus = id }
+            case .knownExternal: set.hasKnownExternal = true
+            case .projector:     if set.projector == nil { set.projector = id }
             }
         }
         return set
     }
 
-    private enum Role { case retina, asus, projector }
+    private enum Role { case retina, asus, knownExternal, projector }
 
     private func role(of id: CGDirectDisplayID) -> Role {
         if CGDisplayIsBuiltin(id) != 0 { return .retina }
+        // The ASUS travel monitor gets its own arrangement role (primary/right).
         if let name = screenName(for: id), name.uppercased().contains("ASUS") {
-            if asusVendorModel == nil {
-                asusVendorModel = (CGDisplayVendorNumber(id), CGDisplayModelNumber(id))
-            }
             return .asus
         }
-        // Fallback for a relaunch where the ASUS sits in a mirror set (no NSScreen
-        // name): match the identity we cached earlier.
-        if let vm = asusVendorModel,
-           CGDisplayVendorNumber(id) == vm.vendor, CGDisplayModelNumber(id) == vm.model {
-            return .asus
-        }
+        // Any other display Victor has marked as his own (home monitors / TV):
+        // a normal extended desktop — never mirrored, never "presenting".
+        if knownDisplays.isKnown(id) { return .knownExternal }
+        // Anything else external = a venue projector / room TV = unknown.
         return .projector
     }
 

@@ -41,6 +41,25 @@ final class StatusBanner {
         startPresencePolling()
     }
 
+    /// Show immediately, WITHOUT waiting for presence (mouse movement). Use for
+    /// events the user is already looking at the screen for — e.g. a display
+    /// reconfiguration, where the banner must appear the instant the layout
+    /// changes rather than on the next mouse move. Latest-wins.
+    func showNow(text: String, sound: NSSound?, visibleDuration: TimeInterval = 5.0) {
+        presenceTimer?.invalidate(); presenceTimer = nil
+        pendingText = text
+        pendingSound = sound
+        pendingVisibleDuration = visibleDuration
+        if banner.isVisible {
+            banner.updateText(text)
+        } else {
+            banner.show(text: text)
+        }
+        sound?.play()
+        scheduleFadeOut(after: visibleDuration)
+        startHoverKeepAlive()
+    }
+
     /// Dismiss anything pending or visible without firing.
     func dismiss() {
         presenceTimer?.invalidate(); presenceTimer = nil

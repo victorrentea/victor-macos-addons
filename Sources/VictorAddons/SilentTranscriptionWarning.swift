@@ -1,80 +1,104 @@
 import Cocoa
 
-/// Periodic "no sound captured" hint while transcription is on.
+/// Aggressive "transcription isn't capturing anything" warning — **only while
+/// Victor is presenting** (a venue projector connected, or a live Zoom/Teams/
+/// Webex/Meet call; see `PresentationDetector`).
 ///
-/// Every 5 minutes after transcription starts, if the transcription file
-/// has been stale (no new lines for ~3 min as reported by
-/// `TranscriptionWatcher`), briefly shows a "😶" pill in the bottom-left
-/// of every screen for 5 seconds. Hovering snoozes the warning until the
-/// next transcription start — the pill then slides straight DOWN off the
-/// bottom of the screen ("no / stop"), distinct from the plain fade used
-/// when transcription stops or the un-hovered countdown lapses.
+/// The whole point: during a live session, silent transcription is a real
+/// failure Victor must notice *now*. So instead of the old gentle 5-minute "😶"
+/// pill that showed anytime, this shows a **big red banner the moment
+/// transcription goes stale during a presentation and keeps it on screen until
+/// transcription recovers or the presentation ends** — with a chime on
+/// appearance. Hovering snoozes it for the current stale episode (the pill sinks
+/// straight down, the "put away" gesture); it re-arms once transcription
+/// recovers, the presentation ends, or transcription restarts.
+///
+/// When **not** presenting, this stays completely silent regardless of
+/// staleness — outside a live session a transcription gap doesn't matter.
 final class SilentTranscriptionWarning {
     private let banner: BottomLeftBanner
-    private var checkTimer: Timer?
 
-    private var notificationEnabled = true
-    private var isStale = false
+    private var running = false
+    private var stale = false
+    private var presenting = false
+    private var snoozed = false
 
-    private static let checkInterval: TimeInterval = 5 * 60
-    private static let visibleDuration: TimeInterval = 5
-    private static let warningEmoji = "😶"
+    private static let warningText = "🔴 Transcription silent!"
+    private static let warningColor = NSColor.systemRed.withAlphaComponent(0.85)
+    private static let chime = NSSound(named: NSSound.Name("Basso"))
 
     init(screensProvider: @escaping () -> [NSScreen]) {
         banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
         banner.onHover = { [weak self] in self?.snooze() }
     }
 
-    /// Reset snooze and (re)arm the 5-minute check timer. Call on every
-    /// transcription start path: launch on AC, AC resume, or a
-    /// heartbeat-detected auto-restart.
+    /// Transcription came up (launch on AC, AC resume, or heartbeat restart).
+    /// Clears any snooze and the stale flag; the watcher re-reports staleness.
     func transcriptionStarted() {
-        notificationEnabled = true
-        isStale = false
-        startCheckTimer()
+        running = true
+        snoozed = false
+        stale = false
+        evaluate()
     }
 
-    /// Cancel timer and any visible overlay. Call when transcription stops.
+    /// Transcription stopped (battery). Hide and disarm.
     func transcriptionStopped() {
-        checkTimer?.invalidate(); checkTimer = nil
-        dismiss()
+        running = false
+        evaluate()
     }
 
     /// Forwarded from `TranscriptionWatcher.onStaleChanged`.
-    func setStale(_ stale: Bool) {
-        isStale = stale
+    func setStale(_ value: Bool) {
+        guard value != stale else { return }
+        stale = value
+        if !value { snoozed = false } // recovered → re-arm for the next episode
+        evaluate()
     }
 
-    private func startCheckTimer() {
-        checkTimer?.invalidate()
-        checkTimer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
-            self?.tick()
+    /// Forwarded from `PresentationDetector.onPresentingChanged`.
+    func setPresenting(_ value: Bool) {
+        guard value != presenting else { return }
+        presenting = value
+        if !value { snoozed = false } // presentation ended → re-arm
+        evaluate()
+    }
+
+    /// Show the warning right now regardless of gates (test hook), then
+    /// auto-dismiss after a few seconds — a preview. The real, gated path stays
+    /// persistent until transcription recovers / the presentation ends.
+    func forceShow() {
+        show()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, !self.shouldShow else { return } // don't nuke a real one
+            self.banner.dismiss()
         }
     }
 
-    private func tick() {
-        guard notificationEnabled, isStale, !banner.isVisible else { return }
-        overlayInfo("Silent transcription warning shown")
-        // Auto-dismiss when the snooze window closes. The banner's countdown
-        // pauses while the cursor is on the pill, so hovering freezes the bar
-        // and keeps the warning up until the user moves away (or snoozes).
-        banner.onHoverCountdownExpired = { [weak self] in self?.dismiss() }
-        banner.show(text: Self.warningEmoji, hoverHint: "Hover to snooze",
-                    hoverCountdown: Self.visibleDuration, hoverNudge: .down)
+    private var shouldShow: Bool { running && presenting && stale && !snoozed }
+
+    private func evaluate() {
+        if shouldShow {
+            if !banner.isVisible { show() }
+        } else if banner.isVisible {
+            banner.dismiss()
+        }
+    }
+
+    private func show() {
+        overlayInfo("🔴 Aggressive silent-transcription warning shown (presenting)")
+        Self.chime?.play()
+        // No hover-countdown → the pill is persistent: it stays until transcription
+        // recovers, the presentation ends, or Victor hovers to snooze. The `.down`
+        // nudge previews the sinking "put away" exit that snoozing triggers.
+        banner.show(text: Self.warningText,
+                    backgroundColor: Self.warningColor,
+                    hoverHint: "Hover to snooze",
+                    hoverNudge: .down)
     }
 
     private func snooze() {
-        notificationEnabled = false
-        overlayInfo("Silent warning snoozed until next transcription start")
-        // Snooze is a "no / stop bugging me" gesture, so the pill slides straight
-        // DOWN off the bottom of the screen (dismissSinking) rather than just
-        // fading — the downward motion alone reads as "dismissed / put away".
-        // The plain dismiss() stays for the non-gesture exits (transcription
-        // stopped, or the un-hovered countdown lapsing).
+        snoozed = true
+        overlayInfo("🔴 Silent warning snoozed for this episode")
         banner.dismissSinking()
-    }
-
-    private func dismiss() {
-        banner.dismiss()
     }
 }
