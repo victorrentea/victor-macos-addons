@@ -162,10 +162,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }()
 
         let wsServer = LocalWebSocketServer()
-        wsServer.onEmoji = { [weak self] emoji, count in
+        wsServer.onEmoji = { [weak self] emoji, count, glow in
             self?.overlayPanel?.refreshScreenFrame()
             for _ in 0..<max(1, count) {
-                self?.animator.spawnEmoji(emoji)
+                self?.animator.spawnEmoji(emoji, glow: glow)
             }
         }
         wsServer.onClientCountChanged = { [weak self] count in

@@ -4,8 +4,9 @@ import Network
 class LocalWebSocketServer {
     static let port: UInt16 = 8765
 
-    // Called when emoji received — triggers in-process animation
-    var onEmoji: ((String, Int) -> Void)?
+    // Called when emoji received — triggers in-process animation.
+    // Third arg is an optional per-participant halo colour (#rrggbb), nil if absent.
+    var onEmoji: ((String, Int, String?) -> Void)?
     // Called when client count changes (dispatch to main by caller)
     var onClientCountChanged: ((Int) -> Void)?
     // Called when session_started or session_ended message received
@@ -192,9 +193,10 @@ class LocalWebSocketServer {
         case "display_emoji":
             let emoji = json["emoji"] as? String ?? ""
             let count = json["count"] as? Int ?? 1
+            let glow = json["glow"] as? String   // optional per-participant halo colour
             // In-process: directly trigger animation
             DispatchQueue.main.async { [weak self] in
-                self?.onEmoji?(emoji, count)
+                self?.onEmoji?(emoji, count, glow)
             }
             // Also relay to other clients
             broadcast(text, except: senderID)

@@ -143,6 +143,37 @@ final class EmojiAnimatorTests: XCTestCase {
             XCTAssertGreaterThan(maxAlpha, 200, "frame \(i) has no opaque flame pixels")
         }
     }
+
+    // MARK: - Per-participant emoji glow
+
+    func testGlowColorParsesHex() {
+        let c = EmojiAnimator.nsColor(fromHex: "#36e264")?.usingColorSpace(.sRGB)
+        XCTAssertNotNil(c)
+        XCTAssertEqual(c!.redComponent,   CGFloat(0x36) / 255, accuracy: 0.005)
+        XCTAssertEqual(c!.greenComponent, CGFloat(0xe2) / 255, accuracy: 0.005)
+        XCTAssertEqual(c!.blueComponent,  CGFloat(0x64) / 255, accuracy: 0.005)
+        // Accepts a bare (no-#) form; rejects malformed input.
+        XCTAssertNotNil(EmojiAnimator.nsColor(fromHex: "36e264"))
+        XCTAssertNil(EmojiAnimator.nsColor(fromHex: "nope"))
+        XCTAssertNil(EmojiAnimator.nsColor(fromHex: "#12"))
+    }
+
+    func testSpawnEmojiAppliesParticipantGlowHalo() {
+        let host = CALayer()
+        let animator = EmojiAnimator(hostLayer: host)
+        animator.spawnEmoji("❤️", glow: "#36e264")
+        guard let layer = host.sublayers?.last else { XCTFail("no emoji layer added"); return }
+        XCTAssertGreaterThan(layer.shadowOpacity, 0, "glow should set a visible shadow")
+        XCTAssertEqual(layer.shadowColor, EmojiAnimator.nsColor(fromHex: "#36e264")?.cgColor)
+    }
+
+    func testSpawnEmojiWithoutGlowHasNoHalo() {
+        let host = CALayer()
+        let animator = EmojiAnimator(hostLayer: host)
+        animator.spawnEmoji("❤️")   // no glow → unchanged look
+        guard let layer = host.sublayers?.last else { XCTFail("no emoji layer added"); return }
+        XCTAssertEqual(layer.shadowOpacity, 0, "no glow should leave the default (0) shadow opacity")
+    }
 }
 
 private extension CGPath {

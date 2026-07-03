@@ -117,7 +117,7 @@ class EmojiAnimator {
         }
     }
 
-    func spawnEmoji(_ emoji: String = "❤️") {
+    func spawnEmoji(_ emoji: String = "❤️", glow: String? = nil) {
         let fontSize: CGFloat = 78
         let size: CGFloat = 91
 
@@ -130,6 +130,18 @@ class EmojiAnimator {
         layer.alignmentMode = .center
         layer.frame = CGRect(x: spawnX - size / 2, y: spawnY, width: size, height: size)
         layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        // Per-participant halo: a coloured glow around the (unchanged) emoji so the
+        // trainer can tell how many distinct people are reacting — same sender →
+        // same colour. No colour → no halo (unchanged look).
+        if let glow = glow, let color = Self.nsColor(fromHex: glow) {
+            layer.shadowColor = color.cgColor
+            layer.shadowRadius = 14
+            layer.shadowOpacity = 0.95
+            layer.shadowOffset = .zero
+            layer.masksToBounds = false
+        }
+
         hostLayer.addSublayer(layer)
 
         // Randomize duration: 2.5–4 seconds (matches browser host.js)
@@ -189,6 +201,19 @@ class EmojiAnimator {
 
     func spawnRandomEmoji() {
         spawnEmoji(EmojiAnimator.emojiSet.randomElement()!)
+    }
+
+    /// Parse a "#rrggbb" (or "rrggbb") string into an NSColor; nil if malformed.
+    static func nsColor(fromHex hex: String) -> NSColor? {
+        var s = hex.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
+        return NSColor(
+            srgbRed: CGFloat((v >> 16) & 0xff) / 255.0,
+            green: CGFloat((v >> 8) & 0xff) / 255.0,
+            blue: CGFloat(v & 0xff) / 255.0,
+            alpha: 1.0
+        )
     }
 
     // MARK: - Confetti burst
@@ -1571,9 +1596,12 @@ class EmojiAnimator {
     /// in its "playing" state, i.e. the window during which a re-tap STOPS it.
     static let minionDuration: Double = 6.0
 
-    /// Tile #80 (`80_badumtss.mp3`) — a looping animated minion FACE, centered,
-    /// with NO sound. The asset (`minion.gif`, 30 transparent full-canvas frames,
-    /// ~1.8s loop) is a tight crop of the central laughing minion from a group GIF.
+    /// Tile #80 (`80_badumtss.mp3`) — a looping animated minion (goggled, blue
+    /// overalls, wiping frost off glass with a squeegee), pinned FLUSH BOTTOM-LEFT,
+    /// x-mirrored, ~45% of screen width, with NO sound. The asset is `minion.gif`
+    /// (transparent full-canvas frames). A gray "powder"/frost layer
+    /// (`minion-powder.png`, extracted from an early frame) fades in FIRST, then
+    /// the minion fades in over it and the powder clears.
     /// It loops for `minionDuration`, tracked in `activeEffects` so the tablet's
     /// pre-press /effect/stop-all tears it down — which is what makes the
     /// NON-restartable tile STOP (not restart) when pressed again. A direct
@@ -1603,39 +1631,91 @@ class EmojiAnimator {
         }
         guard let first = images.first, sourceDuration > 0 else { return }
 
+        // Intro: the gray "powder" the minion is wiping (`minion-powder.png`,
+        // extracted from an early frame) fades in FIRST, then the minion itself
+        // fades in over it and the powder clears — as if the minion arrives to
+        // wipe the dust that's already on the glass.
+        // Powder fades in over 1s, then holds 2s fully visible (introDelay = 3s
+        // of powder-only), then the minion fades in quickly as the powder clears.
+        let introDelay = 3.0              // powder-only time before the minion appears
         let duration = Self.minionDuration
+        let total = introDelay + duration
 
-        // ~35% of the screen height, aspect-preserved width, centered on screen.
+        let powderImg: CGImage? = Bundle.module.url(forResource: "minion-powder", withExtension: "png")
+            .flatMap { CGImageSourceCreateWithURL($0 as CFURL, nil) }
+            .flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+
+        // ~45% of the screen WIDTH, aspect-preserved height, pinned FLUSH to the
+        // BOTTOM-LEFT corner and horizontally mirrored (so the minion faces in
+        // toward the screen). A container holds the mirror transform + frame so
+        // BOTH the powder and the minion children are mirrored+aligned identically
+        // and are torn down together on cancel. hostLayer is AppKit y-up, so the
+        // bottom edge is y = 0; the minion's feet reach the canvas bottom in ~80%
+        // of frames, so a flush mount reads as no empty space below.
         let bounds = hostLayer.bounds
         let aspect = CGFloat(first.width) / CGFloat(first.height)
-        let layerH = bounds.height * 0.35
-        let layerW = layerH * aspect
+        let layerW = bounds.width * 0.45
+        let layerH = layerW / aspect
+        let container = CALayer()
+        container.frame = CGRect(x: 0, y: 0, width: layerW, height: layerH)
+        container.transform = CATransform3DMakeScale(-1, 1, 1)   // mirror both children in place
+        hostLayer.addSublayer(container)
+        let childFrame = CGRect(x: 0, y: 0, width: layerW, height: layerH)
+
+        // ── Powder layer (behind) ──────────────────────────────────────────
+        if let powderImg = powderImg {
+            let powderLayer = CALayer()
+            powderLayer.frame = childFrame
+            powderLayer.contentsGravity = .resizeAspect
+            powderLayer.contents = powderImg
+            powderLayer.opacity = 0
+            container.addSublayer(powderLayer)
+
+            let pIn = CABasicAnimation(keyPath: "opacity")
+            pIn.fromValue = 0.0; pIn.toValue = 1.0
+            pIn.duration = 1.0
+            pIn.fillMode = .forwards; pIn.isRemovedOnCompletion = false
+            powderLayer.add(pIn, forKey: "powderIn")
+
+            // Clear the powder as the minion arrives (at introDelay).
+            let pOut = CABasicAnimation(keyPath: "opacity")
+            pOut.fromValue = 1.0; pOut.toValue = 0.0
+            pOut.beginTime = CACurrentMediaTime() + introDelay
+            pOut.duration = 0.7
+            pOut.fillMode = .forwards; pOut.isRemovedOnCompletion = false
+            powderLayer.add(pOut, forKey: "powderOut")
+        }
+
+        // ── Minion layer (in front) ────────────────────────────────────────
         let gifLayer = CALayer()
-        gifLayer.frame = CGRect(x: (bounds.width - layerW) / 2,
-                                y: (bounds.height - layerH) / 2,
-                                width: layerW, height: layerH)
+        gifLayer.frame = childFrame
         gifLayer.contentsGravity = .resizeAspect
         gifLayer.contents = first
-        hostLayer.addSublayer(gifLayer)
+        gifLayer.opacity = 0
+        container.addSublayer(gifLayer)
 
-        // Loop the minion face for the whole duration.
+        // Loop the minion for the whole duration (frames start when it appears).
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.duration = sourceDuration
         anim.repeatCount = .infinity
+        anim.beginTime = CACurrentMediaTime() + introDelay
         gifLayer.add(anim, forKey: "minionFrames")
 
-        // Gentle fade in/out so it doesn't pop on/off.
+        // Fade the minion in QUICKLY after the powder has held (introDelay).
         let fadeIn = CABasicAnimation(keyPath: "opacity")
         fadeIn.fromValue = 0.0
         fadeIn.toValue = 1.0
-        fadeIn.duration = 0.25
+        fadeIn.beginTime = CACurrentMediaTime() + introDelay
+        fadeIn.duration = 0.35
+        fadeIn.fillMode = .forwards
+        fadeIn.isRemovedOnCompletion = false
         gifLayer.add(fadeIn, forKey: "minionFadeIn")
 
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.6)
+        fadeOut.beginTime = CACurrentMediaTime() + max(introDelay, total - 0.6)
         fadeOut.duration = 0.6
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
@@ -1643,7 +1723,8 @@ class EmojiAnimator {
 
         // No sound by design — the tile is silent; onSoundPlay neutralizes the
         // routed clip and returns just the duration so the tile stays "playing".
-        trackEffect("minion", layer: gifLayer, duration: duration, sound: nil)
+        // Track the CONTAINER so cancel/cleanup removes powder + minion together.
+        trackEffect("minion", layer: container, duration: total, sound: nil)
     }
 
     // MARK: - Pulse / heartbeat (one-shot: 2 QRS cycles then flatline)
@@ -3013,6 +3094,17 @@ class EmojiAnimator {
         let active = sweepStartRel + animEnd - fadeOut // fade-out starts here (rotation still going)
         let total  = sweepStartRel + animEnd           // full removal
 
+        // On Bluetooth output the radar audio is played `btComp` later than
+        // "now" (to warm the A2DP link while a power-saving speaker spins up),
+        // so shift the ENTIRE visual timeline by the same amount — otherwise the
+        // three 💩 detections would flash ~btComp (0.55s) BEFORE their beeps
+        // (the desync seen when broadcasting to a Bluetooth speaker). On
+        // wired/built-in output btComp = 0 and nothing moves. `clock0` is the
+        // (possibly delayed) effect start on the CoreAnimation clock; every
+        // begin-time below hangs off it.
+        let btComp = playSound ? SoundTimingConfig.shared.currentBluetoothCompensation : 0
+        let clock0 = CACurrentMediaTime() + btComp
+
         // Everything lives under one container so the end fade-out is a single op.
         let container = CALayer()
         container.frame = bounds
@@ -3028,6 +3120,8 @@ class EmojiAnimator {
         backdropFade.fromValue = 0.0
         backdropFade.toValue = 0.45
         backdropFade.duration = fadeIn
+        backdropFade.beginTime = clock0
+        backdropFade.fillMode = .backwards   // stay invisible until the (BT-shifted) start
         backdrop.add(backdropFade, forKey: "backdropFadeIn")
         container.addSublayer(backdrop)
 
@@ -3097,7 +3191,7 @@ class EmojiAnimator {
         let gridFade = CABasicAnimation(keyPath: "opacity")
         gridFade.fromValue = 0.0
         gridFade.toValue = 1.0
-        gridFade.beginTime = CACurrentMediaTime() + fadeIn * 0.6
+        gridFade.beginTime = clock0 + fadeIn * 0.6
         gridFade.duration = 0.6
         gridFade.fillMode = .both
         grid.add(gridFade, forKey: "gridFadeIn")
@@ -3120,6 +3214,8 @@ class EmojiAnimator {
             bgFade.fromValue = 0.0
             bgFade.toValue = 0.16
             bgFade.duration = fadeIn
+            bgFade.beginTime = clock0
+            bgFade.fillMode = .backwards   // stay invisible until the (BT-shifted) start
             bgNoise.add(bgFade, forKey: "bgNoiseFadeIn")
             let bgFlick = CAKeyframeAnimation(keyPath: "contents")
             bgFlick.values = bgNoiseFrames
@@ -3197,7 +3293,7 @@ class EmojiAnimator {
             sweep.addSublayer(noise)
         }
 
-        let sweepStart = CACurrentMediaTime() + fadeIn * 0.9
+        let sweepStart = clock0 + fadeIn * 0.9
         let sweepFade = CABasicAnimation(keyPath: "opacity")
         sweepFade.fromValue = 0.0
         sweepFade.toValue = 1.0
@@ -3292,7 +3388,7 @@ class EmojiAnimator {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 1.0
         fade.toValue = 0.0
-        fade.beginTime = CACurrentMediaTime() + active
+        fade.beginTime = clock0 + active
         fade.duration = fadeOut
         fade.fillMode = .forwards
         fade.isRemovedOnCompletion = false
@@ -3301,15 +3397,25 @@ class EmojiAnimator {
         // Play the radar SFX (when this path owns the audio), delayed by
         // `soundStartRel` so its three detection beeps land on the three 💩
         // detections (first ~0.5s stays beep-free rotation). The extra +0.1s
-        // nudges the whole soundtrack slightly behind the visuals.
+        // nudges the whole soundtrack slightly behind the visuals. On Bluetooth
+        // output the play is pushed a further `btComp` — matching the visual
+        // shift above — and an inaudible wake tone runs for the WHOLE lead-in so
+        // a power-saving speaker is fully awake before the first beep. (A BT amp
+        // can take ~1s to leave power-saving; warming only ~0.5s ahead — as the
+        // generic path does — would still clip the leading beep.)
         if playSound {
-            DispatchQueue.main.asyncAfter(deadline: .now() + soundStartRel + 0.1) { [weak self, weak container] in
+            let soundAt = soundStartRel + 0.1 + btComp
+            if btComp > 0 { BluetoothOutput.playWakeTone(seconds: soundAt + 0.05) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + soundAt) { [weak self, weak container] in
                 guard let self = self, let container = container,
                       self.activeEffects["sonar"] === container else { return }   // dropped/retriggered
-                SoundManager.shared.play("23_radar.mp3")
+                // btComp is already baked into `soundAt` (and the visual shift),
+                // so bypass SoundManager's own BT compensation — otherwise the
+                // audio would be delayed 2×btComp and lag the visuals again.
+                SoundManager.shared.play("23_radar.mp3", bluetoothCompensated: false)
             }
         }
-        trackEffect("sonar", layer: container, duration: total, sound: soundKey)
+        trackEffect("sonar", layer: container, duration: btComp + total, sound: soundKey)
     }
 
     func showHeartbeat() {
