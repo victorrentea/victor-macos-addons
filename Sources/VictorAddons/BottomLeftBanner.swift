@@ -15,6 +15,18 @@ import Cocoa
 /// The state-machine logic (presence-gating, countdown ticks, snooze,
 /// auto-dismiss) lives in the caller. This class is rendering only.
 final class BottomLeftBanner {
+    /// Which way the pill slides *slightly* while the cursor dwells on it, on
+    /// top of the whitening — a directional hint for what hovering will do:
+    ///   • `.up`   — hovering CONFIRMS / commits an offered action (e.g. "Send
+    ///     prompt to notes?"); the pill drifts up, previewing the rising-fade exit.
+    ///   • `.down` — hovering CANCELS an already-done action or dismisses the
+    ///     banner (undo a paste, snooze a warning); the pill drifts down,
+    ///     previewing the sinking exit.
+    ///   • `.none` — no directional nudge (default; whitening only).
+    /// The offset ramps with the dwell progress and springs back when the cursor
+    /// leaves, mirroring the whitening.
+    enum HoverNudge { case none, up, down }
+
     enum Style {
         static let fontSize: CGFloat = 36
         static let leftPadding: CGFloat = 20
@@ -60,6 +72,10 @@ final class BottomLeftBanner {
         // AND has an active onHover.
         static let progressBarHeight: CGFloat = 5
         static let progressBarColor: NSColor = .systemOrange
+
+        // MARK: Hover nudge — how far (points) the pill drifts up/down at full
+        // dwell. Deliberately small: a subtle directional cue, not a jump.
+        static let hoverNudgeDistance: CGFloat = 10
     }
 
     private let screensProvider: () -> [NSScreen]
@@ -124,6 +140,10 @@ final class BottomLeftBanner {
     /// countdown accompanies the hint, which every current caller does.
     private var hintFixedLeft = false
 
+    /// Direction the pill drifts while the cursor dwells on it (see `HoverNudge`).
+    /// Set per `show()`; `.none` disables the nudge (whitening only).
+    private var hoverNudge: HoverNudge = .none
+
     /// Final window opacity when visible. Below 1.0 to add an extra layer
     /// of see-through on top of the NSVisualEffectView glass.
     private static let visibleAlpha: CGFloat = 0.75
@@ -153,13 +173,16 @@ final class BottomLeftBanner {
               backgroundColor: NSColor = Style.defaultBackground,
               font: NSFont = Style.defaultFont(),
               hoverHint: String? = nil,
-              hoverCountdown: TimeInterval? = nil) {
+              hoverCountdown: TimeInterval? = nil,
+              hoverNudge: HoverNudge = .none) {
         // Each show() presents new content → re-arm hover and clear any leftover
         // dwell whitening (e.g. after a previous fire on a banner being reused).
         cancelHoverDwell()
         hoverFired = false
         // Drives the 30% min width (panelWidth) and the fixed-left chip layout.
         hasCountdown = hoverCountdown != nil
+        // Direction the pill drifts on dwell (up = confirm, down = cancel).
+        self.hoverNudge = hoverNudge
         if isVisible {
             updateText(text)
             updateBackgroundColor(backgroundColor)
@@ -374,7 +397,7 @@ final class BottomLeftBanner {
         hoverDwellTimer = nil
         if hoverDwellCount > 0 {
             hoverDwellCount = 0
-            applyWhitenProgress(0)
+            applyDwellProgress(0)
         }
     }
 
@@ -383,7 +406,7 @@ final class BottomLeftBanner {
         if isMouseInsideAnyPanel() {
             hoverDwellCount += 1
             let progress = min(1.0, CGFloat(hoverDwellCount) / CGFloat(Self.hoverDwellRequiredSamples))
-            applyWhitenProgress(progress)
+            applyDwellProgress(progress)
             if hoverDwellCount >= Self.hoverDwellRequiredSamples {
                 hoverDwellTimer?.invalidate()
                 hoverDwellTimer = nil
@@ -391,13 +414,19 @@ final class BottomLeftBanner {
             }
         } else if hoverDwellCount > 0 {
             hoverDwellCount = 0
-            applyWhitenProgress(0)
+            applyDwellProgress(0)
         }
     }
 
-    /// Animate the per-panel "whitening" overlay to `alpha`. Linear over
-    /// one dwell-tick interval so the ramp feels continuous as the user
-    /// holds the cursor in place.
+    /// Reflect the dwell `progress` (0…1) on every panel: ramp the "whitening"
+    /// overlay and slide the pill slightly in the nudge direction. Both animate
+    /// linearly over one dwell-tick interval so the effect feels continuous as
+    /// the user holds the cursor in place, and both return to rest at progress 0.
+    private func applyDwellProgress(_ progress: CGFloat) {
+        applyWhitenProgress(progress)
+        applyNudgeProgress(progress)
+    }
+
     private func applyWhitenProgress(_ alpha: CGFloat) {
         let cg = NSColor.white.withAlphaComponent(alpha).cgColor
         for entry in panels {
@@ -412,6 +441,32 @@ final class BottomLeftBanner {
             CATransaction.setDisableActions(true)
             layer.backgroundColor = cg
             CATransaction.commit()
+        }
+    }
+
+    /// Slide the pill (and its hint chip) `progress × hoverNudgeDistance` points
+    /// up (`.up`) or down (`.down`) from the resting bottom-left position — a
+    /// subtle preview of which exit hovering triggers. No-op for `.none`. The
+    /// resting y is always the screen's bottom edge, so progress 0 restores it
+    /// exactly; the dismiss animations read the current (nudged) frame, so a
+    /// fired hover continues smoothly into the rising/sinking exit.
+    private func applyNudgeProgress(_ progress: CGFloat) {
+        guard hoverNudge != .none else { return }
+        let dir: CGFloat = hoverNudge == .up ? 1 : -1
+        let dy = dir * Style.hoverNudgeDistance * progress
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.hoverDwellInterval
+            ctx.timingFunction = CAMediaTimingFunction(name: .linear)
+            for entry in panels {
+                var f = entry.panel.frame
+                f.origin.y = entry.screen.frame.minY + dy
+                entry.panel.animator().setFrame(f, display: true)
+            }
+            for (entry, hint) in zip(panels, hintPanels) {
+                var f = hint.frame
+                f.origin.y = entry.screen.frame.minY + dy
+                hint.animator().setFrame(f, display: true)
+            }
         }
     }
 

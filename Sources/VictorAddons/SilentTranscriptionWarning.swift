@@ -60,7 +60,7 @@ final class SilentTranscriptionWarning {
         // and keeps the warning up until the user moves away (or snoozes).
         banner.onHoverCountdownExpired = { [weak self] in self?.dismiss() }
         banner.show(text: Self.warningEmoji, hoverHint: "Hover to snooze",
-                    hoverCountdown: Self.visibleDuration)
+                    hoverCountdown: Self.visibleDuration, hoverNudge: .down)
     }
 
     private func snooze() {

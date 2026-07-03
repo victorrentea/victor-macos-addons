@@ -106,7 +106,7 @@ enum SessionNotesAppender {
             banner?.dismiss()
         }
         banner.show(text: display, font: promptFont, hoverHint: "Send prompt to notes?",
-                    hoverCountdown: hoverActionDuration)
+                    hoverCountdown: hoverActionDuration, hoverNudge: .up)
     }
 
     /// Flatten newlines/tabs to single spaces so a multi-line selection shows
@@ -221,7 +221,7 @@ enum SessionNotesAppender {
                 banner?.dismissRisingFade()
             }
             banner.show(text: text, font: promptFont, hoverHint: "Hover to undo",
-                        hoverCountdown: hoverActionDuration)
+                        hoverCountdown: hoverActionDuration, hoverNudge: .down)
         }
     }
 
