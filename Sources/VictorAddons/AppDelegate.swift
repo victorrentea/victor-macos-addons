@@ -572,10 +572,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestPresentationWarn = { [weak self] in
             self?.silentTranscriptionWarning?.forceShow()
         }
-        // /test/known-displays/trust — whitelist the currently-connected externals.
-        tabletServer?.onTestTrustDisplays = { [weak self] in
-            self?.trustCurrentDisplays() ?? "{\"error\":\"unavailable\"}"
-        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -714,9 +710,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onFixDisplayLayout = { [weak self] in
             self?.displayArrangementManager?.applyNow()
-        }
-        menuBarManager.onTrustDisplays = { [weak self] in
-            _ = self?.trustCurrentDisplays()
         }
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
@@ -1538,23 +1531,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         overlayInfo("📸 Group Photo prompt shown")
     }
 
-    /// Trust every currently-connected external display (they become "mine"),
-    /// re-evaluate the presentation signal, and flash a confirmation banner.
-    /// Backs the "🖥️ Trust current external displays" menu item + test hook.
-    @discardableResult
-    private func trustCurrentDisplays() -> String {
-        let added = knownDisplays.trustCurrentExternals()
-        displayArrangementManager?.refreshPresentationSignal()
-        let list = added.isEmpty ? "none" : added.joined(separator: ", ")
-        DispatchQueue.main.async { [weak self] in
-            self?.statusBanner?.showOnPresence(
-                text: "🖥️ Trusted: \(list)", sound: StatusBannerSound.start)
-        }
-        overlayInfo("🖥️ Trusted current external displays: \(list)")
-        let json = added.map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ",")
-        return "{\"trusted\":[\(json)]}"
-    }
-
     /// JSON snapshot of the presenting state + how each connected external is
     /// classified. Backs `GET /test/presentation`.
     private func presentationSnapshotJSON() -> String {
@@ -1565,14 +1541,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let known = knownDisplays.isKnown(id)
             externals.append("{\"name\":\"\(name)\",\"known\":\(known)}")
         }
-        let rules = knownDisplays.nameRules.map { "\"\($0)\"" }.joined(separator: ",")
+        let trusted = knownDisplays.trustedNames.map { "\"\($0)\"" }.joined(separator: ",")
         return "{"
             + "\"presenting\":\(p?.isPresenting ?? false),"
             + "\"meetingActive\":\(p?.meetingActive ?? false),"
             + "\"unknownDisplayPresent\":\(p?.unknownDisplayPresent ?? false),"
             + "\"externals\":[\(externals.joined(separator: ","))],"
-            + "\"knownNameRules\":[\(rules)],"
-            + "\"trustedIdentityCount\":\(knownDisplays.identities.count)"
+            + "\"trustedNames\":[\(trusted)]"
             + "}"
     }
 

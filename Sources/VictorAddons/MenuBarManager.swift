@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 3, 06:55"
+    static let BUILD_TIME = "Jul 3, 07:15"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -72,7 +72,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDesktopEffect: ((String) -> Void)?
     var onTileTerminals: (() -> Void)?
     var onFixDisplayLayout: (() -> Void)?
-    var onTrustDisplays: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
@@ -288,14 +287,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         fixDisplayItem.isEnabled = true
         extraSubmenu.addItem(fixDisplayItem)
 
-        // 🖥️ Trust current external displays — mark the connected externals as
-        // "mine" (home monitors / TV) so they're never treated as a venue
-        // projector nor trigger the presenting warning. Click once when home.
-        let trustDisplaysItem = NSMenuItem(title: "🖥️ Trust current external displays", action: #selector(trustDisplaysAction), keyEquivalent: "")
-        trustDisplaysItem.target = self
-        trustDisplaysItem.isEnabled = true
-        extraSubmenu.addItem(trustDisplaysItem)
-
         // Flattened Dream entries
         let dreamEntries: [(String, Selector)] = [
             ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
@@ -493,9 +484,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onFixDisplayLayout?()
     }
 
-    @objc private func trustDisplaysAction() {
-        onTrustDisplays?()
-    }
 
     @objc private func killHistoricalPort(_ sender: NSMenuItem) {
         killPort(sender.tag)

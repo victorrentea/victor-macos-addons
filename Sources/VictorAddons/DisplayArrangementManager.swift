@@ -148,17 +148,6 @@ final class DisplayArrangementManager {
         onUnknownExternalChanged?(present)
     }
 
-    /// Re-evaluate just the presentation signal (no arrangement change). Call
-    /// after trusting displays, so a just-trusted external flips unknown→known.
-    func refreshPresentationSignal() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let displays = self.resolveDisplays()
-            self.lastUnknownExternal = nil // force a re-notify at the new value
-            self.notifyUnknownExternal(displays.projector != nil)
-        }
-    }
-
     // MARK: - Public triggers
 
     /// Force-apply the correct arrangement for whatever is connected right now.

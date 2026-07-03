@@ -49,8 +49,6 @@ class TabletHttpServer {
         case testPresentation
         /// Force-show the aggressive silent-transcription warning now.
         case testPresentationWarn
-        /// Trust the currently-connected external displays as "mine".
-        case testTrustDisplays
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
         /// cooldown gates — same Terminal flow a real break triggers (test hook).
         case testBreakSummary
@@ -106,8 +104,6 @@ class TabletHttpServer {
     var onTestPresentation: (() -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
-    /// Trust the currently-connected externals; returns JSON of names added.
-    var onTestTrustDisplays: (() -> String)?
     var onTestBreakSummary: (() -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
@@ -235,10 +231,6 @@ class TabletHttpServer {
                     if self?.onTestPresentation == nil { statusCode = 503 }
                 case .testPresentationWarn:
                     self?.onTestPresentationWarn?()
-                case .testTrustDisplays:
-                    contentType = "application/json"
-                    body = self?.onTestTrustDisplays?() ?? "{\"error\":\"unavailable\"}"
-                    if self?.onTestTrustDisplays == nil { statusCode = 503 }
                 case .testBreakSummary:
                     self?.onTestBreakSummary?()
                 case .promptCapture:
@@ -345,8 +337,6 @@ class TabletHttpServer {
             return .testPresentation
         case "/test/presentation/warn":
             return .testPresentationWarn
-        case "/test/known-displays/trust":
-            return .testTrustDisplays
         case "/test/break-summary":
             return .testBreakSummary
         case "/training/prompt-capture":
