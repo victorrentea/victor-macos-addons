@@ -52,9 +52,15 @@ final class WhipPhysics {
         static let wallFriction = 0.86
 
         // Crack detection
-        static let crackSpeed = 340.0     // tip velocity threshold to trigger a crack
+        static let crackSpeed = 260.0     // tip velocity threshold to trigger a crack
+                                          // (tuned down from OpenWhip's 340 so a
+                                          //  gentler flick still cracks)
         static let crackCooldownMs = 200.0
         static let firstCrackGraceMs = 350.0
+
+        // Programmatic-crack impulse (Enter-button crack; not part of the JS port)
+        static let forceCrackKickX = 80.0   // forward (+x) tip velocity, px/frame
+        static let forceCrackKickY = 160.0  // upward (-y) tip velocity, px/frame
 
         // Initial arc shape
         static let arcWidth = 260.0
@@ -127,6 +133,26 @@ final class WhipPhysics {
     func setMouse(_ x: Double, _ y: Double) {
         mouseX = x
         mouseY = y
+    }
+
+    /// Programmatically crack the whip with NO mouse motion (driven by the
+    /// Enter-button while the overlay is up). Injects a whip-snap velocity into
+    /// the free chain — concentrated toward the tip, thrown up-and-forward — so
+    /// it visibly flicks, and arms the crack cooldown so the induced motion
+    /// doesn't also trip the natural detector. Not part of the JS port.
+    func crackImpulse(now: Double) {
+        guard isActive, !dropping, points.count >= 4 else { return }
+        lastCrackTime = now
+        let n = points.count
+        let base = P.basePoseSegments          // leave the handle/base pose intact
+        let span = Double(n - 1 - base)
+        guard span > 0 else { return }
+        for i in base..<n {
+            let t = Double(i - base) / span     // 0 at base → 1 at tip
+            let s = t * t                       // concentrate the snap at the tip
+            points[i].px -= P.forceCrackKickX * s   // +x velocity (forward)
+            points[i].py += P.forceCrackKickY * s   // -y velocity (up)
+        }
     }
 
     // MARK: - Per-link length / helpers

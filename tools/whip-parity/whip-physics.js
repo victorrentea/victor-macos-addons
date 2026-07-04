@@ -56,7 +56,7 @@ const P = {
   wallFriction:    0.86,   // tangential damping on wall hit
 
   // Crack detection
-  crackSpeed:     340,     // tip velocity threshold to trigger crack
+  crackSpeed:     260,     // tip velocity threshold to trigger crack (tuned down from 340)
   crackCooldownMs:200,   // min ms between cracks
   firstCrackGraceMs: 350, // no crack (macro) until this long after spawn
 

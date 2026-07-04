@@ -21,6 +21,10 @@ final class WhipController {
     /// the menu item so UI state stays consistent.
     var onEscape: (() -> Void)?
 
+    /// Fired on every show (true) / hide (false) so the event tap knows when to
+    /// let the Enter-button crack the whip (see `forceCrack`).
+    var onVisibilityChanged: ((Bool) -> Void)?
+
     private var panel: WhipPanel?
     private var view: WhipView?
     private var physics: WhipPhysics?
@@ -29,6 +33,8 @@ final class WhipController {
 
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
+
+    private var lastForceCrackMs = 0.0
 
     private let crackSounds = ["whip_A.mp3", "whip_B.mp3", "whip_C.mp3", "whip_D.mp3", "whip_E.mp3"]
 
@@ -67,9 +73,11 @@ final class WhipController {
 
         installEscMonitors()
         startTimer()
+        onVisibilityChanged?(true)
     }
 
     func hide() {
+        let wasShowing = panel != nil
         displayTimer?.invalidate()
         displayTimer = nil
         removeEscMonitors()
@@ -77,6 +85,22 @@ final class WhipController {
         panel = nil
         view = nil
         physics = nil
+        if wasShowing { onVisibilityChanged?(false) }
+    }
+
+    /// Crack the whip programmatically — no mouse motion. Driven by the
+    /// Enter-button (or Return key) while the overlay is up: injects a visible
+    /// tip snap into the physics and plays a crack sound. Debounced so a single
+    /// press that surfaces as both a key and a mouse event cracks only once.
+    func forceCrack() {
+        guard let physics, isShowing else { return }
+        let now = nowMs()
+        if now - lastForceCrackMs < 120 { return }
+        lastForceCrackMs = now
+        physics.crackImpulse(now: now)
+        if let sound = crackSounds.randomElement() {
+            SoundManager.shared.playOverlapping(sound, volume: 0.8)
+        }
     }
 
     // MARK: - Frame loop

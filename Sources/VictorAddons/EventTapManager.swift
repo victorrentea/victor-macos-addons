@@ -30,8 +30,15 @@ class EventTapManager {
     var onCopySelectionToNotes: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
     var onWhip: (() -> Void)?
+    var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool) -> Void)?
     var onKeyDownWhileOptionHeld: (() -> Void)?
+
+    /// Set on the main thread whenever the 🔥 whip overlay shows/hides. While
+    /// true, an Enter (Return / keypad-Enter) or an extra mouse button (6/7)
+    /// cracks the whip via `onWhipCrack` — the event still passes through, so
+    /// the Enter reaches Claude. Outside the overlay these inputs are untouched.
+    var whipOverlayShowing = false
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -40,10 +47,14 @@ class EventTapManager {
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
     private let VK_W: CGKeyCode = 0x0D
+    private let VK_RETURN: CGKeyCode = 0x24       // Return
+    private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
     private let MOUSE_BUTTON_3: Int64 = 2  // wheel click
     private let MOUSE_BUTTON_5: Int64 = 4  // "forward" side button — used by Wispr Flow push-to-talk
+    private let MOUSE_BUTTON_6: Int64 = 5  // extra side button (physical "button 6")
+    private let MOUSE_BUTTON_7: Int64 = 6  // extra side button (physical "button 7")
 
     // MARK: Wheel click tracking
     private var wheelClickCount: Int = 0
@@ -118,6 +129,9 @@ class EventTapManager {
                 // Pass the event through — Wispr Flow needs to see it. We only
                 // observe so the audio mute poll can briefly run at 100ms.
                 DispatchQueue.global().async { [weak self] in self?.onMouseButton5Pressed?() }
+            } else if whipOverlayShowing && (button == MOUSE_BUTTON_6 || button == MOUSE_BUTTON_7) {
+                // Extra side button while the whip is up → crack it (pass through).
+                DispatchQueue.main.async { [weak self] in self?.onWhipCrack?() }
             }
             return Unmanaged.passUnretained(event)
         }
@@ -144,6 +158,14 @@ class EventTapManager {
 
         if hasOpt {
             DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileOptionHeld?() }
+        }
+
+        // While the 🔥 whip overlay is up, Enter cracks it (the button Victor uses
+        // to submit to Claude often *is* an Enter). Always pass the key through so
+        // the Enter still reaches Claude — this only adds the crack, never eats it.
+        if whipOverlayShowing && (keyCode == VK_RETURN || keyCode == VK_KEYPAD_ENTER) {
+            DispatchQueue.main.async { [weak self] in self?.onWhipCrack?() }
+            return Unmanaged.passUnretained(event)
         }
 
         // Ctrl+P → screenshot to clipboard, Ctrl+Shift+P → screenshot to file (suppress)

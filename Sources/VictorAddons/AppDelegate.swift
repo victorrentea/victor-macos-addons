@@ -846,6 +846,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
+        eventTap.onWhipCrack = { [weak self] in self?.whipController?.forceCrack() }
         eventTap.onRepaste = {
             DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
         }
@@ -1369,6 +1370,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         whipController = controller
         controller.onEscape = { [weak self] in
             self?.whipController?.hide()
+        }
+        // Tell the event tap when the overlay is up so Enter / the extra mouse
+        // button can crack it (see EventTapManager.whipOverlayShowing).
+        controller.onVisibilityChanged = { [weak self] showing in
+            self?.eventTapManager?.whipOverlayShowing = showing
         }
         controller.show()
     }

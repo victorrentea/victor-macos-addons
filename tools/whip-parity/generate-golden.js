@@ -73,7 +73,7 @@ function runSettle() {
 
 // ── Scenario "swing" ──────────────────────────────────────────────────────────
 // N=70. Settle briefly, then a vigorous horizontal oscillation that whips the
-// tip past the crackSpeed (340) threshold, producing real cracks (after the
+// tip past the crackSpeed (260) threshold, producing real cracks (after the
 // 350ms spawn grace and respecting the 200ms cooldown). Record crackFrames,
 // tipVelByFrame, finalPoints. The handle stays within [320,960]×{400}, safely
 // inside the 1280×800 field so wall collisions don't interfere.
