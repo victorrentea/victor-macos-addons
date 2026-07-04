@@ -36,6 +36,9 @@ class TabletHttpServer {
         case testTile
         /// Fire the 🔥 WIP Agent whip overlay — same action as ⌃W (test hook).
         case testWhip
+        /// Crack the whip programmatically (scripted mouse-flick) — same as the
+        /// Enter-button while the overlay is up. No-op if the overlay isn't shown.
+        case testWhipCrack
         /// Post the 13:00 "Group Photo" notification now, bypassing the time +
         /// connection gates (test hook).
         case testGroupPhoto
@@ -96,6 +99,7 @@ class TabletHttpServer {
     var onTestBreakPicker: ((String?) -> Void)?
     var onTestTile: (() -> Void)?
     var onTestWhip: (() -> Void)?
+    var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestWisprOutputDrift: (() -> Void)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
@@ -215,6 +219,8 @@ class TabletHttpServer {
                     self?.onTestTile?()
                 case .testWhip:
                     self?.onTestWhip?()
+                case .testWhipCrack:
+                    self?.onTestWhipCrack?()
                 case .testGroupPhoto:
                     self?.onTestGroupPhoto?()
                 case .testWisprOutputDrift:
@@ -317,6 +323,8 @@ class TabletHttpServer {
             return .testTile
         case "/test/whip":
             return .testWhip
+        case "/test/whip/crack":
+            return .testWhipCrack
         case "/test/sonar":
             return .effect("sonar")
         case "/test/phoenix":

@@ -555,6 +555,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
+        tabletServer?.onTestWhipCrack = { [weak self] in
+            DispatchQueue.main.async { self?.whipController?.forceCrack() }
+        }
         // /test/projector — force-apply the display arrangement now and return a
         // JSON snapshot of what was detected + applied. The HTTP route switch
         // already runs inside `DispatchQueue.main.sync`, so this callback is

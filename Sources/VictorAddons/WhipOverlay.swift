@@ -35,6 +35,17 @@ final class WhipController {
     private var escLocalMonitor: Any?
 
     private var lastForceCrackMs = 0.0
+    private var suppressNaturalCrackUntilMs = 0.0
+    /// Scripted handle positions (view coords) consumed one per frame — a fake
+    /// fast mouse sweep that cracks the whip on a button press (see forceCrack).
+    private var flickQueue: [CGPoint] = []
+
+    /// Handle-offset profile of the scripted flick, as fractions of `peak`:
+    /// accelerate out, then snap back to the start (seamless hand-off to the
+    /// real cursor). ~8 frames ≈ 130 ms — a quick, whip-worthy flick.
+    private static let flickProfile: [Double] = [0.0, 0.45, 0.85, 1.0, 0.7, 0.35, 0.12, 0.0]
+    private static let flickPeakMin = 140.0   // min sweep distance (px)
+    private static let flickPeakMax = 460.0   // max sweep distance (px)
 
     private let crackSounds = ["whip_A.mp3", "whip_B.mp3", "whip_C.mp3", "whip_D.mp3", "whip_E.mp3"]
 
@@ -85,21 +96,41 @@ final class WhipController {
         panel = nil
         view = nil
         physics = nil
+        flickQueue = []
         if wasShowing { onVisibilityChanged?(false) }
     }
 
-    /// Crack the whip programmatically — no mouse motion. Driven by the
-    /// Enter-button (or Return key) while the overlay is up: injects a visible
-    /// tip snap into the physics and plays a crack sound. Debounced so a single
-    /// press that surfaces as both a key and a mouse event cracks only once.
+    /// Crack the whip programmatically — driven by the Enter-button (or Return
+    /// key) while the overlay is up. Rather than nudge the physics directly, it
+    /// *pretends you flicked the mouse*: it scripts a fast horizontal sweep of
+    /// the handle (toward whichever side of the screen has more room) that the
+    /// real physics whips into a genuine crack, and plays a crack sound. The
+    /// sweep returns to the cursor so control hands back seamlessly. Debounced
+    /// so a press seen as both a key and a mouse event cracks only once.
     func forceCrack() {
-        guard let physics, isShowing else { return }
+        guard isShowing else { return }
         let now = nowMs()
-        if now - lastForceCrackMs < 120 { return }
+        if now - lastForceCrackMs < 160 { return }
         lastForceCrackMs = now
-        physics.crackImpulse(now: now)
         if let sound = crackSounds.randomElement() {
             SoundManager.shared.playOverlapping(sound, volume: 0.8)
+        }
+        suppressNaturalCrackUntilMs = now + 500
+        startScriptedFlick()
+    }
+
+    /// Build the fake mouse sweep: from the cursor, out toward the side with
+    /// more space and back, following `flickProfile`.
+    private func startScriptedFlick() {
+        let start = viewPoint(forGlobal: NSEvent.mouseLocation)
+        let w = Double(screenFrame.width)
+        let spaceRight = w - Double(start.x)
+        let spaceLeft = Double(start.x)
+        let dir: Double = spaceRight >= spaceLeft ? 1.0 : -1.0   // flick toward more room
+        let room = Swift.max(spaceRight, spaceLeft) - 40.0
+        let peak = Swift.min(Self.flickPeakMax, Swift.max(Self.flickPeakMin, room))
+        flickQueue = Self.flickProfile.map { frac in
+            CGPoint(x: start.x + CGFloat(dir * peak * frac), y: start.y)
         }
     }
 
@@ -113,10 +144,15 @@ final class WhipController {
 
     @objc private func tick() {
         guard let physics, let view else { return }
-        let m = viewPoint(forGlobal: NSEvent.mouseLocation)
+        let now = nowMs()
+        // A scripted flick (forceCrack) drives the handle for a few frames to
+        // imitate a fast mouse sweep; otherwise follow the real cursor.
+        let m = flickQueue.isEmpty ? viewPoint(forGlobal: NSEvent.mouseLocation) : flickQueue.removeFirst()
         physics.setMouse(Double(m.x), Double(m.y))
-        let cracked = physics.update(now: nowMs())
-        if cracked {
+        let cracked = physics.update(now: now)
+        // Play the natural crack sound — but not during a scripted flick, whose
+        // own forceCrack already played one (avoid doubling).
+        if cracked && now > suppressNaturalCrackUntilMs {
             if let sound = crackSounds.randomElement() {
                 SoundManager.shared.playOverlapping(sound, volume: 0.8)
             }
