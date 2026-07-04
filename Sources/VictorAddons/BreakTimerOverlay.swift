@@ -5,8 +5,9 @@ import QuartzCore
 /// panel showing a big red seven-segment MM:SS countdown over a frosted-glass
 /// (blurred) 60%-opaque black background, the finish time in two timezones, and
 /// small controls (+1 / +3 / +5 / pause / close). Hovering shows resize cursors
-/// at the corners and a 4-way move cursor on the body. On expiry it gongs twice,
-/// blinks twice, and fades out. Unlike OverlayPanel, this panel accepts mouse events.
+/// at the corners and a pointer over the buttons; the body keeps the plain arrow.
+/// On expiry it returns to the retina (if dragged elsewhere), gongs twice, blinks
+/// twice, and fades out. Unlike OverlayPanel, this panel accepts mouse events.
 
 // MARK: - Controller
 
@@ -383,6 +384,11 @@ final class BreakTimerController {
     private func beginExpiry() {
         timer?.invalidate(); timer = nil
         clearPersisted()
+        // If the timer was dragged onto another display (e.g. the external monitor
+        // during a course), bring it home to the retina before the gong + blink —
+        // the retina is what's projected to the room, so "break's over!" lands where
+        // everyone can see it, and it never expires forgotten on a side monitor.
+        returnToRetinaIfNeeded()
         let myEpoch = epoch
         // Play the FULL gong (exact same mp3 as tablet effect #50 — not a clip),
         // then the second strike after the first finishes.
@@ -400,6 +406,22 @@ final class BreakTimerController {
             guard let self, self.epoch == myEpoch else { return }
             self.close()
         }
+    }
+
+    /// Move the panel back to its default spot on the built-in retina display when
+    /// it currently lives on any other screen (or off-screen). No-op when already on
+    /// the retina, so a timer left in place stays put.
+    private func returnToRetinaIfNeeded() {
+        guard let panel else { return }
+        let retinaID = Self.displayID(of: AppDelegate.findRetinaScreen())
+        if Self.displayID(of: panel.screen) == retinaID { return }   // already home
+        isEnlarged = false            // reset idle-enlarge bookkeeping…
+        savedFrame = nil              // …the default frame replaces any saved one
+        panel.setFrame(Self.defaultFrame(), display: true)
+    }
+
+    private static func displayID(of screen: NSScreen?) -> CGDirectDisplayID? {
+        screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
     private static func defaultFrame() -> NSRect {
@@ -1043,7 +1065,7 @@ final class BreakTimerView: NSView {
             return
         } else {
             dragMode = .move
-            NSCursor.closedHand.set()
+            Self.moveCursor.set()   // plain arrow — no grab hand
         }
         // While held, capture the wheel globally so minute-adjust keeps working
         // even if the cursor leaves the view during a drag.
@@ -1053,7 +1075,7 @@ final class BreakTimerView: NSView {
     override func mouseDragged(with event: NSEvent) {
         switch dragMode {
         case .move:
-            NSCursor.closedHand.set()
+            Self.moveCursor.set()   // plain arrow — no grab hand
             let m = NSEvent.mouseLocation
             window?.setFrameOrigin(NSPoint(x: dragStartFrame.origin.x + (m.x - dragStartMouse.x),
                                            y: dragStartFrame.origin.y + (m.y - dragStartMouse.y)))
@@ -1074,8 +1096,8 @@ final class BreakTimerView: NSView {
         pressedButton = nil
         needsDisplay = true
         stopScrollMonitor()
-        // Restore the resting cursor for the release position (e.g. the open
-        // "grab" hand over the body, not the closed "grabbing" hand).
+        // Restore the resting cursor for the release position (resize at a corner,
+        // pointer over a button, plain arrow over the body).
         let L = computeLayout()
         if let corner = cornerHit(p, L) { Self.cursor(forCorner: corner).set() }
         else if buttonHit(p, L) != nil { NSCursor.pointingHand.set() }
@@ -1235,8 +1257,10 @@ final class BreakTimerView: NSView {
     // MARK: Cursor
 
     // Standard OS cursors: the system diagonal resize cursors at the corners
-    // (behind verified private selectors) and the standard open-hand for moving.
-    private static let moveCursor = NSCursor.openHand
+    // (behind verified private selectors). The body uses the plain arrow — never a
+    // grab/hand cursor, which used to linger stuck on screen after the timer closed
+    // or the pointer moved away.
+    private static let moveCursor = NSCursor.arrow
     private static let nwseCursor = privateCursor("_windowResizeNorthWestSouthEastCursor", fallback: .crosshair)
     private static let neswCursor = privateCursor("_windowResizeNorthEastSouthWestCursor", fallback: .crosshair)
 
