@@ -55,14 +55,12 @@ final class BottomLeftBanner {
             NSFont.boldSystemFont(ofSize: fontSize)
         }
 
-        // MARK: Bottom band — a solid black strip across the pill's bottom edge,
-        // overlapping the glass. The hover hint sits on the LEFT and the orange
-        // countdown bar fills the RIGHT, both the same height. The main text is
-        // vertically centered in the gray area *above* this band.
-        static let bottomBandHeight: CGFloat = 26
-        static let bottomBandColor: NSColor = NSColor.black.withAlphaComponent(0.9)
-        /// Hint text — orange, left of the band, sitting on the bottom edge next
-        /// to the bar (same height). 20% smaller than before.
+        // MARK: Hover hint + countdown — the orange hint text (LEFT) and the
+        // orange countdown bar (RIGHT) float directly *in front of* the glass on
+        // the pill's bottom edge, both the same height. There is no black backing
+        // band: the main text stays vertically centered over the *entire* pill and
+        // the orange elements simply sit on top of the glass below it.
+        /// Hint text — orange, on the bottom edge next to the bar (same height).
         static let hintFontSize: CGFloat = 13
         static let hintTextHeight: CGFloat = 18
         /// Horizontal gap between the hint text and the start of the bar.
@@ -142,13 +140,12 @@ final class BottomLeftBanner {
         /// White overlay above the tint that ramps up during the hover
         /// dwell. Alpha 0 at rest, alpha 1 the instant `onHover` fires.
         let whitenTint: NSView
-        /// Solid black band across the pill's bottom edge, hosting the hint text
-        /// (left) and the progress bar (right). Hidden unless a hint is shown.
-        let bottomBand: NSView
-        /// Hint text ("Hover to …") on the left of the band. Hidden at rest.
+        /// Hint text ("Hover to …") on the bottom-left, floating in front of the
+        /// glass. Hidden at rest.
         let hintLabel: NSTextField
-        /// Orange strip on the right of the band whose width animates from 0
-        /// to fill the band over the hover window. Hidden at rest.
+        /// Orange strip on the bottom edge (right of the hint) whose width
+        /// animates from 0 to fill the remaining width over the hover window,
+        /// floating in front of the glass. Hidden at rest.
         let progressBar: NSView
         /// Two orange 2px stroke layers forming the progressive border, both
         /// starting at the bottom-left corner. `borderUp` runs up the left edge
@@ -544,11 +541,10 @@ final class BottomLeftBanner {
         onHover?()
     }
 
-    /// Show the "Hover to …" hint text on the left of each pill's in-pill black
-    /// band (revealing the band), or hide it. Only when the banner is hoverable,
-    /// has an active `onHover`, and `hint` is non-empty. `fixedLeft` is retained
-    /// for the call site but no longer meaningful — the band is always the full
-    /// bottom strip.
+    /// Show the "Hover to …" hint text on the bottom-left of each pill (floating
+    /// in front of the glass), or hide it. Only when the banner is hoverable, has
+    /// an active `onHover`, and `hint` is non-empty. `fixedLeft` is retained for
+    /// the call site but no longer meaningful — the hint always sits bottom-left.
     private func applyHint(_ hint: String?, fixedLeft: Bool) {
         clearHint()
         guard hoverable, onHover != nil, let hint = hint, !hint.isEmpty else { return }
@@ -564,21 +560,19 @@ final class BottomLeftBanner {
             entry.hintLabel.frame = NSRect(
                 x: Style.hintHPadding, y: 0, width: w, height: Style.hintTextHeight)
             entry.hintLabel.isHidden = false
-            entry.bottomBand.isHidden = false
         }
     }
 
-    /// Hide the band + hint text on every pill.
+    /// Hide the hint text on every pill.
     func clearHint() {
         for entry in panels {
             entry.hintLabel.isHidden = true
             entry.hintLabel.stringValue = ""
-            entry.bottomBand.isHidden = true
         }
     }
 
-    /// The band + hint are in-pill subviews (the band auto-stretches width), so a
-    /// pill move/resize carries them for free — nothing to reposition.
+    /// The hint + bar are in-pill subviews pinned to the bottom edge, so a pill
+    /// move/resize carries them for free — nothing to reposition.
     private func repositionHints() {}
 
     private func applyHoverCountdown(_ duration: TimeInterval?) {
@@ -602,7 +596,6 @@ final class BottomLeftBanner {
         countdownDuration = duration
         countdownElapsed = 0
         for (i, entry) in panels.enumerated() {
-            entry.bottomBand.isHidden = false
             entry.progressBar.isHidden = false
             setBar(entry.progressBar, x: barStartX(at: i), width: 0)
             entry.borderUp.isHidden = false
@@ -636,9 +629,9 @@ final class BottomLeftBanner {
         }
     }
 
-    /// Left edge (in band coordinates) where the progress bar begins: just past
-    /// the hint text (its right edge + a gap) so the bar fills the rest of the
-    /// band to the right. Falls back to the left padding when no hint is showing.
+    /// Left edge where the progress bar begins: just past the hint text (its
+    /// right edge + a gap) so the bar fills the rest of the bottom edge to the
+    /// right. Falls back to the left padding when no hint is showing.
     private func barStartX(at index: Int) -> CGFloat {
         guard index < panels.count, !panels[index].hintLabel.isHidden else { return Style.hintHPadding }
         return panels[index].hintLabel.frame.maxX + Style.hintGap
@@ -797,15 +790,8 @@ final class BottomLeftBanner {
         label.autoresizingMask = [.width]
         content.addSubview(label)
 
-        // Black bottom band across the pill, overlapping the glass; hosts the
-        // hint text (left) + progress bar (right). Hidden until a hint is shown.
-        let band = NSView(frame: NSRect(x: 0, y: 0, width: width, height: Style.bottomBandHeight))
-        band.wantsLayer = true
-        band.layer?.backgroundColor = Style.bottomBandColor.cgColor
-        band.autoresizingMask = [.width] // stretch width, stay pinned to the bottom
-        band.isHidden = true
-        content.addSubview(band)
-
+        // Orange hint text on the bottom-left, floating directly in front of the
+        // glass (no black backing band). Hidden until a hint is shown.
         let hintLabel = NSTextField(labelWithString: "")
         hintLabel.font = Style.hintFont()
         hintLabel.textColor = Style.progressBarColor // orange, matching the bar
@@ -817,8 +803,9 @@ final class BottomLeftBanner {
         hintLabel.isHidden = true
         content.addSubview(hintLabel)
 
-        // Orange countdown bar on the right of the band. Width + x driven by the
-        // countdown; no autoresizing so a panel resize never stretches it.
+        // Orange countdown bar on the bottom edge, right of the hint, in front of
+        // the glass. Width + x driven by the countdown; no autoresizing so a
+        // panel resize never stretches it.
         let progressBar = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: Style.progressBarHeight))
         progressBar.wantsLayer = true
         progressBar.layer?.backgroundColor = Style.progressBarColor.cgColor
@@ -842,16 +829,17 @@ final class BottomLeftBanner {
 
         panel.contentView = content
         return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint,
-                          bottomBand: band, hintLabel: hintLabel,
+                          hintLabel: hintLabel,
                           progressBar: progressBar,
                           borderUp: borderUp, borderRight: borderRight,
                           label: label,
                           font: font, screen: screen)
     }
 
-    /// Main-text frame: left-aligned, vertically centered in the **whole** pill —
-    /// deliberately ignoring the black bottom band, which just overlaps the
-    /// text's bottom edge. Shared by build + resize.
+    /// Main-text frame: left-aligned, vertically centered in the **whole** pill.
+    /// The orange hint + bar float in front of the glass on the bottom edge, below
+    /// the text's centered baseline, so they don't push the text off-center.
+    /// Shared by build + resize.
     private static func mainLabelFrame(pillWidth: CGFloat) -> NSRect {
         NSRect(
             x: Style.leftPadding,
