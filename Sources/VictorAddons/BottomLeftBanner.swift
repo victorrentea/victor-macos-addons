@@ -80,6 +80,50 @@ final class BottomLeftBanner {
         static let hoverNudgeDistance: CGFloat = 10
     }
 
+    // MARK: - Theme
+    //
+    // The pill's glass (NSVisualEffectView `.hudWindow`) renders *dark* in the
+    // OS dark theme and *light* in the light theme automatically — but the text
+    // and the hover feedback were hardcoded for the dark look (white text, a
+    // white "whitening" hover overlay). On a light-mode Mac that left white text
+    // on a near-white pill — barely readable. `Palette` resolves the parts that
+    // must flip with the OS theme so the banner reads well in both.
+    private struct Palette {
+        /// Main label color: white on the dark pill, near-black on the light one.
+        let text: NSColor
+        /// Base color the hover-dwell overlay ramps up: white *lightens* the dark
+        /// pill, black *darkens* the light one (whitening a light pill is invisible).
+        let hoverTintBase: NSColor
+    }
+
+    /// Whether the OS is currently in dark mode, read from the app's effective
+    /// appearance (which tracks the system Appearance setting for our
+    /// nil-appearance panels). Recomputed on each `show()` so a theme switch
+    /// between two banners is honored.
+    private static func isDarkNow() -> Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// A caller-tinted pill (e.g. the red silent-transcription warning) supplies
+    /// its own strong background color; treat only a (near-)transparent tint as
+    /// "glass only", the case that must follow the OS theme.
+    private static func isGlassOnly(_ bg: NSColor) -> Bool {
+        let alpha = bg.usingColorSpace(.sRGB)?.alphaComponent ?? 1
+        return alpha < 0.05
+    }
+
+    private static func palette(isDark: Bool, glassOnly: Bool) -> Palette {
+        // A colored pill defines its own look — white text + a white hover
+        // highlight read on the current red in either OS theme, so only the
+        // glass-only pill flips with the theme.
+        guard glassOnly, !isDark else {
+            return Palette(text: Style.textColor, hoverTintBase: .white)
+        }
+        // Light OS theme, glass-only pill: dark text, and hover *darkens*.
+        return Palette(text: NSColor(calibratedWhite: 0.12, alpha: 1),
+                       hoverTintBase: .black)
+    }
+
     private let screensProvider: () -> [NSScreen]
     private let hoverable: Bool
 
@@ -148,6 +192,11 @@ final class BottomLeftBanner {
     /// Set per `show()`; `.none` disables the nudge (whitening only).
     private var hoverNudge: HoverNudge = .none
 
+    /// Base color the hover-dwell overlay ramps up (see `Palette.hoverTintBase`).
+    /// Resolved from the OS theme on each `show()`: white to lighten a dark pill,
+    /// black to darken a light one.
+    private var hoverTintBase: NSColor = .white
+
     /// Final window opacity when visible. Below 1.0 to add an extra layer
     /// of see-through on top of the NSVisualEffectView glass.
     private static let visibleAlpha: CGFloat = 0.75
@@ -187,6 +236,11 @@ final class BottomLeftBanner {
         hasCountdown = hoverCountdown != nil
         // Direction the pill drifts on dwell (up = confirm, down = cancel).
         self.hoverNudge = hoverNudge
+        // Resolve the OS-theme palette for this presentation: a glass-only pill
+        // flips (dark text on the light Mac theme), a colored pill keeps its look.
+        let palette = Self.palette(isDark: Self.isDarkNow(),
+                                   glassOnly: Self.isGlassOnly(backgroundColor))
+        applyPalette(palette)
         if isVisible {
             updateText(text)
             updateBackgroundColor(backgroundColor)
@@ -198,7 +252,8 @@ final class BottomLeftBanner {
             panels.append(buildPanel(on: screen,
                                      text: text,
                                      bg: backgroundColor,
-                                     font: font))
+                                     font: font,
+                                     palette: palette))
         }
         for entry in panels {
             entry.panel.alphaValue = 0
@@ -210,6 +265,17 @@ final class BottomLeftBanner {
         }
         applyHint(hoverHint, fixedLeft: hasCountdown)
         applyHoverCountdown(hoverCountdown)
+    }
+
+    /// Apply the resolved OS-theme `palette` to every panel: the main label color
+    /// and the hover-tint base. Called from `show()` on both the fresh-build path
+    /// (via `buildPanel`) and the reuse path (an already-visible banner re-shown
+    /// after the user toggled the system theme picks up the new colors).
+    private func applyPalette(_ palette: Palette) {
+        hoverTintBase = palette.hoverTintBase
+        for entry in panels {
+            entry.label.textColor = palette.text
+        }
     }
 
     func updateText(_ text: String) {
@@ -405,7 +471,9 @@ final class BottomLeftBanner {
     }
 
     private func applyWhitenProgress(_ alpha: CGFloat) {
-        let cg = NSColor.white.withAlphaComponent(alpha).cgColor
+        // `hoverTintBase` is white on the dark pill (lighten) and black on the
+        // light one (darken) — whitening a light pill would be invisible.
+        let cg = hoverTintBase.withAlphaComponent(alpha).cgColor
         for entry in panels {
             guard let layer = entry.whitenTint.layer else { continue }
             let anim = CABasicAnimation(keyPath: "backgroundColor")
@@ -578,7 +646,8 @@ final class BottomLeftBanner {
     private func buildPanel(on screen: NSScreen,
                             text: String,
                             bg: NSColor,
-                            font: NSFont) -> PanelEntry {
+                            font: NSFont,
+                            palette: Palette) -> PanelEntry {
         let frame = screen.frame
         let width = panelWidth(for: text, font: font, screen: screen)
         let rect = NSRect(x: frame.minX, y: frame.minY, width: width, height: Style.boxHeight)
@@ -623,12 +692,14 @@ final class BottomLeftBanner {
         let whitenTint = NSView(frame: content.bounds)
         whitenTint.autoresizingMask = [.width, .height]
         whitenTint.wantsLayer = true
-        whitenTint.layer?.backgroundColor = NSColor.white.withAlphaComponent(0).cgColor
+        // Fully transparent at rest (the base color only matters once dwell
+        // ramps its alpha up); `hoverTintBase` was set from the palette in show().
+        whitenTint.layer?.backgroundColor = hoverTintBase.withAlphaComponent(0).cgColor
         content.addSubview(whitenTint)
 
         let label = NSTextField(labelWithString: text)
         label.font = font
-        label.textColor = Style.textColor
+        label.textColor = palette.text
         label.alignment = .left
         label.isBezeled = false
         label.isEditable = false

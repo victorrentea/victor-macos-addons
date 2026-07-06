@@ -23,6 +23,14 @@ final class BreakTimerController {
     private static let enlargeFraction: CGFloat = 0.85               // big frame fills 85% of the screen
     private static let enlargeAnimationDuration: TimeInterval = 0.3   // enlarge/restore animation
 
+    /// Seconds from the start of `50_gong.mp3` to its audible strike. The clip
+    /// opens with ~1.0s of near-silence and its RMS/absolute peak (the loud
+    /// "BONG") lands at ~1.02s in (measured with ffmpeg). The expiry shake is
+    /// delayed by this so the watch's most violent wobble coincides with the
+    /// strike you hear — not with the silent lead-in (which made the shake peak
+    /// a full second early).
+    private static let gongStrikePeak: Double = 1.02
+
     private var panel: BreakTimerPanel?
     private var view: BreakTimerView?
 
@@ -395,8 +403,12 @@ final class BreakTimerController {
         let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 8.6
 
         SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1 (full)
-        // One continuous chaotic shake spanning both strikes; peaks at t=0 and t=gong.
-        startExpiryShake(totalDuration: 2 * gong, strikeAt: [0, gong])
+        // One continuous chaotic shake spanning both strikes. Each strike's audible
+        // "BONG" lands `gongStrikePeak` (~1.02s) into its clip, so peak the shake
+        // there — not at t=0 / t=gong (the silent lead-in), which desynced the
+        // wobble from the sound.
+        let peak = Self.gongStrikePeak
+        startExpiryShake(totalDuration: 2 * gong, strikeAt: [peak, gong + peak])
         DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
