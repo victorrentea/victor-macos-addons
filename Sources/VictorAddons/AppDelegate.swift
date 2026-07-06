@@ -384,6 +384,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             SoundManager.shared.setTabletVolume(Float(pct) / 100)
         }
         tabletServer?.onSoundStop = { SoundManager.shared.stopTabletSound() }
+        // Bluetooth wake-up compensation slider (tablet header). The tablet owns
+        // the persisted value and re-pushes it on every (re)connect, so the Mac
+        // just applies whatever it's told; the file default seeds the tablet's
+        // slider the first time via the GET below.
+        tabletServer?.onBtCompensationGet = {
+            let ms = Int((SoundTimingConfig.shared.effectiveBluetoothCompensationSeconds * 1000).rounded())
+            let maxMs = Int((SoundTimingConfig.maxCompensationSeconds * 1000).rounded())
+            return "{\"ms\":\(ms),\"maxMs\":\(maxMs)}"
+        }
+        tabletServer?.onBtCompensationSet = { ms in
+            SoundTimingConfig.shared.setBluetoothCompensation(seconds: Double(ms) / 1000.0)
+            let applied = Int((SoundTimingConfig.shared.effectiveBluetoothCompensationSeconds * 1000).rounded())
+            return "{\"ok\":true,\"ms\":\(applied)}"
+        }
         // Watchdog: if the tablet stops pinging (crash, network drop) while a
         // tablet-routed sound is playing, stop it — otherwise a long sound
         // would blare on with no way to stop it from the tablet.

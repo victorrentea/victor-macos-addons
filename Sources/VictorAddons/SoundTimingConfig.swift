@@ -17,9 +17,23 @@ final class SoundTimingConfig {
     static let shared = SoundTimingConfig()
 
     /// Seconds of silence to prepend (and to delay the paired animation by)
-    /// when the current default output is Bluetooth. Default 0.55s mirrors the
-    /// tablet's `BT_WAKE_MS`.
+    /// when the current default output is Bluetooth. Loaded from
+    /// `sound-timing.json` (Mac prefers `macBluetoothCompensationMs`); this is
+    /// the *baked-in default* — the tablet's header slider can override it at
+    /// runtime (see `overrideSeconds` / `setBluetoothCompensation`).
     let bluetoothCompensationSeconds: TimeInterval
+
+    /// Hard ceiling for the BT compensation, matching the tablet slider's 0–1.2s
+    /// range. Any override is clamped into `0...maxCompensationSeconds`.
+    static let maxCompensationSeconds: TimeInterval = 1.2
+
+    /// Live override pushed by the tablet's header slider (persisted on the
+    /// tablet, re-pushed on every (re)connect). `nil` until the tablet sets one,
+    /// in which case the file default applies. Guarded by `lock` because the
+    /// setter runs on the HTTP server's main-sync closure while sound playback
+    /// reads it on the main thread too — the lock keeps it safe regardless.
+    private var overrideSeconds: TimeInterval?
+    private let lock = NSLock()
 
     /// `animationLeadMs` per sound file, in seconds.
     let animationLeads: [String: TimeInterval]
@@ -64,9 +78,25 @@ final class SoundTimingConfig {
     /// The animation→sound lead for a file (0 if none).
     func animationLead(for file: String) -> TimeInterval { animationLeads[file] ?? 0 }
 
-    /// Compensation to apply **right now**: the configured seconds when the
+    /// The BT wake-up compensation in effect right now regardless of the current
+    /// output route: the tablet-set override if present, else the file default.
+    var effectiveBluetoothCompensationSeconds: TimeInterval {
+        lock.lock(); defer { lock.unlock() }
+        return overrideSeconds ?? bluetoothCompensationSeconds
+    }
+
+    /// Override the BT wake-up compensation from the tablet slider. Clamped to
+    /// `0...maxCompensationSeconds`. Pass a value; there is no "clear" — the
+    /// tablet always pushes an explicit number.
+    func setBluetoothCompensation(seconds: TimeInterval) {
+        let clamped = max(0, min(Self.maxCompensationSeconds, seconds))
+        lock.lock(); overrideSeconds = clamped; lock.unlock()
+        overlayInfo("⏱️ BT compensation set to \(Int((clamped * 1000).rounded()))ms (tablet slider)")
+    }
+
+    /// Compensation to apply **right now**: the effective seconds when the
     /// current default output is Bluetooth, otherwise 0.
     var currentBluetoothCompensation: TimeInterval {
-        BluetoothOutput.isDefaultOutputBluetooth ? bluetoothCompensationSeconds : 0
+        BluetoothOutput.isDefaultOutputBluetooth ? effectiveBluetoothCompensationSeconds : 0
     }
 }

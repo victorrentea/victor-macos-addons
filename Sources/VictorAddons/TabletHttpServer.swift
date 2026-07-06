@@ -16,6 +16,12 @@ class TabletHttpServer {
         case soundPlay(String, Int?)
         case soundVolume(Int)
         case soundStop
+        /// Read the current Bluetooth wake-up compensation (ms) — the tablet
+        /// seeds its header slider from this when it has no persisted value.
+        case btCompensationGet
+        /// Set the Bluetooth wake-up compensation to N ms (clamped 0…1200) from
+        /// the tablet's header slider.
+        case btCompensationSet(Int)
         /// Tablet reports a sound button was pressed; the Mac decides (via
         /// SoundEffectMap) whether to trigger a paired overlay effect.
         case soundPressed(String)
@@ -84,6 +90,12 @@ class TabletHttpServer {
     /// play a feedback click at the new level.
     var onSoundVolume: ((Int) -> Void)?
     var onSoundStop: (() -> Void)?
+    /// Returns JSON with the current BT wake-up compensation, e.g.
+    /// `{"ms":800,"maxMs":1200}`.
+    var onBtCompensationGet: (() -> String)?
+    /// Sets the BT wake-up compensation to N ms; returns JSON with the value
+    /// actually applied (after clamping), e.g. `{"ok":true,"ms":800}`.
+    var onBtCompensationSet: ((Int) -> String)?
     /// Tablet reports a sound press by bare filename; the Mac maps it to a
     /// paired overlay effect (or ignores it). Mapping lives on the Mac.
     var onSoundPressed: ((String) -> Void)?
@@ -185,6 +197,13 @@ class TabletHttpServer {
                     self?.onSoundVolume?(pct)
                 case .soundStop:
                     self?.onSoundStop?()
+                case .btCompensationGet:
+                    contentType = "application/json"
+                    body = self?.onBtCompensationGet?() ?? "{\"error\":\"unavailable\"}"
+                    if self?.onBtCompensationGet == nil { statusCode = 503 }
+                case .btCompensationSet(let ms):
+                    contentType = "application/json"
+                    body = self?.onBtCompensationSet?(ms) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
                 case .soundPressed(let name):
                     self?.onSoundPressed?(name)
                 case .soundStopped(let name):
@@ -301,6 +320,8 @@ class TabletHttpServer {
             return .soundsManifest
         case "/sound/stop":
             return .soundStop
+        case "/bt-compensation":
+            return .btCompensationGet
         case "/videos":
             return .videos
         case "/video/stop":
@@ -376,6 +397,11 @@ class TabletHttpServer {
             if pathOnly.hasPrefix("/sound/volume/") {
                 if let pct = Int(pathOnly.dropFirst("/sound/volume/".count)) {
                     return .soundVolume(pct)
+                }
+            }
+            if pathOnly.hasPrefix("/bt-compensation/") {
+                if let ms = Int(pathOnly.dropFirst("/bt-compensation/".count)) {
+                    return .btCompensationSet(ms)
                 }
             }
             if pathOnly.hasPrefix("/video/play/") {
