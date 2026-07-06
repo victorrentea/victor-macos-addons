@@ -82,6 +82,13 @@ final class WhipController {
 
         p.orderFrontRegardless()
 
+        // On Bluetooth output, keep the A2DP amp continuously warm for the whole
+        // time the whip is on screen. A crack can fire at any instant, so rather
+        // than delay each crack sound to cover BT spin-up (which would trail it
+        // behind the visual crack), we warm the link now and play cracks with no
+        // delay — they stay in sync with the on-screen crack. No-op off Bluetooth.
+        BluetoothOutput.startContinuousWarm()
+
         installEscMonitors()
         startTimer()
         onVisibilityChanged?(true)
@@ -92,6 +99,7 @@ final class WhipController {
         displayTimer?.invalidate()
         displayTimer = nil
         removeEscMonitors()
+        BluetoothOutput.stopContinuousWarm()
         panel?.orderOut(nil)
         panel = nil
         view = nil
@@ -113,7 +121,9 @@ final class WhipController {
         if now - lastForceCrackMs < 160 { return }
         lastForceCrackMs = now
         if let sound = crackSounds.randomElement() {
-            SoundManager.shared.playOverlapping(sound, volume: 0.8)
+            // No BT delay: the overlay keeps the A2DP link warm, so the crack
+            // plays now, in sync with the scripted flick's on-screen crack.
+            SoundManager.shared.playOverlapping(sound, volume: 0.8, bluetoothCompensated: false)
         }
         suppressNaturalCrackUntilMs = now + 500
         startScriptedFlick()
@@ -154,7 +164,9 @@ final class WhipController {
         // own forceCrack already played one (avoid doubling).
         if cracked && now > suppressNaturalCrackUntilMs {
             if let sound = crackSounds.randomElement() {
-                SoundManager.shared.playOverlapping(sound, volume: 0.8)
+                // No BT delay — the warm link (see show()) lets this land in
+                // sync with the physics crack instead of trailing it.
+                SoundManager.shared.playOverlapping(sound, volume: 0.8, bluetoothCompensated: false)
             }
         }
         view.points = physics.points

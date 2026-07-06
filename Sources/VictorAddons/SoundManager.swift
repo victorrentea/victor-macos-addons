@@ -129,7 +129,15 @@ class SoundManager {
 
     /// Play a sound from the bundle Resources folder.
     /// If the same sound is already playing, does nothing (no restart).
-    func play(_ filename: String, volume: Float = 1.0) {
+    ///
+    /// `bluetoothCompensated` (default true) applies the standard A2DP warm-up +
+    /// start delay when the Mac's output is Bluetooth (see
+    /// `startWithBluetoothCompensation`). Pass `false` when the CALLER already
+    /// owns the Bluetooth timing — e.g. the 🛰️ sonar, which delays both its
+    /// audio AND its visual by the compensation itself; letting this method add
+    /// the delay a second time would push the beeps 2×btComp late and desync
+    /// them from the sweep again.
+    func play(_ filename: String, volume: Float = 1.0, bluetoothCompensated: Bool = true) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
@@ -148,7 +156,11 @@ class SoundManager {
                 player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.players[filename] = player
-                self.startWithBluetoothCompensation(player)
+                if bluetoothCompensated {
+                    self.startWithBluetoothCompensation(player)
+                } else {
+                    player.play()
+                }
             } catch {
                 overlayError("Sound play failed \(filename): \(error)")
             }
@@ -157,7 +169,15 @@ class SoundManager {
 
     /// Play a new instance of the sound every time, layering over any already-playing copies.
     /// The player is released automatically when playback finishes.
-    func playOverlapping(_ filename: String, volume: Float = 1.0) {
+    ///
+    /// `bluetoothCompensated` (default true) applies the standard A2DP warm-up +
+    /// start delay when the Mac's output is Bluetooth (see
+    /// `startWithBluetoothCompensation`). Pass `false` when the sound must land
+    /// **now**, in sync with an on-screen event — e.g. the 🔥 whip crack, whose
+    /// overlay keeps the A2DP link continuously warm (`BluetoothOutput.startContinuousWarm`)
+    /// for its whole lifetime, so the amp is already spun up and the delay would
+    /// only push the crack sound late behind the visual crack.
+    func playOverlapping(_ filename: String, volume: Float = 1.0, bluetoothCompensated: Bool = true) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             guard let url = self.soundURL(for: filename) else {
@@ -169,7 +189,13 @@ class SoundManager {
                 player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
                 self.overlappingPlayers.append(player)
-                let comp = self.startWithBluetoothCompensation(player)
+                let comp: TimeInterval
+                if bluetoothCompensated {
+                    comp = self.startWithBluetoothCompensation(player)
+                } else {
+                    player.play()
+                    comp = 0
+                }
                 // Clean up finished players after this one ends
                 DispatchQueue.main.asyncAfter(deadline: .now() + comp + player.duration + 0.1) { [weak self] in
                     self?.overlappingPlayers.removeAll { !$0.isPlaying }

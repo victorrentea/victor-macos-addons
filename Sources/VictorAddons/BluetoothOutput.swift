@@ -93,6 +93,44 @@ enum BluetoothOutput {
         }
     }
 
+    // MARK: - Continuous A2DP warm (interactive features)
+
+    /// Looping near-silent player that keeps a Bluetooth A2DP link continuously
+    /// awake while an interactive feature (the 🔥 whip) is on screen, so a
+    /// crack/"splash" fired at any instant plays with **no amp spin-up lag**.
+    /// That is what lets those cracks be played WITHOUT the usual start delay —
+    /// the sound stays in sync with the on-screen crack instead of trailing it
+    /// by `bluetoothCompensationMs`. Main thread only (AVAudioPlayer isn't
+    /// thread-safe).
+    private static var warmPlayer: AVAudioPlayer?
+
+    /// Start the continuous warm tone **iff** the current default output is
+    /// Bluetooth. Idempotent (a second call while already warming is a no-op)
+    /// and a no-op on built-in/wired output. Pair every call with
+    /// `stopContinuousWarm()`.
+    static func startContinuousWarm() {
+        guard isDefaultOutputBluetooth else { return }
+        if warmPlayer?.isPlaying == true { return }
+        do {
+            // A 2s near-silent loop; each end fades to zero so the loop
+            // boundary is click-free and the ≈ -56 dBFS tone stays inaudible.
+            let p = try AVAudioPlayer(data: makeSilentToneWav(seconds: 2.0))
+            p.numberOfLoops = -1
+            p.volume = 1.0  // amplitude is baked into the samples
+            p.prepareToPlay()
+            warmPlayer = p
+            p.play()
+        } catch {
+            overlayError("BT continuous warm failed: \(error)")
+        }
+    }
+
+    /// Stop the continuous warm tone (safe if it isn't running).
+    static func stopContinuousWarm() {
+        warmPlayer?.stop()
+        warmPlayer = nil
+    }
+
     // MARK: - Tone generation
 
     /// Build a mono 16-bit PCM WAV of a very quiet sine burst with 10ms fades
