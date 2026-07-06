@@ -177,7 +177,12 @@ class SoundManager {
     /// overlay keeps the A2DP link continuously warm (`BluetoothOutput.startContinuousWarm`)
     /// for its whole lifetime, so the amp is already spun up and the delay would
     /// only push the crack sound late behind the visual crack.
-    func playOverlapping(_ filename: String, volume: Float = 1.0, bluetoothCompensated: Bool = true) {
+    ///
+    /// `startAt` (seconds) seeks past the head of the file before playing —
+    /// used to skip a sample's built-in lead-in so its transient bangs
+    /// immediately (e.g. the whip cracks, whose samples carry up to ~170ms of
+    /// wind-up swish before the actual snap). Clamped inside the clip.
+    func playOverlapping(_ filename: String, volume: Float = 1.0, bluetoothCompensated: Bool = true, startAt: TimeInterval = 0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             guard let url = self.soundURL(for: filename) else {
@@ -188,6 +193,7 @@ class SoundManager {
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.volume = max(0.0, min(1.0, volume))
                 player.prepareToPlay()
+                if startAt > 0 { player.currentTime = min(startAt, max(0, player.duration - 0.05)) }
                 self.overlappingPlayers.append(player)
                 let comp: TimeInterval
                 if bluetoothCompensated {

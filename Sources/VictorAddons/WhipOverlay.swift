@@ -49,6 +49,28 @@ final class WhipController {
 
     private let crackSounds = ["whip_A.mp3", "whip_B.mp3", "whip_C.mp3", "whip_D.mp3", "whip_E.mp3"]
 
+    /// Seconds of built-in lead-in before each sample's actual SNAP (measured at
+    /// -18 dB, minus a ~10ms pre-roll so the attack stays punchy). We seek each
+    /// crack player here so its transient bangs the instant the whip visually
+    /// cracks — otherwise whip_B/D bury the snap behind ~140-170ms of wind-up
+    /// swish and the crack you hear trails the visual by that much, at random.
+    private static let crackOnset: [String: TimeInterval] = [
+        "whip_A.mp3": 0.0,
+        "whip_B.mp3": 0.13,
+        "whip_C.mp3": 0.0,
+        "whip_D.mp3": 0.155,
+        "whip_E.mp3": 0.06,
+    ]
+
+    /// Play a random crack sample, seeked to its snap onset and with no BT delay
+    /// (the overlay keeps the A2DP link warm), so the crack lands as tightly as
+    /// possible on the on-screen crack.
+    private func playCrack() {
+        guard let sound = crackSounds.randomElement() else { return }
+        SoundManager.shared.playOverlapping(
+            sound, volume: 0.8, bluetoothCompensated: false, startAt: Self.crackOnset[sound] ?? 0)
+    }
+
     var isShowing: Bool { panel != nil }
 
     /// Monotonic milliseconds for deterministic-style timing (grace/cooldown).
@@ -120,11 +142,7 @@ final class WhipController {
         let now = nowMs()
         if now - lastForceCrackMs < 160 { return }
         lastForceCrackMs = now
-        if let sound = crackSounds.randomElement() {
-            // No BT delay: the overlay keeps the A2DP link warm, so the crack
-            // plays now, in sync with the scripted flick's on-screen crack.
-            SoundManager.shared.playOverlapping(sound, volume: 0.8, bluetoothCompensated: false)
-        }
+        playCrack()
         suppressNaturalCrackUntilMs = now + 500
         startScriptedFlick()
     }
@@ -163,11 +181,7 @@ final class WhipController {
         // Play the natural crack sound — but not during a scripted flick, whose
         // own forceCrack already played one (avoid doubling).
         if cracked && now > suppressNaturalCrackUntilMs {
-            if let sound = crackSounds.randomElement() {
-                // No BT delay — the warm link (see show()) lets this land in
-                // sync with the physics crack instead of trailing it.
-                SoundManager.shared.playOverlapping(sound, volume: 0.8, bluetoothCompensated: false)
-            }
+            playCrack()
         }
         view.points = physics.points
         view.needsDisplay = true
