@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 3, 07:15"
+    static let BUILD_TIME = "Jul 6, 12:59"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -121,24 +121,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Copy Git
         addItem("IntelliJ: Copy Git", action: #selector(copyGitAction))
 
-        // ☕️ Break — countdown "watch" overlay
-        let breakItem = NSMenuItem(title: "☕️ Break", action: nil, keyEquivalent: "")
-        breakItem.isEnabled = true
-        let breakSubmenu = NSMenu()
+        // ☕️ Break — countdown "watch" overlay. The durations are FLAT items
+        // in the main menu (no submenu), each starting/resetting the overlay
+        // directly on click.
         let breakDurations: [(String, Int)] = [
-            ("1 minute", 1), ("2 minutes", 2),
-            ("5 minutes", 5), ("7 minutes", 7), ("10 minutes", 10),
-            ("12 minutes", 12), ("15 minutes", 15), ("45 minutes", 45), ("1 hour", 60),
+            ("☕️ Break of 1 minute", 1),
+            ("☕️ Break of 5 minutes", 5),
+            ("☕️ Break of 10 minutes", 10),
+            ("☕️ Break of 12 minutes", 12),
+            ("☕️ Break of 15 minutes", 15),
+            ("☕️ Break of 1 hour", 60),
         ]
         for (title, minutes) in breakDurations {
             let item = NSMenuItem(title: title, action: #selector(breakAction(_:)), keyEquivalent: "")
             item.target = self
             item.isEnabled = true
             item.representedObject = minutes
-            breakSubmenu.addItem(item)
+            menu.addItem(item)
         }
-        breakItem.submenu = breakSubmenu
-        menu.addItem(breakItem)
 
         menu.addItem(.separator())
 
