@@ -75,6 +75,15 @@ final class BottomLeftBanner {
         static let progressBarHeight: CGFloat = 18
         static let progressBarColor: NSColor = .systemOrange
 
+        // MARK: Progressive border — a 2px orange outline drawn *in lockstep* with
+        // the hover-countdown bar. From the bottom-left corner two strokes grow at
+        // equal speed — one UP the left edge then across the top, one RIGHT along
+        // the bottom then up the right edge — meeting at the top-right corner
+        // exactly when the bar fills (both paths have equal length w+h, so the
+        // shared countdown progress reaches the corner from both sides together).
+        static let borderWidth: CGFloat = 2
+        static let borderColor: NSColor = .systemOrange
+
         // MARK: Hover nudge — how far (points) the pill drifts up/down at full
         // dwell. Deliberately small: a subtle directional cue, not a jump.
         static let hoverNudgeDistance: CGFloat = 10
@@ -141,6 +150,13 @@ final class BottomLeftBanner {
         /// Orange strip on the right of the band whose width animates from 0
         /// to fill the band over the hover window. Hidden at rest.
         let progressBar: NSView
+        /// Two orange 2px stroke layers forming the progressive border, both
+        /// starting at the bottom-left corner. `borderUp` runs up the left edge
+        /// then across the top; `borderRight` runs along the bottom then up the
+        /// right edge. Their `strokeEnd` tracks the countdown progress, so they
+        /// meet at the top-right corner when the bar fills. Hidden at rest.
+        let borderUp: CAShapeLayer
+        let borderRight: CAShapeLayer
         let label: NSTextField
         /// Kept so `updateText` can re-measure and resize the box to hug the
         /// new text (still capped at `maxWidthFraction` of this screen).
@@ -316,6 +332,9 @@ final class BottomLeftBanner {
         entry.panel.setFrame(NSRect(x: f.minX, y: f.minY, width: width, height: Style.boxHeight),
                              display: true)
         entry.label.frame = Self.mainLabelFrame(pillWidth: width)
+        // The border host autoresizes, but its stroke paths are absolute — rebuild
+        // them for the new width so an in-flight border keeps hitting the corners.
+        updateBorderPaths(entry)
     }
 
     /// Update the gray-tint color over the glass. When `animated`, the
@@ -586,6 +605,10 @@ final class BottomLeftBanner {
             entry.bottomBand.isHidden = false
             entry.progressBar.isHidden = false
             setBar(entry.progressBar, x: barStartX(at: i), width: 0)
+            entry.borderUp.isHidden = false
+            entry.borderRight.isHidden = false
+            updateBorderPaths(entry)
+            setBorderProgress(entry, 0)
         }
         countdownTimer = Timer.scheduledTimer(withTimeInterval: Self.countdownTick, repeats: true) { [weak self] _ in
             self?.tickCountdown()
@@ -603,6 +626,9 @@ final class BottomLeftBanner {
             let startX = barStartX(at: i)
             let track = max(0, entry.panel.frame.width - startX - Style.hintHPadding)
             setBar(entry.progressBar, x: startX, width: CGFloat(progress) * track)
+            // Same progress drives the border: both strokes reach the top-right
+            // corner exactly as the bar fills.
+            setBorderProgress(entry, CGFloat(progress))
         }
         if countdownElapsed >= countdownDuration {
             countdownTimer?.invalidate(); countdownTimer = nil
@@ -629,6 +655,65 @@ final class BottomLeftBanner {
         CATransaction.commit()
     }
 
+    /// The two equal-length border paths for a pill of `width` × `height`, both
+    /// starting at the bottom-left corner (inset by half the stroke so the 2px
+    /// line stays inside the pill):
+    ///   • `up`    — up the left edge, then across the top to the top-right corner.
+    ///   • `right` — along the bottom edge, then up the right edge to the same corner.
+    /// Both have length (width - 2·inset) + (height - 2·inset), so a shared
+    /// `strokeEnd` (the countdown progress) draws equal arc-length on each and
+    /// they converge at the top-right corner together.
+    private static func borderPaths(width w: CGFloat, height h: CGFloat) -> (up: CGPath, right: CGPath) {
+        let inset = Style.borderWidth / 2
+        let left = inset, right = w - inset, bottom = inset, top = h - inset
+        let up = CGMutablePath()
+        up.move(to: CGPoint(x: left, y: bottom))
+        up.addLine(to: CGPoint(x: left, y: top))
+        up.addLine(to: CGPoint(x: right, y: top))
+        let rightP = CGMutablePath()
+        rightP.move(to: CGPoint(x: left, y: bottom))
+        rightP.addLine(to: CGPoint(x: right, y: bottom))
+        rightP.addLine(to: CGPoint(x: right, y: top))
+        return (up, rightP)
+    }
+
+    /// A hidden, unfilled orange stroke layer for one border path, starting at
+    /// `strokeEnd = 0` (nothing drawn until the countdown advances it).
+    private static func makeBorderLayer(path: CGPath) -> CAShapeLayer {
+        let layer = CAShapeLayer()
+        layer.path = path
+        layer.fillColor = NSColor.clear.cgColor
+        layer.strokeColor = Style.borderColor.cgColor
+        layer.lineWidth = Style.borderWidth
+        layer.lineJoin = .miter
+        layer.lineCap = .butt
+        layer.strokeEnd = 0
+        layer.isHidden = true
+        return layer
+    }
+
+    /// Rebuild both border layers' paths for the panel's current width (called on
+    /// countdown start and on resize, so an in-flight border tracks the new size).
+    private func updateBorderPaths(_ entry: PanelEntry) {
+        let (up, right) = Self.borderPaths(width: entry.panel.frame.width, height: Style.boxHeight)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entry.borderUp.path = up
+        entry.borderRight.path = right
+        CATransaction.commit()
+    }
+
+    /// Reveal `p` (0…1) of both border strokes, without the implicit stroke
+    /// animation, so the border freezes instantly with the bar when the cursor
+    /// lands on the pill.
+    private func setBorderProgress(_ entry: PanelEntry, _ p: CGFloat) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entry.borderUp.strokeEnd = p
+        entry.borderRight.strokeEnd = p
+        CATransaction.commit()
+    }
+
     /// Stop the countdown and hide the bar on every panel. Called on each
     /// show() (so a reused banner never shows a stale bar), on dismiss(), and
     /// by callers once the window closes another way (e.g. a countdown overlay
@@ -639,6 +724,9 @@ final class BottomLeftBanner {
         for entry in panels {
             setBar(entry.progressBar, x: 0, width: 0)
             entry.progressBar.isHidden = true
+            setBorderProgress(entry, 0)
+            entry.borderUp.isHidden = true
+            entry.borderRight.isHidden = true
         }
     }
 
@@ -738,10 +826,26 @@ final class BottomLeftBanner {
         progressBar.isHidden = true
         content.addSubview(progressBar)
 
+        // Progressive border: a transparent overlay view (topmost so the stroke
+        // sits above the glass/tint/label) hosting the two orange stroke layers.
+        // The strokes' `path` is rebuilt on resize; their `strokeEnd` tracks the
+        // countdown. `masksToBounds` stays off so the 2px line renders fully.
+        let borderHost = NSView(frame: content.bounds)
+        borderHost.wantsLayer = true
+        borderHost.autoresizingMask = [.width, .height]
+        let (upPath, rightPath) = Self.borderPaths(width: width, height: Style.boxHeight)
+        let borderUp = Self.makeBorderLayer(path: upPath)
+        let borderRight = Self.makeBorderLayer(path: rightPath)
+        borderHost.layer?.addSublayer(borderUp)
+        borderHost.layer?.addSublayer(borderRight)
+        content.addSubview(borderHost)
+
         panel.contentView = content
         return PanelEntry(panel: panel, tint: tint, whitenTint: whitenTint,
                           bottomBand: band, hintLabel: hintLabel,
-                          progressBar: progressBar, label: label,
+                          progressBar: progressBar,
+                          borderUp: borderUp, borderRight: borderRight,
+                          label: label,
                           font: font, screen: screen)
     }
 
