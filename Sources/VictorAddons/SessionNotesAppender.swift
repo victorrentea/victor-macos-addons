@@ -118,11 +118,12 @@ enum SessionNotesAppender {
         return collapsed.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Label for the prompt-capture offer: collapse to one line and prefix the
-    /// up-arrow. No character cap — the banner box grows up to half the screen
-    /// width and the label truncates with its own ellipsis only past that.
+    /// Label for the prompt-capture offer: collapse to one line. No prefix — the
+    /// marching send arrow now shows the direction. No character cap either — the
+    /// banner box grows up to half the screen width and the label truncates with
+    /// its own ellipsis only past that.
     private static func formatPromptLabel(from text: String) -> String {
-        return "⬆️ " + singleLine(text)
+        return singleLine(text)
     }
 
     enum NotesError: Error { case noSession, noNotesFile }
@@ -158,7 +159,7 @@ enum SessionNotesAppender {
     private static func pasteAndOfferUndo(text: String) {
         do {
             let (notes, offset) = try writeNotes(text)
-            showUndoable("⬆️ Pasted: " + singleLine(text),
+            showUndoable("Pasted: " + singleLine(text),
                          undo: { performUndo(file: notes, toOffset: offset) })
         } catch {
             reportWriteFailure(error)
