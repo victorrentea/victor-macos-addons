@@ -108,6 +108,26 @@ _DEFAULT_THRESHOLD = 0.018
 _ME_PATTERNS = ["Wireless Mic", "Room Speakerphone", "XLR", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
+# ── Mic auto-switch (signal-aware) ───────────────────────────────────────────
+# Every _AUTO_SWITCH_INTERVAL seconds while transcribing, probe the candidate
+# "me" mics for real signal. Upgrade to a higher-priority mic that has sound
+# immediately; only downgrade to a lower-priority mic after the current one has
+# been silent for _AUTO_SWITCH_SILENCE_SEC (so natural speech pauses don't
+# trigger it). Bluetooth mics are never probed — opening a BT input forces the
+# device into HFP (call) mode and wrecks A2DP music — so they take part only via
+# presence-based selection, not signal probing.
+_AUTO_SWITCH_INTERVAL = int(os.environ.get("WHISPER_AUTO_SWITCH_INTERVAL", "60"))
+_AUTO_SWITCH_SILENCE_SEC = int(os.environ.get("WHISPER_AUTO_SWITCH_SILENCE_SEC", "120"))
+_PROBE_SECONDS = float(os.environ.get("WHISPER_PROBE_SECONDS", "0.8"))
+
+
+def _threshold_for_name(name: str) -> float:
+    n = name.lower()
+    for pattern, thresh in _THRESHOLDS.items():
+        if pattern in n:
+            return thresh
+    return _DEFAULT_THRESHOLD
+
 _HALLUCINATIONS = {
     # Generic Whisper hallucinations
     "thank you.",
@@ -312,6 +332,70 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
     return None
 
 
+def _resolve_all_me_candidates() -> list[tuple[int, str, bool]]:
+    """All present+alive _ME_PATTERNS input devices in priority order (best
+    first), deduped by index. Each tuple is (sounddevice_index, name,
+    is_bluetooth). Mirrors _resolve_device_coreaudio's matching + preferred/hint
+    ordering so auto-switch respects the same priority."""
+    import sounddevice as sd
+
+    ca_devices = [d for d in list_input_devices() if d["alive"]]
+    alive_ca_names = [d["name"] for d in ca_devices]
+    bt_names = [
+        d["name"] for d in ca_devices
+        if "bluetooth" in str(d.get("transport_name", "")).lower()
+    ]
+    patterns = list(_ME_PATTERNS)
+    hint_patterns = _parse_pattern_env("WHISPER_ME_DEVICE_HINT")
+    preferred = _read_preferred_source()
+    if hint_patterns:
+        patterns = hint_patterns + patterns
+    if preferred:
+        patterns = [preferred] + patterns
+
+    out: list[tuple[int, str, bool]] = []
+    seen: set[int] = set()
+    for pattern in patterns:
+        plower = pattern.lower()
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_input_channels"] <= 0 or i in seen:
+                continue
+            if plower not in d["name"].lower():
+                continue
+            if any(_names_equivalent(d["name"], ca) for ca in alive_ca_names):
+                is_bt = any(_names_equivalent(d["name"], bt) for bt in bt_names)
+                out.append((i, d["name"], is_bt))
+                seen.add(i)
+                break
+    return out
+
+
+def _probe_has_sound(idx: int, name: str, is_bluetooth: bool = False) -> bool:
+    """Open the device briefly and return True if its RMS clears the device's
+    silence threshold (real audio, not just presence). Bluetooth mics are never
+    probed — opening a BT input forces HFP (call) mode and wrecks A2DP music."""
+    if is_bluetooth:
+        return False
+    import sounddevice as sd
+
+    try:
+        frames = int(_SAMPLE_RATE * _PROBE_SECONDS)
+        rec = sd.rec(frames, samplerate=_SAMPLE_RATE, channels=1,
+                     dtype="float32", device=idx, blocking=True)
+        rms = float(np.sqrt(np.mean(rec[:, 0] ** 2)))
+        thresh = _threshold_for_name(name)
+        has = rms >= thresh
+        log.info(
+            "transcript",
+            f"🎙️ probe {_short_device_name(name)}: rms={rms:.4f} "
+            f"thr={thresh:.4f} → {'sound' if has else 'silent'}",
+        )
+        return has
+    except Exception as exc:
+        log.error("transcript", f"🎙️ probe failed for {name!r}: {exc}")
+        return False
+
+
 # ── Audio capture ────────────────────────────────────────────────────────────
 class _ChannelCapture:
     def __init__(
@@ -332,6 +416,15 @@ class _ChannelCapture:
         self._overlap = int(_SAMPLE_RATE * _OVERLAP_SEC)
         self._running = False
         self._stream = None
+        # Monotonic time this channel last had audio above its threshold. Feeds
+        # the auto-switch "current mic went silent" test. Assume signal at start
+        # (and reset on each device switch) so a fresh device gets a full grace
+        # window before it's judged silent.
+        self._last_signal_ts = time.monotonic()
+
+    def silent_for(self) -> float:
+        """Seconds since this channel last had audio above its threshold."""
+        return time.monotonic() - self._last_signal_ts
 
     def start(self):
         self._running = True
@@ -360,6 +453,8 @@ class _ChannelCapture:
                 pass
             self._stream = None
         self._buf = np.zeros(0, dtype=np.float32)
+        # Fresh device gets a full grace window before it's judged silent.
+        self._last_signal_ts = time.monotonic()
         log.info("transcript", f"🎙️ [{self.label}] {old_name} → {new_name}")
 
     def _current_threshold(self) -> float:
@@ -439,6 +534,7 @@ class _ChannelCapture:
             rms = float(np.sqrt(np.mean(chunk**2)))
             threshold = self._current_threshold()
             if rms >= threshold:
+                self._last_signal_ts = time.monotonic()
                 tag = _short_device_name(self.device_name)
                 self._queue.put((self.label, chunk, tag))
             elif rms > 0.001:  # non-silent but below threshold — log for debugging
@@ -668,6 +764,11 @@ class WhisperTranscriptionRunner:
                 target=self._watch_preference_file, daemon=True
             ).start()
 
+        # Signal-aware mic auto-switch: prefer a higher-quality mic that has
+        # sound; fall back to a lower-quality one if the current goes silent.
+        if _AUTO_SWITCH_INTERVAL > 0:
+            threading.Thread(target=self._auto_switch_loop, daemon=True).start()
+
     def _on_device_list_changed(self):
         """Called by CoreAudio when devices are added/removed."""
         self._check_best_device(delay=2)  # delay for Bluetooth stabilization
@@ -697,17 +798,74 @@ class WhisperTranscriptionRunner:
                 best_name != self._me_channel.device_name
                 or best_idx != self._me_channel.device
             ):
-                short = _short_device_name(best_name)
-                self._me_channel.switch_device(best_idx, best_name)
-                self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
-                print(f"VICTOR_SOURCE:{short}", flush=True)
-                if self._on_device_change:
-                    self._on_device_change()
+                self._apply_me_switch(best_idx, best_name, reason="presence")
             # Always re-emit availability — device-list change may have toggled
             # available sources without changing the active one.
             self._emit_available()
         except Exception as exc:
             log.error("transcript", f"🎙️ Device change handler error: {exc}")
+
+    def _apply_me_switch(self, idx: int, name: str, reason: str):
+        """Switch the me-channel to (idx, name) and emit the usual side effects
+        (transcript marker, VICTOR_SOURCE for the menu bar, availability)."""
+        if not self._me_channel:
+            return
+        short = _short_device_name(name)
+        log.info("transcript", f"🎙️ me → {short} ({name!r}) [{reason}]")
+        self._me_channel.switch_device(idx, name)
+        self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
+        print(f"VICTOR_SOURCE:{short}", flush=True)
+        if self._on_device_change:
+            self._on_device_change()
+        self._emit_available()
+
+    def _auto_switch_loop(self):
+        while True:
+            time.sleep(_AUTO_SWITCH_INTERVAL)
+            try:
+                self._auto_switch_check()
+            except Exception as exc:
+                log.error("transcript", f"🎙️ auto-switch error: {exc}")
+
+    def _auto_switch_check(self):
+        """Every ~60s: prefer a higher-quality mic that has real signal; if the
+        current mic has gone silent for a while, fall back to any lower-quality
+        mic that does have signal. Bluetooth mics aren't probed (HFP hijack), so
+        they only take part via presence-based selection."""
+        ch = self._me_channel
+        if not ch:
+            return
+        candidates = _resolve_all_me_candidates()
+        if not candidates:
+            return
+        rank = {idx: r for r, (idx, _n, _bt) in enumerate(candidates)}
+        cur_idx = ch.device
+        cur_rank = rank.get(cur_idx)
+        if cur_rank is None:
+            # Current device isn't among the present candidates (gone/unknown);
+            # presence-based _check_best_device handles that case.
+            return
+
+        # 1) Upgrade: a higher-priority mic with real sound wins immediately.
+        for idx, name, is_bt in candidates:
+            if rank[idx] >= cur_rank:
+                break  # candidates are priority-ordered; nothing better remains
+            if idx == cur_idx:
+                continue
+            if _probe_has_sound(idx, name, is_bt):
+                self._apply_me_switch(idx, name, reason="upgrade: higher-quality mic has signal")
+                return
+
+        # 2) Downgrade: only after the current mic has been silent long enough.
+        if ch.silent_for() < _AUTO_SWITCH_SILENCE_SEC:
+            return
+        for idx, name, is_bt in candidates:
+            if rank[idx] <= cur_rank:
+                continue  # only lower-priority mics are downgrade targets
+            if _probe_has_sound(idx, name, is_bt):
+                secs = int(ch.silent_for())
+                self._apply_me_switch(idx, name, reason=f"current silent {secs}s, lower-quality mic has signal")
+                return
 
     def _emit_available(self):
         try:
