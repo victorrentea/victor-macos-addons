@@ -141,4 +141,14 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
         NSLog("[RailwayBridge] closed (code \(closeCode.rawValue)) — reconnecting")
         scheduleReconnect()
     }
+
+    /// A rejected handshake (e.g. HTTP 403 when the token is missing/wrong on
+    /// Railway) surfaces here, not via didClose. Logged so a token mismatch is
+    /// visible rather than a silent retry loop.
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            NSLog("[RailwayBridge] connection failed (\(error.localizedDescription)) — check BRIDGE_TOKEN match; reconnecting")
+        }
+        scheduleReconnect()
+    }
 }
