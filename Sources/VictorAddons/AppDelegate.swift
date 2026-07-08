@@ -37,6 +37,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var bluetoothKeepAlive: BluetoothKeepAlive?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
+    /// Outbound WS to the Railway bridge — the tablet's last-resort internet
+    /// transport when LAN Wi-Fi and USB both fail (public-Wi-Fi client isolation).
+    private var railwayBridge: RailwayBridgeClient?
     /// Last time the tablet hit /ping — feeds the tablet-sound watchdog.
     private var lastTabletPingAt: Date?
     private var tabletSoundWatchdog: Timer?
@@ -420,6 +423,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.start()
         overlayInfo("TabletHttpServer.start() called")
+
+        // Railway bridge: the tablet's last-resort internet transport. Reuses the
+        // whole TabletHttpServer route table via respond(), so every LAN/USB
+        // endpoint also works over the internet. Off unless a token is configured
+        // (env ADDON_BRIDGE_TOKEN or the ~/.training-assistants-secrets.env key).
+        if let tabletServer {
+            let env = ProcessInfo.processInfo.environment
+            let bridgeToken = env["ADDON_BRIDGE_TOKEN"]
+                ?? SecretsLoader.load()["ADDON_BRIDGE_TOKEN"] ?? ""
+            let bridgeURL = env["ADDON_BRIDGE_URL"] ?? serverURL
+            if let bridge = RailwayBridgeClient(baseURL: bridgeURL, token: bridgeToken, server: tabletServer) {
+                bridge.start()
+                railwayBridge = bridge
+                overlayInfo("RailwayBridgeClient started (\(bridgeURL))")
+            }
+        }
 
         menuBarManager = MenuBarManager()
         menuBarManager.onQuit = { [weak self] in

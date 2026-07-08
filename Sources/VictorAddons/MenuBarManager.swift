@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 6, 12:59"
+    static let BUILD_TIME = "Jul 8, 19:22"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -112,7 +112,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
 
         // Kill… submenu (8080 is included as a regular entry inside)
-        let killItem = NSMenuItem(title: "☠️ Kill…", action: nil, keyEquivalent: "")
+        let killItem = NSMenuItem(title: "☠️ Kill PID…", action: nil, keyEquivalent: "")
         killItem.isEnabled = true
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu

@@ -158,136 +158,149 @@ class TabletHttpServer {
     private func handle(_ conn: NWConnection) {
         conn.start(queue: queue)
         conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, _ in
+            guard let self else { conn.cancel(); return }
             let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             let path = Self.parsePath(raw)
-            let route = Self.route(forPath: path)
-
-            var statusCode = 200
-            var body = "ok"
-            var contentType = "text/plain; charset=utf-8"
-
-            DispatchQueue.main.sync {
-                switch route {
-                case .alarmStart:
-                    self?.onAlarmStart?()
-                case .alarmStop:
-                    self?.onAlarmStop?()
-                case .effect(let name):
-                    self?.onEffect?(name)
-                case .openUrl(let url):
-                    self?.onOpenUrl?(url)
-                case .ping:
-                    contentType = "application/json"
-                    body = self?.onPing?() ?? "{\"ok\":true}"
-                case .soundsManifest:
-                    contentType = "application/json"
-                    body = self?.onSoundsManifest?() ?? "{\"error\":\"manifest unavailable\"}"
-                    if self?.onSoundsManifest == nil {
-                        statusCode = 503
-                    }
-                case .soundPlay(let name, let volumePct):
-                    contentType = "application/json"
-                    if let json = self?.onSoundPlay?(name, volumePct) {
-                        body = json
-                    } else {
-                        statusCode = 404
-                        body = "{\"ok\":false,\"reason\":\"unknown-sound\"}"
-                    }
-                case .soundVolume(let pct):
-                    self?.onSoundVolume?(pct)
-                case .soundStop:
-                    self?.onSoundStop?()
-                case .btCompensationGet:
-                    contentType = "application/json"
-                    body = self?.onBtCompensationGet?() ?? "{\"error\":\"unavailable\"}"
-                    if self?.onBtCompensationGet == nil { statusCode = 503 }
-                case .btCompensationSet(let ms):
-                    contentType = "application/json"
-                    body = self?.onBtCompensationSet?(ms) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
-                case .soundPressed(let name):
-                    self?.onSoundPressed?(name)
-                case .soundStopped(let name):
-                    self?.onSoundStopped?(name)
-                case .testTranscriptionStart:
-                    self?.onTestTranscriptionStart?()
-                case .testState:
-                    contentType = "application/json"
-                    body = self?.onTestState?() ?? "{\"error\":\"state unavailable\"}"
-                    if self?.onTestState == nil {
-                        statusCode = 503
-                    }
-                case .testAudioPlaying:
-                    contentType = "application/json"
-                    body = self?.onTestAudioPlaying?() ?? "{\"error\":\"audio probe unavailable\"}"
-                    if self?.onTestAudioPlaying == nil {
-                        statusCode = 503
-                    }
-                case .testWisprRecording:
-                    contentType = "application/json"
-                    body = self?.onTestWisprRecording?() ?? "{\"error\":\"wispr probe unavailable\"}"
-                    if self?.onTestWisprRecording == nil {
-                        statusCode = 503
-                    }
-                case .testBreakStart(let minutes):
-                    self?.onTestBreakStart?(minutes)
-                case .testBreakClose:
-                    self?.onTestBreakClose?()
-                case .testBreakPicker(let q):
-                    self?.onTestBreakPicker?(q)
-                case .testTile:
-                    self?.onTestTile?()
-                case .testWhip:
-                    self?.onTestWhip?()
-                case .testWhipCrack:
-                    self?.onTestWhipCrack?()
-                case .testGroupPhoto:
-                    self?.onTestGroupPhoto?()
-                case .testWisprOutputDrift:
-                    self?.onTestWisprOutputDrift?()
-                case .testProjector:
-                    contentType = "application/json"
-                    body = self?.onTestProjector?() ?? "{\"error\":\"display manager unavailable\"}"
-                    if self?.onTestProjector == nil {
-                        statusCode = 503
-                    }
-                case .testPresentation:
-                    contentType = "application/json"
-                    body = self?.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
-                    if self?.onTestPresentation == nil { statusCode = 503 }
-                case .testPresentationWarn:
-                    self?.onTestPresentationWarn?()
-                case .testBreakSummary:
-                    self?.onTestBreakSummary?()
-                case .promptCapture:
-                    contentType = "application/json"
-                    let promptBody = Self.extractBody(raw)
-                    body = self?.onPromptCapture?(promptBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
-                case .intellijFileOpened:
-                    contentType = "application/json"
-                    let fileBody = Self.extractBody(raw)
-                    body = self?.onIntellijFileOpened?(fileBody) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
-                case .videos:
-                    contentType = "application/json"
-                    body = self?.onVideos?() ?? "{\"videos\":[]}"
-                case .videoPlay(let id, let t):
-                    contentType = "application/json"
-                    if let json = self?.onVideoPlay?(id, t) {
-                        body = json
-                    } else {
-                        statusCode = 404
-                        body = "{\"ok\":false,\"reason\":\"unknown-video\"}"
-                    }
-                case .videoStop:
-                    self?.onVideoStop?()
-                case .unknown:
-                    statusCode = 404
-                    body = "not found"
-                }
-            }
-
-            let response = Self.httpResponse(statusCode: statusCode, contentType: contentType, body: body)
-            conn.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in conn.cancel() })
+            let result = self.respond(path: path, requestBody: Self.extractBody(raw))
+            let response = Self.httpResponse(statusCode: result.status,
+                                             contentType: result.contentType, body: result.body)
+            conn.send(content: response.data(using: .utf8),
+                      completion: .contentProcessed { _ in conn.cancel() })
         }
+    }
+
+    /// Pure request handler shared by the TCP listener (LAN/USB) and the Railway
+    /// bridge (internet fallback). Maps `path` to a route, runs its handler on
+    /// the main thread, and returns the HTTP-style result. `requestBody` is the
+    /// decoded request body, consulted only by the POST-like routes.
+    ///
+    /// Must NOT be called on the main thread (it does `DispatchQueue.main.sync`);
+    /// both callers invoke it from a background queue.
+    func respond(path: String, requestBody: String) -> (status: Int, contentType: String, body: String) {
+        let route = Self.route(forPath: path)
+
+        var statusCode = 200
+        var body = "ok"
+        var contentType = "text/plain; charset=utf-8"
+
+        DispatchQueue.main.sync {
+            switch route {
+            case .alarmStart:
+                self.onAlarmStart?()
+            case .alarmStop:
+                self.onAlarmStop?()
+            case .effect(let name):
+                self.onEffect?(name)
+            case .openUrl(let url):
+                self.onOpenUrl?(url)
+            case .ping:
+                contentType = "application/json"
+                body = self.onPing?() ?? "{\"ok\":true}"
+            case .soundsManifest:
+                contentType = "application/json"
+                body = self.onSoundsManifest?() ?? "{\"error\":\"manifest unavailable\"}"
+                if self.onSoundsManifest == nil {
+                    statusCode = 503
+                }
+            case .soundPlay(let name, let volumePct):
+                contentType = "application/json"
+                if let json = self.onSoundPlay?(name, volumePct) {
+                    body = json
+                } else {
+                    statusCode = 404
+                    body = "{\"ok\":false,\"reason\":\"unknown-sound\"}"
+                }
+            case .soundVolume(let pct):
+                self.onSoundVolume?(pct)
+            case .soundStop:
+                self.onSoundStop?()
+            case .btCompensationGet:
+                contentType = "application/json"
+                body = self.onBtCompensationGet?() ?? "{\"error\":\"unavailable\"}"
+                if self.onBtCompensationGet == nil { statusCode = 503 }
+            case .btCompensationSet(let ms):
+                contentType = "application/json"
+                body = self.onBtCompensationSet?(ms) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .soundPressed(let name):
+                self.onSoundPressed?(name)
+            case .soundStopped(let name):
+                self.onSoundStopped?(name)
+            case .testTranscriptionStart:
+                self.onTestTranscriptionStart?()
+            case .testState:
+                contentType = "application/json"
+                body = self.onTestState?() ?? "{\"error\":\"state unavailable\"}"
+                if self.onTestState == nil {
+                    statusCode = 503
+                }
+            case .testAudioPlaying:
+                contentType = "application/json"
+                body = self.onTestAudioPlaying?() ?? "{\"error\":\"audio probe unavailable\"}"
+                if self.onTestAudioPlaying == nil {
+                    statusCode = 503
+                }
+            case .testWisprRecording:
+                contentType = "application/json"
+                body = self.onTestWisprRecording?() ?? "{\"error\":\"wispr probe unavailable\"}"
+                if self.onTestWisprRecording == nil {
+                    statusCode = 503
+                }
+            case .testBreakStart(let minutes):
+                self.onTestBreakStart?(minutes)
+            case .testBreakClose:
+                self.onTestBreakClose?()
+            case .testBreakPicker(let q):
+                self.onTestBreakPicker?(q)
+            case .testTile:
+                self.onTestTile?()
+            case .testWhip:
+                self.onTestWhip?()
+            case .testWhipCrack:
+                self.onTestWhipCrack?()
+            case .testGroupPhoto:
+                self.onTestGroupPhoto?()
+            case .testWisprOutputDrift:
+                self.onTestWisprOutputDrift?()
+            case .testProjector:
+                contentType = "application/json"
+                body = self.onTestProjector?() ?? "{\"error\":\"display manager unavailable\"}"
+                if self.onTestProjector == nil {
+                    statusCode = 503
+                }
+            case .testPresentation:
+                contentType = "application/json"
+                body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
+                if self.onTestPresentation == nil { statusCode = 503 }
+            case .testPresentationWarn:
+                self.onTestPresentationWarn?()
+            case .testBreakSummary:
+                self.onTestBreakSummary?()
+            case .promptCapture:
+                contentType = "application/json"
+                body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
+            case .intellijFileOpened:
+                contentType = "application/json"
+                body = self.onIntellijFileOpened?(requestBody) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .videos:
+                contentType = "application/json"
+                body = self.onVideos?() ?? "{\"videos\":[]}"
+            case .videoPlay(let id, let t):
+                contentType = "application/json"
+                if let json = self.onVideoPlay?(id, t) {
+                    body = json
+                } else {
+                    statusCode = 404
+                    body = "{\"ok\":false,\"reason\":\"unknown-video\"}"
+                }
+            case .videoStop:
+                self.onVideoStop?()
+            case .unknown:
+                statusCode = 404
+                body = "not found"
+            }
+        }
+
+        return (statusCode, contentType, body)
     }
 
     /// Extract the body from a raw HTTP request — everything after the blank
