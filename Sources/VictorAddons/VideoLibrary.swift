@@ -13,6 +13,10 @@ enum VideoLibrary {
         let startSeconds: Int
         let file: String
         let url: String?
+        /// Optional base64 JPEG tile thumbnail. Present for local (non-YouTube)
+        /// videos that have no `img.youtube.com/vi/<id>` image; the tablet decodes
+        /// it directly instead of fetching by id.
+        let thumb: String?
     }
 
     /// Resolve the repo's `videos/` directory using the same root strategy as
@@ -61,9 +65,9 @@ enum VideoLibrary {
     /// JSON served to the tablet at `GET /videos` — only what a tile needs
     /// (id → thumbnail + play call, title → label, startSeconds is informational).
     static func manifestJSON() -> String {
-        struct TileEntry: Codable { let id: String; let title: String; let startSeconds: Int }
+        struct TileEntry: Codable { let id: String; let title: String; let startSeconds: Int; let thumb: String? }
         struct Out: Codable { let videos: [TileEntry] }
-        let tiles = entries().map { TileEntry(id: $0.id, title: $0.title, startSeconds: $0.startSeconds) }
+        let tiles = entries().map { TileEntry(id: $0.id, title: $0.title, startSeconds: $0.startSeconds, thumb: $0.thumb) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
         if let data = try? enc.encode(Out(videos: tiles)), let s = String(data: data, encoding: .utf8) {

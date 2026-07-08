@@ -100,10 +100,13 @@ enum SessionNotesAppender {
         // Auto-dismiss when the hover window closes. Driven by the banner's
         // countdown (which pauses while the cursor is on the pill) rather than a
         // fixed timer, so parking the mouse on the offer keeps it up.
+        // Un-hovered = the OPPOSITE of the up-arrow's "hover to send": the prompt
+        // is dropped, so the pill sinks straight down (the arrow points up = hover
+        // rises/commits; not acting in time drops it the other way).
         banner.onHoverCountdownExpired = { [weak banner] in
             guard pendingPrompt == trimmed else { return }
             pendingPrompt = nil
-            banner?.dismiss()
+            banner?.dismissSinking()
         }
         banner.show(text: display, font: promptFont,
                     hoverCountdown: hoverActionDuration, hoverNudge: .up)
