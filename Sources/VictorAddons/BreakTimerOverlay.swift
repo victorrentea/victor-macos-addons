@@ -436,11 +436,18 @@ final class BreakTimerController {
         DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
             SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
-        }
-        // Stay on screen until the second gong has fully played out.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2 * gong) { [weak self] in
-            guard let self, self.epoch == myEpoch else { return }
-            self.close()
+            // Auto-close only after this FINAL strike has fully rung out, then
+            // close()'s stopOverlapping is a clean no-op instead of hard-cutting
+            // the decaying tail ("truncated at the end"). `playOverlapping` shifts
+            // the actual audio start later by the Bluetooth wake-up compensation
+            // (0 on wired/built-in; ~0.8s on a BT speaker — the workshop case), so
+            // wait gong + comp + a small margin measured from strike 2, not a fixed
+            // 2*gong from expiry-start.
+            let comp = SoundTimingConfig.shared.currentBluetoothCompensation
+            DispatchQueue.main.asyncAfter(deadline: .now() + gong + comp + 0.6) { [weak self] in
+                guard let self, self.epoch == myEpoch else { return }
+                self.close()
+            }
         }
     }
 
