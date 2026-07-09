@@ -28,6 +28,9 @@ class EventTapManager {
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
+    /// Plain Ctrl+V — the paste passes through; the app advances the clipboard
+    /// image stack to the next image after a short delay.
+    var onCtrlVPaste: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
@@ -243,6 +246,13 @@ class EventTapManager {
                 let captured = text
                 DispatchQueue.global().async { [weak self] in self?.onCaptureClipboard?(captured) }
             }
+        }
+
+        // Ctrl+V → pass the paste through, then advance the clipboard image stack
+        // to the next-older image (after a short delay so this paste reads the
+        // current image first). No-op when the stack is empty.
+        if hasCtrl && !hasCmd && !hasOpt && !hasShift {
+            DispatchQueue.global().async { [weak self] in self?.onCtrlVPaste?() }
         }
 
         return Unmanaged.passUnretained(event)

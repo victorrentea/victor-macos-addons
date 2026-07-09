@@ -911,8 +911,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onKeyDownWhileOptionHeld = { [weak self] in
             self?.keymapHoldCoordinator?.keyDownWhileOptionHeld()
         }
+        eventTap.onCtrlVPaste = { ClipboardStackManager.shared.onCtrlVPaste() }
         eventTap.start()
         self.eventTapManager = eventTap
+
+        // Clipboard image stack: ⌃P screenshots accumulate; ⌃V pastes then pops
+        // to the next-older image (Claude Code / Copilot CLI image workflow).
+        ClipboardStackManager.shared.start()
 
         self.driveShareCache = GoogleDriveShareCache()
 
