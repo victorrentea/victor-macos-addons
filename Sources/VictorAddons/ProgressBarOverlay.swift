@@ -8,9 +8,10 @@ import Cocoa
 /// out so the screen clears. Pressing another value restarts it from zero
 /// (latest-wins). Lives on the built-in Retina display alongside the emoji effects.
 ///
-/// A small black countdown number sits immediately to the LEFT of the bar,
-/// counting the remaining whole seconds (N…1) in sync with the fill, then
-/// disappears with the bar on completion / cancel.
+/// The bar spans the FULL screen width — left edge to right edge. A white
+/// countdown number is overlaid ON the bar's bottom-left corner, counting the
+/// remaining whole seconds (N…1) in sync with the fill, then disappears with the
+/// bar on completion / cancel.
 ///
 /// Rendered as a CALayer on the overlay's host layer — the same layer the emoji
 /// effects use — NOT as an NSView subview. Adding a subview onto that
@@ -35,11 +36,11 @@ final class ProgressBarOverlay {
     private static let alpha: Float = 0.5              // translucent — discreet
     private static let fadeDuration: TimeInterval = 0.5
 
-    // Left gutter reserved for the countdown number, so the bar starts to its
-    // right and never overlaps it. `numberGap` is the breathing room between the
-    // number's right edge and the bar's left edge.
-    private static let numberAreaWidth: CGFloat = 160
-    private static let numberGap: CGFloat = 20
+    // Countdown number overlaid on the bar's bottom-left corner. `numberLeftInset`
+    // is the breathing room from the screen's left edge; `numberAreaWidth` is the
+    // text box width (left-aligned, so extra width is harmless).
+    private static let numberAreaWidth: CGFloat = 200
+    private static let numberLeftInset: CGFloat = 24
     private static let numberFontSize: CGFloat = 80
 
     init(hostLayer: CALayer) {
@@ -54,9 +55,9 @@ final class ProgressBarOverlay {
         let screenWidth = hostLayer.bounds.width > 0
             ? hostLayer.bounds.width
             : (NSScreen.main?.frame.width ?? 1440)
-        // The bar occupies everything to the right of the number gutter.
-        let barOriginX = Self.numberAreaWidth
-        let width = max(1, screenWidth - barOriginX)
+        // The bar spans the full screen width, left edge → right edge.
+        let barOriginX: CGFloat = 0
+        let width = max(1, screenWidth)
 
         // anchorPoint at the bottom-left so growing the width fills left→right and
         // position (barOriginX,0) pins it to the bottom-left of the bar region on the
@@ -83,19 +84,20 @@ final class ProgressBarOverlay {
         grow.timingFunction = CAMediaTimingFunction(name: .linear)
         fill.add(grow, forKey: "fill")
 
-        // Black countdown number, right-aligned in the gutter so it hugs the bar's
-        // left edge. Vertically centred within the bar's height band.
+        // White countdown number overlaid on the bar's bottom-left corner. Added
+        // after the fill so it renders on top of the yellow. Left-aligned with a
+        // small inset from the screen edge, vertically centred within the bar band.
         let lineHeight = Self.numberFontSize * 1.2
         let label = CATextLayer()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         label.anchorPoint = CGPoint(x: 0, y: 0)
-        label.frame = CGRect(x: 0,
+        label.frame = CGRect(x: Self.numberLeftInset,
                              y: (Self.height - lineHeight) / 2,
-                             width: Self.numberAreaWidth - Self.numberGap,
+                             width: Self.numberAreaWidth,
                              height: lineHeight)
-        label.alignmentMode = .right
-        label.foregroundColor = NSColor.black.cgColor
+        label.alignmentMode = .left
+        label.foregroundColor = NSColor.white.cgColor
         label.font = NSFont.boldSystemFont(ofSize: Self.numberFontSize)
         label.fontSize = Self.numberFontSize
         label.contentsScale = NSScreen.main?.backingScaleFactor ?? 2   // crisp on Retina
