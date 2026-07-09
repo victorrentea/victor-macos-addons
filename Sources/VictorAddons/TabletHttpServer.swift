@@ -34,6 +34,7 @@ class TabletHttpServer {
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
         case testBreakStart(Int)
+        case testBreakUntil        // the ☕-click variant: half-size "UNTIL BREAK"
         /// Close the Break countdown overlay (test hook).
         case testBreakClose
         /// Open the country picker on the Break overlay, optionally pre-filtered (test hook).
@@ -107,6 +108,7 @@ class TabletHttpServer {
     var onTestAudioPlaying: (() -> String)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
+    var onTestBreakUntil: (() -> Void)?
     var onTestBreakClose: (() -> Void)?
     var onTestBreakPicker: ((String?) -> Void)?
     var onTestTile: (() -> Void)?
@@ -247,6 +249,8 @@ class TabletHttpServer {
                 }
             case .testBreakStart(let minutes):
                 self.onTestBreakStart?(minutes)
+            case .testBreakUntil:
+                self.onTestBreakUntil?()
             case .testBreakClose:
                 self.onTestBreakClose?()
             case .testBreakPicker(let q):
@@ -429,7 +433,9 @@ class TabletHttpServer {
                 if !id.isEmpty { return .videoPlay(id, nil) }
             }
             if pathOnly.hasPrefix("/test/break/") {
-                if let minutes = Int(pathOnly.dropFirst("/test/break/".count)) {
+                let suffix = String(pathOnly.dropFirst("/test/break/".count))
+                if suffix == "until" { return .testBreakUntil }
+                if let minutes = Int(suffix) {
                     return .testBreakStart(minutes)
                 }
             }

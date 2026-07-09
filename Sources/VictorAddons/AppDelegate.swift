@@ -12,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var menuBarManager: MenuBarManager!
     private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
     private let breakTimer = BreakTimerController()  // ☕️ Break countdown watch overlay
+    private var coffeeClickGlobalMonitor: Any?       // clicks going to other apps
+    private var coffeeClickLocalMonitor: Any?        // clicks landing on our own windows
     /// Menu-triggered desktop effects run for this fixed, sound-independent
     /// duration (looping effects are stopped after it; one-shots keep their own
     /// natural length). The tablet path keeps its sound-driven durations — see
@@ -141,6 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             fatalError("Content view has no layer")
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
+        installCoffeeBreakClickMonitor()
         // Render the progress bar as a CALayer on the same host layer as the emoji
         // effects (built-in Retina overlay) — a plain subview on this
         // manually-populated layer-backed view does not composite.
@@ -579,6 +582,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onTestBreakStart = { [weak self] minutes in
             DispatchQueue.main.async { self?.breakTimer.start(minutes: minutes) }
+        }
+        tabletServer?.onTestBreakUntil = { [weak self] in
+            // Same overlay a floating-☕ click produces: half-size "UNTIL BREAK".
+            DispatchQueue.main.async { self?.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5) }
         }
         tabletServer?.onTestBreakClose = { [weak self] in
             DispatchQueue.main.async { self?.breakTimer.close() }
@@ -1057,6 +1064,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.whisperManager?.start(env: env)
             }
+        }
+    }
+
+    // MARK: - Coffee-click → "until break" timer
+
+    /// Watch for clicks on the floating ☕ emojis participants fire. The effects
+    /// overlay is click-through, so we observe clicks both globally (they land on
+    /// other apps) and locally (our own windows). A click that hits a coffee pops
+    /// it and starts a 10-minute half-size "UNTIL BREAK" countdown — unless a break
+    /// is already on screen, so it never disrupts a running timer.
+    private func installCoffeeBreakClickMonitor() {
+        let handle: () -> Void = { [weak self] in
+            guard let self, self.animator?.popCoffee(atGlobalPoint: NSEvent.mouseLocation) == true else { return }
+            guard !self.breakTimer.isShowing else { return }
+            overlayInfo("☕ clicked → starting 10-min UNTIL BREAK timer")
+            self.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5)
+        }
+        coffeeClickGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { _ in handle() }
+        coffeeClickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            handle(); return event
         }
     }
 

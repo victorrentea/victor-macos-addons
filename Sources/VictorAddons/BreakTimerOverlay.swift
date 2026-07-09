@@ -44,6 +44,16 @@ final class BreakTimerController {
     private var bgOpaque = true              // current backdrop state
     private var epoch = 0                      // invalidates in-flight expiry blocks
 
+    // Title + size for the NEXT fresh window. The menu opens a full-size "BREAK";
+    // clicking a floating ☕ opens a half-size "UNTIL BREAK". Both persist so a
+    // redeploy mid-break resumes with the right label and size.
+    private var titleText = "BREAK"
+    private var nextFreshScale: CGFloat = 1.0
+
+    /// Whether a break overlay is currently on screen (used to avoid a ☕ click
+    /// disrupting a countdown that's already running).
+    var isShowing: Bool { panel != nil }
+
     // Fullscreen-on-idle: after `fullscreenIdleSeconds` of total inactivity the
     // panel grows to `enlargeFraction` of its screen; any input restores it.
     private var isEnlarged = false
@@ -77,17 +87,20 @@ final class BreakTimerController {
 
     /// (Re)start the countdown at `minutes`. Reuses the existing window in place
     /// (keeping its position & size); a fresh window opens top-right at 25% width.
-    func start(minutes: Int) {
+    func start(minutes: Int, title: String = "BREAK", sizeScale: CGFloat = 1.0) {
         epoch += 1
         blinkTimer?.invalidate(); blinkTimer = nil
         remaining = max(0, minutes) * 60
         paused = false
         freezeNow = nil
+        titleText = title
+        nextFreshScale = sizeScale
         // Day-scoped: first start of the day auto-picks "where I am now" (by the
         // Mac's live timezone) and locks it in; later starts today reuse it.
         selectedCountry = BreakCountry.autoSelectForToday()
 
         let view = ensureWindow()
+        view.titleText = title
         view.selectedCountryTZ = selectedCountry.tz
         view.setDigitsVisible(true)
         panel?.alphaValue = 1
@@ -151,9 +164,13 @@ final class BreakTimerController {
 
     private static let kFinishAt = "BreakTimer.finishAt"
     private static let kPausedRemaining = "BreakTimer.pausedRemaining"
+    private static let kTitle = "BreakTimer.title"
+    private static let kScale = "BreakTimer.scale"
 
     private func persist() {
         let d = UserDefaults.standard
+        d.set(titleText, forKey: Self.kTitle)
+        d.set(Double(nextFreshScale), forKey: Self.kScale)
         if paused {
             d.removeObject(forKey: Self.kFinishAt)
             d.set(remaining, forKey: Self.kPausedRemaining)
@@ -166,6 +183,8 @@ final class BreakTimerController {
     private func clearPersisted() {
         UserDefaults.standard.removeObject(forKey: Self.kFinishAt)
         UserDefaults.standard.removeObject(forKey: Self.kPausedRemaining)
+        UserDefaults.standard.removeObject(forKey: Self.kTitle)
+        UserDefaults.standard.removeObject(forKey: Self.kScale)
     }
 
     /// On launch, resume a countdown that was running/paused when the app quit.
@@ -186,7 +205,12 @@ final class BreakTimerController {
         remaining = rem
         paused = isPaused
         freezeNow = isPaused ? Date() : nil
+        // Restore the label + size the break had before the redeploy/restart.
+        titleText = UserDefaults.standard.string(forKey: Self.kTitle) ?? "BREAK"
+        let s = UserDefaults.standard.double(forKey: Self.kScale)
+        nextFreshScale = s > 0 ? CGFloat(s) : 1.0
         let v = ensureWindow()
+        v.titleText = titleText
         v.setDigitsVisible(true)
         panel?.alphaValue = 1
         panel?.orderFrontRegardless()
@@ -322,7 +346,7 @@ final class BreakTimerController {
 
     private func ensureWindow() -> BreakTimerView {
         if let view { return view }
-        let frame = Self.defaultFrame()
+        let frame = Self.defaultFrame(scale: nextFreshScale)
         let panel = BreakTimerPanel(contentRect: frame)
         let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
         container.autoresizingMask = [.width, .height]
@@ -436,18 +460,19 @@ final class BreakTimerController {
         screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
-    private static func defaultFrame() -> NSRect {
+    private static func defaultFrame(scale: CGFloat = 1.0) -> NSRect {
         // Always the laptop's built-in retina display — that's what's projected to
         // the room. The macOS *primary* display (origin .zero) or NSScreen.main (the
         // focused screen) may be an external monitor when one is set as main during
         // a course, which would open the timer on the wrong screen.
         let f = AppDelegate.findRetinaScreen().frame
-        // Default placement/size measured from the reference: ~29% of screen
-        // width, top-right with a 6.4% right gap and 15% top gap.
-        let w = f.width * 0.29
+        // ~29% of screen width, tucked into the top-right corner with small gaps
+        // (hugs the edges). `scale` shrinks a fresh window — the ☕-triggered
+        // "until break" timer opens at 50%.
+        let w = f.width * 0.29 * max(0.1, scale)
         let h = w / aspect
-        let x = f.maxX - w - f.width * 0.064
-        let y = f.maxY - f.height * 0.15 - h
+        let x = f.maxX - w - f.width * 0.02
+        let y = f.maxY - f.height * 0.035 - h
         return NSRect(x: x, y: y, width: w, height: h)
     }
 }
@@ -494,6 +519,9 @@ final class BreakTimerView: NSView {
     private var flag = BreakCountry.romania.flag          // the single finish line's flag
     private var paused = false
     private var digitsVisible = true
+    /// The big blinking title above the digits. "BREAK" for a menu-started timer,
+    /// "UNTIL BREAK" for the one auto-started by clicking a floating ☕.
+    var titleText = "BREAK" { didSet { needsDisplay = true } }
 
     // Country dropdown: the finish line's flag is a click target. The hit rect is
     // recomputed each draw; picking from the dropdown calls back out.
@@ -965,17 +993,27 @@ final class BreakTimerView: NSView {
         let m = b.height * 0.096
         let vgap = b.height * 0.05
         let targetCap = max(4, bandH - m - vgap)
-        let font = Self.labelFont(size: targetCap / Self.titleCapRatio, weight: .heavy)
+        var fontSize = targetCap / Self.titleCapRatio
+        var font = Self.labelFont(size: fontSize, weight: .heavy)
+        // A longer title (e.g. "UNTIL BREAK") would overflow the panel at the
+        // height-derived size; shrink it so it also fits the available width.
+        let availW = max(1, b.width - 2 * m)
+        let naturalW = NSAttributedString(string: titleText, attributes: [.font: font]).size().width
+        if naturalW > availW {
+            fontSize *= availW / naturalW
+            font = Self.labelFont(size: fontSize, weight: .heavy)
+        }
         let pad: CGFloat = max(2, font.pointSize * 0.14)   // headroom for the shadow
-        let str = NSAttributedString(string: "BREAK", attributes: [.font: font])
+        let str = NSAttributedString(string: titleText, attributes: [.font: font])
         // Size the image from FONT metrics (ascender..descender) so the glyphs can
         // never overflow it — drawing at (pad, pad) puts the line box inside, and
         // the visible caps sit a known distance up from the bottom.
         let imgW = ceil(str.size().width + pad * 2)
         let imgH = ceil(font.ascender - font.descender + pad * 2)   // descender is negative
         guard imgW > 1, imgH > 1 else { titleLayer.isHidden = true; return }
+        let title = titleText
         let img = NSImage(size: NSSize(width: imgW, height: imgH), flipped: false) { [weak self] _ in
-            self?.drawOutlinedText("BREAK", at: NSPoint(x: pad, y: pad), font: font, fill: Self.lit)
+            self?.drawOutlinedText(title, at: NSPoint(x: pad, y: pad), font: font, fill: Self.lit)
             return true
         }
         // Caps occupy [baseline, baseline+capHeight] within the image; anchor that

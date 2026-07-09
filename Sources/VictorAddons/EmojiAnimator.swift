@@ -30,6 +30,11 @@ class EmojiAnimator {
     // Track active toggleable effects (danger, sepia, zorro) so clicking again cancels them
     private var activeEffects: [String: CALayer] = [:]
 
+    // Floating ☕ layers currently rising on screen. They're click targets: a click
+    // that lands on one (hit-tested via AppDelegate's global mouse monitor) pops it
+    // and starts the "until break" countdown.
+    private var activeCoffeeLayers: [CATextLayer] = []
+
     // Pulse: layers stored so clicking again can stop it
     private var pulseRunning = false
     private var _pulseDimLayer: CALayer?
@@ -144,6 +149,10 @@ class EmojiAnimator {
 
         hostLayer.addSublayer(layer)
 
+        // ☕ layers are clickable (see popCoffee): remember them while on screen.
+        let isCoffee = (emoji == "☕")
+        if isCoffee { activeCoffeeLayers.append(layer) }
+
         // Randomize duration: 2.5–4 seconds (matches browser host.js)
         let duration = Double.random(in: 2.5...4.0)
         let riseHeight: CGFloat = 540
@@ -192,11 +201,43 @@ class EmojiAnimator {
         group.isRemovedOnCompletion = false
 
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak layer] in
-            layer?.removeFromSuperlayer()
+        CATransaction.setCompletionBlock { [weak self, weak layer] in
+            guard let layer = layer else { return }
+            layer.removeFromSuperlayer()
+            if isCoffee { self?.activeCoffeeLayers.removeAll { $0 === layer } }
         }
         layer.add(group, forKey: "floatAndFade")
         CATransaction.commit()
+    }
+
+    /// If `globalPoint` (screen coords) lands on a floating ☕, pop that coffee and
+    /// return true. Used to start the "until break" timer when the trainer clicks a
+    /// coffee a participant fired. A generous hit slop makes the moving target easy.
+    func popCoffee(atGlobalPoint globalPoint: CGPoint) -> Bool {
+        guard !activeCoffeeLayers.isEmpty, let frame = Self.builtInScreenFrame() else { return false }
+        // Overlay panel covers the built-in screen; its layer origin (0,0) sits at
+        // the screen's bottom-left, so shift the global point by the screen origin.
+        let p = CGPoint(x: globalPoint.x - frame.origin.x, y: globalPoint.y - frame.origin.y)
+        let pad: CGFloat = 34   // hit slop around the rising emoji
+        for layer in activeCoffeeLayers.reversed() {   // topmost (newest) first
+            let box = (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
+            if box.contains(p) {
+                layer.removeAllAnimations()
+                layer.removeFromSuperlayer()
+                activeCoffeeLayers.removeAll { $0 === layer }
+                return true
+            }
+        }
+        return false
+    }
+
+    /// The built-in Retina screen's frame in global coords — where the overlay sits.
+    private static func builtInScreenFrame() -> CGRect? {
+        let screen = NSScreen.screens.first { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
+            return CGDisplayIsBuiltin(id) != 0
+        } ?? NSScreen.main ?? NSScreen.screens.first
+        return screen?.frame
     }
 
     func spawnRandomEmoji() {
