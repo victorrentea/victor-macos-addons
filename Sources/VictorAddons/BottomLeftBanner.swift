@@ -427,10 +427,18 @@ final class BottomLeftBanner {
             ctx.duration = 1.0
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             for entry in toRemove {
+                // Rise: the pill's ONLY *window-level* animation — matching the
+                // flash-free `dismissSinking`. Animating the window's `alphaValue`
+                // in the SAME group as its frame ran two window animations on two
+                // different drivers that could desync for a frame, presenting the
+                // window once at its final (raised) position at full opacity — a
+                // "flash toward the top-left". Fade the CONTENT VIEW instead, so the
+                // window itself only ever animates its frame (smoothly, like the
+                // sink), and the fade rides along on the content layer.
                 var f = entry.panel.frame
                 f.origin.y += rise
                 entry.panel.animator().setFrame(f, display: true)
-                entry.panel.animator().alphaValue = 0
+                entry.panel.contentView?.animator().alphaValue = 0
             }
         }, completionHandler: {
             for entry in toRemove { entry.panel.orderOut(nil) }
