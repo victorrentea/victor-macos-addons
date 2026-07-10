@@ -17,8 +17,8 @@ final class BreakTimerController {
 
     static let minWidth: CGFloat = 180
 
-    // Geometry for the fullscreen-on-idle behavior. (The backdrop is hover-driven,
-    // not idle-driven — see `activityTick`.)
+    // Geometry for the fullscreen-on-idle behavior. (At normal size the backdrop is
+    // hover-driven; while enlarged-on-idle it stays always black — see `activityTick`.)
     private static let fullscreenIdleSeconds: CFTimeInterval = 120    // total (mouse+keyboard) idle → enlarge
     private static let enlargeFraction: CGFloat = 0.85               // big frame fills 85% of the screen
     private static let enlargeAnimationDuration: TimeInterval = 0.3   // enlarge/restore animation
@@ -256,7 +256,9 @@ final class BreakTimerController {
     /// cursor is hovering over the timer panel: hover in → it fades fully away (so
     /// you can see the screen underneath, only the outlined digits remain), hover
     /// out → it fades back to fully opaque. One smooth fade per transition, so it
-    /// never flickers.
+    /// never flickers. EXCEPTION: while the panel is enlarged-on-idle it stays
+    /// always black (a resting cursor sits over the big panel, so hover would
+    /// otherwise clear it — see `activityTick`).
     ///
     /// The same tick also drives the fullscreen-on-idle behavior, but from TOTAL
     /// inactivity (`systemIdleSeconds`, mouse+keyboard), so any input — even
@@ -273,16 +275,19 @@ final class BreakTimerController {
     }
 
     private func activityTick() {
-        // --- Backdrop: black by default, transparent only while hovering the panel ---
-        let hovering = panel?.frame.contains(NSEvent.mouseLocation) ?? false
-        setBackgroundOpaque(!hovering)
-
         // --- Fullscreen on total inactivity; any input restores ---
         if Self.systemIdleSeconds() >= Self.fullscreenIdleSeconds {
             enlargeIfNeeded(on: panelScreen())
         } else {
             restoreIfNeeded()
         }
+
+        // --- Backdrop: black by default, transparent only while hovering the panel ---
+        // While enlarged-on-idle, keep it ALWAYS black: the big panel covers ~85% of
+        // the screen, so a resting cursor sits "over" it and would otherwise fade the
+        // backdrop away. Only the normal-size timer peeks through on hover.
+        let hovering = panel?.frame.contains(NSEvent.mouseLocation) ?? false
+        setBackgroundOpaque(isEnlarged || !hovering)
     }
 
     /// The screen the timer panel is currently on. `panel.screen` is the most-
