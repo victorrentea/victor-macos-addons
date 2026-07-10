@@ -64,6 +64,21 @@ class EventTapManager {
     private var wheelPendingWork: DispatchWorkItem?
     private let wheelClickWindow: TimeInterval = 0.35
 
+    // MARK: Cmd+scroll → terminal scrollback
+    /// Apps where a Cmd+scroll is rewritten to a plain scroll (so it drives the
+    /// terminal's scrollback instead of doing nothing / a modified scroll).
+    /// Matched against the app owning the window UNDER THE CURSOR — that's where
+    /// a scroll is delivered in macOS — not the focused app.
+    private let scrollScopeBundleIds: Set<String> = [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+    ]
+    /// Tiny same-position cache so a stationary Cmd+scroll gesture doesn't
+    /// re-enumerate the window list on every wheel tick. Touched only on the
+    /// tap's run-loop thread (all events are handled serially there), so no lock.
+    private var cachedScrollPoint: CGPoint?
+    private var cachedScrollBundle: String?
+
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
     var isActive: Bool { tapPort != nil }
@@ -75,7 +90,8 @@ class EventTapManager {
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
             CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
-            CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
+            CGEventMask(1 << CGEventType.otherMouseUp.rawValue) |
+            CGEventMask(1 << CGEventType.scrollWheel.rawValue)
 
         let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -144,6 +160,23 @@ class EventTapManager {
             if button == MOUSE_BUTTON_3 {
                 handleWheelUp()
             }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Cmd+scroll over a terminal → strip Cmd so it scrolls the scrollback
+        // like a plain wheel. macOS screen-zoom is Ctrl+scroll (not Cmd) and
+        // Terminal/iTerm2 don't map Cmd+scroll to font-zoom — and we remove Cmd
+        // before the terminal even sees the event, so this can never zoom.
+        // Targets the app under the CURSOR (where the scroll lands), not focus.
+        if type == .scrollWheel {
+            guard event.flags.contains(.maskCommand) else {
+                return Unmanaged.passUnretained(event)
+            }
+            guard let bundle = scopedAppUnderCursor(at: event.location),
+                  scrollScopeBundleIds.contains(bundle) else {
+                return Unmanaged.passUnretained(event)
+            }
+            event.flags.remove(.maskCommand)
             return Unmanaged.passUnretained(event)
         }
 
@@ -287,5 +320,44 @@ class EventTapManager {
 
     private func getClipboardText() -> String? {
         return NSPasteboard.general.string(forType: .string)
+    }
+
+    // MARK: - App under the cursor (for Cmd+scroll targeting)
+
+    /// Bundle id of the app owning the front-most normal window under `point`,
+    /// cached while the cursor is stationary (a scroll gesture holds it still).
+    private func scopedAppUnderCursor(at point: CGPoint) -> String? {
+        if let cached = cachedScrollPoint,
+           abs(cached.x - point.x) < 3, abs(cached.y - point.y) < 3 {
+            return cachedScrollBundle
+        }
+        let bundle = bundleIdUnderCursor(at: point)
+        cachedScrollPoint = point
+        cachedScrollBundle = bundle
+        return bundle
+    }
+
+    /// Walks the on-screen window list (front-to-back) and returns the bundle id
+    /// of the app owning the top-most normal-layer window that contains `point`.
+    /// `point` is Quartz global (top-left origin) — the same space as
+    /// `CGEvent.location` and `kCGWindowBounds`.
+    private func bundleIdUnderCursor(at point: CGPoint) -> String? {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+        for window in windows {
+            // Skip menu bar, shadows, overlays — only real, normal-layer windows.
+            let layer = window[kCGWindowLayer as String] as? Int ?? 0
+            guard layer == 0 else { continue }
+            guard let boundsDict = window[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
+                  bounds.contains(point) else {
+                continue
+            }
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t else { return nil }
+            return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+        }
+        return nil
     }
 }
