@@ -1463,6 +1463,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private func toggleJoinLinkBanner() {
         guard let banner = joinLinkBanner else { return }
 
+        // Every press also copies the join URL to the clipboard so it can be
+        // pasted straight into chat. `participantUrl` is stored without a scheme
+        // (see handleSessionStarted); re-add https:// so the pasted link is
+        // clickable.
+        if let url = participantUrl {
+            let clickable = url.contains("://") ? url : "https://" + url
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(clickable, forType: .string)
+        }
+
         // If banner is visible, hide it
         if banner.bannerIsVisible {
             banner.hide()
