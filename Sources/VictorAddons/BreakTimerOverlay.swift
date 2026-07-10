@@ -676,34 +676,32 @@ final class BreakTimerView: NSView {
         let digitsLeftX = digitsArea.midX - (Self.contentW * dscale) / 2
         let digitsRightX = digitsLeftX + Self.contentW * dscale   // right edge of the last digit
 
-        // The bottom row — "until HH:MM 🏳" on the left, ⏸/✕ on the right — is
-        // v-centered in the gap between the window's bottom edge and the digits'
-        // bottom edge. Its height is the finish-time text height, and the buttons
-        // are squares of that same height (so they line up with the "until" text).
-        let rowH = bottomH * 0.82                       // == the finish-time line height
-        let rowY = (digitsArea.minY - rowH) / 2         // center the whole row under the digits
-
-        // Finish-time label: left-aligned to the digits' left margin. Wide enough
-        // that the "until HH:MM 🏳" line has room before the buttons.
-        let labelRight = ch + b.width * 0.47
-        let label = NSRect(x: digitsLeftX, y: rowY,
-                           width: max(0, labelRight - digitsLeftX), height: rowH)
-
-        // Buttons end exactly at the digits' right edge. Only ⏸ pause and ✕ close
-        // remain (time is adjusted by holding the mouse and scrolling); size them as
-        // squares at the text height and right-align them rather than stretching.
-        let btnLeft = label.maxX
-        let btnRight = digitsRightX
+        // The bottom row — "until HH:MM 🏳" on the left, then ⏸/✕ — is v-centered
+        // in the gap between the window's bottom edge and the digits' bottom edge.
+        // The finish-time line renders at its full (band-height) size and the two
+        // buttons — squares at that same text height — sit RIGHT AFTER it with only
+        // a small gap. If the line + gap + buttons don't fit between the digits'
+        // left and right edges, the whole row scales down together (text and buttons
+        // stay the same height as each other, the gap stays tight).
+        let rowH = bottomH * 0.82                       // full finish-time line height
+        let rowY = (digitsArea.minY - rowH) / 2         // center the row under the digits
         let kinds: [BreakButtonKind] = [.pause, .close]
+        var side = rowH                                 // button height == the "until" text height
+        var btnGap = side * 0.3                         // between the two buttons
+        var labelGap = side * 0.5                       // small gap between the text and the buttons
+        var textW = finishLineWidth(lineH: rowH)        // natural (un-shrunk) width of "until HH:MM 🏳"
+        let availW = max(0, digitsRightX - digitsLeftX)
+        let need = textW + labelGap + side * CGFloat(kinds.count) + btnGap * CGFloat(kinds.count - 1)
+        if need > availW, need > 0 {                    // scale the whole row down to fit
+            let s = availW / need
+            side *= s; btnGap *= s; labelGap *= s; textW *= s
+        }
+        // Label hugs the (possibly scaled) text width so the buttons sit just after it.
+        let label = NSRect(x: digitsLeftX, y: rowY, width: textW, height: rowH)
         var buttons: [(NSRect, BreakButtonKind)] = []
-        let areaW = max(0, btnRight - btnLeft)
-        let gap = rowH * 0.4
-        let maxBw = (areaW - gap * CGFloat(kinds.count - 1)) / CGFloat(kinds.count)
-        let side = max(0, min(rowH, maxBw))
-        let totalW = side * CGFloat(kinds.count) + gap * CGFloat(kinds.count - 1)
-        let startX = btnRight - totalW
+        let btnStartX = digitsLeftX + textW + labelGap
         for (i, k) in kinds.enumerated() {
-            let x = startX + CGFloat(i) * (side + gap)
+            let x = btnStartX + CGFloat(i) * (side + btnGap)
             buttons.append((NSRect(x: x, y: rowY + (rowH - side) / 2, width: side, height: side), k))
         }
 
@@ -963,6 +961,14 @@ final class BreakTimerView: NSView {
         // The WHOLE line (flag + time) is the click target for the country dropdown
         // — a big, discoverable hit area rather than just the flag glyph.
         flagRect = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height)
+    }
+
+    /// Natural (un-shrunk) width of the finish-time line at `lineH` — an unbounded
+    /// maxW so `finishAttr` never shrinks. `computeLayout` uses it to place the
+    /// buttons right after the "until HH:MM 🏳" line.
+    private func finishLineWidth(lineH: CGFloat) -> CGFloat {
+        finishAttr(finishText, flag: flag, lineH: lineH,
+                   maxW: .greatestFiniteMagnitude, color: Self.lit).size().width
     }
 
     /// The finish-time line "until HH:MM 🏳": the word "until" + the finish time in
