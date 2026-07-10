@@ -676,20 +676,23 @@ final class BreakTimerView: NSView {
         let digitsLeftX = digitsArea.midX - (Self.contentW * dscale) / 2
         let digitsRightX = digitsLeftX + Self.contentW * dscale   // right edge of the last digit
 
-        // The bottom row — "until HH:MM 🏳" on the left, then ⏸/✕ — is v-centered
-        // in the gap between the window's bottom edge and the digits' bottom edge.
-        // The finish-time line renders at its full (band-height) size and the two
-        // buttons — squares at that same text height — sit RIGHT AFTER it with only
-        // a small gap. If the line + gap + buttons don't fit between the digits'
-        // left and right edges, the whole row scales down together (text and buttons
-        // stay the same height as each other, the gap stays tight).
+        // The bottom row — "until HH:MM 🏳" on the left, then ⏸/✕ — sits in the gap
+        // between the window's bottom edge and the digits' bottom edge. The line
+        // renders at its full (band-height) size and the two buttons — squares at
+        // the "0" digit's height — sit RIGHT AFTER it with a small gap. If the line
+        // + gap + buttons don't fit between the digits' left and right edges, the
+        // whole row scales down together (text and buttons keep one height, gap tight).
         let rowH = bottomH * 0.82                       // full finish-time line height
-        let rowY = (digitsArea.minY - rowH) / 2         // center the row under the digits
+        let rowY = (digitsArea.minY - rowH) / 2         // the row band under the digits
         let kinds: [BreakButtonKind] = [.pause, .close]
-        var side = Self.finishCapFraction * rowH        // button height == a "0" digit's height in the text
+        // Natural finish line at full band height → its width and the "0" cap height.
+        let natural = finishAttr(finishText, flag: flag, lineH: rowH,
+                                 maxW: .greatestFiniteMagnitude, color: Self.lit)
+        let capH0 = (natural.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.capHeight ?? rowH
+        var side = capH0 * Self.buttonHeightK           // buttons a bit larger than the digits
         var btnGap = side * 0.3                         // between the two buttons
         var labelGap = side * 0.5                       // small gap between the text and the buttons
-        var textW = finishLineWidth(lineH: rowH)        // natural (un-shrunk) width of "until HH:MM 🏳"
+        var textW = natural.size().width
         let availW = max(0, digitsRightX - digitsLeftX)
         let need = textW + labelGap + side * CGFloat(kinds.count) + btnGap * CGFloat(kinds.count - 1)
         if need > availW, need > 0 {                    // scale the whole row down to fit
@@ -698,11 +701,18 @@ final class BreakTimerView: NSView {
         }
         // Label hugs the (possibly scaled) text width so the buttons sit just after it.
         let label = NSRect(x: digitsLeftX, y: rowY, width: textW, height: rowH)
+        // Get the ACTUAL digit band (baseline → cap-top) as the line will be drawn —
+        // the flag's overhang pulls the line's ink-center off the digits, so the row
+        // center alone would misplace the buttons. Buttons are a bit taller than the
+        // digits and centered on that band.
+        let band = finishDigitBand(area: label)
+        side = band.capHeight * Self.buttonHeightK
+        let digitCenter = band.baselineFromBottom + band.capHeight / 2
         var buttons: [(NSRect, BreakButtonKind)] = []
         let btnStartX = digitsLeftX + textW + labelGap
         for (i, k) in kinds.enumerated() {
             let x = btnStartX + CGFloat(i) * (side + btnGap)
-            buttons.append((NSRect(x: x, y: rowY + (rowH - side) / 2, width: side, height: side), k))
+            buttons.append((NSRect(x: x, y: rowY + digitCenter - side / 2, width: side, height: side), k))
         }
 
         let corners: [(NSRect, ResizeCorner)] = [
@@ -892,6 +902,38 @@ final class BreakTimerView: NSView {
         return img
     }
 
+    /// The flag emoji rendered and cropped to its OPAQUE bounds (no transparent
+    /// padding), so the caller can scale it to an exact target height — the digit
+    /// cap height — and get a visible flag of exactly that height rather than the
+    /// emoji's padded box (which is ~15% taller than the flag it contains).
+    private static var tightFlagCache: [String: NSImage] = [:]
+    private static func tightFlagImage(_ flag: String) -> NSImage {
+        if let cached = tightFlagCache[flag] { return cached }
+        let font = labelFont(size: 160, weight: .semibold)   // big render → crisp when scaled down
+        let attr = NSAttributedString(string: flag, attributes: [.font: font])
+        let gs = attr.size()
+        guard gs.width > 1, gs.height > 1 else { return NSImage(size: NSSize(width: 1, height: 1)) }
+        let full = NSImage(size: gs, flipped: false) { _ in attr.draw(at: .zero); return true }
+        guard let tiff = full.tiffRepresentation,
+              let bmp = NSBitmapImageRep(data: tiff),
+              let cg = bmp.cgImage else { return full }
+        // Scan alpha (colorAt / CGImage both top-left origin) for the opaque box.
+        let w = cg.width, h = cg.height
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where (bmp.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.15 {
+                if x < minX { minX = x }; if x > maxX { maxX = x }
+                if y < minY { minY = y }; if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY,
+              let sub = cg.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1))
+        else { return full }
+        let out = NSImage(cgImage: sub, size: NSSize(width: sub.width, height: sub.height))
+        tightFlagCache[flag] = out
+        return out
+    }
+
     /// Display font for the title & finish times — the rounded system design
     /// (distinct from the default SF, pairs cleanly with the LED digits).
     private static func labelFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
@@ -903,11 +945,17 @@ final class BreakTimerView: NSView {
     }
 
     private static let monoCapRatio = NSFont.monospacedSystemFont(ofSize: 100, weight: .semibold).capHeight / 100
-    /// Finish-time font sizing: the cap height (i.e. the height of a "0") as a
-    /// fraction of the line height. The monospaced point size is
-    /// `capHeight / monoCapRatio`. Was 1.02; reduced 10% → 0.918. The ⏸/✕ buttons
-    /// are sized to this same "0" height (see `computeLayout`).
-    private static let finishCapFraction: CGFloat = 0.918
+    /// Finish-time font sizing: the cap height (the height of a "0") as a fraction
+    /// of the line height. The monospaced point size is `capHeight / monoCapRatio`.
+    /// Was 1.02 → 0.918 → 0.826 (two −10% steps) to leave room for larger buttons.
+    private static let finishCapFraction: CGFloat = 0.826
+    /// ⏸/✕ button height as a multiple of the digit ("0") cap height — a bit larger
+    /// than the text so the controls stay easy to hit as the finish font shrinks.
+    private static let buttonHeightK: CGFloat = 1.3
+    /// Flag height as a multiple of the digit cap height. A tight-cropped flag
+    /// scaled to exactly `capHeight` renders visibly ~13% shorter than the digits
+    /// (SF-mono digits sit a touch above the cap line); this nudges it to match.
+    private static let flagHeightK: CGFloat = 1.15
     /// capHeight / pointSize for the rounded heavy title font — lets us size BREAK
     /// from a target cap height so its top & bottom gaps are exact.
     private static let titleCapRatio = labelFont(size: 100, weight: .heavy).capHeight / 100
@@ -968,12 +1016,31 @@ final class BreakTimerView: NSView {
         flagRect = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height)
     }
 
-    /// Natural (un-shrunk) width of the finish-time line at `lineH` — an unbounded
-    /// maxW so `finishAttr` never shrinks. `computeLayout` uses it to place the
-    /// buttons right after the "until HH:MM 🏳" line.
-    private func finishLineWidth(lineH: CGFloat) -> CGFloat {
-        finishAttr(finishText, flag: flag, lineH: lineH,
-                   maxW: .greatestFiniteMagnitude, color: Self.lit).size().width
+    /// The finish line's DIGIT band (baseline → cap-top) exactly as `drawLabels`
+    /// will render it, in view points measured from the row's bottom edge, plus the
+    /// rendered "0" cap height. The line is ink-centered but `draw(at:)` offsets it
+    /// by the line's descent, so the digits don't sit at the row-band center — the
+    /// buttons align to THIS band (and take its height) instead of the row center.
+    private func finishDigitBand(area: NSRect) -> (baselineFromBottom: CGFloat, capHeight: CGFloat) {
+        let attr = finishAttr(finishText, flag: flag, lineH: area.height, maxW: area.width, color: Self.lit)
+        let capH = (attr.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.capHeight ?? area.height
+        let ink = attr.boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
+        let drawY = (area.height - ink.height) / 2 - ink.minY      // draw point y, relative to the row bottom
+        // draw(at: p) puts the baseline at p.y + (line descent); read it from layout.
+        let storage = NSTextStorage(attributedString: attr)
+        let container = NSTextContainer(size: NSSize(width: 1e5, height: 1e5))
+        container.lineFragmentPadding = 0
+        let lm = NSLayoutManager()
+        lm.addTextContainer(container)
+        storage.addLayoutManager(lm)
+        lm.ensureLayout(for: container)
+        var baselineAboveDraw: CGFloat = 0
+        if lm.numberOfGlyphs > 0 {
+            let frag = lm.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+            let loc = lm.location(forGlyphAt: 0)
+            baselineAboveDraw = frag.height - loc.y
+        }
+        return (drawY + baselineAboveDraw, capH)
     }
 
     /// The finish-time line "until HH:MM 🏳": the word "until" + the finish time in
@@ -994,10 +1061,17 @@ final class BreakTimerView: NSView {
             let spaceAdv = (" " as NSString).size(withAttributes: [.font: timeFont]).width
             m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: -spaceAdv / 2]))
             let att = NSTextAttachment()
-            let img = Self.plainFlagImage(flag, pointSize: sz * 0.92)
+            // The flag stands exactly as tall as the digits: a tight-cropped image
+            // (no emoji padding) scaled to the cap height and sitting on the baseline,
+            // so it spans [baseline, cap-top] just like the "38".
+            let img = Self.tightFlagImage(flag)
+            let capH = timeFont.capHeight
+            let flagH = capH * Self.flagHeightK
+            let aspect = img.size.height > 1 ? img.size.width / img.size.height : 1.5
             att.image = img
-            att.bounds = NSRect(x: 0, y: (timeFont.capHeight - img.size.height) / 2,
-                                width: img.size.width, height: img.size.height)
+            // As tall as the digits, centered on the cap band so it sits level with
+            // "38" and grows/shrinks with the finish font.
+            att.bounds = NSRect(x: 0, y: (capH - flagH) / 2, width: flagH * aspect, height: flagH)
             m.append(NSAttributedString(attachment: att))
             return m
         }
