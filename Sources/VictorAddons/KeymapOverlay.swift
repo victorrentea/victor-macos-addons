@@ -286,17 +286,29 @@ enum KeymapOverlayOutputFilter {
 }
 
 enum KeymapOverlayPlacement {
-    static func frame(retinaFrame: NSRect, externalFrames: [NSRect], imageAspectRatio: CGFloat) -> NSRect {
-        guard let external = closestExternal(to: retinaFrame, externalFrames: externalFrames) else {
+    static func frame(retinaFrame: NSRect, externalFrames: [NSRect], imageAspectRatio: CGFloat, mouseLocation: CGPoint? = nil) -> NSRect {
+        // Never place the overlay on the screen the mouse is currently on — the
+        // cheat-sheet must not land under the cursor / cover what Victor is
+        // actively working on. So drop any external screen containing the mouse
+        // from the candidates; if that empties the list (mouse is on the only
+        // external), we fall through to the single-monitor retina-corner path.
+        let candidates: [NSRect]
+        if let mouse = mouseLocation {
+            candidates = externalFrames.filter { !$0.contains(mouse) }
+        } else {
+            candidates = externalFrames
+        }
+
+        guard let external = closestExternal(to: retinaFrame, externalFrames: candidates) else {
             let width = retinaFrame.width / 3.0
             let height = width / imageAspectRatio
             return NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height)
         }
 
-        // When a second monitor is present, occupy the ENTIRE external screen.
-        // The window covers the whole monitor; the keyboard image is scaled to
-        // fit (aspect-preserved, centered) by the image view. Single-monitor
-        // placement above is unchanged.
+        // When a second monitor is present (and the mouse isn't on it), occupy
+        // the ENTIRE external screen. The window covers the whole monitor; the
+        // keyboard image is scaled to fit (aspect-preserved, centered) by the
+        // image view. Single-monitor placement above is unchanged.
         return external
     }
 
@@ -595,7 +607,12 @@ final class KeymapOverlayController {
         let retina = retinaScreenProvider()
         let retinaID = screenID(retina)
         let externals = screensProvider().filter { screenID($0) != retinaID }.map(\.frame)
-        let frame = KeymapOverlayPlacement.frame(retinaFrame: retina.frame, externalFrames: externals, imageAspectRatio: KeymapOverlayRenderer.imageAspectRatio)
+        let frame = KeymapOverlayPlacement.frame(
+            retinaFrame: retina.frame,
+            externalFrames: externals,
+            imageAspectRatio: KeymapOverlayRenderer.imageAspectRatio,
+            mouseLocation: NSEvent.mouseLocation
+        )
 
         window.display(image: image, frame: frame)
     }

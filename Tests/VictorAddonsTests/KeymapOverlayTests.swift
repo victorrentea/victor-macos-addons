@@ -94,6 +94,53 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(frame, external)
     }
 
+    func testMouseOnExternalFallsBackToRetinaCornerInsteadOfCoveringIt() {
+        let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
+        let external = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
+        // Cursor is on the external screen — the overlay must NOT land under it,
+        // so it falls back to the single-monitor retina bottom-right corner.
+        let frame = KeymapOverlayPlacement.frame(
+            retinaFrame: retina,
+            externalFrames: [external],
+            imageAspectRatio: 1298.0 / 398.0,
+            mouseLocation: CGPoint(x: 2500, y: 500)
+        )
+
+        XCTAssertEqual(frame.maxX, retina.maxX, accuracy: 0.001)
+        XCTAssertEqual(frame.minY, retina.minY, accuracy: 0.001)
+        XCTAssertEqual(frame.width, retina.width / 3.0, accuracy: 0.001)
+    }
+
+    func testMouseOnRetinaStillFillsTheExternalScreen() {
+        let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
+        let external = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
+        // Cursor is on the retina — external placement (the normal case) is kept.
+        let frame = KeymapOverlayPlacement.frame(
+            retinaFrame: retina,
+            externalFrames: [external],
+            imageAspectRatio: 1298.0 / 398.0,
+            mouseLocation: CGPoint(x: 800, y: 500)
+        )
+
+        XCTAssertEqual(frame, external)
+    }
+
+    func testMouseOnOneExternalPrefersTheOtherExternal() {
+        let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
+        let left = NSRect(x: -1920, y: 0, width: 1920, height: 1080)
+        let right = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
+        // Cursor on the right external → overlay goes to the left external, never
+        // the one under the mouse.
+        let frame = KeymapOverlayPlacement.frame(
+            retinaFrame: retina,
+            externalFrames: [left, right],
+            imageAspectRatio: 1298.0 / 398.0,
+            mouseLocation: CGPoint(x: 2500, y: 500)
+        )
+
+        XCTAssertEqual(frame, left)
+    }
+
     func testHoldCoordinatorShowsAfterDelayAndHidesOnOptionRelease() {
         var shown: [KeymapModifier] = []
         var hideCount = 0
