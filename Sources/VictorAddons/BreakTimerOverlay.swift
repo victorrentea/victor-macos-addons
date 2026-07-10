@@ -39,6 +39,7 @@ final class BreakTimerController {
     private var freezeNow: Date?              // wall-clock frozen while paused
     private var timer: Timer?
     private var blinkTimer: Timer?            // drives the expiry blink
+    private var shakeTimer: Timer?            // drives the whole-window expiry shake
     private var activityTimer: Timer?         // toggles the background while the user works
     private var bgView: NSView?              // opaque backdrop, faded in/out
     private var bgOpaque = true              // current backdrop state
@@ -145,6 +146,7 @@ final class BreakTimerController {
         SoundManager.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
+        shakeTimer?.invalidate(); shakeTimer = nil
         activityTimer?.invalidate(); activityTimer = nil
         panel?.orderOut(nil)
         panel = nil
@@ -220,12 +222,14 @@ final class BreakTimerController {
     }
 
     /// Chaotic 2D shake for the expiry: violent at each gong strike, then decaying
-    /// fully to still as that strike's sound fades out (no residual jitter). Not
-    /// just on X — the watch wobbles all over the place.
+    /// fully to still as that strike's sound fades out (no residual jitter). Drives
+    /// the WHOLE panel's frame origin (not a content-layer transform) so the entire
+    /// window — black backdrop, digits and all — jitters as one rigid unit, instead
+    /// of just the text moving inside a static box.
     private func startExpiryShake(totalDuration: Double, strikeAt: [Double]) {
-        guard let layer = panel?.contentView?.layer else { return }
-        let fps = 60.0
-        let n = max(2, Int(totalDuration * fps))
+        guard let panel else { return }
+        shakeTimer?.invalidate()
+        let base = panel.frame.origin                  // home position; every frame offsets from this
         let peak: CGFloat = 36                         // same peak amplitude as before
         let k = 2.4                                    // decay rate ~ the gong's loud fade
         func env(_ t: Double) -> Double {
@@ -233,21 +237,28 @@ final class BreakTimerController {
             for s in strikeAt where t >= s { bump += exp(-k * (t - s)) }
             return Double(peak) * min(1.0, bump)       // decays to 0 → still as the gong fades
         }
-        var xs = [NSNumber](), ys = [NSNumber]()
-        for i in 0..<n {
-            let t = Double(i) / fps
+        let start = Date()
+        let myEpoch = epoch
+        var lastOffset: NSPoint?
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
+            guard let self, self.epoch == myEpoch, let panel = self.panel else { tm.invalidate(); return }
+            let t = Date().timeIntervalSince(start)
+            guard t < totalDuration else {
+                tm.invalidate()
+                panel.setFrameOrigin(base)             // settle exactly home
+                return
+            }
             let e = env(t)
             // incommensurate frequencies on X and Y → chaotic, non-axis-aligned wobble
-            let dx = e * (0.7 * sin(t * 2 * .pi * 7.3) + 0.3 * sin(t * 2 * .pi * 13.1 + 0.7))
-            let dy = e * (0.7 * sin(t * 2 * .pi * 9.7 + 1.1) + 0.3 * sin(t * 2 * .pi * 5.3 + 2.0))
-            xs.append(NSNumber(value: dx)); ys.append(NSNumber(value: dy))
+            let dx = (e * (0.7 * sin(t * 2 * .pi * 7.3) + 0.3 * sin(t * 2 * .pi * 13.1 + 0.7))).rounded()
+            let dy = (e * (0.7 * sin(t * 2 * .pi * 9.7 + 1.1) + 0.3 * sin(t * 2 * .pi * 5.3 + 2.0))).rounded()
+            let off = NSPoint(x: dx, y: dy)
+            if off == lastOffset { return }            // no visible change (quiet gap) → skip the move
+            lastOffset = off
+            panel.setFrameOrigin(NSPoint(x: base.x + dx, y: base.y + dy))
         }
-        let ax = CAKeyframeAnimation(keyPath: "transform.translation.x")
-        ax.values = xs; ax.duration = totalDuration; ax.isAdditive = true; ax.calculationMode = .cubic
-        let ay = CAKeyframeAnimation(keyPath: "transform.translation.y")
-        ay.values = ys; ay.duration = totalDuration; ay.isAdditive = true; ay.calculationMode = .cubic
-        layer.add(ax, forKey: "shakeX")
-        layer.add(ay, forKey: "shakeY")
+        RunLoop.main.add(timer, forMode: .common)
+        shakeTimer = timer
     }
 
     // MARK: - Activity-driven backdrop
@@ -665,28 +676,35 @@ final class BreakTimerView: NSView {
         let digitsLeftX = digitsArea.midX - (Self.contentW * dscale) / 2
         let digitsRightX = digitsLeftX + Self.contentW * dscale   // right edge of the last digit
 
-        // Finish-time labels: left-aligned to the digits' left margin. Wide
-        // enough that the digit-height tz labels don't starve the line width.
+        // The bottom row — "until HH:MM 🏳" on the left, ⏸/✕ on the right — is
+        // v-centered in the gap between the window's bottom edge and the digits'
+        // bottom edge. Its height is the finish-time text height, and the buttons
+        // are squares of that same height (so they line up with the "until" text).
+        let rowH = bottomH * 0.82                       // == the finish-time line height
+        let rowY = (digitsArea.minY - rowH) / 2         // center the whole row under the digits
+
+        // Finish-time label: left-aligned to the digits' left margin. Wide enough
+        // that the "until HH:MM 🏳" line has room before the buttons.
         let labelRight = ch + b.width * 0.47
-        let label = NSRect(x: digitsLeftX, y: bottomY,
-                           width: max(0, labelRight - digitsLeftX), height: bottomH)
+        let label = NSRect(x: digitsLeftX, y: rowY,
+                           width: max(0, labelRight - digitsLeftX), height: rowH)
 
         // Buttons end exactly at the digits' right edge. Only ⏸ pause and ✕ close
-        // remain (time is adjusted by holding the mouse and scrolling), so size them
-        // as squares and right-align them rather than stretching across the row.
+        // remain (time is adjusted by holding the mouse and scrolling); size them as
+        // squares at the text height and right-align them rather than stretching.
         let btnLeft = label.maxX
         let btnRight = digitsRightX
         let kinds: [BreakButtonKind] = [.pause, .close]
         var buttons: [(NSRect, BreakButtonKind)] = []
         let areaW = max(0, btnRight - btnLeft)
-        let gap = areaW * 0.03
+        let gap = rowH * 0.4
         let maxBw = (areaW - gap * CGFloat(kinds.count - 1)) / CGFloat(kinds.count)
-        let side = min(bottomH, maxBw)
+        let side = max(0, min(rowH, maxBw))
         let totalW = side * CGFloat(kinds.count) + gap * CGFloat(kinds.count - 1)
         let startX = btnRight - totalW
         for (i, k) in kinds.enumerated() {
             let x = startX + CGFloat(i) * (side + gap)
-            buttons.append((NSRect(x: x, y: bottomY + (bottomH - side) / 2, width: side, height: side), k))
+            buttons.append((NSRect(x: x, y: rowY + (rowH - side) / 2, width: side, height: side), k))
         }
 
         let corners: [(NSRect, ResizeCorner)] = [
@@ -936,9 +954,10 @@ final class BreakTimerView: NSView {
 
     private func drawLabels(in area: NSRect) {
         guard area.height > 0, area.width > 0 else { return }
-        // ONE finish-time line (the picked country, default Romania), sized to fill
-        // the label band — noticeably larger than the old two-line layout.
-        let lineH = area.height * 0.82
+        // ONE finish-time line (the picked country, default Romania). The label
+        // band height IS the text line height now (the buttons match it), so use
+        // it directly rather than shrinking it.
+        let lineH = area.height
         let a = finishAttr(finishText, flag: flag, lineH: lineH, maxW: area.width, color: Self.lit)
         drawAttrCentered(a, x: area.minX, bottomY: area.minY, cellH: area.height)
         // The WHOLE line (flag + time) is the click target for the country dropdown
@@ -946,29 +965,27 @@ final class BreakTimerView: NSView {
         flagRect = NSRect(x: area.minX, y: area.minY, width: area.width, height: area.height)
     }
 
-    /// The finish-time line "🏳 → HH:MM": the picked country's flag FIRST, then the
-    /// arrow and time in a MONOSPACED font. Sized to the line, clamped to width.
+    /// The finish-time line "until HH:MM 🏳": the word "until" + the finish time in
+    /// a MONOSPACED font, then the picked country's flag at the END. Sized to the
+    /// line, clamped to width.
     private func finishAttr(_ s: String, flag: String, lineH: CGFloat, maxW: CGFloat, color: NSColor) -> NSAttributedString {
         let time = s.split(separator: " ").first.map(String.init) ?? s
         let capRatio = Self.monoCapRatio
         func build(_ sz: CGFloat) -> NSAttributedString {
             let timeFont = NSFont.monospacedSystemFont(ofSize: sz, weight: .semibold)
-            // Plain flag image; the shared shadow (set when the line is drawn) gives
-            // it the same even halo as the text — no baked outline.
+            // "until HH:MM" in the LED red, then a space and the picked country's
+            // flag at the end. The shared shadow (set when the line is drawn) gives
+            // the flag the same even halo as the text — no baked outline.
+            let m = NSMutableAttributedString()
+            m.append(NSAttributedString(string: "until \(time)",
+                                        attributes: [.font: timeFont, .foregroundColor: color]))
+            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont]))
             let att = NSTextAttachment()
             let img = Self.plainFlagImage(flag, pointSize: sz * 0.92)
             att.image = img
             att.bounds = NSRect(x: 0, y: (timeFont.capHeight - img.size.height) / 2,
                                 width: img.size.width, height: img.size.height)
-            let m = NSMutableAttributedString(attributedString: NSAttributedString(attachment: att))
-            // Center the arrow in the whitespace between the flag and the first digit:
-            // equal half-space on both sides.
-            let spaceAdv = (" " as NSString).size(withAttributes: [.font: timeFont]).width
-            let halfAdv = spaceAdv / 2
-            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: halfAdv - spaceAdv]))
-            m.append(NSAttributedString(string: "→", attributes: [.font: timeFont, .foregroundColor: color]))
-            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: halfAdv - spaceAdv, .foregroundColor: color]))
-            m.append(NSAttributedString(string: time, attributes: [.font: timeFont, .foregroundColor: color]))
+            m.append(NSAttributedString(attachment: att))
             return m
         }
         var size = 1.02 * lineH / capRatio             // end-time font (+20%)

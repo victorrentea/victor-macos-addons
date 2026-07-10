@@ -416,6 +416,16 @@ final class BottomLeftBanner {
 
     /// Dismiss by floating the pill (and any hint) straight up while fading to
     /// transparent over ~1s. The "accepted / committed" gesture.
+    ///
+    /// Both the rise and the fade are driven from ONE display timer, updating the
+    /// window's `frameOrigin` and `alphaValue` together every frame. This replaces
+    /// the earlier `NSAnimationContext` version whose window-frame animation and
+    /// content-view fade ran on two DIFFERENT drivers (the NSWindow animator vs a
+    /// Core-Animation layer fade): they could desync for a single frame and present
+    /// the window once at its final *raised* position at full opacity — a flash near
+    /// the top of the screen. Setting both properties imperatively in the same tick
+    /// makes a desync impossible; the first displayed frame is always the resting
+    /// position at full alpha.
     func dismissRisingFade() {
         guard isVisible else { return }
         cancelHoverDwell()
@@ -423,26 +433,22 @@ final class BottomLeftBanner {
         let toRemove = panels
         panels.removeAll()
         let rise: CGFloat = 140
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 1.0
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            for entry in toRemove {
-                // Rise: the pill's ONLY *window-level* animation — matching the
-                // flash-free `dismissSinking`. Animating the window's `alphaValue`
-                // in the SAME group as its frame ran two window animations on two
-                // different drivers that could desync for a frame, presenting the
-                // window once at its final (raised) position at full opacity — a
-                // "flash toward the top-left". Fade the CONTENT VIEW instead, so the
-                // window itself only ever animates its frame (smoothly, like the
-                // sink), and the fade rides along on the content layer.
-                var f = entry.panel.frame
-                f.origin.y += rise
-                entry.panel.animator().setFrame(f, display: true)
-                entry.panel.contentView?.animator().alphaValue = 0
+        let duration: TimeInterval = 1.0
+        let bases = toRemove.map { $0.panel.frame.origin }
+        let start = Date()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { tm in
+            let p = min(1.0, Date().timeIntervalSince(start) / duration)
+            let eased = CGFloat(p * p)                    // easeIn, matching the old curve
+            for (i, entry) in toRemove.enumerated() {
+                entry.panel.setFrameOrigin(NSPoint(x: bases[i].x, y: bases[i].y + rise * eased))
+                entry.panel.alphaValue = Self.visibleAlpha * (1 - eased)
             }
-        }, completionHandler: {
-            for entry in toRemove { entry.panel.orderOut(nil) }
-        })
+            if p >= 1.0 {
+                tm.invalidate()
+                for entry in toRemove { entry.panel.orderOut(nil) }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// Dismiss by sliding the pill (and any hint) straight DOWN off the bottom
