@@ -261,8 +261,8 @@ final class DisplayArrangementManager {
         guard standardRetinaMode == nil,
               displays.projector == nil,          // only trust the mode when no projector
               let retina = displays.retina,
-              CGDisplayIsInMirrorSet(retina) == 0, // don't snapshot a mirror-forced (e.g. 1080p) mode as "standard"
-              let mode = CGDisplayCopyDisplayMode(retina) else { return }
+              let mode = CGDisplayCopyDisplayMode(retina),
+              mode.pixelWidth > mode.width else { return }  // HiDPI only — never snapshot a mirror-forced 1080p as "standard"
         standardRetinaMode = mode
         overlayInfo("Captured standard Retina mode: \(mode.width)x\(mode.height) "
             + "(px \(mode.pixelWidth)x\(mode.pixelHeight))")
@@ -376,34 +376,63 @@ final class DisplayArrangementManager {
         }
 
         // Retina: un-mirror (it may be the mirror master) + restore its native
-        // mode (a mirror can force it to 1080p) + make it main at (0,0).
+        // HiDPI mode (a mirror can force it to 1080p) + make it main at (0,0).
         CGConfigureDisplayMirrorOfDisplay(config, retina, kCGNullDirectDisplay)
         var x = Int32(CGDisplayCopyDisplayMode(retina)?.width ?? 1728)
-        if let std = standardRetinaMode {
+        if let std = standardRetinaMode ?? retinaNativeMode(retina) {
             CGConfigureDisplayWithDisplayMode(config, retina, std, nil)
             x = Int32(std.width)
         }
         CGConfigureDisplayOrigin(config, retina, 0, 0)
 
-        // Every home monitor: un-mirror + tile extended to the Retina's right.
-        for ext in displays.knownExternals {
+        // Un-mirror + tile extended EVERY other online display, not just the
+        // named home monitors: a display that's currently a hardware-mirror slave
+        // has no `NSScreen` (so no name → it would be misread as an unknown
+        // "projector"), yet at home it must be extended too. There's no real
+        // projector at home, so un-mirroring everything non-builtin is correct.
+        let externals = onlineDisplayIDs().filter { $0 != retina }
+        for ext in externals {
             CGConfigureDisplayMirrorOfDisplay(config, ext, kCGNullDirectDisplay)
+            // Breaking a mirror drops the slave to a fallback (e.g. 800×600), so
+            // pin it back to its native/best mode before placing it.
+            let mode = bestMode(ext)
+            if let mode { CGConfigureDisplayWithDisplayMode(config, ext, mode, nil) }
             CGConfigureDisplayOrigin(config, ext, x, 0)
-            x += Int32(CGDisplayCopyDisplayMode(ext)?.width ?? 1920)
-        }
-        // ASUS travel monitor, if also plugged in, continues the row.
-        if let asus = displays.asus {
-            CGConfigureDisplayMirrorOfDisplay(config, asus, kCGNullDirectDisplay)
-            CGConfigureDisplayOrigin(config, asus, x, 0)
+            x += Int32(mode?.width ?? CGDisplayCopyDisplayMode(ext)?.width ?? 1920)
         }
 
-        let banner = "🖥️ Home: Retina main + \(displays.knownExternals.count) monitor(s) extended"
+        let banner = "🖥️ Home: Retina main + \(externals.count) monitor(s) extended"
         if CGCompleteDisplayConfiguration(config, .permanently) == .success {
             overlayInfo("Un-mirrored home monitors: \(banner)")
             DispatchQueue.main.async { [weak self] in self?.onArrangementApplied?(banner) }
         } else {
             overlayError("CGCompleteDisplayConfiguration failed — could not un-mirror home monitors")
         }
+    }
+
+    /// The highest-resolution usable mode for an external display (prefers 60 Hz),
+    /// used to restore a monitor to full res after breaking its mirror.
+    private func bestMode(_ display: CGDirectDisplayID) -> CGDisplayMode? {
+        guard let modes = CGDisplayCopyAllDisplayModes(display, nil) as? [CGDisplayMode] else { return nil }
+        let usable = modes.filter { $0.isUsableForDesktopGUI() }
+        func rank(_ m: CGDisplayMode) -> (Int, Int) {
+            (m.pixelWidth * m.pixelHeight, abs(m.refreshRate - 60) < 0.5 ? 1 : 0)
+        }
+        return usable.max { rank($0) < rank($1) }
+    }
+
+    /// Best-guess the Retina's native "default" mode when we never captured one
+    /// (e.g. the app only ever saw it while mirror-forced to 1080p): the true 2×
+    /// Retina mode (`pixelWidth == 2·width`) with the largest backing panel.
+    private func retinaNativeMode(_ retina: CGDirectDisplayID) -> CGDisplayMode? {
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes as String: false] as CFDictionary
+        guard let modes = CGDisplayCopyAllDisplayModes(retina, opts) as? [CGDisplayMode] else { return nil }
+        let retina2x = modes.filter {
+            $0.isUsableForDesktopGUI()
+                && $0.pixelWidth == 2 * $0.width
+                && $0.pixelHeight == 2 * $0.height
+        }
+        return retina2x.max { $0.pixelWidth < $1.pixelWidth }
     }
 
     /// Find a real 1920×1080 mode on `display`. Prefers a non-HiDPI mode (1920
