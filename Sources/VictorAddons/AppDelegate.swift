@@ -1616,7 +1616,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// and `/test/group-photo`.
     private func promptGroupPhoto() {
         statusBanner?.showOnPresence(
-            text: "📸 Group Photo — Let's make some memories? :D",
+            text: "📸 Group Photo",
             sound: StatusBannerSound.start,
             visibleDuration: 12.0
         )
