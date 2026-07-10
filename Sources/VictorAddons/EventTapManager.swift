@@ -201,8 +201,8 @@ class EventTapManager {
                 // Reset on direction change so a reversal responds immediately.
                 if (dy > 0) != (zoomAccumulator > 0) { zoomAccumulator = 0 }
                 zoomAccumulator += dy
-                while zoomAccumulator >= 1 { zoomAccumulator -= 1; KeySimulator.zoomBigger() }
-                while zoomAccumulator <= -1 { zoomAccumulator += 1; KeySimulator.zoomSmaller() }
+                while zoomAccumulator >= 1 { zoomAccumulator -= 1; KeySimulator.zoomSmaller() }
+                while zoomAccumulator <= -1 { zoomAccumulator += 1; KeySimulator.zoomBigger() }
             }
             return nil  // eat the scroll so the terminal never scrolls
         }
