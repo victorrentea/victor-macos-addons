@@ -12,8 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var menuBarManager: MenuBarManager!
     private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
     private let breakTimer = BreakTimerController()  // ☕️ Break countdown watch overlay
-    private var coffeeClickGlobalMonitor: Any?       // clicks going to other apps
-    private var coffeeClickLocalMonitor: Any?        // clicks landing on our own windows
+    private var coffeeHoverTimer: Timer?             // polls the cursor vs floating ☕ layers
     /// Menu-triggered desktop effects run for this fixed, sound-independent
     /// duration (looping effects are stopped after it; one-shots keep their own
     /// natural length). The tablet path keeps its sound-driven durations — see
@@ -143,7 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             fatalError("Content view has no layer")
         }
         animator = EmojiAnimator(hostLayer: hostLayer)
-        installCoffeeBreakClickMonitor()
+        installCoffeeBreakHoverMonitor()
         // Render the progress bar as a CALayer on the same host layer as the emoji
         // effects (built-in Retina overlay) — a plain subview on this
         // manually-populated layer-backed view does not composite.
@@ -1074,24 +1073,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    // MARK: - Coffee-click → "until break" timer
+    // MARK: - Coffee-hover → "until break" timer
 
-    /// Watch for clicks on the floating ☕ emojis participants fire. The effects
-    /// overlay is click-through, so we observe clicks both globally (they land on
-    /// other apps) and locally (our own windows). A click that hits a coffee pops
-    /// it and starts a 10-minute half-size "UNTIL BREAK" countdown — unless a break
-    /// is already on screen, so it never disrupts a running timer.
-    private func installCoffeeBreakClickMonitor() {
-        let handle: () -> Void = { [weak self] in
-            guard let self, self.animator?.popCoffee(atGlobalPoint: NSEvent.mouseLocation) == true else { return }
-            guard !self.breakTimer.isShowing else { return }
-            overlayInfo("☕ clicked → starting 10-min UNTIL BREAK timer")
+    /// Hovering the cursor over a floating ☕ emoji participants fire starts a
+    /// 10-minute half-size "UNTIL BREAK" countdown. We POLL the mouse-vs-coffee
+    /// overlap (0.1s) rather than watch `.mouseMoved` events, so it also fires when
+    /// a rising coffee floats into a *stationary* cursor (the coffee is the moving
+    /// target). A hit pops the coffee and — unless a break is already on screen —
+    /// starts the timer; the `isShowing` guard also stops repeat coffees under the
+    /// cursor from spawning a second timer.
+    private func installCoffeeBreakHoverMonitor() {
+        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            // While a break is already up, leave coffees alone (don't pop grazed
+            // ones) and never spawn a second timer.
+            guard let self, !self.breakTimer.isShowing else { return }
+            guard self.animator?.popCoffee(atGlobalPoint: NSEvent.mouseLocation) == true else { return }
+            overlayInfo("☕ hovered → starting 10-min UNTIL BREAK timer")
             self.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5)
         }
-        coffeeClickGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { _ in handle() }
-        coffeeClickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
-            handle(); return event
-        }
+        RunLoop.main.add(t, forMode: .common)
+        coffeeHoverTimer = t
     }
 
     // MARK: - Break reminder
