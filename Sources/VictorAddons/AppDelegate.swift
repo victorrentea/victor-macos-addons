@@ -897,7 +897,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         eventTap.onWhipCrack = { [weak self] in self?.whipController?.forceCrack() }
         eventTap.onRepaste = {
-            DispatchQueue.global().async { KeySimulator.simulateDoubleOptionPress() }
+            DispatchQueue.global().async { KeySimulator.simulateCtrlOptSpace() }
         }
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
