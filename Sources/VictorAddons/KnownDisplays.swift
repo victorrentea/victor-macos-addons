@@ -17,7 +17,8 @@ final class KnownDisplays {
     /// Victor's own displays, by name substring (case-insensitive `contains`).
     /// Keep substrings specific enough not to collide with a venue's gear.
     static let trustedNameSubstrings: [String] = [
-        "ASUS",   // ASUS MB166C — travel monitor
+        "ASUS",           // ASUS MB166C — travel monitor
+        "DELL S2421HN",   // home desk — 3× of these, always extended, never mirrored
         // Home monitors / TV go here once Victor names them, e.g.:
         // "DELL U2419H", "LG", "SAMSUNG",
     ]

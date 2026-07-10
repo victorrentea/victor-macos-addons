@@ -48,9 +48,11 @@ final class DisplayArrangementManager {
         var asus: CGDirectDisplayID?
         /// First unknown external (venue projector / room TV), if any.
         var projector: CGDirectDisplayID?
-        /// A known non-ASUS external (home monitor / TV) is connected → we're at
-        /// home / a familiar rig, so auto-arrange keeps its hands off.
-        var hasKnownExternal = false
+        /// Known non-ASUS externals (home monitors / TV). Their presence means
+        /// we're at home / a familiar rig, so auto-arrange keeps its hands off —
+        /// except we never allow one to stay *mirroring* the Retina (see below).
+        var knownExternals: [CGDirectDisplayID] = []
+        var hasKnownExternal: Bool { !knownExternals.isEmpty }
     }
 
     /// The decision key: re-apply only when this changes.
@@ -126,13 +128,25 @@ final class DisplayArrangementManager {
         }
         lastScene = target
 
-        // Hands off a familiar multi-display rig: when a KNOWN non-ASUS external
-        // (home monitor / TV) is present we assume Victor's own layout is set up
-        // the way he wants, so we don't reshuffle it. A venue (unknown projector)
-        // never has these connected. The manual "🖥️ Fix display layout" (force)
-        // still overrides.
-        if displays.hasKnownExternal && !force {
-            overlayInfo("Auto-arrange suppressed (known external present — familiar rig)")
+        // A familiar multi-display rig: when KNOWN non-ASUS externals (home
+        // monitors / TV) are present, Victor's own layout is set the way he wants,
+        // so we normally don't reshuffle it. The ONE invariant we always enforce:
+        // a home monitor must **never mirror** the Retina — it's always extended.
+        // So we intervene only to un-mirror + extend a monitor that's stuck in a
+        // mirror set; otherwise (all already extended) we truly keep hands off.
+        // A venue (unknown projector) never has these connected. The manual
+        // "🖥️ Fix display layout" (force) always re-lays them out extended.
+        if displays.hasKnownExternal {
+            let mirrored = displays.knownExternals.filter { CGDisplayIsInMirrorSet($0) != 0 }
+            if force {
+                overlayInfo("Force: laying home monitors out extended (never mirrored)")
+                enforceKnownExternalsExtended(displays)
+            } else if mirrored.isEmpty {
+                overlayInfo("Auto-arrange suppressed (known external present — familiar rig)")
+            } else {
+                overlayInfo("Home monitor(s) mirroring the Retina (\(mirrored.count)) — un-mirroring + extending")
+                enforceKnownExternalsExtended(displays)
+            }
             return
         }
 
@@ -198,7 +212,7 @@ final class DisplayArrangementManager {
             switch role(of: id) {
             case .retina:        if set.retina == nil { set.retina = id }
             case .asus:          if set.asus == nil { set.asus = id }
-            case .knownExternal: set.hasKnownExternal = true
+            case .knownExternal: set.knownExternals.append(id)
             case .projector:     if set.projector == nil { set.projector = id }
             }
         }
@@ -247,6 +261,7 @@ final class DisplayArrangementManager {
         guard standardRetinaMode == nil,
               displays.projector == nil,          // only trust the mode when no projector
               let retina = displays.retina,
+              CGDisplayIsInMirrorSet(retina) == 0, // don't snapshot a mirror-forced (e.g. 1080p) mode as "standard"
               let mode = CGDisplayCopyDisplayMode(retina) else { return }
         standardRetinaMode = mode
         overlayInfo("Captured standard Retina mode: \(mode.width)x\(mode.height) "
@@ -338,6 +353,57 @@ final class DisplayArrangementManager {
             return "🖥️ Standard: Retina main + ASUS right"
         }
         return "🖥️ Standard: Retina only"
+    }
+
+    /// Home rig: break any mirroring on the Retina + the known home monitors and
+    /// lay them out **extended** — Retina main at its native mode, every home
+    /// monitor (and the ASUS, if present) tiled to its right. Called when a home
+    /// monitor is found mirroring the Retina (auto) or on a manual force, so the
+    /// home displays are *never* left mirrored.
+    private func enforceKnownExternalsExtended(_ displays: DisplaySet) {
+        guard let retina = displays.retina else { return }
+        isApplying = true
+        defer {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.isApplying = false
+            }
+        }
+
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
+            overlayError("CGBeginDisplayConfiguration failed — could not un-mirror home monitors")
+            return
+        }
+
+        // Retina: un-mirror (it may be the mirror master) + restore its native
+        // mode (a mirror can force it to 1080p) + make it main at (0,0).
+        CGConfigureDisplayMirrorOfDisplay(config, retina, kCGNullDirectDisplay)
+        var x = Int32(CGDisplayCopyDisplayMode(retina)?.width ?? 1728)
+        if let std = standardRetinaMode {
+            CGConfigureDisplayWithDisplayMode(config, retina, std, nil)
+            x = Int32(std.width)
+        }
+        CGConfigureDisplayOrigin(config, retina, 0, 0)
+
+        // Every home monitor: un-mirror + tile extended to the Retina's right.
+        for ext in displays.knownExternals {
+            CGConfigureDisplayMirrorOfDisplay(config, ext, kCGNullDirectDisplay)
+            CGConfigureDisplayOrigin(config, ext, x, 0)
+            x += Int32(CGDisplayCopyDisplayMode(ext)?.width ?? 1920)
+        }
+        // ASUS travel monitor, if also plugged in, continues the row.
+        if let asus = displays.asus {
+            CGConfigureDisplayMirrorOfDisplay(config, asus, kCGNullDirectDisplay)
+            CGConfigureDisplayOrigin(config, asus, x, 0)
+        }
+
+        let banner = "🖥️ Home: Retina main + \(displays.knownExternals.count) monitor(s) extended"
+        if CGCompleteDisplayConfiguration(config, .permanently) == .success {
+            overlayInfo("Un-mirrored home monitors: \(banner)")
+            DispatchQueue.main.async { [weak self] in self?.onArrangementApplied?(banner) }
+        } else {
+            overlayError("CGCompleteDisplayConfiguration failed — could not un-mirror home monitors")
+        }
     }
 
     /// Find a real 1920×1080 mode on `display`. Prefers a non-HiDPI mode (1920
