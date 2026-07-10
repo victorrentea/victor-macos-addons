@@ -317,7 +317,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // of playing locally (one sound at a time, new play preempts).
         tabletServer?.onPing = { [weak self] in
             self?.lastTabletPingAt = Date()
-            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\"}"
+            // Carry the Mac's wall time so the tablet can render its clock in sync
+            // with the system (its own device clock/timezone is often wrong while
+            // travelling). We send both the absolute epoch (corrects a wrong clock)
+            // and the timezone id (corrects a wrong timezone) — the tablet formats
+            // the epoch in this timezone to match exactly what the Mac shows.
+            let macMs = Int64(Date().timeIntervalSince1970 * 1000)
+            let macTz = TimeZone.current.identifier
+            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\"}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
         tabletServer?.onSoundPlay = { [weak self] name, volumePct in
