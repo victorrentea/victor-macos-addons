@@ -17,6 +17,11 @@ enum KeySimulator {
     static func cmdC() { simulateKeyPress(keyCode: 0x08, flags: .maskCommand) }
     static func cmdZ() { simulateKeyPress(keyCode: 0x06, flags: .maskCommand) }
 
+    /// Cmd+= — terminal "Bigger" (increase font size). Key 0x18 = kVK_ANSI_Equal.
+    static func zoomBigger()  { simulateKeyPress(keyCode: 0x18, flags: .maskCommand) }
+    /// Cmd+- — terminal "Smaller" (decrease font size). Key 0x1B = kVK_ANSI_Minus.
+    static func zoomSmaller() { simulateKeyPress(keyCode: 0x1B, flags: .maskCommand) }
+
     static func simulateDoubleOptionPress() {
         let src = CGEventSource(stateID: .hidSystemState)
         let optKey: CGKeyCode = 0x3A  // kVK_Option

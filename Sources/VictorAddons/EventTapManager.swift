@@ -64,20 +64,24 @@ class EventTapManager {
     private var wheelPendingWork: DispatchWorkItem?
     private let wheelClickWindow: TimeInterval = 0.35
 
-    // MARK: Cmd+scroll → terminal scrollback
-    /// Apps where a Cmd+scroll is rewritten to a plain scroll (so it drives the
-    /// terminal's scrollback instead of doing nothing / a modified scroll).
-    /// Matched against the app owning the window UNDER THE CURSOR — that's where
-    /// a scroll is delivered in macOS — not the focused app.
+    // MARK: Cmd+scroll → terminal font zoom
+    /// Terminals where Cmd+scroll is turned into a font-size zoom (Cmd+= / Cmd+-).
+    /// Matched against the FOCUSED app, because the synthesized zoom keystroke is
+    /// delivered to the key window.
     private let scrollScopeBundleIds: Set<String> = [
         "com.apple.Terminal",
         "com.googlecode.iterm2",
     ]
-    /// Tiny same-position cache so a stationary Cmd+scroll gesture doesn't
-    /// re-enumerate the window list on every wheel tick. Touched only on the
-    /// tap's run-loop thread (all events are handled serially there), so no lock.
-    private var cachedScrollPoint: CGPoint?
-    private var cachedScrollBundle: String?
+    /// Accumulates wheel line-delta so one notch = one font step regardless of how
+    /// many scroll events a notch emits. Touched only on the tap's run-loop thread
+    /// (events are handled serially there), so no lock needed.
+    private var zoomAccumulator: Double = 0
+
+    /// Bundle id of the focused app, cached from the main thread via an NSWorkspace
+    /// notification so the tap callback can read it without touching AppKit
+    /// off-thread.
+    private let frontmostLock = NSLock()
+    private var frontmostBundleId: String?
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
@@ -116,6 +120,21 @@ class EventTapManager {
         }
         thread.name = "EventTapRunLoop"
         thread.start()
+
+        // Track the focused app on the main thread so the tap can cheaply decide
+        // (without touching AppKit off-thread) whether Cmd+scroll should zoom.
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.setFrontmostBundleId(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                self?.setFrontmostBundleId(app?.bundleIdentifier)
+            }
+        }
     }
 
     // MARK: - Internal event handler (called from C callback)
@@ -168,16 +187,24 @@ class EventTapManager {
         // Terminal/iTerm2 don't map Cmd+scroll to font-zoom — and we remove Cmd
         // before the terminal even sees the event, so this can never zoom.
         // Targets the app under the CURSOR (where the scroll lands), not focus.
+        // Cmd+scroll while a terminal is focused → zoom the font (Cmd+= / Cmd+-)
+        // instead of scrolling. Suppress the scroll and synthesize the native
+        // Bigger/Smaller shortcut, one step per wheel notch.
         if type == .scrollWheel {
-            guard event.flags.contains(.maskCommand) else {
-                return Unmanaged.passUnretained(event)
-            }
-            guard let bundle = scopedAppUnderCursor(at: event.location),
+            guard event.flags.contains(.maskCommand),
+                  let bundle = currentFrontmostBundleId(),
                   scrollScopeBundleIds.contains(bundle) else {
                 return Unmanaged.passUnretained(event)
             }
-            event.flags.remove(.maskCommand)
-            return Unmanaged.passUnretained(event)
+            let dy = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)  // + up, - down
+            if dy != 0 {
+                // Reset on direction change so a reversal responds immediately.
+                if (dy > 0) != (zoomAccumulator > 0) { zoomAccumulator = 0 }
+                zoomAccumulator += dy
+                while zoomAccumulator >= 1 { zoomAccumulator -= 1; KeySimulator.zoomBigger() }
+                while zoomAccumulator <= -1 { zoomAccumulator += 1; KeySimulator.zoomSmaller() }
+            }
+            return nil  // eat the scroll so the terminal never scrolls
         }
 
         // Keyboard events
@@ -322,42 +349,14 @@ class EventTapManager {
         return NSPasteboard.general.string(forType: .string)
     }
 
-    // MARK: - App under the cursor (for Cmd+scroll targeting)
+    // MARK: - Frontmost app tracking (for Cmd+scroll zoom targeting)
 
-    /// Bundle id of the app owning the front-most normal window under `point`,
-    /// cached while the cursor is stationary (a scroll gesture holds it still).
-    private func scopedAppUnderCursor(at point: CGPoint) -> String? {
-        if let cached = cachedScrollPoint,
-           abs(cached.x - point.x) < 3, abs(cached.y - point.y) < 3 {
-            return cachedScrollBundle
-        }
-        let bundle = bundleIdUnderCursor(at: point)
-        cachedScrollPoint = point
-        cachedScrollBundle = bundle
-        return bundle
+    private func setFrontmostBundleId(_ id: String?) {
+        frontmostLock.lock(); frontmostBundleId = id; frontmostLock.unlock()
     }
 
-    /// Walks the on-screen window list (front-to-back) and returns the bundle id
-    /// of the app owning the top-most normal-layer window that contains `point`.
-    /// `point` is Quartz global (top-left origin) — the same space as
-    /// `CGEvent.location` and `kCGWindowBounds`.
-    private func bundleIdUnderCursor(at point: CGPoint) -> String? {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return nil
-        }
-        for window in windows {
-            // Skip menu bar, shadows, overlays — only real, normal-layer windows.
-            let layer = window[kCGWindowLayer as String] as? Int ?? 0
-            guard layer == 0 else { continue }
-            guard let boundsDict = window[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
-                  bounds.contains(point) else {
-                continue
-            }
-            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t else { return nil }
-            return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
-        }
-        return nil
+    private func currentFrontmostBundleId() -> String? {
+        frontmostLock.lock(); defer { frontmostLock.unlock() }
+        return frontmostBundleId
     }
 }
