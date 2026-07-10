@@ -686,7 +686,7 @@ final class BreakTimerView: NSView {
         let rowH = bottomH * 0.82                       // full finish-time line height
         let rowY = (digitsArea.minY - rowH) / 2         // center the row under the digits
         let kinds: [BreakButtonKind] = [.pause, .close]
-        var side = rowH                                 // button height == the "until" text height
+        var side = Self.finishCapFraction * rowH        // button height == a "0" digit's height in the text
         var btnGap = side * 0.3                         // between the two buttons
         var labelGap = side * 0.5                       // small gap between the text and the buttons
         var textW = finishLineWidth(lineH: rowH)        // natural (un-shrunk) width of "until HH:MM 🏳"
@@ -903,6 +903,11 @@ final class BreakTimerView: NSView {
     }
 
     private static let monoCapRatio = NSFont.monospacedSystemFont(ofSize: 100, weight: .semibold).capHeight / 100
+    /// Finish-time font sizing: the cap height (i.e. the height of a "0") as a
+    /// fraction of the line height. The monospaced point size is
+    /// `capHeight / monoCapRatio`. Was 1.02; reduced 10% → 0.918. The ⏸/✕ buttons
+    /// are sized to this same "0" height (see `computeLayout`).
+    private static let finishCapFraction: CGFloat = 0.918
     /// capHeight / pointSize for the rounded heavy title font — lets us size BREAK
     /// from a target cap height so its top & bottom gaps are exact.
     private static let titleCapRatio = labelFont(size: 100, weight: .heavy).capHeight / 100
@@ -985,7 +990,9 @@ final class BreakTimerView: NSView {
             let m = NSMutableAttributedString()
             m.append(NSAttributedString(string: "until \(time)",
                                         attributes: [.font: timeFont, .foregroundColor: color]))
-            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont]))
+            // Half a space between the time and the flag (−50% from a full space).
+            let spaceAdv = (" " as NSString).size(withAttributes: [.font: timeFont]).width
+            m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: -spaceAdv / 2]))
             let att = NSTextAttachment()
             let img = Self.plainFlagImage(flag, pointSize: sz * 0.92)
             att.image = img
@@ -994,7 +1001,7 @@ final class BreakTimerView: NSView {
             m.append(NSAttributedString(attachment: att))
             return m
         }
-        var size = 1.02 * lineH / capRatio             // end-time font (+20%)
+        var size = Self.finishCapFraction * lineH / capRatio   // cap ("0") height = finishCapFraction × lineH
         var attr = build(size)
         let w = attr.size().width
         if w > maxW { size *= maxW / w; attr = build(size) }
