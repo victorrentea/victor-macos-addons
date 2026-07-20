@@ -428,7 +428,7 @@ final class BottomLeftBanner {
     /// position at full alpha.
     func dismissRisingFade() {
         guard isVisible else { return }
-        cancelHoverDwell()
+        cancelHoverDwell(resetNudge: false)   // keep the raised y the hover-slide reached
         clearHoverCountdown()
         let toRemove = panels
         panels.removeAll()
@@ -460,7 +460,7 @@ final class BottomLeftBanner {
     /// being pulled back down), then the off-screen panels are torn down.
     func dismissSinking() {
         guard isVisible else { return }
-        cancelHoverDwell()
+        cancelHoverDwell(resetNudge: false)   // keep the lowered y the hover-slide reached
         clearHoverCountdown()
         let toRemove = panels
         panels.removeAll()
@@ -491,12 +491,17 @@ final class BottomLeftBanner {
         }
     }
 
-    fileprivate func cancelHoverDwell() {
+    /// Stop the dwell timer. `resetNudge` snaps the whitening + slide back to rest
+    /// (progress 0) — correct when the hover was ABANDONED (mouse left). The outcome
+    /// dismissals (`dismissRisingFade` / `dismissSinking`) pass `false`: the pill has
+    /// crept up/down under the cursor and the exit must continue from *there*, not
+    /// jump back to the resting y first (that snap-back was the visible stutter).
+    fileprivate func cancelHoverDwell(resetNudge: Bool = true) {
         hoverDwellTimer?.invalidate()
         hoverDwellTimer = nil
         if hoverDwellCount > 0 {
             hoverDwellCount = 0
-            applyDwellProgress(0)
+            if resetNudge { applyDwellProgress(0) }
         }
     }
 
