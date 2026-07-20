@@ -249,6 +249,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "money":           self?.animator.showMoneyRise()
             case "iris":            self?.animator.showIrisClose()
             case "minion":          self?.animator.showMinion()
+            case "coffee":
+                // Test hook (/test/coffee): spawn a few rising ☕ so the hold-charge
+                // gesture can be exercised headlessly — hover one, hold 3s, watch it
+                // freeze, grow, and explode (starts the break, or shaves 1s off it).
+                for _ in 0..<3 { self?.animator.spawnEmoji("☕") }
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -1075,21 +1080,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
     // MARK: - Coffee-hover → "until break" timer
 
-    /// Hovering the cursor over a floating ☕ emoji participants fire starts a
-    /// 10-minute half-size "UNTIL BREAK" countdown. We POLL the mouse-vs-coffee
-    /// overlap (0.1s) rather than watch `.mouseMoved` events, so it also fires when
-    /// a rising coffee floats into a *stationary* cursor (the coffee is the moving
-    /// target). A hit pops the coffee and — unless a break is already on screen —
-    /// starts the timer; the `isShowing` guard also stops repeat coffees under the
-    /// cursor from spawning a second timer.
+    /// Resting the cursor on a floating ☕ (that participants fire) FREEZES it and
+    /// starts a hold-charge: it stops rising and grows for 3s, then explodes. We POLL
+    /// the mouse-vs-coffee overlap (0.1s) rather than watch `.mouseMoved`, so a
+    /// deliberate hold registers even with a perfectly still cursor. The 3-second
+    /// hold — not a mere graze — is what triggers the payoff, so it can now run even
+    /// while a break is up without accidental firing:
+    ///   • no break showing → the explosion STARTS the 10-min "UNTIL BREAK" timer;
+    ///   • break already running → the explosion SHAVES 1s off the remaining time
+    ///     (repeat the gesture on more coffees to keep shortening the wait).
     private func installCoffeeBreakHoverMonitor() {
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            // While a break is already up, leave coffees alone (don't pop grazed
-            // ones) and never spawn a second timer.
-            guard let self, !self.breakTimer.isShowing else { return }
-            guard self.animator?.popCoffee(atGlobalPoint: NSEvent.mouseLocation) == true else { return }
-            overlayInfo("☕ hovered → starting 10-min UNTIL BREAK timer")
-            self.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5)
+            guard let self else { return }
+            guard self.animator?.tickCoffeeCharge(cursorGlobalPoint: NSEvent.mouseLocation) == true else { return }
+            if self.breakTimer.isShowing {
+                overlayInfo("☕ held 3s → −1s off the break")
+                self.breakTimer.addSeconds(-1)
+            } else {
+                overlayInfo("☕ held 3s → starting 10-min UNTIL BREAK timer")
+                self.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5)
+            }
         }
         RunLoop.main.add(t, forMode: .common)
         coffeeHoverTimer = t

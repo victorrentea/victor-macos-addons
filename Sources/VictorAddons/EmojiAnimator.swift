@@ -30,10 +30,20 @@ class EmojiAnimator {
     // Track active toggleable effects (danger, sepia, zorro) so clicking again cancels them
     private var activeEffects: [String: CALayer] = [:]
 
-    // Floating ☕ layers currently rising on screen. They're click targets: a click
-    // that lands on one (hit-tested via AppDelegate's global mouse monitor) pops it
-    // and starts the "until break" countdown.
+    // Floating ☕ layers currently rising on screen. They're hover targets: parking
+    // the cursor on one (hit-tested via AppDelegate's poll timer) FREEZES it and
+    // begins a hold-charge — see tickCoffeeCharge.
     private var activeCoffeeLayers: [CATextLayer] = []
+
+    // Hover-to-hold coffee gesture. Resting the cursor on a rising ☕ freezes it in
+    // place and grows it for `coffeeChargeSeconds`; completing the hold explodes it
+    // (the payoff — start / shave the break — is the caller's, in AppDelegate). Only
+    // one coffee charges at a time; the cursor leaving before the hold ends cancels.
+    private var chargingCoffee: CATextLayer?
+    private var coffeeChargeStart: CFTimeInterval = 0
+    static let coffeeChargeSeconds: Double = 3.0
+    private static let coffeeChargeGrowScale: CGFloat = 2.6
+    private static let coffeeHitSlop: CGFloat = 34
 
     // Pulse: layers stored so clicking again can stop it
     private var pulseRunning = false
@@ -203,6 +213,10 @@ class EmojiAnimator {
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak layer] in
             guard let layer = layer else { return }
+            // If this coffee got caught mid-flight for a hold-charge, the charge
+            // owns its lifecycle now — don't let the original rise/fade removal
+            // pull it off screen underneath the growing hover.
+            if isCoffee, self?.chargingCoffee === layer { return }
             layer.removeFromSuperlayer()
             if isCoffee { self?.activeCoffeeLayers.removeAll { $0 === layer } }
         }
@@ -210,25 +224,133 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
-    /// If `globalPoint` (screen coords) lands on a floating ☕, pop that coffee and
-    /// return true. Used to start the "until break" timer when the trainer clicks a
-    /// coffee a participant fired. A generous hit slop makes the moving target easy.
-    func popCoffee(atGlobalPoint globalPoint: CGPoint) -> Bool {
-        guard !activeCoffeeLayers.isEmpty, let frame = Self.builtInScreenFrame() else { return false }
+    /// Drive the hover-to-hold coffee gesture. Call every poll tick (~0.1s) with the
+    /// current global cursor point. Returns `true` on the SINGLE tick a full
+    /// `coffeeChargeSeconds` hold completes (the coffee explodes) — the caller then
+    /// performs the payoff (start the break, or shave a second off a running one).
+    ///
+    /// While charging, the caught coffee is frozen in place and grows steadily (the
+    /// growth is the 3-second progress bar); the cursor slipping off cancels it. A
+    /// generous hit slop keeps both the initial catch and the hold forgiving.
+    func tickCoffeeCharge(cursorGlobalPoint globalPoint: CGPoint) -> Bool {
+        guard let frame = Self.builtInScreenFrame() else { return false }
         // Overlay panel covers the built-in screen; its layer origin (0,0) sits at
         // the screen's bottom-left, so shift the global point by the screen origin.
         let p = CGPoint(x: globalPoint.x - frame.origin.x, y: globalPoint.y - frame.origin.y)
-        let pad: CGFloat = 34   // hit slop around the rising emoji
-        for layer in activeCoffeeLayers.reversed() {   // topmost (newest) first
+        let pad = Self.coffeeHitSlop
+
+        // --- Already charging one: keep, complete, or cancel it ---
+        if let layer = chargingCoffee {
             let box = (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
-            if box.contains(p) {
-                layer.removeAllAnimations()
-                layer.removeFromSuperlayer()
-                activeCoffeeLayers.removeAll { $0 === layer }
+            if !box.contains(p) { cancelCoffeeCharge(); return false }
+            if CACurrentMediaTime() - coffeeChargeStart >= Self.coffeeChargeSeconds {
+                chargingCoffee = nil
+                explodeCoffee(layer)
                 return true
             }
+            return false
+        }
+
+        // --- Nothing charging: try to catch a coffee under the cursor ---
+        guard !activeCoffeeLayers.isEmpty else { return false }
+        for layer in activeCoffeeLayers.reversed() {   // topmost (newest) first
+            let box = (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
+            if box.contains(p) { beginCoffeeCharge(layer); return false }
         }
         return false
+    }
+
+    /// Catch a coffee: freeze it where it visually is, stop its rise/fade, and start
+    /// the steady 3-second grow that doubles as the hold's progress indicator.
+    private func beginCoffeeCharge(_ layer: CATextLayer) {
+        let pos = layer.presentation()?.position ?? layer.position
+        chargingCoffee = layer                 // set FIRST: guards the original completion block
+        coffeeChargeStart = CACurrentMediaTime()
+        activeCoffeeLayers.removeAll { $0 === layer }   // out of the auto-rising pool
+        layer.removeAllAnimations()
+        layer.position = pos
+        layer.opacity = 1
+        layer.transform = CATransform3DMakeScale(Self.coffeeChargeGrowScale, Self.coffeeChargeGrowScale, 1)
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = 1.0
+        grow.toValue = Self.coffeeChargeGrowScale
+        grow.duration = Self.coffeeChargeSeconds
+        grow.timingFunction = CAMediaTimingFunction(name: .linear)
+        grow.fillMode = .forwards
+        grow.isRemovedOnCompletion = false
+        layer.add(grow, forKey: "charge")
+    }
+
+    /// Cursor slipped off before the hold finished — let the coffee fade away and go.
+    private func cancelCoffeeCharge() {
+        guard let layer = chargingCoffee else { return }
+        chargingCoffee = nil
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = layer.presentation()?.opacity ?? 1
+        fade.toValue = 0
+        fade.duration = 0.3
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
+        layer.add(fade, forKey: "cancel")
+        CATransaction.commit()
+    }
+
+    /// The hold completed: pop the coffee with a 💥 burst. The burst rides its own
+    /// fully-owned layer, so it plays in full even if the coffee's original rise/fade
+    /// bookkeeping happens to remove the ☕ underneath it.
+    private func explodeCoffee(_ coffee: CATextLayer) {
+        let center = coffee.presentation()?.position ?? coffee.position
+
+        // Fling the ☕ itself out: a quick scale-up + fade, then gone.
+        coffee.removeAllAnimations()
+        let pop = CABasicAnimation(keyPath: "transform.scale")
+        pop.fromValue = Self.coffeeChargeGrowScale
+        pop.toValue = Self.coffeeChargeGrowScale * 1.6
+        let popFade = CABasicAnimation(keyPath: "opacity")
+        popFade.fromValue = 1
+        popFade.toValue = 0
+        let popGrp = CAAnimationGroup()
+        popGrp.animations = [pop, popFade]
+        popGrp.duration = 0.35
+        popGrp.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        popGrp.fillMode = .forwards
+        popGrp.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak coffee] in coffee?.removeFromSuperlayer() }
+        coffee.add(popGrp, forKey: "explode")
+        CATransaction.commit()
+
+        // 💥 burst on its own layer, centered on the coffee.
+        let burst = CATextLayer()
+        burst.string = "💥"
+        burst.fontSize = 96
+        burst.alignmentMode = .center
+        burst.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        let s: CGFloat = 130
+        burst.frame = CGRect(x: center.x - s / 2, y: center.y - s / 2, width: s, height: s)
+        hostLayer.addSublayer(burst)
+        let bScale = CABasicAnimation(keyPath: "transform.scale")
+        bScale.fromValue = 0.4
+        bScale.toValue = 1.8
+        bScale.duration = 0.5
+        bScale.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        let bFade = CABasicAnimation(keyPath: "opacity")
+        bFade.fromValue = 1
+        bFade.toValue = 0
+        bFade.beginTime = 0.15
+        bFade.duration = 0.35
+        bFade.fillMode = .forwards
+        let bGrp = CAAnimationGroup()
+        bGrp.animations = [bScale, bFade]
+        bGrp.duration = 0.5
+        bGrp.fillMode = .forwards
+        bGrp.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak burst] in burst?.removeFromSuperlayer() }
+        burst.add(bGrp, forKey: "burst")
+        CATransaction.commit()
     }
 
     /// The built-in Retina screen's frame in global coords — where the overlay sits.
