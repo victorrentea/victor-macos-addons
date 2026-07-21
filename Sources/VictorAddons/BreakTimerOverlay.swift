@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import IOKit.pwr_mgt
 
 /// Break countdown "watch" overlay: a draggable, resizable, mouse-interactive
 /// panel showing a big red seven-segment MM:SS countdown over a frosted-glass
@@ -18,10 +19,10 @@ final class BreakTimerController {
     static let minWidth: CGFloat = 180
 
     // Geometry for the fullscreen-on-idle behavior. (At normal size the backdrop is
-    // hover-driven; while enlarged-on-idle it stays always black — see `activityTick`.)
-    private static let fullscreenIdleSeconds: CFTimeInterval = 120    // total (mouse+keyboard) idle → enlarge
-    private static let enlargeFraction: CGFloat = 0.85               // big frame fills 85% of the screen
-    private static let enlargeAnimationDuration: TimeInterval = 0.3   // enlarge/restore animation
+    // hover-driven; while fullscreen-on-idle it stays always black — see `activityTick`.)
+    private static let fullscreenIdleSeconds: CFTimeInterval = 120    // total (mouse+keyboard) idle → go fullscreen
+    private static let fullscreenFraction: CGFloat = 1.0             // fills 100% of the retina (desktop-like)
+    private static let enlargeAnimationDuration: TimeInterval = 0.3   // enter/exit fullscreen animation
 
     /// Seconds from the start of `50_gong.mp3` to its audible strike. The clip
     /// opens with ~1.0s of near-silence and its RMS/absolute peak (the loud
@@ -56,9 +57,13 @@ final class BreakTimerController {
     var isShowing: Bool { panel != nil }
 
     // Fullscreen-on-idle: after `fullscreenIdleSeconds` of total inactivity the
-    // panel grows to `enlargeFraction` of its screen; any input restores it.
+    // panel fills the retina (a black "break screen"), every OTHER display goes
+    // black, and the Mac is kept awake; any input restores everything.
     private var isEnlarged = false
-    private var savedFrame: NSRect?           // the user's frame, restored on enlarge → normal
+    private var savedFrame: NSRect?           // the user's frame, restored on fullscreen → normal
+    private var blackoutPanels: [NSPanel] = []  // opaque-black covers over the non-retina displays
+    private var sleepAssertionID: IOPMAssertionID = 0
+    private var hasSleepAssertion = false     // an IOPM "keep display awake" assertion is held
 
     // The single finish-time line shows a user-pickable country; the pick is
     // day-scoped (resets to Romania each new day). Clicking the flag opens the picker.
@@ -153,6 +158,9 @@ final class BreakTimerController {
         blinkTimer?.invalidate(); blinkTimer = nil
         shakeTimer?.invalidate(); shakeTimer = nil
         activityTimer?.invalidate(); activityTimer = nil
+        // Drop the fullscreen "break screen" extras (harmless no-ops if not active).
+        removeBlackoutPanels()
+        allowSleep()
         panel?.orderOut(nil)
         panel = nil
         view = nil
@@ -272,12 +280,12 @@ final class BreakTimerController {
     /// cursor is hovering over the timer panel: hover in → it fades fully away (so
     /// you can see the screen underneath, only the outlined digits remain), hover
     /// out → it fades back to fully opaque. One smooth fade per transition, so it
-    /// never flickers. EXCEPTION: while the panel is enlarged-on-idle it stays
+    /// never flickers. EXCEPTION: while the panel is fullscreen-on-idle it stays
     /// always black (a resting cursor sits over the big panel, so hover would
     /// otherwise clear it — see `activityTick`).
     ///
-    /// The same tick also drives the fullscreen-on-idle behavior, but from TOTAL
-    /// inactivity (`systemIdleSeconds`, mouse+keyboard), so any input — even
+    /// The same tick also drives the fullscreen-on-idle "break screen", but from
+    /// TOTAL inactivity (`systemIdleSeconds`, mouse+keyboard), so any input — even
     /// keystrokes or a mouse move on another screen — restores the original size.
     private func startActivityMonitor() {
         activityTimer?.invalidate()
@@ -291,60 +299,112 @@ final class BreakTimerController {
     }
 
     private func activityTick() {
-        // --- Fullscreen on total inactivity; any input restores ---
+        // --- Fullscreen "break screen" on total inactivity; any input restores ---
         if Self.systemIdleSeconds() >= Self.fullscreenIdleSeconds {
-            enlargeIfNeeded(on: panelScreen())
+            enterFullscreenIfNeeded()
         } else {
-            restoreIfNeeded()
+            exitFullscreenIfNeeded()
         }
 
         // --- Backdrop: black by default, transparent only while hovering the panel ---
-        // While enlarged-on-idle, keep it ALWAYS black: the big panel covers ~85% of
-        // the screen, so a resting cursor sits "over" it and would otherwise fade the
+        // While fullscreen-on-idle, keep it ALWAYS black: the panel covers the whole
+        // retina, so a resting cursor sits "over" it and would otherwise fade the
         // backdrop away. Only the normal-size timer peeks through on hover.
         let hovering = panel?.frame.contains(NSEvent.mouseLocation) ?? false
         setBackgroundOpaque(isEnlarged || !hovering)
     }
 
-    /// The screen the timer panel is currently on. `panel.screen` is the most-
-    /// overlapping screen; if it's nil (panel dragged off-screen) fall back to the
-    /// screen containing the panel's center, then to the retina/built-in display.
-    private func panelScreen() -> NSScreen {
-        if let s = panel?.screen { return s }
-        if let f = panel?.frame,
-           let s = Self.screen(containing: NSPoint(x: f.midX, y: f.midY)) { return s }
-        return AppDelegate.findRetinaScreen()
-    }
-
-    private static func screen(containing point: NSPoint) -> NSScreen? {
-        NSScreen.screens.first { $0.frame.contains(point) }
-    }
-
-    /// Grow the panel to a centered ~85% frame on its screen (saving the user's
-    /// current frame first). Idempotent — does nothing while already enlarged.
-    private func enlargeIfNeeded(on screen: NSScreen) {
+    /// Enter the fullscreen "break screen": the timer fills the ENTIRE retina (a
+    /// black, desktop-like pause screen — regardless of which display it was on),
+    /// every OTHER connected display is blacked out, and the Mac is kept awake so
+    /// it never sleeps mid-break. Saves the user's current frame first. Idempotent.
+    private func enterFullscreenIfNeeded() {
         guard !isEnlarged, let panel else { return }
         isEnlarged = true
         savedFrame = panel.frame
-        let aspect = panel.frame.height > 0 ? panel.frame.width / panel.frame.height : Self.aspect
-        let big = BreakTimerModel.enlargedFrame(in: screen.frame, aspect: aspect, fraction: Self.enlargeFraction)
+        let retina = AppDelegate.findRetinaScreen()
+        let big = BreakTimerModel.fullscreenFrame(in: retina.frame, fraction: Self.fullscreenFraction)
+        bgView?.layer?.cornerRadius = 0            // square black fill, no rounded corners
+        blackoutOtherScreens(except: retina)       // the extended displays → pure black
+        preventSleep()                             // keep display + system awake while the break screen is up
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Self.enlargeAnimationDuration
             panel.animator().setFrame(big, display: true)
         }
     }
 
-    /// Shrink back to the user's saved frame. Idempotent — does nothing unless
-    /// currently enlarged.
-    private func restoreIfNeeded() {
+    /// Restore everything to the pre-idle state: shrink the panel back to the user's
+    /// saved frame, drop the other-display blackouts, and release the wake lock.
+    /// Idempotent — does nothing unless currently fullscreen.
+    private func exitFullscreenIfNeeded() {
         guard isEnlarged, let panel else { return }
         isEnlarged = false
+        removeBlackoutPanels()
+        allowSleep()
         let target = savedFrame ?? Self.defaultFrame()
         savedFrame = nil
+        bgView?.layer?.cornerRadius = target.height * 0.05   // restore the rounded corners
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Self.enlargeAnimationDuration
             panel.animator().setFrame(target, display: true)
         }
+    }
+
+    /// Cover every display that is NOT the retina with an opaque-black, click-through
+    /// panel (fading in), so only the retina shows the countdown during a break.
+    private func blackoutOtherScreens(except retina: NSScreen) {
+        removeBlackoutPanels()                       // safety: never stack covers
+        let retinaID = Self.displayID(of: retina)
+        for screen in NSScreen.screens where Self.displayID(of: screen) != retinaID {
+            let p = NSPanel(contentRect: screen.frame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+            p.isOpaque = true
+            p.hasShadow = false
+            p.ignoresMouseEvents = true              // clicks pass through; a mouse move still restores
+            p.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+            p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            let content = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            content.wantsLayer = true
+            content.layer?.backgroundColor = NSColor.black.cgColor
+            p.contentView = content
+            p.setFrame(screen.frame, display: false)
+            p.alphaValue = 0
+            p.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Self.enlargeAnimationDuration
+                p.animator().alphaValue = 1
+            }
+            blackoutPanels.append(p)
+        }
+    }
+
+    /// Remove the other-display blackout covers immediately (on any input, so the
+    /// extended desktops reappear at once).
+    private func removeBlackoutPanels() {
+        for p in blackoutPanels { p.orderOut(nil) }
+        blackoutPanels.removeAll()
+    }
+
+    /// Hold an IOPM assertion that keeps the display (and thus the system) awake so
+    /// the Mac never sleeps while the fullscreen break screen is showing. Idempotent.
+    private func preventSleep() {
+        guard !hasSleepAssertion else { return }
+        var id: IOPMAssertionID = 0
+        let ok = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "Victor Addons break timer fullscreen" as CFString,
+            &id)
+        if ok == kIOReturnSuccess { sleepAssertionID = id; hasSleepAssertion = true }
+    }
+
+    /// Release the wake-lock assertion so normal power management resumes. Idempotent.
+    private func allowSleep() {
+        guard hasSleepAssertion else { return }
+        IOPMAssertionRelease(sleepAssertionID)
+        sleepAssertionID = 0
+        hasSleepAssertion = false
     }
 
     private func setBackgroundOpaque(_ opaque: Bool) {
@@ -477,10 +537,17 @@ final class BreakTimerController {
     /// the retina, so a timer left in place stays put.
     private func returnToRetinaIfNeeded() {
         guard let panel else { return }
-        let retinaID = Self.displayID(of: AppDelegate.findRetinaScreen())
-        if Self.displayID(of: panel.screen) == retinaID { return }   // already home
-        isEnlarged = false            // reset idle-enlarge bookkeeping…
+        // Leaving any fullscreen "break screen": drop the other-display blackouts +
+        // the wake lock and restore the rounded corners before the gong.
+        let wasFullscreen = isEnlarged
+        removeBlackoutPanels()
+        allowSleep()
+        isEnlarged = false            // reset idle-fullscreen bookkeeping…
         savedFrame = nil              // …the default frame replaces any saved one
+        let retinaID = Self.displayID(of: AppDelegate.findRetinaScreen())
+        // Already home at normal size and not fullscreen → leave it in place.
+        if !wasFullscreen && Self.displayID(of: panel.screen) == retinaID { return }
+        bgView?.layer?.cornerRadius = Self.defaultFrame().height * 0.05
         panel.setFrame(Self.defaultFrame(), display: true)
     }
 

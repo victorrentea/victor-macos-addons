@@ -5,21 +5,17 @@ import CoreGraphics
 /// No UIKit/AppKit — formatting and finish-time math only.
 enum BreakTimerModel {
 
-    /// The centered "big" frame for the idle/fullscreen mode: the largest rect of
-    /// the given `aspect` (width / height) that fits within `fraction` of
-    /// `screenFrame` on BOTH axes, centered in `screenFrame`. Used when the user
-    /// has been fully idle — the timer grows to fill most of the screen (a large
-    /// countdown on black) without covering the whole desktop. Aspect is
-    /// preserved, so the result never distorts the digits; height-constrained
-    /// screens (tall monitors) fit by height instead of width.
-    static func enlargedFrame(in screenFrame: CGRect, aspect: CGFloat, fraction: CGFloat) -> CGRect {
-        let f = max(0, fraction)
-        let a = aspect > 0 ? aspect : 1
-        let availW = screenFrame.width * f
-        let availH = screenFrame.height * f
-        var w = availW
-        var h = w / a
-        if h > availH { h = availH; w = h * a }   // too tall for the band → fit by height
+    /// The frame the timer fills in the fullscreen "break screen" mode: a rect
+    /// covering `fraction` of `screenFrame` on BOTH axes, centered. Unlike the old
+    /// aspect-preserving enlarge, this deliberately does NOT keep the digit aspect —
+    /// the panel becomes a full black, desktop-like fill (the view re-centers and
+    /// scales the digits inside), so with `fraction` 1.0 it covers the entire
+    /// screen (menu bar included) and the retina reads like a pause/lock screen.
+    /// A non-zero screen origin (a secondary display) is honored in the centering.
+    static func fullscreenFrame(in screenFrame: CGRect, fraction: CGFloat = 1.0) -> CGRect {
+        let f = min(1, max(0, fraction))
+        let w = screenFrame.width * f
+        let h = screenFrame.height * f
         let x = screenFrame.minX + (screenFrame.width - w) / 2
         let y = screenFrame.minY + (screenFrame.height - h) / 2
         return CGRect(x: x, y: y, width: w, height: h)
