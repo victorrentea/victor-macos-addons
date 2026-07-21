@@ -316,6 +316,11 @@ final class DisplayArrangementManager {
 
         if let asus = asus {
             CGConfigureDisplayMirrorOfDisplay(config, asus, kCGNullDirectDisplay)
+            // Un-mirroring drops a former mirror slave to a fallback mode (e.g.
+            // 800×600); if macOS swept the ASUS into the mirror set when the
+            // projector appeared, breaking that mirror leaves it there. Pin it
+            // back to its native mode so it isn't primary at 800×600.
+            if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
             CGConfigureDisplayOrigin(config, asus, 0, 0)                 // (0,0) ⇒ main
             CGConfigureDisplayOrigin(config, retina, -retinaPointWidth, 0) // to ASUS's left
             return "🖥️ Projector: mirror + ASUS primary (Retina 1080p left)"
@@ -340,6 +345,9 @@ final class DisplayArrangementManager {
 
         if let asus = asus {
             CGConfigureDisplayMirrorOfDisplay(config, asus, kCGNullDirectDisplay)
+            // Same guard as the projector path: restore the ASUS's native mode so
+            // a mirror-break fallback (800×600) never survives into the layout.
+            if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
             CGConfigureDisplayOrigin(config, asus, retinaPointWidth, 0) // extended right
             return "🖥️ Standard: Retina main + ASUS right"
         }
