@@ -99,8 +99,6 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>Victor Addons needs microphone access for live transcription.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>Victor Addons needs accessibility access for keyboard shortcuts and clipboard monitoring.</string>
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Victor Addons reads the JBL Go 4 speaker battery level over Bluetooth (Google Fast Pair) to warn you before it dies.</string>
     <key>NSUserNotificationAlertStyle</key>
     <string>alert</string>
 </dict>

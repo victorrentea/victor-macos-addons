@@ -38,14 +38,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var tailItem: NSMenuItem!
     private var transcribeSubmenu: NSMenu!
 
-    /// Grayed-out battery rows for connected JBL speakers, rebuilt on every menu
-    /// open from `speakerBatteryProvider`. Inserted right after the transcribe
-    /// row; empty (no rows) when no JBL speaker is connected.
-    private var speakerBatteryItems: [NSMenuItem] = []
-    /// Supplies the current battery of connected JBL speakers (wired from
-    /// AppDelegate → SpeakerBatteryMonitor). Called on the main thread.
-    var speakerBatteryProvider: (() -> [SpeakerBatteryMonitor.Reading])?
-
     private(set) var resumeItem: NSMenuItem!
 
     /// When the last break ended (✕ or expiry). Persisted so the "Resumed Xm ago"
@@ -342,34 +334,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
         onMenuOpened?()
-        refreshSpeakerBatteryItems()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
-        }
-    }
-
-    /// Rebuild the grayed-out "🔋 <speaker>: NN%" rows (one per connected JBL
-    /// speaker) just before the menu shows. No rows when nothing is connected.
-    /// `level` is nil until the speaker pushes its first Fast Pair battery
-    /// update (battery is change-driven, so it's unknown right after connect).
-    private func refreshSpeakerBatteryItems() {
-        for it in speakerBatteryItems where menu.index(of: it) >= 0 { menu.removeItem(it) }
-        speakerBatteryItems.removeAll()
-        guard let readings = speakerBatteryProvider?(), !readings.isEmpty else { return }
-        guard transcribeItem != nil else { return }
-        var at = menu.index(of: transcribeItem) + 1
-        for r in readings {
-            let value: String
-            if let lvl = r.level {
-                value = "\(lvl)%\(r.charging ? " ⚡" : "")"
-            } else {
-                value = "…"   // no push yet (play audio / let it change to populate)
-            }
-            let item = NSMenuItem(title: "🔋 \(r.name): \(value)", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.insertItem(item, at: at)
-            speakerBatteryItems.append(item)
-            at += 1
         }
     }
 

@@ -36,7 +36,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var emotionalPasteHandler: EmotionalPasteHandler?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
-    private var speakerBatteryMonitor: SpeakerBatteryMonitor?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// Outbound WS to the Railway bridge — the tablet's last-resort internet
@@ -586,16 +585,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             BreakSummaryLauncher.launchNow(reason: "/test/break-summary")
         }
 
-        tabletServer?.onTestSpeakerBattery = { [weak self] in
-            self?.speakerBatteryMonitor?.snapshotJSON() ?? "{\"error\":\"monitor unavailable\"}"
-        }
-        tabletServer?.onTestSpeakerBatterySimulate = { [weak self] level, charging in
-            // respond() already runs this whole switch inside DispatchQueue.main.sync,
-            // so we're on the main thread — call simulate directly (a nested
-            // main.sync would deadlock). Snapshot reflects the applied state.
-            self?.speakerBatteryMonitor?.simulate(level: level, charging: charging)
-            return self?.speakerBatteryMonitor?.snapshotJSON() ?? "{\"error\":\"monitor unavailable\"}"
-        }
 
         tabletServer?.onTestTranscriptionStart = {
             // Headless force-(re)start of Whisper for E2E checks. The start
@@ -905,27 +894,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let btKeepAlive = BluetoothKeepAlive()
         self.bluetoothKeepAlive = btKeepAlive
         btKeepAlive.start()
-
-        // Low-battery warnings for the JBL Go 4 speakers. Reads battery off the
-        // Google Fast Pair message stream (RFCOMM); warns at 15/10/5% with a
-        // **standard, persistent macOS notification only** (no bottom-left overlay
-        // banner — Victor's explicit preference) that survives in Notification
-        // Center until the speaker charges.
-        let speakerBattery = SpeakerBatteryMonitor()
-        speakerBattery.onLowBattery = { [weak self] name, level, _ in
-            DispatchQueue.main.async {
-                self?.postSpeakerLowBatteryNotification(name: name, level: level)
-            }
-        }
-        speakerBattery.onCleared = { [weak self] name in
-            DispatchQueue.main.async { self?.clearSpeakerLowBatteryNotification(name: name) }
-        }
-        self.speakerBatteryMonitor = speakerBattery
-        speakerBattery.start()
-        // Grayed-out menu rows showing connected JBL speakers' battery (test aid).
-        menuBarManager.speakerBatteryProvider = { [weak speakerBattery] in
-            speakerBattery?.connectedReadings() ?? []
-        }
 
         let eventTap = EventTapManager()
         eventTap.onCaptureClipboard = { [weak pasteHandler] text in
@@ -1636,40 +1604,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if let err { overlayInfo("PDF export alarm notification error: \(err)") }
         }
         overlayInfo("🚨 PDF export alarm raised: \(deck)")
-    }
-
-    /// Persistent low-battery warning for a JBL Go 4 speaker, fired from
-    /// `SpeakerBatteryMonitor` when the battery drops to 15/10/5%. Like the PDF
-    /// export alarm above (and unlike the transient notifications), this is NOT
-    /// auto-removed: it stays in Notification Center until the speaker charges
-    /// (`clearSpeakerLowBatteryNotification`). A stable per-speaker identifier
-    /// means a lower reading (15→10→5) replaces rather than stacks. Marked
-    /// time-sensitive so it can break through Focus.
-    func postSpeakerLowBatteryNotification(name: String, level: Int) {
-        let identifier = "speaker-low-battery:\(name)"
-        let content = UNMutableNotificationContent()
-        content.title = "🔋 \(name) — \(level)%"
-        content.body = "Baterie scăzută — pune boxa la încărcat înainte să se stingă."
-        content.sound = .default
-        content.userInfo = ["purpose": "speaker-low-battery", "speaker": name, "level": level]
-        if #available(macOS 12.0, *) {
-            content.interruptionLevel = .timeSensitive
-        }
-        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req) { err in
-            if let err { overlayInfo("Speaker low-battery notification error: \(err)") }
-        }
-        overlayInfo("🔋⚠️ Low-battery warning raised: \(name) \(level)%")
-    }
-
-    /// Speaker recovered (charging / climbed back up) → clear its persistent
-    /// low-battery warning from Notification Center.
-    func clearSpeakerLowBatteryNotification(name: String) {
-        let identifier = "speaker-low-battery:\(name)"
-        let center = UNUserNotificationCenter.current()
-        center.removeDeliveredNotifications(withIdentifiers: [identifier])
-        center.removePendingNotificationRequests(withIdentifiers: [identifier])
-        overlayInfo("🔋✅ Low-battery warning cleared: \(name)")
     }
 
     /// "Wispr started but the system output isn't 🔊OS Output" warning, fired from
