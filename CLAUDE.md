@@ -162,8 +162,22 @@ on `contents` from bundled gif frames (`Bundle.module`).
   instead of being wiped + restarted. `/test/iris` and `/effect/iris` call
   `showIrisClose` directly.
 
+### Tablet ↔ Mac transport (local Wi-Fi preferred, internet last resort)
+The tablet reaches the Mac over four transports, first that answers wins (`MacLink.reach`,
+tablet side): USB (`localhost:55123` via `adb reverse`) → **the Mac's raw LAN IP `http://<ip>:55123`**
+→ mDNS (`Victor-Mac.local:55123`) → the **Railway relay** (`RailwayBridgeClient` ⇄ tablet's
+`MacBridge`, `wss://interact.victorrentea.ro`), which is a genuine LAST resort. The `/ping`
+response advertises the Mac's own LAN IPv4s as **`macLanIps`** (`NetworkInfo.lanIPv4Addresses()`,
+`en*` interfaces) so the tablet — which gets `/ping` even over the relay — can probe the Mac
+**directly on the shared Wi-Fi**, sidestepping mDNS (which phone hotspots filter). This is what
+stops the tablet falling to the internet relay when both devices are on the same hotspot.
+The `TabletHttpServer` `NWListener` already binds all interfaces, and the tablet's
+`network_security_config` permits cleartext to those raw IPs (previously only `.local`/localhost,
+so the raw-IP path was silently blocked).
+
 ### Tablet sound routing (tablet → Mac playback)
-The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash`).
+The Android LaunchBreak tablet pings `GET /ping` every 5s (response carries `soundsHash` +
+`macLanIps`; see the transport section above).
 When the tablet has no BT speaker / wired headphones and the Mac answers, the tablet routes
 soundboard playback here instead of playing locally:
 - `GET /sound/play/<file>?vol=<0-100>` — one sound at a time, a new play preempts the
