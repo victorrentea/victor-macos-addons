@@ -908,17 +908,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         // Low-battery warnings for the JBL Go 4 speakers. Reads battery off the
         // Google Fast Pair message stream (RFCOMM); warns at 15/10/5% with a
-        // persistent macOS notification (survives in Notification Center until
-        // the speaker charges) plus an immediate banner (visible even while
-        // presenting, when native notifications get suppressed).
+        // **standard, persistent macOS notification only** (no bottom-left overlay
+        // banner — Victor's explicit preference) that survives in Notification
+        // Center until the speaker charges.
         let speakerBattery = SpeakerBatteryMonitor()
         speakerBattery.onLowBattery = { [weak self] name, level, _ in
             DispatchQueue.main.async {
                 self?.postSpeakerLowBatteryNotification(name: name, level: level)
-                self?.statusBanner?.showNow(
-                    text: "🔋⚠️ \(name): \(level)% — pune-o la încărcat",
-                    sound: StatusBannerSound.stop,
-                    visibleDuration: 12.0)
             }
         }
         speakerBattery.onCleared = { [weak self] name in
@@ -926,6 +922,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         self.speakerBatteryMonitor = speakerBattery
         speakerBattery.start()
+        // Grayed-out menu rows showing connected JBL speakers' battery (test aid).
+        menuBarManager.speakerBatteryProvider = { [weak speakerBattery] in
+            speakerBattery?.connectedReadings() ?? []
+        }
 
         let eventTap = EventTapManager()
         eventTap.onCaptureClipboard = { [weak pasteHandler] text in

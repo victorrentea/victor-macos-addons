@@ -198,6 +198,24 @@ final class SpeakerBatteryMonitor: NSObject, IOBluetoothRFCOMMChannelDelegate {
         onLowBattery?(st.name, level, mostUrgent)
     }
 
+    // MARK: Menu / UI
+
+    /// A connected speaker's current battery, for the grayed-out menu row.
+    struct Reading {
+        let name: String
+        let level: Int?      // nil until the first Fast Pair push (battery is change-driven)
+        let charging: Bool
+    }
+
+    /// Currently-connected JBL speakers with an open Fast Pair channel (excludes
+    /// the synthetic test speaker, which never has a real channel). Call on main.
+    func connectedReadings() -> [Reading] {
+        states.values
+            .filter { $0.channel != nil }
+            .map { Reading(name: $0.name, level: $0.level, charging: $0.charging) }
+            .sorted { $0.name < $1.name }
+    }
+
     // MARK: Test / diagnostics
 
     /// JSON snapshot of every known speaker's battery state. Backs
