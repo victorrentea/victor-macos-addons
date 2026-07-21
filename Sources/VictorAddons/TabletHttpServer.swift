@@ -62,6 +62,11 @@ class TabletHttpServer {
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
         /// cooldown gates — same Terminal flow a real break triggers (test hook).
         case testBreakSummary
+        /// JSON snapshot of the JBL Go 4 speaker battery monitor's known state.
+        case testSpeakerBattery
+        /// Inject a synthetic speaker-battery reading (level%, optional charging)
+        /// to exercise the low-battery threshold + notification path.
+        case testSpeakerBatterySimulate(Int, Bool)
         case promptCapture
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
@@ -123,6 +128,10 @@ class TabletHttpServer {
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
+    /// JSON snapshot of the JBL Go 4 speaker-battery monitor.
+    var onTestSpeakerBattery: (() -> String)?
+    /// Inject a synthetic speaker-battery reading (level%, charging) → JSON snapshot.
+    var onTestSpeakerBatterySimulate: ((Int, Bool) -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -279,6 +288,14 @@ class TabletHttpServer {
                 self.onTestPresentationWarn?()
             case .testBreakSummary:
                 self.onTestBreakSummary?()
+            case .testSpeakerBattery:
+                contentType = "application/json"
+                body = self.onTestSpeakerBattery?() ?? "{\"error\":\"speaker battery monitor unavailable\"}"
+                if self.onTestSpeakerBattery == nil { statusCode = 503 }
+            case .testSpeakerBatterySimulate(let level, let charging):
+                contentType = "application/json"
+                body = self.onTestSpeakerBatterySimulate?(level, charging) ?? "{\"error\":\"speaker battery monitor unavailable\"}"
+                if self.onTestSpeakerBatterySimulate == nil { statusCode = 503 }
             case .promptCapture:
                 contentType = "application/json"
                 body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
@@ -387,6 +404,8 @@ class TabletHttpServer {
             return .testPresentationWarn
         case "/test/break-summary":
             return .testBreakSummary
+        case "/test/speaker-battery":
+            return .testSpeakerBattery
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":
@@ -439,6 +458,12 @@ class TabletHttpServer {
                 if suffix == "until" { return .testBreakUntil }
                 if let minutes = Int(suffix) {
                     return .testBreakStart(minutes)
+                }
+            }
+            if pathOnly.hasPrefix("/test/speaker-battery/simulate/") {
+                if let level = Int(pathOnly.dropFirst("/test/speaker-battery/simulate/".count)) {
+                    let charging = queryItems.first(where: { $0.name == "charging" })?.value == "1"
+                    return .testSpeakerBatterySimulate(level, charging)
                 }
             }
             return .unknown
