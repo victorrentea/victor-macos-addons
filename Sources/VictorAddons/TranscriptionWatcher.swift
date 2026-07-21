@@ -1,7 +1,11 @@
 import Foundation
 
 /// Watches the daily transcription file every 10 seconds.
-/// Fires onStaleChanged(true) when nothing has been written for > 10 minutes.
+/// Fires onStaleChanged(true) when nothing has been written for > `staleThreshold`
+/// (default 180 s = 3 min). Staleness is measured from `max(fileMtime, watchStart)`,
+/// so every Whisper (re)start gets a fresh warm-up window: a pre-existing daily
+/// file from earlier today (mid-day restart) does not read as instantly stale
+/// before Whisper has loaded its model and written its first line.
 class TranscriptionWatcher {
     var onStaleChanged: ((Bool) -> Void)?
 
@@ -38,10 +42,24 @@ class TranscriptionWatcher {
         }
     }
 
+    /// Pure staleness decision. `mtime` = the transcript file's modification date
+    /// (nil if it doesn't exist yet); `start` = when this watch began, i.e. when
+    /// Whisper (re)started. We only trust `mtime` once it's newer than `start` —
+    /// meaning a line was written *since* this Whisper start. A pre-existing daily
+    /// file from earlier today has an OLD mtime and would otherwise read as
+    /// instantly stale on a mid-day restart, before Whisper finished warming up.
+    /// Until a fresh line lands, staleness is measured from `start`, giving each
+    /// (re)start a full `threshold` warm-up window.
+    static func isStale(mtime: Date?, start: Date, now: Date, threshold: TimeInterval) -> Bool {
+        let lastActivity = max(mtime ?? .distantPast, start)
+        return now.timeIntervalSince(lastActivity) > threshold
+    }
+
     private func check() {
         let todayFile = transcriptionFolder.appendingPathComponent(todayFilename())
-        let lastActivity = modificationDate(of: todayFile) ?? transcriptionStartTime ?? Date()
-        let isStale = Date().timeIntervalSince(lastActivity) > staleThreshold
+        let start = transcriptionStartTime ?? Date()
+        let isStale = Self.isStale(mtime: modificationDate(of: todayFile),
+                                   start: start, now: Date(), threshold: staleThreshold)
 
         if isStale != lastIsStale {
             lastIsStale = isStale
