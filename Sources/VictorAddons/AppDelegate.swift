@@ -328,7 +328,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // the epoch in this timezone to match exactly what the Mac shows.
             let macMs = Int64(Date().timeIntervalSince1970 * 1000)
             let macTz = TimeZone.current.identifier
-            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\"}"
+            // Advertise the Mac's own LAN IPs so the tablet — which receives this
+            // even over the Railway relay — can probe us DIRECTLY on the shared
+            // Wi-Fi (bypassing mDNS, which hotspots filter) and prefer that
+            // lower-latency local path, keeping the internet relay a last resort.
+            let macLanIps = NetworkInfo.lanIPv4Addresses()
+                .map { "\"\($0)\"" }.joined(separator: ",")
+            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
         tabletServer?.onSoundPlay = { [weak self] name, volumePct in
