@@ -71,7 +71,9 @@ class LogWindow {
 private class ClickToCopyTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         // Copy all text to clipboard on click
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
+        PasteboardGate.sync { pb in
+            pb.clearContents()
+            pb.setString(string, forType: .string)
+        }
     }
 }

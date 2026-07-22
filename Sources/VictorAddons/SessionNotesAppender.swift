@@ -42,8 +42,7 @@ enum SessionNotesAppender {
     /// clipboard, matching normal Cmd+C semantics. Run off the main thread: it
     /// blocks briefly polling the pasteboard for the copy to land.
     static func copySelectionAndAppend() {
-        let pasteboard = NSPasteboard.general
-        let before = pasteboard.changeCount
+        let before = PasteboardGate.sync { $0.changeCount }
         KeySimulator.cmdC()
 
         // Wait for the app to service the copy. changeCount bumps on every
@@ -51,11 +50,11 @@ enum SessionNotesAppender {
         // whether anything was copied — apps no-op Cmd+C when nothing is selected.
         var waited: TimeInterval = 0
         let step: TimeInterval = 0.02
-        while pasteboard.changeCount == before && waited < 0.5 {
+        while PasteboardGate.sync({ $0.changeCount }) == before && waited < 0.5 {
             Thread.sleep(forTimeInterval: step)
             waited += step
         }
-        guard pasteboard.changeCount != before else {
+        guard PasteboardGate.sync({ $0.changeCount }) != before else {
             showResult("(no selection)")
             return
         }

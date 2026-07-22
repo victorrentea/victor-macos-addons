@@ -1494,9 +1494,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // clickable.
         if let url = participantUrl {
             let clickable = url.contains("://") ? url : "https://" + url
-            let pb = NSPasteboard.general
-            pb.clearContents()
-            pb.setString(clickable, forType: .string)
+            PasteboardGate.sync { pb in
+                pb.clearContents()
+                pb.setString(clickable, forType: .string)
+            }
         }
 
         // If banner is visible, hide it
@@ -1522,7 +1523,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.hide()
             return
         }
-        guard let raw = NSPasteboard.general.string(forType: .string) else {
+        guard let raw = PasteboardGate.sync({ $0.string(forType: .string) }) else {
             postInvalidURLNotification("(empty)")
             return
         }

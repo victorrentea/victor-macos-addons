@@ -2,11 +2,13 @@ import AppKit
 
 enum ClipboardManager {
     static func read() -> String {
-        return NSPasteboard.general.string(forType: .string) ?? ""
+        return PasteboardGate.sync { $0.string(forType: .string) ?? "" }
     }
 
     static func write(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        PasteboardGate.sync { pb in
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+        }
     }
 }

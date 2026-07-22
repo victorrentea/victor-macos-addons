@@ -346,7 +346,9 @@ class EventTapManager {
     // MARK: - Clipboard helper
 
     private func getClipboardText() -> String? {
-        return NSPasteboard.general.string(forType: .string)
+        // Runs on the EventTapRunLoop thread — must go through the gate
+        // (raced the clip-stack poller → 2026-07-22 workshop crashes).
+        return PasteboardGate.sync { $0.string(forType: .string) }
     }
 
     // MARK: - Frontmost app tracking (for Cmd+scroll zoom targeting)
