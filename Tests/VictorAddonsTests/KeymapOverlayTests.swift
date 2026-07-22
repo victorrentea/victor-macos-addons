@@ -125,12 +125,28 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(frame, external)
     }
 
-    func testMouseOnOneExternalPrefersTheOtherExternal() {
+    func testTwoExternalsPrefersTheRightmostScreen() {
         let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
         let left = NSRect(x: -1920, y: 0, width: 1920, height: 1080)
         let right = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
-        // Cursor on the right external → overlay goes to the left external, never
-        // the one under the mouse.
+        // Victor's 3-monitor home rig: retina + two externals. The cheat-sheet
+        // lands on the RIGHT monitor (order in the array must not matter).
+        let frame = KeymapOverlayPlacement.frame(
+            retinaFrame: retina,
+            externalFrames: [left, right],
+            imageAspectRatio: 1298.0 / 398.0,
+            mouseLocation: CGPoint(x: 800, y: 500)
+        )
+
+        XCTAssertEqual(frame, right)
+    }
+
+    func testMouseOnRightmostExternalFallsBackToTheOtherExternal() {
+        let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
+        let left = NSRect(x: -1920, y: 0, width: 1920, height: 1080)
+        let right = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
+        // Cursor on the (preferred) right external → overlay goes to the left
+        // external, never the one under the mouse.
         let frame = KeymapOverlayPlacement.frame(
             retinaFrame: retina,
             externalFrames: [left, right],

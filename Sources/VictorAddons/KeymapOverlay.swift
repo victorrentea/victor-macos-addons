@@ -299,7 +299,7 @@ enum KeymapOverlayPlacement {
             candidates = externalFrames
         }
 
-        guard let external = closestExternal(to: retinaFrame, externalFrames: candidates) else {
+        guard let external = rightmostExternal(among: candidates) else {
             let width = retinaFrame.width / 3.0
             let height = width / imageAspectRatio
             return NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height)
@@ -312,16 +312,16 @@ enum KeymapOverlayPlacement {
         return external
     }
 
-    private static func closestExternal(to retina: NSRect, externalFrames: [NSRect]) -> NSRect? {
-        externalFrames.min { a, b in
-            distanceBetween(a, retina) < distanceBetween(b, retina)
+    // Among the candidate external screens, prefer the RIGHTMOST one (greatest
+    // left-edge x). With Victor's 3-monitor home rig (retina + two externals) the
+    // cheat-sheet lands on the right monitor, which is where he wants it — not
+    // whichever external happens to sit closest to the built-in display. Ties
+    // (screens stacked vertically at the same x) resolve to the topmost.
+    private static func rightmostExternal(among externalFrames: [NSRect]) -> NSRect? {
+        externalFrames.max { a, b in
+            if a.minX != b.minX { return a.minX < b.minX }
+            return a.minY < b.minY
         }
-    }
-
-    private static func distanceBetween(_ a: NSRect, _ b: NSRect) -> CGFloat {
-        let dx = max(max(b.minX - a.maxX, a.minX - b.maxX), 0)
-        let dy = max(max(b.minY - a.maxY, a.minY - b.maxY), 0)
-        return hypot(dx, dy)
     }
 }
 
