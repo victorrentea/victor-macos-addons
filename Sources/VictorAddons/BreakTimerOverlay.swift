@@ -65,6 +65,14 @@ final class BreakTimerController {
     private var sleepAssertionID: IOPMAssertionID = 0
     private var hasSleepAssertion = false     // an IOPM "keep display awake" assertion is held
 
+    /// Seconds since the live transcript last grew. Wired by AppDelegate to the
+    /// daily transcription file's mtime; the fullscreen break screen only appears
+    /// when this is ALSO past the idle threshold (see `shouldShowBreakScreen`), so
+    /// a silent keyboard while Victor keeps talking does not black out the room's
+    /// screens. Unset (tests / no folder) → `.infinity`, i.e. idleness alone decides.
+    var transcriptSilentSeconds: (() -> CFTimeInterval)?
+    private var transcriptProbe: (at: CFTimeInterval, value: CFTimeInterval)?  // 1s cache: no stat() per 0.15s tick
+
     // The single finish-time line shows a user-pickable country; the pick is
     // day-scoped (resets to Romania each new day). Clicking the flag opens the picker.
     private var selectedCountry = BreakCountry.loadSelected()
@@ -299,8 +307,12 @@ final class BreakTimerController {
     }
 
     private func activityTick() {
-        // --- Fullscreen "break screen" on total inactivity; any input restores ---
-        if Self.systemIdleSeconds() >= Self.fullscreenIdleSeconds {
+        // --- Fullscreen "break screen" on total inactivity AND transcript silence ---
+        // Any input restores it; so does speech starting to land in the transcript
+        // (Victor is still talking to the room even if he isn't typing).
+        if BreakTimerModel.shouldShowBreakScreen(idleSeconds: Self.systemIdleSeconds(),
+                                                 transcriptSilentSeconds: transcriptSilence(),
+                                                 threshold: Self.fullscreenIdleSeconds) {
             enterFullscreenIfNeeded()
         } else {
             exitFullscreenIfNeeded()
@@ -414,6 +426,17 @@ final class BreakTimerController {
             ctx.duration = 0.35
             bgView.animator().alphaValue = opaque ? 1.0 : 0.0
         }
+    }
+
+    /// Seconds since the transcript last grew, probed at most once per second (the
+    /// activity tick runs ~7×/s and the answer only changes at file-write speed).
+    private func transcriptSilence() -> CFTimeInterval {
+        guard let provider = transcriptSilentSeconds else { return .infinity }
+        let now = CACurrentMediaTime()
+        if let p = transcriptProbe, now - p.at < 1 { return p.value }
+        let value = provider()
+        transcriptProbe = (at: now, value: value)
+        return value
     }
 
     /// Seconds since the last user input of any kind (mouse or keyboard).

@@ -114,4 +114,29 @@ final class BreakTimerModelTests: XCTestCase {
         let f = BreakTimerModel.fullscreenFrame(in: screen, fraction: 1.5)
         XCTAssertEqual(f, screen)
     }
+
+    // MARK: - Break screen gate (idle AND transcript silence)
+
+    func testBreakScreenNeedsBothIdleAndSilence() {
+        let t: Double = 120
+        // Nobody around and nothing said → the black break screen takes over.
+        XCTAssertTrue(BreakTimerModel.shouldShowBreakScreen(
+            idleSeconds: 130, transcriptSilentSeconds: 300, threshold: t))
+        // Still talking (a line landed 5s ago) though the keyboard is untouched →
+        // the timer must stay small; this is the case the gate was added for.
+        XCTAssertFalse(BreakTimerModel.shouldShowBreakScreen(
+            idleSeconds: 600, transcriptSilentSeconds: 5, threshold: t))
+        // Working at the Mac in silence → not idle enough, as before.
+        XCTAssertFalse(BreakTimerModel.shouldShowBreakScreen(
+            idleSeconds: 3, transcriptSilentSeconds: 999, threshold: t))
+    }
+
+    func testBreakScreenWithTranscriptionOffBehavesAsBefore() {
+        // No transcription running → the file never grows → `.infinity` silence, so
+        // pure idleness decides (the pre-existing behavior).
+        XCTAssertTrue(BreakTimerModel.shouldShowBreakScreen(
+            idleSeconds: 120, transcriptSilentSeconds: .infinity, threshold: 120))
+        XCTAssertFalse(BreakTimerModel.shouldShowBreakScreen(
+            idleSeconds: 119.9, transcriptSilentSeconds: .infinity, threshold: 120))
+    }
 }

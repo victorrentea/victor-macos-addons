@@ -21,6 +21,20 @@ enum BreakTimerModel {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
+    /// Whether the fullscreen black "break screen" should take over the displays.
+    /// It is a hands-off pause screen, so it needs the room to be genuinely empty:
+    /// no user input AND nothing being transcribed for the whole waiting window.
+    /// `transcriptSilentSeconds` is how long ago the live transcript last grew —
+    /// while Victor keeps talking (Whisper appends lines) the timer stays small,
+    /// even though nobody touched the mouse/keyboard. When transcription isn't
+    /// running at all the transcript never grows, so this reads `.infinity` and
+    /// idleness alone decides, exactly as before.
+    static func shouldShowBreakScreen(idleSeconds: Double,
+                                      transcriptSilentSeconds: Double,
+                                      threshold: Double) -> Bool {
+        idleSeconds >= threshold && transcriptSilentSeconds >= threshold
+    }
+
     /// Format remaining seconds as `MM:SS`. Minutes are NOT capped at 59 — one
     /// hour shows `60:00` to keep the two-group "watch" look. Negative values
     /// clamp to `00:00`.

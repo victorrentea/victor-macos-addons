@@ -864,6 +864,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // The "Resumed Xm ago" menu clock now tracks OUR break timer — the ✕ button
         // or the countdown expiring — not the external Timer RH app. breakEndedAt is
         // persisted (UserDefaults), so it survives an app restart.
+        // The fullscreen black "break screen" is meant for an empty room, so it also
+        // asks whether anything is still being *said*: if Whisper keeps appending to
+        // today's transcript, the timer stays small even though nobody is touching
+        // the Mac (Victor talking through the break must not black out the projector).
+        breakTimer.transcriptSilentSeconds = { [weak self] in
+            guard let self else { return .infinity }
+            return Self.transcriptSilenceSeconds(in: self.transcriptionFolder)
+        }
         breakTimer.onEnded = { [weak self] in
             DispatchQueue.main.async {
                 self?.menuBarManager.breakEndedAt = Date()
@@ -1224,6 +1232,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         if secs < 60 { return "\(secs)s ago" }
         if secs < 3600 { return "\(secs / 60)m ago" }
         return "\(secs / 3600)h ago"
+    }
+
+    /// Seconds since today's transcription file last grew — `.infinity` when it
+    /// doesn't exist (transcription never started today), which reads as "nothing
+    /// is being recorded". Same daily filename as `TranscriptionWatcher`.
+    static func transcriptSilenceSeconds(in folder: URL) -> CFTimeInterval {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let file = folder.appendingPathComponent("\(fmt.string(from: Date()))-transcription.txt")
+        guard let mtime = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+        else { return .infinity }
+        return max(0, Date().timeIntervalSince(mtime))
     }
 
     private func openTranscriptionMonitor() {
