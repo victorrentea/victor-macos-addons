@@ -37,10 +37,16 @@ class EmojiAnimator {
 
     // Hover-to-hold coffee gesture. Resting the cursor on a rising ☕ freezes it in
     // place and grows it for `coffeeChargeSeconds`; completing the hold explodes it
-    // (the payoff — start / shave the break — is the caller's, in AppDelegate). Only
-    // one coffee charges at a time; the cursor leaving before the hold ends cancels.
-    private var chargingCoffee: CATextLayer?
-    private var coffeeChargeStart: CFTimeInterval = 0
+    // (the payoff — start / shorten the break — is the caller's, in AppDelegate).
+    // EVERY coffee under the cursor charges at once, each on its own clock, so
+    // parking on a cluster inflates the whole cluster and they pop as they ripen;
+    // what counts is how many actually explode. The cursor leaving a coffee's box
+    // cancels that one alone.
+    private struct CoffeeCharge {
+        let layer: CATextLayer
+        let start: CFTimeInterval
+    }
+    private var coffeeCharges: [CoffeeCharge] = []
     static let coffeeChargeSeconds: Double = 3.0
     private static let coffeeChargeGrowScale: CGFloat = 2.6
     private static let coffeeHitSlop: CGFloat = 34
@@ -216,7 +222,7 @@ class EmojiAnimator {
             // If this coffee got caught mid-flight for a hold-charge, the charge
             // owns its lifecycle now — don't let the original rise/fade removal
             // pull it off screen underneath the growing hover.
-            if isCoffee, self?.chargingCoffee === layer { return }
+            if isCoffee, self?.coffeeCharges.contains(where: { $0.layer === layer }) == true { return }
             layer.removeFromSuperlayer()
             if isCoffee { self?.activeCoffeeLayers.removeAll { $0 === layer } }
         }
@@ -225,47 +231,55 @@ class EmojiAnimator {
     }
 
     /// Drive the hover-to-hold coffee gesture. Call every poll tick (~0.1s) with the
-    /// current global cursor point. Returns `true` on the SINGLE tick a full
-    /// `coffeeChargeSeconds` hold completes (the coffee explodes) — the caller then
-    /// performs the payoff (start the break, or shave a second off a running one).
+    /// current global cursor point. Returns HOW MANY coffees finished their
+    /// `coffeeChargeSeconds` hold on this tick and exploded — the caller turns each
+    /// one into a minute off the break (or the first one into a fresh break timer).
     ///
-    /// While charging, the caught coffee is frozen in place and grows steadily (the
-    /// growth is the 3-second progress bar); the cursor slipping off cancels it. A
-    /// generous hit slop keeps both the initial catch and the hold forgiving.
-    func tickCoffeeCharge(cursorGlobalPoint globalPoint: CGPoint) -> Bool {
-        guard let frame = Self.builtInScreenFrame() else { return false }
+    /// Every coffee under the cursor charges simultaneously: parking on a cluster
+    /// inflates all of them, each frozen in place and growing steadily (the growth is
+    /// its own 3-second progress bar), and they pop as they ripen. Only the ones that
+    /// actually explode count. A coffee whose box the cursor has left is cancelled
+    /// individually — the others keep charging. A generous hit slop keeps both the
+    /// catch and the hold forgiving.
+    func tickCoffeeCharge(cursorGlobalPoint globalPoint: CGPoint) -> Int {
+        guard let frame = Self.builtInScreenFrame() else { return 0 }
         // Overlay panel covers the built-in screen; its layer origin (0,0) sits at
         // the screen's bottom-left, so shift the global point by the screen origin.
         let p = CGPoint(x: globalPoint.x - frame.origin.x, y: globalPoint.y - frame.origin.y)
         let pad = Self.coffeeHitSlop
+        let now = CACurrentMediaTime()
+        func box(_ layer: CATextLayer) -> CGRect {
+            (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
+        }
 
-        // --- Already charging one: keep, complete, or cancel it ---
-        if let layer = chargingCoffee {
-            let box = (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
-            if !box.contains(p) { cancelCoffeeCharge(); return false }
-            if CACurrentMediaTime() - coffeeChargeStart >= Self.coffeeChargeSeconds {
-                chargingCoffee = nil
-                explodeCoffee(layer)
-                return true
+        // --- Charging ones: complete, cancel, or keep each on its own clock ---
+        var exploded = 0
+        var stillCharging: [CoffeeCharge] = []
+        for charge in coffeeCharges {
+            if !box(charge.layer).contains(p) {
+                cancelCoffeeCharge(charge.layer)
+            } else if now - charge.start >= Self.coffeeChargeSeconds {
+                explodeCoffee(charge.layer)
+                exploded += 1
+            } else {
+                stillCharging.append(charge)
             }
-            return false
         }
+        coffeeCharges = stillCharging
 
-        // --- Nothing charging: try to catch a coffee under the cursor ---
-        guard !activeCoffeeLayers.isEmpty else { return false }
-        for layer in activeCoffeeLayers.reversed() {   // topmost (newest) first
-            let box = (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
-            if box.contains(p) { beginCoffeeCharge(layer); return false }
+        // --- Catch EVERY fresh coffee under the cursor (they all inflate together) ---
+        for layer in activeCoffeeLayers where box(layer).contains(p) {
+            beginCoffeeCharge(layer, now: now)   // snapshot semantics: safe to mutate the pool inside
         }
-        return false
+        return exploded
     }
 
     /// Catch a coffee: freeze it where it visually is, stop its rise/fade, and start
     /// the steady 3-second grow that doubles as the hold's progress indicator.
-    private func beginCoffeeCharge(_ layer: CATextLayer) {
+    private func beginCoffeeCharge(_ layer: CATextLayer, now: CFTimeInterval) {
         let pos = layer.presentation()?.position ?? layer.position
-        chargingCoffee = layer                 // set FIRST: guards the original completion block
-        coffeeChargeStart = CACurrentMediaTime()
+        // Registered FIRST: guards the original rise/fade completion block.
+        coffeeCharges.append(CoffeeCharge(layer: layer, start: now))
         activeCoffeeLayers.removeAll { $0 === layer }   // out of the auto-rising pool
         layer.removeAllAnimations()
         layer.position = pos
@@ -281,10 +295,9 @@ class EmojiAnimator {
         layer.add(grow, forKey: "charge")
     }
 
-    /// Cursor slipped off before the hold finished — let the coffee fade away and go.
-    private func cancelCoffeeCharge() {
-        guard let layer = chargingCoffee else { return }
-        chargingCoffee = nil
+    /// Cursor slipped off this coffee before its hold finished — let it fade away and
+    /// go. Only this one is dropped; any sibling coffees keep charging.
+    private func cancelCoffeeCharge(_ layer: CATextLayer) {
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = layer.presentation()?.opacity ?? 1
         fade.toValue = 0

@@ -129,8 +129,9 @@ final class BreakTimerController {
     func addMinutes(_ m: Int) { addSeconds(m * 60) }
 
     /// Adjust the remaining time by `s` seconds (negative shaves it). Used by the
-    /// +N-minute buttons and by the ☕ hold-charge, which shaves 1s per completed
-    /// hold while the break runs. Floors at 0; the next tick handles a 0 as expiry.
+    /// +N-minute buttons and by the ☕ hold-charge, which shaves 1 minute per
+    /// exploded coffee while the break runs. Floors at 0; the next tick handles a 0
+    /// as expiry.
     func addSeconds(_ s: Int) {
         guard panel != nil else { return }
         epoch += 1                            // cancel any pending expiry sequence

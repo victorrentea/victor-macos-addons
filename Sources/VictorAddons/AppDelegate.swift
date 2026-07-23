@@ -1100,20 +1100,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// the mouse-vs-coffee overlap (0.1s) rather than watch `.mouseMoved`, so a
     /// deliberate hold registers even with a perfectly still cursor. The 3-second
     /// hold — not a mere graze — is what triggers the payoff, so it can now run even
-    /// while a break is up without accidental firing:
-    ///   • no break showing → the explosion STARTS the 10-min "UNTIL BREAK" timer;
-    ///   • break already running → the explosion SHAVES 1s off the remaining time
-    ///     (repeat the gesture on more coffees to keep shortening the wait).
+    /// while a break is up without accidental firing. EVERY coffee under the cursor
+    /// inflates at once, and the tick reports how many actually EXPLODED:
+    ///   • no break showing → the first explosion STARTS the 10-min "UNTIL BREAK"
+    ///     timer (any further ones in the same tick immediately shorten it);
+    ///   • break already running → each explosion SHAVES 1 MINUTE off the remaining
+    ///     time (keep popping coffees to keep pulling the break closer).
     private func installCoffeeBreakHoverMonitor() {
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            guard self.animator?.tickCoffeeCharge(cursorGlobalPoint: NSEvent.mouseLocation) == true else { return }
+            let exploded = self.animator?.tickCoffeeCharge(cursorGlobalPoint: NSEvent.mouseLocation) ?? 0
+            guard exploded > 0 else { return }
             if self.breakTimer.isShowing {
-                overlayInfo("☕ held 3s → −1s off the break")
-                self.breakTimer.addSeconds(-1)
+                overlayInfo("☕ x\(exploded) exploded → −\(exploded)m off the break")
+                self.breakTimer.addSeconds(-60 * exploded)
             } else {
-                overlayInfo("☕ held 3s → starting 10-min UNTIL BREAK timer")
+                overlayInfo("☕ x\(exploded) exploded → starting 10-min UNTIL BREAK timer")
                 self.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5)
+                // Coffees that ripened on the same tick still count: the first one
+                // opened the timer, the rest immediately pull it closer.
+                if exploded > 1 { self.breakTimer.addSeconds(-60 * (exploded - 1)) }
             }
         }
         RunLoop.main.add(t, forMode: .common)
