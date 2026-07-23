@@ -375,6 +375,8 @@ class TabletHttpServer {
             return .effect("iris")
         case "/test/minion":
             return .effect("minion")
+        case "/test/counter-strike":
+            return .effect("counter-strike")
         case "/test/group-photo":
             return .testGroupPhoto
         case "/test/wispr-output-drift":

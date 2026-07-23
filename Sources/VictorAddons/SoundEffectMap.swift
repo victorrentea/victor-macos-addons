@@ -34,6 +34,7 @@ enum SoundEffectMap {
         "64_fbi.mp3":            "fbi-knock",
         "67_sfx_109.mp3":        "brother",
         "70_cavalry.mp3":        "cavalry",
+        "73_counter_strike.mp3": "counter-strike",
         "29_gangnam_style.mp3":  "gangnam",
         "41_love_hearts.mp3":    "love-hands",
         "55_star_wars.mp3":      "star-wars",

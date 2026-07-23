@@ -242,6 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "rainbow":         self?.animator.showRainbow(playSound: false)
             case "rainbow/stop":    self?.animator.stopRainbow()
             case "cavalry":         self?.animator.showCavalry(playSound: false)
+            case "counter-strike":  self?.animator.showCounterStrike(playSound: false)
             case "wrong-x":         self?.animator.showWrongX(playSound: false)
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
@@ -725,6 +726,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "gong":            self.animator.showGong(playSound: false)
                 case "rainbow":         self.animator.showRainbow(playSound: false); stopAfter { self.animator.stopRainbow() }
                 case "cavalry":         self.animator.showCavalry(playSound: false)
+                case "counter-strike":  self.animator.showCounterStrike(playSound: false)
                 case "wrong-x":         self.animator.showWrongX(playSound: false)
                 case "drum-roll":       self.animator.showDrumRoll(playSound: false); stopAfter { self.animator.stopDrumRoll() }
                 case "phoenix":         self.animator.showPhoenix()

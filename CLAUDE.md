@@ -137,6 +137,18 @@ on `contents` from bundled gif frames (`Bundle.module`).
   repeatedly **stacks overlapping rounds**. `53_rain.mp3` is intentionally
   **absent from `SoundEffectMap`** so a press = a single ching + single round (no
   double-trigger). `/test/money` and `/effect/money` call `showMoneyRise` directly.
+- **🔫 Counter-Strike** (sfx #73 `73_counter_strike.mp3` → `counter-strike`,
+  `showCounterStrike`): the two CT operators (a transparent PNG,
+  `Resources/counter-strike.png`, **pre-trimmed to its opaque content** so there is
+  no transparent margin lifting them off the edge) stand in the **bottom-left
+  quarter** of the retina — fitted aspect-preserved inside half-width × half-height,
+  anchored at the bottom-left corner, **glued to the bottom screen edge** — snapping
+  up into place over 0.18 s. It lives exactly as long as the clip (**duration read
+  from the mp3** via `AVURLAsset`, ~1.36 s, falling back to that measured value) and
+  fades out over its last 0.3 s. Driven from the **press path** (`SoundEffectMap`),
+  so the routed `/sound/play/73_counter_strike.mp3` supplies the audio and the
+  visual never double-triggers. `/test/counter-strike` and `/effect/counter-strike`
+  fire it silently; the menu item **Counter-Strike 🔫** (Desktop Effects) too.
 - **🕳️ Iris close** (tile #31, repurposed from Tarzan): a cinematic "iris out"
   blackout. The Android tile #31 is redrawn as a **black circle
   with a white centre and four inward-pointing arrows** (vector `sfx_31_iris.xml`);
@@ -225,6 +237,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/sonar` — fire the 🛰️ Sonar overlay now (visual + synced `23_radar.mp3`); same as `/effect/sonar`. The tablet drives it by routing `GET /sound/play/23_radar.mp3` to the Mac (handled in `onSoundPlay`)
 - `GET /test/money` — fire one round of the 💸 Money rising-dollars overlay now; same as `/effect/money`. The tablet drives it by routing `GET /sound/play/53_rain.mp3` to the Mac (handled in `onSoundPlay`), which also plays the #57 checkmark "ching"
 - `GET /test/iris` — fire the 🕳️ Iris-close blackout now (5s close → 1s hold → auto fade-out reveal); same as `/effect/iris`. The tablet drives it via `GET /sound/pressed/31_tarzan.mp3` (mapped to `iris` in `SoundEffectMap`); a second press before the auto-reveal cancels it early. The `/test/iris` visual itself is silent; the tablet-routed press pairs it with the gong (`50_gong.mp3`) via `onSoundPlay`
+- `GET /test/counter-strike` — fire the 🔫 Counter-Strike overlay now (silent, ~1.4 s in the bottom-left quarter); same as `/effect/counter-strike`. The tablet drives it via `GET /sound/pressed/73_counter_strike.mp3` (mapped to `counter-strike` in `SoundEffectMap`) while the routed `/sound/play/73_counter_strike.mp3` plays the clip
 - `GET /test/coffee` — spawn 3 rising ☕ so the **coffee hold-charge** gesture can be exercised headlessly (no live session needed). Rest the cursor on one (or on several at once — they all inflate): each freezes, grows for 3 s, then explodes (`EmojiAnimator.tickCoffeeCharge`, which returns the per-tick explosion count). With no break showing the first explosion starts the 10-min "UNTIL BREAK" timer; while a break runs each explosion shaves **1 minute** off the remaining time (`BreakTimerController.addSeconds(-60 × exploded)`)
 - `GET /ping`, `GET /sounds/manifest`, `GET /sound/play/<file>?vol=N`, `GET /sound/volume/<pct>`, `GET /sound/stop` — tablet sound routing (see Overlay Components)
 - `GET /bt-compensation` — JSON `{"ms":<current>,"maxMs":1200}` of the Bluetooth wake-up compensation in effect (override if set, else the `sound-timing.json` default). `GET /bt-compensation/<ms>` — set it (clamped `0…1200`), returns `{"ok":true,"ms":<applied>}`; this is what the tablet's header **BT wake** slider pushes on release + on reconnect

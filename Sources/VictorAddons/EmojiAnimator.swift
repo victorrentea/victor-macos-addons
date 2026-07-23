@@ -4754,6 +4754,73 @@ class EmojiAnimator {
         trackEffect("cavalry", layer: gifLayer, duration: travel + 0.1, sound: playSound ? "70_cavalry.mp3" : nil)
     }
 
+    // MARK: - Counter-Strike (CT duo holds the bottom-left quarter — sound #73)
+
+    /// The two Counter-Strike operators stand in the BOTTOM-LEFT QUARTER of the
+    /// screen, glued to the bottom edge, for exactly as long as `73_counter_strike.mp3`
+    /// plays (~1.36s, measured from the file so a re-cut clip stays in sync).
+    /// The bundled PNG is pre-trimmed to its opaque content, so "glued to the
+    /// bottom" is literal — the layer's bottom edge IS the boots, with no
+    /// transparent margin lifting them off the edge. It fits inside the quarter
+    /// aspect-preserved (the art is wider than the quarter is tall, so height is
+    /// usually the binding constraint) and rises quickly into place.
+    func showCounterStrike(playSound: Bool = true) {
+        if cancelIfRunning("counter-strike", sound: playSound ? "73_counter_strike.mp3" : nil) { return }
+
+        guard let url = Bundle.module.url(forResource: "counter-strike", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            overlayError("counter-strike.png not found in bundle")
+            return
+        }
+
+        // Linger exactly as long as the clip; fall back to its measured length.
+        var duration: Double = 1.36
+        if let soundURL = SoundManager.shared.soundURL(for: "73_counter_strike.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
+
+        let bounds = hostLayer.bounds
+        // Fit the art inside the bottom-left quarter (half width × half height),
+        // aspect preserved, anchored at the bottom-left corner of the screen.
+        let aspect = CGFloat(image.width) / CGFloat(image.height)
+        var w = bounds.width / 2
+        var h = w / aspect
+        if h > bounds.height / 2 {
+            h = bounds.height / 2
+            w = h * aspect
+        }
+
+        let imgLayer = CALayer()
+        imgLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)   // y = 0 is the bottom edge
+        imgLayer.contents = image
+        imgLayer.contentsGravity = .resizeAspect
+        hostLayer.addSublayer(imgLayer)
+
+        // Snap up from just below the edge (0.18s) — reads as "they take position".
+        let rise = CABasicAnimation(keyPath: "position.y")
+        rise.fromValue = -h / 2
+        rise.toValue = h / 2
+        rise.duration = min(0.18, duration * 0.2)
+        rise.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        imgLayer.add(rise, forKey: "rise")
+
+        // Gone with the last of the sound.
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = CACurrentMediaTime() + max(0, duration - 0.3)
+        fadeOut.fromValue = 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.duration = 0.3
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        imgLayer.add(fadeOut, forKey: "fadeOut")
+
+        if playSound { SoundManager.shared.play("73_counter_strike.mp3") }
+        trackEffect("counter-strike", layer: imgLayer, duration: duration,
+                    sound: playSound ? "73_counter_strike.mp3" : nil)
+    }
+
     // MARK: - Rainbow (translucent semicircle smeared in like a wiper, toggled by tablet sound #37)
 
     func showRainbow(playSound: Bool = true) {
