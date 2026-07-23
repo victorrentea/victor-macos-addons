@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 
@@ -222,7 +223,24 @@ enum KeymapLayoutParser {
 }
 
 enum KeymapLayoutLocator {
+    // Ask Text Input Sources (live, in-process) first and only fall back to the
+    // cached HIToolbox preferences. `defaults read` goes through cfprefsd, which
+    // lags the actual selection — at login (and right after Ukelele installs a
+    // new layout bundle) it can still report the previous/system layout, or the
+    // key can be missing entirely. That's how the overlay ended up with no
+    // images at all: one failed read at startup and it never tried again.
     static func activeLayoutName() -> String? {
+        activeLayoutNameFromInputSource() ?? activeLayoutNameFromPreferences()
+    }
+
+    static func activeLayoutNameFromInputSource() -> String? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let raw = TISGetInputSourceProperty(source, kTISPropertyLocalizedName) else { return nil }
+        let name = Unmanaged<CFString>.fromOpaque(raw).takeUnretainedValue() as String
+        return name.isEmpty ? nil : name
+    }
+
+    static func activeLayoutNameFromPreferences() -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
         task.arguments = ["read", "com.apple.HIToolbox", "AppleSelectedInputSources"]
@@ -576,19 +594,63 @@ final class KeymapOverlayController {
     private let retinaScreenProvider: () -> NSScreen
     private let screensProvider: () -> [NSScreen]
 
+    // Startup can lose the race against the keyboard-layout selection being
+    // restored (login, or Ukelele reinstalling a bundle): the read fails, images
+    // stay empty and every Option hold silently no-ops until the next relaunch.
+    // So a failed generation retries with a backoff instead of giving up.
+    private static let retryDelays: [TimeInterval] = [2, 5, 15, 60, 300]
+    private var retryIndex = 0
+
     init(retinaScreenProvider: @escaping () -> NSScreen, screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens }) {
         self.retinaScreenProvider = retinaScreenProvider
         self.screensProvider = screensProvider
-        regenerateImages()
+        if !regenerateImages() { scheduleRetry() }
+        // Switching input source (or saving a new layout in Ukelele, which
+        // re-selects it) must re-render — the cheat-sheet has to match the
+        // layout actually in effect.
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(inputSourceChanged),
+            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
     }
 
-    func regenerateImages() {
+    deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
+    }
+
+    @objc private func inputSourceChanged() {
+        // cfprefsd/TIS settle a beat after the notification; a short hop avoids
+        // rendering the layout we're switching away from.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            self.retryIndex = 0
+            if !self.regenerateImages() { self.scheduleRetry() }
+        }
+    }
+
+    private func scheduleRetry() {
+        guard retryIndex < Self.retryDelays.count else {
+            overlayError("KeymapOverlay: giving up on layout images until the next input-source change")
+            return
+        }
+        let delay = Self.retryDelays[retryIndex]
+        retryIndex += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.images.isEmpty else { return }
+            if !self.regenerateImages() { self.scheduleRetry() }
+        }
+    }
+
+    @discardableResult
+    func regenerateImages() -> Bool {
         let started = CFAbsoluteTimeGetCurrent()
         guard let name = KeymapLayoutLocator.activeLayoutName(),
               let url = KeymapLayoutLocator.keylayoutURL(named: name),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
-            overlayError("KeymapOverlay: could not locate active .keylayout")
-            return
+            overlayError("KeymapOverlay: could not locate active .keylayout (layout name: \(KeymapLayoutLocator.activeLayoutName() ?? "unknown"))")
+            return false
         }
         do {
             let optionOutputs = try KeymapLayoutParser.outputs(in: text, modifier: .option)
@@ -596,13 +658,18 @@ final class KeymapOverlayController {
             images[.option] = renderer.render(outputs: KeymapOverlayOutputFilter.customOutputs(from: optionOutputs, modifier: .option))
             images[.optionShift] = renderer.render(outputs: KeymapOverlayOutputFilter.customOutputs(from: optionShiftOutputs, modifier: .optionShift))
             let elapsed = CFAbsoluteTimeGetCurrent() - started
-            overlayInfo(String(format: "KeymapOverlay: regenerated active layout images in %.3fs", elapsed))
+            overlayInfo(String(format: "KeymapOverlay: regenerated '%@' layout images in %.3fs", name, elapsed))
+            return true
         } catch {
-            overlayError("KeymapOverlay: failed to parse active .keylayout — \(error)")
+            overlayError("KeymapOverlay: failed to parse active .keylayout '\(name)' — \(error)")
+            return false
         }
     }
 
     func show(_ modifier: KeymapModifier) {
+        // Last-chance rebuild: if we still have no images (startup read failed),
+        // try once more now rather than no-opping the hold.
+        if images[modifier] == nil { regenerateImages() }
         guard let image = images[modifier] else { return }
         let retina = retinaScreenProvider()
         let retinaID = screenID(retina)
