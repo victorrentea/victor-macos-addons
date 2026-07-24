@@ -2846,12 +2846,18 @@ class EmojiAnimator {
         guard activeEffects["game-over"] == nil else { return }
         let bounds = hostLayer.bounds
 
-        // Match tablet sound duration
-        var duration: Double = 8.0
-        if let soundURL = SoundManager.shared.soundURL(for: "dying.mp3") {
+        // Self-destruct time MUST match the sound the tablet actually plays
+        // (59_game_over.mp3, ~1.6s) — NOT the legacy dying.mp3 (~4.6s) the
+        // overlay no longer plays. This auto-cleanup is the authoritative
+        // removal: the tablet's /sound/stopped → game-over/stop is best-effort
+        // (skipped on preempt/network drop), so the overlay must clear itself in
+        // sync with the sound regardless. Fallback stays short so a missing file
+        // can't leave a long black screen.
+        var duration: Double = 2.0
+        if let soundURL = SoundManager.shared.soundURL(for: "59_game_over.mp3") {
             let asset = AVURLAsset(url: soundURL)
             let d = asset.duration
-            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+            if d.isNumeric, CMTimeGetSeconds(d) > 0 { duration = CMTimeGetSeconds(d) }
         }
 
         let container = CALayer()
