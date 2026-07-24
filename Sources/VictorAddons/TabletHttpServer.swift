@@ -62,6 +62,9 @@ class TabletHttpServer {
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
         /// cooldown gates — same Terminal flow a real break triggers (test hook).
         case testBreakSummary
+        /// Show a 🔔 bell card now with an optional "?name=" caller (defaulting to
+        /// a sample name), bypassing the daemon-connected gate (test hook).
+        case testBell(String?)
         case promptCapture
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
@@ -123,6 +126,8 @@ class TabletHttpServer {
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
+    /// Show a 🔔 bell card now; the argument is the optional "?name=" caller.
+    var onTestBell: ((String?) -> Void)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -279,6 +284,8 @@ class TabletHttpServer {
                 self.onTestPresentationWarn?()
             case .testBreakSummary:
                 self.onTestBreakSummary?()
+            case .testBell(let name):
+                self.onTestBell?(name)
             case .promptCapture:
                 contentType = "application/json"
                 body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
@@ -389,6 +396,8 @@ class TabletHttpServer {
             return .testPresentationWarn
         case "/test/break-summary":
             return .testBreakSummary
+        case "/test/bell":
+            return .testBell(queryItems.first(where: { $0.name == "name" })?.value)
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":

@@ -42,6 +42,13 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/break-summary"), .testBreakSummary)
     }
 
+    func testRouteMapsBellTestHook() {
+        // /test/bell with no query → a nil name (AppDelegate substitutes a sample);
+        // ?name=… carries the caller through so the card can preview a real name.
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/bell"), .testBell(nil))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/bell?name=Ana%20Pop"), .testBell("Ana Pop"))
+    }
+
     func testRouteUnknownForUnsupportedPath() {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/unknown"), .unknown)
     }

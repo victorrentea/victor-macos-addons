@@ -14,6 +14,9 @@ class LocalWebSocketServer {
     // Called when the daemon reports a deck's Google PDF export is failing
     // (failing=true) or has recovered (failing=false).
     var onPdfExportAlarm: ((_ deck: String, _ slug: String, _ failing: Bool, _ detail: String) -> Void)?
+    // Called when a participant rings the attention bell — carries the ringing
+    // participant's resolved display name (mirrors `onEmoji`). Dispatched on main.
+    var onBellRing: ((String) -> Void)?
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
@@ -184,7 +187,22 @@ class LocalWebSocketServer {
         }
     }
 
-    private func handleText(_ text: String, from senderID: UUID) {
+    /// Resolve the caller name from a `bell_ring` payload, falling back to a
+    /// neutral placeholder when the field is missing/empty/whitespace — so a
+    /// malformed bell never crashes and still alerts the host. Pure, so the
+    /// parsing rule can be unit-tested without the WS transport.
+    static func bellCaller(from json: [String: Any]) -> String {
+        if let caller = json["caller"] as? String {
+            let trimmed = caller.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return "Someone"
+    }
+
+    // Internal (not private) so the message-dispatch switch — including the new
+    // `bell_ring` branch and the unknown-type log-and-ignore fallback — can be
+    // exercised directly in unit tests via `@testable import`.
+    func handleText(_ text: String, from senderID: UUID) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
@@ -213,6 +231,15 @@ class LocalWebSocketServer {
             let detail = json["detail"] as? String ?? ""
             DispatchQueue.main.async { [weak self] in
                 self?.onPdfExportAlarm?(deck, slug, failing, detail)
+            }
+        case "bell_ring":
+            // A participant rang the attention bell. Single consumer (the overlay
+            // bell card), so — unlike display_emoji — we do NOT relay to other
+            // clients. Resolve the caller (neutral fallback if absent) and fire on
+            // main, mirroring the display_emoji dispatch.
+            let caller = Self.bellCaller(from: json)
+            DispatchQueue.main.async { [weak self] in
+                self?.onBellRing?(caller)
             }
         case "ping":
             break  // ignore keep-alive

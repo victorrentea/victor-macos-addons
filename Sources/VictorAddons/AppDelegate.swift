@@ -75,6 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Gates the aggressive silent-transcription warning.
     private var presentationDetector: PresentationDetector?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
+    /// Persistent bottom-left "🔔 [Name] is calling you" card shown when a
+    /// participant rings the attention bell (via `wsServer.onBellRing`).
+    private var bellCard: BellCard?
     private var meetingDetector: MeetingDetector?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
@@ -189,6 +192,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         wsServer.onPdfExportAlarm = { [weak self] deck, slug, failing, detail in
             self?.postPdfExportAlarm(deck: deck, slug: slug, failing: failing, detail: detail)
+        }
+        // A participant rang the attention bell → play a bell sound + show the
+        // persistent bottom-left card (BellCard owns the sound + banner). Already
+        // on the main thread (onBellRing is dispatched to main by the WS server).
+        wsServer.onBellRing = { [weak self] caller in
+            self?.bellCard?.show(caller: caller)
         }
         wsServer.start()
         self.wsServer = wsServer
@@ -573,6 +582,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async { self?.promptGroupPhoto() }
         }
 
+        // /test/bell(?name=…) — show the 🔔 bell card now (+ chime), bypassing the
+        // daemon-connected gate so it can be previewed on the right-hand screen.
+        tabletServer?.onTestBell = { [weak self] name in
+            let caller = (name?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "Ana Pop"
+            DispatchQueue.main.async { self?.bellCard?.show(caller: caller) }
+        }
+
         tabletServer?.onTestWisprOutputDrift = { [weak self] in
             DispatchQueue.main.async {
                 let name = self?.coreAudioManager?.currentDefaultOutputName() ?? "?"
@@ -798,6 +814,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
         statusBanner = StatusBanner(screensProvider: { NSScreen.screens })
         silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.screens })
+        bellCard = BellCard(screensProvider: { NSScreen.screens })
         promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.screens }, hoverable: true)
         SessionNotesAppender.promptBanner = promptCaptureBanner
         menuBarManager.onDisplayJoinLink = { [weak self] in
