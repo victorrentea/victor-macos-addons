@@ -196,8 +196,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // A participant rang the attention bell → play a bell sound + show the
         // persistent bottom-left card (BellCard owns the sound + banner). Already
         // on the main thread (onBellRing is dispatched to main by the WS server).
-        wsServer.onBellRing = { [weak self] caller in
-            self?.bellCard?.show(caller: caller)
+        wsServer.onBellRing = { [weak self] caller, anonymous in
+            self?.bellCard?.show(caller: caller, anonymous: anonymous)
         }
         wsServer.start()
         self.wsServer = wsServer

@@ -42,6 +42,52 @@ final class BellCardTests: XCTestCase {
         XCTAssertEqual(BellCard.cardText(callers: []), "🔔 Someone is calling you")
     }
 
+    // MARK: - Anonymous marker (BellCard.callerLabel + show(anonymous:))
+
+    func testCallerLabelAppendsMarkerWhenAnonymous() {
+        XCTAssertEqual(BellCard.callerLabel("Ana", anonymous: true), "Ana (anonymous)")
+    }
+
+    func testCallerLabelNoMarkerWhenNotAnonymous() {
+        XCTAssertEqual(BellCard.callerLabel("Ana", anonymous: false), "Ana")
+    }
+
+    func testCallerLabelBlankAnonymousUsesNeutralName() {
+        XCTAssertEqual(BellCard.callerLabel("   ", anonymous: true), "Someone (anonymous)")
+    }
+
+    func testAnonymousBellRendersMarkerInCardText() {
+        let card = makeCard()
+        card.show(caller: "Ana", anonymous: true)
+        XCTAssertEqual(card.callers, ["Ana (anonymous)"])
+        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana (anonymous) is calling you")
+    }
+
+    func testNonAnonymousBellHasNoMarker() {
+        let card = makeCard()
+        card.show(caller: "Ana", anonymous: false)
+        XCTAssertEqual(card.callers, ["Ana"])
+        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana is calling you")
+    }
+
+    func testAnonymousDefaultsFalseWhenFlagOmitted() {
+        // The pre-flag call site — show(caller:) with no anonymous argument —
+        // must behave exactly as today (no marker).
+        let card = makeCard()
+        card.show(caller: "Ana")
+        XCTAssertEqual(card.callers, ["Ana"])
+    }
+
+    func testAnonymousAndNamedCallersCoalesce() {
+        // Coalescing still works with a marked label mixed in.
+        let card = makeCard()
+        card.show(caller: "Ana", anonymous: true)
+        card.show(caller: "Dan")
+        XCTAssertEqual(card.callers, ["Ana (anonymous)", "Dan"])
+        XCTAssertEqual(BellCard.cardText(callers: card.callers),
+                       "🔔 Ana (anonymous) + Dan are calling you")
+    }
+
     // MARK: - Stacking / de-dup / cap (BellCard.addCaller)
 
     func testSecondBellDoesNotOverwriteTheFirst() {
