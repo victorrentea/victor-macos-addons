@@ -585,7 +585,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // /test/bell(?name=…) — show the 🔔 bell card now (+ chime), bypassing the
         // daemon-connected gate so it can be previewed on the right-hand screen.
         tabletServer?.onTestBell = { [weak self] name in
-            let caller = (name?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "Ana Pop"
+            let caller = name.nonBlank(or: "Ana Pop")   // sample-name preview default
             DispatchQueue.main.async { self?.bellCard?.show(caller: caller) }
         }
 

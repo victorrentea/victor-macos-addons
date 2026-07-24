@@ -190,13 +190,10 @@ class LocalWebSocketServer {
     /// Resolve the caller name from a `bell_ring` payload, falling back to a
     /// neutral placeholder when the field is missing/empty/whitespace — so a
     /// malformed bell never crashes and still alerts the host. Pure, so the
-    /// parsing rule can be unit-tested without the WS transport.
+    /// parsing rule can be unit-tested without the WS transport. (The shared
+    /// trim/blank rule itself lives in `String.nonBlank(or:)` — see BellCard.)
     static func bellCaller(from json: [String: Any]) -> String {
-        if let caller = json["caller"] as? String {
-            let trimmed = caller.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
-        }
-        return "Someone"
+        (json["caller"] as? String).nonBlank(or: "Someone")
     }
 
     // Internal (not private) so the message-dispatch switch — including the new

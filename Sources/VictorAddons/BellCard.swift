@@ -44,6 +44,18 @@ final class BellCard {
     /// `NSSound(named: "Basso")`. Reads clearly as a bell/notification.
     private static let chime = NSSound(named: NSSound.Name("Glass"))
 
+    /// Rings the chime from the start. `NSSound.play()` is a no-op while the
+    /// sound is still playing, so without the stop() a second bell arriving
+    /// within the previous ding (exactly the coalescing scenario) would be
+    /// silent. Instance seam (`= Self.ringChime`) so unit tests can mute it.
+    var playChime: () -> Void = BellCard.ringChime
+
+    private static func ringChime() {
+        guard let chime else { return }
+        if chime.isPlaying { chime.stop() }
+        chime.play()
+    }
+
     init(screensProvider: @escaping () -> [NSScreen]) {
         banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
         banner.onHover = { [weak self] in self?.dismiss() }
@@ -56,7 +68,7 @@ final class BellCard {
     /// without duplicating their name.
     func show(caller: String) {
         addCaller(caller)
-        Self.chime?.play()
+        playChime()
         // NO auto-dismiss timer — the card is persistent by design. `.down`
         // previews the sinking "put away" exit that hovering triggers. The
         // caller-tinted (amber) pill still gets the hover whitening for feedback.
@@ -70,19 +82,19 @@ final class BellCard {
     /// neutral placeholder. Extracted so the stacking rule is unit-testable
     /// without rendering any panels.
     func addCaller(_ caller: String) {
-        let name = caller.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolved = name.isEmpty ? "Someone" : name
+        let resolved = caller.nonBlank(or: "Someone")
         guard !callers.contains(resolved) else { return }
         callers.append(resolved)
+        // A single append can only ever put the list one over the cap.
         if callers.count > Self.maxCallers {
-            callers.removeFirst(callers.count - Self.maxCallers)
+            callers.removeFirst()
         }
     }
 
     /// The exact card copy for the active `callers`:
-    ///   • one caller  → `🔔 Ana is calling you`     (the spec's exact wording)
-    ///   • more callers → `🔔 Ana + Dan is calling you` → uses "are" for plural,
-    ///     e.g. `🔔 Ana + Dan are calling you`.
+    ///   • one caller   → `🔔 Ana is calling you`   (the spec's exact wording)
+    ///   • more callers → names joined with " + " and the plural "are", e.g.
+    ///     `🔔 Ana + Dan are calling you`.
     /// Pure, so the wording is unit-testable.
     static func cardText(callers: [String]) -> String {
         switch callers.count {
@@ -105,4 +117,25 @@ final class BellCard {
     /// True while the card is on screen. (False in a headless test with no
     /// screens, since `BottomLeftBanner` builds one panel per screen.)
     var isVisible: Bool { banner.isVisible }
+}
+
+/// The one blank-proof display-name rule shared by every bell entry point —
+/// `LocalWebSocketServer.bellCaller` (fallback "Someone", per the bell_ring
+/// spec), `BellCard.addCaller` (same, for direct callers), and the `/test/bell`
+/// wiring in AppDelegate (sample-name fallback "Ana Pop"). One definition so
+/// the trim/empty rule can never drift between the three layers.
+extension String {
+    /// The trimmed string, or `fallback` when nothing readable remains.
+    func nonBlank(or fallback: String) -> String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+}
+
+extension Optional where Wrapped == String {
+    /// `nonBlank(or:)` lifted over nil: an absent JSON field / query param
+    /// resolves straight to `fallback` with no unwrapping dance at call sites.
+    func nonBlank(or fallback: String) -> String {
+        self?.nonBlank(or: fallback) ?? fallback
+    }
 }

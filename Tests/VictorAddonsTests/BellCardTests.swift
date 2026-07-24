@@ -18,7 +18,11 @@ final class BellCardTests: XCTestCase {
     }
 
     private func makeCard() -> BellCard {
-        BellCard(screensProvider: { [] })
+        let card = BellCard(screensProvider: { [] })
+        // Mute the chime: these tests assert controller state, and no other
+        // suite makes the test machine audibly ding on every run.
+        card.playChime = {}
+        return card
     }
 
     // MARK: - Card copy (pure)
@@ -32,15 +36,21 @@ final class BellCardTests: XCTestCase {
         XCTAssertEqual(BellCard.cardText(callers: ["Ana", "Dan", "Eve"]), "🔔 Ana + Dan + Eve are calling you")
     }
 
+    func testCardTextEmptyListStaysTotalWithNeutralName() {
+        // Unreachable via show() (addCaller guarantees ≥ 1), but the pure
+        // function stays total — never the garbled "🔔  are calling you".
+        XCTAssertEqual(BellCard.cardText(callers: []), "🔔 Someone is calling you")
+    }
+
     // MARK: - Stacking / de-dup / cap (BellCard.addCaller)
 
     func testSecondBellDoesNotOverwriteTheFirst() {
         let card = makeCard()
         card.show(caller: "Ana")
         card.show(caller: "Dan")
-        // Both callers stay represented — the second bell must not replace the first.
+        // Both callers stay represented — the second bell must not replace the
+        // first. (The coalesced wording itself is covered by the cardText tests.)
         XCTAssertEqual(card.callers, ["Ana", "Dan"])
-        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana + Dan are calling you")
     }
 
     func testRepeatBellFromSameCallerIsDeDuped() {
