@@ -2842,7 +2842,9 @@ class EmojiAnimator {
 
     // MARK: - Game Over overlay
 
-    func showGameOver(playSound: Bool = true) {
+    // The overlay never plays its own sound — the tablet owns the audio
+    // (59_game_over.mp3, routed). Per project principle: Mac overlays are silent.
+    func showGameOver() {
         guard activeEffects["game-over"] == nil else { return }
         let bounds = hostLayer.bounds
 
@@ -2863,8 +2865,7 @@ class EmojiAnimator {
         let container = CALayer()
         container.frame = bounds
         hostLayer.addSublayer(container)
-        trackEffect("game-over", layer: container, duration: duration, sound: playSound ? "dying.mp3" : nil)
-        if playSound { SoundManager.shared.play("dying.mp3") }
+        trackEffect("game-over", layer: container, duration: duration)
 
         // 70% black backdrop
         let blackLayer = CALayer()
@@ -5604,7 +5605,7 @@ class EmojiAnimator {
 
     func stopGameOver() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            _ = self?.cancelIfRunning("game-over", sound: "dying.mp3")
+            _ = self?.cancelIfRunning("game-over")
         }
     }
 

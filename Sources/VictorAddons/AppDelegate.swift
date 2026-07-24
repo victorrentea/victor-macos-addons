@@ -211,7 +211,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             switch name {
             case "earthquake":    self?.animator.showBrokenGlass(playSound: false)
             case "explosion":     self?.animator.showExplosionGif(playSound: false)
-            case "game-over":     self?.animator.showGameOver(playSound: false)
+            case "game-over":     self?.animator.showGameOver()
             case "broken-glass":  self?.animator.showBrokenGlass(playSound: false)
             case "pulse":         self?.animator.startPulseOverlay(playSound: false)
             case "pulse/stop":    self?.animator.stopPulseOverlay()
@@ -713,7 +713,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "spiral-hearts": self.animator.showSpiralHearts(); stopAfter { self.animator.stopSpiralHearts() }
                 case "explosion":    self.animator.showExplosionGif(playSound: false)
                 case "broken-glass": self.animator.showBrokenGlass(playSound: false)
-                case "game-over":    self.animator.showGameOver(playSound: false); stopAfter { self.animator.stopGameOver() }
+                case "game-over":    self.animator.showGameOver(); stopAfter { self.animator.stopGameOver() }
                 case "pulse":        self.animator.startPulseOverlay(playSound: false); stopAfter { self.animator.stopPulseOverlay() }
                 case "fire-alarm":       self.animator.showFireAlarm(playSound: false)
                 case "bullet-holes":    self.animator.showBulletHoles(playSound: false)
