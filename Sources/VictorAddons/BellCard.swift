@@ -66,8 +66,13 @@ final class BellCard {
     /// repeatedly — each call plays the sound and, for a *new* caller, widens the
     /// coalesced card; a repeat from a caller already shown re-plays the sound
     /// without duplicating their name.
-    func show(caller: String) {
-        addCaller(caller)
+    ///
+    /// `anonymous` (default `false`, so pre-flag call sites are unchanged) appends
+    /// an "(anonymous)" marker to this caller's label — e.g. the card then reads
+    /// `🔔 Ana (anonymous) is calling you`. The marker is baked into the stored
+    /// label, so coalescing/de-dup/cap all keep working unchanged.
+    func show(caller: String, anonymous: Bool = false) {
+        addCaller(Self.callerLabel(caller, anonymous: anonymous))
         playChime()
         // NO auto-dismiss timer — the card is persistent by design. `.down`
         // previews the sinking "put away" exit that hovering triggers. The
@@ -89,6 +94,16 @@ final class BellCard {
         if callers.count > Self.maxCallers {
             callers.removeFirst()
         }
+    }
+
+    /// A single caller's display label: the resolved (blank-proof) name, with an
+    /// "(anonymous)" marker appended when the ring was anonymous. Pure, so the
+    /// marker wording is unit-testable and stays identical in the single-caller
+    /// (`🔔 Ana (anonymous) is calling you`) and coalesced
+    /// (`🔔 Ana (anonymous) + Dan are calling you`) renderings.
+    static func callerLabel(_ caller: String, anonymous: Bool) -> String {
+        let resolved = caller.nonBlank(or: "Someone")
+        return anonymous ? "\(resolved) (anonymous)" : resolved
     }
 
     /// The exact card copy for the active `callers`:

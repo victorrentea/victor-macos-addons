@@ -15,8 +15,9 @@ class LocalWebSocketServer {
     // (failing=true) or has recovered (failing=false).
     var onPdfExportAlarm: ((_ deck: String, _ slug: String, _ failing: Bool, _ detail: String) -> Void)?
     // Called when a participant rings the attention bell — carries the ringing
-    // participant's resolved display name (mirrors `onEmoji`). Dispatched on main.
-    var onBellRing: ((String) -> Void)?
+    // participant's resolved display name (mirrors `onEmoji`) plus whether the
+    // ring was anonymous (false when the field is absent). Dispatched on main.
+    var onBellRing: ((String, Bool) -> Void)?
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
@@ -196,6 +197,13 @@ class LocalWebSocketServer {
         (json["caller"] as? String).nonBlank(or: "Someone")
     }
 
+    /// Whether a `bell_ring` payload marks the ring as anonymous. Absent (older
+    /// daemons predating the flag) or a non-bool value → `false`, so behaviour is
+    /// exactly as before the marker existed. Pure, for unit-testing the rule.
+    static func bellAnonymous(from json: [String: Any]) -> Bool {
+        json["anonymous"] as? Bool ?? false
+    }
+
     // Internal (not private) so the message-dispatch switch — including the new
     // `bell_ring` branch and the unknown-type log-and-ignore fallback — can be
     // exercised directly in unit tests via `@testable import`.
@@ -232,11 +240,13 @@ class LocalWebSocketServer {
         case "bell_ring":
             // A participant rang the attention bell. Single consumer (the overlay
             // bell card), so — unlike display_emoji — we do NOT relay to other
-            // clients. Resolve the caller (neutral fallback if absent) and fire on
-            // main, mirroring the display_emoji dispatch.
+            // clients. Resolve the caller (neutral fallback if absent) and whether
+            // the ring is anonymous (false when absent), then fire on main,
+            // mirroring the display_emoji dispatch.
             let caller = Self.bellCaller(from: json)
+            let anonymous = Self.bellAnonymous(from: json)
             DispatchQueue.main.async { [weak self] in
-                self?.onBellRing?(caller)
+                self?.onBellRing?(caller, anonymous)
             }
         case "ping":
             break  // ignore keep-alive
