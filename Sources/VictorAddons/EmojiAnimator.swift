@@ -4075,9 +4075,15 @@ class EmojiAnimator {
 
         if playSound {
             SoundManager.shared.play("55_star_wars.mp3")
-            DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
-                self?.stopStarWars()
-            }
+        }
+        // ALWAYS self-stop when the sound ends — including the silent tablet
+        // path (playSound: false), whose /sound/stopped → star-wars/stop is
+        // best-effort (lost on relay/network drops) and previously the ONLY
+        // thing standing between the Death Star and staying parked forever.
+        // Identity-guarded so an old run's timer can't kill a newer run.
+        DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration + 0.3) { [weak self, weak layer] in
+            guard let self, let layer, self.activeEffects["star-wars"] === layer else { return }
+            self.stopStarWars()
         }
     }
 
@@ -4877,18 +4883,20 @@ class EmojiAnimator {
         }
 
         // Auto fade-out so the rainbow never stays stuck on screen: it lingers
-        // for the sound's length (or a default when triggered silently), then
-        // stopRainbow() fades it to 0 and removes it.
+        // for the sound's length, then stopRainbow() fades it to 0 and removes
+        // it. The duration is read in the SILENT (tablet) path too — the routed
+        // sound is the same mp3, and the old 5s default faded the rainbow ~9s
+        // before the music ended. Identity-guarded so an old run's timer can't
+        // kill a newer run.
         var visibleFor = 5.0
-        if playSound {
-            SoundManager.shared.play("37_rainbow.mp3")
-            if let soundURL = SoundManager.shared.soundURL(for: "37_rainbow.mp3") {
-                let d = AVURLAsset(url: soundURL).duration
-                if d.isNumeric { visibleFor = CMTimeGetSeconds(d) }
-            }
+        if let soundURL = SoundManager.shared.soundURL(for: "37_rainbow.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { visibleFor = CMTimeGetSeconds(d) }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + visibleFor) { [weak self] in
-            self?.stopRainbow()
+        if playSound { SoundManager.shared.play("37_rainbow.mp3") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + visibleFor) { [weak self, weak container] in
+            guard let self, let container, self.activeEffects["rainbow"] === container else { return }
+            self.stopRainbow()
         }
     }
 
@@ -5000,23 +5008,26 @@ class EmojiAnimator {
         gifLayer.add(anim, forKey: "brotherFrames")
         CATransaction.commit()
 
+        // Sound trails the animation by the paired-effect delay, matching
+        // the tablet-routed path (see SoundManager.pairedEffectStartDelays).
+        let soundDelay = SoundManager.pairedEffectStartDelays["67_sfx_109.mp3"] ?? 0
         if playSound {
-            // Sound trails the animation by the paired-effect delay, matching
-            // the tablet-routed path (see SoundManager.pairedEffectStartDelays).
-            let soundDelay = SoundManager.pairedEffectStartDelays["67_sfx_109.mp3"] ?? 0
             DispatchQueue.main.asyncAfter(deadline: .now() + soundDelay) {
                 SoundManager.shared.play("67_sfx_109.mp3")
             }
-            if let soundURL = SoundManager.shared.soundURL(for: "67_sfx_109.mp3") {
-                let asset = AVURLAsset(url: soundURL)
-                let d = asset.duration
-                if d.isNumeric {
-                    let soundDuration = CMTimeGetSeconds(d)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + soundDelay + soundDuration) { [weak self] in
-                        self?.stopBrother()
-                    }
-                }
-            }
+        }
+        // ALWAYS self-stop when the sound ends — the looping GIF must never
+        // depend on the tablet's best-effort /sound/stopped → brother/stop
+        // (lost on relay/network drops → brother danced forever). Identity-
+        // guarded so an old run's timer can't kill a newer run.
+        var soundDuration = 10.0
+        if let soundURL = SoundManager.shared.soundURL(for: "67_sfx_109.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { soundDuration = CMTimeGetSeconds(d) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + soundDelay + soundDuration + 0.3) { [weak self, weak gifLayer] in
+            guard let self, let gifLayer, self.activeEffects["brother"] === gifLayer else { return }
+            self.stopBrother()
         }
     }
 
@@ -5083,16 +5094,19 @@ class EmojiAnimator {
 
         if playSound {
             SoundManager.shared.play("29_gangnam_style.mp3")
-            if let soundURL = SoundManager.shared.soundURL(for: "29_gangnam_style.mp3") {
-                let asset = AVURLAsset(url: soundURL)
-                let d = asset.duration
-                if d.isNumeric {
-                    let soundDuration = CMTimeGetSeconds(d)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration) { [weak self] in
-                        self?.stopGangnam()
-                    }
-                }
-            }
+        }
+        // ALWAYS self-stop when the sound ends — the looping frames must never
+        // depend on the tablet's best-effort /sound/stopped → gangnam/stop
+        // (lost on relay/network drops → PSY danced forever). Identity-guarded
+        // so an old run's timer can't kill a newer run.
+        var soundDuration = 3.1
+        if let soundURL = SoundManager.shared.soundURL(for: "29_gangnam_style.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { soundDuration = CMTimeGetSeconds(d) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration + 0.3) { [weak self, weak gifLayer] in
+            guard let self, let gifLayer, self.activeEffects["gangnam"] === gifLayer else { return }
+            self.stopGangnam()
         }
     }
 
@@ -5363,19 +5377,41 @@ class EmojiAnimator {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + cycleDuration - 0.002, repeating: cycleDuration)
         timer.setEventHandler { [weak gifLayer] in
-            guard gifLayer?.superlayer != nil else { return }
+            // Self-cancel once the layer left the tree (stop-all removes layers
+            // directly, without stopDrumRoll) — otherwise this timer would keep
+            // firing no-ops forever. Cancellation releases the handler, breaking
+            // the timer→handler→timer retain cycle.
+            guard gifLayer?.superlayer != nil else { timer.cancel(); return }
             startCycle()
         }
         timer.resume()
         drumRollTimer = timer
 
         if playSound { SoundManager.shared.play("26_drum.mp3") }
+
+        // ALWAYS self-stop when the sound ends — this loop previously had NO
+        // self-termination and relied entirely on the tablet's best-effort
+        // /sound/stopped → drum-roll/stop (lost on relay/network drops → the
+        // drum rolled forever). Identity-guarded so an old run's timer can't
+        // kill a newer run.
+        var soundDuration = 6.2
+        if let url = SoundManager.shared.soundURL(for: "26_drum.mp3") {
+            let d = AVURLAsset(url: url).duration
+            if d.isNumeric { soundDuration = CMTimeGetSeconds(d) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + soundDuration + 0.3) { [weak self, weak gifLayer] in
+            guard let self, let gifLayer, self.activeEffects["drum-roll"] === gifLayer else { return }
+            self.stopDrumRoll()
+        }
     }
 
     func stopDrumRoll() {
         guard let layer = activeEffects.removeValue(forKey: "drum-roll") else { return }
         SoundManager.shared.stop("26_drum.mp3")
-        // Keep drumming while fading out, then clean up
+        // Keep drumming while fading out, then clean up. The loop-restart timer
+        // is NOT cancelled here — `drumRollTimer` may already belong to a newer
+        // run started during the fade; each timer self-cancels on its next tick
+        // once its own layer has left the tree (see showDrumRoll).
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = layer.opacity
         fade.toValue = 0.0
@@ -5383,10 +5419,8 @@ class EmojiAnimator {
         fade.fillMode = .forwards
         fade.isRemovedOnCompletion = false
         CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
+        CATransaction.setCompletionBlock {
             layer.removeFromSuperlayer()
-            self?.drumRollTimer?.cancel()
-            self?.drumRollTimer = nil
         }
         layer.add(fade, forKey: "fadeOut")
         CATransaction.commit()
