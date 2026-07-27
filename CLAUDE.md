@@ -94,6 +94,23 @@ effect needs only a Mac rebuild — no tablet redeploy.** The siren
 (`/alarm/start`,`/alarm/stop`) and stays special-cased on the tablet. Effects
 are CALayers on the overlay's `hostLayer`, animated via `CAKeyframeAnimation`
 on `contents` from bundled gif frames (`Bundle.module`).
+
+**Lifecycle rule (2026-07): every overlay effect MUST self-terminate at its
+sound's length — network stop messages are an optimization, never the only
+teardown.** The tablet's `/sound/stopped` → `onStop` chain (and even the
+pre-press `/effect/stop-all`) is best-effort: on a flaky venue network the
+tablet falls back to the Railway relay and those GETs get lost, which used to
+leave looping overlays (star-wars, brother, gangnam, drum-roll) on the desktop
+forever. Every `show*` therefore schedules its own authoritative stop —
+`trackEffect(duration:)` for one-shots, or an explicit
+`asyncAfter(realMp3Duration + 0.3s grace)` for loopers, reading the paired
+mp3's length via `AVURLAsset` — **in the silent (`playSound: false`) tablet
+path too**, since that's the path real presses take. Self-stop timers are
+**identity-guarded** (`activeEffects[key] === layer`, the love-hands pattern)
+so an old run's timer can never kill a newer run of the same effect. The one
+deliberate exception is the siren's alarm overlay (an unbounded toggle — its
+sound loops until explicitly stopped). When adding a new effect, follow this
+rule from the start.
 - **🩸 Blood drip** (sfx #40 `40_joker.mp3` → `blood-drip`): `blood-drip.gif`
   (white bg made transparent via ImageMagick `-coalesce -fuzz 20% -transparent`,
   full-canvas frames) shown as a blood band pinned to the **top of the screen**
