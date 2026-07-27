@@ -103,6 +103,7 @@ final class BreakTimerController {
     /// (keeping its position & size); a fresh window opens top-right at 25% width.
     func start(minutes: Int, title: String = "BREAK", sizeScale: CGFloat = 1.0) {
         epoch += 1
+        ScreenBlackout.shared.dismiss()        // a new break wins over a previous close's blackout
         blinkTimer?.invalidate(); blinkTimer = nil
         remaining = max(0, minutes) * 60
         paused = false
@@ -161,7 +162,9 @@ final class BreakTimerController {
 
     func close() {
         epoch += 1                                       // cancels pending gong/expiry blocks
-        if panel != nil { onEnded?() }                   // a break was showing → (re)start the "resumed" clock
+        let wasShowing = panel != nil
+        let wasFullscreen = isEnlarged
+        if wasShowing { onEnded?() }                     // a break was showing → (re)start the "resumed" clock
         SoundManager.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
@@ -182,6 +185,14 @@ final class BreakTimerController {
         // the timer never leaves a hand/resize cursor stuck on screen.
         NSCursor.arrow.set()
         clearPersisted()
+        // The break is over but Victor may still be out of the room: keep every
+        // display black until he's actually back (any mouse move / keystroke),
+        // instead of exposing the desktop on the projector. Applies to EVERY
+        // close — ✕, expiry after the gong, or programmatic — and only when a
+        // timer was really on screen. When the panel was the fullscreen break
+        // screen the screen is already black, so skip the fade-in (no flash of
+        // desktop between the two blacks).
+        if wasShowing { ScreenBlackout.shared.show(fadeIn: wasFullscreen ? 0 : 0.35) }
     }
 
     // MARK: - Persistence (survive an app redeploy mid-break)
@@ -225,6 +236,7 @@ final class BreakTimerController {
 
     private func resume(remaining rem: Int, paused isPaused: Bool) {
         epoch += 1
+        ScreenBlackout.shared.dismiss()
         blinkTimer?.invalidate(); blinkTimer = nil
         remaining = rem
         paused = isPaused
@@ -442,9 +454,7 @@ final class BreakTimerController {
 
     /// Seconds since the last user input of any kind (mouse or keyboard).
     private static func systemIdleSeconds() -> CFTimeInterval {
-        let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .rightMouseDown,
-                                    .leftMouseDragged, .keyDown, .scrollWheel, .flagsChanged]
-        return types.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 999
+        ScreenBlackout.secondsSinceLastInput()
     }
 
     // MARK: - Internals
