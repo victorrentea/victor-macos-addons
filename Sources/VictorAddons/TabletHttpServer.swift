@@ -65,6 +65,9 @@ class TabletHttpServer {
         /// Show a 🔔 bell card now with an optional "?name=" caller (defaulting to
         /// a sample name), bypassing the daemon-connected gate (test hook).
         case testBell(String?)
+        /// Force one Flux-inbox poll now, bypassing the battery gate, and return
+        /// a JSON snapshot of the poller's state (test hook).
+        case testEmailPoll
         case promptCapture
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
@@ -128,6 +131,8 @@ class TabletHttpServer {
     var onTestBreakSummary: (() -> Void)?
     /// Show a 🔔 bell card now; the argument is the optional "?name=" caller.
     var onTestBell: ((String?) -> Void)?
+    /// Force one Flux-inbox poll now; returns the poller's JSON snapshot.
+    var onTestEmailPoll: (() -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -286,6 +291,10 @@ class TabletHttpServer {
                 self.onTestBreakSummary?()
             case .testBell(let name):
                 self.onTestBell?(name)
+            case .testEmailPoll:
+                contentType = "application/json"
+                body = self.onTestEmailPoll?() ?? "{\"error\":\"flux poller unavailable\"}"
+                if self.onTestEmailPoll == nil { statusCode = 503 }
             case .promptCapture:
                 contentType = "application/json"
                 body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
@@ -398,6 +407,8 @@ class TabletHttpServer {
             return .testBreakSummary
         case "/test/bell":
             return .testBell(queryItems.first(where: { $0.name == "name" })?.value)
+        case "/test/email":
+            return .testEmailPoll
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":

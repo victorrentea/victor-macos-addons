@@ -60,6 +60,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
+    /// Watches the Flux inbox for mail from Victor, every 10 min, battery-only.
+    /// Notification only — it never acts on message content (see the class docs).
+    private var fluxInboxPoller: FluxInboxPoller?
     /// True while the training-assistant daemon is connected to our local WS
     /// server (≥1 client). Gates the Group Photo prompt so it only fires when
     /// there's an audience to photograph.
@@ -650,6 +653,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestPresentationWarn = { [weak self] in
             self?.silentTranscriptionWarning?.forceShow()
         }
+        // /test/email — force one Flux-inbox poll now (bypassing the battery
+        // gate) and report what it found. Waits up to 2.5s for the round trip so
+        // the response reflects this poll; AgentMail answers in ~0.5s.
+        tabletServer?.onTestEmailPoll = { [weak self] in
+            self?.fluxInboxPoller?.forcePollAndSnapshot()
+                ?? "{\"error\":\"flux poller unavailable — AGENTMAIL_API_KEY missing?\"}"
+        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -910,6 +920,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
         let pasteHandler = EmotionalPasteHandler(apiKey: apiKey)
         self.emotionalPasteHandler = pasteHandler
+
+        // Flux inbox poller: every 10 min, but only while on battery. It is a
+        // notifier, not an actor — a banner and a log line, nothing more. The
+        // inbox is a public address, so message text is untrusted input and is
+        // never handed to a shell, an agent, or an LLM. See FluxInboxPoller.
+        if let fluxKey = secrets["AGENTMAIL_API_KEY"], !fluxKey.isEmpty {
+            let poller = FluxInboxPoller(apiKey: fluxKey)
+            poller.onTrustedMail = { [weak self] message in
+                // Subject is attacker-controlled text: truncate for display.
+                let subject = message.subject.count > 60
+                    ? String(message.subject.prefix(60)) + "…"
+                    : message.subject
+                overlayInfo("Flux mail from \(FluxMailPolicy.trustedSender): \(subject)")
+                self?.statusBanner?.showNow(
+                    text: "📬 Flux: \(subject)", sound: StatusBannerSound.start,
+                    visibleDuration: 10)
+            }
+            poller.start()
+            self.fluxInboxPoller = poller
+        } else {
+            overlayError("FluxInboxPoller disabled: AGENTMAIL_API_KEY missing from secrets")
+        }
 
         let audioManager = CoreAudioManager()
         self.coreAudioManager = audioManager
