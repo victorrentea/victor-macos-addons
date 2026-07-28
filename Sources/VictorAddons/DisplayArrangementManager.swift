@@ -19,8 +19,13 @@ import CoreGraphics
 /// hasASUS)` — actually changes, so re-applying our own layout doesn't loop.
 ///
 /// Applying uses Quartz Display Services (`CGBegin/CompleteDisplayConfiguration`)
-/// — a single atomic transaction, no external tools, no extra entitlements
-/// (reconfiguring displays needs no Screen-Recording permission).
+/// in **two phases**: modes + mirror topology first, then origins (who is main,
+/// who sits where) in a separate transaction ~0.6 s later. They cannot share one
+/// transaction: when the mirror set changes, macOS recomputes the layout after
+/// the mirror lands and silently discards the requested origins — the Epson
+/// PU100 bug, where "ASUS primary" reported success yet the Retina stayed main.
+/// No external tools, no extra entitlements (reconfiguring displays needs no
+/// Screen-Recording permission).
 ///
 /// Roles are identified live, not from a frozen profile, so this works with *any*
 /// venue's projector (different EDID every time): built-in = Retina
@@ -263,52 +268,96 @@ final class DisplayArrangementManager {
 
     private func apply(scene: Scene, displays: DisplaySet) {
         isApplying = true
-        defer {
-            // Keep swallowing our own reconfiguration callbacks briefly after the
-            // transaction settles.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.isApplying = false
-            }
-        }
 
+        // Phase 1 — display modes + mirror topology ONLY. Origins must not ride
+        // in this transaction: when the mirror set changes, macOS recomputes the
+        // layout after the mirror lands and silently discards the requested
+        // origins (the Epson PU100 bug — "ASUS primary" reported success, yet
+        // the Retina stayed main). Origins get their own transaction in phase 2.
         var configRef: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
             overlayError("CGBeginDisplayConfiguration failed — arrangement not applied")
+            scheduleApplyingReset()
             return
         }
 
         let banner: String
         if scene.projector, let projector = displays.projector, let retina = displays.retina {
-            banner = applyProjector(config: config, retina: retina, projector: projector, asus: displays.asus)
+            banner = configureProjectorModes(config: config, retina: retina, projector: projector, asus: displays.asus)
         } else if let retina = displays.retina {
-            banner = applyStandard(config: config, retina: retina, asus: displays.asus)
+            banner = configureStandardModes(config: config, retina: retina, asus: displays.asus)
         } else {
             _ = CGCancelDisplayConfiguration(config)
+            scheduleApplyingReset()
             return
+        }
+
+        let result = CGCompleteDisplayConfiguration(config, .permanently)
+        guard result == .success else {
+            overlayError("CGCompleteDisplayConfiguration failed (\(result.rawValue)) — \(banner)")
+            scheduleApplyingReset()
+            return
+        }
+
+        // Phase 2 — origins (which display is main, who sits where), after the
+        // mirror/mode transaction settles.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            self.applyOrigins(scene: scene, displays: displays, banner: banner)
+            self.scheduleApplyingReset()
+        }
+    }
+
+    /// Keep swallowing our own reconfiguration callbacks briefly after the last
+    /// transaction settles.
+    private func scheduleApplyingReset() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.isApplying = false
+        }
+    }
+
+    /// Phase 2: place the displays. The display whose origin lands at (0,0)
+    /// becomes main. Runs in its own transaction (see `apply`).
+    private func applyOrigins(scene: Scene, displays: DisplaySet, banner: String) {
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
+            overlayError("CGBeginDisplayConfiguration failed — origins not applied (\(banner))")
+            return
+        }
+
+        // Phase 1's mode change is live by now, so the Retina's current mode is
+        // the actual point width being extended next to.
+        let retinaPointWidth = Int32(displays.retina.flatMap { CGDisplayCopyDisplayMode($0)?.width } ?? 1920)
+
+        if scene.projector, let asus = displays.asus, let retina = displays.retina {
+            CGConfigureDisplayOrigin(config, asus, 0, 0)                   // (0,0) ⇒ main
+            CGConfigureDisplayOrigin(config, retina, -retinaPointWidth, 0) // to ASUS's left
+        } else if let retina = displays.retina {
+            CGConfigureDisplayOrigin(config, retina, 0, 0)                 // Retina main
+            if let asus = displays.asus {
+                CGConfigureDisplayOrigin(config, asus, retinaPointWidth, 0) // extended right
+            }
         }
 
         let result = CGCompleteDisplayConfiguration(config, .permanently)
         if result == .success {
             overlayInfo("Display arrangement applied: \(banner)")
-            DispatchQueue.main.async { [weak self] in self?.onArrangementApplied?(banner) }
+            onArrangementApplied?(banner)
         } else {
-            overlayError("CGCompleteDisplayConfiguration failed (\(result.rawValue)) — \(banner)")
+            overlayError("CGCompleteDisplayConfiguration failed on origins (\(result.rawValue)) — \(banner)")
         }
     }
 
-    /// Projector present: Retina→1080p mirrored by the projector; ASUS (if any)
-    /// primary on the right, Retina extended to its left.
-    private func applyProjector(config: CGDisplayConfigRef,
-                                retina: CGDirectDisplayID,
-                                projector: CGDirectDisplayID,
-                                asus: CGDirectDisplayID?) -> String {
-        var retinaPointWidth: Int32 = 1920
+    /// Projector present (phase 1): Retina→1080p, mirrored by the projector;
+    /// ASUS (if any) un-mirrored + pinned to its native mode.
+    private func configureProjectorModes(config: CGDisplayConfigRef,
+                                         retina: CGDirectDisplayID,
+                                         projector: CGDirectDisplayID,
+                                         asus: CGDirectDisplayID?) -> String {
         if let mode = find1080Mode(retina) {
             CGConfigureDisplayWithDisplayMode(config, retina, mode, nil)
-            retinaPointWidth = Int32(mode.width)
         } else {
             overlayError("No 1920×1080 mode on the Retina — mirroring at current mode")
-            if let cur = CGDisplayCopyDisplayMode(retina) { retinaPointWidth = Int32(cur.width) }
         }
 
         // Projector mirrors the Retina (shares its bounds — do not place it).
@@ -321,34 +370,28 @@ final class DisplayArrangementManager {
             // projector appeared, breaking that mirror leaves it there. Pin it
             // back to its native mode so it isn't primary at 800×600.
             if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
-            CGConfigureDisplayOrigin(config, asus, 0, 0)                 // (0,0) ⇒ main
-            CGConfigureDisplayOrigin(config, retina, -retinaPointWidth, 0) // to ASUS's left
             return "🖥️ Projector: mirror + ASUS primary (Retina 1080p left)"
         } else {
-            CGConfigureDisplayOrigin(config, retina, 0, 0)
             return "🖥️ Projector: mirrored (Retina 1080p)"
         }
     }
 
-    /// No projector: Retina main at its native mode; ASUS (if any) to the right.
-    private func applyStandard(config: CGDisplayConfigRef,
-                               retina: CGDirectDisplayID,
-                               asus: CGDirectDisplayID?) -> String {
+    /// No projector (phase 1): Retina un-mirrored at its native mode; ASUS (if
+    /// any) un-mirrored + pinned to its native mode.
+    private func configureStandardModes(config: CGDisplayConfigRef,
+                                        retina: CGDirectDisplayID,
+                                        asus: CGDirectDisplayID?) -> String {
         CGConfigureDisplayMirrorOfDisplay(config, retina, kCGNullDirectDisplay)
 
-        var retinaPointWidth = Int32(CGDisplayCopyDisplayMode(retina)?.width ?? 1728)
         if let std = standardRetinaMode {
             CGConfigureDisplayWithDisplayMode(config, retina, std, nil)
-            retinaPointWidth = Int32(std.width)
         }
-        CGConfigureDisplayOrigin(config, retina, 0, 0)                  // Retina main
 
         if let asus = asus {
             CGConfigureDisplayMirrorOfDisplay(config, asus, kCGNullDirectDisplay)
             // Same guard as the projector path: restore the ASUS's native mode so
             // a mirror-break fallback (800×600) never survives into the layout.
             if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
-            CGConfigureDisplayOrigin(config, asus, retinaPointWidth, 0) // extended right
             return "🖥️ Standard: Retina main + ASUS right"
         }
         return "🖥️ Standard: Retina only"
