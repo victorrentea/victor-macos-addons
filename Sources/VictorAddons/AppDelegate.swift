@@ -936,6 +936,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.statusBanner?.showNow(
                     text: "📬 Flux: \(subject)", sound: StatusBannerSound.start,
                     visibleDuration: 10)
+                // The message was already claimed (its `unread` label cleared)
+                // before this fired, so this can never start a second agent for
+                // the same email.
+                FluxAgentLauncher.launch(
+                    messageId: message.messageId,
+                    threadId: message.threadId,
+                    subject: subject)
             }
             poller.start()
             self.fluxInboxPoller = poller

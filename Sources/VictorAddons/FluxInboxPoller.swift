@@ -16,6 +16,13 @@ struct FluxMessage: Equatable {
     let timestamp: Date
     /// The receiving MTA's `Authentication-Results` stamp, if present.
     let authenticationResults: String?
+    let threadId: String
+    /// AgentMail labels. `unread` is the **claim token**: it is cleared the
+    /// moment we start processing a message, so no second agent can pick it up.
+    let labels: [String]
+
+    /// Not yet claimed by an agent run.
+    var isUnprocessed: Bool { labels.contains("unread") }
 }
 
 // MARK: - Trust policy (pure, unit-tested)
@@ -98,8 +105,12 @@ enum FluxMailPolicy {
         force || !onAC
     }
 
-    /// The messages a poll should report: trusted senders only, newer than the
-    /// watermark, and not already reported.
+    /// The messages a poll should report: trusted senders only, still unclaimed
+    /// (`unread`), newer than the watermark, and not already reported.
+    ///
+    /// The `unread` filter is the one dedupe layer that lives server-side, so it
+    /// is what stops a second agent starting after a reinstall or a wiped
+    /// watermark — see `FluxAgentLauncher`.
     ///
     /// Oldest first, so a burst of mail is reported in the order it was sent.
     static func newMail(in messages: [FluxMessage],
@@ -108,6 +119,7 @@ enum FluxMailPolicy {
         messages
             .filter { $0.timestamp > watermark }
             .filter { !seen.contains($0.messageId) }
+            .filter { $0.isUnprocessed }
             .filter { isTrusted($0) }
             .sorted { $0.timestamp < $1.timestamp }
     }
@@ -241,7 +253,18 @@ final class FluxInboxPoller {
                         : "polled — \(fresh.count) new from \(FluxMailPolicy.trustedSender)"
                     for message in fresh {
                         self.remember(message)
-                        DispatchQueue.main.async { self.onTrustedMail?(message) }
+                        // CLAIM FIRST, notify second — and fail closed. Clearing
+                        // `unread` server-side is what guarantees no second agent
+                        // ever starts for this email, so if the claim fails we do
+                        // NOT hand it on: a missed notification is recoverable,
+                        // two agents answering the same mail is not.
+                        self.claim(message) { claimed in
+                            guard claimed else {
+                                overlayError("FluxInboxPoller: could not claim \(message.messageId) — not launching")
+                                return
+                            }
+                            DispatchQueue.main.async { self.onTrustedMail?(message) }
+                        }
                     }
                 }
                 completion?()
@@ -271,6 +294,36 @@ final class FluxInboxPoller {
             case .malformedResponse: return "AgentMail returned an unreadable response"
             }
         }
+    }
+
+    /// Claim a message by clearing its `unread` label, so no other poll — in
+    /// this run, a later run, or a reinstalled app — can pick it up again.
+    ///
+    /// Message ids are Message-IDs (`<...@mail.gmail.com>`), so they must be
+    /// percent-encoded into the path.
+    private func claim(_ message: FluxMessage, completion: @escaping (Bool) -> Void) {
+        let encoded = message.messageId.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics) ?? message.messageId
+        guard let url = URL(string: "https://api.agentmail.to/v0/inboxes/\(Self.inboxId)/messages/\(encoded)")
+        else { completion(false); return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["remove_labels": ["unread"]])
+        request.timeoutInterval = 20
+
+        session.dataTask(with: request) { _, response, error in
+            if let error {
+                overlayError("FluxInboxPoller: claim failed — \(error.localizedDescription)")
+                completion(false)
+                return
+            }
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            completion((200..<300).contains(code))
+        }.resume()
     }
 
     /// Fetch recent message **metadata**. Bodies are never requested.
@@ -320,7 +373,9 @@ final class FluxInboxPoller {
                 from: from,
                 subject: item["subject"] as? String ?? "(no subject)",
                 timestamp: timestamp,
-                authenticationResults: auth)
+                authenticationResults: auth,
+                threadId: item["thread_id"] as? String ?? "",
+                labels: item["labels"] as? [String] ?? [])
         }
     }
 

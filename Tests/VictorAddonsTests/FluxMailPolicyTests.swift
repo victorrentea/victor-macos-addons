@@ -17,9 +17,11 @@ final class FluxMailPolicyTests: XCTestCase {
     private func message(from: String,
                          auth: String? = nil,
                          id: String = "m1",
-                         at: Date = Date(timeIntervalSince1970: 1_000)) -> FluxMessage {
+                         at: Date = Date(timeIntervalSince1970: 1_000),
+                         labels: [String] = ["received", "unread"]) -> FluxMessage {
         FluxMessage(messageId: id, from: from, subject: "hi", timestamp: at,
-                    authenticationResults: auth ?? goodAuth)
+                    authenticationResults: auth ?? goodAuth,
+                    threadId: "t1", labels: labels)
     }
 
     // MARK: Address extraction
@@ -163,6 +165,28 @@ final class FluxMailPolicyTests: XCTestCase {
         XCTAssertEqual(result.map(\.messageId), ["a", "b"])
     }
 
+    // MARK: The `unread` claim token — never two agents for one email
+
+    /// Once a message is claimed (its `unread` label cleared), no later poll may
+    /// pick it up again — this is the dedupe layer that survives a wiped
+    /// watermark or a reinstalled app.
+    func testClaimedMailIsNotReported() {
+        let claimed = message(from: victor, at: epoch.addingTimeInterval(60),
+                              labels: ["received"])
+        XCTAssertTrue(FluxMailPolicy.newMail(in: [claimed], since: epoch, seen: []).isEmpty)
+    }
+
+    func testUnclaimedMailIsReported() {
+        let unclaimed = message(from: victor, at: epoch.addingTimeInterval(60),
+                                labels: ["received", "unread"])
+        XCTAssertEqual(FluxMailPolicy.newMail(in: [unclaimed], since: epoch, seen: []).count, 1)
+    }
+
+    func testMailWithNoLabelsIsTreatedAsClaimed() {
+        let bare = message(from: victor, at: epoch.addingTimeInterval(60), labels: [])
+        XCTAssertTrue(FluxMailPolicy.newMail(in: [bare], since: epoch, seen: []).isEmpty)
+    }
+
     // MARK: Battery gate
 
     func testScheduledTickIsSkippedOnACPower() {
@@ -191,6 +215,7 @@ final class FluxMailPolicyTests: XCTestCase {
           "from":"Victor Rentea <victorrentea@gmail.com>",
           "subject":"Export PDF",
           "timestamp":"2026-06-01T18:56:33.000Z",
+          "thread_id":"th-1","labels":["received","unread"],
           "headers":{"Authentication-Results":"amazonses.com; dkim=pass header.i=@gmail.com;"}
         }]}
         """.data(using: .utf8)!
@@ -199,6 +224,8 @@ final class FluxMailPolicyTests: XCTestCase {
         XCTAssertEqual(parsed?.first?.messageId, "<abc@mail.gmail.com>")
         XCTAssertEqual(parsed?.first?.subject, "Export PDF")
         XCTAssertNotNil(parsed?.first?.authenticationResults)
+        XCTAssertEqual(parsed?.first?.threadId, "th-1")
+        XCTAssertEqual(parsed?.first?.labels, ["received", "unread"])
     }
 
     func testParsesTimestampWithoutFractionalSeconds() {
