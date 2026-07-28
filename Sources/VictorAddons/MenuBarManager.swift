@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 28, 20:08"
+    static let BUILD_TIME = "Jul 28, 20:10"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -112,7 +112,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
 
         // Kill… submenu (8080 is included as a regular entry inside)
-        let killItem = NSMenuItem(title: "☠️ Kill PID…", action: nil, keyEquivalent: "")
+        let killItem = NSMenuItem(title: "☠️ Kill by port…", action: nil, keyEquivalent: "")
         killItem.isEnabled = true
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu
@@ -125,12 +125,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // in the main menu (no submenu), each starting/resetting the overlay
         // directly on click.
         let breakDurations: [(String, Int)] = [
-            ("☕️ Break of 1 minute", 1),
-            ("☕️ Break of 5 minutes", 5),
-            ("☕️ Break of 10 minutes", 10),
-            ("☕️ Break of 12 minutes", 12),
-            ("☕️ Break of 15 minutes", 15),
-            ("☕️ Break of 1 hour", 60),
+            ("☕️ Break: 1 minute", 1),
+            ("☕️ Break: 5 minutes", 5),
+            ("☕️ Break: 10 minutes", 10),
+            ("☕️ Break: 12 minutes", 12),
+            ("☕️ Break: 15 minutes", 15),
+            ("☕️ Break: 1 hour", 60),
         ]
         for (title, minutes) in breakDurations {
             let item = NSMenuItem(title: title, action: #selector(breakAction(_:)), keyEquivalent: "")
@@ -281,13 +281,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         tileItem.isEnabled = true
         extraSubmenu.addItem(tileItem)
 
-        // 🖥️ Fix display layout — force the projector/standard arrangement now
-        // (manual fallback for a venue projector that came up wrong).
-        let fixDisplayItem = NSMenuItem(title: "🖥️ Fix display layout", action: #selector(fixDisplayLayoutAction), keyEquivalent: "")
-        fixDisplayItem.target = self
-        fixDisplayItem.isEnabled = true
-        extraSubmenu.addItem(fixDisplayItem)
-
         // Flattened Dream entries
         let dreamEntries: [(String, Selector)] = [
             ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
@@ -303,9 +296,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
-        // 🔥 WIP Agent — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
+        // 🖥️ Fix Monitors — force the projector/standard arrangement now (manual
+        // fallback for a venue projector that came up wrong). Top-level rather
+        // than buried in the submenu: it's wanted in a hurry, mid-talk.
+        let fixDisplayItem = addItem("🖥️ Fix Monitors", action: #selector(fixDisplayLayoutAction))
+        fixDisplayItem.isEnabled = true
+
+        // 🔥 Whip — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
         menu.addItem(.separator())
-        let wipItem = addItem("🔥 WIP Agent", action: #selector(whipAction))
+        let wipItem = addItem("🔥 Whip", action: #selector(whipAction))
         wipItem.keyEquivalent = "w"
         wipItem.keyEquivalentModifierMask = .control
 
@@ -622,7 +621,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private func refreshWsItem() {
         if sessionActive {
-            wsStatusItem.title = "🟢 Display Join Link"
+            wsStatusItem.title = "🟢 Interact Link"
             wsStatusItem.isEnabled = true
             wsStatusItem.action = #selector(displayJoinLinkAction)
             wsStatusItem.target = self

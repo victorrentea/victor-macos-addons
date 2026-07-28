@@ -139,7 +139,7 @@ final class DisplayArrangementManager {
         // enforce is that no home display *mirrors* the Retina; we touch only a
         // display actually caught in a mirror set (see `unmirrorHomeDisplays`),
         // never the ones already extended. A venue (unknown projector) never has
-        // these connected. Even the manual "🖥️ Fix display layout" (force) only
+        // these connected. Even the manual "🖥️ Fix Monitors" (force) only
         // breaks stray mirroring here — it does not re-shuffle the home layout.
         if displays.hasKnownExternal {
             unmirrorHomeDisplays(displays)
@@ -161,7 +161,7 @@ final class DisplayArrangementManager {
     // MARK: - Public triggers
 
     /// Force-apply the correct arrangement for whatever is connected right now.
-    /// Backs the "🖥️ Fix display layout" menu item.
+    /// Backs the "🖥️ Fix Monitors" menu item.
     func applyNow() {
         DispatchQueue.main.async { [weak self] in self?.evaluateAndApply(force: true) }
     }

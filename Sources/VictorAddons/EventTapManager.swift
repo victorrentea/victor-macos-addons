@@ -276,7 +276,7 @@ class EventTapManager {
             return nil
         }
 
-        // Ctrl+W → 🔥 WIP Agent (whip Claude) (suppress). NB: this globally
+        // Ctrl+W → 🔥 Whip (interrupt Claude) (suppress). NB: this globally
         // shadows Ctrl+W's usual "delete word backwards" in terminals/editors.
         if keyCode == VK_W && hasCtrl && !hasCmd && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onWhip?() }

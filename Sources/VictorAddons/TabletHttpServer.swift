@@ -41,7 +41,7 @@ class TabletHttpServer {
         case testBreakPicker(String?)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
         case testTile
-        /// Fire the 🔥 WIP Agent whip overlay — same action as ⌃W (test hook).
+        /// Fire the 🔥 Whip overlay — same action as ⌃W (test hook).
         case testWhip
         /// Crack the whip programmatically (scripted mouse-flick) — same as the
         /// Enter-button while the overlay is up. No-op if the overlay isn't shown.
