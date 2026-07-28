@@ -163,6 +163,25 @@ final class FluxMailPolicyTests: XCTestCase {
         XCTAssertEqual(result.map(\.messageId), ["a", "b"])
     }
 
+    // MARK: Battery gate
+
+    func testScheduledTickIsSkippedOnACPower() {
+        XCTAssertFalse(FluxMailPolicy.shouldPoll(onAC: true, force: false))
+    }
+
+    func testScheduledTickRunsOnBattery() {
+        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: false, force: false))
+    }
+
+    /// `/test/email` is the one way to poll while plugged in.
+    func testForceOverridesTheACGate() {
+        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: true, force: true))
+    }
+
+    func testForceAlsoWorksOnBattery() {
+        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: false, force: true))
+    }
+
     // MARK: Response parsing
 
     func testParsesLiveResponseShape() {

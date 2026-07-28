@@ -89,6 +89,15 @@ enum FluxMailPolicy {
         isTrustedAddress(message.from) && isAuthenticated(message.authenticationResults)
     }
 
+    /// Whether a poll may run at all.
+    ///
+    /// Scheduled ticks run **only on battery** — landing on AC power skips the
+    /// tick entirely rather than deferring it. `force` is the `/test/email`
+    /// override, the one way to poll while plugged in.
+    static func shouldPoll(onAC: Bool, force: Bool) -> Bool {
+        force || !onAC
+    }
+
     /// The messages a poll should report: trusted senders only, newer than the
     /// watermark, and not already reported.
     ///
@@ -198,13 +207,9 @@ final class FluxInboxPoller {
         timer = nil
     }
 
-    /// Scheduled tick — skipped entirely while on AC power.
+    /// Scheduled tick — skipped entirely while on AC power (see
+    /// `FluxMailPolicy.shouldPoll`).
     private func tick() {
-        guard !isOnAC() else {
-            lastPollAt = Date()
-            lastOutcome = "skipped — on AC power"
-            return
-        }
         poll(force: false, completion: nil)
     }
 
@@ -213,7 +218,7 @@ final class FluxInboxPoller {
     func poll(force: Bool, completion: (() -> Void)?) {
         queue.async { [weak self] in
             guard let self else { completion?(); return }
-            guard force || !self.isOnAC() else {
+            guard FluxMailPolicy.shouldPoll(onAC: self.isOnAC(), force: force) else {
                 self.lastPollAt = Date()
                 self.lastOutcome = "skipped — on AC power"
                 completion?()
