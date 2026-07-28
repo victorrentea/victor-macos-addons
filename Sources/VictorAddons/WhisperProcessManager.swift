@@ -9,6 +9,18 @@ class WhisperProcessManager {
     var onDeviceChanged: ((String) -> Void)?
     var onAvailableDevicesChanged: (([String]) -> Void)?
 
+    /// Bytes of a UTF-8 sequence split across two pipe reads.
+    private var pendingOutput = Data()
+    private let pendingLock = NSLock()
+
+    /// whisper_runner.py converts these fatal signals into a plain exit status
+    /// so macOS never shows a crash dialog on the projector; translate back.
+    private static let quietCrashSignals: [Int32: String] = [
+        6: "SIGABRT — likely a PortAudio double-free",
+        10: "SIGBUS",
+        11: "SIGSEGV",
+    ]
+
     func start(env: [String: String]) {
         guard !isRunning else { return }
 
@@ -42,7 +54,33 @@ class WhisperProcessManager {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if data.isEmpty { return }
-            guard let text = String(data: data, encoding: .utf8) else { return }
+            // Whisper's output is emoji-dense, so a pipe chunk regularly ends
+            // mid-codepoint. Strict UTF-8 decoding returned nil and the handler
+            // dropped the WHOLE buffer — which is how a Python traceback that
+            // would have explained a dead capture thread could vanish without a
+            // trace. Carry the incomplete tail over to the next chunk instead,
+            // and never discard a buffer outright.
+            self?.pendingLock.lock()
+            var buffer = (self?.pendingOutput ?? Data()) + data
+            var text = String(data: buffer, encoding: .utf8)
+            if text == nil {
+                // Trim up to 3 bytes: the longest possible partial UTF-8 tail.
+                var carry = Data()
+                for _ in 0..<3 where text == nil && !buffer.isEmpty {
+                    carry.insert(buffer.removeLast(), at: 0)
+                    text = String(data: buffer, encoding: .utf8)
+                }
+                if text == nil {  // genuinely malformed, not just split
+                    buffer += carry
+                    carry = Data()
+                    text = String(decoding: buffer, as: UTF8.self)
+                }
+                self?.pendingOutput = carry
+            } else {
+                self?.pendingOutput = Data()
+            }
+            self?.pendingLock.unlock()
+            guard let text else { return }
             for line in text.components(separatedBy: .newlines) {
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.isEmpty { continue }
@@ -59,13 +97,27 @@ class WhisperProcessManager {
             }
         }
 
-        p.terminationHandler = { [weak self, weak p] _ in
+        p.terminationHandler = { [weak self, weak p] proc in
+            let status = proc.terminationStatus
+            let reason = proc.terminationReason
             DispatchQueue.main.async {
                 guard let self, let p, self.process?.processIdentifier == p.processIdentifier else { return }
                 self.isRunning = false
                 self.process = nil
                 self.onStateChanged?(false)
-                overlayInfo("Whisper process ended")
+                // We deliberately suppress macOS's crash report for whisper (see
+                // _install_quiet_death_handlers), so this line is now the only
+                // record that it died badly rather than being asked to stop.
+                // A fatal signal turned into a status: 6=SIGABRT, 10=SIGBUS,
+                // 11=SIGSEGV.
+                if reason == .uncaughtSignal {
+                    overlayError("Whisper killed by signal \(status)")
+                } else if status != 0 {
+                    overlayError("Whisper exited with status \(status)"
+                                 + (Self.quietCrashSignals[status].map { " (\($0))" } ?? ""))
+                } else {
+                    overlayInfo("Whisper process ended")
+                }
             }
         }
 

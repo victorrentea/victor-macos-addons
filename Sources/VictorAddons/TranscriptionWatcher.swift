@@ -56,10 +56,15 @@ class TranscriptionWatcher {
     }
 
     private func check() {
-        let todayFile = transcriptionFolder.appendingPathComponent(todayFilename())
-        let start = transcriptionStartTime ?? Date()
-        let isStale = Self.isStale(mtime: modificationDate(of: todayFile),
-                                   start: start, now: Date(), threshold: staleThreshold)
+        let now = Date()
+        let start = transcriptionStartTime ?? now
+        // Deliberately NOT the file's mtime: whisper also writes `--- Victor →
+        // 💻 ---` device markers into the transcript, and each one bumped the
+        // mtime and cleared this warning for another 3 minutes even though not a
+        // word had been transcribed. Only real speech lines count.
+        let silence = TranscriptActivity.speechSilenceSeconds(in: transcriptionFolder, now: now)
+        let lastSpeech: Date? = silence.isFinite ? now.addingTimeInterval(-silence) : nil
+        let isStale = Self.isStale(mtime: lastSpeech, start: start, now: now, threshold: staleThreshold)
 
         if isStale != lastIsStale {
             lastIsStale = isStale

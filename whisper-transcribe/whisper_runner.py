@@ -24,12 +24,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 _portaudio_lock = threading.Lock()
 
+# Last CoreAudio input-device set we reinitialised PortAudio for. `None` = we
+# have not looked yet, so the first check always counts as a change.
+_device_snapshot: tuple[str, ...] | None = None
+
 
 def _portaudio_reinit():
     with _portaudio_lock:
         import sounddevice as sd
         sd._terminate()
         sd._initialize()
+
+
+def _device_set_changed() -> bool:
+    """Did the set of input devices actually change since the last reinit?
+
+    Read from CoreAudio, never from PortAudio: asking PortAudio would need the
+    very re-init we are trying to avoid. Errors answer "yes" — a needless
+    re-init is survivable, missing a hot-plugged mic is not.
+    """
+    global _device_snapshot
+    try:
+        snapshot = tuple(sorted(
+            d.get("uid") or d.get("name", "") for d in list_input_devices()
+        ))
+    except Exception as exc:
+        log.error("transcript", f"🎙️ device snapshot failed: {exc}")
+        _device_snapshot = None
+        return True
+    if snapshot == _device_snapshot:
+        return False
+    _device_snapshot = snapshot
+    return True
 from coreaudio_devices import (
     list_input_devices,
     register_device_change_callback,
@@ -237,6 +263,16 @@ def _read_preferred_source() -> str:
         return ""
 
 
+def _preferred_source_mtime() -> float:
+    """Current mtime of the preference file, or 0.0 when there isn't one."""
+    if not _PREFERRED_SOURCE_FILE:
+        return 0.0
+    try:
+        return os.path.getmtime(_PREFERRED_SOURCE_FILE)
+    except (FileNotFoundError, OSError):
+        return 0.0
+
+
 def _available_me_short_names() -> list[str]:
     """Return short-emoji names of currently available _ME_PATTERNS devices, in priority order."""
     import sounddevice as sd
@@ -335,7 +371,29 @@ class _ChannelCapture:
 
     def start(self):
         self._running = True
-        threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(
+            target=self._supervised_loop, daemon=True, name=f"cap-{self.label}"
+        ).start()
+
+    def _supervised_loop(self):
+        """Last line of defence: a capture thread must never die quietly.
+
+        Whatever escapes `_loop` — including the errors we haven't thought of —
+        gets logged and the loop restarts. A channel that stops capturing is
+        invisible from the outside (the process stays alive and the other
+        channel keeps working), so "crash loudly and retry" beats any silent
+        exit.
+        """
+        while self._running:
+            try:
+                self._loop()
+                return  # clean exit: _running went false
+            except BaseException as exc:  # noqa: BLE001 — deliberately everything
+                log.error(
+                    "transcript",
+                    f"🎙️ [{self.label}] capture loop crashed, restarting: {exc!r}",
+                )
+                time.sleep(2)
 
     def stop(self):
         self._running = False
@@ -419,17 +477,32 @@ class _ChannelCapture:
                     _portaudio_reinit()
                 except Exception:
                     pass
-                if self._resolve_fn:
-                    resolved = self._resolve_fn()
-                    if resolved:
-                        new_idx, new_name = resolved
-                        if new_idx != self.device or new_name != self.device_name:
-                            log.info(
-                                "transcript",
-                                f"🎙️ [{self.label}] re-resolved: {new_name!r} (idx {new_idx})",
-                            )
-                        self.device = new_idx
-                        self.device_name = new_name
+                # MUST be guarded. An exception raised inside an `except` block
+                # is not caught by its own `try`: it escapes `_loop`, silently
+                # kills this daemon thread, and Python says nothing. That is
+                # exactly what used to happen here — `_resolve_fn` calls
+                # sd.query_devices(), which raises PortAudioError when another
+                # thread is mid-`_terminate()`. Only the Victor channel has a
+                # `_resolve_fn`, so only Victor's thread died: the process, the
+                # Audience thread and the menu-bar icon all stayed healthy while
+                # nothing was transcribed for hours.
+                try:
+                    if self._resolve_fn:
+                        resolved = self._resolve_fn()
+                        if resolved:
+                            new_idx, new_name = resolved
+                            if new_idx != self.device or new_name != self.device_name:
+                                log.info(
+                                    "transcript",
+                                    f"🎙️ [{self.label}] re-resolved: {new_name!r} (idx {new_idx})",
+                                )
+                            self.device = new_idx
+                            self.device_name = new_name
+                except Exception as resolve_exc:
+                    log.error(
+                        "transcript",
+                        f"🎙️ [{self.label}] re-resolve failed: {resolve_exc}",
+                    )
 
     def _cb(self, indata, frames, time_info, status):
         self._buf = np.concatenate([self._buf, indata[:, 0]])
@@ -528,6 +601,23 @@ def _collect_batch(first_item, tx_queue: queue.Queue):
     return items, overflow
 
 
+def _supervised_transcriber_loop(tx_queue: queue.Queue, on_segment):
+    """Same rule as the capture threads: never die quietly.
+
+    The batching code around `tx_queue.get` sits outside the per-item try/except
+    below, so an unexpected shape (a numpy concat mismatch, say) would kill this
+    thread and leave a whisper that captures audio and transcribes nothing —
+    indistinguishable from the outside from a healthy one.
+    """
+    while True:
+        try:
+            _transcriber_loop(tx_queue, on_segment)
+            return
+        except BaseException as exc:  # noqa: BLE001 — deliberately everything
+            log.error("transcript", f"🎙️ transcriber loop crashed, restarting: {exc!r}")
+            time.sleep(2)
+
+
 def _transcriber_loop(tx_queue: queue.Queue, on_segment):
     log.info("transcript", "🎙️ Transcription loop started")
     # Track last transcribed text per channel for context
@@ -599,7 +689,14 @@ class WhisperTranscriptionRunner:
         self._unregister_listener = None
         self._unregister_alive_listener = None
         self._recent_victor: list[tuple[float, str]] = []  # (timestamp, text) for dedup
-        self._pref_watch_mtime: float = 0.0
+        # Seed from the file's REAL mtime. Starting at 0.0 meant the watcher's
+        # very first poll always saw "changed" — a phantom source switch ~1s
+        # into every single run, which called _check_best_device() and tore
+        # PortAudio down underneath two streams that had just opened. That one
+        # line is what produced the paired `Invalid stream pointer [-9988]`
+        # errors on every start, and the double-frees that crashed Python.
+        self._pref_watch_mtime: float = _preferred_source_mtime()
+        self._device_check_event = threading.Event()
 
     def start(self):
         tx_queue: queue.Queue = queue.Queue()
@@ -642,12 +739,18 @@ class WhisperTranscriptionRunner:
             ch.start()
 
         threading.Thread(
-            target=_transcriber_loop,
+            target=_supervised_transcriber_loop,
             args=(tx_queue, self._on_segment),
             daemon=True,
+            name="transcriber",
         ).start()
 
         self.enabled = True
+
+        # Drains device-change notifications off CoreAudio's own thread.
+        threading.Thread(
+            target=self._device_check_worker, daemon=True, name="device-check"
+        ).start()
 
         # Register CoreAudio device change listener (fires for USB/new devices)
         self._unregister_listener = register_device_change_callback(
@@ -669,8 +772,32 @@ class WhisperTranscriptionRunner:
             ).start()
 
     def _on_device_list_changed(self):
-        """Called by CoreAudio when devices are added/removed."""
-        self._check_best_device(delay=2)  # delay for Bluetooth stabilization
+        """Called by CoreAudio when devices are added/removed.
+
+        This runs ON COREAUDIO'S OWN NOTIFICATION QUEUE (the ctypes listeners in
+        coreaudio_devices.py invoke us directly), so it must return immediately
+        and touch nothing audio-related. The old code did the opposite: it slept
+        2s and then called Pa_Terminate() right there, while CoreAudio held its
+        locks — visible in the crash reports as a double-free on the
+        `HALC_ProxyNotification Call Listener Queue`.
+
+        It also has to COALESCE. One dock or projector plug fires the listener
+        once per input device, and each of those used to spawn its own teardown;
+        the worker below collapses a burst into a single check.
+        """
+        self._device_check_event.set()
+
+    def _device_check_worker(self):
+        while True:
+            self._device_check_event.wait()
+            # Bluetooth needs a moment to settle, and the wait doubles as the
+            # coalescing window: everything that fires during it is one check.
+            time.sleep(2)
+            self._device_check_event.clear()
+            try:
+                self._check_best_device()
+            except Exception as exc:
+                log.error("transcript", f"🎙️ device check failed: {exc}")
 
     def _check_best_device(self, delay: float = 0):
         if not self._me_channel:
@@ -679,12 +806,20 @@ class WhisperTranscriptionRunner:
             time.sleep(delay)
         try:
             # PortAudio caches its device list at import time and never sees USB
-            # devices plugged in afterwards (e.g. DJI Mic Mini hot-plug). Force a
-            # re-init so sd.query_devices() returns the fresh list before lookup.
-            try:
-                _portaudio_reinit()
-            except Exception as exc:
-                log.error("transcript", f"PortAudio refresh failed: {exc}")
+            # devices plugged in afterwards (e.g. DJI Mic Mini hot-plug), so a
+            # re-init is the only way sd.query_devices() sees a hot-plugged mic.
+            #
+            # But re-init is `Pa_Terminate()` — process-global, it closes BOTH
+            # channels' live streams — so it may only run when the device set
+            # ACTUALLY changed. Firing it unconditionally on every device check
+            # (and every phantom preference event) is what tore down healthy
+            # streams several times an hour. CoreAudio's own list is the source
+            # of truth here and needs no PortAudio call to read.
+            if _device_set_changed():
+                try:
+                    _portaudio_reinit()
+                except Exception as exc:
+                    log.error("transcript", f"PortAudio refresh failed: {exc}")
             resolved = _resolve_device_coreaudio(_ME_PATTERNS)
             best_idx, best_name = resolved if resolved else (None, None)
             log.info(
@@ -831,6 +966,68 @@ def _required_parent_pid(env: dict[str, str]) -> int:
     return pid
 
 
+def _install_quiet_death_handlers(runner_ref: dict) -> None:
+    """Make this process die *quietly*, in both senses.
+
+    1. **SIGTERM/SIGINT** — the Swift side stops us on every battery switch and
+       every redeploy. Without a handler that lands wherever the interpreter
+       happens to be, and CPython's shutdown then tears PortAudio down through
+       `atexit` while audio callbacks are still live. `os._exit(0)` after a
+       best-effort `runner.stop()` skips all of that. (The parent sentinel has
+       always used this pattern, which is why it never crashed.)
+
+    2. **SIGABRT/SIGSEGV/SIGBUS** — when PortAudio *does* still blow up, the
+       interpreter we run under is `Python.app`, a bundled GUI app, so macOS
+       greets the audience with a "Python quit unexpectedly" modal — mid-talk,
+       on the projector. Dying by exit *status* instead of by uncaught signal
+       produces no crash report and therefore no dialog.
+
+       The trade-off is deliberate: we lose the `.ips` file. `faulthandler`
+       cannot be combined with this — it refuses to `register()` fatal signals
+       ("use enable() instead"), and `enable()` re-raises with the DEFAULT
+       action rather than chaining, which is exactly the dialog we are removing.
+       What we keep instead is everything Python already logged on its way down,
+       plus `threading.excepthook` and the supervised loops, which now catch the
+       failures that used to be invisible. Set
+       `WHISPER_QUIET_CRASH=0` to get the crash reports back.
+    """
+    import ctypes
+    import signal
+
+    def _graceful_exit(_signum, _frame):
+        runner = runner_ref.get("runner")
+        if runner is not None:
+            try:
+                runner.stop()
+            except Exception:
+                pass
+        os._exit(0)
+
+    signal.signal(signal.SIGTERM, _graceful_exit)
+    signal.signal(signal.SIGINT, _graceful_exit)
+
+    if os.environ.get("WHISPER_QUIET_CRASH", "1") != "1":
+        print("[sentinel    ] quiet-crash disabled — macOS will show the crash dialog", flush=True)
+        return
+
+    try:
+        libc = ctypes.CDLL(None)
+        # Handler addresses are 64-bit; the default c_int signature would
+        # silently truncate them and install garbage.
+        libc.signal.argtypes = [ctypes.c_int, ctypes.c_void_p]
+        libc.signal.restype = ctypes.c_void_p
+        # `_exit` is async-signal-safe; a Python-level handler is not, and would
+        # deadlock here — SIGABRT from libmalloc arrives holding the malloc lock.
+        # It gets called with the signal number as its status argument, which is
+        # precisely the "died by status, not by signal" we are after.
+        quiet = ctypes.cast(libc._exit, ctypes.c_void_p).value
+        for sig in (signal.SIGABRT, signal.SIGSEGV, signal.SIGBUS):
+            libc.signal(sig, quiet)
+        print("[sentinel    ] quiet-crash handlers armed (no macOS crash dialog)", flush=True)
+    except Exception as exc:  # never let hardening break startup
+        print(f"[sentinel    ] quiet-crash handlers unavailable: {exc}", flush=True)
+
+
 if __name__ == "__main__":
     import sys
     from pathlib import Path
@@ -844,6 +1041,17 @@ if __name__ == "__main__":
 
     import threading
 
+    # A dying thread is the failure mode that cost us a whole day of transcript:
+    # Python's default is to print to stderr, which the Swift side used to
+    # discard. Route it through our own logger so it can never be invisible again.
+    def _thread_died(args):
+        log.error(
+            "transcript",
+            f"🎙️ thread {getattr(args.thread, 'name', '?')} died: {args.exc_value!r}",
+        )
+
+    threading.excepthook = _thread_died
+
     threading.Thread(
         target=_watch_parent, args=(parent_pid,), daemon=True, name="sentinel"
     ).start()
@@ -854,7 +1062,11 @@ if __name__ == "__main__":
             "/Users/victorrentea/workspace/victor-macos-addons/addons-output",
         )
     )
+    runner_ref: dict = {}
+    _install_quiet_death_handlers(runner_ref)
+
     runner = WhisperTranscriptionRunner(folder)
+    runner_ref["runner"] = runner
     runner.start()
     try:
         while True:

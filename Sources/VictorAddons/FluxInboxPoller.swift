@@ -99,8 +99,11 @@ enum FluxMailPolicy {
     /// Whether a poll may run at all.
     ///
     /// Scheduled ticks run **only on battery** — landing on AC power skips the
-    /// tick entirely rather than deferring it. `force` is the `/test/email`
-    /// override, the one way to poll while plugged in.
+    /// tick entirely rather than deferring it. `force` is the override used by
+    /// `/test/email` **and by the 📬 menu item**, which is the one way to look at
+    /// the inbox while plugged in: on AC the app assumes Victor is mid-workshop
+    /// and must not have a Terminal pop open on the projector, so an email that
+    /// lands then waits for him to unplug — or to ask for it from the menu.
     static func shouldPoll(onAC: Bool, force: Bool) -> Bool {
         force || !onAC
     }
@@ -122,6 +125,39 @@ enum FluxMailPolicy {
             .filter { $0.isUnprocessed }
             .filter { isTrusted($0) }
             .sorted { $0.timestamp < $1.timestamp }
+    }
+}
+
+// MARK: - Menu presentation (pure, unit-tested)
+
+/// Renders the 📬 menu item's title: `Check task inbox (1m ago, 2🚀)`.
+///
+/// The suffix is the whole point of the item — it answers "did this thing even
+/// look at the inbox, and did it ever do anything?" at a glance, without opening
+/// a log. The rocket count is cumulative across restarts (see
+/// `FluxAgentLauncher.launchedCount`).
+enum FluxInboxMenu {
+    static let base = "📬 Check task inbox"
+
+    /// Compact "how long ago", coarse on purpose: below a minute everything is
+    /// "just now", because the exact second never changes what you'd do next.
+    static func ago(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded()))
+        if seconds < 60 { return "just now" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        return "\(hours / 24)d ago"
+    }
+
+    static func title(lastCheck: Date?, now: Date = Date(), launches: Int) -> String {
+        var parts: [String] = []
+        if let lastCheck { parts.append(ago(now.timeIntervalSince(lastCheck))) }
+        // A zero count is noise — the absence of rockets says the same thing.
+        if launches > 0 { parts.append("\(launches)🚀") }
+        guard !parts.isEmpty else { return base }
+        return "\(base) (\(parts.joined(separator: ", ")))"
     }
 }
 
@@ -181,11 +217,24 @@ final class FluxInboxPoller {
     /// timestamps at the watermark boundary. Bounded to avoid unbounded growth.
     private var seen: [String] = []
 
-    // Diagnostics for the /test/email snapshot.
-    private var lastPollAt: Date?
+    // Diagnostics for the /test/email snapshot and the 📬 menu item.
+    //
+    // These are read from three threads that are none of them `queue` — the
+    // HTTP server's (`/test/email`) and the main one (the menu) — so they get
+    // their own lock rather than riding on the poll queue.
+    private let statusLock = NSLock()
+    private var _lastPollAt: Date?
     private var lastOutcome: String = "never polled"
     private var lastMatchCount = 0
     private var lastError: String?
+
+    /// When the inbox was last *actually looked at*. Deliberately not advanced
+    /// by a tick that the battery gate skipped: "we checked" has to mean a round
+    /// trip happened, or the menu item would claim freshness it doesn't have.
+    var lastCheckedAt: Date? {
+        statusLock.lock(); defer { statusLock.unlock() }
+        return _lastPollAt
+    }
 
     init(apiKey: String,
          session: URLSession = .shared,
@@ -225,51 +274,87 @@ final class FluxInboxPoller {
         poll(force: false, completion: nil)
     }
 
-    /// Run one poll. `force` bypasses the battery gate (used by `/test/email`).
-    /// `completion` fires on `queue` once the poll settles.
+    /// Run one poll. `force` bypasses the battery gate (used by `/test/email`
+    /// and the 📬 menu item). `completion` fires on `queue` once the poll settles.
     func poll(force: Bool, completion: (() -> Void)?) {
         queue.async { [weak self] in
             guard let self else { completion?(); return }
             guard FluxMailPolicy.shouldPoll(onAC: self.isOnAC(), force: force) else {
-                self.lastPollAt = Date()
-                self.lastOutcome = "skipped — on AC power"
+                // Note we do NOT stamp `_lastPollAt` here: the timer fired, but
+                // nobody looked at the inbox.
+                self.setStatus { $0.outcome = "skipped — on AC power" }
                 completion?()
                 return
             }
             self.fetch { result in
-                self.lastPollAt = Date()
-                switch result {
-                case .failure(let error):
-                    self.lastOutcome = "error"
-                    self.lastError = error.localizedDescription
-                    overlayError("FluxInboxPoller: \(error.localizedDescription)")
-                case .success(let messages):
-                    self.lastError = nil
-                    let fresh = FluxMailPolicy.newMail(
-                        in: messages, since: self.watermark, seen: Set(self.seen))
-                    self.lastMatchCount = fresh.count
-                    self.lastOutcome = fresh.isEmpty
-                        ? "polled — nothing new (\(messages.count) inspected)"
-                        : "polled — \(fresh.count) new from \(FluxMailPolicy.trustedSender)"
-                    for message in fresh {
-                        self.remember(message)
-                        // CLAIM FIRST, notify second — and fail closed. Clearing
-                        // `unread` server-side is what guarantees no second agent
-                        // ever starts for this email, so if the claim fails we do
-                        // NOT hand it on: a missed notification is recoverable,
-                        // two agents answering the same mail is not.
-                        self.claim(message) { claimed in
-                            guard claimed else {
-                                overlayError("FluxInboxPoller: could not claim \(message.messageId) — not launching")
-                                return
+                // `fetch` calls back on URLSession's delegate queue and `claim`
+                // on a third one; hop back so every mutation below — watermark,
+                // `seen`, the status fields — stays serialized on `queue`.
+                self.queue.async {
+                    self.setStatus { $0.pollAt = Date() }
+                    switch result {
+                    case .failure(let error):
+                        self.setStatus {
+                            $0.outcome = "error"
+                            $0.error = error.localizedDescription
+                        }
+                        overlayError("FluxInboxPoller: \(error.localizedDescription)")
+                    case .success(let messages):
+                        let fresh = FluxMailPolicy.newMail(
+                            in: messages, since: self.watermark, seen: Set(self.seen))
+                        self.setStatus {
+                            $0.error = nil
+                            $0.matchCount = fresh.count
+                            $0.outcome = fresh.isEmpty
+                                ? "polled — nothing new (\(messages.count) inspected)"
+                                : "polled — \(fresh.count) new from \(FluxMailPolicy.trustedSender)"
+                        }
+                        for message in fresh {
+                            self.remember(message)
+                            // CLAIM FIRST, notify second — and fail closed. Clearing
+                            // `unread` server-side is what guarantees no second agent
+                            // ever starts for this email, so if the claim fails we do
+                            // NOT hand it on: a missed notification is recoverable,
+                            // two agents answering the same mail is not.
+                            self.claim(message) { claimed in
+                                guard claimed else {
+                                    overlayError("FluxInboxPoller: could not claim \(message.messageId) — not launching")
+                                    return
+                                }
+                                DispatchQueue.main.async { self.onTrustedMail?(message) }
                             }
-                            DispatchQueue.main.async { self.onTrustedMail?(message) }
                         }
                     }
+                    completion?()
                 }
-                completion?()
             }
         }
+    }
+
+    /// The lock-protected diagnostics, mutated as one unit.
+    private struct Status {
+        var pollAt: Date?
+        var outcome: String
+        var matchCount: Int
+        var error: String?
+    }
+
+    private func setStatus(_ mutate: (inout Status) -> Void) {
+        statusLock.lock()
+        var s = Status(pollAt: _lastPollAt, outcome: lastOutcome,
+                       matchCount: lastMatchCount, error: lastError)
+        mutate(&s)
+        _lastPollAt = s.pollAt
+        lastOutcome = s.outcome
+        lastMatchCount = s.matchCount
+        lastError = s.error
+        statusLock.unlock()
+    }
+
+    private func readStatus() -> Status {
+        statusLock.lock(); defer { statusLock.unlock() }
+        return Status(pollAt: _lastPollAt, outcome: lastOutcome,
+                      matchCount: lastMatchCount, error: lastError)
     }
 
     /// Advance the watermark and record the id. Always on `queue`.
@@ -409,6 +494,7 @@ final class FluxInboxPoller {
     /// Attacker-controlled strings go through `JSONSerialization`, never string
     /// interpolation, so a crafted subject cannot forge JSON structure.
     private func snapshotJSON(settled: Bool) -> String {
+        let status = readStatus()
         var payload: [String: Any] = [
             "inbox": Self.inboxId,
             "trusted_sender": FluxMailPolicy.trustedSender,
@@ -417,14 +503,15 @@ final class FluxInboxPoller {
             "polls_only_on_battery": true,
             "on_battery_now": !isOnAC(),
             "status": settled ? "settled" : "pending",
-            "last_outcome": lastOutcome,
-            "last_match_count": lastMatchCount,
+            "last_outcome": status.outcome,
+            "last_match_count": status.matchCount,
+            "launched_tasks": FluxAgentLauncher.launchedCount,
         ]
         payload["watermark"] = Self.isoFormatter.string(from: watermark)
-        if let lastPollAt {
-            payload["last_poll_at"] = Self.isoFormatter.string(from: lastPollAt)
+        if let pollAt = status.pollAt {
+            payload["last_poll_at"] = Self.isoFormatter.string(from: pollAt)
         }
-        if let lastError { payload["last_error"] = lastError }
+        if let error = status.error { payload["last_error"] = error }
         guard let data = try? JSONSerialization.data(
                 withJSONObject: payload, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8) else {

@@ -99,6 +99,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         super.init()
     }
 
+    /// Used to tell a launch-time reopen event apart from a real user click.
+    private let launchedAt = Date()
+
+    /// Clicking an already-running app in Spotlight/Finder/Dock does NOT start a
+    /// second process — LaunchServices just re-activates us, so the pid-file
+    /// hand-over in `main.swift` never fires. This reopen event is the only
+    /// notification we get, and "I opened it again" only ever means one thing
+    /// for a menu-bar app with no windows: *give me a fresh one*.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // AppKit can deliver a reopen as part of our own launch; restarting on
+        // that would be an infinite loop.
+        guard Date().timeIntervalSince(launchedAt) > 5 else { return true }
+        AppRelaunch.relaunch(reason: "reopened from Finder/Spotlight/Dock")
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Request permissions if not already granted
         requestMicrophonePermissions()
@@ -477,6 +493,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onQuit = { [weak self] in
             self?.whisperManager?.stop()
         }
+        menuBarManager.onRestart = { AppRelaunch.relaunch(reason: "🔁 Restart menu item") }
+        menuBarManager.onCheckTaskInbox = { [weak self] in
+            // force: the whole point of the item is to defeat the battery gate.
+            self?.fluxInboxPoller?.poll(force: true, completion: nil)
+        }
+        menuBarManager.onTaskInboxStatus = { [weak self] in
+            (lastCheck: self?.fluxInboxPoller?.lastCheckedAt,
+             launches: FluxAgentLauncher.launchedCount)
+        }
         let whisperManager = WhisperProcessManager()
         self.whisperManager = whisperManager
         let watcher = TranscriptionWatcher(transcriptionFolder: transcriptionFolder)
@@ -522,11 +547,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // Whisper runs whenever we're on AC and pauses on battery — nothing
         // else. The controller owns that decision plus a 60s heartbeat that
         // restarts Whisper if it died while still plugged in.
-        let controller = TranscriptionController(isWhisperRunning: { [weak whisperManager] in
-            whisperManager?.isRunning == true
-        })
+        let transcriptionFolderForProbe = transcriptionFolder
+        let controller = TranscriptionController(
+            isWhisperRunning: { [weak whisperManager] in whisperManager?.isRunning == true },
+            transcriptSilenceSeconds: {
+                TranscriptActivity.speechSilenceSeconds(in: transcriptionFolderForProbe)
+            })
         controller.onStart = startWhisper
         controller.onStop = stopWhisper
+        controller.onForceRestart = {
+            stopWhisper()
+            // PortAudio needs a beat to release the devices before the new
+            // process grabs them, or the replacement inherits the same mess.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { startWhisper() }
+        }
         controller.onAutoRestart = { [weak self] in
             // Whisper died while on AC — the heartbeat is bringing it back.
             // Arm the "started" banner; it fires once whisper is confirmed running.

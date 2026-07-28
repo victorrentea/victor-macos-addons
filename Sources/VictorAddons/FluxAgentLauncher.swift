@@ -30,6 +30,20 @@ enum FluxAgentLauncher {
     private static let lock = NSLock()
     private static var inFlight = Set<String>()
 
+    /// How many Terminal agents we have ever opened, for the 📬 menu item's
+    /// rocket count. Persisted, because this app restarts several times a day
+    /// (redeploys, replacements) and a counter that resets to 0 each time would
+    /// answer "did any mail turn into work?" with a permanent "no".
+    private static let launchedCountKey = "flux.agent.launched.count"
+
+    static var launchedCount: Int {
+        UserDefaults.standard.integer(forKey: launchedCountKey)
+    }
+
+    private static func recordLaunch() {
+        UserDefaults.standard.set(launchedCount + 1, forKey: launchedCountKey)
+    }
+
     /// Launch the agent for one message. Safe to call twice — the second call
     /// for the same message id is dropped.
     static func launch(messageId: String, threadId: String, subject: String) {
@@ -123,6 +137,7 @@ enum FluxAgentLauncher {
         p.terminationHandler = { _ in release(messageId) }
         do {
             try p.run()  // fire-and-forget: survives an app redeploy
+            recordLaunch()
         } catch {
             overlayError("flux-agent: failed to launch Terminal — \(error.localizedDescription)")
             release(messageId)

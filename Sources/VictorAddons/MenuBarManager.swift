@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 28, 20:30"
+    static let BUILD_TIME = "Jul 29, 00:47"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -36,6 +36,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
     private(set) var tailItem: NSMenuItem!
+    private(set) var fluxInboxItem: NSMenuItem!
     private var transcribeSubmenu: NSMenu!
 
     private(set) var resumeItem: NSMenuItem!
@@ -79,6 +80,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onWhip: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
+    /// Force one Flux-inbox poll now, bypassing the battery gate.
+    var onCheckTaskInbox: (() -> Void)?
+    /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
+    var onTaskInboxStatus: (() -> (lastCheck: Date?, launches: Int))?
+    var onRestart: (() -> Void)?
 
     // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
 
@@ -88,6 +94,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         loadPortHistory()
         buildMenu()
         setupStatusItem()
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(systemAppearanceChanged),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"), object: nil)
     }
 
     // MARK: - Status Item
@@ -153,6 +162,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // Tail (was Monitor)
         tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
+
+        // 📬 Check task inbox — the manual override for the poller's battery
+        // gate. Scheduled polls are skipped while plugged in (no Terminal may
+        // pop open on a projector), so on AC this item is the ONLY way an email
+        // ever becomes a task. Its title carries the two facts worth knowing at
+        // a glance: how long since the inbox was actually read, and how many
+        // agents have been launched from it.
+        fluxInboxItem = addItem(FluxInboxMenu.base, action: #selector(checkTaskInboxAction))
 
         // Screenshot → Clipboard (⌃P)
         let screenshotClipItem = addItem("📸 Screenshot → Clipboard", action: #selector(takeScreenshotClipboardAction))
@@ -308,6 +325,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         wipItem.keyEquivalent = "w"
         wipItem.keyEquivalentModifierMask = .control
 
+        // 🔁 Restart — the supported way to get a fresh instance. Clicking the
+        // app in Spotlight/Finder while it is already running does the same
+        // thing (see AppRelaunch), but that is invisible; this is the button you
+        // can find when something is wedged mid-workshop.
+        let restartItem = addItem("🔁 Restart", action: #selector(restartApp))
+        restartItem.keyEquivalent = "r"
+        restartItem.keyEquivalentModifierMask = [.command, .control]
+
         // Quit (build timestamp inlined to save a menu line). Uses a full-width
         // emoji (🔴) instead of the narrow ⏻ power glyph so it lines up with the
         // other menu items' emojis.
@@ -336,6 +361,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onMenuOpened?()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
+            // Lets a "checking…" click resolve to its real result without the
+            // user having to close and reopen the menu.
+            self?.updateFluxInboxItem()
         }
     }
 
@@ -372,6 +400,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         updateTranscribeTitle()
         updateTailItem()
+        updateFluxInboxItem()
 
         refreshPortItems()
 
@@ -722,6 +751,56 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return composite
     }
 
+    // MARK: - Source glyphs
+
+    /// Whisper reports the built-in mic as 💻. That string is the **wire value**
+    /// — it comes from `whisper_runner.py`'s `_ME_PATTERNS` and every lookup here
+    /// (`availableSources`, the checkmark in the submenu) is string equality — so
+    /// it stays 💻 on the protocol and only the glyph we *draw* changes, to the
+    /// Apple logo (U+F8FF, the bitten apple): "this Mac", not "a laptop".
+    private static let glyphOverrides: [String: String] = ["💻": "\u{F8FF}"]
+
+    private static func displayGlyph(_ emoji: String) -> String {
+        glyphOverrides[emoji] ?? emoji
+    }
+
+    /// Overridden glyphs are the only *monochrome* ones — every real emoji
+    /// carries its own colour. A monochrome glyph must be tinted to match the
+    /// surface it lands on, or a black apple vanishes into a dark menu bar.
+    private static func isMonochromeGlyph(_ emoji: String) -> Bool {
+        glyphOverrides[emoji] != nil
+    }
+
+    private static func glyphInk(_ appearance: NSAppearance?) -> NSColor {
+        let dark = (appearance ?? NSApp.effectiveAppearance)
+            .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return dark ? .white : .black
+    }
+
+    /// Attributes for drawing one source glyph on `appearance`.
+    ///
+    /// The system font is the right one for U+F8FF — verified with
+    /// `CTFontGetGlyphsForCharacters`, `.AppleSystemUIFont` carries the glyph
+    /// directly while "Apple Symbols", despite the name, does not (it only
+    /// renders it through fallback).
+    private static func glyphAttributes(_ emoji: String, size: CGFloat,
+                                        on appearance: NSAppearance?) -> [NSAttributedString.Key: Any] {
+        var attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size)]
+        if isMonochromeGlyph(emoji) { attrs[.foregroundColor] = glyphInk(appearance) }
+        return attrs
+    }
+
+    /// Our menu-bar icons are baked bitmaps, so a light/dark flip cannot repaint
+    /// them by itself — the monochrome ones have to be re-drawn. The theme
+    /// notification lands slightly *before* `effectiveAppearance` updates, hence
+    /// the short delay.
+    @objc private func systemAppearanceChanged() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.refreshMenuIcon()
+            self?.updateTranscribeTitle()
+        }
+    }
+
     /// Render any emoji as a colored 18×18 menu-bar icon, optionally with a small
     /// emoji badge in the bottom-right 9×9 quadrant (50% w × 50% h).
     /// `isTemplate = false` is essential — template images are forced to a single
@@ -732,8 +811,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
         composite.lockFocus()
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 16)]
-        let str = emoji as NSString
+        let attrs = Self.glyphAttributes(emoji, size: 16,
+                                         on: statusItem.button?.effectiveAppearance)
+        let str = Self.displayGlyph(emoji) as NSString
         let strSize = str.size(withAttributes: attrs)
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
@@ -829,7 +909,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func rebuildTranscribeSubmenu() {
         transcribeSubmenu.removeAllItems()
         for src in Self.knownSources {
-            let item = NSMenuItem(title: "\(src.emoji) \(src.name)",
+            // Titles are drawn by AppKit in the menu's own label colour, so the
+            // monochrome  needs no tinting here — only the substitution.
+            let item = NSMenuItem(title: "\(Self.displayGlyph(src.emoji)) \(src.name)",
                                   action: #selector(pickSource(_:)),
                                   keyEquivalent: "")
             item.target = self
@@ -844,6 +926,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func pickSource(_ sender: NSMenuItem) {
         guard let pattern = sender.representedObject as? String else { return }
         onPickSource?(pattern)
+    }
+
+    private func updateFluxInboxItem() {
+        guard let item = fluxInboxItem else { return }
+        let status = onTaskInboxStatus?() ?? (lastCheck: nil, launches: 0)
+        item.title = FluxInboxMenu.title(lastCheck: status.lastCheck, launches: status.launches)
+    }
+
+    @objc private func checkTaskInboxAction() {
+        // The poll is async; show that the click landed rather than leaving the
+        // title reading "17m ago" until the round trip returns.
+        fluxInboxItem?.title = "\(FluxInboxMenu.base) (checking…)"
+        onCheckTaskInbox?()
+    }
+
+    @objc private func restartApp() {
+        overlayInfo("Restart requested from the menu")
+        onRestart?()
     }
 
     private func updateTailItem() {
@@ -866,8 +966,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         guard !emoji.isEmpty else { return nil }
         let img = NSImage(size: size)
         img.lockFocus()
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size.height - 2)]
-        let str = emoji as NSString
+        // Menu items are drawn on the menu's surface, which follows the system
+        // appearance — not the (possibly different) menu-bar one.
+        let attrs = Self.glyphAttributes(emoji, size: size.height - 2,
+                                         on: NSApp.effectiveAppearance)
+        let str = Self.displayGlyph(emoji) as NSString
         let strSize = str.size(withAttributes: attrs)
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
