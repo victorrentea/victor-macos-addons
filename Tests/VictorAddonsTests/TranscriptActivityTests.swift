@@ -84,6 +84,19 @@ final class TranscriptionControllerRestartTests: XCTestCase {
         XCTAssertFalse(TranscriptionController.shouldForceRestart(
             silence: 10, sinceStart: overThreshold, sinceLastRestart: overInterval))
     }
+
+    /// Regression: `Int(.infinity)` **traps**. Silence is infinite whenever
+    /// nothing has been transcribed all day — the single likeliest case when the
+    /// watchdog fires — so interpolating it crashed the entire app the first two
+    /// times this triggered (2026-07-29), and it crashed *before* the restart it
+    /// was announcing.
+    func testDescribesInfiniteSilenceWithoutTrapping() {
+        XCTAssertEqual(TranscriptionController.describe(.infinity), "nothing transcribed today")
+    }
+
+    func testDescribesFiniteSilenceInSeconds() {
+        XCTAssertEqual(TranscriptionController.describe(312), "312s")
+    }
 }
 
 /// The 📬 menu item's title.

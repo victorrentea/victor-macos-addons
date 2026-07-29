@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 29, 00:51"
+    static let BUILD_TIME = "Jul 29, 07:25"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -80,7 +80,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onWhip: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
-    /// Force one Flux-inbox poll now, bypassing the battery gate.
+    /// Force one Flux-inbox poll now, bypassing the power gate.
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
     var onTaskInboxStatus: (() -> (lastCheck: Date?, launches: Int))?
@@ -163,12 +163,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Tail (was Monitor)
         tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
 
-        // 📬 Check task inbox — the manual override for the poller's battery
-        // gate. Scheduled polls are skipped while plugged in (no Terminal may
-        // pop open on a projector), so on AC this item is the ONLY way an email
-        // ever becomes a task. Its title carries the two facts worth knowing at
-        // a glance: how long since the inbox was actually read, and how many
-        // agents have been launched from it.
+        // 📬 Check task inbox — the manual override for the poller's power
+        // gate. Scheduled polls only run on AC, so while unplugged this item is
+        // the ONLY way an email ever becomes a task. Its title carries the two
+        // facts worth knowing at a glance: how long since the inbox was
+        // actually read, and how many agents have been launched from it.
         fluxInboxItem = addItem(FluxInboxMenu.base, action: #selector(checkTaskInboxAction))
 
         // Screenshot → Clipboard (⌃P)
@@ -777,6 +776,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return dark ? .white : .black
     }
 
+    /// A text glyph is drawn inside its em-box, and the Apple logo occupies far
+    /// less of that box than an emoji does — measured at the same point size in
+    /// an 18×18 icon, 💻 inks the full 18×18 while  inks only 10.5×13, which
+    /// reads as a visibly *smaller* icon. Scale it up to compensate: ×1.25 gets
+    ///  to 13×16 and still clears both icon sizes we draw (18×18 menu bar,
+    /// 16×16 menu item). ×1.4 clips.
+    private static let monochromeGlyphScale: CGFloat = 1.25
+
     /// Attributes for drawing one source glyph on `appearance`.
     ///
     /// The system font is the right one for U+F8FF — verified with
@@ -785,9 +792,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// renders it through fallback).
     private static func glyphAttributes(_ emoji: String, size: CGFloat,
                                         on appearance: NSAppearance?) -> [NSAttributedString.Key: Any] {
-        var attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size)]
-        if isMonochromeGlyph(emoji) { attrs[.foregroundColor] = glyphInk(appearance) }
-        return attrs
+        guard isMonochromeGlyph(emoji) else {
+            return [.font: NSFont.systemFont(ofSize: size)]
+        }
+        return [.font: NSFont.systemFont(ofSize: size * monochromeGlyphScale),
+                .foregroundColor: glyphInk(appearance)]
     }
 
     /// Our menu-bar icons are baked bitmaps, so a light/dark flip cannot repaint

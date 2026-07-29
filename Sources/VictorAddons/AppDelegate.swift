@@ -60,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
-    /// Watches the Flux inbox for mail from Victor, every 10 min, battery-only.
+    /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
     /// True while the training-assistant daemon is connected to our local WS
@@ -495,7 +495,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onRestart = { AppRelaunch.relaunch(reason: "🔁 Restart menu item") }
         menuBarManager.onCheckTaskInbox = { [weak self] in
-            // force: the whole point of the item is to defeat the battery gate.
+            // force: the whole point of the item is to defeat the power gate.
             self?.fluxInboxPoller?.poll(force: true, completion: nil)
         }
         menuBarManager.onTaskInboxStatus = { [weak self] in

@@ -55,6 +55,17 @@ final class TranscriptionController {
         self.transcriptSilenceSeconds = transcriptSilenceSeconds
     }
 
+    /// Silence is `.infinity` when nothing has been transcribed at all today —
+    /// which is the single most likely case when this fires. `Int(.infinity)`
+    /// **traps**, so it must never reach a string interpolation: that crashed
+    /// the whole app the first two times the watchdog triggered (2026-07-29,
+    /// EXC_BREAKPOINT in heartbeatTick), and it crashed *before* restarting
+    /// whisper, so it broke the very thing it was there to fix.
+    static func describe(_ silence: TimeInterval) -> String {
+        guard silence.isFinite else { return "nothing transcribed today" }
+        return "\(Int(silence))s"
+    }
+
     /// Pure decision: is a live-but-mute whisper due for a restart?
     ///
     /// `sinceStart` gates the model-loading window (a fresh whisper is silent for
@@ -122,7 +133,7 @@ final class TranscriptionController {
             else { return }
             self.lastForcedRestart = now
             self.noteStarted()
-            overlayError("Whisper alive but silent for \(Int(silence))s — forcing a restart")
+            overlayError("Whisper alive but silent (\(Self.describe(silence))) — forcing a restart")
             self.onForceRestart?()
             self.onAutoRestart?()
         }

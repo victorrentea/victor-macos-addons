@@ -98,14 +98,16 @@ enum FluxMailPolicy {
 
     /// Whether a poll may run at all.
     ///
-    /// Scheduled ticks run **only on battery** — landing on AC power skips the
-    /// tick entirely rather than deferring it. `force` is the override used by
-    /// `/test/email` **and by the 📬 menu item**, which is the one way to look at
-    /// the inbox while plugged in: on AC the app assumes Victor is mid-workshop
-    /// and must not have a Terminal pop open on the projector, so an email that
-    /// lands then waits for him to unplug — or to ask for it from the menu.
+    /// Scheduled ticks run **only on AC power** — landing on battery skips the
+    /// tick entirely rather than deferring it. Plugged in is when the Mac is at
+    /// a desk with the power and the network to actually run an agent; on
+    /// battery it may be in a bag, on a stage, or minutes from empty, and
+    /// spawning a Terminal full of `claude` there helps nobody.
+    ///
+    /// `force` is the override used by `/test/email` and by the 📬 menu item,
+    /// the one way to look at the inbox while unplugged.
     static func shouldPoll(onAC: Bool, force: Bool) -> Bool {
-        force || !onAC
+        force || onAC
     }
 
     /// The messages a poll should report: trusted senders only, still unclaimed
@@ -142,6 +144,10 @@ enum FluxInboxMenu {
     /// Compact "how long ago", coarse on purpose: below a minute everything is
     /// "just now", because the exact second never changes what you'd do next.
     static func ago(_ interval: TimeInterval) -> String {
+        // `Int(.infinity)` traps — see TranscriptionController.describe. Nothing
+        // feeds a non-finite value in here today, but this is a menu title: it
+        // must never be the thing that kills the app.
+        guard interval.isFinite else { return "never" }
         let seconds = max(0, Int(interval.rounded()))
         if seconds < 60 { return "just now" }
         let minutes = seconds / 60
@@ -195,6 +201,9 @@ final class FluxInboxPoller {
 
     static let inboxId = "victor.flux@agentmail.to"
     static let interval: TimeInterval = 600  // 10 minutes
+    /// Not zero: launch is already busy (whisper, event tap, WS, displays), and
+    /// `PowerMonitor` needs a moment to have a truthful answer about AC.
+    static let startupDelay: TimeInterval = 10
 
     /// How many recent messages each poll inspects. Comfortably more than a
     /// 10-minute window can hold, so nothing is missed between ticks.
@@ -252,15 +261,23 @@ final class FluxInboxPoller {
         }
     }
 
-    /// Arm the 10-minute timer. The first tick happens one full interval from
-    /// now, so launching the app never fires a poll immediately.
+    /// Arm the 10-minute timer, and look at the inbox **right away**.
+    ///
+    /// The first tick used to be a full interval out, which is the wrong default
+    /// for an app that gets restarted several times a day: every redeploy or
+    /// replacement pushed the next look 10 more minutes into the future, so mail
+    /// could sit unclaimed indefinitely. Launching is itself a natural "check
+    /// now" moment. The immediate poll still respects the AC gate — it goes
+    /// through the same `shouldPoll` as any tick, so an unplugged Mac starts
+    /// nothing.
     func start() {
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + Self.interval, repeating: Self.interval)
+        t.schedule(deadline: .now() + Self.startupDelay, repeating: Self.interval)
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
-        overlayInfo("FluxInboxPoller armed: every \(Int(Self.interval))s, battery-only")
+        overlayInfo("FluxInboxPoller armed: every \(Int(Self.interval))s, AC-only"
+                    + " (first check in \(Int(Self.startupDelay))s)")
     }
 
     func stop() {
@@ -268,13 +285,13 @@ final class FluxInboxPoller {
         timer = nil
     }
 
-    /// Scheduled tick — skipped entirely while on AC power (see
+    /// Scheduled tick — skipped entirely while on battery (see
     /// `FluxMailPolicy.shouldPoll`).
     private func tick() {
         poll(force: false, completion: nil)
     }
 
-    /// Run one poll. `force` bypasses the battery gate (used by `/test/email`
+    /// Run one poll. `force` bypasses the power gate (used by `/test/email`
     /// and the 📬 menu item). `completion` fires on `queue` once the poll settles.
     func poll(force: Bool, completion: (() -> Void)?) {
         queue.async { [weak self] in
@@ -282,7 +299,11 @@ final class FluxInboxPoller {
             guard FluxMailPolicy.shouldPoll(onAC: self.isOnAC(), force: force) else {
                 // Note we do NOT stamp `_lastPollAt` here: the timer fired, but
                 // nobody looked at the inbox.
-                self.setStatus { $0.outcome = "skipped — on AC power" }
+                self.setStatus { $0.outcome = "skipped — on battery" }
+                // A silent skip is what made the 2026-07-28 miss so hard to
+                // explain: hours of ignored mail looked exactly like an empty
+                // inbox. Say so, every time.
+                overlayInfo("📬 inbox check skipped — on battery")
                 completion?()
                 return
             }
@@ -298,7 +319,7 @@ final class FluxInboxPoller {
                             $0.outcome = "error"
                             $0.error = error.localizedDescription
                         }
-                        overlayError("FluxInboxPoller: \(error.localizedDescription)")
+                        overlayError("📬 inbox check failed: \(error.localizedDescription)")
                     case .success(let messages):
                         let fresh = FluxMailPolicy.newMail(
                             in: messages, since: self.watermark, seen: Set(self.seen))
@@ -309,6 +330,11 @@ final class FluxInboxPoller {
                                 ? "polled — nothing new (\(messages.count) inspected)"
                                 : "polled — \(fresh.count) new from \(FluxMailPolicy.trustedSender)"
                         }
+                        // Every completed poll leaves a trace, including the
+                        // boring ones — "nothing arrived" and "we never looked"
+                        // must not read the same in the log.
+                        overlayInfo("📬 inbox checked: \(fresh.count) new"
+                                    + " (\(messages.count) inspected)")
                         for message in fresh {
                             self.remember(message)
                             // CLAIM FIRST, notify second — and fail closed. Clearing
@@ -500,8 +526,8 @@ final class FluxInboxPoller {
             "trusted_sender": FluxMailPolicy.trustedSender,
             "match": "exact-address + dkim/dmarc pass",
             "interval_seconds": Int(Self.interval),
-            "polls_only_on_battery": true,
-            "on_battery_now": !isOnAC(),
+            "polls_only_on_ac": true,
+            "on_ac_now": isOnAC(),
             "status": settled ? "settled" : "pending",
             "last_outcome": status.outcome,
             "last_match_count": status.matchCount,

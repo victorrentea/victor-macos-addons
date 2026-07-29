@@ -187,23 +187,25 @@ final class FluxMailPolicyTests: XCTestCase {
         XCTAssertTrue(FluxMailPolicy.newMail(in: [bare], since: epoch, seen: []).isEmpty)
     }
 
-    // MARK: Battery gate
+    // MARK: Power gate
 
-    func testScheduledTickIsSkippedOnACPower() {
-        XCTAssertFalse(FluxMailPolicy.shouldPoll(onAC: true, force: false))
+    func testScheduledTickRunsOnACPower() {
+        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: true, force: false))
     }
 
-    func testScheduledTickRunsOnBattery() {
-        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: false, force: false))
+    /// Unplugged, the Mac may be in a bag, on a stage, or nearly empty — no
+    /// place to start a Terminal full of `claude`.
+    func testScheduledTickIsSkippedOnBattery() {
+        XCTAssertFalse(FluxMailPolicy.shouldPoll(onAC: false, force: false))
     }
 
-    /// `/test/email` is the one way to poll while plugged in.
-    func testForceOverridesTheACGate() {
-        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: true, force: true))
-    }
-
-    func testForceAlsoWorksOnBattery() {
+    /// The 📬 menu item and `/test/email` are the one way to poll while unplugged.
+    func testForceOverridesTheBatteryGate() {
         XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: false, force: true))
+    }
+
+    func testForceAlsoWorksOnAC() {
+        XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: true, force: true))
     }
 
     // MARK: Response parsing
