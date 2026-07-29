@@ -59,6 +59,48 @@ finish() { [ -n "$SENTINEL" ] && printf '%s' "$VERDICT" > "$SENTINEL"; return 0;
 # Guarded so an unset HEARTBEAT can never become `kill 0` (= whole process group).
 stop_heartbeat() { [ -n "${HEARTBEAT:-}" ] && kill "$HEARTBEAT" 2>/dev/null; return 0; }
 
+# --- live $ spent ------------------------------------------------------------
+# `claude` only reports total_cost_usd once, in the final result of a run, so a
+# running total has to be computed from the outside. We pin the session id, then
+# read the transcript claude appends as it works and price its token usage.
+SESSION_ID="$(uuidgen | tr 'A-Z' 'a-z')"
+TRANSCRIPT=""
+
+# The transcript lives under a directory named after claude's cwd; rather than
+# re-deriving that mangling, find it by filename — once, then cache.
+find_transcript() {
+  [ -n "$TRANSCRIPT" ] && return 0
+  TRANSCRIPT="$(find "$HOME/.claude/projects" -name "$SESSION_ID.jsonl" -print -quit 2>/dev/null)"
+  [ -n "$TRANSCRIPT" ]
+}
+
+# Sum of tokens x list price, in dollars.
+#
+# Two traps: the same usage block is repeated on EVERY entry of one API request
+# (text, thinking, each tool_use), so a naive sum multiplies the bill several
+# times over — dedupe by requestId first. And the file is being appended to
+# while we read it, so a trailing half-written line is normal: parse per line
+# with `fromjson?` instead of slurping, which would abort on it.
+session_cost_usd() {
+  [ -n "$TRANSCRIPT" ] && [ -s "$TRANSCRIPT" ] || return 1
+  jq -R -r 'fromjson? // empty' "$TRANSCRIPT" 2>/dev/null | jq -s -r '
+    # $/MTok: input / output / cache-write (1.25x in) / cache-read (0.1x in).
+    def price($m):
+      if   ($m | test("opus"))  then {i: 5, o: 25, w: 6.25, r: 0.5}
+      elif ($m | test("haiku")) then {i: 1, o: 5,  w: 1.25, r: 0.1}
+      else                           {i: 3, o: 15, w: 3.75, r: 0.3} end;   # sonnet + unknown
+    [ .[] | select(.type == "assistant" and .message.usage != null) ]
+    | group_by(.requestId // .uuid) | map(.[0])
+    | map( price(.message.model // "") as $p
+           | .message.usage
+           | ( (.input_tokens // 0)                * $p.i
+             + (.output_tokens // 0)               * $p.o
+             + (.cache_creation_input_tokens // 0) * $p.w
+             + (.cache_read_input_tokens // 0)     * $p.r ) / 1000000 )
+    | add // 0
+  ' 2>/dev/null
+}
+
 if [ -z "$MESSAGE_ID" ] || [ -z "$THREAD_ID" ]; then
   echo "❌ usage: flux-agent.sh <sentinel> <message-id> <thread-id>"
   finish; sleep 3; exit 1
@@ -199,7 +241,18 @@ echo "  Prompt  : $(wc -c < "$PROMPT_FILE" | tr -d ' ') bytes"
 echo
 
 # --- run claude -------------------------------------------------------------
-( while true; do sleep 15; printf '  … still working (%s)\n' "$(date +%H:%M:%S)"; done ) &
+# The heartbeat carries the running spend: "still working" alone says the process
+# is alive, not what it is costing.
+( while true; do
+    sleep 15
+    COST=""
+    find_transcript && COST="$(session_cost_usd)"
+    if [ -n "$COST" ]; then
+      printf '  … still working (%s) — $%.2f\n' "$(date +%H:%M:%S)" "$COST"
+    else
+      printf '  … still working (%s)\n' "$(date +%H:%M:%S)"
+    fi
+  done ) &
 HEARTBEAT=$!
 
 cd "$WORKDIR" || cd "$HOME" || true
@@ -207,13 +260,20 @@ cd "$WORKDIR" || cd "$HOME" || true
 # Victor's subscription (the exported key shadows it and fails on credit).
 # MCP connectors are left ON here: unlike the break-delta, this agent may need to
 # actually work in the repos.
+# `--session-id` is what makes the run's cost readable: it fixes the transcript
+# filename we poll for token usage above.
 env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$(cat "$PROMPT_FILE")" \
   --model opus --dangerously-skip-permissions \
+  --session-id "$SESSION_ID" \
   2>&1 | tee "$REPLY_FILE"
 STATUS="${PIPESTATUS[0]}"
 
 stop_heartbeat
 echo
+if find_transcript; then
+  TOTAL="$(session_cost_usd)"
+  [ -n "$TOTAL" ] && printf '  💰 total: $%.2f (tokens x list price — this run was on the subscription)\n' "$TOTAL"
+fi
 
 # --- mail the answer back ---------------------------------------------------
 # The reply goes to the hardcoded $TRUSTED_SENDER. Claude never chooses the
