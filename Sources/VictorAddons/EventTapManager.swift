@@ -77,11 +77,13 @@ class EventTapManager {
     /// (events are handled serially there), so no lock needed.
     private var zoomAccumulator: Double = 0
 
-    /// Bundle id of the focused app, cached from the main thread via an NSWorkspace
-    /// notification so the tap callback can read it without touching AppKit
-    /// off-thread.
+    /// Bundle id + pid of the focused app, cached from the main thread via an
+    /// NSWorkspace notification so the tap callback can read them without touching
+    /// AppKit off-thread. The pid is what `TerminalZoomSizeLock` addresses the
+    /// window through.
     private let frontmostLock = NSLock()
     private var frontmostBundleId: String?
+    private var frontmostPid: pid_t?
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
@@ -125,14 +127,14 @@ class EventTapManager {
         // (without touching AppKit off-thread) whether Cmd+scroll should zoom.
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.setFrontmostBundleId(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+            self.setFrontmost(NSWorkspace.shared.frontmostApplication)
             NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didActivateApplicationNotification,
                 object: nil,
                 queue: .main
             ) { [weak self] note in
                 let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                self?.setFrontmostBundleId(app?.bundleIdentifier)
+                self?.setFrontmost(app)
             }
         }
     }
@@ -182,18 +184,18 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        // Cmd+scroll over a terminal → strip Cmd so it scrolls the scrollback
-        // like a plain wheel. macOS screen-zoom is Ctrl+scroll (not Cmd) and
-        // Terminal/iTerm2 don't map Cmd+scroll to font-zoom — and we remove Cmd
-        // before the terminal even sees the event, so this can never zoom.
-        // Targets the app under the CURSOR (where the scroll lands), not focus.
         // Cmd+scroll while a terminal is focused → zoom the font (Cmd+= / Cmd+-)
         // instead of scrolling. Suppress the scroll and synthesize the native
-        // Bigger/Smaller shortcut, one step per wheel notch.
+        // Bigger/Smaller shortcut, one step per wheel notch. `TerminalZoomSizeLock`
+        // pins the window's frame across the gesture — left alone, the terminal
+        // keeps its character grid and resizes the *window* around the new font,
+        // which throws away a placement that was deliberate (tiled, or sized to the
+        // projector). It must be told BEFORE the keystroke goes out, so the frame it
+        // captures is still the pre-zoom one.
         if type == .scrollWheel {
             guard event.flags.contains(.maskCommand),
-                  let bundle = currentFrontmostBundleId(),
-                  scrollScopeBundleIds.contains(bundle) else {
+                  let front = currentFrontmost(),
+                  scrollScopeBundleIds.contains(front.bundleId) else {
                 return Unmanaged.passUnretained(event)
             }
             let dy = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)  // + up, - down
@@ -201,6 +203,9 @@ class EventTapManager {
                 // Reset on direction change so a reversal responds immediately.
                 if (dy > 0) != (zoomAccumulator > 0) { zoomAccumulator = 0 }
                 zoomAccumulator += dy
+                if zoomAccumulator >= 1 || zoomAccumulator <= -1 {
+                    TerminalZoomSizeLock.beforeZoomStep(pid: front.pid)
+                }
                 while zoomAccumulator >= 1 { zoomAccumulator -= 1; KeySimulator.zoomSmaller() }
                 while zoomAccumulator <= -1 { zoomAccumulator += 1; KeySimulator.zoomBigger() }
             }
@@ -353,12 +358,16 @@ class EventTapManager {
 
     // MARK: - Frontmost app tracking (for Cmd+scroll zoom targeting)
 
-    private func setFrontmostBundleId(_ id: String?) {
-        frontmostLock.lock(); frontmostBundleId = id; frontmostLock.unlock()
+    private func setFrontmost(_ app: NSRunningApplication?) {
+        frontmostLock.lock()
+        frontmostBundleId = app?.bundleIdentifier
+        frontmostPid = app?.processIdentifier
+        frontmostLock.unlock()
     }
 
-    private func currentFrontmostBundleId() -> String? {
+    private func currentFrontmost() -> (bundleId: String, pid: pid_t)? {
         frontmostLock.lock(); defer { frontmostLock.unlock() }
-        return frontmostBundleId
+        guard let bundleId = frontmostBundleId, let pid = frontmostPid else { return nil }
+        return (bundleId, pid)
     }
 }
