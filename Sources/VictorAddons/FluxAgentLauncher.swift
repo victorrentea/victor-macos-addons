@@ -96,6 +96,12 @@ enum FluxAgentLauncher {
 
     /// Open a NEW foreground Terminal window and auto-close it only on success.
     ///
+    /// The window is pushed onto an external screen (`TerminalWindowPlacement`):
+    /// mail can land mid-workshop, and the built-in Retina is what the projector
+    /// mirrors — an agent window opening there would appear on the wall in front
+    /// of the room. With no external screen connected it stays wherever macOS
+    /// puts it.
+    ///
     /// The message/thread ids are AgentMail identifiers (a Message-ID and a
     /// UUID), and they are single-quoted into the `do script` line, so they are
     /// escaped defensively even though no email *body* text goes near the shell.
@@ -108,6 +114,7 @@ enum FluxAgentLauncher {
         tell application "Terminal"
             activate
             set t to do script "bash '\(script)' '\(sentinel)' '\(shellEscape(messageId))' '\(shellEscape(threadId))'"
+        \(TerminalWindowPlacement.appleScriptSnippet(tabVar: "t"))
         end tell
         -- Wait up to ~60 min: this agent may do real work, not just a summary.
         repeat 1800 times

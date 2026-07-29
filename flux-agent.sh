@@ -113,6 +113,38 @@ echo "  Messages: $COUNT"
 echo "  Workdir : $WORKDIR"
 echo
 
+# --- show the mail we are answering ------------------------------------------
+# A glance at the window used to show only "still working", never WHICH mail was
+# being worked on. Print the triggering message: the one matching $MESSAGE_ID,
+# falling back to the newest in the thread if the API stops returning per-message
+# ids.
+MAIL_JSON="$WORK/received.json"
+jq --arg mid "$MESSAGE_ID" '
+  ([.messages[]? | select(.message_id == $mid)] | first)
+  // ([.messages[]?] | sort_by(.timestamp) | last)
+  // {}
+' "$THREAD_JSON" > "$MAIL_JSON" 2>/dev/null
+# An unparseable payload makes jq print nothing at all; keep the display code
+# below on a valid object rather than silently printing two separators.
+[ -s "$MAIL_JSON" ] || echo '{}' > "$MAIL_JSON"
+
+echo "──────────────────────── the mail being answered ────────────────────────"
+jq -r '"  From    : \(.from // "?")\n  Date    : \(.timestamp // "?")\n  Subject : \(.subject // "(no subject)")"' "$MAIL_JSON"
+echo "─────────────────────────────────────────────────────────────────────────"
+# `.text` (the full body) preferred over `.extracted_text` for the same reason as
+# the prompt below: extraction strips quoted history and on a short mail can
+# strip away everything but the signature.
+BODY_FILE="$WORK/received-body.txt"
+jq -r '(.text // .extracted_text // .preview // "(empty body)") | rtrimstr("\n")' "$MAIL_JSON" > "$BODY_FILE"
+# Display cap only — claude below still gets the whole thread.
+head -c 4000 "$BODY_FILE"
+echo
+if [ "$(wc -c < "$BODY_FILE")" -gt 4000 ]; then
+  echo "  […] body truncated for display (claude gets the full thread)"
+fi
+echo "─────────────────────────────────────────────────────────────────────────"
+echo
+
 # --- build the prompt -------------------------------------------------------
 # The thread is rendered into a FILE and passed by path. Nothing from the email
 # reaches the shell command line.
