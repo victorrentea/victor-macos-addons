@@ -173,10 +173,11 @@ final class BottomLeftBanner {
 
     /// Fires once per `show()` after the cursor has *dwelled* inside the
     /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
-    /// (0.5s by default). Cursor merely happening to be in the corner when
-    /// the banner appears never fires this — NSTrackingArea only kicks in
-    /// on a fresh entry, and even then the user must hold the cursor in
-    /// place. Only meaningful when `hoverable: true`.
+    /// (0.5s by default) *while being moved* — see `HoverMotionGate`. A cursor
+    /// merely happening to be in the corner when the banner appears never fires
+    /// this: NSTrackingArea only kicks in on a fresh entry, and a motionless
+    /// cursor makes no progress however long it stays. Only meaningful when
+    /// `hoverable: true`.
     var onHover: (() -> Void)?
     private var hoverFired = false
 
@@ -185,6 +186,10 @@ final class BottomLeftBanner {
     private static let hoverDwellRequiredSamples = 20
     private var hoverDwellTimer: Timer?
     private var hoverDwellCount = 0
+    /// Requires the cursor to keep *moving* while it dwells (see `HoverMotionGate`).
+    /// A hand simply left on the mouse in the bottom-left corner is not a decision,
+    /// and used to send/undo on its own.
+    private var hoverMotion: HoverMotionGate?
 
     /// Fires once the hover-countdown bar fills completely *without* the user
     /// hovering to act — i.e. the window closed on its own. Callers use it to
@@ -486,6 +491,8 @@ final class BottomLeftBanner {
         // flashes (onHover == nil) must not whiten or fire.
         guard hoverable, onHover != nil, !hoverFired, hoverDwellTimer == nil else { return }
         hoverDwellCount = 0
+        hoverMotion = HoverMotionGate(position: NSEvent.mouseLocation,
+                                      now: Date.timeIntervalSinceReferenceDate)
         hoverDwellTimer = Timer.scheduledTimer(withTimeInterval: Self.hoverDwellInterval, repeats: true) { [weak self] _ in
             self?.tickHoverDwell()
         }
@@ -499,6 +506,7 @@ final class BottomLeftBanner {
     fileprivate func cancelHoverDwell(resetNudge: Bool = true) {
         hoverDwellTimer?.invalidate()
         hoverDwellTimer = nil
+        hoverMotion = nil
         if hoverDwellCount > 0 {
             hoverDwellCount = 0
             if resetNudge { applyDwellProgress(0) }
@@ -508,6 +516,18 @@ final class BottomLeftBanner {
     private func tickHoverDwell() {
         guard !hoverFired else { cancelHoverDwell(); return }
         if isMouseInsideAnyPanel() {
+            // Inside is not enough — the cursor must still be MOVING. A slice
+            // without movement zeroes the progress (the bar visibly falls back),
+            // so a hand parked on the mouse can never confirm or undo on its own.
+            let moving = hoverMotion?.admit(position: NSEvent.mouseLocation,
+                                            now: Date.timeIntervalSinceReferenceDate) ?? true
+            guard moving else {
+                if hoverDwellCount > 0 {
+                    hoverDwellCount = 0
+                    applyDwellProgress(0)
+                }
+                return
+            }
             hoverDwellCount += 1
             let progress = min(1.0, CGFloat(hoverDwellCount) / CGFloat(Self.hoverDwellRequiredSamples))
             applyDwellProgress(progress)
