@@ -35,6 +35,17 @@ enum BreakTimerModel {
         idleSeconds >= threshold && transcriptSilentSeconds >= threshold
     }
 
+    /// Title of the countdown a ☕ hold-charge opens. It counts down TO the next
+    /// break — it is not itself a break.
+    static let untilBreakTitle = "UNTIL BREAK"
+
+    /// Whether closing a timer with this title means "a break just ended", i.e.
+    /// whether it should (re)start the menu's "⏱️ Resumed Xm ago" clock and the
+    /// break reminder. An "UNTIL BREAK" countdown reaching zero is the moment the
+    /// break is *due*, not the moment one finished, so the resumed clock must keep
+    /// measuring from the last real break instead of being reset by it.
+    static func endsABreak(title: String) -> Bool { title != untilBreakTitle }
+
     /// Format remaining seconds as `MM:SS`. Minutes are NOT capped at 59 — one
     /// hour shows `60:00` to keep the two-group "watch" look. Negative values
     /// clamp to `00:00`.

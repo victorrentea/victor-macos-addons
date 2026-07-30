@@ -139,4 +139,11 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertFalse(BreakTimerModel.shouldShowBreakScreen(
             idleSeconds: 119.9, transcriptSilentSeconds: .infinity, threshold: 120))
     }
+
+    func testOnlyRealBreaksEndABreak() {
+        // The ☕ hold-charge timer counts down TO the pause, so its close must not
+        // reset "⏱️ Resumed Xm ago" — only a real break's close does.
+        XCTAssertFalse(BreakTimerModel.endsABreak(title: BreakTimerModel.untilBreakTitle))
+        XCTAssertTrue(BreakTimerModel.endsABreak(title: "BREAK"))
+    }
 }

@@ -95,8 +95,10 @@ final class BreakTimerController {
     /// Fired when a break *ends* — i.e. whenever the window is closed: the ✕
     /// button, the countdown expiring (which auto-closes after the gong), or a
     /// programmatic stop. NOT fired by re-opening or +minutes (those reuse the
-    /// window via start(), never close()). Drives the menu's "Resumed Xm ago"
-    /// clock (time since the last break ended).
+    /// window via start(), never close()), and NOT fired by the ☕-started
+    /// "UNTIL BREAK" countdown, which ends when a break is due rather than when
+    /// one is over (`BreakTimerModel.endsABreak`). Drives the menu's
+    /// "Resumed Xm ago" clock (time since the last break ended).
     var onEnded: (() -> Void)?
 
     /// (Re)start the countdown at `minutes`. Reuses the existing window in place
@@ -164,7 +166,10 @@ final class BreakTimerController {
         epoch += 1                                       // cancels pending gong/expiry blocks
         let wasShowing = panel != nil
         let wasFullscreen = isEnlarged
-        if wasShowing { onEnded?() }                     // a break was showing → (re)start the "resumed" clock
+        // A real break was showing → (re)start the "resumed" clock. An "UNTIL BREAK"
+        // countdown is excluded: it measures the time TO the pause, so its close
+        // must leave "Resumed Xm ago" anchored on the last actual break.
+        if wasShowing && BreakTimerModel.endsABreak(title: titleText) { onEnded?() }
         SoundManager.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil

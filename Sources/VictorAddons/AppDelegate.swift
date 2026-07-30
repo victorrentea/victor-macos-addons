@@ -657,7 +657,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onTestBreakUntil = { [weak self] in
             // Same overlay a floating-☕ click produces: half-size "UNTIL BREAK".
-            DispatchQueue.main.async { self?.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5) }
+            DispatchQueue.main.async { self?.breakTimer.start(minutes: 10, title: BreakTimerModel.untilBreakTitle, sizeScale: 0.5) }
         }
         tabletServer?.onTestBreakClose = { [weak self] in
             DispatchQueue.main.async { self?.breakTimer.close() }
@@ -1208,7 +1208,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self.breakTimer.addSeconds(-60 * exploded)
             } else {
                 overlayInfo("☕ x\(exploded) exploded → starting 10-min UNTIL BREAK timer")
-                self.breakTimer.start(minutes: 10, title: "UNTIL BREAK", sizeScale: 0.5)
+                self.breakTimer.start(minutes: 10, title: BreakTimerModel.untilBreakTitle, sizeScale: 0.5)
                 // Coffees that ripened on the same tick still count: the first one
                 // opened the timer, the rest immediately pull it closer.
                 if exploded > 1 { self.breakTimer.addSeconds(-60 * (exploded - 1)) }
