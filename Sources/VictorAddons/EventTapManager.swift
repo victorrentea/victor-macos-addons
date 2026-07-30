@@ -25,6 +25,7 @@ class EventTapManager {
     var onOpenCatalog: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
+    var onPlainTerminalHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
@@ -50,6 +51,8 @@ class EventTapManager {
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
     private let VK_W: CGKeyCode = 0x0D
+    private let VK_T: CGKeyCode = 0x11
+    private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
 
@@ -249,9 +252,17 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Opt+Ctrl+C → open Claude Code in ~/workspace (suppress)
-        if keyCode == VK_C && hasCmd && hasCtrl && hasOpt {
+        // F8 → open Claude Code in ~/workspace (suppress). Bare F8, not fn+F8:
+        // this Mac runs F1–F12 as standard function keys, so the key arrives as
+        // a real keyDown rather than a media-key system event.
+        if keyCode == VK_F8 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+T → open a plain (empty) Terminal in ~/workspace (suppress)
+        if keyCode == VK_T && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onPlainTerminalHotkey?() }
             return nil
         }
 

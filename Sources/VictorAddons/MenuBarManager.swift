@@ -297,6 +297,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         tileItem.isEnabled = true
         extraSubmenu.addItem(tileItem)
 
+        // Terminal in ~/workspace, empty shell (⌘⌃T)
+        let plainTerminalItem = NSMenuItem(title: "Terminal in workspace", action: #selector(openPlainTerminalWorkspace), keyEquivalent: "t")
+        plainTerminalItem.keyEquivalentModifierMask = [.command, .control]
+        plainTerminalItem.target = self
+        plainTerminalItem.isEnabled = true
+        extraSubmenu.addItem(plainTerminalItem)
+
+        // Claude in ~/workspace (F8)
+        let claudeWorkspaceItem = NSMenuItem(title: "🎅 workspace (plain)", action: #selector(openDreamPlainWorkspace), keyEquivalent: String(UnicodeScalar(NSF8FunctionKey)!))
+        claudeWorkspaceItem.keyEquivalentModifierMask = []
+        claudeWorkspaceItem.target = self
+        claudeWorkspaceItem.isEnabled = true
+        extraSubmenu.addItem(claudeWorkspaceItem)
+
         // Flattened Dream entries
         let dreamEntries: [(String, Selector)] = [
             ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
@@ -551,19 +565,30 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         openDreamClaude(directory: "~/workspace/ai", sessionName: "workspace", quarter: .topLeft)
     }
 
+    /// F8 global hotkey lands here.
     @objc func openDreamPlainWorkspace() {
-        // ⌘⌥⌃C global hotkey lands here. `do script` already spawns a NEW window
-        // (not a tab), but without an explicit `set bounds` Terminal reopens it on
-        // whichever display it last had a window on (often an external monitor).
-        // Pin it to a quarter of the built-in Retina screen, like the other
-        // openDream* items. bottomLeft is the only quarter not used elsewhere.
+        openWorkspaceTerminal(command: "cd ~/workspace && claude")
+    }
+
+    /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell
+    /// sitting in ~/workspace.
+    @objc func openPlainTerminalWorkspace() {
+        openWorkspaceTerminal(command: "cd ~/workspace")
+    }
+
+    private func openWorkspaceTerminal(command: String) {
+        // `do script` already spawns a NEW window (not a tab), but without an
+        // explicit `set bounds` Terminal reopens it on whichever display it last
+        // had a window on (often an external monitor). Pin it to a quarter of the
+        // built-in Retina screen, like the other openDream* items. bottomLeft is
+        // the only quarter not used elsewhere.
         let screen = NSScreen.screens.first(where: { $0.localizedName.localizedCaseInsensitiveContains("built-in") })
             ?? NSScreen.screens.first(where: { $0.frame.origin == .zero })
             ?? NSScreen.main ?? NSScreen.screens[0]
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: .bottomLeft)
         let script = """
         tell application "Terminal"
-            do script "cd ~/workspace && claude"
+            do script "\(command)"
             activate
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
