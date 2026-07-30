@@ -517,7 +517,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.silentTranscriptionWarning?.transcriptionStarted()
                 if self?.pendingAutoRestartBanner == true {
                     self?.pendingAutoRestartBanner = false
-                    self?.statusBanner?.showOnPresence(text: "started", sound: StatusBannerSound.start)
+                    self?.statusBanner?.showOnPresence(text: "👂", sound: StatusBannerSound.start)
                 }
             } else {
                 self?.transcriptionWatcher?.stopWatching()
