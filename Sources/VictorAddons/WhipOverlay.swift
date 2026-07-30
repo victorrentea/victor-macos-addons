@@ -68,7 +68,7 @@ final class WhipController {
     private func playCrack() {
         guard let sound = crackSounds.randomElement() else { return }
         SoundManager.shared.playOverlapping(
-            sound, volume: 0.8, bluetoothCompensated: false, startAt: Self.crackOnset[sound] ?? 0)
+            sound, volume: 0.64, bluetoothCompensated: false, startAt: Self.crackOnset[sound] ?? 0)
     }
 
     var isShowing: Bool { panel != nil }
