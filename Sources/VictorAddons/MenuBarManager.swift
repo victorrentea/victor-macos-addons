@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 30, 22:45"
+    static let BUILD_TIME = "Jul 31, 02:32"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -570,10 +570,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         openWorkspaceTerminal(command: "cd ~/workspace && claude")
     }
 
-    /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell
-    /// sitting in ~/workspace.
+    /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.
+    /// The empty `do script ""` opens the window and runs NOTHING: ~/.zshrc
+    /// already cds a shell that started in $HOME to ~/workspace, so an explicit
+    /// `cd` would only print a redundant command line into a fresh window.
     @objc func openPlainTerminalWorkspace() {
-        openWorkspaceTerminal(command: "cd ~/workspace")
+        openWorkspaceTerminal(command: "")
     }
 
     private func openWorkspaceTerminal(command: String) {
