@@ -3054,6 +3054,31 @@ class EmojiAnimator {
         return images
     }
 
+    // Animation tunables, hoisted out of showPhoenix so the on-screen life can be
+    // known WITHOUT firing the effect (see phoenixDuration).
+    private static let phoenixFrameDt = 0.05    // one source frame
+    private static let phoenixBeats = 3         // wing beats spent rising
+    private static let phoenixHoldAtTop = 3.0   // hover-and-flap once arrived
+    private static let phoenixFadeOutDur = 1.4  // dissolve (visual + cry, in unison)
+
+    /// Frame count of the bundled APNG, read without decoding any pixels.
+    private static let phoenixFrameCount: Int = {
+        guard let url = Bundle.module.url(forResource: "phoenix", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return 28 }
+        return CGImageSourceGetCount(source)
+    }()
+
+    /// How long the phoenix lives on screen, and — mirrored by AppDelegate's
+    /// onSoundPlay `durationMs` — how long the tablet keeps tile #34 in its
+    /// "playing" state, i.e. the window during which a re-tap STOPS it. Tile #34
+    /// carries no ↻ restartable badge, so this number IS the stop contract: the
+    /// branch used to answer a token 1ms (the tablet's `34_phoenix.mp3` is a silent
+    /// placeholder — nothing to time), which cleared the playing state instantly
+    /// and turned every re-tap into a restart instead of a stop.
+    static let phoenixDuration: Double =
+        Double(phoenixFrameCount) * phoenixFrameDt * Double(phoenixBeats)
+        + phoenixHoldAtTop + phoenixFadeOutDur
+
     func showPhoenix() {
         // Re-press cancels: tear down the visual AND silence the cry. The sound
         // rides playClip's overlapping player (not the `players` dict cancelIfRunning
@@ -3111,7 +3136,7 @@ class EmojiAnimator {
 
         // Loop the 28 source frames (~0.05s each → ~1.4s/cycle) — one full wing
         // beat per cycle. Discrete so frames switch crisply (no cross-fade).
-        let frameDt = 0.05
+        let frameDt = Self.phoenixFrameDt
         let cycleDur = Double(images.count) * frameDt
         let framesAnim = CAKeyframeAnimation(keyPath: "contents")
         framesAnim.values = images
@@ -3126,7 +3151,7 @@ class EmojiAnimator {
         // timed to that launch sub-phase (frames ~8→24 of each loop), holding
         // (gliding) between beats. The per-beat distance decreases so it decel-
         // erates into a hover at the settle point.
-        let beats = 3
+        let beats = Self.phoenixBeats
         let riseDur = cycleDur * Double(beats)
         let riseDist = stopCenterY - startCenterY
         let surgeStartFrac = 0.30   // within a cycle: launch begins (~frame 8/28)
@@ -3175,11 +3200,11 @@ class EmojiAnimator {
 
         // After arriving, hover-and-flap in place for ~3s before leaving, THEN
         // fade out (the fade follows the hover — it must not eat into it).
-        let holdAtTop = 3.0
+        let holdAtTop = Self.phoenixHoldAtTop
         // Fade-out is 2× the original 0.7s — a slower, gentler dissolve. It
         // drives BOTH the visual opacity fade and the audio fade (playClip
         // below uses fadeOutDur), so they stay in unison at the longer length.
-        let fadeOutDur = 1.4
+        let fadeOutDur = Self.phoenixFadeOutDur
         let totalLife = riseDur + holdAtTop + fadeOutDur
 
         let fadeIn = CABasicAnimation(keyPath: "opacity")

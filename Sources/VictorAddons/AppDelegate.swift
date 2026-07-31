@@ -404,8 +404,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // tablet's `34_phoenix.mp3` is a silent placeholder, so skip routed
             // playback here — the press path (SoundEffectMap: 34_phoenix.mp3 →
             // "phoenix") drives both the visual and the real sound.
+            // Report the phoenix's ON-SCREEN life (not the silent placeholder's ~0),
+            // exactly like the minion below: tile #34 carries no ↻ restartable badge,
+            // so the tablet's stop-on-re-tap only works while it still considers the
+            // tile "playing" — a 1ms answer ended that window instantly and every
+            // re-tap restarted the bird.
             if name == "34_phoenix.mp3" {
-                return "{\"ok\":true,\"durationMs\":1}"
+                return "{\"ok\":true,\"durationMs\":\(Int(EmojiAnimator.phoenixDuration * 1000))}"
             }
             // Tile #80 (🍌 badumtss → animated minion face): SILENT by design —
             // play NOTHING here. The looping minion face is driven by the press
