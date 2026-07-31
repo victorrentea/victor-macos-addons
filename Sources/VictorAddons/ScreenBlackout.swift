@@ -29,6 +29,22 @@ final class ScreenBlackout {
             let lastInputAt = now - idleSeconds
             return lastInputAt > startedAt
         }
+
+        /// How recently the user must have touched the Mac, at the moment the
+        /// countdown hits zero, for the post-break blackout to be skipped.
+        static let atTheMacWindow: CFTimeInterval = 10
+
+        /// Whether the countdown reaching zero should black the displays out at
+        /// all. The blackout exists for the break that ends while Victor is
+        /// still out of the room — but when he was working at the Mac in the
+        /// last `atTheMacWindow` seconds he is plainly back, and the covers
+        /// would only flash black over what he is doing until his next mouse
+        /// move takes them down again. Sampled at expiry (not at the close that
+        /// follows the gong ~18s later), so the gong itself can't count as
+        /// "he's here".
+        static func shouldBlackoutOnExpiry(idleSecondsAtExpiry: CFTimeInterval) -> Bool {
+            idleSecondsAtExpiry > atTheMacWindow
+        }
     }
 
     private static let defaultFadeIn: TimeInterval = 0.35

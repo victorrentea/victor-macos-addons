@@ -35,4 +35,29 @@ final class ScreenBlackoutPolicyTests: XCTestCase {
     func testDismissesAfterALongAbsence() {
         XCTAssertTrue(shouldDismiss(now: 3600, startedAt: 100, idle: 1))
     }
+
+    // MARK: - Expiry gate: an occupied Mac never gets blacked out
+
+    private func shouldBlackout(idle: CFTimeInterval) -> Bool {
+        ScreenBlackout.Policy.shouldBlackoutOnExpiry(idleSecondsAtExpiry: idle)
+    }
+
+    /// Victor is back and typing when the countdown runs out → no covers at all.
+    func testWorkingAtTheMacOnExpirySkipsTheBlackout() {
+        XCTAssertFalse(shouldBlackout(idle: 0))
+        XCTAssertFalse(shouldBlackout(idle: 3))
+        XCTAssertFalse(shouldBlackout(idle: 9.9))
+    }
+
+    /// The room is still empty → black, as before.
+    func testIdleOnExpiryStillBlacksOut() {
+        XCTAssertTrue(shouldBlackout(idle: 11))
+        XCTAssertTrue(shouldBlackout(idle: 600))
+    }
+
+    /// Exactly at the window edge counts as "he's here" (the gate is
+    /// `> atTheMacWindow`), so a 10s-old nudge still suppresses the covers.
+    func testExactlyAtTheWindowEdgeCountsAsPresent() {
+        XCTAssertFalse(shouldBlackout(idle: ScreenBlackout.Policy.atTheMacWindow))
+    }
 }
