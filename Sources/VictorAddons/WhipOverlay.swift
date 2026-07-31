@@ -62,13 +62,20 @@ final class WhipController {
         "whip_E.mp3": 0.06,
     ]
 
+    /// The crack rides the **tablet's** volume wedge like every soundboard
+    /// sound — one knob for everything the room hears — but at 80% of it: at
+    /// the wedge's full level the crack is loud enough to genuinely startle the
+    /// audience, which is not the joke we're going for.
+    private static let crackVolumeFactor: Float = 0.8
+
     /// Play a random crack sample, seeked to its snap onset and with no BT delay
     /// (the overlay keeps the A2DP link warm), so the crack lands as tightly as
     /// possible on the on-screen crack.
     private func playCrack() {
         guard let sound = crackSounds.randomElement() else { return }
+        let volume = SoundManager.shared.currentTabletVolume * Self.crackVolumeFactor
         SoundManager.shared.playOverlapping(
-            sound, volume: 0.64, bluetoothCompensated: false, startAt: Self.crackOnset[sound] ?? 0)
+            sound, volume: volume, bluetoothCompensated: false, startAt: Self.crackOnset[sound] ?? 0)
     }
 
     var isShowing: Bool { panel != nil }

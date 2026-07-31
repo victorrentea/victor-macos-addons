@@ -388,6 +388,12 @@ class SoundManager {
         }
     }
 
+    /// The tablet's current volume level (0..1), for Mac-local sounds that
+    /// should follow the tablet's wedge even though they aren't routed from it
+    /// — e.g. the 🔥 whip crack. Main thread only (`tabletVolume` is only ever
+    /// mutated on main).
+    var currentTabletVolume: Float { tabletVolume }
+
     /// Stop the tablet-routed sound immediately (mirrors the tablet's abrupt
     /// MediaPlayer.stop on re-press / preempt).
     func stopTabletSound() {
