@@ -243,21 +243,24 @@ echo
 # --- run claude -------------------------------------------------------------
 # The heartbeat line reads left to right the way it is scanned: WHEN, HOW LONG,
 # HOW MUCH. The clock leads so the lines form a column down the window; the
-# elapsed time is given in both units on purpose (seconds are the precise answer,
-# minutes are the one you actually judge a run by once it is past a minute or
-# two); the running spend comes last — "still working" alone says the process is
-# alive, not what it is costing.
+# elapsed time is `2m15s` (below a minute, just `15s` — a leading `0m` is noise);
+# the running spend comes last — "still working" alone says the process is alive,
+# not what it is costing.
 RUN_START="$(date +%s)"
 ( while true; do
     sleep 15
     ELAPSED=$(( $(date +%s) - RUN_START ))
-    MINS="$(awk -v s="$ELAPSED" 'BEGIN { printf "%.1f", s / 60 }')"
+    if [ "$ELAPSED" -lt 60 ]; then
+      FOR="${ELAPSED}s"
+    else
+      FOR="$(printf '%dm%02ds' $(( ELAPSED / 60 )) $(( ELAPSED % 60 )))"
+    fi
     COST=""
     find_transcript && COST="$(session_cost_usd)"
     if [ -n "$COST" ]; then
-      printf '[%s] %ss (%sm) — $%.2f\n' "$(date +%H:%M:%S)" "$ELAPSED" "$MINS" "$COST"
+      printf '[%s] %s — $%.2f\n' "$(date +%H:%M:%S)" "$FOR" "$COST"
     else
-      printf '[%s] %ss (%sm)\n' "$(date +%H:%M:%S)" "$ELAPSED" "$MINS"
+      printf '[%s] %s\n' "$(date +%H:%M:%S)" "$FOR"
     fi
   done ) &
 HEARTBEAT=$!
