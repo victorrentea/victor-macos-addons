@@ -60,6 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
+    private var androidDeployer: AndroidAppDeployer?
     /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
@@ -622,6 +623,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // plugging the tablet in mid-session restores the no-WiFi path within
         // ~20s (start.sh only arms it once, at launch).
         let usbTunnel = UsbTunnelKeeper()
+
+        // Plugging the tablet in is also the one moment the Mac can bring its
+        // Android app up to date on its own — but only when the sources have
+        // actually moved since the last deploy (see AndroidAppDeployer).
+        let androidDeploy = AndroidAppDeployer()
+        androidDeploy.onNotify = { [weak self] title, body in
+            self?.postAndroidDeployNotification(title: title, body: body)
+        }
+        self.androidDeployer = androidDeploy
+        usbTunnel.onTunnelArmed = { [weak androidDeploy] in androidDeploy?.tabletConnected() }
+        tabletServer?.onTestAndroidDeploy = { [weak androidDeploy] in
+            androidDeploy?.forceDeployJSON() ?? "{\"error\":\"deployer unavailable\"}"
+        }
+
         usbTunnel.start()
         self.usbTunnelKeeper = usbTunnel
         // /test/group-photo — show the overlay now, bypassing the break + daemon gates.
@@ -1759,6 +1774,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if let err { overlayInfo("Wispr output-drift notification error: \(err)") }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+        }
+    }
+
+    /// "Android app updated to version / <build date>" — the outcome of a USB
+    /// auto-deploy (`AndroidAppDeployer`), success or failure. A native
+    /// notification is right here (unlike the presentation-time banners): a
+    /// deploy fires when the cable goes in, i.e. at the desk between sessions,
+    /// and Notification Center is a fine place for it to wait if it doesn't.
+    /// Transient: auto-removed after 10s, with a stable identifier so a re-fire
+    /// replaces rather than stacks.
+    func postAndroidDeployNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let identifier = "android-deploy"
+        let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req) { err in
+            if let err { overlayInfo("Android deploy notification error: \(err)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
         }
     }

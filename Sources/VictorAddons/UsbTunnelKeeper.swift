@@ -67,10 +67,17 @@ final class UsbTunnelKeeper {
     /// sequential. Logged only when it flips (no per-tick spam).
     private var armed = false
 
+    /// Fired on the armed edge — the cable is in *and* adb is answering. This is
+    /// the moment `AndroidAppDeployer` can talk to the tablet, so it hangs off
+    /// here rather than off the raw IOKit attach (where adbd is still
+    /// handshaking). Called on `queue`.
+    var onTunnelArmed: (() -> Void)?
+
     /// First adb binary that exists among the known install locations. Prefers
     /// the Android SDK copy `start.sh` uses, so the app and its own startup
-    /// script share one adb server (no version thrash).
-    private static let adbPath: String? = {
+    /// script share one adb server (no version thrash). Shared with
+    /// `AndroidAppDeployer`, so both speak to the same adb server.
+    static let adbPath: String? = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "\(home)/Library/Android/sdk/platform-tools/adb",
@@ -225,6 +232,7 @@ final class UsbTunnelKeeper {
         NSLog(value
             ? "[UsbTunnelKeeper] USB tunnel armed — tablet reachable at localhost:\(Self.port)"
             : "[UsbTunnelKeeper] USB tunnel down — tablet unplugged")
+        if value { onTunnelArmed?() }
     }
 
     /// A fresh matching dictionary for the standard Android ADB interface:

@@ -68,6 +68,9 @@ class TabletHttpServer {
         /// Force one Flux-inbox poll now, bypassing the battery gate, and return
         /// a JSON snapshot of the poller's state (test hook).
         case testEmailPoll
+        /// Force a tablet app (re)deploy now, bypassing the source-stamp check
+        /// and the failure cooldown; returns a JSON snapshot (test hook).
+        case testAndroidDeploy
         case promptCapture
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
@@ -133,6 +136,9 @@ class TabletHttpServer {
     var onTestBell: ((String?) -> Void)?
     /// Force one Flux-inbox poll now; returns the poller's JSON snapshot.
     var onTestEmailPoll: (() -> String)?
+    /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
+    /// deployer's state (the deploy itself continues in the background).
+    var onTestAndroidDeploy: (() -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -295,6 +301,10 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestEmailPoll?() ?? "{\"error\":\"flux poller unavailable\"}"
                 if self.onTestEmailPoll == nil { statusCode = 503 }
+            case .testAndroidDeploy:
+                contentType = "application/json"
+                body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
+                if self.onTestAndroidDeploy == nil { statusCode = 503 }
             case .promptCapture:
                 contentType = "application/json"
                 body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
@@ -409,6 +419,8 @@ class TabletHttpServer {
             return .testBell(queryItems.first(where: { $0.name == "name" })?.value)
         case "/test/email":
             return .testEmailPoll
+        case "/test/android-deploy":
+            return .testAndroidDeploy
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":
