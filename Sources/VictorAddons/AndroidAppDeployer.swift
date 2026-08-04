@@ -46,6 +46,13 @@ final class AndroidAppDeployer {
     /// build fails the same way every time, and re-plugging the cable shouldn't
     /// mean re-running a 10-minute gradle build to be told so again.
     private static let failureCooldown: TimeInterval = 10 * 60
+    /// How long a freshly plugged cable is given to settle before we deploy over it.
+    private static let arrivalSettleDelay: TimeInterval = 8
+    /// `adb install` attempts. A USB link that has just come up can drop one
+    /// mid-transfer, and re-plugging the cable to recover from that is exactly
+    /// the manual step this feature exists to remove.
+    private static let installAttempts = 3
+    private static let installRetryDelay: TimeInterval = 4
 
     /// Posts the standard macOS notification (title, body). Wired to
     /// `AppDelegate.postAndroidDeployNotification`; nil in tests.
@@ -63,8 +70,16 @@ final class AndroidAppDeployer {
 
     /// The USB plug-in edge (`UsbTunnelKeeper.onTunnelArmed`): adb has just
     /// answered, so the tablet is not only attached but talking.
+    ///
+    /// It answers *early*, though — the first deploy this ever ran started 3s
+    /// after the edge and its `adb install` died mid-transfer while the tunnel
+    /// re-armed underneath it (a freshly plugged cable renegotiates for a few
+    /// seconds). So the deploy waits for the connection to settle first; a
+    /// tablet that has been sitting plugged in loses nothing by the delay.
     func tabletConnected() {
-        queue.async { [weak self] in self?.deploy(force: false) }
+        queue.asyncAfter(deadline: .now() + Self.arrivalSettleDelay) { [weak self] in
+            self?.deploy(force: false)
+        }
     }
 
     /// `GET /test/android-deploy` — deploy now regardless of the stamp and the
@@ -154,9 +169,21 @@ final class AndroidAppDeployer {
         }
 
         // 2. Install over the existing app (keeps its data and granted permissions).
-        let install = Self.run(adb, ["install", "-r", apk], timeout: Self.adbTimeout)
-        let installOut = install.output
-        guard install.status == 0, !installOut.contains("Failure"), !installOut.contains("Error") else {
+        var installOut = ""
+        var installed = false
+        for attempt in 1...Self.installAttempts {
+            let install = Self.run(adb, ["install", "-r", apk], timeout: Self.adbTimeout)
+            installOut = install.output
+            if install.status == 0, !installOut.contains("Failure"), !installOut.contains("Error") {
+                installed = true
+                break
+            }
+            NSLog("[AndroidDeploy] install attempt \(attempt)/\(Self.installAttempts) failed: \(Self.lastLines(installOut))")
+            guard attempt < Self.installAttempts else { break }
+            Thread.sleep(forTimeInterval: Self.installRetryDelay)
+            guard Self.deviceReady() else { break }   // cable pulled — stop trying
+        }
+        guard installed else {
             return fail(step: "adb install", detail: Self.lastLines(installOut), source: source)
         }
 
@@ -375,12 +402,18 @@ final class AndroidAppDeployer {
 
         // Read the pipe on another thread: a gradle build easily outgrows the
         // 64 KB pipe buffer, and a full buffer would deadlock `waitUntilExit`.
+        // The reader is *joined* before we return — sleeping "long enough"
+        // instead truncated the tail, which is exactly where the reason a
+        // command failed is written (an `adb install` failure once reported only
+        // "failed to install …:", with the cause cut off).
         var data = Data()
         let lock = NSLock()
+        let drained = DispatchSemaphore(value: 0)
         let reader = DispatchQueue(label: "android-deploy-reader", qos: .utility)
         reader.async {
             let chunk = pipe.fileHandleForReading.readDataToEndOfFile()
             lock.lock(); data.append(chunk); lock.unlock()
+            drained.signal()
         }
 
         let deadline = Date().addingTimeInterval(timeout)
@@ -392,12 +425,12 @@ final class AndroidAppDeployer {
             Thread.sleep(forTimeInterval: 1.0)
             if p.isRunning { kill(p.processIdentifier, SIGKILL) }
             p.waitUntilExit()
+            _ = drained.wait(timeout: .now() + 2)
             lock.lock(); let partial = String(data: data, encoding: .utf8) ?? ""; lock.unlock()
             return (-2, partial + "\ntimed out after \(Int(timeout))s")
         }
         p.waitUntilExit()
-        // Give the reader a moment to drain what's left in the pipe.
-        Thread.sleep(forTimeInterval: 0.1)
+        _ = drained.wait(timeout: .now() + 5)
         lock.lock(); let out = String(data: data, encoding: .utf8) ?? ""; lock.unlock()
         return (p.terminationStatus, out)
     }
