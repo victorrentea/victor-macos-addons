@@ -46,7 +46,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var tabletSoundWatchdog: Timer?
     private var pptMonitor: PowerPointMonitor?
     private var driveShareCache: GoogleDriveShareCache?
-    private var ijMonitor: IntelliJMonitor?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
     private var transcriptionWatcher: TranscriptionWatcher?
@@ -1102,16 +1101,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         pptMonitor.start()
         self.pptMonitor = pptMonitor
 
-        // IntelliJ open-file reporting is now driven by the live-coding IntelliJ plugin, which
-        // POSTs accurate data to /intellij/file-opened (wired below). The AppleScript window-title
-        // scraper is kept for reference but no longer started — the plugin is the single source.
-        let ijMonitor = IntelliJMonitor(outputDir: transcriptionFolder)
-        ijMonitor.onGitFileOpened = { [weak self] url, branch, file, fileURL in
-            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: fileURL)
-        }
-        // ijMonitor.start()  // disabled: superseded by the IntelliJ plugin push
-        self.ijMonitor = ijMonitor
-
         // IntelliJ plugin → POST /intellij/file-opened → forward to the daemon via the WS bridge.
         tabletServer?.onIntellijFileOpened = { [weak self] body in
             guard let data = body.data(using: .utf8),
@@ -1120,10 +1109,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                   let file = json["file"] as? String, !file.isEmpty else {
                 return "{\"ok\":false,\"reason\":\"bad-request\"}"
             }
-            let url = IntelliJMonitor.httpsRemote(rawUrl)
+            let url = GitRemote.https(rawUrl)
             let branch = (json["branch"] as? String) ?? ""
-            // Daemon ignores branch/fileURL and builds the default-branch blob URL itself.
-            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file, fileURL: nil)
+            self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file)
             // Bottom-left flash only while a session is live — outside a session a file
             // opening in IntelliJ is just noise (the daemon discards the push too).
             if self?.isSessionActive == true {
