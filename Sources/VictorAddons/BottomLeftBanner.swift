@@ -439,6 +439,21 @@ final class BottomLeftBanner {
         panels.removeAll()
         let rise: CGFloat = 140
         let duration: TimeInterval = 1.0
+        // Take the frame back from any in-flight nudge animation BEFORE reading the
+        // bases. `applyDwellProgress` slides the pill with a 0.1s `animator().setFrame`
+        // on every dwell tick, so a rise that starts right after the cursor touched
+        // the pill (hover fired, or the cursor left and the slide is returning to
+        // rest) begins with one of those still running. The window animator keeps
+        // writing the frame from its own driver for the rest of its 0.1s — yanking
+        // the rising pill back down for ~6 frames, on top of a `bases` read mid-slide.
+        // That is the same two-drivers-one-window desync this method's own timer was
+        // written to avoid; it just came in from the hover side. A zero-duration
+        // animator write to the current frame replaces (and so ends) the running one,
+        // leaving the timer as the only thing moving the window.
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            for entry in toRemove { entry.panel.animator().setFrame(entry.panel.frame, display: false) }
+        }
         let bases = toRemove.map { $0.panel.frame.origin }
         let start = Date()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { tm in
