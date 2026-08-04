@@ -857,12 +857,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
             }
         }
-        menuBarManager.onCopyGit = { [weak self] in
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let url = GitCopier.copyIntelliJGit() else { return }
-                DispatchQueue.main.async { self?.showBanner(forGitUrl: url) }
-            }
-        }
         menuBarManager.onOpenCalendar = { [weak self] in
             DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/") }
         }
@@ -1683,13 +1677,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.setTargetScreen(AppDelegate.findRetinaScreen())
             banner.show(url: url)
         }
-    }
-
-    private func showBanner(forGitUrl url: String) {
-        guard let banner = joinLinkBanner else { return }
-        if banner.bannerIsVisible { banner.hide() }
-        banner.setTargetScreen(AppDelegate.findRetinaScreen())
-        banner.show(url: stripProtocolPrefix(from: url))
     }
 
     private func displayClipboardLinkBanner() {

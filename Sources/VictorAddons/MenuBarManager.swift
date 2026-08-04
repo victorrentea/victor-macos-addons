@@ -60,7 +60,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
-    var onCopyGit: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
@@ -126,9 +125,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu
         menu.addItem(killItem)
-
-        // Copy Git
-        addItem("IntelliJ: Copy Git", action: #selector(copyGitAction))
 
         // ☕️ Break — countdown "watch" overlay. The durations are FLAT items
         // in the main menu (no submenu), each starting/resetting the overlay
@@ -472,10 +468,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Actions
-
-    @objc private func copyGitAction() {
-        onCopyGit?()
-    }
 
     @objc private func openCatalogAction() {
         onOpenCatalog?()
