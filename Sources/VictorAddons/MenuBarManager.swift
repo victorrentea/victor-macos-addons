@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 4, 20:18"
+    static let BUILD_TIME = "Aug 4, 21:07"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -276,13 +276,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.isEnabled = true
         extraSubmenu.addItem(darkModeItem)
 
-        // Catalog (⌘⌃C)
-        let catalogItem = NSMenuItem(title: "Catalog", action: #selector(openCatalogAction), keyEquivalent: "c")
-        catalogItem.keyEquivalentModifierMask = [.command, .control]
-        catalogItem.target = self
-        catalogItem.isEnabled = true
-        extraSubmenu.addItem(catalogItem)
-
         // Google Calendar (⌘⌥C)
         let calendarItem = NSMenuItem(title: "📅 Google Calendar", action: #selector(openCalendarAction), keyEquivalent: "c")
         calendarItem.keyEquivalentModifierMask = [.command, .option]
@@ -331,6 +324,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // than buried in the submenu: it's wanted in a hurry, mid-talk.
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
+
+        // 📕 Catalog — opens Catalog.docx in Word. No key equivalent: ⌘⌃C now
+        // starts Claude in a new Terminal (the hurry-case), so the catalog moved
+        // out of the shortcut and up here where it can be found by eye.
+        let catalogItem = addItem("📕 Catalog", action: #selector(openCatalogAction))
+        catalogItem.isEnabled = true
 
         // 🔥 Whip — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
         menu.addItem(.separator())

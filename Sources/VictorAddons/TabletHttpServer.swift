@@ -65,6 +65,10 @@ class TabletHttpServer {
         /// Show a 🔔 bell card now with an optional "?name=" caller (defaulting to
         /// a sample name), bypassing the daemon-connected gate (test hook).
         case testBell(String?)
+        /// Show a bottom-left banner and dismiss it with the rising fade after a
+        /// short beat — the "accepted / committed" exit — so the animation can be
+        /// screen-recorded without a live session (test hook).
+        case testBannerRise(String)
         /// Force one Flux-inbox poll now, bypassing the battery gate, and return
         /// a JSON snapshot of the poller's state (test hook).
         case testEmailPoll
@@ -134,6 +138,7 @@ class TabletHttpServer {
     var onTestBreakSummary: (() -> Void)?
     /// Show a 🔔 bell card now; the argument is the optional "?name=" caller.
     var onTestBell: ((String?) -> Void)?
+    var onTestBannerRise: ((String) -> Void)?
     /// Force one Flux-inbox poll now; returns the poller's JSON snapshot.
     var onTestEmailPoll: (() -> String)?
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
@@ -297,6 +302,8 @@ class TabletHttpServer {
                 self.onTestBreakSummary?()
             case .testBell(let name):
                 self.onTestBell?(name)
+            case .testBannerRise(let mode):
+                self.onTestBannerRise?(mode)
             case .testEmailPoll:
                 contentType = "application/json"
                 body = self.onTestEmailPoll?() ?? "{\"error\":\"flux poller unavailable\"}"
@@ -417,6 +424,8 @@ class TabletHttpServer {
             return .testBreakSummary
         case "/test/bell":
             return .testBell(queryItems.first(where: { $0.name == "name" })?.value)
+        case "/test/banner/rise":
+            return .testBannerRise(queryItems.first(where: { $0.name == "hover" })?.value ?? "")
         case "/test/email":
             return .testEmailPoll
         case "/test/android-deploy":

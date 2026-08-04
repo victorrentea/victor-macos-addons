@@ -22,7 +22,6 @@ class EventTapManager {
     var onScreenshot: ((_ toClipboard: Bool) -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onRepaste: (() -> Void)?
-    var onOpenCatalog: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
@@ -266,9 +265,13 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Ctrl+C → open catalog (suppress)
+        // Cmd+Ctrl+C → open Claude Code in a new Terminal on the Retina — the same
+        // action as F8 (suppress). This used to open Catalog.docx, which now lives
+        // in the menu ("Catalog", under 🖥️ Arrange Monitors): a catalog is looked
+        // up occasionally and can afford a menu click, while starting Claude is the
+        // thing wanted in a hurry, mid-talk.
         if keyCode == VK_C && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onOpenCatalog?() }
+            DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
             return nil
         }
 

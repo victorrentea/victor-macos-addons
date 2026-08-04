@@ -651,6 +651,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async { self?.bellCard?.show(caller: caller) }
         }
 
+        // /test/banner/rise — show a bottom-left pill and float it up 1.5 s later,
+        // so the "accepted / committed" exit can be screen-recorded head-on. With
+        // `?hover=1` it instead reproduces the REAL prompt-capture pill (hoverable,
+        // .up nudge, live countdown), whose exit is driven by the hover dwell —
+        // that's the path where the flicker shows up.
+        tabletServer?.onTestBannerRise = { [weak self] mode in
+            DispatchQueue.main.async {
+                guard let banner = self?.promptCaptureBanner else { return }
+                if mode == "up" || mode == "down" || mode == "1" {
+                    banner.onHover = { [weak banner] in banner?.dismissRisingFade() }
+                    banner.onHoverCountdownExpired = { [weak banner] in banner?.dismissRisingFade() }
+                    banner.show(text: "Rising-fade hover test — nudge me, then let go",
+                                hoverCountdown: 7.5, hoverNudge: mode == "down" ? .down : .up)
+                } else {
+                    banner.onHover = nil
+                    banner.onHoverCountdownExpired = nil
+                    banner.show(text: "Rising-fade test — watch the top of the screen")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        banner.dismissRisingFade()
+                    }
+                }
+            }
+        }
+
         tabletServer?.onTestWisprOutputDrift = { [weak self] in
             DispatchQueue.main.async {
                 let name = self?.coreAudioManager?.currentDefaultOutputName() ?? "?"
@@ -1029,7 +1053,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
-        eventTap.onOpenCatalog = { [weak menuBarManager] in menuBarManager?.onOpenCatalog?() }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         eventTap.onWhipCrack = { [weak self] in self?.whipController?.forceCrack() }
