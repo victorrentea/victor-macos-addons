@@ -584,6 +584,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         pm.onSwitchToAC = { [weak self, weak controller] in
             controller?.powerDidChange()
             self?.statusBanner?.showOnPresence(text: "resumed on AC", sound: StatusBannerSound.start)
+            // Plugging in is "back at the desk": look at the task inbox now
+            // rather than at the end of the 10-minute tick. Coalesced with the
+            // wake trigger below — the two orders (plug then open the lid, open
+            // then plug) are one arrival.
+            self?.fluxInboxPoller?.pollOnArrival(reason: "AC connected")
         }
         pm.start()
         self.powerMonitor = pm
@@ -1175,6 +1180,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     }
 
     @objc private func handleDidWake() {
+        // Waking on AC is the other half of "back at the desk" (the lid opened
+        // after the charger went in, or with it already in — a plug during sleep
+        // raises no notification we're awake to hear). Checked before the whisper
+        // guard below, which returns early on a Mac that wasn't transcribing.
+        fluxInboxPoller?.pollOnArrival(reason: "wake on AC")
+
         guard wasTranscribingBeforeSleep else { return }
         wasTranscribingBeforeSleep = false
         guard PowerMonitor.isOnAC() else { return }

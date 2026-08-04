@@ -241,16 +241,23 @@ echo "  Prompt  : $(wc -c < "$PROMPT_FILE" | tr -d ' ') bytes"
 echo
 
 # --- run claude -------------------------------------------------------------
-# The heartbeat carries the running spend: "still working" alone says the process
-# is alive, not what it is costing.
+# The heartbeat line reads left to right the way it is scanned: WHEN, HOW LONG,
+# HOW MUCH. The clock leads so the lines form a column down the window; the
+# elapsed time is given in both units on purpose (seconds are the precise answer,
+# minutes are the one you actually judge a run by once it is past a minute or
+# two); the running spend comes last — "still working" alone says the process is
+# alive, not what it is costing.
+RUN_START="$(date +%s)"
 ( while true; do
     sleep 15
+    ELAPSED=$(( $(date +%s) - RUN_START ))
+    MINS="$(awk -v s="$ELAPSED" 'BEGIN { printf "%.1f", s / 60 }')"
     COST=""
     find_transcript && COST="$(session_cost_usd)"
     if [ -n "$COST" ]; then
-      printf '  … still working (%s) — $%.2f\n' "$(date +%H:%M:%S)" "$COST"
+      printf '[%s] %ss (%sm) — $%.2f\n' "$(date +%H:%M:%S)" "$ELAPSED" "$MINS" "$COST"
     else
-      printf '  … still working (%s)\n' "$(date +%H:%M:%S)"
+      printf '[%s] %ss (%sm)\n' "$(date +%H:%M:%S)" "$ELAPSED" "$MINS"
     fi
   done ) &
 HEARTBEAT=$!

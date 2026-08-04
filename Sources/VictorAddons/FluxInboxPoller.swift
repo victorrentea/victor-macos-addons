@@ -110,6 +110,27 @@ enum FluxMailPolicy {
         force || onAC
     }
 
+    /// Two events mean "Victor just got back to a desk": the Mac was plugged in,
+    /// and the Mac woke up while already on AC. Either one should look at the
+    /// inbox **on the spot** — that moment is exactly when mail is most likely to
+    /// be waiting, and waiting out the rest of a 10-minute tick is the difference
+    /// between an agent that answers now and one that answers in nine minutes.
+    ///
+    /// They are two events for **one** arrival, in either order (plug in, then
+    /// open the lid; or open the lid, then plug in), so the pair must collapse
+    /// into a single poll — hence the coalescing window, which also swallows the
+    /// power-source notification bursts macOS emits around wake.
+    ///
+    /// Still AC-gated: waking on battery is a bag being opened, not a desk.
+    static func shouldPollOnArrival(onAC: Bool,
+                                    lastArrivalPoll: Date?,
+                                    now: Date,
+                                    window: TimeInterval) -> Bool {
+        guard onAC else { return false }
+        guard let last = lastArrivalPoll else { return true }
+        return now.timeIntervalSince(last) >= window
+    }
+
     /// The messages a poll should report: trusted senders only, still unclaimed
     /// (`unread`), newer than the watermark, and not already reported.
     ///
@@ -205,6 +226,14 @@ final class FluxInboxPoller {
     /// `PowerMonitor` needs a moment to have a truthful answer about AC.
     static let startupDelay: TimeInterval = 10
 
+    /// Wake and AC-connect fire immediately, but the network does not: on wake
+    /// the Wi-Fi is still reassociating, so a fetch posted at once just logs a
+    /// connection error. Long enough to be online, short enough to still feel
+    /// like "on the spot".
+    static let arrivalSettleDelay: TimeInterval = 8
+    /// One arrival = at most one poll, however many events macOS emits for it.
+    static let arrivalCoalesceWindow: TimeInterval = 120
+
     /// How many recent messages each poll inspects. Comfortably more than a
     /// 10-minute window can hold, so nothing is missed between ticks.
     private static let fetchLimit = 25
@@ -225,6 +254,10 @@ final class FluxInboxPoller {
     /// Message ids already reported — belt-and-braces against same-second
     /// timestamps at the watermark boundary. Bounded to avoid unbounded growth.
     private var seen: [String] = []
+
+    /// When the last AC-connect / wake-triggered poll ran. Lives on `queue` like
+    /// every other mutable field here.
+    private var lastArrivalPollAt: Date?
 
     // Diagnostics for the /test/email snapshot and the 📬 menu item.
     //
@@ -289,6 +322,29 @@ final class FluxInboxPoller {
     /// `FluxMailPolicy.shouldPoll`).
     private func tick() {
         poll(force: false, completion: nil)
+    }
+
+    /// "Back at the desk" — the Mac was just plugged in, or woke while on AC.
+    /// Poll now instead of waiting out the 10-minute tick.
+    ///
+    /// Plugging in and opening the lid are one arrival that fires two events in
+    /// whichever order Victor happens to do them, so the pair is coalesced (see
+    /// `FluxMailPolicy.shouldPollOnArrival`). The poll is deferred by
+    /// `arrivalSettleDelay` because on wake the Wi-Fi has not reassociated yet —
+    /// an immediate fetch would just log a network error.
+    func pollOnArrival(reason: String) {
+        queue.asyncAfter(deadline: .now() + Self.arrivalSettleDelay) { [weak self] in
+            guard let self else { return }
+            let now = Date()
+            guard FluxMailPolicy.shouldPollOnArrival(
+                onAC: self.isOnAC(),
+                lastArrivalPoll: self.lastArrivalPollAt,
+                now: now,
+                window: Self.arrivalCoalesceWindow) else { return }
+            self.lastArrivalPollAt = now
+            overlayInfo("📬 inbox check on \(reason)")
+            self.poll(force: false, completion: nil)
+        }
     }
 
     /// Run one poll. `force` bypasses the power gate (used by `/test/email`

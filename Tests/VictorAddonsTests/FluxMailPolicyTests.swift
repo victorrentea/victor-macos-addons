@@ -208,6 +208,39 @@ final class FluxMailPolicyTests: XCTestCase {
         XCTAssertTrue(FluxMailPolicy.shouldPoll(onAC: true, force: true))
     }
 
+    // MARK: Arrival gate (AC connected / woke on AC)
+
+    private let window: TimeInterval = 120
+
+    func testFirstArrivalOnACPolls() {
+        XCTAssertTrue(FluxMailPolicy.shouldPollOnArrival(
+            onAC: true, lastArrivalPoll: nil, now: epoch, window: window))
+    }
+
+    /// Waking on battery is a bag being opened, not a desk being sat at.
+    func testArrivalOnBatteryDoesNotPoll() {
+        XCTAssertFalse(FluxMailPolicy.shouldPollOnArrival(
+            onAC: false, lastArrivalPoll: nil, now: epoch, window: window))
+    }
+
+    /// Plug in, then open the lid: two events, one arrival, one poll.
+    func testSecondArrivalWithinTheWindowIsCoalesced() {
+        XCTAssertFalse(FluxMailPolicy.shouldPollOnArrival(
+            onAC: true,
+            lastArrivalPoll: epoch,
+            now: epoch.addingTimeInterval(5),
+            window: window))
+    }
+
+    /// Leaving and coming back later is a genuinely new arrival.
+    func testArrivalAfterTheWindowPollsAgain() {
+        XCTAssertTrue(FluxMailPolicy.shouldPollOnArrival(
+            onAC: true,
+            lastArrivalPoll: epoch,
+            now: epoch.addingTimeInterval(window),
+            window: window))
+    }
+
     // MARK: Response parsing
 
     func testParsesLiveResponseShape() {

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Jul 31, 13:37"
+    static let BUILD_TIME = "Jul 31, 15:07"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -326,10 +326,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
-        // 🖥️ Fix Monitors — force the projector/standard arrangement now (manual
+        // 🖥️ Arrange Monitors — force the projector/standard arrangement now (manual
         // fallback for a venue projector that came up wrong). Top-level rather
         // than buried in the submenu: it's wanted in a hurry, mid-talk.
-        let fixDisplayItem = addItem("🖥️ Fix Monitors", action: #selector(fixDisplayLayoutAction))
+        let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
         // 🔥 Whip — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
