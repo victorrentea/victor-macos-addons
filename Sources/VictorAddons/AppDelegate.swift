@@ -859,6 +859,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onOpenCalendar = { [weak self] in
             DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/") }
         }
+        menuBarManager.onOpenGmail = { [weak self] in
+            DispatchQueue.main.async { self?.openUrlInChrome("https://mail.google.com/") }
+        }
         menuBarManager.onOpenCatalog = {
             DispatchQueue.global(qos: .userInitiated).async {
                 let path = NSHomeDirectory() + "/My Drive/Clients/Catalog.docx"
@@ -1070,15 +1073,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenCalendar = { [weak menuBarManager] in
             menuBarManager?.onOpenCalendar?()
         }
-        eventTap.onModifierFlagsChanged = { [weak self] option, shift in
+        eventTap.onOpenGmail = { [weak menuBarManager] in
+            menuBarManager?.onOpenGmail?()
+        }
+        eventTap.onOpenCatalog = { [weak menuBarManager] in
+            menuBarManager?.onOpenCatalog?()
+        }
+        eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
             guard KeymapOverlaySettings.isEnabled else {
                 self?.keymapHoldCoordinator?.reset()
                 return
             }
-            self?.keymapHoldCoordinator?.modifierFlagsChanged(option: option, shift: shift)
+            self?.keymapHoldCoordinator?.modifierFlagsChanged(option: option, shift: shift,
+                                                              command: command, control: control)
         }
-        eventTap.onKeyDownWhileOptionHeld = { [weak self] in
-            self?.keymapHoldCoordinator?.keyDownWhileOptionHeld()
+        eventTap.onKeyDownWhileModifierHeld = { [weak self] in
+            self?.keymapHoldCoordinator?.keyDownWhileModifierHeld()
         }
         eventTap.onCtrlVPaste = { ClipboardStackManager.shared.onCtrlVPaste() }
         eventTap.start()

@@ -32,10 +32,12 @@ class EventTapManager {
     /// image stack to the next image after a short delay.
     var onCtrlVPaste: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
+    var onOpenGmail: (() -> Void)?
+    var onOpenCatalog: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
-    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool) -> Void)?
-    var onKeyDownWhileOptionHeld: (() -> Void)?
+    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
+    var onKeyDownWhileModifierHeld: (() -> Void)?
 
     /// Set on the main thread whenever the 🔥 whip overlay shows/hides. While
     /// true, an Enter (Return / keypad-Enter) or an extra mouse button (6/7)
@@ -51,6 +53,9 @@ class EventTapManager {
     private let VK_A: CGKeyCode = 0x00
     private let VK_W: CGKeyCode = 0x0D
     private let VK_T: CGKeyCode = 0x11
+    private let VK_K: CGKeyCode = 0x28
+    private let VK_L: CGKeyCode = 0x25
+    private let VK_M: CGKeyCode = 0x2E
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -158,7 +163,11 @@ class EventTapManager {
             let flags = event.flags
             let hasOpt = flags.contains(.maskAlternate)
             let hasShift = flags.contains(.maskShift)
-            DispatchQueue.main.async { [weak self] in self?.onModifierFlagsChanged?(hasOpt, hasShift) }
+            let hasCmdFlag = flags.contains(.maskCommand)
+            let hasCtrlFlag = flags.contains(.maskControl)
+            DispatchQueue.main.async { [weak self] in
+                self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag)
+            }
             return Unmanaged.passUnretained(event)
         }
 
@@ -226,8 +235,10 @@ class EventTapManager {
         let hasOpt   = flags.contains(.maskAlternate)
         let hasShift = flags.contains(.maskShift)
 
-        if hasOpt {
-            DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileOptionHeld?() }
+        // A key pressed under either cheat-sheet's modifiers means the hold was a
+        // real shortcut, not a "remind me what's here" pause — drop the overlay.
+        if hasOpt || (hasCmd && hasCtrl) {
+            DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileModifierHeld?() }
         }
 
         // While the 🔥 whip overlay is up, Enter cracks it (the button Victor uses
@@ -272,6 +283,26 @@ class EventTapManager {
         // thing wanted in a hurry, mid-talk.
         if keyCode == VK_C && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+K → open the training Catalog.docx in Word (suppress). K, not
+        // the T of "training": ⌘⌃T is the Terminal and is used far more often.
+        if keyCode == VK_K && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onOpenCatalog?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+M → open Gmail in Chrome (suppress)
+        if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onOpenGmail?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+L → open Google Calendar in Chrome (suppress). Same action as
+        // ⌘⌥C below, which keeps working; this one joins the ⌘⌃ cheat-sheet.
+        if keyCode == VK_L && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onOpenCalendar?() }
             return nil
         }
 

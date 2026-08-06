@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 4, 21:22"
+    static let BUILD_TIME = "Aug 6, 09:26"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -69,6 +69,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDisplayClipboardLink: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
+    var onOpenGmail: (() -> Void)?
     var onDesktopEffect: ((String) -> Void)?
     var onTileTerminals: (() -> Void)?
     var onFixDisplayLayout: (() -> Void)?
@@ -272,12 +273,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.isEnabled = true
         extraSubmenu.addItem(darkModeItem)
 
-        // Google Calendar (⌘⌥C)
-        let calendarItem = NSMenuItem(title: "📅 Google Calendar", action: #selector(openCalendarAction), keyEquivalent: "c")
-        calendarItem.keyEquivalentModifierMask = [.command, .option]
+        // Google Calendar (⌘⌃L; ⌘⌥C still works via the event tap — the menu can
+        // only advertise one, and ⌘⌃L is the one on the ⌘⌃ cheat-sheet)
+        let calendarItem = NSMenuItem(title: "📅 Google Calendar", action: #selector(openCalendarAction), keyEquivalent: "l")
+        calendarItem.keyEquivalentModifierMask = [.command, .control]
         calendarItem.target = self
         calendarItem.isEnabled = true
         extraSubmenu.addItem(calendarItem)
+
+        // Gmail (⌘⌃M)
+        let gmailItem = NSMenuItem(title: "📧 Gmail", action: #selector(openGmailAction), keyEquivalent: "m")
+        gmailItem.keyEquivalentModifierMask = [.command, .control]
+        gmailItem.target = self
+        gmailItem.isEnabled = true
+        extraSubmenu.addItem(gmailItem)
 
         // Tile Terminals (⌘⌃A)
         let tileItem = NSMenuItem(title: "Tile Terminals", action: #selector(tileTerminalsAction), keyEquivalent: "a")
@@ -321,10 +330,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
-        // 📕 Catalog — opens Catalog.docx in Word. No key equivalent: ⌘⌃C now
-        // starts Claude in a new Terminal (the hurry-case), so the catalog moved
-        // out of the shortcut and up here where it can be found by eye.
+        // 📕 Catalog — opens Catalog.docx in Word (⌘⌃K). It lost ⌘⌃C to Claude
+        // (the hurry-case) and can't have ⌘⌃T either — that is the Terminal —
+        // so the training catalog answers to K.
         let catalogItem = addItem("📕 Catalog", action: #selector(openCatalogAction))
+        catalogItem.keyEquivalent = "k"
+        catalogItem.keyEquivalentModifierMask = [.command, .control]
         catalogItem.isEnabled = true
 
         // 🔥 Whip — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
@@ -475,6 +486,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func openCalendarAction() {
         onOpenCalendar?()
+    }
+
+    @objc private func openGmailAction() {
+        onOpenGmail?()
     }
 
     @objc private func monitorAction() {

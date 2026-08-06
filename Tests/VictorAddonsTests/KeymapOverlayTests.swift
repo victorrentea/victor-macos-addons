@@ -227,11 +227,99 @@ final class KeymapOverlayTests: XCTestCase {
         )
 
         coordinator.modifierFlagsChanged(option: true, shift: false)
-        coordinator.keyDownWhileOptionHeld()
+        coordinator.keyDownWhileModifierHeld()
         scheduled?()
 
         XCTAssertTrue(didCancel)
         XCTAssertEqual(hideCount, 1)
+    }
+
+    func testSheetResolvesOptionLayersAndTheCommandControlShortcutSheet() {
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: false), .option)
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: true, command: false, control: false), .optionShift)
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: false, shift: false, command: true, control: true), .commandControl)
+        // ⇧ doesn't split the ⌘⌃ sheet — there is only one of it.
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: false, shift: true, command: true, control: true), .commandControl)
+    }
+
+    func testSheetShowsNothingForMixedOrIncompleteModifiers() {
+        // ⌘⌃⌥ is Dark Mode, not a cheat-sheet.
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: true, control: true))
+        // ⌥ with ⌘ (or ⌃) alone is a shortcut prefix, not the character layer.
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: true, control: false))
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: true))
+        // Half of ⌘⌃ isn't ⌘⌃.
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: true, control: false))
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: false, control: true))
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: false, control: false))
+    }
+
+    func testHoldCoordinatorShowsCommandControlSheetAfterSameDelay() {
+        var shown: [KeymapModifier] = []
+        var scheduledDelay: TimeInterval?
+        var hideCount = 0
+        let coordinator = KeymapHoldCoordinator(
+            delayProvider: { 0.3 },
+            schedule: { delay, fire in scheduledDelay = delay; fire() },
+            cancelScheduled: {},
+            show: { shown.append($0) },
+            hide: { hideCount += 1 }
+        )
+
+        coordinator.modifierFlagsChanged(option: false, shift: false, command: true, control: true)
+        XCTAssertEqual(shown, [.commandControl])
+        XCTAssertEqual(scheduledDelay ?? -1, 0.3, accuracy: 0.001)
+
+        // Releasing ⌘ leaves a bare ⌃ — no sheet, so it goes away.
+        coordinator.modifierFlagsChanged(option: false, shift: false, command: false, control: true)
+        XCTAssertEqual(hideCount, 1)
+    }
+
+    func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
+        // a c k l m r t v — the ⌘⌃ branches in EventTapManager / the menu.
+        XCTAssertEqual(Set(CommandControlShortcuts.labels.keys), [0, 8, 40, 37, 46, 15, 17, 9])
+        XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
+        XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
+        XCTAssertEqual(CommandControlShortcuts.labels[40], "catalog")
+        XCTAssertEqual(CommandControlShortcuts.labels[46], "gmail")
+        XCTAssertEqual(CommandControlShortcuts.labels[37], "calendar")
+        for (code, word) in CommandControlShortcuts.labels {
+            XCTAssertFalse(word.contains(" "), "key \(code) label '\(word)' must be a single word")
+        }
+    }
+
+    func testWordFontShrinksAsTheWordGrows() {
+        XCTAssertEqual(KeymapOverlayRenderer.wordFontSize("tile"), 26, accuracy: 0.001)
+        XCTAssertEqual(KeymapOverlayRenderer.wordFontSize("claude"), 22, accuracy: 0.001)
+        XCTAssertEqual(KeymapOverlayRenderer.wordFontSize("terminal"), 18, accuracy: 0.001)
+        XCTAssertEqual(KeymapOverlayRenderer.wordFontSize("calendar"), 18, accuracy: 0.001)
+        XCTAssertGreaterThan(KeymapOverlayRenderer.wordFontSize("tile"),
+                             KeymapOverlayRenderer.wordFontSize("supercalifragilistic"))
+
+        // Every real label must fit inside a key's 86pt of usable width.
+        let usableWidth: CGFloat = 86
+        for (code, word) in CommandControlShortcuts.labels {
+            let font = NSFont.boldSystemFont(ofSize: KeymapOverlayRenderer.wordFontSize(word))
+            let width = (word as NSString).size(withAttributes: [.font: font]).width
+            XCTAssertLessThanOrEqual(width, usableWidth, "'\(word)' (key \(code)) overflows its key: \(width)")
+        }
+    }
+
+    func testWordStyleDimsUnboundKeysAndKeepsBoundOnesBright() throws {
+        // T (row 1, x 450) is bound; Y (row 1, x 550) is not.
+        let image = KeymapOverlayRenderer().render(outputs: [17: "terminal"], style: .word, scale: 1.0)
+        guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {
+            XCTFail("Could not inspect rendered image")
+            return
+        }
+
+        // Sample the top border of each key — bound draws it opaque, unbound faint.
+        // Row 101 is the outer half of the 3px stroke — nothing else paints it,
+        // so its alpha IS the border's alpha.
+        let boundEdge = bitmap.colorAt(x: 500, y: 101)?.alphaComponent ?? 0
+        let unboundEdge = bitmap.colorAt(x: 600, y: 101)?.alphaComponent ?? 0
+        XCTAssertGreaterThan(boundEdge, 0.9)
+        XCTAssertLessThan(unboundEdge, boundEdge)
     }
 
     func testOptionOutputsKeepOnlyValuesDifferentFromStoredMacDefaults() {
@@ -333,14 +421,19 @@ final class KeymapOverlayTests: XCTestCase {
         let optionShift = renderer.render(outputs: try KeymapLayoutParser.outputs(in: text, modifier: .optionShift))
         let elapsed = CFAbsoluteTimeGetCurrent() - started
 
+        let commandControl = renderer.render(outputs: CommandControlShortcuts.labels, style: .word)
+
         let optionURL = outputDir.appendingPathComponent("keymap-overlay-option-swift.png")
         let optionShiftURL = outputDir.appendingPathComponent("keymap-overlay-option-shift-swift.png")
+        let commandControlURL = outputDir.appendingPathComponent("keymap-overlay-command-control-swift.png")
         try writePNG(option, to: optionURL)
         try writePNG(optionShift, to: optionShiftURL)
+        try writePNG(commandControl, to: commandControlURL)
         print(String(format: "Generated two keymap overlay images in %.3fs", elapsed))
         print("Rendered keymap overlay previews:")
         print(optionURL.path)
         print(optionShiftURL.path)
+        print(commandControlURL.path)
     }
 
     private func writePNG(_ image: NSImage, to url: URL) throws {

@@ -6,6 +6,26 @@ import Foundation
 enum KeymapModifier: String, Equatable {
     case option
     case optionShift
+    /// The ⌘⌃ cheat-sheet. Unlike the two above it is NOT read from the active
+    /// .keylayout — ⌘⌃ combinations are app shortcuts (this app's event tap),
+    /// not characters — so its contents come from `CommandControlShortcuts`.
+    case commandControl
+}
+
+/// What ⌘⌃<key> does, as one word drawn inside that key on the cheat-sheet.
+/// Key codes are the same virtual key codes `KeymapOverlayRenderer` draws with,
+/// and the entries must stay in sync with the ⌘⌃ branches in `EventTapManager`.
+enum CommandControlShortcuts {
+    static let labels: [Int: String] = [
+        0:  "tile",      // A — tile Terminal windows
+        8:  "claude",    // C — Claude Code in a new Terminal
+        40: "catalog",   // K — training Catalog.docx
+        37: "calendar",  // L — Google Calendar
+        46: "gmail",     // M — Gmail
+        15: "restart",   // R — restart this app
+        17: "terminal",  // T — empty Terminal in ~/workspace
+        9:  "paste",     // V — emotional paste
+    ]
 }
 
 enum KeymapOverlaySettings {
@@ -49,6 +69,9 @@ enum KeymapLayoutParser {
                 if block.contains(#"<modifier keys="anyOption"/>"#) { return index }
             case .optionShift:
                 if block.contains(#"<modifier keys="anyShift caps? anyOption command?"/>"#) { return index }
+            case .commandControl:
+                // Not a layout modifier — the ⌘⌃ sheet never goes through the parser.
+                throw ParseError.missingModifier(modifier)
             }
         }
         throw ParseError.missingModifier(modifier)
@@ -296,7 +319,13 @@ enum KeymapOverlayOutputFilter {
     ]
 
     static func customOutputs(from outputs: [Int: String], modifier: KeymapModifier) -> [Int: String] {
-        let defaults = modifier == .option ? optionDefaults : optionShiftDefaults
+        let defaults: [Int: String]
+        switch modifier {
+        case .option: defaults = optionDefaults
+        case .optionShift: defaults = optionShiftDefaults
+        // Nothing baseline to strip: every ⌘⌃ entry is an explicit binding.
+        case .commandControl: defaults = [:]
+        }
         return outputs.filter { code, output in
             output != defaults[code]
         }
@@ -354,6 +383,16 @@ final class KeymapHoldCoordinator {
         monitorCount > 1 ? multiMonitorDelay : singleMonitorDelay
     }
 
+    /// Which cheat-sheet a held modifier combination asks for, or nil for
+    /// "none of them". Deliberately exact: ⌥ alone (± ⇧) is the character
+    /// layout, ⌘⌃ alone is the shortcut sheet. Anything mixed — ⌘⌃⌥ (Dark
+    /// Mode), ⌃⌥ (notes) — shows nothing rather than guessing.
+    static func sheet(option: Bool, shift: Bool, command: Bool, control: Bool) -> KeymapModifier? {
+        if command && control && !option { return .commandControl }
+        if option && !command && !control { return shift ? .optionShift : .option }
+        return nil
+    }
+
     private let delayProvider: () -> TimeInterval
     private let schedule: (TimeInterval, @escaping () -> Void) -> Void
     private let cancelScheduled: () -> Void
@@ -376,13 +415,12 @@ final class KeymapHoldCoordinator {
         self.hide = hide
     }
 
-    func modifierFlagsChanged(option: Bool, shift: Bool) {
-        guard option else {
+    func modifierFlagsChanged(option: Bool, shift: Bool, command: Bool = false, control: Bool = false) {
+        guard let modifier = Self.sheet(option: option, shift: shift, command: command, control: control) else {
             reset()
             return
         }
 
-        let modifier: KeymapModifier = shift ? .optionShift : .option
         if visibleModifier != nil {
             if visibleModifier != modifier {
                 visibleModifier = modifier
@@ -401,7 +439,9 @@ final class KeymapHoldCoordinator {
         }
     }
 
-    func keyDownWhileOptionHeld() {
+    /// A key was pressed while a sheet's modifiers were held — the hold was a
+    /// real shortcut, not a "what's on this layer?" pause, so drop the overlay.
+    func keyDownWhileModifierHeld() {
         let hadOverlayState = pendingModifier != nil || visibleModifier != nil
         cancelScheduled()
         pendingModifier = nil
@@ -420,6 +460,17 @@ final class KeymapHoldCoordinator {
 }
 
 final class KeymapOverlayRenderer {
+    /// How a key's payload is drawn.
+    /// - `glyph`: one emoji/character, right-aligned next to the base letter
+    ///   (the ⌥ layout cheat-sheet).
+    /// - `word`: a whole word wrapped across the bottom of the key, and keys
+    ///   with nothing bound dimmed right down so the bound ones stand out
+    ///   (the ⌘⌃ shortcut cheat-sheet).
+    enum Style {
+        case glyph
+        case word
+    }
+
     struct KeyDef {
         let row: Int
         let x: CGFloat
@@ -481,7 +532,7 @@ final class KeymapOverlayRenderer {
         [";", "'", "\\", "[", "]"].contains(label) ? "" : label.uppercased()
     }
 
-    func render(outputs: [Int: String], scale: CGFloat = 2.0) -> NSImage {
+    func render(outputs: [Int: String], style: Style = .glyph, scale: CGFloat = 2.0) -> NSImage {
         let pixelSize = NSSize(width: Self.logicalSize.width * scale, height: Self.logicalSize.height * scale)
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -506,9 +557,10 @@ final class KeymapOverlayRenderer {
             NSRect(x: x * scale, y: (Self.logicalSize.height - y - h) * scale, width: w * scale, height: h * scale)
         }
 
-        func drawText(_ text: String, in frame: NSRect, fontSize: CGFloat, color: NSColor, alignment: NSTextAlignment) {
+        func drawText(_ text: String, in frame: NSRect, fontSize: CGFloat, color: NSColor, alignment: NSTextAlignment, wraps: Bool = false) {
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = alignment
+            paragraph.lineBreakMode = wraps ? .byWordWrapping : .byClipping
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: fontSize * scale),
                 .foregroundColor: color,
@@ -521,24 +573,45 @@ final class KeymapOverlayRenderer {
 
         for key in Self.keys {
             let y = CGFloat(key.row) * 100
+            let output = compactOutput(outputs[key.code] ?? "")
+            // In word style an unbound key is not worth reading: dim its outline
+            // and its letter so the eye lands only on the keys that do something.
+            let bound = style == .glyph || !output.isEmpty
+
             let keyRect = rect(key.x, y, key.width, 96).insetBy(dx: 2 * scale, dy: 2 * scale)
             let path = NSBezierPath(roundedRect: keyRect, xRadius: 7 * scale, yRadius: 7 * scale)
             NSColor(calibratedRed: 5 / 255, green: 6 / 255, blue: 9 / 255, alpha: 1).setFill()
             path.fill()
             path.lineWidth = 3 * scale
-            NSColor(calibratedRed: 215 / 255, green: 222 / 255, blue: 254 / 255, alpha: 1).setStroke()
+            NSColor(calibratedRed: 215 / 255, green: 222 / 255, blue: 254 / 255, alpha: bound ? 1 : 0.22).setStroke()
             path.stroke()
 
             let baseLabel = Self.visibleBaseLabel(key.label)
             if !baseLabel.isEmpty {
-                let baseFrame = rect(key.x + 10, y - 1, key.width * 0.5, 58)
-                drawText(baseLabel, in: baseFrame, fontSize: 58, color: NSColor(calibratedRed: 64 / 255, green: 68 / 255, blue: 77 / 255, alpha: 1), alignment: .left)
+                switch style {
+                case .glyph:
+                    let baseFrame = rect(key.x + 10, y - 1, key.width * 0.5, 58)
+                    drawText(baseLabel, in: baseFrame, fontSize: 58, color: NSColor(calibratedRed: 64 / 255, green: 68 / 255, blue: 77 / 255, alpha: 1), alignment: .left)
+                case .word:
+                    // The word needs the bottom half of the key, so the letter
+                    // shrinks and moves to the top-left corner.
+                    let baseFrame = rect(key.x + 10, y + 2, key.width - 20, 44)
+                    let ink = bound
+                        ? NSColor(calibratedRed: 150 / 255, green: 156 / 255, blue: 172 / 255, alpha: 1)
+                        : NSColor(calibratedRed: 64 / 255, green: 68 / 255, blue: 77 / 255, alpha: 0.55)
+                    drawText(baseLabel, in: baseFrame, fontSize: 42, color: ink, alignment: .left)
+                }
             }
 
-            let output = compactOutput(outputs[key.code] ?? "")
             guard !output.isEmpty else { continue }
-            let outputFrame = rect(key.x + key.width - key.width * 0.5 - 10, y + 36, key.width * 0.5, 56)
-            drawText(output, in: outputFrame, fontSize: compactFontSize(output), color: .white, alignment: .right)
+            switch style {
+            case .glyph:
+                let outputFrame = rect(key.x + key.width - key.width * 0.5 - 10, y + 36, key.width * 0.5, 56)
+                drawText(output, in: outputFrame, fontSize: compactFontSize(output), color: .white, alignment: .right)
+            case .word:
+                let wordFrame = rect(key.x + 5, y + 46, key.width - 10, 46)
+                drawText(output, in: wordFrame, fontSize: Self.wordFontSize(output), color: .white, alignment: .center, wraps: true)
+            }
         }
 
         NSGraphicsContext.restoreGraphicsState()
@@ -554,6 +627,20 @@ final class KeymapOverlayRenderer {
 
     private func compactFontSize(_ output: String) -> CGFloat {
         output.count >= 3 ? 34 : 46
+    }
+
+    /// A key is 96 wide with 10 of padding, so a word has ~86 to live in and the
+    /// font has to shrink as it grows — word-wrapping cannot break a single word,
+    /// so anything too wide spills over the key's border instead of wrapping.
+    /// 8 characters ("terminal", "calendar") is the longest word here; 18pt bold
+    /// measures ~79 for those, which clears the border.
+    static func wordFontSize(_ word: String) -> CGFloat {
+        switch word.count {
+        case ...4: return 26
+        case ...6: return 22
+        case ...8: return 18
+        default: return 15
+        }
     }
 }
 
@@ -604,6 +691,10 @@ final class KeymapOverlayController {
     init(retinaScreenProvider: @escaping () -> NSScreen, screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens }) {
         self.retinaScreenProvider = retinaScreenProvider
         self.screensProvider = screensProvider
+        // The ⌘⌃ sheet is a static map of this app's own shortcuts, so it is
+        // built once here and is unaffected by whether the .keylayout can be
+        // found — that failure must not take the shortcut cheat-sheet with it.
+        images[.commandControl] = renderer.render(outputs: CommandControlShortcuts.labels, style: .word)
         if !regenerateImages() { scheduleRetry() }
         // Switching input source (or saving a new layout in Ukelele, which
         // re-selects it) must re-render — the cheat-sheet has to match the
@@ -638,7 +729,9 @@ final class KeymapOverlayController {
         let delay = Self.retryDelays[retryIndex]
         retryIndex += 1
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.images.isEmpty else { return }
+            // `images` is never empty (the ⌘⌃ sheet is always there), so the
+            // "did the layout ever render?" question is asked of ⌥ specifically.
+            guard let self, self.images[.option] == nil else { return }
             if !self.regenerateImages() { self.scheduleRetry() }
         }
     }
