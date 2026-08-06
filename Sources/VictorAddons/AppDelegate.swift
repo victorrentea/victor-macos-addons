@@ -52,6 +52,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptionFolder: URL = URL(fileURLWithPath: "/Users/victorrentea/workspace/victor-macos-addons/addons-output")
     private var joinLinkBanner: JoinLinkBanner?
     private var promptCaptureBanner: BottomLeftBanner?
+    /// Fires the 16:45 / 17:15 "Start summarization?" offer (see SummaryReminder).
+    private var summaryReminder: SummaryReminder?
     private var powerMonitor: PowerMonitor?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
@@ -694,6 +696,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // a real >= 5 min break fires, but bypassing the minutes + cooldown gates.
             BreakSummaryLauncher.launchNow(reason: "/test/break-summary")
         }
+        tabletServer?.onTestSummaryReminder = { [weak self] in
+            // Headless trigger of the wrap-up offer, bypassing the 16:45 / 17:15
+            // schedule. Hovering the pill still opens the real claude session.
+            DispatchQueue.main.async { self?.summaryReminder?.offer(reason: "/test/summary-reminder") }
+        }
 
 
         tabletServer?.onTestTranscriptionStart = {
@@ -914,6 +921,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         bellCard = BellCard(screensProvider: { NSScreen.screens })
         promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.screens }, hoverable: true)
         SessionNotesAppender.promptBanner = promptCaptureBanner
+        summaryReminder = SummaryReminder(screensProvider: { NSScreen.screens })
+        summaryReminder?.start()
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
         }

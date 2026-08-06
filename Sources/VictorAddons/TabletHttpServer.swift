@@ -62,6 +62,10 @@ class TabletHttpServer {
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
         /// cooldown gates — same Terminal flow a real break triggers (test hook).
         case testBreakSummary
+        /// Show the "Start summarization?" wrap-up offer now, bypassing the
+        /// 16:45 / 17:15 schedule (test hook). Hovering it still launches the
+        /// interactive claude for real.
+        case testSummaryReminder
         /// Show a 🔔 bell card now with an optional "?name=" caller (defaulting to
         /// a sample name), bypassing the daemon-connected gate (test hook).
         case testBell(String?)
@@ -136,6 +140,7 @@ class TabletHttpServer {
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
+    var onTestSummaryReminder: (() -> Void)?
     /// Show a 🔔 bell card now; the argument is the optional "?name=" caller.
     var onTestBell: ((String?) -> Void)?
     var onTestBannerRise: ((String) -> Void)?
@@ -300,6 +305,8 @@ class TabletHttpServer {
                 self.onTestPresentationWarn?()
             case .testBreakSummary:
                 self.onTestBreakSummary?()
+            case .testSummaryReminder:
+                self.onTestSummaryReminder?()
             case .testBell(let name):
                 self.onTestBell?(name)
             case .testBannerRise(let mode):
@@ -422,6 +429,8 @@ class TabletHttpServer {
             return .testPresentationWarn
         case "/test/break-summary":
             return .testBreakSummary
+        case "/test/summary-reminder":
+            return .testSummaryReminder
         case "/test/bell":
             return .testBell(queryItems.first(where: { $0.name == "name" })?.value)
         case "/test/banner/rise":
