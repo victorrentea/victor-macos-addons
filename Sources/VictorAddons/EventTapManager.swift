@@ -55,7 +55,7 @@ class EventTapManager {
     private let VK_T: CGKeyCode = 0x11
     private let VK_K: CGKeyCode = 0x28
     private let VK_L: CGKeyCode = 0x25
-    private let VK_M: CGKeyCode = 0x2E
+    private let VK_G: CGKeyCode = 0x05
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -293,8 +293,9 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Ctrl+M → open Gmail in Chrome (suppress)
-        if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
+        // Cmd+Ctrl+G → open Gmail in Chrome (suppress). G for Gmail, which is what
+        // the hand reaches for; it used to be ⌘⌃M.
+        if keyCode == VK_G && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenGmail?() }
             return nil
         }

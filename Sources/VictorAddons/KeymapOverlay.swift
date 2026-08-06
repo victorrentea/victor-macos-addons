@@ -14,17 +14,27 @@ enum KeymapModifier: String, Equatable {
 
 /// What ⌘⌃<key> does, as one word drawn inside that key on the cheat-sheet.
 /// Key codes are the same virtual key codes `KeymapOverlayRenderer` draws with,
-/// and the entries must stay in sync with the ⌘⌃ branches in `EventTapManager`.
+/// and the entries must stay in sync with the ⌘⌃ branches in `EventTapManager`
+/// — with one deliberate exception, marked below: the sheet answers "what does
+/// this combination do on THIS Mac", and a ⌘⌃ shortcut owned by another app is
+/// still an answer to that question. Leaving it blank would say "nothing here",
+/// which is worse than saying who does own it.
 enum CommandControlShortcuts {
     static let labels: [Int: String] = [
         0:  "tile",      // A — tile Terminal windows
         8:  "claude",    // C — Claude Code in a new Terminal
+        5:  "gmail",     // G — Gmail
         40: "catalog",   // K — training Catalog.docx
         37: "calendar",  // L — Google Calendar
-        46: "gmail",     // M — Gmail
         15: "restart",   // R — restart this app
         17: "terminal",  // T — empty Terminal in ~/workspace
-        9:  "paste",     // V — emotional paste
+        9:  "paste🎤",   // V — emotional paste; the 🎤 because what it cleans up
+                         // is nearly always Wispr-dictated text. This app never
+                         // listens to the microphone — Wispr does.
+        13: "wispr",     // W — paste the Wispr transcript. NOT ours: the shortcut
+                         // lives in Wispr Flow and we must NOT claim it. The tap's
+                         // ⌃W → 🔥 Whip branch requires !hasCmd, so ⌘⌃W passes
+                         // straight through to Wispr; this entry is display-only.
     ]
 }
 
