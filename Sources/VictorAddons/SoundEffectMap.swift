@@ -68,6 +68,11 @@ enum SoundEffectMap {
         // plays normally on the routed /sound/play path (it was never special-cased
         // in onSoundPlay), so dropping the press→visual mapping here keeps the
         // sound but fires no overlay.
+        // 61_dinner.mp3 is NOT here either, for the same reason: the clip is now
+        // a kitchen timer whose BING lands 2.695s in, and the ⏲️ microwave's door
+        // must swing open on exactly that edge. Sound and visual therefore start
+        // from one call on the routed /sound/play path (onSoundPlay); mapping the
+        // press too would open a second door with no bell behind it.
         // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
         // effect is driven from the routed /sound/play path (onSoundPlay),
         // which plays the beep-synced audio itself — mapping the press too

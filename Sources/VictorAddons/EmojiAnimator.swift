@@ -4859,6 +4859,121 @@ class EmojiAnimator {
                     sound: playSound ? "73_counter_strike.mp3" : nil)
     }
 
+    // MARK: - Microwave (kitchen timer ticks, then the door swings open on the BING — sound #61)
+
+    /// Where the BING starts inside `61_dinner.mp3` — measured off the file as the
+    /// *beginning of the rising front* toward the peak (RMS crosses 10% of peak at
+    /// 2.695s, peak at 2.700s), which is the instant Victor asked the door to start
+    /// moving on. Everything before it is the timer ticking away at a closed
+    /// microwave; a constant is fine because the clip is fixed, and re-cutting it
+    /// means re-measuring this number.
+    private static let microwaveBingOnset: Double = 2.695
+
+    /// A cartoon microwave sits translucent in the middle of the desktop while a
+    /// kitchen timer ticks, then its door swings open exactly on the BING.
+    ///
+    /// The whole point is that one sync: the 16 source frames are NOT a loop —
+    /// frame 0 is the closed door and frame 15 the fully open one — so the layer
+    /// simply *holds frame 0* for the 2.695s of ticking and only then runs the
+    /// swing (0.64s at the gif's native 25fps), holding the open door through the
+    /// bell's decay before fading out with it.
+    ///
+    /// The art is pre-cropped to its content **symmetrically about the source
+    /// frame's centre**, so the closed microwave still sits dead-centre and the
+    /// door has room to swing out to the left; it is then fitted aspect-preserved
+    /// inside 80% of the screen and drawn at 85% opacity so the desktop reads
+    /// through it.
+    ///
+    /// `playSound` = this call owns the audio (the routed `/sound/play` path).
+    /// Returns the full length incl. any Bluetooth compensation, which
+    /// `onSoundPlay` reports back to the tablet as `durationMs`.
+    @discardableResult
+    func showMicrowave(playSound: Bool = true, volume: Float? = nil) -> TimeInterval {
+        _ = cancelIfRunning("microwave", sound: playSound ? "61_dinner.mp3" : nil)
+
+        guard let url = Bundle.module.url(forResource: "microwave", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("microwave.gif not found in bundle")
+            return 0
+        }
+        let count = CGImageSourceGetCount(source)
+        var images: [CGImage] = []
+        for i in 0..<count {
+            if let cg = CGImageSourceCreateImageAtIndex(source, i, nil) { images.append(cg) }
+        }
+        guard let closed = images.first else { return 0 }
+
+        // Live exactly as long as the timer clip; fall back to its measured length.
+        var duration: Double = 4.38
+        if let soundURL = SoundManager.shared.soundURL(for: "61_dinner.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
+
+        // On Bluetooth output the audio is started `btComp` late (A2DP warm-up),
+        // so shift the ENTIRE visual timeline by the same amount — otherwise the
+        // door would fly open most of a second before the BING reached the
+        // speaker, which is the one thing this effect must never do. Zero on
+        // wired/built-in output. `playTabletSound` applies the same delay to the
+        // audio itself, so we must NOT add it there a second time.
+        let btComp = playSound ? SoundTimingConfig.shared.currentBluetoothCompensation : 0
+        let clock0 = CACurrentMediaTime() + btComp
+
+        let bounds = hostLayer.bounds
+        let aspect = CGFloat(closed.width) / CGFloat(closed.height)
+        var w = bounds.width * 0.8
+        var h = w / aspect
+        if h > bounds.height * 0.8 {
+            h = bounds.height * 0.8
+            w = h * aspect
+        }
+
+        let layer = CALayer()
+        layer.frame = CGRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+        layer.contentsGravity = .resizeAspect
+        layer.contents = closed              // model value: door shut, all through the ticking
+        layer.opacity = Self.microwaveOpacity
+        hostLayer.addSublayer(layer)
+
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = Self.microwaveOpacity
+        fadeIn.beginTime = clock0
+        fadeIn.duration = 0.25
+        fadeIn.fillMode = .backwards         // invisible until the (BT-shifted) start
+        layer.add(fadeIn, forKey: "microwaveFadeIn")
+
+        // THE sync point: the swing begins on the leading edge of the BING and
+        // stays on the last frame afterwards (.forwards, not removed).
+        let swing = CAKeyframeAnimation(keyPath: "contents")
+        swing.values = images
+        swing.duration = Double(images.count) * 0.04   // the gif's own 25fps
+        swing.beginTime = clock0 + Self.microwaveBingOnset
+        swing.calculationMode = .discrete               // step frames, never cross-fade
+        swing.fillMode = .forwards
+        swing.isRemovedOnCompletion = false
+        layer.add(swing, forKey: "microwaveDoor")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = Self.microwaveOpacity
+        fadeOut.toValue = 0.0
+        fadeOut.beginTime = clock0 + max(0, duration - 0.5)
+        fadeOut.duration = 0.5
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        layer.add(fadeOut, forKey: "microwaveFadeOut")
+
+        if playSound { _ = SoundManager.shared.playTabletSound("61_dinner.mp3", volume: volume) }
+        let total = btComp + duration
+        trackEffect("microwave", layer: layer, duration: total,
+                    sound: playSound ? "61_dinner.mp3" : nil)
+        return total
+    }
+
+    /// Translucent enough that the desktop reads through the microwave, opaque
+    /// enough that the flat cartoon art still holds its own colours.
+    private static let microwaveOpacity: Float = 0.85
+
     // MARK: - Rainbow (translucent semicircle smeared in like a wiper, toggled by tablet sound #37)
 
     func showRainbow(playSound: Bool = true) {

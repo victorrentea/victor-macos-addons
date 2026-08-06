@@ -281,6 +281,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "rainbow/stop":    self?.animator.stopRainbow()
             case "cavalry":         self?.animator.showCavalry(playSound: false)
             case "counter-strike":  self?.animator.showCounterStrike(playSound: false)
+            // Like the sonar: the door's cue lives INSIDE the clip, so the effect
+            // owns its own audio rather than trusting a separate routed play to
+            // land on the same millisecond. (`/effect/microwave`, `/test/microwave`
+            // and the menu all reach it here.)
+            case "microwave":       self?.animator.showMicrowave(playSound: true)
             case "wrong-x":         self?.animator.showWrongX(playSound: false)
             case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
             case "drum-roll/stop":  self?.animator.stopDrumRoll()
@@ -407,6 +412,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if name == "31_tarzan.mp3" {
                 let volume = volumePct.map { Float($0) / 100 }
                 guard let duration = SoundManager.shared.playTabletSound("50_gong.mp3", volume: volume) else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
+            }
+            // Tile #61 (🍽️ dinner → ⏲️ kitchen timer): the timer ticks at a closed
+            // microwave and the door swings open ON the BING. The door's cue is a
+            // fixed offset INSIDE the clip (2.695s), so the visual and the audio
+            // must start from the same call — like the radar — or a routed-press
+            // round trip would slide the swing off its bell. Kept OUT of
+            // SoundEffectMap so the press path can't fire it a second time.
+            if name == "61_dinner.mp3" {
+                let volume = volumePct.map { Float($0) / 100 }
+                let duration = self?.animator.showMicrowave(playSound: true, volume: volume) ?? 0
+                guard duration > 0 else { return nil }
                 return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
             // Tile #34 (🔥 Phoenix): the Mac owns the phoenix cry (`phoenix.mp3`,
@@ -850,6 +867,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "rainbow":         self.animator.showRainbow(playSound: false); stopAfter { self.animator.stopRainbow() }
                 case "cavalry":         self.animator.showCavalry(playSound: false)
                 case "counter-strike":  self.animator.showCounterStrike(playSound: false)
+                // The one menu effect that is NOT silent: the whole gag is the
+                // door opening on the BING, so a soundless microwave would just
+                // sit there for 2.7s and then open for no reason.
+                case "microwave":       self.animator.showMicrowave(playSound: true)
                 case "wrong-x":         self.animator.showWrongX(playSound: false)
                 case "drum-roll":       self.animator.showDrumRoll(playSound: false); stopAfter { self.animator.stopDrumRoll() }
                 case "phoenix":         self.animator.showPhoenix()

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 6, 17:50"
+    static let BUILD_TIME = "Aug 6, 19:01"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -215,6 +215,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Rainbow 🌈",       "rainbow"),
             ("Cavalry 🐎",       "cavalry"),
             ("Counter-Strike 🔫", "counter-strike"),
+            ("Microwave ⏲️",      "microwave"),
             ("Wrong X ❌",        "wrong-x"),
             ("Drum Roll 🥁",     "drum-roll"),
             ("Phoenix 🔥",        "phoenix"),
@@ -281,8 +282,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         calendarItem.isEnabled = true
         extraSubmenu.addItem(calendarItem)
 
-        // Gmail (⌘⌃M)
-        let gmailItem = NSMenuItem(title: "📧 Gmail", action: #selector(openGmailAction), keyEquivalent: "m")
+        // Gmail (⌘⌃G)
+        let gmailItem = NSMenuItem(title: "📧 Gmail", action: #selector(openGmailAction), keyEquivalent: "g")
         gmailItem.keyEquivalentModifierMask = [.command, .control]
         gmailItem.target = self
         gmailItem.isEnabled = true
