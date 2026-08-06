@@ -36,6 +36,10 @@ class EventTapManager {
     var onOpenCalendar: (() -> Void)?
     var onOpenGmail: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
+    /// ⌘⌃Z — paste Victor's personal Zoom room link.
+    var onPasteZoomLink: (() -> Void)?
+    /// ⌘⌃E — paste Victor's email address.
+    var onPasteEmail: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
@@ -60,6 +64,8 @@ class EventTapManager {
     private let VK_G: CGKeyCode = 0x05
     private let VK_S: CGKeyCode = 0x01
     private let VK_Q: CGKeyCode = 0x0C
+    private let VK_Z: CGKeyCode = 0x06
+    private let VK_E: CGKeyCode = 0x0E
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -332,6 +338,19 @@ class EventTapManager {
         // Moved off ⌃⌥C so it joins the ⌘⌃ cheat-sheet, where it is discoverable.
         if keyCode == VK_S && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onCopySelectionToNotes?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+Z → paste the Zoom room link (suppress). NB this shadows the
+        // usual ⌃⌘Z in whatever app is focused; nothing standard lives there.
+        if keyCode == VK_Z && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onPasteZoomLink?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+E → paste Victor's email address (suppress)
+        if keyCode == VK_E && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onPasteEmail?() }
             return nil
         }
 

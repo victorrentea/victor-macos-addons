@@ -1120,6 +1120,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenCatalog = { [weak menuBarManager] in
             menuBarManager?.onOpenCatalog?()
         }
+        eventTap.onPasteZoomLink = {
+            DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.zoomLink) }
+        }
+        eventTap.onPasteEmail = {
+            DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.email) }
+        }
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
             guard KeymapOverlaySettings.isEnabled else {
                 self?.keymapHoldCoordinator?.reset()

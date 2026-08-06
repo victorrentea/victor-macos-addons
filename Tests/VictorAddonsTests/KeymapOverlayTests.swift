@@ -276,20 +276,42 @@ final class KeymapOverlayTests: XCTestCase {
     }
 
     func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
-        // a c g k l q r s t — the ⌘⌃ branches in EventTapManager / the menu — plus w,
-        // which is Wispr Flow's own ⌘⌃W and is on the sheet for reference only
-        // (the tap's ⌃W whip branch excludes Cmd, so we never intercept it), and
-        // MINUS v: ⌘⌃V is still bound to the emotional paste but is off the sheet,
-        // so "paste" points at exactly one key.
-        XCTAssertEqual(Set(CommandControlShortcuts.labels.keys), [0, 8, 5, 40, 37, 12, 15, 1, 17, 13])
+        // a c e g k l q r s t z — the ⌘⌃ branches in EventTapManager / the menu —
+        // plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet for reference
+        // only (the tap's ⌃W whip branch excludes Cmd, so we never intercept it),
+        // and MINUS v: ⌘⌃V is still bound to the emotional paste but is off the
+        // sheet, so "paste" points at exactly one key.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 12, 15, 1, 17, 13, 6])
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
-        XCTAssertEqual(CommandControlShortcuts.labels[40], "catalog")
-        XCTAssertEqual(CommandControlShortcuts.labels[5], "gmail")
-        XCTAssertEqual(CommandControlShortcuts.labels[37], "calendar")
+        XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
+        XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
+        // K / L answer with a pictogram and G with the Gmail mark — a picture is
+        // read faster than the word for it.
+        XCTAssertEqual(CommandControlShortcuts.labels[40], "📕")
+        XCTAssertEqual(CommandControlShortcuts.labels[37], "📅")
+        XCTAssertNil(CommandControlShortcuts.labels[5])
+        XCTAssertEqual(CommandControlShortcuts.artworkNames[5], "gmail-logo")
         for (code, word) in CommandControlShortcuts.labels {
             XCTAssertFalse(word.contains(" "), "key \(code) label '\(word)' must be a single word")
         }
+    }
+
+    func testArtworkShipsInTheBundleSoTheSheetNeverDrawsAnEmptyKey() {
+        // No bundle argument: the default resolves to VictorAddons' own bundle,
+        // which is where the artwork ships — not the test target's.
+        let images = CommandControlShortcuts.artworkImages()
+        for (code, name) in CommandControlShortcuts.artworkNames {
+            XCTAssertNotNil(images[code], "artwork '\(name)' (key \(code)) is missing from the bundle")
+        }
+    }
+
+    func testPictogramLabelsAreDrawnBigButWordsCarryingAnEmojiAreNot() {
+        XCTAssertTrue(KeymapOverlayRenderer.isPictogram("📕"))
+        XCTAssertTrue(KeymapOverlayRenderer.isPictogram("📅"))
+        XCTAssertFalse(KeymapOverlayRenderer.isPictogram("wispr🎙️"))
+        XCTAssertFalse(KeymapOverlayRenderer.isPictogram("zoom"))
+        XCTAssertFalse(KeymapOverlayRenderer.isPictogram(""))
     }
 
     func testWordFontShrinksAsTheWordGrows() {
@@ -300,9 +322,11 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertGreaterThan(KeymapOverlayRenderer.wordFontSize("tile"),
                              KeymapOverlayRenderer.wordFontSize("supercalifragilistic"))
 
-        // Every real label must fit inside a key's 86pt of usable width.
+        // Every real WORD label must fit inside a key's 86pt of usable width.
+        // Pictograms are exempt: they are drawn at a fixed large size in the
+        // payload area, not run through wordFontSize.
         let usableWidth: CGFloat = 86
-        for (code, word) in CommandControlShortcuts.labels {
+        for (code, word) in CommandControlShortcuts.labels where !KeymapOverlayRenderer.isPictogram(word) {
             let font = NSFont.boldSystemFont(ofSize: KeymapOverlayRenderer.wordFontSize(word))
             let width = (word as NSString).size(withAttributes: [.font: font]).width
             XCTAssertLessThanOrEqual(width, usableWidth, "'\(word)' (key \(code)) overflows its key: \(width)")
@@ -425,7 +449,11 @@ final class KeymapOverlayTests: XCTestCase {
         let optionShift = renderer.render(outputs: try KeymapLayoutParser.outputs(in: text, modifier: .optionShift))
         let elapsed = CFAbsoluteTimeGetCurrent() - started
 
-        let commandControl = renderer.render(outputs: CommandControlShortcuts.labels, style: .word)
+        let commandControl = renderer.render(
+            outputs: CommandControlShortcuts.labels,
+            style: .word,
+            artwork: CommandControlShortcuts.artworkImages()
+        )
 
         let optionURL = outputDir.appendingPathComponent("keymap-overlay-option-swift.png")
         let optionShiftURL = outputDir.appendingPathComponent("keymap-overlay-option-shift-swift.png")

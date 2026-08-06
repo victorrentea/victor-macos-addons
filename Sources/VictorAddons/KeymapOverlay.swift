@@ -23,13 +23,15 @@ enum CommandControlShortcuts {
     static let labels: [Int: String] = [
         0:  "tile",      // A — tile Terminal windows
         8:  "claude",    // C — Claude Code in a new Terminal
-        5:  "gmail",     // G — Gmail
-        40: "catalog",   // K — training Catalog.docx
-        37: "calendar",  // L — Google Calendar
+        14: "email",     // E — paste Victor's email address
+        // G (key 5) is drawn from `artworkNames` below, not from a word.
+        40: "📕",        // K — training Catalog.docx
+        37: "📅",        // L — Google Calendar
         15: "restart",   // R — restart this app
         1:  "notes",     // S — copy the selection into the session notes
         17: "terminal",  // T — empty Terminal in ~/workspace
         12: "claude",    // Q — Claude Code with permissions bypassed (`cx`)
+        6:  "zoom",      // Z — paste Victor's personal Zoom room link
         13: "wispr🎙️",   // W — paste the Wispr transcript. NOT ours: the shortcut
                          // lives in Wispr Flow and we must NOT claim it. The tap's
                          // ⌃W → 🔥 Whip branch requires !hasCmd, so ⌘⌃W passes
@@ -41,6 +43,30 @@ enum CommandControlShortcuts {
         // both reading "paste" on the sheet would make the reader pick the wrong
         // one at speed. The tap keeps serving ⌘⌃V; only the hint is gone.
     ]
+
+    /// Keys whose payload is a bundled picture rather than a word, by key code.
+    /// A logo is recognised faster than the word for it, and Gmail's is the one
+    /// destination here with a mark everyone already knows by sight.
+    static let artworkNames: [Int: String] = [
+        5: "gmail-logo",  // G — Gmail
+    ]
+
+    /// The sheet's payload for a key, whatever form it takes — used by the
+    /// "every ⌘⌃ branch is on the sheet" checks, which don't care whether the
+    /// answer is drawn as a word, an emoji or a logo.
+    static var boundKeyCodes: Set<Int> {
+        Set(labels.keys).union(artworkNames.keys)
+    }
+
+    static func artworkImages(bundle: Bundle = .module) -> [Int: NSImage] {
+        var images: [Int: NSImage] = [:]
+        for (code, name) in artworkNames {
+            guard let url = bundle.url(forResource: name, withExtension: "png"),
+                  let image = NSImage(contentsOf: url) else { continue }
+            images[code] = image
+        }
+        return images
+    }
 }
 
 enum KeymapOverlaySettings {
@@ -547,7 +573,7 @@ final class KeymapOverlayRenderer {
         [";", "'", "\\", "[", "]"].contains(label) ? "" : label.uppercased()
     }
 
-    func render(outputs: [Int: String], style: Style = .glyph, scale: CGFloat = 2.0) -> NSImage {
+    func render(outputs: [Int: String], style: Style = .glyph, artwork: [Int: NSImage] = [:], scale: CGFloat = 2.0) -> NSImage {
         let pixelSize = NSSize(width: Self.logicalSize.width * scale, height: Self.logicalSize.height * scale)
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -589,9 +615,10 @@ final class KeymapOverlayRenderer {
         for key in Self.keys {
             let y = CGFloat(key.row) * 100
             let output = compactOutput(outputs[key.code] ?? "")
+            let picture = style == .word ? artwork[key.code] : nil
             // In word style an unbound key is not worth reading: dim its outline
             // and its letter so the eye lands only on the keys that do something.
-            let bound = style == .glyph || !output.isEmpty
+            let bound = style == .glyph || !output.isEmpty || picture != nil
 
             let keyRect = rect(key.x, y, key.width, 96).insetBy(dx: 2 * scale, dy: 2 * scale)
             let path = NSBezierPath(roundedRect: keyRect, xRadius: 7 * scale, yRadius: 7 * scale)
@@ -618,14 +645,35 @@ final class KeymapOverlayRenderer {
                 }
             }
 
+            // A logo answers "what is this key" faster than any word, so it gets
+            // the whole payload area — on the white plate the mark is designed
+            // for, since these are brand icons drawn for a light background.
+            if let picture {
+                let plate = rect(key.x + 20, y + 38, key.width - 40, key.width - 40)
+                let plateRect = NSBezierPath(roundedRect: plate, xRadius: 9 * scale, yRadius: 9 * scale)
+                NSColor.white.setFill()
+                plateRect.fill()
+                let inset = plate.insetBy(dx: 6 * scale, dy: 6 * scale)
+                picture.draw(in: aspectFit(picture.size, in: inset))
+                continue
+            }
+
             guard !output.isEmpty else { continue }
             switch style {
             case .glyph:
                 let outputFrame = rect(key.x + key.width - key.width * 0.5 - 10, y + 36, key.width * 0.5, 56)
                 drawText(output, in: outputFrame, fontSize: compactFontSize(output), color: .white, alignment: .right)
             case .word:
-                let wordFrame = rect(key.x + 5, y + 46, key.width - 10, 46)
-                drawText(output, in: wordFrame, fontSize: Self.wordFontSize(output), color: .white, alignment: .center, wraps: true)
+                // An emoji label is a picture, not a word: it says what the key
+                // does at a glance, so it is drawn big and centred in the whole
+                // payload area rather than shrunk to word size at the bottom.
+                if Self.isPictogram(output) {
+                    let glyphFrame = rect(key.x + 5, y + 34, key.width - 10, 58)
+                    drawText(output, in: glyphFrame, fontSize: 46, color: .white, alignment: .center)
+                } else {
+                    let wordFrame = rect(key.x + 5, y + 46, key.width - 10, 46)
+                    drawText(output, in: wordFrame, fontSize: Self.wordFontSize(output), color: .white, alignment: .center, wraps: true)
+                }
             }
         }
 
@@ -634,6 +682,27 @@ final class KeymapOverlayRenderer {
         let image = NSImage(size: pixelSize)
         image.addRepresentation(bitmap)
         return image
+    }
+
+    /// A label that is nothing but emoji (📕, 📅) — never a word that merely
+    /// contains one ("wispr🎙️", which still has to read as a word).
+    static func isPictogram(_ label: String) -> Bool {
+        guard !label.isEmpty, label.count <= 2 else { return false }
+        return label.unicodeScalars.allSatisfy { $0.properties.isEmoji && !$0.isASCII }
+    }
+
+    /// The largest rect of `size`'s aspect ratio that fits inside `bounds`,
+    /// centred — a logo squashed to a square would stop being the logo.
+    private func aspectFit(_ size: NSSize, in bounds: NSRect) -> NSRect {
+        guard size.width > 0, size.height > 0 else { return bounds }
+        let scale = min(bounds.width / size.width, bounds.height / size.height)
+        let fitted = NSSize(width: size.width * scale, height: size.height * scale)
+        return NSRect(
+            x: bounds.midX - fitted.width / 2,
+            y: bounds.midY - fitted.height / 2,
+            width: fitted.width,
+            height: fitted.height
+        )
     }
 
     private func compactOutput(_ output: String) -> String {
@@ -709,7 +778,11 @@ final class KeymapOverlayController {
         // The ⌘⌃ sheet is a static map of this app's own shortcuts, so it is
         // built once here and is unaffected by whether the .keylayout can be
         // found — that failure must not take the shortcut cheat-sheet with it.
-        images[.commandControl] = renderer.render(outputs: CommandControlShortcuts.labels, style: .word)
+        images[.commandControl] = renderer.render(
+            outputs: CommandControlShortcuts.labels,
+            style: .word,
+            artwork: CommandControlShortcuts.artworkImages()
+        )
         if !regenerateImages() { scheduleRetry() }
         // Switching input source (or saving a new layout in Ukelele, which
         // re-selects it) must re-render — the cheat-sheet has to match the
