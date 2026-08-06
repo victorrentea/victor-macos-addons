@@ -45,6 +45,10 @@ class SoundManager {
     /// visual `name` should be delayed by, or 0. Only a fresh (<1.5s) pending
     /// compensation tied to a just-routed sound applies, and never to
     /// stop/utility signals (those must fire immediately).
+    ///
+    /// `green-flash` is excluded here because it is never paired with a routed
+    /// tablet sound — it is paired with the Mac's own click tone, so its
+    /// compensation is taken straight from `SoundTimingConfig` by the caller.
     static func consumePendingVisualCompensation(for name: String) -> TimeInterval {
         guard pendingVisualCompensation > 0,
               let at = pendingVisualCompensationAt,

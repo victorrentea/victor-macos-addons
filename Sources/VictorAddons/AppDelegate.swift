@@ -233,7 +233,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // Bluetooth compensation, delay the paired visual by the same amount
             // so it stays in sync with the silence-prepended audio. 0 for
             // stop/utility signals and on non-Bluetooth output → fires now.
-            let comp = SoundManager.consumePendingVisualCompensation(for: name)
+            // The green-flash is the VISUAL half of an audible "the link works"
+            // tap — the ⟳ button's click, the volume wedge's click — and the Mac
+            // plays those with the Bluetooth wake-up silence prepended. So it
+            // carries the same compensation as the beep it belongs to, instead
+            // of firing now: otherwise the border lit up to 1.2s before the
+            // sound reached the speaker, which reads as two separate events.
+            let comp = name == "green-flash"
+                ? SoundTimingConfig.shared.currentBluetoothCompensation
+                : SoundManager.consumePendingVisualCompensation(for: name)
             let fire = {
             self?.overlayPanel?.refreshScreenFrame()
             switch name {
