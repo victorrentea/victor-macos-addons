@@ -24,6 +24,8 @@ class EventTapManager {
     var onRepaste: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
+    /// ⌘⌃Q — Claude Code with `--dangerously-skip-permissions` (Victor's `cx`).
+    var onClaudeBypassHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
@@ -56,6 +58,8 @@ class EventTapManager {
     private let VK_K: CGKeyCode = 0x28
     private let VK_L: CGKeyCode = 0x25
     private let VK_G: CGKeyCode = 0x05
+    private let VK_S: CGKeyCode = 0x01
+    private let VK_Q: CGKeyCode = 0x0C
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -286,6 +290,15 @@ class EventTapManager {
             return nil
         }
 
+        // Cmd+Ctrl+Q → open Claude Code with permissions bypassed (`cx`) in a new
+        // Terminal (suppress). NB this shadows macOS's own ⌃⌘Q "Lock Screen";
+        // the session tap sees the key first and swallows it, so the Mac no
+        // longer locks on that combination.
+        if keyCode == VK_Q && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onClaudeBypassHotkey?() }
+            return nil
+        }
+
         // Cmd+Ctrl+K → open the training Catalog.docx in Word (suppress). K, not
         // the T of "training": ⌘⌃T is the Terminal and is used far more often.
         if keyCode == VK_K && hasCmd && hasCtrl && !hasOpt {
@@ -314,9 +327,10 @@ class EventTapManager {
             return nil
         }
 
-        // Ctrl+Opt+C → copy current selection and append it to session notes
-        // (sibling of Ctrl+Opt+V, which appends the existing clipboard) (suppress)
-        if keyCode == VK_C && hasCtrl && hasOpt && !hasCmd {
+        // Cmd+Ctrl+S → copy current selection and append it to session notes
+        // (sibling of Ctrl+Opt+V, which appends the existing clipboard) (suppress).
+        // Moved off ⌃⌥C so it joins the ⌘⌃ cheat-sheet, where it is discoverable.
+        if keyCode == VK_S && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onCopySelectionToNotes?() }
             return nil
         }

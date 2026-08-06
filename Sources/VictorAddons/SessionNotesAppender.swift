@@ -36,11 +36,20 @@ enum SessionNotesAppender {
         pasteAndOfferUndo(text: text)
     }
 
-    /// Copy the current selection in the frontmost app (simulated Cmd+C), then
-    /// append it to the session notes — a one-key alternative to manually
-    /// copying and then calling `appendClipboard`. Leaves the copied text on the
-    /// clipboard, matching normal Cmd+C semantics. Run off the main thread: it
-    /// blocks briefly polling the pasteboard for the copy to land.
+    /// Send whatever the hand meant to the session notes: the current selection
+    /// in the frontmost app if there is one (captured with a simulated Cmd+C),
+    /// otherwise the clipboard. One key (⌘⌃S) covers both because at the moment
+    /// of pressing it the two are the same intent — "put THIS in the notes" —
+    /// and having to remember which of two shortcuts matches the current state
+    /// of the screen is exactly the friction that stops it being used mid-talk.
+    ///
+    /// Selection wins when both are available: it is the fresher of the two, and
+    /// a stale clipboard silently landing in the notes instead of the paragraph
+    /// under the cursor is the mistake worth avoiding.
+    ///
+    /// Leaves any copied text on the clipboard, matching normal Cmd+C semantics.
+    /// Run off the main thread: it blocks briefly polling the pasteboard for the
+    /// copy to land.
     static func copySelectionAndAppend() {
         let before = PasteboardGate.sync { $0.changeCount }
         KeySimulator.cmdC()
@@ -54,14 +63,14 @@ enum SessionNotesAppender {
             Thread.sleep(forTimeInterval: step)
             waited += step
         }
-        guard PasteboardGate.sync({ $0.changeCount }) != before else {
-            showResult("(no selection)")
-            return
-        }
+        // Unchanged changeCount = the app no-op'd the Cmd+C = nothing was
+        // selected. Fall back to whatever is already on the clipboard rather
+        // than reporting a failure and doing nothing.
+        let copiedSomething = PasteboardGate.sync { $0.changeCount } != before
 
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
-            showResult("(empty selection)")
+            showResult(copiedSomething ? "(empty selection)" : "(empty clipboard)")
             return
         }
         pasteAndOfferUndo(text: text)

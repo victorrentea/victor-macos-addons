@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 6, 19:01"
+    static let BUILD_TIME = "Aug 6, 19:12"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -254,10 +254,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         appendNotesItem.isEnabled = true
         extraSubmenu.addItem(appendNotesItem)
 
-        // Copy selection to session notes (⌃⌥C) — disabled shortcut reminder:
-        // a menu click can't capture the prior app's selection, so it's hotkey-only.
-        let copySelectionItem = NSMenuItem(title: "Copy Selection to Notes", action: nil, keyEquivalent: "c")
-        copySelectionItem.keyEquivalentModifierMask = [.control, .option]
+        // Selection-or-clipboard → session notes (⌘⌃S) — disabled shortcut
+        // reminder: a menu click can't capture the prior app's selection, so
+        // it's hotkey-only. (The item above stays clickable for the clipboard.)
+        let copySelectionItem = NSMenuItem(title: "Selection (or Clipboard) to Notes", action: nil, keyEquivalent: "s")
+        copySelectionItem.keyEquivalentModifierMask = [.command, .control]
         copySelectionItem.isEnabled = false
         extraSubmenu.addItem(copySelectionItem)
 
@@ -575,6 +576,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// F8 global hotkey lands here.
     @objc func openDreamPlainWorkspace() {
         openWorkspaceTerminal(command: "cd ~/workspace && claude")
+    }
+
+    /// ⌘⌃Q — the same window running `cx`, Victor's ~/.zshrc alias for
+    /// `claude --dangerously-skip-permissions`. The alias (not the expansion) is
+    /// sent on purpose: it is what he'd type, and it is what the window then
+    /// shows. `do script` runs an interactive login shell, which is why a zsh
+    /// alias resolves at all — renaming `cx` in ~/.zshrc breaks this hotkey.
+    @objc func openBypassClaudeWorkspace() {
+        openWorkspaceTerminal(command: "cd ~/workspace && cx")
     }
 
     /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.

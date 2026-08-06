@@ -27,14 +27,19 @@ enum CommandControlShortcuts {
         40: "catalog",   // K — training Catalog.docx
         37: "calendar",  // L — Google Calendar
         15: "restart",   // R — restart this app
+        1:  "notes",     // S — copy the selection into the session notes
         17: "terminal",  // T — empty Terminal in ~/workspace
-        9:  "paste🎤",   // V — emotional paste; the 🎤 because what it cleans up
-                         // is nearly always Wispr-dictated text. This app never
-                         // listens to the microphone — Wispr does.
-        13: "wispr",     // W — paste the Wispr transcript. NOT ours: the shortcut
+        12: "claude",    // Q — Claude Code with permissions bypassed (`cx`)
+        13: "wispr🎙️",   // W — paste the Wispr transcript. NOT ours: the shortcut
                          // lives in Wispr Flow and we must NOT claim it. The tap's
                          // ⌃W → 🔥 Whip branch requires !hasCmd, so ⌘⌃W passes
                          // straight through to Wispr; this entry is display-only.
+                         // The studio 🎙️ says whose paste it is: the listening is
+                         // Wispr's job, never this app's.
+        // V (key 9) is deliberately ABSENT even though ⌘⌃V is still bound here to
+        // the emotional paste. "Paste" now means ⌘⌃W to the hand, and two keys
+        // both reading "paste" on the sheet would make the reader pick the wrong
+        // one at speed. The tap keeps serving ⌘⌃V; only the hint is gone.
     ]
 }
 

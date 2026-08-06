@@ -1096,6 +1096,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
+        eventTap.onClaudeBypassHotkey = { [weak menuBarManager] in
+            DispatchQueue.main.async { menuBarManager?.openBypassClaudeWorkspace() }
+        }
         eventTap.onPlainTerminalHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openPlainTerminalWorkspace() }
         }
