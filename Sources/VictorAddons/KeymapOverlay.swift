@@ -646,15 +646,14 @@ final class KeymapOverlayRenderer {
             }
 
             // A logo answers "what is this key" faster than any word, so it gets
-            // the whole payload area — on the white plate the mark is designed
-            // for, since these are brand icons drawn for a light background.
+            // the whole payload area — drawn straight onto the key, no plate
+            // behind it: the sheet's keys are one flat black and a white card
+            // under one of them is the loudest thing on the whole keyboard.
+            // Gmail's mark survives it because the M is the coloured part; the
+            // envelope body it normally paints white is simply left as key.
             if let picture {
-                let plate = rect(key.x + 20, y + 38, key.width - 40, key.width - 40)
-                let plateRect = NSBezierPath(roundedRect: plate, xRadius: 9 * scale, yRadius: 9 * scale)
-                NSColor.white.setFill()
-                plateRect.fill()
-                let inset = plate.insetBy(dx: 6 * scale, dy: 6 * scale)
-                picture.draw(in: aspectFit(picture.size, in: inset))
+                let box = rect(key.x + 14, y + 34, key.width - 28, 58)
+                picture.draw(in: aspectFit(picture.size, in: box))
                 continue
             }
 
