@@ -145,10 +145,21 @@ enum SummaryReminderPolicy {
         String(format: "%@ %02d:%02d", dayKey(date, calendar: calendar), hour, minute)
     }
 
-    /// The key of the slot that should fire right now, or nil. A slot is due
-    /// from its own minute until `graceMinutes` later, and only if it hasn't
-    /// already fired today.
+    /// Whether `date` is a working day (Mon–Fri). Training happens on weekdays,
+    /// so a Saturday afternoon has no session to write up and the offer would
+    /// only be an interruption. Public holidays are deliberately NOT modelled —
+    /// they'd need a calendar per country Victor happens to be in, and an
+    /// unwanted pill on one such afternoon costs a glance.
+    static func isWorkday(_ date: Date, calendar: Calendar) -> Bool {
+        let weekday = calendar.component(.weekday, from: date)   // 1 = Sunday … 7 = Saturday
+        return weekday != 1 && weekday != 7
+    }
+
+    /// The key of the slot that should fire right now, or nil. A slot is due on
+    /// a working day, from its own minute until `graceMinutes` later, and only
+    /// if it hasn't already fired today.
     static func dueSlot(now: Date, calendar: Calendar, alreadyFired: Set<String>) -> String? {
+        guard isWorkday(now, calendar: calendar) else { return nil }
         let c = calendar.dateComponents([.hour, .minute], from: now)
         guard let h = c.hour, let m = c.minute else { return nil }
         let nowMinutes = h * 60 + m

@@ -8,8 +8,13 @@ final class SummaryReminderPolicyTests: XCTestCase {
         return c
     }()
 
+    /// 2026-08-06 is a Thursday — a working day, so the base case fires.
     private func at(_ hour: Int, _ minute: Int) -> Date {
         cal.date(from: DateComponents(year: 2026, month: 8, day: 6, hour: hour, minute: minute))!
+    }
+
+    private func onDay(_ day: Int, _ hour: Int, _ minute: Int) -> Date {
+        cal.date(from: DateComponents(year: 2026, month: 8, day: day, hour: hour, minute: minute))!
     }
 
     func testFiresExactlyOnTheFirstSlot() {
@@ -61,6 +66,32 @@ final class SummaryReminderPolicyTests: XCTestCase {
                                                      calendar: cal,
                                                      alreadyFired: ["2026-08-05 16:45"]),
                        "2026-08-06 16:45")
+    }
+
+    // 2026-08-08 is a Saturday, 2026-08-09 a Sunday, 2026-08-10 a Monday.
+    func testSilentOnSaturday() {
+        XCTAssertFalse(SummaryReminderPolicy.isWorkday(onDay(8, 16, 45), calendar: cal))
+        XCTAssertNil(SummaryReminderPolicy.dueSlot(now: onDay(8, 16, 45), calendar: cal, alreadyFired: []))
+        XCTAssertNil(SummaryReminderPolicy.dueSlot(now: onDay(8, 17, 15), calendar: cal, alreadyFired: []))
+    }
+
+    func testSilentOnSunday() {
+        XCTAssertFalse(SummaryReminderPolicy.isWorkday(onDay(9, 16, 45), calendar: cal))
+        XCTAssertNil(SummaryReminderPolicy.dueSlot(now: onDay(9, 16, 45), calendar: cal, alreadyFired: []))
+    }
+
+    func testFiresAgainOnMonday() {
+        XCTAssertTrue(SummaryReminderPolicy.isWorkday(onDay(10, 16, 45), calendar: cal))
+        XCTAssertEqual(SummaryReminderPolicy.dueSlot(now: onDay(10, 16, 45), calendar: cal, alreadyFired: []),
+                       "2026-08-10 16:45")
+    }
+
+    func testEveryWeekdayIsAWorkday() {
+        // Mon 10th … Fri 14th August 2026.
+        for day in 10...14 {
+            XCTAssertTrue(SummaryReminderPolicy.isWorkday(onDay(day, 16, 45), calendar: cal),
+                          "day \(day) should be a workday")
+        }
     }
 
     func testSlotsAreTheAdvertisedTimes() {
