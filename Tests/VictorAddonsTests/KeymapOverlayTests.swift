@@ -297,6 +297,16 @@ final class KeymapOverlayTests: XCTestCase {
         }
     }
 
+    func testCornerAccentsMarkOnlyKeysThatAreActuallyBound() {
+        XCTAssertEqual(CommandControlShortcuts.accents[14], "@")   // E — email
+        XCTAssertEqual(CommandControlShortcuts.accents[6], "🔗")   // Z — Zoom link
+        // An accent on an unbound key would decorate a dimmed, meaningless key.
+        for code in CommandControlShortcuts.accents.keys {
+            XCTAssertTrue(CommandControlShortcuts.boundKeyCodes.contains(code),
+                          "key \(code) carries an accent but nothing is bound to it")
+        }
+    }
+
     func testArtworkShipsInTheBundleSoTheSheetNeverDrawsAnEmptyKey() {
         // No bundle argument: the default resolves to VictorAddons' own bundle,
         // which is where the artwork ships — not the test target's.
@@ -452,7 +462,8 @@ final class KeymapOverlayTests: XCTestCase {
         let commandControl = renderer.render(
             outputs: CommandControlShortcuts.labels,
             style: .word,
-            artwork: CommandControlShortcuts.artworkImages()
+            artwork: CommandControlShortcuts.artworkImages(),
+            accents: CommandControlShortcuts.accents
         )
 
         let optionURL = outputDir.appendingPathComponent("keymap-overlay-option-swift.png")

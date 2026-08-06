@@ -44,6 +44,14 @@ enum CommandControlShortcuts {
         // one at speed. The tap keeps serving ⌘⌃V; only the hint is gone.
     ]
 
+    /// A small mark in the key's top-right corner, opposite the base letter —
+    /// a second, faster read of the same word for the two keys whose word alone
+    /// ("email", "zoom") is a noun rather than a picture of what happens.
+    static let accents: [Int: String] = [
+        14: "@",   // E — email
+        6:  "🔗",  // Z — the Zoom room link
+    ]
+
     /// Keys whose payload is a bundled picture rather than a word, by key code.
     /// A logo is recognised faster than the word for it, and Gmail's is the one
     /// destination here with a mark everyone already knows by sight.
@@ -573,7 +581,7 @@ final class KeymapOverlayRenderer {
         [";", "'", "\\", "[", "]"].contains(label) ? "" : label.uppercased()
     }
 
-    func render(outputs: [Int: String], style: Style = .glyph, artwork: [Int: NSImage] = [:], scale: CGFloat = 2.0) -> NSImage {
+    func render(outputs: [Int: String], style: Style = .glyph, artwork: [Int: NSImage] = [:], accents: [Int: String] = [:], scale: CGFloat = 2.0) -> NSImage {
         let pixelSize = NSSize(width: Self.logicalSize.width * scale, height: Self.logicalSize.height * scale)
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -643,6 +651,14 @@ final class KeymapOverlayRenderer {
                         : NSColor(calibratedRed: 64 / 255, green: 68 / 255, blue: 77 / 255, alpha: 0.55)
                     drawText(baseLabel, in: baseFrame, fontSize: 42, color: ink, alignment: .left)
                 }
+            }
+
+            // The accent shares the letter's row, pinned to the far corner, and
+            // is drawn smaller so it reads as a hint about the key rather than
+            // as a second key label competing with the letter.
+            if style == .word, let accent = accents[key.code], !accent.isEmpty {
+                let accentFrame = rect(key.x + key.width * 0.4, y + 6, key.width * 0.6 - 10, 34)
+                drawText(accent, in: accentFrame, fontSize: 28, color: .white, alignment: .right)
             }
 
             // A logo answers "what is this key" faster than any word, so it gets
@@ -780,7 +796,8 @@ final class KeymapOverlayController {
         images[.commandControl] = renderer.render(
             outputs: CommandControlShortcuts.labels,
             style: .word,
-            artwork: CommandControlShortcuts.artworkImages()
+            artwork: CommandControlShortcuts.artworkImages(),
+            accents: CommandControlShortcuts.accents
         )
         if !regenerateImages() { scheduleRetry() }
         // Switching input source (or saving a new layout in Ukelele, which
