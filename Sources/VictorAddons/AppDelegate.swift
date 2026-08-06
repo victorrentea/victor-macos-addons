@@ -1673,7 +1673,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         } else {
             guard isSessionActive, let url = participantUrl else { return }
             banner.setTargetScreen(AppDelegate.findRetinaScreen())
-            banner.show(url: url)
+            banner.show(url: url, uppercaseLastSegment: true)
         }
     }
 

@@ -114,17 +114,21 @@ class JoinLinkBanner: NSPanel {
         self.targetScreen = screen
     }
 
-    func show(url: String) {
+    /// - Parameter uppercaseLastSegment: display the trailing path segment in caps.
+    ///   True for the session join link (participants type the id in caps and the
+    ///   backend matches case-insensitively); false for arbitrary clipboard URLs,
+    ///   whose paths are case-sensitive and must be shown verbatim.
+    func show(url: String, uppercaseLastSegment: Bool = false) {
         let trimmedUrl = url.trimmingCharacters(in: .whitespaces)
         let maxWidth = targetScreen.frame.width - horizontalPadding * 2
 
         // Start at default font size; shrink if URL is too wide to fit
         var fontSize: CGFloat = 76
-        urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize)
+        urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize, uppercaseLastSegment: uppercaseLastSegment)
         urlLabel.sizeToFit()
         if urlLabel.frame.width > maxWidth {
             fontSize = max(24, floor(fontSize * maxWidth / urlLabel.frame.width))
-            urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize)
+            urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize, uppercaseLastSegment: uppercaseLastSegment)
             urlLabel.sizeToFit()
         }
 
@@ -337,7 +341,7 @@ class JoinLinkBanner: NSPanel {
 
     // MARK: - Attributed string
 
-    private func buildAttributedString(url: String, fontSize: CGFloat = 76) -> NSAttributedString {
+    private func buildAttributedString(url: String, fontSize: CGFloat = 76, uppercaseLastSegment: Bool = false) -> NSAttributedString {
         let parts = url.split(separator: "/")
         let result = NSMutableAttributedString()
         if parts.count > 1 {
@@ -349,8 +353,11 @@ class JoinLinkBanner: NSPanel {
                     .foregroundColor: NSColor.white
                 ]
             ))
+            // Only the display changes — the QR code and the clipboard still carry
+            // the original URL.
+            let tail = String(parts.last!)
             result.append(NSAttributedString(
-                string: String(parts.last!),
+                string: uppercaseLastSegment ? tail.uppercased() : tail,
                 attributes: [
                     .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
                     .foregroundColor: NSColor.yellow
