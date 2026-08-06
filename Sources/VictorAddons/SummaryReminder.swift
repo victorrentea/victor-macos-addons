@@ -23,11 +23,11 @@ final class SummaryReminder {
     private static let defaultsKey = "summary.reminder.fired.slots"
 
     /// How long the pill stays actionable, in *un-hovered* seconds (the
-    /// countdown pauses while the cursor is on it). Far longer than the notes
-    /// banner's 7.5s: this one lands while Victor may still be talking to the
-    /// room, and a wrap-up reminder that expires before he looks at the screen
-    /// is a reminder that never happened.
-    static let hoverWindow: TimeInterval = 90
+    /// countdown pauses while the cursor is on it) — the same short window as
+    /// the notes banner. A wrap-up offer is glanceable: either Victor is at the
+    /// Mac and reaches for it, or he isn't and the 17:15 slot asks again.
+    /// Lingering longer would just park a pill over the projected screen.
+    static let hoverWindow: TimeInterval = 10
 
     init(screensProvider: @escaping () -> [NSScreen]) {
         banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
