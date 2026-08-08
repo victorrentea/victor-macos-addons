@@ -62,6 +62,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
     private var androidDeployer: AndroidAppDeployer?
+    /// 📱 Watches Soduto's low-battery notification for the paired Android and
+    /// feeds it into `/ping` so the tablet can blink about it.
+    private var phoneBattery: PhoneBatteryMonitor?
     /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
@@ -378,7 +381,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // lower-latency local path, keeping the internet relay a last resort.
             let macLanIps = NetworkInfo.lanIPv4Addresses()
                 .map { "\"\($0)\"" }.joined(separator: ",")
-            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]}"
+            // 📱 Mirror the phone's low battery to the tablet. macOS already
+            // notifies about it (Soduto does), but a notification on the Mac is
+            // exactly what gets missed while presenting — the tablet is the
+            // screen that's always in view.
+            let phone = PhoneBatteryPolicy.pingFields(for: self?.phoneBattery?.reading, now: Date())
+            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
         tabletServer?.onSoundPlay = { [weak self] name, volumePct in
@@ -665,6 +673,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         usbTunnel.start()
         self.usbTunnelKeeper = usbTunnel
+
+        // 📱 Phone low-battery → tablet. Soduto already raises a macOS
+        // notification when the paired Android drops below its threshold, but
+        // that banner is the one thing that reliably gets missed: it lands on
+        // the screen that is being projected (or behind PowerPoint) while the
+        // tablet is the surface always in eye-line. The Mac only carries the
+        // state; the blinking lives on the tablet, driven off `/ping`.
+        let phoneBatteryMonitor = PhoneBatteryMonitor()
+        phoneBatteryMonitor.onChange = { reading in
+            if let reading {
+                overlayInfo("📱 phone battery low: \(reading.chargePct)%")
+            } else {
+                overlayInfo("📱 phone battery warning cleared")
+            }
+        }
+        // Reading Notification Center's store needs Full Disk Access, which this
+        // app is not granted by default. Say so once — a feature that silently
+        // never fires is indistinguishable from a phone that never runs low.
+        phoneBatteryMonitor.onPermissionDenied = { [weak self] in
+            self?.postAndroidDeployNotification(
+                title: "📱 Phone battery mirror is off",
+                body: "Grant Victor Addons Full Disk Access (System Settings → Privacy & Security) so it can read Soduto's low-battery notification.",
+                identifier: "phone-battery-permission")
+        }
+        phoneBatteryMonitor.start()
+        self.phoneBattery = phoneBatteryMonitor
+        tabletServer?.onTestPhoneBattery = { [weak phoneBatteryMonitor] in
+            phoneBatteryMonitor?.pollNow()
+            return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
+        tabletServer?.onTestPhoneBatterySimulate = { [weak phoneBatteryMonitor] pct in
+            phoneBatteryMonitor?.simulate(chargePct: pct)
+            return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
         // /test/group-photo — show the overlay now, bypassing the break + daemon gates.
         tabletServer?.onTestGroupPhoto = { [weak self] in
             DispatchQueue.main.async { self?.promptGroupPhoto() }
@@ -1840,12 +1882,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// and Notification Center is a fine place for it to wait if it doesn't.
     /// Transient: auto-removed after 10s, with a stable identifier so a re-fire
     /// replaces rather than stacks.
-    func postAndroidDeployNotification(title: String, body: String) {
+    /// `identifier` also decides which notifications replace each other — keep
+    /// unrelated messages (a deploy outcome vs. a missing permission) on
+    /// separate ids so one can't silently overwrite the other.
+    func postAndroidDeployNotification(title: String, body: String, identifier: String = "android-deploy") {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
-        let identifier = "android-deploy"
         let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req) { err in
             if let err { overlayInfo("Android deploy notification error: \(err)") }

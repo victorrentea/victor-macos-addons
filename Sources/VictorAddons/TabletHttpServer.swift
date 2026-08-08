@@ -79,6 +79,13 @@ class TabletHttpServer {
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
+        /// JSON snapshot of the 📱 phone low-battery mirror (read-only): whether
+        /// the tablet is being told to blink, at what charge, and how fresh the
+        /// underlying Soduto notification is (test hook).
+        case testPhoneBattery
+        /// Pretend the phone is at N% for a couple of minutes, so the tablet's
+        /// blink can be previewed without waiting for a genuinely flat phone.
+        case testPhoneBatterySimulate(Int)
         case promptCapture
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
@@ -149,6 +156,10 @@ class TabletHttpServer {
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
+    /// Read-only JSON snapshot of the 📱 phone low-battery mirror.
+    var onTestPhoneBattery: (() -> String)?
+    /// Force a synthetic phone charge for a short while; returns the snapshot.
+    var onTestPhoneBatterySimulate: ((Int) -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -319,6 +330,14 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
                 if self.onTestAndroidDeploy == nil { statusCode = 503 }
+            case .testPhoneBattery:
+                contentType = "application/json"
+                body = self.onTestPhoneBattery?() ?? "{\"error\":\"phone battery monitor unavailable\"}"
+                if self.onTestPhoneBattery == nil { statusCode = 503 }
+            case .testPhoneBatterySimulate(let pct):
+                contentType = "application/json"
+                body = self.onTestPhoneBatterySimulate?(pct) ?? "{\"error\":\"phone battery monitor unavailable\"}"
+                if self.onTestPhoneBatterySimulate == nil { statusCode = 503 }
             case .promptCapture:
                 contentType = "application/json"
                 body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
@@ -441,6 +460,8 @@ class TabletHttpServer {
             return .testEmailPoll
         case "/test/android-deploy":
             return .testAndroidDeploy
+        case "/test/phone-battery":
+            return .testPhoneBattery
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":
@@ -487,6 +508,12 @@ class TabletHttpServer {
             if pathOnly.hasPrefix("/test/video/") {
                 let id = String(pathOnly.dropFirst("/test/video/".count))
                 if !id.isEmpty { return .videoPlay(id, nil) }
+            }
+            if pathOnly.hasPrefix("/test/phone-battery/simulate/") {
+                let suffix = String(pathOnly.dropFirst("/test/phone-battery/simulate/".count))
+                if let pct = Int(suffix), (0...100).contains(pct) {
+                    return .testPhoneBatterySimulate(pct)
+                }
             }
             if pathOnly.hasPrefix("/test/break/") {
                 let suffix = String(pathOnly.dropFirst("/test/break/".count))
