@@ -27,10 +27,10 @@ enum CommandControlShortcuts {
         // G (key 5) is drawn from `artworkNames` below, not from a word.
         40: "📕",        // K — training Catalog.docx
         37: "📅",        // L — Google Calendar
-        // N (key 45) and S (key 1) are drawn from `artworkNames` below: both
-        // land in a Google Doc, so the Docs mark is the honest answer for each
-        // and their accents (🤖 / 🚀) say which doc and what happens to it.
+        // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
+        // Google Doc, and the Docs mark says that faster than any word could.
         15: "SRL",       // R — paste the company's invoicing details
+        1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
         12: "claude",    // Q — Claude Code with permissions bypassed (`cx`)
         6:  "zoom",      // Z — paste Victor's personal Zoom room link
@@ -52,8 +52,8 @@ enum CommandControlShortcuts {
     static let accents: [Int: String] = [
         14: "@",   // E — email
         6:  "🔗",  // Z — the Zoom room link
-        1:  "🚀",  // S — the selection is launched into the notes doc
-        45: "🤖",  // N — the Android/tablet notes doc
+        1:  "🚀",  // S — the selection is launched into the notes
+        15: "📋",  // R — the SRL details are pasted, not opened
     ]
 
     /// Keys whose payload is a bundled picture rather than a word, by key code.
@@ -61,8 +61,7 @@ enum CommandControlShortcuts {
     /// destination here with a mark everyone already knows by sight.
     static let artworkNames: [Int: String] = [
         5:  "gmail-logo",  // G — Gmail
-        1:  "gdocs-logo",  // S — the selection goes into the session notes doc
-        45: "gdocs-logo",  // N — open the Android notes doc in Chrome
+        45: "gdocs-logo",  // N — open the "notes" Google Doc in Chrome
     ]
 
     /// The sheet's payload for a key, whatever form it takes — used by the

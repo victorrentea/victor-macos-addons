@@ -42,8 +42,8 @@ class EventTapManager {
     var onPasteEmail: (() -> Void)?
     /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
     var onPasteCompanyDetails: (() -> Void)?
-    /// ⌘⌃N — open the Android notes Google Doc in Chrome.
-    var onOpenAndroidNotes: (() -> Void)?
+    /// ⌘⌃N — open the "notes" Google Doc in Chrome.
+    var onOpenNotesDoc: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
@@ -369,9 +369,9 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Ctrl+N → open the Android notes Google Doc in Chrome (suppress).
+        // Cmd+Ctrl+N → open the "notes" Google Doc in Chrome (suppress).
         if keyCode == VK_N && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onOpenAndroidNotes?() }
+            DispatchQueue.global().async { [weak self] in self?.onOpenNotesDoc?() }
             return nil
         }
 
