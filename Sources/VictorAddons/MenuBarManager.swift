@@ -350,9 +350,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // app in Spotlight/Finder while it is already running does the same
         // thing (see AppRelaunch), but that is invisible; this is the button you
         // can find when something is wedged mid-workshop.
-        let restartItem = addItem("🔁 Restart", action: #selector(restartApp))
-        restartItem.keyEquivalent = "r"
-        restartItem.keyEquivalentModifierMask = [.command, .control]
+        // Click-only: ⌘⌃R now pastes the company's invoicing details in the
+        // event tap, and one combination cannot mean two things.
+        _ = addItem("🔁 Restart", action: #selector(restartApp))
 
         // Quit (build timestamp inlined to save a menu line). Uses a full-width
         // emoji (🔴) instead of the narrow ⏻ power glyph so it lines up with the

@@ -1168,6 +1168,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onPasteEmail = {
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.email) }
         }
+        eventTap.onPasteCompanyDetails = {
+            DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.companyDetails) }
+        }
+        eventTap.onOpenAndroidNotes = { [weak self] in
+            DispatchQueue.main.async { self?.openUrlInChrome(Self.androidNotesDocUrl) }
+        }
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
             guard KeymapOverlaySettings.isEnabled else {
                 self?.keymapHoldCoordinator?.reset()
@@ -1240,6 +1246,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// inherits that window's profile — YouTube Premium / signed-in / no ads.
     /// `make new window` and `--user-data-dir=…` were tried first but both
     /// fell back to Chrome's empty "Default" profile.
+    /// The Android notes Google Doc (⌘⌃N).
+    static let androidNotesDocUrl =
+        "https://docs.google.com/document/d/1_SfS83iRqGxnrBixqOg66a-OYqH1dd6leV42B56_Juk/edit?tab=t.0"
+
     private func openUrlInChrome(_ url: String) {
         overlayInfo("Opening Chrome (front-window profile): \(url)")
         let openTask = Process()

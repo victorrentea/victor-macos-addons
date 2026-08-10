@@ -40,6 +40,10 @@ class EventTapManager {
     var onPasteZoomLink: (() -> Void)?
     /// ⌘⌃E — paste Victor's email address.
     var onPasteEmail: (() -> Void)?
+    /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
+    var onPasteCompanyDetails: (() -> Void)?
+    /// ⌘⌃N — open the Android notes Google Doc in Chrome.
+    var onOpenAndroidNotes: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
@@ -66,6 +70,8 @@ class EventTapManager {
     private let VK_Q: CGKeyCode = 0x0C
     private let VK_Z: CGKeyCode = 0x06
     private let VK_E: CGKeyCode = 0x0E
+    private let VK_R: CGKeyCode = 0x0F
+    private let VK_N: CGKeyCode = 0x2D
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -351,6 +357,21 @@ class EventTapManager {
         // Cmd+Ctrl+E → paste Victor's email address (suppress)
         if keyCode == VK_E && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onPasteEmail?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+R → paste the company's invoicing details (suppress). This
+        // took ⌘⌃R off the 🔁 Restart menu item, which is now click-only: two
+        // actions cannot answer the same combination, and the invoicing block is
+        // asked for far more often than a wedged app needs restarting.
+        if keyCode == VK_R && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onPasteCompanyDetails?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+N → open the Android notes Google Doc in Chrome (suppress).
+        if keyCode == VK_N && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onOpenAndroidNotes?() }
             return nil
         }
 

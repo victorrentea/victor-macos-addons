@@ -9,6 +9,15 @@ enum PasteSnippets {
     static let zoomLink = "https://us02web.zoom.us/j/8206573499?pwd=L1RsS3l2NXc2SGJ5TitWd082NEhpQT09"
     static let email = "victorrentea@gmail.com"
 
+    /// The company's invoicing block (⌘⌃R) — the three lines every client's
+    /// finance department asks for, always in the same order and always
+    /// verbatim: a mistyped VAT code bounces an invoice days later.
+    static let companyDetails = """
+        Victor Rentea Consulting SRL
+        VAT Code (CUI): RO41987600
+        Address: Dristorului 91-95, Ap. 1106, Bucharest 031538, Romania
+        """
+
     /// Puts `text` on the pasteboard, pastes it into the focused app, then puts
     /// back whatever was on the pasteboard before — a shortcut that helps with
     /// one line must not cost you the clipboard you were carrying. The restore

@@ -276,22 +276,27 @@ final class KeymapOverlayTests: XCTestCase {
     }
 
     func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
-        // a c e g k l q r s t z — the ⌘⌃ branches in EventTapManager / the menu —
-        // plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet for reference
-        // only (the tap's ⌃W whip branch excludes Cmd, so we never intercept it),
-        // and MINUS v: ⌘⌃V is still bound to the emotional paste but is off the
-        // sheet, so "paste" points at exactly one key.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 12, 15, 1, 17, 13, 6])
+        // a c e g k l n q r s t z — the ⌘⌃ branches in EventTapManager / the menu
+        // — plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet for
+        // reference only (the tap's ⌃W whip branch excludes Cmd, so we never
+        // intercept it), and MINUS v: ⌘⌃V is still bound to the emotional paste
+        // but is off the sheet, so "paste" points at exactly one key.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 45, 12, 15, 1, 17, 13, 6])
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
         XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
-        // K / L answer with a pictogram and G with the Gmail mark — a picture is
-        // read faster than the word for it.
+        XCTAssertEqual(CommandControlShortcuts.labels[15], "SRL")
+        // K / L answer with a pictogram, G with the Gmail mark and S / N with the
+        // Docs one — a picture is read faster than the word for it.
         XCTAssertEqual(CommandControlShortcuts.labels[40], "📕")
         XCTAssertEqual(CommandControlShortcuts.labels[37], "📅")
         XCTAssertNil(CommandControlShortcuts.labels[5])
+        XCTAssertNil(CommandControlShortcuts.labels[1])
+        XCTAssertNil(CommandControlShortcuts.labels[45])
         XCTAssertEqual(CommandControlShortcuts.artworkNames[5], "gmail-logo")
+        XCTAssertEqual(CommandControlShortcuts.artworkNames[1], "gdocs-logo")
+        XCTAssertEqual(CommandControlShortcuts.artworkNames[45], "gdocs-logo")
         for (code, word) in CommandControlShortcuts.labels {
             XCTAssertFalse(word.contains(" "), "key \(code) label '\(word)' must be a single word")
         }
@@ -300,6 +305,9 @@ final class KeymapOverlayTests: XCTestCase {
     func testCornerAccentsMarkOnlyKeysThatAreActuallyBound() {
         XCTAssertEqual(CommandControlShortcuts.accents[14], "@")   // E — email
         XCTAssertEqual(CommandControlShortcuts.accents[6], "🔗")   // Z — Zoom link
+        // S and N both draw the Docs mark; the accent is what tells them apart.
+        XCTAssertEqual(CommandControlShortcuts.accents[1], "🚀")   // S — into the notes
+        XCTAssertEqual(CommandControlShortcuts.accents[45], "🤖")  // N — the Android doc
         // An accent on an unbound key would decorate a dimmed, meaningless key.
         for code in CommandControlShortcuts.accents.keys {
             XCTAssertTrue(CommandControlShortcuts.boundKeyCodes.contains(code),
