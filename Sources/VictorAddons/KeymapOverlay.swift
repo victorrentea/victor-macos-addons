@@ -25,7 +25,7 @@ enum CommandControlShortcuts {
         8:  "claude",    // C — Claude Code in a new Terminal
         14: "email",     // E — paste Victor's email address
         // G (key 5) is drawn from `artworkNames` below, not from a word.
-        40: "📕",        // K — training Catalog.docx
+        40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
         37: "📅",        // L — Google Calendar
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
         // Google Doc, and the Docs mark says that faster than any word could.
@@ -47,13 +47,16 @@ enum CommandControlShortcuts {
     ]
 
     /// A small mark in the key's top-right corner, opposite the base letter —
-    /// a second, faster read of the same word for the two keys whose word alone
-    /// ("email", "zoom") is a noun rather than a picture of what happens.
+    /// a second, faster read for keys whose word alone ("email", "zoom",
+    /// "notes", "SRL", "catalog") names a noun rather than picturing what
+    /// happens to it. The word stays: the mark is the glance, the word the
+    /// confirmation.
     static let accents: [Int: String] = [
         14: "@",   // E — email
         6:  "🔗",  // Z — the Zoom room link
         1:  "🚀",  // S — the selection is launched into the notes
         15: "📋",  // R — the SRL details are pasted, not opened
+        40: "📕",  // K — the training catalog
     ]
 
     /// Keys whose payload is a bundled picture rather than a word, by key code.
