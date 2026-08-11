@@ -51,33 +51,51 @@ enum SessionNotesAppender {
     /// Run off the main thread: it blocks briefly polling the pasteboard for the
     /// copy to land.
     static func copySelectionAndAppend() {
-        // ⌘⌃S is still under the fingers when this runs, and a synthetic ⌘C
-        // posted then reaches the app as ⌃⌘C — not Copy — so the selection is
-        // never captured and we silently fall back to a stale clipboard. Let
-        // the hand come off the keys first.
-        let clean = KeySimulator.waitForModifiersReleased()
-        if !clean {
-            overlayInfo("⌘⌃S: modifiers still held after 1s; posting ⌘C anyway")
+        // 1. Ask the frontmost app what is selected, through Accessibility. No
+        //    keystroke, no pasteboard, no timing — when the app answers, this is
+        //    the truth, and the clipboard the user was carrying stays untouched.
+        if let selection = SelectionReader.focusedSelection() {
+            overlayInfo("⌘⌃S: AX selection (\(selection.count) chars)")
+            pasteAndOfferUndo(text: selection.trimmingCharacters(in: .whitespacesAndNewlines))
+            return
         }
-        let before = PasteboardGate.sync { $0.changeCount }
-        KeySimulator.cmdC()
 
-        // Wait for the app to service the copy. changeCount bumps on every
-        // pasteboard write (even identical content), so this reliably detects
-        // whether anything was copied — apps no-op Cmd+C when nothing is selected.
+        // 2. The app didn't answer (many Java/Electron UIs don't). Fall back to a
+        //    simulated ⌘C — but ONLY once the hotkey's own modifiers are off the
+        //    keyboard. A ⌘C posted while ⌘⌃S is still held arrives at the app as
+        //    ⌃⌘C, and on this Mac that is a real shortcut: it makes Wispr Flow
+        //    replace the clipboard with its last dictation. That is the whole bug
+        //    — the fresh copy was overwritten by a stale transcript a few
+        //    milliseconds before we read it, and the transcript went to the notes.
+        //    So if the fingers are still down after the wait, we do NOT copy: the
+        //    clipboard already holds what the user wants, and the one thing worse
+        //    than missing a selection is destroying the clipboard to look for it.
+        let clean = KeySimulator.waitForModifiersReleased()
         var waited: TimeInterval = 0
-        let step: TimeInterval = 0.02
-        while PasteboardGate.sync({ $0.changeCount }) == before && waited < 0.5 {
-            Thread.sleep(forTimeInterval: step)
-            waited += step
+        var copiedSomething = false
+        let clipboardBefore = ClipboardManager.read()
+
+        if clean {
+            let before = PasteboardGate.sync { $0.changeCount }
+            KeySimulator.cmdC()
+
+            // Wait for the app to service the copy. changeCount bumps on every
+            // pasteboard write (even identical content), so this detects whether
+            // anything was copied — apps no-op ⌘C when nothing is selected.
+            let step: TimeInterval = 0.02
+            while PasteboardGate.sync({ $0.changeCount }) == before && waited < 0.5 {
+                Thread.sleep(forTimeInterval: step)
+                waited += step
+            }
+            copiedSomething = PasteboardGate.sync { $0.changeCount } != before
         }
-        // Unchanged changeCount = the app no-op'd the Cmd+C = nothing was
-        // selected. Fall back to whatever is already on the clipboard rather
-        // than reporting a failure and doing nothing.
-        let copiedSomething = PasteboardGate.sync { $0.changeCount } != before
-        overlayInfo("⌘⌃S: \(copiedSomething ? "captured selection" : "no selection — using clipboard")")
 
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
+        overlayInfo("⌘⌃S: no AX selection; "
+            + (clean ? "⌘C \(copiedSomething ? "copied" : "no-op") after \(Int(waited * 1000))ms"
+                     : "modifiers still held — skipped ⌘C, using clipboard")
+            + "; before [\(clipboardBefore.count)]: \(String(clipboardBefore.prefix(40))) "
+            + "→ after [\(text.count)]: \(String(text.prefix(40)))")
         guard !text.isEmpty else {
             showResult(copiedSomething ? "(empty selection)" : "(empty clipboard)")
             return
