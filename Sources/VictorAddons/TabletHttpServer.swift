@@ -57,6 +57,13 @@ class TabletHttpServer {
         case testProjector
         /// JSON snapshot of the presenting state (meeting / unknown display).
         case testPresentation
+        /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
+        /// on, the map file it is serving and how many bindings it holds.
+        case testEmojiLayer
+        /// Turn the ⌥ emoji layer on/off at runtime and return the same
+        /// snapshot — the kill switch if a synthetic character misbehaves in
+        /// some app mid-workshop.
+        case testEmojiLayerEnable(Bool)
         /// Force-show the aggressive silent-transcription warning now.
         case testPresentationWarn
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
@@ -312,6 +319,13 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestPresentation == nil { statusCode = 503 }
+            case .testEmojiLayer:
+                contentType = "application/json"
+                body = EmojiKeyLayer.statusJSON()
+            case .testEmojiLayerEnable(let on):
+                EmojiKeyLayer.isEnabled = on
+                contentType = "application/json"
+                body = EmojiKeyLayer.statusJSON()
             case .testPresentationWarn:
                 self.onTestPresentationWarn?()
             case .testBreakSummary:
@@ -446,6 +460,12 @@ class TabletHttpServer {
             return .testProjector
         case "/test/presentation":
             return .testPresentation
+        case "/test/emoji-layer":
+            return .testEmojiLayer
+        case "/test/emoji-layer/on":
+            return .testEmojiLayerEnable(true)
+        case "/test/emoji-layer/off":
+            return .testEmojiLayerEnable(false)
         case "/test/presentation/warn":
             return .testPresentationWarn
         case "/test/break-summary":

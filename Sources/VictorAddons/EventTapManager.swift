@@ -257,6 +257,26 @@ class EventTapManager {
             DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileModifierHeld?() }
         }
 
+        // ⌥ / ⌥⇧ emoji layer (`EmojiKeyLayer`) — the app types the character
+        // instead of the .keylayout, so adding one no longer costs a re-login.
+        //
+        // The event is REWRITTEN, not swallowed-and-replaced: a synthetic
+        // keystroke posted from here would re-enter our own tap and would be
+        // merged with the ⌥ the user is still physically holding (see the flag
+        // -latching note on `KeySimulator.chord`). Mutating in place is what a
+        // keyboard layout does conceptually, and keeps this to one event.
+        //
+        // ⌥ must be cleared off the event too. Left on, the character arrives
+        // flagged as a ⌥ chord and apps route it to a menu equivalent instead of
+        // inserting it.
+        if hasOpt, !hasCmd, !hasCtrl,
+           let text = EmojiKeyLayer.output(keyCode: Int(keyCode), shift: hasShift) {
+            let utf16 = Array(text.utf16)
+            event.flags = flags.subtracting([.maskAlternate, .maskShift])
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+            return Unmanaged.passUnretained(event)
+        }
+
         // While the 🔥 whip overlay is up, Enter cracks it (the button Victor uses
         // to submit to Claude often *is* an Enter). Always pass the key through so
         // the Enter still reaches Claude — this only adds the crack, never eats it.
