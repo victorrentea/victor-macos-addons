@@ -269,12 +269,15 @@ class EventTapManager {
         // ⌥ must be cleared off the event too. Left on, the character arrives
         // flagged as a ⌥ chord and apps route it to a menu equivalent instead of
         // inserting it.
-        if hasOpt, !hasCmd, !hasCtrl,
-           let text = EmojiKeyLayer.output(keyCode: Int(keyCode), shift: hasShift) {
-            let utf16 = Array(text.utf16)
-            event.flags = flags.subtracting([.maskAlternate, .maskShift])
-            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-            return Unmanaged.passUnretained(event)
+        if hasOpt, !hasCmd, !hasCtrl {
+            let text = EmojiKeyLayer.output(keyCode: Int(keyCode), shift: hasShift)
+            EmojiKeyLayer.noteObserved(keyCode: Int(keyCode), shift: hasShift, matched: text != nil, text: text)
+            if let text {
+                let utf16 = Array(text.utf16)
+                event.flags = flags.subtracting([.maskAlternate, .maskShift])
+                event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+                return Unmanaged.passUnretained(event)
+            }
         }
 
         // While the 🔥 whip overlay is up, Enter cracks it (the button Victor uses

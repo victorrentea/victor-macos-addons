@@ -146,12 +146,40 @@ enum EmojiKeyLayer {
 
     // MARK: - Diagnostics
 
+    /// Every ⌥ keyDown the tap actually receives, matched or not.
+    ///
+    /// This is the whole difference between the two ways this can fail: a key
+    /// that never shows up here was taken upstream of us (another app's tap,
+    /// inserted ahead of ours), while one that shows up as `matched` and still
+    /// types the old character means the rewrite is being ignored downstream.
+    /// Guessing between those two is a waste of a restart.
+    private static var lastSeen: (keyCode: Int, shift: Bool, matched: Bool, at: Date)?
+    private static var lastRewrite: (keyCode: Int, text: String, at: Date)?
+    private static var rewrites = 0
+
+    /// The last *rewritten* key is tracked separately from the last one merely
+    /// seen: ⌥ chords fly past constantly (⌥⇧← to select a word, and so on), so
+    /// "last seen" is almost always some unrelated navigation key by the time
+    /// the status is read, and it cannot answer "did MY probe land?".
+    static func noteObserved(keyCode: Int, shift: Bool, matched: Bool, text: String?) {
+        lock.lock()
+        lastSeen = (keyCode, shift, matched, Date())
+        if let text {
+            lastRewrite = (keyCode, text, Date())
+            rewrites += 1
+        }
+        lock.unlock()
+    }
+
     static func statusJSON() -> String {
         refreshIfNeeded()
         lock.lock()
         let counts = (option.count, optionShift.count)
         let modified = loadedModified
         let error = lastLoadError
+        let seen = lastSeen
+        let rewritten = lastRewrite
+        let rewriteCount = rewrites
         lock.unlock()
         var fields: [String] = [
             "\"enabled\":\(isEnabled)",
@@ -159,7 +187,18 @@ enum EmojiKeyLayer {
             "\"option_bindings\":\(counts.0)",
             "\"option_shift_bindings\":\(counts.1)",
             "\"file_loaded\":\(modified != nil)",
+            "\"rewrites\":\(rewriteCount)",
         ]
+        if let seen {
+            fields.append("\"last_opt_keydown\":{\"key_code\":\(seen.keyCode),\"shift\":\(seen.shift),\"matched\":\(seen.matched),\"seconds_ago\":\(Int(Date().timeIntervalSince(seen.at)))}")
+        } else {
+            fields.append("\"last_opt_keydown\":null")
+        }
+        if let rewritten {
+            fields.append("\"last_rewrite\":{\"key_code\":\(rewritten.keyCode),\"typed\":\"\(rewritten.text)\",\"seconds_ago\":\(Int(Date().timeIntervalSince(rewritten.at)))}")
+        } else {
+            fields.append("\"last_rewrite\":null")
+        }
         if let modified {
             fields.append("\"file_modified\":\(Int(modified.timeIntervalSince1970))")
         }
