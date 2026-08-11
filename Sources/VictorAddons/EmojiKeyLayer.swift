@@ -21,17 +21,31 @@ import Foundation
 /// moves. Editing that file is live on the **next keystroke** — no rebuild, no
 /// re-login, no new layout name.
 ///
-/// **What it does not cover** (the `.keylayout` still does, and still should
-/// stay installed): secure-input contexts — password fields, Terminal's Secure
-/// Keyboard Entry — where event taps are disabled by design, and the login
-/// window, where this app isn't running yet.
+/// The seed is the **complete** ⌥/⌥⇧ custom set of `Victor-v27` — emoji *and*
+/// the Romanian diacritics `ă â î ș ț` — so the system layout can go back to
+/// stock ABC and nothing is lost. Everything not in this map falls through to
+/// ABC untouched, which is why the map holds only the differences: the baseline
+/// is macOS's job, and copying it would mean re-implementing a layout instead
+/// of layering on one.
+///
+/// **What it does not cover:** secure-input contexts — password fields,
+/// Terminal's Secure Keyboard Entry — where event taps are disabled by design,
+/// the login window, and the moments this app is restarting. In all of those ⌥
+/// falls back to plain ABC.
+///
+/// **The control layer is deliberately NOT ported.** `Victor-v27` also carried
+/// emoji on ⌃A/⌃C/⌃R and friends (verified live with `UCKeyTranslate`: ⌃C
+/// really does translate to 😢). It never did any harm because terminals and
+/// AppKit text views derive control characters themselves rather than asking
+/// the layout, so the mapping sat inert. This tap has no such mercy — it
+/// rewrites what it matches — so porting those would genuinely break ⌃C in
+/// every terminal. They are dropped as the dead experiment they are.
 enum EmojiKeyLayer {
     static let enabledKey = "EmojiKeyLayer.enabled"
 
-    /// Default ON: the seed below is transcribed from the active `Victor-v27`
-    /// layout, so with the layout still installed both paths produce the same
-    /// character and enabling this changes nothing visible. The one exception is
-    /// the probe on key 18 — see `optionSeed`.
+    /// Default ON: with the map now the only source of these characters,
+    /// starting disabled would mean an app restart silently costs Victor his
+    /// diacritics.
     static var isEnabled: Bool {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
@@ -57,9 +71,24 @@ enum EmojiKeyLayer {
         return (shift ? optionShift : option)[keyCode]
     }
 
+    /// The whole layer, for the ⌥ cheat-sheet to draw.
+    ///
+    /// `generation` bumps on every successful reload, so the overlay can tell
+    /// whether its cached keyboard images are stale without re-reading the file
+    /// or diffing dictionaries. Without it, editing the map would change what
+    /// the keys *type* while the sheet kept advertising the old bindings — a
+    /// cheat-sheet that lies is worse than none.
+    static func snapshot(shift: Bool) -> (bindings: [Int: String], generation: Int) {
+        refreshIfNeeded()
+        lock.lock()
+        defer { lock.unlock() }
+        return (shift ? optionShift : option, generation)
+    }
+
     // MARK: - File backing
 
     private static let lock = NSLock()
+    private static var generation = 0
     private static var option: [Int: String] = optionSeed
     private static var optionShift: [Int: String] = optionShiftSeed
     private static var loadedModified: Date?
@@ -103,6 +132,7 @@ enum EmojiKeyLayer {
             loadedModified = modified
             lastLoadError = nil
             seeded = true
+            generation += 1
             lock.unlock()
         } catch {
             // Keep serving the last good map: a half-saved file mid-edit must not
@@ -234,15 +264,8 @@ enum EmojiKeyLayer {
          13: "⚠️",
          15: "🤖",
          16: "🫵",
-         // Key 18 = "1". Stock ABC types ¡ here and Victor-v27 leaves it alone,
-         // so this is the probe: a 🧪 on ⌥+1 can ONLY have come from this tap,
-         // which is what makes the experiment falsifiable while every other
-         // binding agrees with the still-installed layout.
-         18: "🧪",
          20: "💰",
-         // ⌥+6 → "a" is faithfully transcribed from the layout, where it looks
-         // like a slip of the mouse in Ukelele rather than an intended binding.
-         22: "a",
+         21: "🥷",
          25: "🙁",
          29: "😊",
          30: "î",
@@ -267,6 +290,7 @@ enum EmojiKeyLayer {
           3: "🔥",
           4: "❤️",
           5: "🤮",
+          6: "🙈",
           8: "😢",
          11: "💣",
          13: "🚽",
@@ -274,6 +298,7 @@ enum EmojiKeyLayer {
          15: "☢️",
          17: "⏱️",
          20: "🤑",
+         21: "🧑‍💼",
          25: "🔽",
          27: "⊖",
          29: "🔼",
@@ -288,6 +313,7 @@ enum EmojiKeyLayer {
          41: "Ș",
          42: "Â",
          43: "∈",
+         45: "🥷",
          46: "💸",
          47: "⇒",
     ]

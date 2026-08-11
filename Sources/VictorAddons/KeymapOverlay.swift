@@ -783,6 +783,8 @@ final class KeymapOverlayWindow: NSPanel {
 
 final class KeymapOverlayController {
     private var images: [KeymapModifier: NSImage] = [:]
+    /// `EmojiKeyLayer.generation` these images were drawn from — see `show`.
+    private var renderedGeneration = -1
     private let window = KeymapOverlayWindow()
     private let renderer = KeymapOverlayRenderer()
     private let retinaScreenProvider: () -> NSScreen
@@ -848,30 +850,42 @@ final class KeymapOverlayController {
         }
     }
 
+    /// The ⌥ / ⌥⇧ sheets are drawn from `EmojiKeyLayer` — the same map the event
+    /// tap types from — rather than from the active `.keylayout`.
+    ///
+    /// They used to be parsed out of the layout file, which was correct only for
+    /// as long as the layout was what produced the characters. Now that the app
+    /// types them, parsing the layout would draw a keyboard nobody is using:
+    /// with the system layout back on stock ABC the sheet would come up empty,
+    /// and any binding added to the map would be missing from it. Reading the
+    /// map instead also removes the whole "could not locate active .keylayout"
+    /// failure path — there is no longer a file to fail to find.
+    ///
+    /// No `KeymapOverlayOutputFilter` here either: the map holds *only* the
+    /// custom bindings, so there is no ABC baseline left to strip out.
     @discardableResult
     func regenerateImages() -> Bool {
         let started = CFAbsoluteTimeGetCurrent()
-        guard let name = KeymapLayoutLocator.activeLayoutName(),
-              let url = KeymapLayoutLocator.keylayoutURL(named: name),
-              let text = try? String(contentsOf: url, encoding: .utf8) else {
-            overlayError("KeymapOverlay: could not locate active .keylayout (layout name: \(KeymapLayoutLocator.activeLayoutName() ?? "unknown"))")
-            return false
-        }
-        do {
-            let optionOutputs = try KeymapLayoutParser.outputs(in: text, modifier: .option)
-            let optionShiftOutputs = try KeymapLayoutParser.outputs(in: text, modifier: .optionShift)
-            images[.option] = renderer.render(outputs: KeymapOverlayOutputFilter.customOutputs(from: optionOutputs, modifier: .option))
-            images[.optionShift] = renderer.render(outputs: KeymapOverlayOutputFilter.customOutputs(from: optionShiftOutputs, modifier: .optionShift))
-            let elapsed = CFAbsoluteTimeGetCurrent() - started
-            overlayInfo(String(format: "KeymapOverlay: regenerated '%@' layout images in %.3fs", name, elapsed))
-            return true
-        } catch {
-            overlayError("KeymapOverlay: failed to parse active .keylayout '\(name)' — \(error)")
-            return false
-        }
+        let option = EmojiKeyLayer.snapshot(shift: false)
+        let optionShift = EmojiKeyLayer.snapshot(shift: true)
+        images[.option] = renderer.render(outputs: option.bindings)
+        images[.optionShift] = renderer.render(outputs: optionShift.bindings)
+        renderedGeneration = option.generation
+        let elapsed = CFAbsoluteTimeGetCurrent() - started
+        overlayInfo(String(format: "KeymapOverlay: drew %d ⌥ + %d ⌥⇧ bindings in %.3fs",
+                           option.bindings.count, optionShift.bindings.count, elapsed))
+        return true
     }
 
     func show(_ modifier: KeymapModifier) {
+        // Redraw when the map file has been edited since these images were baked,
+        // so a binding added mid-session shows up on the very next hold — the
+        // sheet has to keep pace with what the keys actually type. (The ⌘⌃ sheet
+        // is built in `init` from `CommandControlShortcuts` and is unaffected.)
+        if modifier != .commandControl,
+           EmojiKeyLayer.snapshot(shift: false).generation != renderedGeneration {
+            regenerateImages()
+        }
         // Last-chance rebuild: if we still have no images (startup read failed),
         // try once more now rather than no-opping the hold.
         if images[modifier] == nil { regenerateImages() }
