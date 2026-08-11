@@ -563,6 +563,12 @@ final class KeymapOverlayRenderer {
         KeyDef(row: 1, x: 750, width: 96, label: "i", code: 34),
         KeyDef(row: 1, x: 850, width: 96, label: "o", code: 31),
         KeyDef(row: 1, x: 950, width: 96, label: "p", code: 35),
+        // The five punctuation keys carry the Romanian diacritics (ă î â ș ț)
+        // and were missing from this list entirely — `visibleBaseLabel` already
+        // anticipated them, but with no KeyDef it never ran, so the sheet drew a
+        // keyboard that stopped at P and L and simply had nowhere to show them.
+        KeyDef(row: 1, x: 1050, width: 96, label: "[", code: 33),
+        KeyDef(row: 1, x: 1150, width: 96, label: "]", code: 30),
         KeyDef(row: 2, x: 90, width: 96, label: "a", code: 0),
         KeyDef(row: 2, x: 190, width: 96, label: "s", code: 1),
         KeyDef(row: 2, x: 290, width: 96, label: "d", code: 2),
@@ -572,6 +578,11 @@ final class KeymapOverlayRenderer {
         KeyDef(row: 2, x: 690, width: 96, label: "j", code: 38),
         KeyDef(row: 2, x: 790, width: 96, label: "k", code: 40),
         KeyDef(row: 2, x: 890, width: 96, label: "l", code: 37),
+        KeyDef(row: 2, x: 990, width: 96, label: ";", code: 41),
+        KeyDef(row: 2, x: 1090, width: 96, label: "'", code: 39),
+        // \ sits at the end of the home row on this Mac's ISO keyboard, not
+        // after ] the way an ANSI board has it.
+        KeyDef(row: 2, x: 1190, width: 96, label: "\\", code: 42),
         KeyDef(row: 3, x: 130, width: 96, label: "`", code: 50),
         KeyDef(row: 3, x: 230, width: 96, label: "z", code: 6),
         KeyDef(row: 3, x: 330, width: 96, label: "x", code: 7),
@@ -684,8 +695,16 @@ final class KeymapOverlayRenderer {
             guard !output.isEmpty else { continue }
             switch style {
             case .glyph:
-                let outputFrame = rect(key.x + key.width - key.width * 0.5 - 10, y + 36, key.width * 0.5, 56)
-                drawText(output, in: outputFrame, fontSize: compactFontSize(output), color: .white, alignment: .right)
+                // The punctuation keys draw no base letter (`visibleBaseLabel`),
+                // so their payload gets the whole key instead of being pushed
+                // into the right half against a letter that isn't there.
+                if baseLabel.isEmpty {
+                    let glyphFrame = rect(key.x + 5, y + 22, key.width - 10, 60)
+                    drawText(output, in: glyphFrame, fontSize: compactFontSize(output), color: .white, alignment: .center)
+                } else {
+                    let outputFrame = rect(key.x + key.width - key.width * 0.5 - 10, y + 36, key.width * 0.5, 56)
+                    drawText(output, in: outputFrame, fontSize: compactFontSize(output), color: .white, alignment: .right)
+                }
             case .word:
                 // An emoji label is a picture, not a word: it says what the key
                 // does at a glance, so it is drawn big and centred in the whole

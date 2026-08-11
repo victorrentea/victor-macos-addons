@@ -396,18 +396,28 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(KeymapOverlayRenderer.visibleBaseLabel("a"), "A")
     }
 
-    func testRenderedImageOmitsRomanianDiacriticKeyButtonsEntirely() throws {
+    /// The five punctuation keys carry the Romanian diacritics (ă î â ș ț), and
+    /// the sheet must draw them.
+    ///
+    /// This assertion used to say the exact opposite — those keys were left off
+    /// the keyboard deliberately. That made sense while the sheet was only ever
+    /// an *emoji* cheat-sheet; it stopped making sense once the app itself
+    /// became the source of the diacritics, because the sheet is now the only
+    /// place that answers "which key gives me ș". Their base labels stay
+    /// suppressed (see `testRendererSuppressesRequestedPunctuationBaseLabels`)
+    /// so the character itself is the whole content of the key.
+    func testRenderedImageDrawsTheRomanianDiacriticKeys() throws {
         let image = KeymapOverlayRenderer().render(outputs: [:], scale: 1.0)
         guard let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first else {
             XCTFail("Could not inspect rendered image")
             return
         }
 
-        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1098, y: 148)?.alphaComponent ?? 1, 0, accuracy: 0.001, "[ key should be transparent")
-        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1198, y: 148)?.alphaComponent ?? 1, 0, accuracy: 0.001, "] key should be transparent")
-        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1038, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "; key should be transparent")
-        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1138, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "' key should be transparent")
-        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1238, y: 248)?.alphaComponent ?? 1, 0, accuracy: 0.001, "\\ key should be transparent")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1098, y: 148)?.alphaComponent ?? 0, 1, accuracy: 0.001, "[ key should be drawn")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1198, y: 148)?.alphaComponent ?? 0, 1, accuracy: 0.001, "] key should be drawn")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1038, y: 248)?.alphaComponent ?? 0, 1, accuracy: 0.001, "; key should be drawn")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1138, y: 248)?.alphaComponent ?? 0, 1, accuracy: 0.001, "' key should be drawn")
+        XCTAssertEqual(bitmap.colorAtLogicalPoint(x: 1238, y: 248)?.alphaComponent ?? 0, 1, accuracy: 0.001, "\\ key should be drawn")
     }
 
     func testOverlayWindowStartsAtVisibleOpacityWithNoFade() {
