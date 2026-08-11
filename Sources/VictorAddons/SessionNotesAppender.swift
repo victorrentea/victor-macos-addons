@@ -51,6 +51,14 @@ enum SessionNotesAppender {
     /// Run off the main thread: it blocks briefly polling the pasteboard for the
     /// copy to land.
     static func copySelectionAndAppend() {
+        // ⌘⌃S is still under the fingers when this runs, and a synthetic ⌘C
+        // posted then reaches the app as ⌃⌘C — not Copy — so the selection is
+        // never captured and we silently fall back to a stale clipboard. Let
+        // the hand come off the keys first.
+        let clean = KeySimulator.waitForModifiersReleased()
+        if !clean {
+            overlayInfo("⌘⌃S: modifiers still held after 1s; posting ⌘C anyway")
+        }
         let before = PasteboardGate.sync { $0.changeCount }
         KeySimulator.cmdC()
 
@@ -67,6 +75,7 @@ enum SessionNotesAppender {
         // selected. Fall back to whatever is already on the clipboard rather
         // than reporting a failure and doing nothing.
         let copiedSomething = PasteboardGate.sync { $0.changeCount } != before
+        overlayInfo("⌘⌃S: \(copiedSomething ? "captured selection" : "no selection — using clipboard")")
 
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {

@@ -13,6 +13,32 @@ enum KeySimulator {
         keyUp.post(tap: .cghidEventTap)
     }
 
+    /// Block until no modifier key is physically held (or `timeout` elapses),
+    /// returning whether the keyboard actually came clean.
+    ///
+    /// A synthetic keystroke posted while the user is still holding the hotkey's
+    /// own modifiers does NOT arrive as the combination we asked for: the window
+    /// server merges the live hardware modifier state into it, so a ⌘C posted
+    /// with ⌘⌃S still down lands in the target app as ⌃⌘C — which no app treats
+    /// as Copy, so nothing is copied and the caller sees a clipboard that never
+    /// moved. Waiting for the fingers to come off is the only reliable fix; the
+    /// hand is already lifting by the time the hotkey handler runs, so this
+    /// normally costs a few tens of milliseconds.
+    @discardableResult
+    static func waitForModifiersReleased(timeout: TimeInterval = 1.0) -> Bool {
+        let watched: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
+        var waited: TimeInterval = 0
+        let step: TimeInterval = 0.02
+        while waited < timeout {
+            if CGEventSource.flagsState(.combinedSessionState).intersection(watched).isEmpty {
+                return true
+            }
+            Thread.sleep(forTimeInterval: step)
+            waited += step
+        }
+        return false
+    }
+
     static func cmdV() { simulateKeyPress(keyCode: 0x09, flags: .maskCommand) }
     static func cmdC() { simulateKeyPress(keyCode: 0x08, flags: .maskCommand) }
     static func cmdZ() { simulateKeyPress(keyCode: 0x06, flags: .maskCommand) }
