@@ -573,18 +573,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         openDreamClaude(directory: "~/workspace/ai", sessionName: "workspace", quarter: .topLeft)
     }
 
-    /// F8 global hotkey lands here.
+    /// F8 / ⌘⌃C global hotkey lands here.
     @objc func openDreamPlainWorkspace() {
-        openWorkspaceTerminal(command: "cd ~/workspace && claude")
+        openWorkspaceTerminal(command: "claude", tag: "claude")
     }
 
-    /// ⌘⌃Q — the same window running `cx`, Victor's ~/.zshrc alias for
-    /// `claude --dangerously-skip-permissions`. The alias (not the expansion) is
-    /// sent on purpose: it is what he'd type, and it is what the window then
-    /// shows. `do script` runs an interactive login shell, which is why a zsh
-    /// alias resolves at all — renaming `cx` in ~/.zshrc breaks this hotkey.
+    /// ⌘⌃Q — the same window with permissions bypassed. This used to type `cx`,
+    /// Victor's ~/.zshrc alias, into an interactive shell; the command is now
+    /// carried by a script file (see `openWorkspaceTerminal`), which is a
+    /// NON-interactive login shell, so .zshrc — and therefore the alias — never
+    /// loads. The expansion is spelled out instead, which also means renaming
+    /// `cx` in ~/.zshrc no longer breaks this hotkey.
     @objc func openBypassClaudeWorkspace() {
-        openWorkspaceTerminal(command: "cd ~/workspace && cx")
+        openWorkspaceTerminal(command: "claude --dangerously-skip-permissions", tag: "claude_bypass")
     }
 
     /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.
@@ -592,22 +593,73 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// already cds a shell that started in $HOME to ~/workspace, so an explicit
     /// `cd` would only print a redundant command line into a fresh window.
     @objc func openPlainTerminalWorkspace() {
-        openWorkspaceTerminal(command: "")
+        openWorkspaceTerminal(command: nil, tag: "")
     }
 
-    private func openWorkspaceTerminal(command: String) {
-        // `do script` already spawns a NEW window (not a tab), but without an
-        // explicit `set bounds` Terminal reopens it on whichever display it last
-        // had a window on (often an external monitor). Pin it to a quarter of the
-        // built-in Retina screen, like the other openDream* items. bottomLeft is
-        // the only quarter not used elsewhere.
-        let screen = NSScreen.screens.first(where: { $0.localizedName.localizedCaseInsensitiveContains("built-in") })
-            ?? NSScreen.screens.first(where: { $0.frame.origin == .zero })
+    /// The screen the MOUSE is currently on — that is the screen Victor is
+    /// looking at when he reaches for the shortcut, and the only one he can
+    /// mean. (Pinning these windows to the built-in Retina, as this used to,
+    /// puts them on the projector during a workshop.)
+    private func mouseScreen() -> NSScreen {
+        let p = NSEvent.mouseLocation
+        return NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) })
             ?? NSScreen.main ?? NSScreen.screens[0]
-        let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: .bottomLeft)
+    }
+
+    /// Open a Terminal window in ~/workspace on the screen under the cursor,
+    /// optionally running `command`.
+    ///
+    /// **The command travels in a script file, never as text typed into the
+    /// window.** `do script "claude"` writes those characters into the new
+    /// window's tty, and a window that already has keyboard focus is also
+    /// receiving whatever Victor is typing — so anything typed in that gap gets
+    /// interleaved into the command line and the shell runs `clahelloude`.
+    /// Passing the command as the shell's *argv* removes the race by
+    /// construction, and the script then drains the tty of anything typed
+    /// early before handing the terminal to claude.
+    private func openWorkspaceTerminal(command: String?, tag: String) {
+        // `do script` / `open` already spawn a NEW window (not a tab), but
+        // without an explicit `set bounds` Terminal reopens it on whichever
+        // display it last had a window on. bottomLeft is the only quarter not
+        // used by the other openDream* items.
+        let (l, t, r, b) = appleScriptBounds(screen: mouseScreen(), quarter: .bottomLeft)
+
+        guard let command, !command.isEmpty else {
+            let script = """
+            tell application "Terminal"
+                do script ""
+                activate
+                set bounds of front window to {\(l), \(t), \(r), \(b)}
+            end tell
+            """
+            DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
+            return
+        }
+
+        // A non-interactive login shell: .zprofile (PATH) loads, .zshrc does not
+        // — which is why the cd is explicit here even though .zshrc would land an
+        // *interactive* shell in ~/workspace on its own. It costs nothing: this
+        // line is never shown, unlike the old typed `cd ~/workspace && …`.
+        // The `exec zsh -il` at the end leaves a normal interactive prompt behind
+        // when claude exits, as the typed-command version did.
+        let tmpPath = "/tmp/victor_\(tag).sh"
+        let shContent = """
+        #!/bin/zsh -l
+        cd "$HOME/workspace" 2>/dev/null
+        stty -echo 2>/dev/null
+        while read -t 0 -k 1 _ 2>/dev/null; do : ; done
+        stty echo 2>/dev/null
+        \(command)
+        exec /bin/zsh -il
+
+        """
+        try? shContent.write(toFile: tmpPath, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
+
         let script = """
+        do shell script "open -a Terminal \(tmpPath)"
+        delay 0.5
         tell application "Terminal"
-            do script "\(command)"
             activate
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
