@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 12, 18:14"
+    static let BUILD_TIME = "Aug 12, 19:46"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -172,10 +172,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         screenshotClipItem.keyEquivalent = "p"
         screenshotClipItem.keyEquivalentModifierMask = .control
 
-        // Screenshot → Session Folder (⌃⇧P)
+        // Screenshot → Session Folder (⌥⇧P)
         let screenshotFileItem = addItem("📸 Screenshot → Session Folder", action: #selector(takeScreenshotFileAction))
-        screenshotFileItem.keyEquivalent = "P"
-        screenshotFileItem.keyEquivalentModifierMask = [.control, .shift]
+        screenshotFileItem.keyEquivalent = "p"
+        screenshotFileItem.keyEquivalentModifierMask = [.option, .shift]
 
         menu.addItem(.separator())
 
