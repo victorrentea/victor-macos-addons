@@ -2,6 +2,19 @@ import AppKit
 import Foundation
 
 enum SessionNotesAppender {
+    /// Who put a line in the session notes. Every appended line is relayed by
+    /// the daemon into the participants' notes toast, so the marker is what
+    /// tells the room — and whoever reads the notes file afterwards — whether a
+    /// line is a prompt that went to an agent or something Victor deliberately
+    /// sent over from his screen. The two paths were previously
+    /// indistinguishable once written.
+    enum Marker: String {
+        /// An intercepted prompt (⌘⌃ prompt capture via `/prompt`).
+        case agentPrompt = "🤖"
+        /// Sent by hand — ⌘⌃S (selection or clipboard) / ⌃⌥V (clipboard).
+        case sentByHand = "📋"
+    }
+
     /// Set by AppDelegate at startup. The unified bottom-left banner used to
     /// surface a prompt-capture offer (hover to commit) and the short
     /// confirmation flash after a clipboard append. If unset, those requests
@@ -126,7 +139,7 @@ enum SessionNotesAppender {
             // proposed action floats the pill up into the notes — the rising
             // fade *is* the "sent" feedback, so there's no follow-up flash.
             do {
-                _ = try writeNotes(captured)
+                _ = try writeNotes(captured, marker: .agentPrompt)
                 banner?.dismissRisingFade()
             } catch {
                 reportWriteFailure(error)
@@ -166,15 +179,15 @@ enum SessionNotesAppender {
 
     enum NotesError: Error { case noSession, noNotesFile }
 
-    /// Write a "- text" line to the active notes file, returning the file URL
+    /// Write a "- <marker> text" line to the active notes file, returning the file URL
     /// and the byte offset *before* the write (for undo). Throws on any failure.
     /// Banner-free: callers decide the visual feedback (rising-fade, undo offer,
     /// or an error flash) so the same write powers every entry point.
     @discardableResult
-    private static func writeNotes(_ text: String) throws -> (file: URL, offset: UInt64) {
+    private static func writeNotes(_ text: String, marker: Marker) throws -> (file: URL, offset: UInt64) {
         guard let folder = ScreenshotManager.sessionFolder else { throw NotesError.noSession }
         guard let notes = findNotesFile(in: folder) else { throw NotesError.noNotesFile }
-        let offset = try appendLine(text, to: notes)
+        let offset = try appendLine(marker.rawValue + " " + text, to: notes)
         overlayInfo("Appended \(text.count) chars to \(notes.path)")
         return (notes, offset)
     }
@@ -196,7 +209,7 @@ enum SessionNotesAppender {
     /// expires → rising fade).
     private static func pasteAndOfferUndo(text: String) {
         do {
-            let (notes, offset) = try writeNotes(text)
+            let (notes, offset) = try writeNotes(text, marker: .sentByHand)
             showUndoable("Pasted: " + singleLine(text),
                          undo: { performUndo(file: notes, toOffset: offset) })
         } catch {
