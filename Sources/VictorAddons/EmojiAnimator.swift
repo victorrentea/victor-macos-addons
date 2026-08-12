@@ -4711,6 +4711,29 @@ class EmojiAnimator {
         shake.values = positions
         imgLayer.add(shake, forKey: "shake")
 
+        // The ringing phone itself, in the bottom-left corner. It is a SUBLAYER
+        // of the screenshot, not a sibling: the shake above animates the
+        // screenshot's `position`, and children ride along with it for free —
+        // so the phone rattles in lockstep with the desktop instead of drifting
+        // out of phase with a shake of its own.
+        if let url = Bundle.module.url(forResource: "red-phone", withExtension: "png"),
+           let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let phone = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+            let aspect = CGFloat(phone.width) / CGFloat(phone.height)
+            var w = bounds.width * 0.26
+            var h = w / aspect
+            if h > bounds.height * 0.45 {
+                h = bounds.height * 0.45
+                w = h * aspect
+            }
+            let margin = bounds.width * 0.02
+            let phoneLayer = CALayer()
+            phoneLayer.frame = CGRect(x: margin, y: margin, width: w, height: h)  // y = 0 is the bottom edge
+            phoneLayer.contents = phone
+            phoneLayer.contentsGravity = .resizeAspect
+            imgLayer.addSublayer(phoneLayer)
+        }
+
         // Fade out over last 0.3s
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.3
