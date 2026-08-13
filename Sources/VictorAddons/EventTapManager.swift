@@ -257,18 +257,6 @@ class EventTapManager {
             DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileModifierHeld?() }
         }
 
-        // ⌥⇧P → screenshot to session folder (suppress). Moved off ⌃⇧P, which is
-        // VS Code's Command Palette — a global tap that eats it makes the palette
-        // unreachable in the editor, and the editor wins that argument.
-        //
-        // This MUST stay above the ⌥ emoji layer below: that branch claims every
-        // ⌥ chord it has a character for, and on a US layout ⌥⇧P is `Π`, so an
-        // order swap here silently turns the screenshot back into a typed glyph.
-        if keyCode == VK_P && hasOpt && hasShift && !hasCmd && !hasCtrl {
-            DispatchQueue.global().async { [weak self] in self?.onScreenshot?(false) }
-            return nil
-        }
-
         // ⌥ / ⌥⇧ emoji layer (`EmojiKeyLayer`) — the app types the character
         // instead of the .keylayout, so adding one no longer costs a re-login.
         //
@@ -300,10 +288,15 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        // ⌃P → screenshot to clipboard (suppress). ⇧ excluded: ⌃⇧P is left for
-        // VS Code now, and the "to file" half lives on ⌥⇧P above.
-        if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt && !hasShift {
-            DispatchQueue.global().async { [weak self] in self?.onScreenshot?(true) }
+        // ⌃P → screenshot to clipboard, ⌃⇧P → screenshot to the session folder
+        // (both suppressed). The file half briefly lived on ⌥⇧P to leave ⌃⇧P to
+        // VS Code's Command Palette, but ⌥⇧P is the emoji layer's 🧑‍💻 — a
+        // character Victor actually types — and a branch above that layer ate it.
+        // Losing the palette to a global tap is the cheaper of the two prices,
+        // and the two halves of one feature read better on one base modifier.
+        if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt {
+            let toClipboard = !hasShift
+            DispatchQueue.global().async { [weak self] in self?.onScreenshot?(toClipboard) }
             return nil
         }
 

@@ -172,10 +172,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         screenshotClipItem.keyEquivalent = "p"
         screenshotClipItem.keyEquivalentModifierMask = .control
 
-        // Screenshot → Session Folder (⌥⇧P)
+        // Screenshot → Session Folder (⌃⇧P)
         let screenshotFileItem = addItem("📸 Screenshot → Session Folder", action: #selector(takeScreenshotFileAction))
         screenshotFileItem.keyEquivalent = "p"
-        screenshotFileItem.keyEquivalentModifierMask = [.option, .shift]
+        screenshotFileItem.keyEquivalentModifierMask = [.control, .shift]
 
         menu.addItem(.separator())
 
