@@ -20,6 +20,8 @@ class EventTapManager {
     var onCaptureClipboard: ((String) -> Void)?
     var onEmotionalPaste: (() -> Void)?
     var onScreenshot: (() -> Void)?
+    /// ⌃P **held** — macOS's crosshair crop (see `ScreenshotHoldPolicy`).
+    var onScreenshotCrop: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onTileTerminals: (() -> Void)?
@@ -100,6 +102,13 @@ class EventTapManager {
     /// (events are handled serially there), so no lock needed.
     private var zoomAccumulator: Double = 0
 
+    /// ⌃P press tracking, for the tap-vs-hold split. Like `zoomAccumulator`,
+    /// these live only on the tap's run-loop thread, so they need no lock.
+    /// `screenshotCropFired` makes the two hold signals (autorepeat, then keyUp)
+    /// idempotent — whichever arrives first wins, one crop per press.
+    private var screenshotKeyDownAt: CFAbsoluteTime?
+    private var screenshotCropFired = false
+
     /// Bundle id + pid of the focused app, cached from the main thread via an
     /// NSWorkspace notification so the tap callback can read them without touching
     /// AppKit off-thread. The pid is what `TerminalZoomSizeLock` addresses the
@@ -117,6 +126,9 @@ class EventTapManager {
     func start() {
         let eventsOfInterest: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
+            // keyUp is here for one reason: telling a ⌃P tap from a ⌃P hold on a
+            // Mac whose key repeat is off, where no autorepeat ever arrives.
+            CGEventMask(1 << CGEventType.keyUp.rawValue) |
             CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseUp.rawValue) |
@@ -240,6 +252,21 @@ class EventTapManager {
         }
 
         // Keyboard events
+        if type == .keyUp {
+            // The only key whose release means anything to us: a ⌃P that was
+            // held long enough to be asking for the crop instead of the screen.
+            if CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_P,
+               let pressedAt = screenshotKeyDownAt {
+                screenshotKeyDownAt = nil
+                if !screenshotCropFired,
+                   ScreenshotHoldPolicy.isHold(pressDuration: CFAbsoluteTimeGetCurrent() - pressedAt) {
+                    screenshotCropFired = true
+                    DispatchQueue.global().async { [weak self] in self?.onScreenshotCrop?() }
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
         guard type == .keyDown else {
             return Unmanaged.passUnretained(event)
         }
@@ -293,8 +320,22 @@ class EventTapManager {
         // "save to the session folder" half of this feature, and with one
         // shortcut doing both there is nothing left for it to mean, so the
         // combination goes back to the focused app (VS Code's Command Palette).
+        //
+        // Held, it becomes the crosshair crop instead (`ScreenshotHoldPolicy`).
+        // The tap fires the full-screen shot on the *first* keyDown with nothing
+        // deferred — a "wait and see if it's a hold" delay in front of every
+        // press is precisely the latency this shortcut must not have.
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt && !hasShift {
-            DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+                if !screenshotCropFired {
+                    screenshotCropFired = true
+                    DispatchQueue.global().async { [weak self] in self?.onScreenshotCrop?() }
+                }
+            } else {
+                screenshotKeyDownAt = CFAbsoluteTimeGetCurrent()
+                screenshotCropFired = false
+                DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
+            }
             return nil
         }
 

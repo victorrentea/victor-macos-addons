@@ -36,6 +36,13 @@ enum ScreenshotManager {
     /// still uses it for the notes file.
     static var sessionFolder: URL?
 
+    /// The full-screen shot taken by the *keyDown* of a ⌃P that turned out to be
+    /// a hold. A crop launched by that same press supersedes it, so the folder
+    /// doesn't collect a full screen nobody asked for next to every crop.
+    /// Tap thread writes it, the crop's background queue consumes it.
+    private static let supersedeLock = NSLock()
+    private static var supersedable: (url: URL, at: Date)?
+
     @discardableResult
     static func takeScreenshot() -> URL? {
         let target = activeDisplay()
@@ -52,23 +59,93 @@ enum ScreenshotManager {
         process.waitUntilExit()
 
         let saved = FileManager.default.fileExists(atPath: filepath.path)
+
+        // The border flash goes up the instant the pixels are safe — BEFORE the
+        // clipboard work, not after it. Re-encoding a retina capture to PNG *and*
+        // TIFF is by far the most expensive step here (hundreds of ms), and doing
+        // it first pushed the yellow border that far behind the keypress, which
+        // read as "⌃P is laggy". The flash cannot go any earlier than this:
+        // it is a window on screen, so anything drawn before the capture is drawn
+        // *into* the capture.
+        if saved, let screen = target.screen {
+            DispatchQueue.main.async {
+                ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
+            }
+        }
+
         if saved {
+            supersedeLock.lock()
+            supersedable = (filepath, Date())
+            supersedeLock.unlock()
             copyToClipboard(filepath)
             overlayInfo("📸 \(filename) (display \(display)) → clipboard + \(screenshotsDir.path)")
         } else {
             overlayInfo("⚠️ Screenshot failed (display \(display))")
         }
 
-        if let screen = target.screen {
-            DispatchQueue.main.async {
-                ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
-            }
-        }
         // A folder nobody looks at has to bound itself. Off the capture path —
         // the shot is already on the clipboard, the pruning can take its time.
         DispatchQueue.global(qos: .background).async { prune() }
         onScreenshotTaken?()
         return saved ? filepath : nil
+    }
+
+    /// Hold ⌃P (or the menu item) → macOS's own crosshair selection, then the
+    /// same two destinations as a plain ⌃P: clipboard **and** a dated file.
+    ///
+    /// `screencapture -i` is the very tool ⌃⇧P used to reach, minus the choice:
+    /// you no longer decide "full or crop" before pressing, you decide it by how
+    /// long you keep the key down. Esc / right-click cancels the selection and
+    /// writes no file — which must leave the clipboard alone, so nothing here
+    /// runs unless a file actually appeared.
+    ///
+    /// `supersedeRecentFull` is true only on the hotkey path: the hold has
+    /// already taken a full-screen shot (that's what made it zero-latency), and
+    /// once the crop lands that full screen is a byproduct nobody wanted.
+    @discardableResult
+    static func takeCropScreenshot(supersedeRecentFull: Bool = false) -> URL? {
+        // Our own fading border would otherwise be selected *into* the crop.
+        DispatchQueue.main.async { ScreenCaptureFlash.cancelAll() }
+
+        try? FileManager.default.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
+        let filename = Self.filename(for: Date())
+        let filepath = screenshotsDir.appendingPathComponent(filename)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-i", "-x", "-t", "jpg", filepath.path]
+        try? process.run()
+        process.waitUntilExit()
+
+        guard FileManager.default.fileExists(atPath: filepath.path) else {
+            overlayInfo("📸 crop cancelled")
+            return nil   // Esc: clipboard and folder untouched.
+        }
+
+        if let screen = activeDisplay().screen {
+            DispatchQueue.main.async {
+                ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
+            }
+        }
+        copyToClipboard(filepath)
+        overlayInfo("✂️ \(filename) → clipboard + \(screenshotsDir.path)")
+
+        if supersedeRecentFull { dropSupersededFull() }
+        DispatchQueue.global(qos: .background).async { prune() }
+        onScreenshotTaken?()
+        return filepath
+    }
+
+    /// Delete the full-screen shot the same hold produced. Bounded in time so a
+    /// crop can never remove a screenshot that belongs to an earlier press.
+    private static func dropSupersededFull(now: Date = Date()) {
+        supersedeLock.lock()
+        let pending = supersedable
+        supersedable = nil
+        supersedeLock.unlock()
+        guard let pending, now.timeIntervalSince(pending.at) < 20 else { return }
+        try? FileManager.default.removeItem(at: pending.url)
+        NSLog("[Screenshot] crop superseded \(pending.url.lastPathComponent)")
     }
 
     /// Enforce `ScreenshotRetentionPolicy` over the folder. Best-effort by

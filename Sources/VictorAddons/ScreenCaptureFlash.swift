@@ -12,6 +12,14 @@ enum ScreenCaptureFlash {
         } ?? NSScreen.main ?? NSScreen.screens.first
     }
 
+    /// Take every live border down immediately. Called before an interactive
+    /// crop: the flash is a real window, so a border still fading on screen
+    /// would be selected into the crop the user is about to drag.
+    static func cancelAll() {
+        for panel in activePanels { panel.orderOut(nil) }
+        activePanels.removeAll()
+    }
+
     static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30, color: NSColor = .systemYellow, showCameraGlyph: Bool = false) {
         let panel = NSPanel(
             contentRect: screen.frame,

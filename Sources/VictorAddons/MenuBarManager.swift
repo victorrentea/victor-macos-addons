@@ -65,6 +65,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
+    var onCropScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
@@ -173,6 +174,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let screenshotItem = addItem("📸 Screenshot", action: #selector(takeScreenshotAction))
         screenshotItem.keyEquivalent = "p"
         screenshotItem.keyEquivalentModifierMask = .control
+
+        // The crop has no key equivalent of its own — it IS ⌃P, held. The item
+        // says so, because a hold is the one gesture nothing on screen reveals.
+        addItem("✂️ Screenshot crop (hold ⌃P)", action: #selector(cropScreenshotAction))
 
         menu.addItem(.separator())
 
@@ -508,6 +513,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func takeScreenshotAction() {
         onTakeScreenshot?()
+    }
+
+    @objc private func cropScreenshotAction() {
+        onCropScreenshot?()
     }
 
     @objc private func displayJoinLinkAction() {

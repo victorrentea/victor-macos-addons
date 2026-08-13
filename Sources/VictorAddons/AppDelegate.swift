@@ -991,6 +991,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onTakeScreenshot = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() }
         }
+        menuBarManager.onCropScreenshot = {
+            // From the menu there is no hold and so no full-screen shot to drop.
+            DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() }
+        }
 
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
@@ -1141,6 +1145,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onEmotionalPaste = { [weak pasteHandler] in pasteHandler?.handleCleanHotkey() }
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
+        eventTap.onScreenshotCrop = {
+            // supersedeRecentFull: the keyDown of this same hold already took a
+            // full-screen shot; the crop is what was actually wanted.
+            DispatchQueue.global(qos: .userInitiated).async {
+                ScreenshotManager.takeCropScreenshot(supersedeRecentFull: true)
+            }
+        }
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
