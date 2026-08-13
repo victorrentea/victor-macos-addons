@@ -375,10 +375,15 @@ class EmojiAnimator {
     }
 
     /// Blow the cup's pixels apart from `center`, over a box `side` wide. Every tile
-    /// flies outward along its own direction from the centre (plus jitter and a
-    /// little gravity on the way down), spinning and shrinking as it fades, while
-    /// the whole cloud is scaled up 1.6× — so the cup visibly ENLARGES as it
-    /// fragments instead of just vanishing.
+    /// drifts outward along its own direction from the centre (plus jitter and a
+    /// little gravity on the way down), turning and shrinking as it fades, while
+    /// the whole cloud is scaled up — so the cup visibly ENLARGES as it fragments
+    /// instead of just vanishing.
+    ///
+    /// Tuned DOWN from the first version, which read as a detonation: the fragments
+    /// travel about a third as far, turn a quarter as much, take longer doing it and
+    /// start fading at a quarter of the way in. The cup should come apart and
+    /// dissolve, not be shot.
     private func pixelDissolve(at center: CGPoint, side: CGFloat) {
         let tiles = Self.dissolveTiles()
         guard !tiles.isEmpty else { return }
@@ -405,11 +410,11 @@ class EmojiAnimator {
             let from = CGPoint(x: f.midX, y: f.midY)
             let dx = from.x - side / 2, dy = from.y - side / 2
             let len = max(1, sqrt(dx * dx + dy * dy))
-            let dist = side * CGFloat.random(in: 0.55...1.5)
-            let jx = CGFloat.random(in: -0.3...0.3), jy = CGFloat.random(in: -0.3...0.3)
+            let dist = side * CGFloat.random(in: 0.18...0.55)
+            let jx = CGFloat.random(in: -0.15...0.15), jy = CGFloat.random(in: -0.15...0.15)
             let ux = dx / len + jx, uy = dy / len + jy
-            let end = CGPoint(x: from.x + ux * dist, y: from.y + uy * dist - side * 0.30)
-            let apex = CGPoint(x: from.x + ux * dist * 0.55, y: from.y + uy * dist * 0.55 + side * 0.12)
+            let end = CGPoint(x: from.x + ux * dist, y: from.y + uy * dist - side * 0.16)
+            let apex = CGPoint(x: from.x + ux * dist * 0.55, y: from.y + uy * dist * 0.55 + side * 0.06)
             let path = CGMutablePath()
             path.move(to: from)
             path.addQuadCurve(to: end, control: apex)
@@ -420,8 +425,8 @@ class EmojiAnimator {
             // Spin + shrink baked into ONE keyframed transform: two separate
             // animations on transform.rotation and transform.scale fight over the
             // same property, so the fragments would jitter instead of tumbling.
-            let rot = CGFloat.random(in: -2.6...2.6)
-            let endScale = CGFloat.random(in: 0.35...1.15)
+            let rot = CGFloat.random(in: -0.7...0.7)
+            let endScale = CGFloat.random(in: 0.55...1.0)
             let steps = 6
             var frames: [NSValue] = []
             for i in 0...steps {
@@ -435,12 +440,12 @@ class EmojiAnimator {
             tumble.values = frames
             tumble.timingFunction = CAMediaTimingFunction(name: .easeOut)
 
-            let dur = Double.random(in: 0.55...0.9)
+            let dur = Double.random(in: 0.8...1.25)
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 1
             fade.toValue = 0
-            fade.beginTime = dur * 0.45
-            fade.duration = dur * 0.55
+            fade.beginTime = dur * 0.25
+            fade.duration = dur * 0.75
             fade.fillMode = .forwards
 
             let grp = CAAnimationGroup()
@@ -451,20 +456,21 @@ class EmojiAnimator {
             piece.add(grp, forKey: "shatter")
         }
 
-        // The cloud itself keeps expanding — the "grows while it explodes" part.
+        // The cloud itself keeps expanding — the "grows while it comes apart" part.
         let bloom = CABasicAnimation(keyPath: "transform.scale")
         bloom.fromValue = 1.0
-        bloom.toValue = 1.6
-        bloom.duration = 0.9
+        bloom.toValue = 1.25
+        bloom.duration = 1.2
         bloom.timingFunction = CAMediaTimingFunction(name: .easeOut)
         bloom.fillMode = .forwards
         bloom.isRemovedOnCompletion = false
         container.add(bloom, forKey: "bloom")
 
-        // A short white flash at the seat of the blast, for punch.
+        // A soft glow where the cup was — a hint that something gave way, not a muzzle
+        // flash (which is what made the first version read as an explosion).
         let flash = CAGradientLayer()
         flash.type = .radial
-        flash.colors = [NSColor.white.withAlphaComponent(0.95).cgColor,
+        flash.colors = [NSColor.white.withAlphaComponent(0.45).cgColor,
                         NSColor.white.withAlphaComponent(0.0).cgColor]
         flash.locations = [0.0, 1.0]
         flash.startPoint = CGPoint(x: 0.5, y: 0.5)
@@ -473,14 +479,14 @@ class EmojiAnimator {
         flash.frame = CGRect(x: center.x - fs / 2, y: center.y - fs / 2, width: fs, height: fs)
         hostLayer.addSublayer(flash)
         let fScale = CABasicAnimation(keyPath: "transform.scale")
-        fScale.fromValue = 0.35
-        fScale.toValue = 1.7
+        fScale.fromValue = 0.4
+        fScale.toValue = 1.15
         let fFade = CABasicAnimation(keyPath: "opacity")
-        fFade.fromValue = 0.85
+        fFade.fromValue = 0.5
         fFade.toValue = 0
         let fGrp = CAAnimationGroup()
         fGrp.animations = [fScale, fFade]
-        fGrp.duration = 0.32
+        fGrp.duration = 0.4
         fGrp.timingFunction = CAMediaTimingFunction(name: .easeOut)
         fGrp.fillMode = .forwards
         fGrp.isRemovedOnCompletion = false
@@ -488,8 +494,8 @@ class EmojiAnimator {
 
         // Both layers are fire-and-forget: nothing else refers to them, so a plain
         // deadline past the longest animation is all the teardown they need.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { flash.removeFromSuperlayer() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { container.removeFromSuperlayer() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { flash.removeFromSuperlayer() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.45) { container.removeFromSuperlayer() }
     }
 
     // MARK: - "−1" minute token flying to the break timer
