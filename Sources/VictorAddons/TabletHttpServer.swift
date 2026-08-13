@@ -444,6 +444,8 @@ class TabletHttpServer {
             return .effect("money")
         case "/test/coffee":
             return .effect("coffee")
+        case "/test/coffee/pop":
+            return .effect("coffee/pop")
         case "/test/iris":
             return .effect("iris")
         case "/test/minion":

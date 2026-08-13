@@ -301,6 +301,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 // gesture can be exercised headlessly — hover one, hold 3s, watch it
                 // freeze, grow, and explode (starts the break, or shaves 1s off it).
                 for _ in 0..<3 { self?.animator.spawnEmoji("☕") }
+            case "coffee/pop":
+                // Test hook (/test/coffee/pop): skip the hold entirely — pop a fully
+                // charged ☕ mid-screen and run the whole payoff (pixel dissolve, then
+                // either the timer flying in from the blast or a −1 floating to it).
+                guard let self else { return }
+                if let at = self.animator.popCoffeeForTest() {
+                    if self.breakTimer.isShowing {
+                        self.flyMinuteToBreakTimer(from: at)
+                    } else {
+                        self.breakTimer.start(minutes: 10,
+                                              title: BreakTimerModel.untilBreakTitle,
+                                              sizeScale: 0.5,
+                                              zoomFrom: at)
+                    }
+                }
             case "corner-confetti": self?.animator.spawnCornerConfetti()
             case "game-over/stop":  self?.animator.stopGameOver()
             case "green-flash":
@@ -1341,29 +1356,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// deliberate hold registers even with a perfectly still cursor. The 3-second
     /// hold — not a mere graze — is what triggers the payoff, so it can now run even
     /// while a break is up without accidental firing. EVERY coffee under the cursor
-    /// inflates at once, and the tick reports how many actually EXPLODED:
+    /// inflates at once, and the tick reports WHERE each one actually EXPLODED:
     ///   • no break showing → the first explosion STARTS the 10-min "UNTIL BREAK"
-    ///     timer (any further ones in the same tick immediately shorten it);
-    ///   • break already running → each explosion SHAVES 1 MINUTE off the remaining
-    ///     time (keep popping coffees to keep pulling the break closer).
+    ///     timer, which grows into its corner out of that very blast over 2s (any
+    ///     further ones in the same tick then fly their minute at it);
+    ///   • break already running → each explosion sends a big red **−1** floating to
+    ///     the clock, and the minute comes off WHEN IT LANDS (keep popping coffees to
+    ///     keep pulling the break closer).
+    ///
+    /// The deduction is deliberately deferred to the token's arrival rather than
+    /// applied here: the number arriving is then the deduction itself, so a cluster
+    /// of coffees popping at once reads as several minutes converging on the watch
+    /// instead of digits that dropped by 3 while confetti happened elsewhere.
     private func installCoffeeBreakHoverMonitor() {
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            let exploded = self.animator?.tickCoffeeCharge(cursorGlobalPoint: NSEvent.mouseLocation) ?? 0
-            guard exploded > 0 else { return }
-            if self.breakTimer.isShowing {
-                overlayInfo("☕ x\(exploded) exploded → −\(exploded)m off the break")
-                self.breakTimer.addSeconds(-60 * exploded)
+            let exploded = self.animator?.tickCoffeeCharge(cursorGlobalPoint: NSEvent.mouseLocation) ?? []
+            guard !exploded.isEmpty else { return }
+            var pending = exploded
+            if !self.breakTimer.isShowing {
+                let origin = pending.removeFirst()
+                overlayInfo("☕ x\(exploded.count) exploded → starting 10-min UNTIL BREAK timer")
+                self.breakTimer.start(minutes: 10,
+                                      title: BreakTimerModel.untilBreakTitle,
+                                      sizeScale: 0.5,
+                                      zoomFrom: origin)
             } else {
-                overlayInfo("☕ x\(exploded) exploded → starting 10-min UNTIL BREAK timer")
-                self.breakTimer.start(minutes: 10, title: BreakTimerModel.untilBreakTitle, sizeScale: 0.5)
-                // Coffees that ripened on the same tick still count: the first one
-                // opened the timer, the rest immediately pull it closer.
-                if exploded > 1 { self.breakTimer.addSeconds(-60 * (exploded - 1)) }
+                overlayInfo("☕ x\(exploded.count) exploded → −\(exploded.count)m flying to the break")
             }
+            // Coffees that ripened on the same tick still count: the first one opened
+            // the timer, the rest send their minute after it (they land while it is
+            // still flying in, and the token tracks it there).
+            for point in pending { self.flyMinuteToBreakTimer(from: point) }
         }
         RunLoop.main.add(t, forMode: .common)
         coffeeHoverTimer = t
+    }
+
+    /// Send one exploded coffee's minute to the break timer: a "−1" floats from the
+    /// blast to wherever the watch is at that moment, shrinking as it closes in, and
+    /// the countdown loses the minute (with a flash + a nudge) only once it arrives.
+    private func flyMinuteToBreakTimer(from point: CGPoint) {
+        animator?.flyMinuteToken(
+            fromGlobal: point,
+            targetGlobal: { [weak self] in self?.breakTimer.tokenTargetGlobal },
+            onArrival: { [weak self] in
+                guard let self, self.breakTimer.isShowing else { return }
+                self.breakTimer.addSeconds(-60)
+                self.breakTimer.reactToMinuteRemoved()
+            })
     }
 
     // MARK: - Break reminder

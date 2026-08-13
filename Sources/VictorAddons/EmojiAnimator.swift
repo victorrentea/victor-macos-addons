@@ -231,9 +231,12 @@ class EmojiAnimator {
     }
 
     /// Drive the hover-to-hold coffee gesture. Call every poll tick (~0.1s) with the
-    /// current global cursor point. Returns HOW MANY coffees finished their
-    /// `coffeeChargeSeconds` hold on this tick and exploded — the caller turns each
-    /// one into a minute off the break (or the first one into a fresh break timer).
+    /// current global cursor point. Returns WHERE (global coords) each coffee that
+    /// finished its `coffeeChargeSeconds` hold exploded on this tick — the caller
+    /// turns each one into a minute off the break (or the first one into a fresh
+    /// break timer). The POSITIONS, not just the count, because both payoffs start
+    /// at the coffee: the fresh timer zooms in from there and each later minute
+    /// flies to the clock from there.
     ///
     /// Every coffee under the cursor charges simultaneously: parking on a cluster
     /// inflates all of them, each frozen in place and growing steadily (the growth is
@@ -241,8 +244,8 @@ class EmojiAnimator {
     /// actually explode count. A coffee whose box the cursor has left is cancelled
     /// individually — the others keep charging. A generous hit slop keeps both the
     /// catch and the hold forgiving.
-    func tickCoffeeCharge(cursorGlobalPoint globalPoint: CGPoint) -> Int {
-        guard let frame = Self.builtInScreenFrame() else { return 0 }
+    func tickCoffeeCharge(cursorGlobalPoint globalPoint: CGPoint) -> [CGPoint] {
+        guard let frame = Self.builtInScreenFrame() else { return [] }
         // Overlay panel covers the built-in screen; its layer origin (0,0) sits at
         // the screen's bottom-left, so shift the global point by the screen origin.
         let p = CGPoint(x: globalPoint.x - frame.origin.x, y: globalPoint.y - frame.origin.y)
@@ -253,14 +256,14 @@ class EmojiAnimator {
         }
 
         // --- Charging ones: complete, cancel, or keep each on its own clock ---
-        var exploded = 0
+        var exploded: [CGPoint] = []
         var stillCharging: [CoffeeCharge] = []
         for charge in coffeeCharges {
             if !box(charge.layer).contains(p) {
                 cancelCoffeeCharge(charge.layer)
             } else if now - charge.start >= Self.coffeeChargeSeconds {
-                explodeCoffee(charge.layer)
-                exploded += 1
+                let at = explodeCoffee(charge.layer)
+                exploded.append(CGPoint(x: at.x + frame.origin.x, y: at.y + frame.origin.y))
             } else {
                 stillCharging.append(charge)
             }
@@ -310,60 +313,289 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
-    /// The hold completed: pop the coffee with a 💥 burst. The burst rides its own
-    /// fully-owned layer, so it plays in full even if the coffee's original rise/fade
-    /// bookkeeping happens to remove the ☕ underneath it.
-    private func explodeCoffee(_ coffee: CATextLayer) {
-        let center = coffee.presentation()?.position ?? coffee.position
+    /// The hold completed: the coffee doesn't get a 💥 pasted on top of it — it
+    /// FRAGMENTS. The ☕ layer goes away in the same frame and its own rendered
+    /// pixels take its place as a grid of little square tiles that blow apart while
+    /// the cloud as a whole keeps growing (see `pixelDissolve`), so the pop reads as
+    /// the cup shattering rather than as a second emoji arriving. Returns the
+    /// explosion centre in overlay-layer coords, which is where the payoff starts
+    /// from (the timer's zoom-in, or the −1 token's flight).
+    @discardableResult
+    private func explodeCoffee(_ coffee: CATextLayer) -> CGPoint {
+        let pres = coffee.presentation() ?? coffee
+        let center = pres.position
+        // The charge grew the cup via transform.scale, so its on-screen box is the
+        // layer box times that scale — the size the fragments must start at.
+        let scale = max(0.1, pres.transform.m11)
+        let side = pres.bounds.width * scale
 
-        // Fling the ☕ itself out: a quick scale-up + fade, then gone.
         coffee.removeAllAnimations()
-        let pop = CABasicAnimation(keyPath: "transform.scale")
-        pop.fromValue = Self.coffeeChargeGrowScale
-        pop.toValue = Self.coffeeChargeGrowScale * 1.6
-        let popFade = CABasicAnimation(keyPath: "opacity")
-        popFade.fromValue = 1
-        popFade.toValue = 0
-        let popGrp = CAAnimationGroup()
-        popGrp.animations = [pop, popFade]
-        popGrp.duration = 0.35
-        popGrp.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        popGrp.fillMode = .forwards
-        popGrp.isRemovedOnCompletion = false
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak coffee] in coffee?.removeFromSuperlayer() }
-        coffee.add(popGrp, forKey: "explode")
-        CATransaction.commit()
+        coffee.removeFromSuperlayer()
+        pixelDissolve(at: center, side: side)
+        return center
+    }
 
-        // 💥 burst on its own layer, centered on the coffee.
-        let burst = CATextLayer()
-        burst.string = "💥"
-        burst.fontSize = 96
-        burst.alignmentMode = .center
-        burst.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
-        let s: CGFloat = 130
-        burst.frame = CGRect(x: center.x - s / 2, y: center.y - s / 2, width: s, height: s)
-        hostLayer.addSublayer(burst)
-        let bScale = CABasicAnimation(keyPath: "transform.scale")
-        bScale.fromValue = 0.4
-        bScale.toValue = 1.8
-        bScale.duration = 0.5
-        bScale.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        let bFade = CABasicAnimation(keyPath: "opacity")
-        bFade.fromValue = 1
-        bFade.toValue = 0
-        bFade.beginTime = 0.15
-        bFade.duration = 0.35
-        bFade.fillMode = .forwards
-        let bGrp = CAAnimationGroup()
-        bGrp.animations = [bScale, bFade]
-        bGrp.duration = 0.5
-        bGrp.fillMode = .forwards
-        bGrp.isRemovedOnCompletion = false
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak burst] in burst?.removeFromSuperlayer() }
-        burst.add(bGrp, forKey: "burst")
-        CATransaction.commit()
+    // MARK: - Pixel dissolve
+
+    /// The ☕ glyph is diced into `dissolveGrid²` square tiles. 12×12 over a ~240px
+    /// popped cup gives ~20px fragments: chunky enough to read as pixels, fine
+    /// enough to still look like a cup for the first frames.
+    private static let dissolveGrid = 12
+    private static var _dissolveTiles: [(row: Int, col: Int, image: CGImage)]?
+
+    /// The cup rendered once and cut into tiles, laid out the way `CATextLayer`
+    /// draws it inside its box — horizontally centred, anchored at the TOP (that's
+    /// where CATextLayer puts the first line) — so each fragment starts on exactly
+    /// the pixels it replaces and the swap is invisible.
+    private static func dissolveTiles() -> [(row: Int, col: Int, image: CGImage)] {
+        if let cached = _dissolveTiles { return cached }
+        let side: CGFloat = 91                        // the spawnEmoji box
+        let img = NSImage(size: NSSize(width: side, height: side))
+        img.lockFocus()
+        let str = NSAttributedString(string: "☕", attributes: [.font: NSFont.systemFont(ofSize: 78)])
+        let sz = str.size()
+        str.draw(at: NSPoint(x: (side - sz.width) / 2, y: side - sz.height))
+        img.unlockFocus()
+        var rect = CGRect(x: 0, y: 0, width: side, height: side)
+        guard let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return [] }
+        var out: [(row: Int, col: Int, image: CGImage)] = []
+        let g = dissolveGrid
+        for r in 0..<g {
+            for c in 0..<g {
+                // Integer pixel bounds, so no row/column is dropped or doubled.
+                let x0 = cg.width * c / g, x1 = cg.width * (c + 1) / g
+                let y0 = cg.height * r / g, y1 = cg.height * (r + 1) / g
+                if let cut = cg.cropping(to: CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)) {
+                    out.append((row: r, col: c, image: cut))
+                }
+            }
+        }
+        _dissolveTiles = out
+        return out
+    }
+
+    /// Blow the cup's pixels apart from `center`, over a box `side` wide. Every tile
+    /// flies outward along its own direction from the centre (plus jitter and a
+    /// little gravity on the way down), spinning and shrinking as it fades, while
+    /// the whole cloud is scaled up 1.6× — so the cup visibly ENLARGES as it
+    /// fragments instead of just vanishing.
+    private func pixelDissolve(at center: CGPoint, side: CGFloat) {
+        let tiles = Self.dissolveTiles()
+        guard !tiles.isEmpty else { return }
+        let g = Self.dissolveGrid
+        let cell = side / CGFloat(g)
+        let contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+
+        let container = CALayer()
+        container.frame = CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+        hostLayer.addSublayer(container)
+
+        for t in tiles {
+            // Row 0 is the TOP of the bitmap; the overlay layer's y grows upward.
+            let f = CGRect(x: CGFloat(t.col) * cell,
+                           y: CGFloat(g - 1 - t.row) * cell,
+                           width: cell, height: cell)
+            let piece = CALayer()
+            piece.frame = f
+            piece.contents = t.image
+            piece.contentsScale = contentsScale
+            piece.magnificationFilter = .nearest      // stay square: pixels, not smudges
+            container.addSublayer(piece)
+
+            let from = CGPoint(x: f.midX, y: f.midY)
+            let dx = from.x - side / 2, dy = from.y - side / 2
+            let len = max(1, sqrt(dx * dx + dy * dy))
+            let dist = side * CGFloat.random(in: 0.55...1.5)
+            let jx = CGFloat.random(in: -0.3...0.3), jy = CGFloat.random(in: -0.3...0.3)
+            let ux = dx / len + jx, uy = dy / len + jy
+            let end = CGPoint(x: from.x + ux * dist, y: from.y + uy * dist - side * 0.30)
+            let apex = CGPoint(x: from.x + ux * dist * 0.55, y: from.y + uy * dist * 0.55 + side * 0.12)
+            let path = CGMutablePath()
+            path.move(to: from)
+            path.addQuadCurve(to: end, control: apex)
+            let move = CAKeyframeAnimation(keyPath: "position")
+            move.path = path
+            move.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+            // Spin + shrink baked into ONE keyframed transform: two separate
+            // animations on transform.rotation and transform.scale fight over the
+            // same property, so the fragments would jitter instead of tumbling.
+            let rot = CGFloat.random(in: -2.6...2.6)
+            let endScale = CGFloat.random(in: 0.35...1.15)
+            let steps = 6
+            var frames: [NSValue] = []
+            for i in 0...steps {
+                let k = CGFloat(i) / CGFloat(steps)
+                let s = 1 + (endScale - 1) * k
+                var m = CATransform3DMakeRotation(rot * k, 0, 0, 1)
+                m = CATransform3DScale(m, s, s, 1)
+                frames.append(NSValue(caTransform3D: m))
+            }
+            let tumble = CAKeyframeAnimation(keyPath: "transform")
+            tumble.values = frames
+            tumble.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+            let dur = Double.random(in: 0.55...0.9)
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0
+            fade.beginTime = dur * 0.45
+            fade.duration = dur * 0.55
+            fade.fillMode = .forwards
+
+            let grp = CAAnimationGroup()
+            grp.animations = [move, tumble, fade]
+            grp.duration = dur
+            grp.fillMode = .forwards
+            grp.isRemovedOnCompletion = false
+            piece.add(grp, forKey: "shatter")
+        }
+
+        // The cloud itself keeps expanding — the "grows while it explodes" part.
+        let bloom = CABasicAnimation(keyPath: "transform.scale")
+        bloom.fromValue = 1.0
+        bloom.toValue = 1.6
+        bloom.duration = 0.9
+        bloom.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        bloom.fillMode = .forwards
+        bloom.isRemovedOnCompletion = false
+        container.add(bloom, forKey: "bloom")
+
+        // A short white flash at the seat of the blast, for punch.
+        let flash = CAGradientLayer()
+        flash.type = .radial
+        flash.colors = [NSColor.white.withAlphaComponent(0.95).cgColor,
+                        NSColor.white.withAlphaComponent(0.0).cgColor]
+        flash.locations = [0.0, 1.0]
+        flash.startPoint = CGPoint(x: 0.5, y: 0.5)
+        flash.endPoint = CGPoint(x: 1.0, y: 1.0)
+        let fs = side * 0.9
+        flash.frame = CGRect(x: center.x - fs / 2, y: center.y - fs / 2, width: fs, height: fs)
+        hostLayer.addSublayer(flash)
+        let fScale = CABasicAnimation(keyPath: "transform.scale")
+        fScale.fromValue = 0.35
+        fScale.toValue = 1.7
+        let fFade = CABasicAnimation(keyPath: "opacity")
+        fFade.fromValue = 0.85
+        fFade.toValue = 0
+        let fGrp = CAAnimationGroup()
+        fGrp.animations = [fScale, fFade]
+        fGrp.duration = 0.32
+        fGrp.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        fGrp.fillMode = .forwards
+        fGrp.isRemovedOnCompletion = false
+        flash.add(fGrp, forKey: "flash")
+
+        // Both layers are fire-and-forget: nothing else refers to them, so a plain
+        // deadline past the longest animation is all the teardown they need.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { flash.removeFromSuperlayer() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { container.removeFromSuperlayer() }
+    }
+
+    // MARK: - "−1" minute token flying to the break timer
+
+    private static let minuteTokenFlightSeconds: CFTimeInterval = 1.15
+
+    /// Fling a big red **−1** from an exploded coffee (`fromGlobal`) to the break
+    /// timer and, when it lands, call `onArrival` — which is what actually takes the
+    /// minute off the countdown, so the number you watch arriving IS the deduction
+    /// rather than a decoration next to one that already happened.
+    ///
+    /// `targetGlobal` is sampled EVERY FRAME, not once: the clock may be zooming in
+    /// from a coffee that popped on the same tick, or be dragged mid-flight, and the
+    /// token has to end up wherever it actually is at that moment. It shrinks to
+    /// half its size on the way in (near → big, at the clock → small), so a cluster
+    /// of coffees popping reads as several minutes converging on the watch. If the
+    /// timer is closed mid-flight the token just fades out and `onArrival` never
+    /// fires — there is nothing left to subtract from.
+    func flyMinuteToken(fromGlobal point: CGPoint,
+                        targetGlobal: @escaping () -> CGPoint?,
+                        onArrival: @escaping () -> Void) {
+        guard let screen = Self.builtInScreenFrame() else { return }
+        let start = CGPoint(x: point.x - screen.origin.x, y: point.y - screen.origin.y)
+
+        let size: CGFloat = 190
+        let token = CATextLayer()
+        token.string = "−1"
+        token.font = NSFont.boldSystemFont(ofSize: 130)
+        token.fontSize = 130
+        token.alignmentMode = .center
+        token.foregroundColor = NSColor.systemRed.cgColor
+        token.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        // Black halo: the token crosses whatever is on the desktop on its way to the
+        // clock, and red on red text needs an edge to stay readable.
+        token.shadowColor = NSColor.black.cgColor
+        token.shadowRadius = 6
+        token.shadowOpacity = 1
+        token.shadowOffset = .zero
+        token.masksToBounds = false
+        token.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        token.position = start
+        hostLayer.addSublayer(token)
+
+        let t0 = CACurrentMediaTime()
+        let dur = Self.minuteTokenFlightSeconds
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak token] tm in
+            guard let token else { tm.invalidate(); return }
+            guard let tgGlobal = targetGlobal() else {
+                // The clock went away mid-flight — drop the token, subtract nothing.
+                tm.invalidate()
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { token.removeFromSuperlayer() }
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = token.presentation()?.opacity ?? 1
+                fade.toValue = 0
+                fade.duration = 0.25
+                fade.fillMode = .forwards
+                fade.isRemovedOnCompletion = false
+                token.add(fade, forKey: "fizzle")
+                CATransaction.commit()
+                return
+            }
+            let target = CGPoint(x: tgGlobal.x - screen.origin.x, y: tgGlobal.y - screen.origin.y)
+            let raw = min(1.0, (CACurrentMediaTime() - t0) / dur)
+            // easeInOut: it leaves the blast gently, covers the distance, then settles.
+            let e = CGFloat(raw < 0.5 ? 2 * raw * raw : 1 - pow(-2 * raw + 2, 2) / 2)
+            let arc = sin(Double(e) * .pi) * 70                  // a hump, so it "floats" over
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)                // we ARE the animation
+            token.position = CGPoint(x: start.x + (target.x - start.x) * e,
+                                     y: start.y + (target.y - start.y) * e + CGFloat(arc))
+            let s = 1 - 0.5 * e                                  // full size → half at the clock
+            token.transform = CATransform3DMakeScale(s, s, 1)
+            token.opacity = Float(e > 0.88 ? (1 - (e - 0.88) / 0.12) : 1)
+            CATransaction.commit()
+
+            if raw >= 1.0 {
+                tm.invalidate()
+                token.removeFromSuperlayer()
+                onArrival()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// Test hook (`/test/coffee/pop`): put a ☕ at the given point already fully
+    /// charged and blow it up on the spot, returning where it popped — the whole
+    /// chain (pixel dissolve → timer zoom-in / −1 token) without holding a cursor
+    /// still for three seconds. Nil if there is no built-in screen to draw on.
+    @discardableResult
+    func popCoffeeForTest(atGlobal globalPoint: CGPoint? = nil) -> CGPoint? {
+        guard let screen = Self.builtInScreenFrame() else { return nil }
+        let side: CGFloat = 91
+        let layer = CATextLayer()
+        layer.string = "☕"
+        layer.fontSize = 78
+        layer.alignmentMode = .center
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        layer.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        let p = globalPoint.map { CGPoint(x: $0.x - screen.origin.x, y: $0.y - screen.origin.y) }
+            ?? CGPoint(x: screen.width * 0.3, y: screen.height * 0.45)
+        layer.position = p
+        layer.transform = CATransform3DMakeScale(Self.coffeeChargeGrowScale, Self.coffeeChargeGrowScale, 1)
+        hostLayer.addSublayer(layer)
+        let at = explodeCoffee(layer)
+        return CGPoint(x: at.x + screen.origin.x, y: at.y + screen.origin.y)
     }
 
     /// The built-in Retina screen's frame in global coords — where the overlay sits.

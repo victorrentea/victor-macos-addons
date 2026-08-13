@@ -42,6 +42,9 @@ final class BreakTimerController {
     private var blinkTimer: Timer?            // drives the expiry blink
     private var shakeTimer: Timer?            // drives the whole-window expiry shake
     private var activityTimer: Timer?         // toggles the background while the user works
+    private var joltTimer: Timer?             // the short "a minute just landed" nudge
+    private var joltBase: NSRect?             // pre-jolt frame, so overlapping jolts can't drift the window
+    private var zoomInUntil: CFTimeInterval = 0   // a coffee-driven fly-in owns the frame until then
     private var bgView: NSView?              // opaque backdrop, faded in/out
     private var bgOpaque = true              // current backdrop state
     private var epoch = 0                      // invalidates in-flight expiry blocks
@@ -108,7 +111,13 @@ final class BreakTimerController {
 
     /// (Re)start the countdown at `minutes`. Reuses the existing window in place
     /// (keeping its position & size); a fresh window opens top-right at 25% width.
-    func start(minutes: Int, title: String = "BREAK", sizeScale: CGFloat = 1.0) {
+    ///
+    /// `zoomFrom` (global coords) makes a FRESH window grow into place from that
+    /// point over `zoomInSeconds` instead of appearing in the corner: the ☕ gesture
+    /// passes the spot where the coffee exploded, so the watch visibly comes OUT of
+    /// the pop that asked for it. Ignored when a window is already up (a re-click
+    /// must not fly the running countdown around the screen).
+    func start(minutes: Int, title: String = "BREAK", sizeScale: CGFloat = 1.0, zoomFrom: CGPoint? = nil) {
         epoch += 1
         skipBlackoutOnClose = false
         ScreenBlackout.shared.dismiss()        // a new break wins over a previous close's blackout
@@ -122,12 +131,14 @@ final class BreakTimerController {
         // Mac's live timezone) and locks it in; later starts today reuse it.
         selectedCountry = BreakCountry.autoSelectForToday()
 
+        let isFresh = (panel == nil)
         let view = ensureWindow()
         view.titleText = title
         view.selectedCountryTZ = selectedCountry.tz
         view.setDigitsVisible(true)
         panel?.alphaValue = 1
         panel?.orderFrontRegardless()
+        if isFresh, let origin = zoomFrom { animateZoomIn(from: origin) }
 
         startTicking()
         startActivityMonitor()
@@ -153,6 +164,107 @@ final class BreakTimerController {
         if !paused { startTicking() }
         refresh()
         persist()
+    }
+
+    // MARK: - Coffee-driven entrances / reactions
+
+    /// How long a fresh window takes to grow from the exploded coffee into its
+    /// corner. Two seconds is slow on purpose: it is the only announcement the
+    /// "UNTIL BREAK" countdown gets, and the travel is what makes the room notice
+    /// that popping coffees produced a clock.
+    private static let zoomInSeconds: TimeInterval = 2.0
+
+    /// Where a flying "−1" should land: the middle of the watch in global coords, or
+    /// nil when no timer is on screen (the token then fizzles instead of subtracting
+    /// from a countdown that no longer exists). Read per frame during a flight, so
+    /// the token follows the window through its zoom-in and any drag.
+    var tokenTargetGlobal: CGPoint? {
+        guard let panel else { return nil }
+        let f = panel.frame
+        return CGPoint(x: f.midX, y: f.midY)
+    }
+
+    /// Grow the fresh window into place from `globalPoint` (where the coffee blew
+    /// up). The panel starts as a small copy of its target frame centred on that
+    /// point and animates to the corner; the backdrop's corner radius rides along,
+    /// otherwise the radius computed for the full size rounds the tiny window into a
+    /// pill for the first second.
+    private func animateZoomIn(from globalPoint: CGPoint) {
+        guard let panel else { return }
+        let target = panel.frame
+        let k: CGFloat = 0.10                             // starts a tenth of the way there
+        let small = NSRect(x: globalPoint.x - target.width * k / 2,
+                           y: globalPoint.y - target.height * k / 2,
+                           width: target.width * k,
+                           height: target.height * k)
+        zoomInUntil = CACurrentMediaTime() + Self.zoomInSeconds
+        panel.setFrame(small, display: true)
+        if let bg = bgView?.layer {
+            let from = small.height * 0.05, to = target.height * 0.05
+            bg.cornerRadius = to
+            let r = CABasicAnimation(keyPath: "cornerRadius")
+            r.fromValue = from
+            r.toValue = to
+            r.duration = Self.zoomInSeconds
+            r.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            bg.add(r, forKey: "zoomInRadius")
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.zoomInSeconds
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(target, display: true)
+        }
+    }
+
+    /// A "−1" token just reached the watch: flash the backdrop white and give the
+    /// window a short jolt, so the minute coming off is unmistakable rather than a
+    /// digit that quietly changed. Skipped while fullscreen — the panel is then the
+    /// whole screen, and flashing/shoving that would be a strobe, not feedback.
+    func reactToMinuteRemoved() {
+        guard let panel else { return }
+        if let bg = bgView?.layer {
+            let flash = CABasicAnimation(keyPath: "backgroundColor")
+            flash.fromValue = NSColor.white.withAlphaComponent(0.85).cgColor
+            flash.toValue = NSColor.black.cgColor
+            flash.duration = 0.4
+            flash.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            bg.add(flash, forKey: "minuteFlash")
+        }
+        // No jolt while fullscreen (the panel IS the screen — that would be a strobe)
+        // or while the window is still flying in from the coffee, whose own frame
+        // animation we would be fighting for control of the frame.
+        guard !isEnlarged, CACurrentMediaTime() >= zoomInUntil else { return }
+        // One outward-and-back nudge about the window's own centre (~4%), driven
+        // frame by frame like the expiry shake — a frame animation is the only way
+        // to move a borderless panel as one rigid unit.
+        //
+        // A second token landing mid-jolt must not treat the bumped frame as home:
+        // `joltBase` is the pre-jolt frame and survives the takeover, otherwise each
+        // overlapping jolt would leave the window a few percent bigger for good.
+        joltTimer?.invalidate()
+        let base = joltBase ?? panel.frame
+        joltBase = base
+        let start = Date()
+        let total = 0.26
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
+            guard let self, self.joltTimer === tm, let panel = self.panel, !self.isEnlarged else {
+                tm.invalidate(); return
+            }
+            let dt = Date().timeIntervalSince(start)
+            guard dt < total else {
+                tm.invalidate()
+                self.joltTimer = nil
+                self.joltBase = nil
+                panel.setFrame(base, display: true)       // settle exactly home
+                return
+            }
+            let bump = sin(dt / total * .pi) * 0.04       // 0 → +4% → 0
+            let w = base.width * (1 + bump), h = base.height * (1 + bump)
+            panel.setFrame(NSRect(x: base.midX - w / 2, y: base.midY - h / 2, width: w, height: h),
+                           display: true)
+        }
+        joltTimer = t
+        RunLoop.main.add(t, forMode: .common)
     }
 
     func togglePause() {
@@ -182,6 +294,8 @@ final class BreakTimerController {
         blinkTimer?.invalidate(); blinkTimer = nil
         shakeTimer?.invalidate(); shakeTimer = nil
         activityTimer?.invalidate(); activityTimer = nil
+        joltTimer?.invalidate(); joltTimer = nil; joltBase = nil
+        zoomInUntil = 0
         // Drop the fullscreen "break screen" extras (harmless no-ops if not active).
         removeBlackoutPanels()
         allowSleep()
