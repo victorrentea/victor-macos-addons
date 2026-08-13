@@ -2003,19 +2003,25 @@ class EmojiAnimator {
         _ = cancelIfRunning("applause", sound: "27_clapping.mp3")
     }
 
-    // MARK: - Minion (tile #80 `80_badumtss.mp3` — silent animated minion face)
+    // MARK: - Minion (tile #80 `80_badumtss.mp3` — silent animated minion crowd)
 
-    /// How long the minion face lingers on screen, and — mirrored by
+    /// How long the minions linger on screen, and — mirrored by
     /// AppDelegate's onSoundPlay `durationMs` — how long the tablet keeps the tile
     /// in its "playing" state, i.e. the window during which a re-tap STOPS it.
-    static let minionDuration: Double = 6.0
+    /// It is **one full pass of the asset** (132 frames × 40 ms), so the clip is
+    /// never cut mid-motion: the GIF ends on the frame it started from (it plays
+    /// forward, then rewinds through its last 30%), which is only a seamless
+    /// landing if the effect lives exactly one loop.
+    static let minionDuration: Double = 5.28
 
-    /// Tile #80 (`80_badumtss.mp3`) — a looping animated minion (goggled, blue
-    /// overalls, wiping frost off glass with a squeegee), pinned FLUSH BOTTOM-LEFT,
-    /// x-mirrored, ~45% of screen width, with NO sound. The asset is `minion.gif`
-    /// (transparent full-canvas frames). A gray "powder"/frost layer
-    /// (`minion-powder.png`, extracted from an early frame) fades in FIRST, then
-    /// the minion fades in over it and the powder clears.
+    /// Tile #80 (`80_badumtss.mp3`) — a cheering crowd of minions, pinned FLUSH
+    /// BOTTOM-LEFT, ~45% of screen width, with NO sound. The asset is `minion.gif`
+    /// (OPAQUE frames, 480×227): the source footage is a live-action-ish crowd
+    /// shot with no separable subject, so there is no alpha to key out and the
+    /// banner is meant to read as a framed clip sitting on the desktop.
+    /// It is **not** mirrored — the old asset was a lone minion facing out of frame
+    /// and had to be flipped to face the screen; a crowd has no such heading, and
+    /// flipping it would only mirror the lettering and lighting for no gain.
     /// It loops for `minionDuration`, tracked in `activeEffects` so the tablet's
     /// pre-press /effect/stop-all tears it down — which is what makes the
     /// NON-restartable tile STOP (not restart) when pressed again. A direct
@@ -2045,82 +2051,37 @@ class EmojiAnimator {
         }
         guard let first = images.first, sourceDuration > 0 else { return }
 
-        // Intro: the gray "powder" the minion is wiping (`minion-powder.png`,
-        // extracted from an early frame) fades in FIRST, then the minion itself
-        // fades in over it and the powder clears — as if the minion arrives to
-        // wipe the dust that's already on the glass.
-        // Powder fades in over 1s, then holds 2s fully visible (introDelay = 3s
-        // of powder-only), then the minion fades in quickly as the powder clears.
-        let introDelay = 3.0              // powder-only time before the minion appears
-        let duration = Self.minionDuration
-        let total = introDelay + duration
-
-        let powderImg: CGImage? = Bundle.module.url(forResource: "minion-powder", withExtension: "png")
-            .flatMap { CGImageSourceCreateWithURL($0 as CFURL, nil) }
-            .flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+        let total = Self.minionDuration
 
         // ~45% of the screen WIDTH, aspect-preserved height, pinned FLUSH to the
-        // BOTTOM-LEFT corner and horizontally mirrored (so the minion faces in
-        // toward the screen). A container holds the mirror transform + frame so
-        // BOTH the powder and the minion children are mirrored+aligned identically
-        // and are torn down together on cancel. hostLayer is AppKit y-up, so the
-        // bottom edge is y = 0; the minion's feet reach the canvas bottom in ~80%
-        // of frames, so a flush mount reads as no empty space below.
+        // BOTTOM-LEFT corner. hostLayer is AppKit y-up, so the bottom edge is
+        // y = 0; the crowd is framed right up to the bottom of its own canvas, so
+        // a flush mount reads as no empty space below.
         let bounds = hostLayer.bounds
         let aspect = CGFloat(first.width) / CGFloat(first.height)
         let layerW = bounds.width * 0.45
         let layerH = layerW / aspect
-        let container = CALayer()
-        container.frame = CGRect(x: 0, y: 0, width: layerW, height: layerH)
-        container.transform = CATransform3DMakeScale(-1, 1, 1)   // mirror both children in place
-        hostLayer.addSublayer(container)
-        let childFrame = CGRect(x: 0, y: 0, width: layerW, height: layerH)
-
-        // ── Powder layer (behind) ──────────────────────────────────────────
-        if let powderImg = powderImg {
-            let powderLayer = CALayer()
-            powderLayer.frame = childFrame
-            powderLayer.contentsGravity = .resizeAspect
-            powderLayer.contents = powderImg
-            powderLayer.opacity = 0
-            container.addSublayer(powderLayer)
-
-            let pIn = CABasicAnimation(keyPath: "opacity")
-            pIn.fromValue = 0.0; pIn.toValue = 1.0
-            pIn.duration = 1.0
-            pIn.fillMode = .forwards; pIn.isRemovedOnCompletion = false
-            powderLayer.add(pIn, forKey: "powderIn")
-
-            // Clear the powder as the minion arrives (at introDelay).
-            let pOut = CABasicAnimation(keyPath: "opacity")
-            pOut.fromValue = 1.0; pOut.toValue = 0.0
-            pOut.beginTime = CACurrentMediaTime() + introDelay
-            pOut.duration = 0.7
-            pOut.fillMode = .forwards; pOut.isRemovedOnCompletion = false
-            powderLayer.add(pOut, forKey: "powderOut")
-        }
-
-        // ── Minion layer (in front) ────────────────────────────────────────
         let gifLayer = CALayer()
-        gifLayer.frame = childFrame
+        gifLayer.frame = CGRect(x: 0, y: 0, width: layerW, height: layerH)
         gifLayer.contentsGravity = .resizeAspect
         gifLayer.contents = first
         gifLayer.opacity = 0
-        container.addSublayer(gifLayer)
+        hostLayer.addSublayer(gifLayer)
 
-        // Loop the minion for the whole duration (frames start when it appears).
+        // Loop the crowd for the whole duration. `repeatCount` stays infinite even
+        // though the effect is one loop long: the fade-out overlaps the tail, and a
+        // finite count would freeze the last frame under it if either drifts.
         let anim = CAKeyframeAnimation(keyPath: "contents")
         anim.values = images
         anim.duration = sourceDuration
         anim.repeatCount = .infinity
-        anim.beginTime = CACurrentMediaTime() + introDelay
         gifLayer.add(anim, forKey: "minionFrames")
 
-        // Fade the minion in QUICKLY after the powder has held (introDelay).
+        // Fade in immediately — the press IS the cue, so anything before the crowd
+        // is dead air on a 5s effect.
         let fadeIn = CABasicAnimation(keyPath: "opacity")
         fadeIn.fromValue = 0.0
         fadeIn.toValue = 1.0
-        fadeIn.beginTime = CACurrentMediaTime() + introDelay
         fadeIn.duration = 0.35
         fadeIn.fillMode = .forwards
         fadeIn.isRemovedOnCompletion = false
@@ -2129,7 +2090,7 @@ class EmojiAnimator {
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = CACurrentMediaTime() + max(introDelay, total - 0.6)
+        fadeOut.beginTime = CACurrentMediaTime() + max(0, total - 0.6)
         fadeOut.duration = 0.6
         fadeOut.fillMode = .forwards
         fadeOut.isRemovedOnCompletion = false
@@ -2137,8 +2098,7 @@ class EmojiAnimator {
 
         // No sound by design — the tile is silent; onSoundPlay neutralizes the
         // routed clip and returns just the duration so the tile stays "playing".
-        // Track the CONTAINER so cancel/cleanup removes powder + minion together.
-        trackEffect("minion", layer: container, duration: total, sound: nil)
+        trackEffect("minion", layer: gifLayer, duration: total, sound: nil)
     }
 
     // MARK: - Pulse / heartbeat (one-shot: 2 QRS cycles then flatline)

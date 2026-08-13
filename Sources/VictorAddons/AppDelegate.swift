@@ -462,8 +462,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if name == "34_phoenix.mp3" {
                 return "{\"ok\":true,\"durationMs\":\(Int(EmojiAnimator.phoenixDuration * 1000))}"
             }
-            // Tile #80 (🍌 badumtss → animated minion face): SILENT by design —
-            // play NOTHING here. The looping minion face is driven by the press
+            // Tile #80 (🍌 badumtss → animated minion crowd): SILENT by design —
+            // play NOTHING here. The looping minion crowd is driven by the press
             // path (SoundEffectMap: 80_badumtss.mp3 → "minion"). Return the minion's
             // on-screen duration so the NON-restartable tile stays "playing" for that
             // window: a re-tap within it fires /effect/stop-all (which tears the
