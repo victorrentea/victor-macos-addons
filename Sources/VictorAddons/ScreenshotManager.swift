@@ -49,8 +49,8 @@ enum ScreenshotManager {
         let display = target.number
 
         try? FileManager.default.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
-        let filename = Self.filename(for: Date())
-        let filepath = screenshotsDir.appendingPathComponent(filename)
+        let filepath = uniqueURL(for: Date())
+        let filename = filepath.lastPathComponent
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -104,46 +104,85 @@ enum ScreenshotManager {
     /// once the crop lands that full screen is a byproduct nobody wanted.
     @discardableResult
     static func takeCropScreenshot(supersedeRecentFull: Bool = false) -> URL? {
-        // Our own fading border would otherwise be selected *into* the crop.
-        DispatchQueue.main.async { ScreenCaptureFlash.cancelAll() }
+        // Our own border must stay off the screen for the whole selection —
+        // both the one still fading and the one the hold's full-screen shot is
+        // about to raise from behind us.
+        ScreenCaptureFlash.beginSuppression()
+        defer { ScreenCaptureFlash.endSuppression() }
 
         try? FileManager.default.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
-        let filename = Self.filename(for: Date())
-        let filepath = screenshotsDir.appendingPathComponent(filename)
+        let filepath = uniqueURL(for: Date())
+        let filename = filepath.lastPathComponent
+
+        // Watched so the confirmation border can frame the crop; `screencapture`
+        // itself says nothing about the region it took.
+        let drag = CropDragTracker()
+        drag.start()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         process.arguments = ["-i", "-x", "-t", "jpg", filepath.path]
         try? process.run()
         process.waitUntilExit()
+        let draggedRect = drag.stop()
 
         guard FileManager.default.fileExists(atPath: filepath.path) else {
             overlayInfo("📸 crop cancelled")
             return nil   // Esc: clipboard and folder untouched.
         }
 
-        if let screen = activeDisplay().screen {
-            DispatchQueue.main.async {
-                ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
-            }
-        }
+        flashCropBorder(around: draggedRect, capture: filepath)
         copyToClipboard(filepath)
         overlayInfo("✂️ \(filename) → clipboard + \(screenshotsDir.path)")
 
-        if supersedeRecentFull { dropSupersededFull() }
+        if supersedeRecentFull { dropSupersededFull(except: filepath) }
         DispatchQueue.global(qos: .background).async { prune() }
         onScreenshotTaken?()
         return filepath
     }
 
+    /// Frame the crop that was just taken — or show nothing at all.
+    ///
+    /// The whole-screen border belongs to the whole-screen shot: after a
+    /// selection it claims the wrong thing, since not taking the whole screen is
+    /// exactly what the crop was for. So the border goes around the region — and
+    /// only when the drag we watched agrees with the saved picture's own pixel
+    /// dimensions. A window pick, or a drag that couldn't be reconstructed,
+    /// draws nothing: silence is right, a border in the wrong place isn't.
+    private static func flashCropBorder(around dragged: CGRect?, capture: URL) {
+        guard let dragged else { return }
+        DispatchQueue.main.async {
+            guard let primaryMaxY = NSScreen.screens.first?.frame.maxY else { return }
+            let cocoa = CropFlashGeometry.cocoaRect(dragged, primaryMaxY: primaryMaxY)
+            let scale = NSScreen.screens.first { NSMouseInRect(CGPoint(x: cocoa.midX, y: cocoa.midY), $0.frame, false) }?
+                .backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+            guard let pixels = imagePixelSize(capture),
+                  CropFlashGeometry.matchesCapture(drag: dragged, imagePixels: pixels, scale: scale) else { return }
+            ScreenCaptureFlash.flash(around: cocoa)
+        }
+    }
+
+    /// The capture's dimensions in pixels, read from the file's metadata alone
+    /// (no decode — this runs while the user is waiting to paste).
+    private static func imagePixelSize(_ url: URL) -> CGSize? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+              let h = props[kCGImagePropertyPixelHeight] as? CGFloat else { return nil }
+        return CGSize(width: w, height: h)
+    }
+
     /// Delete the full-screen shot the same hold produced. Bounded in time so a
     /// crop can never remove a screenshot that belongs to an earlier press.
-    private static func dropSupersededFull(now: Date = Date()) {
+    private static func dropSupersededFull(except crop: URL, now: Date = Date()) {
         supersedeLock.lock()
         let pending = supersedable
         supersedable = nil
         supersedeLock.unlock()
         guard let pending, now.timeIntervalSince(pending.at) < 20 else { return }
+        // Belt and braces next to `uniqueURL`: deleting the crop we just saved
+        // would turn this feature into one that quietly loses the picture.
+        guard pending.url != crop else { return }
         try? FileManager.default.removeItem(at: pending.url)
         NSLog("[Screenshot] crop superseded \(pending.url.lastPathComponent)")
     }
@@ -168,6 +207,26 @@ enum ScreenshotManager {
             try? fm.removeItem(at: screenshotsDir.appendingPathComponent(name))
         }
         NSLog("[Screenshot] pruned \(doomed.count) old screenshot(s)")
+    }
+
+    /// A free path for a capture taken *now*. The name is a timestamp to the
+    /// second, and two captures can land inside one second — which is not an
+    /// abstract worry: a held ⌃P takes the full screen and then names the crop
+    /// moments later, and when both names collided the crop overwrote the full
+    /// shot and the supersede that followed deleted the only remaining file.
+    /// Later shots take a `-2` suffix, leaving the timestamp prefix (which the
+    /// summarizer skills parse) untouched.
+    static func uniqueURL(for date: Date, in dir: URL? = nil) -> URL {
+        let dir = dir ?? screenshotsDir
+        let base = filename(for: date)
+        let stem = String(base.dropLast(4))   // without ".jpg"
+        var url = dir.appendingPathComponent(base)
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent("\(stem)-\(n).jpg")
+            n += 1
+        }
+        return url
     }
 
     /// `2026-08-13_14-30-05.jpg` — sortable, and both halves are parseable, so a

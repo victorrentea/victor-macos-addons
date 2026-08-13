@@ -41,6 +41,10 @@ class TabletHttpServer {
         case testBreakPicker(String?)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
         case testTile
+        /// ✂️ Interactive crop — puts macOS's crosshair up, so this one WAITS for a
+        /// human to drag (or Esc). Not read-only: it really writes a file and
+        /// really replaces the clipboard.
+        case testScreenshotCrop
         /// Fire the 🔥 Whip overlay — same action as ⌃W (test hook).
         case testWhip
         /// Crack the whip programmatically (scripted mouse-flick) — same as the
@@ -143,6 +147,7 @@ class TabletHttpServer {
     var onTestBreakClose: (() -> Void)?
     var onTestBreakPicker: ((String?) -> Void)?
     var onTestTile: (() -> Void)?
+    var onTestScreenshotCrop: (() -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
@@ -301,6 +306,8 @@ class TabletHttpServer {
                 self.onTestBreakPicker?(q)
             case .testTile:
                 self.onTestTile?()
+            case .testScreenshotCrop:
+                self.onTestScreenshotCrop?()
             case .testWhip:
                 self.onTestWhip?()
             case .testWhipCrack:
@@ -432,6 +439,8 @@ class TabletHttpServer {
             return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/tile":
             return .testTile
+        case "/test/screenshot/crop":
+            return .testScreenshotCrop
         case "/test/whip":
             return .testWhip
         case "/test/whip/crack":

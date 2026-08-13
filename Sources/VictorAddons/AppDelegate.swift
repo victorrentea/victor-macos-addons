@@ -802,6 +802,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestBreakPicker = { [weak self] q in
             DispatchQueue.main.async { self?.breakTimer.openCountryPicker(query: q) }
         }
+        tabletServer?.onTestScreenshotCrop = { [weak menuBarManager] in menuBarManager?.onCropScreenshot?() }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         tabletServer?.onTestWhipCrack = { [weak self] in

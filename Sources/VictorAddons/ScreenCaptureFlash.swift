@@ -20,7 +20,40 @@ enum ScreenCaptureFlash {
         activePanels.removeAll()
     }
 
+    // MARK: - Suppression (while a crosshair selection is up)
+
+    private static let suppressLock = NSLock()
+    private static var suppressDepth = 0
+
+    /// Hold off *screen-sized* flashes until `endSuppression`.
+    ///
+    /// Cancelling what is already up is not enough on the hold path: the crop
+    /// starts on the keyUp, while the full-screen shot the same press fired is
+    /// still encoding — so its border goes up a beat **later**, i.e. straight
+    /// over a crosshair that is already waiting for the drag. That is wrong to
+    /// look at (a whole-screen frame around a selection you are still making)
+    /// and worse than cosmetic: our panel is ordered front over screencapture's
+    /// own selection overlay, and observed runs then ended with the selection
+    /// cancelled and no file written.
+    static func beginSuppression() {
+        suppressLock.lock(); suppressDepth += 1; suppressLock.unlock()
+        DispatchQueue.main.async { cancelAll() }
+    }
+
+    static func endSuppression() {
+        suppressLock.lock(); suppressDepth = max(0, suppressDepth - 1); suppressLock.unlock()
+    }
+
+    private static var isSuppressed: Bool {
+        suppressLock.lock(); defer { suppressLock.unlock() }
+        return suppressDepth > 0
+    }
+
     static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30, color: NSColor = .systemYellow, showCameraGlyph: Bool = false) {
+        // A crosshair selection owns the screen right now; the crop draws its
+        // own border when it lands.
+        guard !isSuppressed else { return }
+
         let panel = NSPanel(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -39,38 +72,7 @@ enum ScreenCaptureFlash {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
 
-        let solid = color.cgColor
-        let clear = color.withAlphaComponent(0).cgColor
-
-        // Top edge: solid at outer (top) → clear at inner (bottom)
-        let top = CAGradientLayer()
-        top.frame = CGRect(x: 0, y: size.height - thickness, width: size.width, height: thickness)
-        top.colors = [solid, clear]
-        top.startPoint = CGPoint(x: 0.5, y: 1.0)
-        top.endPoint = CGPoint(x: 0.5, y: 0.0)
-
-        // Bottom edge: solid at outer (bottom) → clear at inner (top)
-        let bottom = CAGradientLayer()
-        bottom.frame = CGRect(x: 0, y: 0, width: size.width, height: thickness)
-        bottom.colors = [solid, clear]
-        bottom.startPoint = CGPoint(x: 0.5, y: 0.0)
-        bottom.endPoint = CGPoint(x: 0.5, y: 1.0)
-
-        // Left edge: solid at outer (left) → clear at inner (right)
-        let left = CAGradientLayer()
-        left.frame = CGRect(x: 0, y: 0, width: thickness, height: size.height)
-        left.colors = [solid, clear]
-        left.startPoint = CGPoint(x: 0.0, y: 0.5)
-        left.endPoint = CGPoint(x: 1.0, y: 0.5)
-
-        // Right edge: solid at outer (right) → clear at inner (left)
-        let right = CAGradientLayer()
-        right.frame = CGRect(x: size.width - thickness, y: 0, width: thickness, height: size.height)
-        right.colors = [solid, clear]
-        right.startPoint = CGPoint(x: 1.0, y: 0.5)
-        right.endPoint = CGPoint(x: 0.0, y: 0.5)
-
-        for edge in [top, bottom, left, right] {
+        for edge in edgeGradients(size: size, thickness: thickness, color: color) {
             view.layer?.addSublayer(edge)
         }
 
@@ -109,6 +111,87 @@ enum ScreenCaptureFlash {
             panel.orderOut(nil)
             activePanels.removeAll { $0 === panel }
         }
+    }
+
+    /// The same fading border, but drawn **around a crop** instead of around the
+    /// screen. A full-screen border after a small selection is a lie about what
+    /// was captured — it says "this whole screen", when the point of the crop was
+    /// that it wasn't. The ring sits entirely *outside* `rect` (the panel is the
+    /// crop grown by `thickness` on each side), so it frames the picture rather
+    /// than covering its edges.
+    ///
+    /// `rect` is in global Cocoa coordinates.
+    static func flash(around rect: NSRect, duration: CFTimeInterval = 1.2, color: NSColor = .systemYellow) {
+        let thickness = CropFlashGeometry.borderThickness(for: rect)
+        let frame = rect.insetBy(dx: -thickness, dy: -thickness)
+
+        let panel = NSPanel(contentRect: frame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+
+        let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        for edge in edgeGradients(size: frame.size, thickness: thickness, color: color) {
+            view.layer?.addSublayer(edge)
+        }
+
+        panel.contentView = view
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        activePanels.append(panel)
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        fade.duration = duration
+        fade.timingFunction = CAMediaTimingFunction(name: .linear)
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        view.layer?.add(fade, forKey: "fade")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            panel.orderOut(nil)
+            activePanels.removeAll { $0 === panel }
+        }
+    }
+
+    /// Four bands hugging the edges of `size`, each solid on its outer edge and
+    /// fading to nothing inward — the shape both flashes are made of.
+    private static func edgeGradients(size: CGSize, thickness: CGFloat, color: NSColor) -> [CAGradientLayer] {
+        let solid = color.cgColor
+        let clear = color.withAlphaComponent(0).cgColor
+
+        func band(_ frame: CGRect, from: CGPoint, to: CGPoint) -> CAGradientLayer {
+            let layer = CAGradientLayer()
+            layer.frame = frame
+            layer.colors = [solid, clear]
+            layer.startPoint = from
+            layer.endPoint = to
+            return layer
+        }
+
+        return [
+            // Top: solid at the top → clear downward
+            band(CGRect(x: 0, y: size.height - thickness, width: size.width, height: thickness),
+                 from: CGPoint(x: 0.5, y: 1.0), to: CGPoint(x: 0.5, y: 0.0)),
+            // Bottom: solid at the bottom → clear upward
+            band(CGRect(x: 0, y: 0, width: size.width, height: thickness),
+                 from: CGPoint(x: 0.5, y: 0.0), to: CGPoint(x: 0.5, y: 1.0)),
+            // Left: solid at the left → clear rightward
+            band(CGRect(x: 0, y: 0, width: thickness, height: size.height),
+                 from: CGPoint(x: 0.0, y: 0.5), to: CGPoint(x: 1.0, y: 0.5)),
+            // Right: solid at the right → clear leftward
+            band(CGRect(x: size.width - thickness, y: 0, width: thickness, height: size.height),
+                 from: CGPoint(x: 1.0, y: 0.5), to: CGPoint(x: 0.0, y: 0.5)),
+        ]
     }
 
     // Cache the tinted glyph per color (the camera silhouette is recomputed only if the
