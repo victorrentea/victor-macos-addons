@@ -579,7 +579,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // without an explicit `set bounds` Terminal reopens it on whichever
         // display it last had a window on. bottomLeft is the only quarter not
         // used by the other openDream* items.
-        let (l, t, r, b) = appleScriptBounds(screen: mouseScreen(), quarter: .bottomLeft)
+        let screen = mouseScreen()
+        let displayID = displayID(of: screen)
+        let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: .bottomLeft)
 
         guard let command, !command.isEmpty else {
             let script = """
@@ -589,7 +591,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 set bounds of front window to {\(l), \(t), \(r), \(b)}
             end tell
             """
-            DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
+            DispatchQueue.global().async {
+                _ = AppleScriptRunner.run(script, timeout: 10)
+                Self.tileAfterOpening(displayID: displayID)
+            }
             return
         }
 
@@ -621,7 +626,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
         """
-        DispatchQueue.global().async { AppleScriptRunner.run(script, timeout: 10) }
+        DispatchQueue.global().async {
+            _ = AppleScriptRunner.run(script, timeout: 10)
+            Self.tileAfterOpening(displayID: displayID)
+        }
+    }
+
+    /// Tile the screen the new window landed on, so the window that was already
+    /// there makes room instead of being covered. The wait is for Terminal: the
+    /// `set bounds` above is still settling when the script returns, and reading
+    /// a frame mid-move would tile the window from a position it has already left.
+    /// Only that display is touched — see `TerminalTiler.tile(onDisplay:)`.
+    private static func tileAfterOpening(displayID: CGDirectDisplayID?) {
+        Thread.sleep(forTimeInterval: 0.6)
+        TerminalTiler.tile(onDisplay: displayID)
+    }
+
+    private func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
     private enum ScreenQuarter { case topLeft, topRight, bottomLeft, bottomRight }

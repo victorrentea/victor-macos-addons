@@ -25,7 +25,13 @@ enum TerminalTiler {
         var center: (Double, Double) { (Double(x) + Double(w) / 2, Double(y) + Double(h) / 2) }
     }
 
-    static func tile() {
+    /// Tile every Terminal window, each on the display it already sits on.
+    ///
+    /// `onDisplay` narrows that to a single monitor: the shortcut-opened Terminal
+    /// (⌘⌃T / ⌘⌃C / ⌘⌃Q) tiles the screen it just landed on and leaves the
+    /// windows on every other screen exactly where they were — the gesture said
+    /// "make room here", not "rearrange all my monitors".
+    static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
         let displays = getDisplays()
         let wins = getTerminalWindows()
         guard !displays.isEmpty, !wins.isEmpty else { return }
@@ -38,7 +44,8 @@ enum TerminalTiler {
         }
 
         for (di, var ws) in groups {
-            let quads = quadrants(of: displays[di])
+            if let displayID, displays[di].id != displayID { continue }
+            let quads = quadrants(of: displays[di].rect)
             ws = Array(ws.prefix(quads.count))
             let assignment = assignOptimally(windowRects: ws.map { $0.rect }, quads: quads)
             for (i, w) in ws.enumerated() {
@@ -50,20 +57,23 @@ enum TerminalTiler {
 
     // MARK: - Displays
 
-    private static func getDisplays() -> [Rect] {
+    private static func getDisplays() -> [(id: CGDirectDisplayID, rect: Rect)] {
         var count: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &count)
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetActiveDisplayList(count, &ids, &count)
         return ids.map {
             let b = CGDisplayBounds($0)
-            return Rect(x: Int(b.origin.x), y: Int(b.origin.y),
-                        w: Int(b.size.width), h: Int(b.size.height))
+            return (id: $0,
+                    rect: Rect(x: Int(b.origin.x), y: Int(b.origin.y),
+                               w: Int(b.size.width), h: Int(b.size.height)))
         }
     }
 
-    private static func displayFor(cx: Double, cy: Double, displays: [Rect]) -> Int {
-        for (i, d) in displays.enumerated() {
+    private static func displayFor(cx: Double, cy: Double,
+                                   displays: [(id: CGDirectDisplayID, rect: Rect)]) -> Int {
+        for (i, e) in displays.enumerated() {
+            let d = e.rect
             if Double(d.x) <= cx, cx < Double(d.x2),
                Double(d.y) <= cy, cy < Double(d.y2) { return i }
         }
