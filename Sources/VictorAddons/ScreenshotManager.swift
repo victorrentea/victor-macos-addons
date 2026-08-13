@@ -40,9 +40,13 @@ enum ScreenshotManager {
     static func takeScreenshot() -> URL? {
         let target = activeDisplay()
         let display = target.number
+        // Read the cursor BEFORE the shutter: it is what `-C` draws into the
+        // picture, and it is the one thing about the shot the picture itself
+        // cannot tell you afterwards.
+        let cursor = CGEvent(source: nil)?.location
 
         try? FileManager.default.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
-        let filepath = uniqueURL(for: Date())
+        let filepath = uniqueURL(for: Date(), cursor: cursor)
         let filename = filepath.lastPathComponent
 
         let process = Process()
@@ -63,6 +67,9 @@ enum ScreenshotManager {
         if saved, let screen = target.screen {
             DispatchQueue.main.async {
                 ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
+                if let cursor, let primaryMaxY = NSScreen.screens.first?.frame.maxY {
+                    ScreenCaptureFlash.markCursor(at: CGPoint(x: cursor.x, y: primaryMaxY - cursor.y))
+                }
             }
         }
 
@@ -188,9 +195,9 @@ enum ScreenshotManager {
     /// shot and the supersede that followed deleted the only remaining file.
     /// Later shots take a `-2` suffix, leaving the timestamp prefix (which the
     /// summarizer skills parse) untouched.
-    static func uniqueURL(for date: Date, in dir: URL? = nil) -> URL {
+    static func uniqueURL(for date: Date, cursor: CGPoint? = nil, in dir: URL? = nil) -> URL {
         let dir = dir ?? screenshotsDir
-        let base = filename(for: date)
+        let base = filename(for: date, cursor: cursor)
         let stem = String(base.dropLast(4))   // without ".jpg"
         var url = dir.appendingPathComponent(base)
         var n = 2
@@ -203,11 +210,21 @@ enum ScreenshotManager {
 
     /// `2026-08-13_14-30-05.jpg` — sortable, and both halves are parseable, so a
     /// skill can select "screenshots taken during this call" by filename alone.
-    static func filename(for date: Date) -> String {
+    ///
+    /// With a `cursor` it becomes `2026-08-13_14-30-05_at1234x567.jpg`: global
+    /// CG coordinates (y down from the primary's top, so negatives are normal on
+    /// a screen left of it), rounded to whole points. The picture shows the
+    /// pointer but nothing in it says *which display coordinate* that was, and a
+    /// summary reading the folder months later cannot recover it — the filename
+    /// is the only place it survives. `screenshot_index.py` in the
+    /// training-summarizer skill matches the timestamp prefix and ignores this.
+    static func filename(for date: Date, cursor: CGPoint? = nil) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        return f.string(from: date) + ".jpg"
+        let stamp = f.string(from: date)
+        guard let cursor else { return stamp + ".jpg" }
+        return "\(stamp)_at\(Int(cursor.x.rounded()))x\(Int(cursor.y.rounded())).jpg"
     }
 
     /// PNG *and* TIFF on the pasteboard: the clip-stack poller and most native

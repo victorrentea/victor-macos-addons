@@ -167,6 +167,73 @@ enum ScreenCaptureFlash {
         }
     }
 
+    /// Drop the minigun's red reticle on the spot the cursor was standing when
+    /// the shutter went — it pops in, holds, and fades out inside ~2 s.
+    ///
+    /// The border says *what* was captured; this says *where you were pointing*
+    /// while you said whatever the transcript recorded at that minute. Reusing
+    /// the aiming reticle (`EmojiAnimator.makeSniperReticle`) is deliberate: it
+    /// is already the mark this desktop uses for "here", so it needs no learning.
+    ///
+    /// `point` is in global Cocoa coordinates.
+    static func markCursor(at point: NSPoint, duration: CFTimeInterval = 2.0) {
+        guard !isSuppressed else { return }
+
+        // Half the minigun's aiming scale: that one has to be found while you
+        // are moving the mouse, this one only has to mark a spot you are
+        // already looking at.
+        let reticle = EmojiAnimator.makeSniperReticle(scale: 1.25, armed: true)
+        let side = max(reticle.bounds.width, reticle.bounds.height) + 40   // room for the pop + shadow
+        let frame = NSRect(x: point.x - side / 2, y: point.y - side / 2, width: side, height: side)
+
+        let panel = NSPanel(contentRect: frame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+
+        let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        reticle.position = CGPoint(x: side / 2, y: side / 2)
+        view.layer?.addSublayer(reticle)
+
+        panel.contentView = view
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        activePanels.append(panel)
+
+        // Snap in from slightly too big — the reticle lands on the spot rather
+        // than growing onto it.
+        let pop = CABasicAnimation(keyPath: "transform.scale")
+        pop.fromValue = 1.45
+        pop.toValue = 1.0
+        pop.duration = 0.22
+        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        reticle.add(pop, forKey: "pop")
+
+        // There from the first frame at 80% — a mark that fades *in* asks to be
+        // watched arriving; this one is already there when you look. The only
+        // fade is the last quarter, where it leaves.
+        let life = CAKeyframeAnimation(keyPath: "opacity")
+        life.values = [0.8, 0.8, 0.0]
+        life.keyTimes = [0.0, 0.75, 1.0]
+        life.duration = duration
+        life.fillMode = .forwards
+        life.isRemovedOnCompletion = false
+        view.layer?.add(life, forKey: "life")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            panel.orderOut(nil)
+            activePanels.removeAll { $0 === panel }
+        }
+    }
+
     /// Four bands hugging the edges of `size`, each solid on its outer edge and
     /// fading to nothing inward — the shape both flashes are made of.
     private static func edgeGradients(size: CGSize, thickness: CGFloat, color: NSColor) -> [CAGradientLayer] {

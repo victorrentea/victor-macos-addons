@@ -64,15 +64,27 @@ final class RHTimerMonitorTests: XCTestCase {
     }
 
     func testFormatElapsedMinutesOnly() {
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(300), "Resumed 5m ago")
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(59), "Resumed 0m ago")
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(3540), "Resumed 59m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(300), "⏱️ Resumed 5m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(59), "⏱️ Resumed 0m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(3540), "⏱️ Resumed 59m ago")
     }
 
     func testFormatElapsedHoursAndMinutes() {
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(3600), "Resumed 1h ago")
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(3660), "Resumed 1h 1m ago")
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(5400), "Resumed 1h 30m ago")
-        XCTAssertEqual(RHTimerMonitor.formatElapsed(7320), "Resumed 2h 2m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(3600), "⏱️ Resumed 1h ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(3660), "⏱️ Resumed 1h 1m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(5400), "⏱️ Resumed 1h 30m ago")
+        XCTAssertEqual(RHTimerMonitor.formatElapsed(7320), "⏱️ Resumed 2h 2m ago")
+    }
+
+    /// The row is read at a glance mid-sentence, so the colour has to carry it.
+    /// Thresholds are Victor's teaching rhythm: a section is about 1h15m, and
+    /// past 1h45m the room is gone.
+    func testUrgencyThresholds() {
+        XCTAssertEqual(RHTimerMonitor.urgency(0), .fresh)
+        XCTAssertEqual(RHTimerMonitor.urgency(75 * 60), .fresh)        // exactly 1h15m is still fine
+        XCTAssertEqual(RHTimerMonitor.urgency(75 * 60 + 1), .due)
+        XCTAssertEqual(RHTimerMonitor.urgency(105 * 60), .due)         // exactly 1h45m
+        XCTAssertEqual(RHTimerMonitor.urgency(105 * 60 + 1), .overdue)
+        XCTAssertEqual(RHTimerMonitor.urgency(4 * 3600), .overdue)
     }
 }

@@ -2876,7 +2876,7 @@ class EmojiAnimator {
     /// + thick from the first frame (the minigun reticle, which is never grey).
     /// `scale` sizes the whole reticle (nuke 1.5×; the minigun passes a bigger
     /// value) and the stroke widths scale with it so the lines stay proportional.
-    private static func makeSniperReticle(scale: CGFloat = 1.5, armed: Bool = false) -> CALayer {
+    static func makeSniperReticle(scale: CGFloat = 1.5, armed: Bool = false) -> CALayer {
         let canonical: CGFloat = 1.5      // the scale at which the width constants are defined
         let d: CGFloat = 65 * scale       // overall reticle box
         let idleW = bombReticleLineWidthIdle * (scale / canonical)

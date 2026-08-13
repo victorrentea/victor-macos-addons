@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 14, 00:23"
+    static let BUILD_TIME = "Aug 14, 00:35"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -67,6 +67,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
+    /// ⌘⌃K, from the event tap — the catalog has no menu row of its own.
     var onOpenCatalog: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
     var onOpenGmail: (() -> Void)?
@@ -84,7 +85,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
     var onTaskInboxStatus: (() -> (lastCheck: Date?, launches: Int))?
-    var onRestart: (() -> Void)?
 
     // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
 
@@ -240,26 +240,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
 
-        // Paste Emotions (disabled — shortcut reminder)
-        let pasteItem = NSMenuItem(title: "Paste Emotions", action: nil, keyEquivalent: "v")
-        pasteItem.keyEquivalentModifierMask = [.command, .control]
-        pasteItem.isEnabled = false
-        extraSubmenu.addItem(pasteItem)
-
         // Append clipboard to session notes (⌃⌥V)
         let appendNotesItem = NSMenuItem(title: "📝 Paste Clipboard to Notes", action: #selector(appendClipboardToNotesAction), keyEquivalent: "v")
         appendNotesItem.keyEquivalentModifierMask = [.control, .option]
         appendNotesItem.target = self
         appendNotesItem.isEnabled = true
         extraSubmenu.addItem(appendNotesItem)
-
-        // Selection-or-clipboard → session notes (⌘⌃S) — disabled shortcut
-        // reminder: a menu click can't capture the prior app's selection, so
-        // it's hotkey-only. (The item above stays clickable for the clipboard.)
-        let copySelectionItem = NSMenuItem(title: "Selection (or Clipboard) to Notes", action: nil, keyEquivalent: "s")
-        copySelectionItem.keyEquivalentModifierMask = [.command, .control]
-        copySelectionItem.isEnabled = false
-        extraSubmenu.addItem(copySelectionItem)
 
         emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
         emojiOverlayItem.target = self
@@ -274,47 +260,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.isEnabled = true
         extraSubmenu.addItem(darkModeItem)
 
-        // Google Calendar (⌘⌃L; ⌘⌥C still works via the event tap — the menu can
-        // only advertise one, and ⌘⌃L is the one on the ⌘⌃ cheat-sheet)
-        let calendarItem = NSMenuItem(title: "📅 Google Calendar", action: #selector(openCalendarAction), keyEquivalent: "l")
-        calendarItem.keyEquivalentModifierMask = [.command, .control]
-        calendarItem.target = self
-        calendarItem.isEnabled = true
-        extraSubmenu.addItem(calendarItem)
-
-        // Gmail (⌘⌃G)
-        let gmailItem = NSMenuItem(title: "📧 Gmail", action: #selector(openGmailAction), keyEquivalent: "g")
-        gmailItem.keyEquivalentModifierMask = [.command, .control]
-        gmailItem.target = self
-        gmailItem.isEnabled = true
-        extraSubmenu.addItem(gmailItem)
-
-        // Tile Terminals (⌘⌃A)
-        let tileItem = NSMenuItem(title: "Tile Terminals", action: #selector(tileTerminalsAction), keyEquivalent: "a")
-        tileItem.keyEquivalentModifierMask = [.command, .control]
-        tileItem.target = self
-        tileItem.isEnabled = true
-        extraSubmenu.addItem(tileItem)
-
-        // Terminal in ~/workspace, empty shell (⌘⌃T)
-        let plainTerminalItem = NSMenuItem(title: "Terminal in workspace", action: #selector(openPlainTerminalWorkspace), keyEquivalent: "t")
-        plainTerminalItem.keyEquivalentModifierMask = [.command, .control]
-        plainTerminalItem.target = self
-        plainTerminalItem.isEnabled = true
-        extraSubmenu.addItem(plainTerminalItem)
-
-        // Claude in ~/workspace (F8)
-        let claudeWorkspaceItem = NSMenuItem(title: "🎅 workspace (plain)", action: #selector(openDreamPlainWorkspace), keyEquivalent: String(UnicodeScalar(NSF8FunctionKey)!))
-        claudeWorkspaceItem.keyEquivalentModifierMask = []
-        claudeWorkspaceItem.target = self
-        claudeWorkspaceItem.isEnabled = true
-        extraSubmenu.addItem(claudeWorkspaceItem)
-
-        // Flattened Dream entries
+        // Gmail (⌘⌃G), Calendar (⌘⌃L), Tile (⌘⌃A), Terminal (⌘⌃T) and Claude in
+        // ~/workspace (F8, ⌘⌃C) have no rows here: every one of those keys is
+        // taught by the ⌘⌃ cheat-sheet you get by *holding* the modifiers, which
+        // is both faster to reach than a submenu and shows all of them at once.
+        // What stays is what the sheet can't replace: the two toggles, and the
+        // clipboard→notes item (a menu click cannot capture the previous app's
+        // selection, so ⌘⌃S has no menu form at all).
+        //
+        // The claude-per-repo launchers stay because they are not a key: each
+        // opens claude in a specific repo, renamed, in its own screen quarter.
+        // `🎅 workspace` pointed at ~/workspace/ai, which no longer exists (it
+        // became skills-private), so that one is gone.
         let dreamEntries: [(String, Selector)] = [
             ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
             ("🎅 macos-addons",       #selector(openDreamMacOSAddons)),
-            ("🎅 workspace",          #selector(openDreamWorkspace)),
         ]
         for (title, sel) in dreamEntries {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
@@ -331,27 +291,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
-        // 📕 Catalog — opens Catalog.docx in Word (⌘⌃K). It lost ⌘⌃C to Claude
-        // (the hurry-case) and can't have ⌘⌃T either — that is the Terminal —
-        // so the training catalog answers to K.
-        let catalogItem = addItem("📕 Catalog", action: #selector(openCatalogAction))
-        catalogItem.keyEquivalent = "k"
-        catalogItem.keyEquivalentModifierMask = [.command, .control]
-        catalogItem.isEnabled = true
+        // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
+        // cheat-sheet already teaches that key, so the menu line was a third
+        // copy of something two other places say better.
 
         // 🔥 Whip — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
         menu.addItem(.separator())
-        let wipItem = addItem("🔥 Whip", action: #selector(whipAction))
+        let wipItem = addItem("🔥 Whip Agent", action: #selector(whipAction))
         wipItem.keyEquivalent = "w"
         wipItem.keyEquivalentModifierMask = .control
 
-        // 🔁 Restart — the supported way to get a fresh instance. Clicking the
-        // app in Spotlight/Finder while it is already running does the same
-        // thing (see AppRelaunch), but that is invisible; this is the button you
-        // can find when something is wedged mid-workshop.
-        // Click-only: ⌘⌃R now pastes the company's invoicing details in the
-        // event tap, and one combination cannot mean two things.
-        _ = addItem("🔁 Restart", action: #selector(restartApp))
+        // 🔁 Restart has no row either: opening the app again (Spotlight, Finder,
+        // Dock) relaunches it — `AppDelegate.applicationShouldHandleReopen` →
+        // `AppRelaunch` — which is the gesture you reach for anyway when
+        // something is wedged.
 
         // Quit (build timestamp inlined to save a menu line). Uses a full-width
         // emoji (🔴) instead of the narrow ⏻ power glyph so it lines up with the
@@ -424,14 +377,43 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         refreshPortItems()
 
-        if let endedAt = breakEndedAt {
-            let elapsed = Int(Date().timeIntervalSince(endedAt))
-            // Show up to 12h (a full workshop day); beyond that the value is stale.
-            resumeItem.title = (0...(12 * 3600)).contains(elapsed) ? RHTimerMonitor.formatElapsed(elapsed) : "⏱️ Resumed -"
+        // Show up to 12h (a full workshop day); beyond that the value is stale.
+        if let endedAt = breakEndedAt,
+           case let elapsed = Int(Date().timeIntervalSince(endedAt)),
+           (0...(12 * 3600)).contains(elapsed) {
+            applyResumedTitle(RHTimerMonitor.formatElapsed(elapsed),
+                              urgency: RHTimerMonitor.urgency(elapsed))
         } else {
-            resumeItem.title = "⏱️ Resumed -"
+            applyResumedTitle("⏱️ Resumed -", urgency: .fresh)
         }
 
+    }
+
+    /// Colour the "Resumed …" row once a break is due, so the glance is enough.
+    ///
+    /// It is drawn through `attributedTitle` because the item is **disabled** —
+    /// it is a readout, nothing to click — and a disabled item's plain title is
+    /// dimmed by AppKit, which is precisely the opposite of what a warning wants.
+    /// An explicit foreground colour survives that dimming.
+    ///
+    /// The yellow is appearance-resolved for the same reason the menu-bar apple
+    /// glyph is: `systemYellow` is legible on a dark menu and nearly invisible on
+    /// a light one, so in light mode it becomes a dark amber instead.
+    private func applyResumedTitle(_ title: String, urgency: RHTimerMonitor.Urgency) {
+        resumeItem.title = title
+        switch urgency {
+        case .fresh:
+            resumeItem.attributedTitle = nil
+        case .due, .overdue:
+            let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let color: NSColor = urgency == .overdue
+                ? .systemRed
+                : (dark ? .systemYellow : NSColor(calibratedRed: 0.62, green: 0.44, blue: 0.0, alpha: 1))
+            resumeItem.attributedTitle = NSAttributedString(
+                string: title,
+                attributes: [.foregroundColor: color,
+                             .font: NSFont.menuFont(ofSize: 0)])
+        }
     }
 
     private func refreshPortItems() {
@@ -481,18 +463,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // MARK: - Actions
 
-    @objc private func openCatalogAction() {
-        onOpenCatalog?()
-    }
-
-    @objc private func openCalendarAction() {
-        onOpenCalendar?()
-    }
-
-    @objc private func openGmailAction() {
-        onOpenGmail?()
-    }
-
     @objc private func monitorAction() {
         onMonitor?()
     }
@@ -519,10 +489,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func desktopEffectAction(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         onDesktopEffect?(name)
-    }
-
-    @objc private func tileTerminalsAction() {
-        onTileTerminals?()
     }
 
     @objc private func fixDisplayLayoutAction() {
@@ -562,10 +528,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc func openDreamMacOSAddons() {
         openDreamClaude(directory: "~/workspace/victor-macos-addons", sessionName: "macos-addons", quarter: .bottomRight)
-    }
-
-    @objc private func openDreamWorkspace() {
-        openDreamClaude(directory: "~/workspace/ai", sessionName: "workspace", quarter: .topLeft)
     }
 
     /// F8 / ⌘⌃C global hotkey lands here.
@@ -1039,11 +1001,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // title reading "17m ago" until the round trip returns.
         fluxInboxItem?.title = "\(FluxInboxMenu.base) (checking…)"
         onCheckTaskInbox?()
-    }
-
-    @objc private func restartApp() {
-        overlayInfo("Restart requested from the menu")
-        onRestart?()
     }
 
     private func updateTailItem() {

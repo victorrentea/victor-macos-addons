@@ -548,7 +548,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onQuit = { [weak self] in
             self?.whisperManager?.stop()
         }
-        menuBarManager.onRestart = { AppRelaunch.relaunch(reason: "🔁 Restart menu item") }
         menuBarManager.onCheckTaskInbox = { [weak self] in
             // force: the whole point of the item is to defeat the power gate.
             self?.fluxInboxPoller?.poll(force: true, completion: nil)
