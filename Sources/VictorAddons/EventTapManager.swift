@@ -19,7 +19,7 @@ class EventTapManager {
     // MARK: Callbacks (set before calling start())
     var onCaptureClipboard: ((String) -> Void)?
     var onEmotionalPaste: (() -> Void)?
-    var onScreenshot: ((_ toClipboard: Bool) -> Void)?
+    var onScreenshot: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onTileTerminals: (() -> Void)?
@@ -288,15 +288,13 @@ class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        // ⌃P → screenshot to clipboard, ⌃⇧P → screenshot to the session folder
-        // (both suppressed). The file half briefly lived on ⌥⇧P to leave ⌃⇧P to
-        // VS Code's Command Palette, but ⌥⇧P is the emoji layer's 🧑‍💻 — a
-        // character Victor actually types — and a branch above that layer ate it.
-        // Losing the palette to a global tap is the cheaper of the two prices,
-        // and the two halves of one feature read better on one base modifier.
-        if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt {
-            let toClipboard = !hasShift
-            DispatchQueue.global().async { [weak self] in self?.onScreenshot?(toClipboard) }
+        // ⌃P → screenshot (suppressed): clipboard AND /tmp/victor-screenshots,
+        // always both. ⌃⇧P is deliberately NOT bound — it used to be the
+        // "save to the session folder" half of this feature, and with one
+        // shortcut doing both there is nothing left for it to mean, so the
+        // combination goes back to the focused app (VS Code's Command Palette).
+        if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt && !hasShift {
+            DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
             return nil
         }
 

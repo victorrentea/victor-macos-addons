@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 13, 11:30"
+    static let BUILD_TIME = "Aug 13, 19:40"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -64,7 +64,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onMonitor: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
-    var onTakeScreenshot: ((_ toClipboard: Bool) -> Void)?
+    var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
@@ -167,15 +167,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // actually read, and how many agents have been launched from it.
         fluxInboxItem = addItem(FluxInboxMenu.base, action: #selector(checkTaskInboxAction))
 
-        // Screenshot → Clipboard (⌃P)
-        let screenshotClipItem = addItem("📸 Screenshot → Clipboard", action: #selector(takeScreenshotClipboardAction))
-        screenshotClipItem.keyEquivalent = "p"
-        screenshotClipItem.keyEquivalentModifierMask = .control
-
-        // Screenshot → Session Folder (⌃⇧P)
-        let screenshotFileItem = addItem("📸 Screenshot → Session Folder", action: #selector(takeScreenshotFileAction))
-        screenshotFileItem.keyEquivalent = "p"
-        screenshotFileItem.keyEquivalentModifierMask = [.control, .shift]
+        // Screenshot (⌃P) — one item, because there is one shortcut: it copies
+        // to the clipboard and keeps a dated file in /tmp/victor-screenshots
+        // for the summarizer skills. The ⌃⇧P "→ Session Folder" twin is gone.
+        let screenshotItem = addItem("📸 Screenshot", action: #selector(takeScreenshotAction))
+        screenshotItem.keyEquivalent = "p"
+        screenshotItem.keyEquivalentModifierMask = .control
 
         menu.addItem(.separator())
 
@@ -509,12 +506,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onEmojiOverlayEnabledChanged?(enabled)
     }
 
-    @objc private func takeScreenshotClipboardAction() {
-        onTakeScreenshot?(true)
-    }
-
-    @objc private func takeScreenshotFileAction() {
-        onTakeScreenshot?(false)
+    @objc private func takeScreenshotAction() {
+        onTakeScreenshot?()
     }
 
     @objc private func displayJoinLinkAction() {

@@ -988,8 +988,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.joinLinkBanner?.hide()
             }
         }
-        menuBarManager.onTakeScreenshot = { toClipboard in
-            DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot(toClipboard: toClipboard) }
+        menuBarManager.onTakeScreenshot = {
+            DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() }
         }
 
         // Initialize join link banner
@@ -1140,7 +1140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             pasteHandler?.captureText(text)
         }
         eventTap.onEmotionalPaste = { [weak pasteHandler] in pasteHandler?.handleCleanHotkey() }
-        eventTap.onScreenshot = { toClipboard in DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot(toClipboard: toClipboard) } }
+        eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
