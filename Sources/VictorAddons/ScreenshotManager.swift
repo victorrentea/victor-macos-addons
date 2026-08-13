@@ -15,11 +15,21 @@ import Foundation
 /// The file is the capture and the clipboard is a copy of it (not a second
 /// `screencapture -c` run): two runs would be two different moments, and the
 /// picture you pasted has to be the picture the summary can quote.
+///
+/// **Why `~/Library/Caches` and not `/tmp`:** these files must be *reclaimable*.
+/// Caches is the one folder emptying the Trash, macOS's Storage Management and
+/// every cleaner tool actually reach, and the OS may purge it under disk
+/// pressure — all of which is welcome here, because anything a summary keeps is
+/// copied into the session folder by the skill that keeps it. `/tmp` looked
+/// similar and was worse: invisible to Finder *and* to every cleaner.
 enum ScreenshotManager {
-    /// Well-known, stable, greppable. `/tmp` because these are working copies:
-    /// anything a summary keeps is copied into the session folder by the skill
-    /// that keeps it, so macOS's 3-day sweep of /tmp can never break a note.
-    static let screenshotsDir = URL(fileURLWithPath: "/tmp/victor-screenshots")
+    /// Well-known, stable, greppable — the summarizer skills glob it by date.
+    static let screenshotsDir: URL = {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return URL(fileURLWithPath: "/tmp/victor-screenshots")
+        }
+        return caches.appendingPathComponent("ro.victorrentea.macos-addons/screenshots")
+    }()
     static var onScreenshotTaken: (() -> Void)?
     /// The active training-session folder (set on `session_started`, cleared on
     /// `session_ended`). Screenshots no longer go here — `SessionNotesAppender`
@@ -54,8 +64,33 @@ enum ScreenshotManager {
                 ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
             }
         }
+        // A folder nobody looks at has to bound itself. Off the capture path —
+        // the shot is already on the clipboard, the pruning can take its time.
+        DispatchQueue.global(qos: .background).async { prune() }
         onScreenshotTaken?()
         return saved ? filepath : nil
+    }
+
+    /// Enforce `ScreenshotRetentionPolicy` over the folder. Best-effort by
+    /// design: a file that refuses to delete is not worth a word to anyone.
+    static func prune(now: Date = Date()) {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        guard let urls = try? fm.contentsOfDirectory(at: screenshotsDir,
+                                                     includingPropertiesForKeys: keys,
+                                                     options: [.skipsHiddenFiles]) else { return }
+        let items: [ScreenshotRetentionPolicy.Item] = urls.compactMap { url in
+            guard url.pathExtension.lowercased() == "jpg",
+                  let v = try? url.resourceValues(forKeys: Set(keys)),
+                  let date = v.contentModificationDate else { return nil }
+            return .init(name: url.lastPathComponent, modified: date, bytes: v.fileSize ?? 0)
+        }
+        let doomed = ScreenshotRetentionPolicy.toDelete(items, now: now)
+        guard !doomed.isEmpty else { return }
+        for name in doomed {
+            try? fm.removeItem(at: screenshotsDir.appendingPathComponent(name))
+        }
+        NSLog("[Screenshot] pruned \(doomed.count) old screenshot(s)")
     }
 
     /// `2026-08-13_14-30-05.jpg` — sortable, and both halves are parseable, so a
