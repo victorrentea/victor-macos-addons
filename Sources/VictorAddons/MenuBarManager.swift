@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 14, 00:13"
+    static let BUILD_TIME = "Aug 14, 00:23"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -65,7 +65,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
-    var onCropScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
     var onOpenCatalog: (() -> Void)?
@@ -168,16 +167,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // actually read, and how many agents have been launched from it.
         fluxInboxItem = addItem(FluxInboxMenu.base, action: #selector(checkTaskInboxAction))
 
-        // Screenshot (⌃P) — one item, because there is one shortcut: it copies
-        // to the clipboard and keeps a dated file in /tmp/victor-screenshots
-        // for the summarizer skills. The ⌃⇧P "→ Session Folder" twin is gone.
-        let screenshotItem = addItem("📸 Screenshot", action: #selector(takeScreenshotAction))
+        // Screenshot — ONE item for one key. Clicking it takes the whole screen
+        // (a click cannot be held); the title is where the other half of the
+        // shortcut is taught, since a hold is the one gesture nothing on screen
+        // reveals. A second item for the crop would have been a row you can
+        // never usefully click, explaining a key you already have.
+        let screenshotItem = addItem("📸 Screenshot (hold to crop)", action: #selector(takeScreenshotAction))
         screenshotItem.keyEquivalent = "p"
         screenshotItem.keyEquivalentModifierMask = .control
-
-        // The crop has no key equivalent of its own — it IS ⌃P, held. The item
-        // says so, because a hold is the one gesture nothing on screen reveals.
-        addItem("✂️ Screenshot crop (hold ⌃P)", action: #selector(cropScreenshotAction))
 
         menu.addItem(.separator())
 
@@ -513,10 +510,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func takeScreenshotAction() {
         onTakeScreenshot?()
-    }
-
-    @objc private func cropScreenshotAction() {
-        onCropScreenshot?()
     }
 
     @objc private func displayJoinLinkAction() {

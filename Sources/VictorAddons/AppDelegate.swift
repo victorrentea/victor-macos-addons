@@ -802,7 +802,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestBreakPicker = { [weak self] q in
             DispatchQueue.main.async { self?.breakTimer.openCountryPicker(query: q) }
         }
-        tabletServer?.onTestScreenshotCrop = { [weak menuBarManager] in menuBarManager?.onCropScreenshot?() }
+        tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         tabletServer?.onTestWhipCrack = { [weak self] in
@@ -991,9 +991,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         menuBarManager.onTakeScreenshot = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() }
-        }
-        menuBarManager.onCropScreenshot = {
-            DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() }
         }
 
         // Initialize join link banner
