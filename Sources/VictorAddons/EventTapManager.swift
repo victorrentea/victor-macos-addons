@@ -253,15 +253,20 @@ class EventTapManager {
 
         // Keyboard events
         if type == .keyUp {
-            // The only key whose release means anything to us: a ⌃P that was
-            // held long enough to be asking for the crop instead of the screen.
+            // ⌃P is decided on release: a tap is the whole screen, a hold is the
+            // crop. Nothing fires on the keyDown, so a hold never takes the
+            // full-screen shot it doesn't want (and never flashes the whole
+            // screen over the crosshair). The tap pays for that with the length
+            // of its own keypress — ~100 ms — and nothing else.
             if CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_P,
                let pressedAt = screenshotKeyDownAt {
                 screenshotKeyDownAt = nil
-                if !screenshotCropFired,
-                   ScreenshotHoldPolicy.isHold(pressDuration: CFAbsoluteTimeGetCurrent() - pressedAt) {
-                    screenshotCropFired = true
+                if screenshotCropFired {
+                    screenshotCropFired = false   // autorepeat already opened the crosshair
+                } else if ScreenshotHoldPolicy.isHold(pressDuration: CFAbsoluteTimeGetCurrent() - pressedAt) {
                     DispatchQueue.global().async { [weak self] in self?.onScreenshotCrop?() }
+                } else {
+                    DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
                 }
             }
             return Unmanaged.passUnretained(event)
@@ -322,9 +327,8 @@ class EventTapManager {
         // combination goes back to the focused app (VS Code's Command Palette).
         //
         // Held, it becomes the crosshair crop instead (`ScreenshotHoldPolicy`).
-        // The tap fires the full-screen shot on the *first* keyDown with nothing
-        // deferred — a "wait and see if it's a hold" delay in front of every
-        // press is precisely the latency this shortcut must not have.
+        // The keyDown only starts the clock — which of the two you meant is
+        // answered on the release, or earlier if autorepeat says "still down".
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt && !hasShift {
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
                 if !screenshotCropFired {
@@ -334,7 +338,6 @@ class EventTapManager {
             } else {
                 screenshotKeyDownAt = CFAbsoluteTimeGetCurrent()
                 screenshotCropFired = false
-                DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
             }
             return nil
         }

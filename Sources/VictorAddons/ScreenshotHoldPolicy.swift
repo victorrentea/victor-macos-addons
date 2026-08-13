@@ -3,20 +3,18 @@ import Foundation
 /// One key, two screenshots: a tap of ⌃P is the whole screen, a *hold* is the
 /// crosshair crop that ⌃⇧P used to be.
 ///
-/// The tap must stay free: the full-screen shot fires on the very first keyDown,
-/// with nothing deferred and no "is this a hold?" delay in front of it — waiting
-/// half a second to find out would reintroduce exactly the latency this feature
-/// exists to remove. So a hold is recognised *after the fact*, from either of
-/// two signals, whichever the system gives us first:
+/// **Nothing fires on the keyDown** — which of the two you meant is answered on
+/// the *release*: under `holdSeconds` takes the screen, over it opens the
+/// crosshair. (An **autorepeat** keyDown answers it earlier, so on a Mac with
+/// key repeat on the crosshair appears while the key is still down, which is
+/// what a hold should feel like; the keyUp is the fallback where repeat is off.)
 ///
-///  - an **autorepeat** keyDown (the crosshair then appears while the key is
-///    still down, which is what a hold should feel like), or
-///  - the **keyUp**, when the press lasted at least `holdSeconds` — the fallback
-///    for a Mac with key repeat turned off, where no repeat ever arrives.
-///
-/// The price of not deferring is that a hold also produces a full-screen shot;
-/// `ScreenshotManager.takeCropScreenshot(supersedeRecentFull:)` deletes it once
-/// the crop lands.
+/// The first version did fire the full-screen shot on the keyDown, to keep a tap
+/// free of any "is this a hold?" delay. That delay is not what it costs, though:
+/// waiting for the *release* costs only the length of the keypress itself — some
+/// 100 ms for a tap — while firing early meant a hold always took a full screen
+/// nobody asked for, and flashed a whole-screen yellow border over the crosshair
+/// that was already waiting for the drag.
 enum ScreenshotHoldPolicy {
     /// Long enough that a normal tap (~80–150 ms) can never reach it, short
     /// enough that "hold it a moment" is one motion rather than a wait.

@@ -36,13 +36,6 @@ enum ScreenshotManager {
     /// still uses it for the notes file.
     static var sessionFolder: URL?
 
-    /// The full-screen shot taken by the *keyDown* of a ⌃P that turned out to be
-    /// a hold. A crop launched by that same press supersedes it, so the folder
-    /// doesn't collect a full screen nobody asked for next to every crop.
-    /// Tap thread writes it, the crop's background queue consumes it.
-    private static let supersedeLock = NSLock()
-    private static var supersedable: (url: URL, at: Date)?
-
     @discardableResult
     static func takeScreenshot() -> URL? {
         let target = activeDisplay()
@@ -74,9 +67,6 @@ enum ScreenshotManager {
         }
 
         if saved {
-            supersedeLock.lock()
-            supersedable = (filepath, Date())
-            supersedeLock.unlock()
             copyToClipboard(filepath)
             overlayInfo("📸 \(filename) (display \(display)) → clipboard + \(screenshotsDir.path)")
         } else {
@@ -98,15 +88,13 @@ enum ScreenshotManager {
     /// long you keep the key down. Esc / right-click cancels the selection and
     /// writes no file — which must leave the clipboard alone, so nothing here
     /// runs unless a file actually appeared.
-    ///
-    /// `supersedeRecentFull` is true only on the hotkey path: the hold has
-    /// already taken a full-screen shot (that's what made it zero-latency), and
-    /// once the crop lands that full screen is a byproduct nobody wanted.
     @discardableResult
-    static func takeCropScreenshot(supersedeRecentFull: Bool = false) -> URL? {
-        // Our own border must stay off the screen for the whole selection —
-        // both the one still fading and the one the hold's full-screen shot is
-        // about to raise from behind us.
+    static func takeCropScreenshot() -> URL? {
+        // Our own border must stay off the screen for the whole selection: one
+        // still fading from an earlier shot would be dragged into the crop, and
+        // any raised over the crosshair puts a window above screencapture's own
+        // selection overlay — observed to end with the selection cancelled and
+        // no file written.
         ScreenCaptureFlash.beginSuppression()
         defer { ScreenCaptureFlash.endSuppression() }
 
@@ -135,7 +123,6 @@ enum ScreenshotManager {
         copyToClipboard(filepath)
         overlayInfo("✂️ \(filename) → clipboard + \(screenshotsDir.path)")
 
-        if supersedeRecentFull { dropSupersededFull(except: filepath) }
         DispatchQueue.global(qos: .background).async { prune() }
         onScreenshotTaken?()
         return filepath
@@ -170,21 +157,6 @@ enum ScreenshotManager {
               let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
               let h = props[kCGImagePropertyPixelHeight] as? CGFloat else { return nil }
         return CGSize(width: w, height: h)
-    }
-
-    /// Delete the full-screen shot the same hold produced. Bounded in time so a
-    /// crop can never remove a screenshot that belongs to an earlier press.
-    private static func dropSupersededFull(except crop: URL, now: Date = Date()) {
-        supersedeLock.lock()
-        let pending = supersedable
-        supersedable = nil
-        supersedeLock.unlock()
-        guard let pending, now.timeIntervalSince(pending.at) < 20 else { return }
-        // Belt and braces next to `uniqueURL`: deleting the crop we just saved
-        // would turn this feature into one that quietly loses the picture.
-        guard pending.url != crop else { return }
-        try? FileManager.default.removeItem(at: pending.url)
-        NSLog("[Screenshot] crop superseded \(pending.url.lastPathComponent)")
     }
 
     /// Enforce `ScreenshotRetentionPolicy` over the folder. Best-effort by

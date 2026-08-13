@@ -15,9 +15,9 @@ final class ScreenshotUniqueNameTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
-    /// A held ⌃P takes the full screen and names the crop moments later — often
-    /// inside the same second. When both got the same name the crop overwrote
-    /// the full shot and the supersede deleted what was left: no picture at all.
+    /// Two captures can land inside one second — a ⌃P tap followed straight away
+    /// by another, or a crop right after one. When both got the same name the
+    /// second overwrote the first, and a shot taken seconds ago was simply gone.
     func testSecondCaptureInTheSameSecondGetsItsOwnName() throws {
         let now = Date()
         let first = ScreenshotManager.uniqueURL(for: now, in: dir)
