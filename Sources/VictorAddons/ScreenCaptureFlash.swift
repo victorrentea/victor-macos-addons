@@ -113,17 +113,21 @@ enum ScreenCaptureFlash {
         }
     }
 
-    /// The same fading border, but drawn **around a crop** instead of around the
-    /// screen. A full-screen border after a small selection is a lie about what
-    /// was captured — it says "this whole screen", when the point of the crop was
-    /// that it wasn't. The ring sits entirely *outside* `rect` (the panel is the
-    /// crop grown by `thickness` on each side), so it frames the picture rather
-    /// than covering its edges.
+    /// The same fading border, but drawn **on a crop** instead of on the screen.
+    /// A full-screen border after a small selection is a lie about what was
+    /// captured — it says "this whole screen", when the point of the crop was
+    /// that it wasn't.
+    ///
+    /// The ring sits **inside** `rect`, fading inward from its edges exactly the
+    /// way the screen-sized flash fades in from the screen's: what lights up is
+    /// then the captured pixels themselves, not the untaken ones around them.
+    /// Drawn outside, it read as a frame *around* something — which is the
+    /// wrong answer to "what did I just take".
     ///
     /// `rect` is in global Cocoa coordinates.
     static func flash(around rect: NSRect, duration: CFTimeInterval = 1.2, color: NSColor = .systemYellow) {
         let thickness = CropFlashGeometry.borderThickness(for: rect)
-        let frame = rect.insetBy(dx: -thickness, dy: -thickness)
+        let frame = rect
 
         let panel = NSPanel(contentRect: frame,
                             styleMask: [.borderless, .nonactivatingPanel],
