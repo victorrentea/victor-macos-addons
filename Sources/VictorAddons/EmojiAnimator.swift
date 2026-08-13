@@ -3793,9 +3793,11 @@ class EmojiAnimator {
         blip.shadowOffset = .zero
         blip.masksToBounds = false
         blip.opacity = 0
-        // Below the green sweep (so the radar's green washes over it) but above
-        // the grid lines.
-        container.insertSublayer(blip, below: sweep)
+        // ABOVE the sweep. It used to sit below it, so the green front and its
+        // reception noise washed over the find at the exact instant the find
+        // happens — which is the one moment it must be unmistakable. The wedge
+        // passing behind it now reads as the thing that revealed it.
+        container.addSublayer(blip)
 
         // Blip lifecycle: invisible until a detection, then FULLY lit while the
         // sector passes over it, then a 1s fade-out. Three detections, each
@@ -3829,6 +3831,40 @@ class EmojiAnimator {
         blipFlash.fillMode = .both
         blipFlash.isRemovedOnCompletion = false
         blip.add(blipFlash, forKey: "blipFlash")
+
+        // Each detection ZOOMS the 💩 in: it lands at 2× and settles to its own
+        // size over 1s, easing out so the motion is spent in the first third —
+        // it arrives, it doesn't creep. Sampled on the SAME grid as the flash
+        // above and off the SAME `detT[di]`, so the zoom starts on the exact
+        // frame the find becomes visible; drifting the two apart would show the
+        // 💩 already shrinking as it appears.
+        //
+        // Between detections the scale is parked back at 2× ready for the next
+        // one. That reset is deliberately placed *after* the fade has fully
+        // finished (`coverT + fadeT`), so the jump from 1× back to 2× always
+        // happens while the layer is at zero opacity and can never be seen.
+        let zoomT = 1.0
+        var blipScale: [NSNumber] = []
+        for k in 0...blipSamples {
+            let tau = Double(k) / Double(blipSamples) * animEnd
+            var s = 2.0
+            for di in 0..<3 {
+                let x = tau - detT[di]
+                if x < 0 || x > coverT[di] + fadeT { continue }
+                let u = min(1.0, x / zoomT)
+                s = 1.0 + pow(1.0 - u, 3)          // 2 → 1, cubic ease-out
+            }
+            blipScale.append(NSNumber(value: s))
+        }
+        let blipZoom = CAKeyframeAnimation(keyPath: "transform.scale")
+        blipZoom.keyTimes = blipKeyTimes
+        blipZoom.values = blipScale
+        blipZoom.calculationMode = .linear
+        blipZoom.duration = animEnd
+        blipZoom.beginTime = sweepStart
+        blipZoom.fillMode = .both
+        blipZoom.isRemovedOnCompletion = false
+        blip.add(blipZoom, forKey: "blipZoom")
 
         // 4) End: fade the whole container out, then trackEffect removes it.
         let fade = CABasicAnimation(keyPath: "opacity")

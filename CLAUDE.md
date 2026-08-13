@@ -156,7 +156,18 @@ rule from the start.
   masked to the wedge), and a fainter copy of the same noise covers the circle
   interior (background static; outside the circle is just the dark wash). A
   **💩 blip** (3× emoji, green glow) sits at the front's detection angle, hidden
-  until found. The rotation is **keyframed** (not constant): ~0.5s beep-free
+  until found. It is drawn **over the sweep**, not under it — the green front and
+  its reception noise used to wash across the find at the exact instant the find
+  happens, which is the one moment it must be unmistakable; the wedge passing
+  *behind* it now reads as the thing that revealed it. Each detection also
+  **zooms it in**: it lands at **2×** and settles to its own size over **1 s**,
+  cubic-ease-out so the motion is spent in the first third (it arrives, it
+  doesn't creep). The zoom is sampled on the **same keyframe grid and the same
+  `detT[di]`** as the opacity flash, so it starts on the exact frame the 💩
+  becomes visible; between detections the scale is parked back at 2× ready for
+  the next one, and that 1×→2× reset is placed **after** the fade has fully
+  finished (`coverT + fadeT`) so it always happens at zero opacity and can never
+  be seen. The rotation is **keyframed** (not constant): ~0.5s beep-free
   lead-in, then the front sweeps over the 💩 on **three radar beeps** in the clip
   (clip times 0.104/2.211/3.879s; one full turn between detections). The Mac
   **owns the audio** here — `showSonar(playSound:true)` plays `23_radar.mp3`
