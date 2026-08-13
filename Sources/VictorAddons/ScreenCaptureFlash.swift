@@ -208,14 +208,17 @@ enum ScreenCaptureFlash {
         panel.orderFrontRegardless()
         activePanels.append(panel)
 
-        // Snap in from slightly too big — the reticle lands on the spot rather
-        // than growing onto it.
-        let pop = CABasicAnimation(keyPath: "transform.scale")
-        pop.fromValue = 1.45
-        pop.toValue = 1.0
-        pop.duration = 0.22
-        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        reticle.add(pop, forKey: "pop")
+        // It arrives too big and closes on the spot — a scope being brought down
+        // onto a target, not a badge appearing next to one. It lands *smaller*
+        // than it came in (0.9), so the motion is unmistakably a zoom-out and
+        // what stays behind is the smaller, quieter mark.
+        reticle.transform = CATransform3DMakeScale(0.9, 0.9, 1)   // the resting size
+        let zoom = CABasicAnimation(keyPath: "transform.scale")
+        zoom.fromValue = 1.3
+        zoom.toValue = 0.9
+        zoom.duration = 0.35
+        zoom.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        reticle.add(zoom, forKey: "zoom")
 
         // There from the first frame at 80% — a mark that fades *in* asks to be
         // watched arriving; this one is already there when you look. The only
