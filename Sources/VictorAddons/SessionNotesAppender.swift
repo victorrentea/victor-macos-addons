@@ -169,12 +169,16 @@ enum SessionNotesAppender {
         return collapsed.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Label for the prompt-capture offer: collapse to one line. No prefix — the
-    /// marching send arrow now shows the direction. No character cap either — the
-    /// banner box grows up to half the screen width and the label truncates with
-    /// its own ellipsis only past that.
+    /// Label for the prompt-capture offer: the same 🤖 marker the line will carry
+    /// in the notes, then the text collapsed to one line. The marker is what says
+    /// *which* of the two paths this pill is — an intercepted agent prompt, not
+    /// something sent by hand — and reading it here means the pill and the line
+    /// that shows up in the notes a moment later look like the same thing, which
+    /// is the only way a glance can tell them apart mid-workshop. No character
+    /// cap: the banner box grows up to half the screen width and the label
+    /// truncates with its own ellipsis only past that.
     private static func formatPromptLabel(from text: String) -> String {
-        return singleLine(text)
+        return Marker.agentPrompt.rawValue + " " + singleLine(text)
     }
 
     enum NotesError: Error { case noSession, noNotesFile }
@@ -210,7 +214,10 @@ enum SessionNotesAppender {
     private static func pasteAndOfferUndo(text: String) {
         do {
             let (notes, offset) = try writeNotes(text, marker: .sentByHand)
-            showUndoable("Pasted: " + singleLine(text),
+            // 📋 instead of the word "Pasted:" — the same marker the line gets in
+            // the notes, so the pill and the note read as one thing (and the mark
+            // is recognised faster than the word it replaces).
+            showUndoable(Marker.sentByHand.rawValue + " " + singleLine(text),
                          undo: { performUndo(file: notes, toOffset: offset) })
         } catch {
             reportWriteFailure(error)
