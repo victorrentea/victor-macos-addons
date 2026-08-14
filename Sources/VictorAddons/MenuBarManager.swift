@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 14, 17:07"
+    static let BUILD_TIME = "Aug 14, 20:36"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -553,14 +553,36 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         openWorkspaceTerminal(command: nil, tag: "")
     }
 
-    /// The screen the MOUSE is currently on — that is the screen Victor is
+    /// The screen a point is on — for the cursor, that is the screen Victor is
     /// looking at when he reaches for the shortcut, and the only one he can
     /// mean. (Pinning these windows to the built-in Retina, as this used to,
     /// puts them on the projector during a workshop.)
-    private func mouseScreen() -> NSScreen {
-        let p = NSEvent.mouseLocation
-        return NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) })
+    ///
+    /// It takes the point rather than sampling `NSEvent.mouseLocation` itself so
+    /// that the screen and the quarter below are answered from **one** sample: two
+    /// separate reads can straddle a screen or quadrant edge while the hand is
+    /// still moving, and the window would then be sized for one screen and placed
+    /// by the other half of a different one.
+    private func screen(containing p: NSPoint) -> NSScreen {
+        NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) })
             ?? NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    /// Which quarter of `screen` the cursor is in. The window opens **where the
+    /// hand already is**: the shortcut is pressed while looking at a spot, and that
+    /// spot is the answer to "where do you want this" — a fixed corner lands the
+    /// terminal on top of what is being read about as often as not.
+    ///
+    /// NB `NSScreen` coordinates count y **upward**, so `p.y < midY` is the BOTTOM
+    /// half (the opposite of every top-left-origin space in this file).
+    private func quarter(of p: NSPoint, on screen: NSScreen) -> ScreenQuarter {
+        let f = screen.frame
+        switch (p.y < f.midY, p.x < f.midX) {
+        case (true, true):   return .bottomLeft
+        case (true, false):  return .bottomRight
+        case (false, true):  return .topLeft
+        case (false, false): return .topRight
+        }
     }
 
     /// Open a Terminal window in ~/workspace on the screen under the cursor,
@@ -577,11 +599,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func openWorkspaceTerminal(command: String?, tag: String) {
         // `do script` / `open` already spawn a NEW window (not a tab), but
         // without an explicit `set bounds` Terminal reopens it on whichever
-        // display it last had a window on. bottomLeft is the only quarter not
-        // used by the other openDream* items.
-        let screen = mouseScreen()
+        // display it last had a window on. Both the screen AND the quarter come
+        // from where the cursor was at the moment of the shortcut — one sample,
+        // read once here and passed to both (see `screen(containing:)`). This
+        // used to be pinned to `.bottomLeft`, which meant reaching for a terminal
+        // while reading the bottom-left of a screen covered exactly what you were
+        // looking at.
+        let cursor = NSEvent.mouseLocation
+        let screen = screen(containing: cursor)
         let displayID = displayID(of: screen)
-        let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: .bottomLeft)
+        let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter(of: cursor, on: screen))
 
         guard let command, !command.isEmpty else {
             let script = """
