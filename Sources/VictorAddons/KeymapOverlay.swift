@@ -41,10 +41,14 @@ enum CommandControlShortcuts {
                          // straight through to Wispr; this entry is display-only.
                          // The studio 🎙️ says whose paste it is: the listening is
                          // Wispr's job, never this app's.
-        // V (key 9) is deliberately ABSENT even though ⌘⌃V is still bound here to
-        // the emotional paste. "Paste" now means ⌘⌃W to the hand, and two keys
-        // both reading "paste" on the sheet would make the reader pick the wrong
-        // one at speed. The tap keeps serving ⌘⌃V; only the hint is gone.
+        9:  "spus",       // V — the last minute of transcript, cleaned, to pick from.
+                          // The key was blank while it meant the emotional paste,
+                          // precisely because "paste" was already ⌘⌃W's word and a
+                          // sheet with two of them makes you pick wrong at speed.
+                          // What it does now is a different thing entirely and needs
+                          // saying: `spus` — "said" — is the one word that separates
+                          // it from every paste on the board, because the text comes
+                          // from your mouth rather than from a clipboard.
     ]
 
     /// A small mark in the key's top-right corner, opposite the base letter —
@@ -59,6 +63,7 @@ enum CommandControlShortcuts {
         15: "📋",  // R — the SRL details are pasted, not opened
         40: "📕",  // K — the training catalog
         46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
+        9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
     ]
 
     /// Keys whose payload is a bundled picture rather than a word, by key code.

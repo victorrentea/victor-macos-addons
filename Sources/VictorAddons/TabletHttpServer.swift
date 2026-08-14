@@ -45,6 +45,10 @@ class TabletHttpServer {
         case testBreakPicker(String?)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
         case testTile
+        /// 🎙️ Open the transcript picker — same action as ⌘⌃V (test hook). Not
+        /// read-only and not instant: it waits ~10 s for whisper, then really
+        /// spends a Haiku call and puts a modal up on the cursor's screen.
+        case testTranscriptPicker
         /// ✂️ Interactive crop — puts macOS's crosshair up, so this one WAITS for a
         /// human to drag (or Esc). Not read-only: it really writes a file and
         /// really replaces the clipboard.
@@ -153,6 +157,7 @@ class TabletHttpServer {
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
     var onTestTile: (() -> Void)?
+    var onTestTranscriptPicker: (() -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
@@ -318,6 +323,8 @@ class TabletHttpServer {
                 self.onTestBreakPicker?(q)
             case .testTile:
                 self.onTestTile?()
+            case .testTranscriptPicker:
+                self.onTestTranscriptPicker?()
             case .testScreenshotCrop:
                 self.onTestScreenshotCrop?()
             case .testWhip:
@@ -455,6 +462,8 @@ class TabletHttpServer {
             return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/tile":
             return .testTile
+        case "/test/transcript-picker":
+            return .testTranscriptPicker
         case "/test/screenshot/crop":
             return .testScreenshotCrop
         case "/test/whip":

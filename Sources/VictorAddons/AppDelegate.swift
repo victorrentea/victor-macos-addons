@@ -33,7 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var keymapOverlayController: KeymapOverlayController?
     private var keymapHoldCoordinator: KeymapHoldCoordinator?
     private var keymapHoldWorkItem: DispatchWorkItem?
-    private var emotionalPasteHandler: EmotionalPasteHandler?
+    private var transcriptPasteController: TranscriptPasteController?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
     private var wsServer: LocalWebSocketServer?
@@ -817,6 +817,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
+        // Goes through `self` rather than capturing the controller: this whole
+        // block wires the server long before `transcriptPasteController` is
+        // built further down `applicationDidFinishLaunching`.
+        tabletServer?.onTestTranscriptPicker = { [weak self] in
+            DispatchQueue.main.async { self?.transcriptPasteController?.trigger() }
+        }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         tabletServer?.onTestWhipCrack = { [weak self] in
             DispatchQueue.main.async { self?.whipController?.forceCrack() }
@@ -1106,9 +1112,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         controller.start()
 
         let secrets = SecretsLoader.load()
-        let apiKey = secrets["WISPR_CLEANUP_ANTHROPIC_API_KEY"] ?? ""
-        let pasteHandler = EmotionalPasteHandler(apiKey: apiKey)
-        self.emotionalPasteHandler = pasteHandler
+        // No API key: the ⌘⌃V picker cleans on the LOCAL Ollama. The emotional
+        // paste it replaced spent `WISPR_CLEANUP_ANTHROPIC_API_KEY`, which — like
+        // `ANTHROPIC_API_KEY` next to it — has answered "credit balance too low"
+        // for long enough that nobody noticed the shortcut had stopped working.
+        // See `TranscriptCleaner` for why not `claude -p` either.
+        let transcriptPaste = TranscriptPasteController(transcriptionFolder: transcriptionFolder)
+        self.transcriptPasteController = transcriptPaste
 
         // Flux inbox poller: every 10 min, but only while on battery. It is a
         // notifier, not an actor — a banner and a log line, nothing more. The
@@ -1151,10 +1161,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         btKeepAlive.start()
 
         let eventTap = EventTapManager()
-        eventTap.onCaptureClipboard = { [weak pasteHandler] text in
-            pasteHandler?.captureText(text)
+        // The tap fires this off a background queue; the controller is main-actor
+        // (it drives two panels), so hop back before touching it.
+        eventTap.onTranscriptPicker = { [weak transcriptPaste] in
+            DispatchQueue.main.async { transcriptPaste?.trigger() }
         }
-        eventTap.onEmotionalPaste = { [weak pasteHandler] in pasteHandler?.handleCleanHotkey() }
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
         eventTap.onScreenshotCrop = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() }

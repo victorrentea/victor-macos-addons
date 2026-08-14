@@ -907,20 +907,30 @@ class WhisperTranscriptionRunner:
         now = datetime.now()
         hhmm = now.strftime("%H:%M")
 
+        # NO SPEAKER PREFIX, no mic glyph — just `[HH:MM] text`.
+        #
+        # The two channels do not separate two speakers. The room's audio and
+        # the mic pick each other up, so both channels hear *everyone*: whoever
+        # happened to be louder on that chunk decided whether a sentence was
+        # filed under `Victor 🎙️:` or `Audience:`. A label that is wrong half
+        # the time is worse than no label — it invites every downstream reader
+        # (the summarizer, the ⌘⌃V picker, Victor himself) to attribute words
+        # to the wrong mouth. The channels stay separate for *capture* (two
+        # devices, two threads, the echo dedup below); they just no longer
+        # claim to know who spoke.
+        #
+        # The `[HH:MM] ` stamp is load-bearing and stays: `TranscriptActivity`
+        # counts only stamped lines as speech, which is what keeps the whisper
+        # watchdog from mistaking a `--- Victor → 💻 ---` device marker for
+        # somebody talking.
         if label == _ME_SPEAKER:
-            # Track Victor's recent text for dedup
+            # Still tracked, purely so the audience channel can recognise an
+            # echo of what this channel just wrote and drop it.
             self._recent_victor.append((time.time(), text))
-            if device_tag:
-                line = f"[{hhmm}] {label} {device_tag}: {text}"
-            else:
-                line = f"[{hhmm}] {label}: {text}"
-        else:
-            # Audience — skip if it's an echo of Victor
-            if self._is_duplicate_of_victor(text):
-                return
-            line = f"[{hhmm}] {label}:  {text}"
+        elif self._is_duplicate_of_victor(text):
+            return
 
-        self._write_to_transcript(line)
+        self._write_to_transcript(f"[{hhmm}] {text}")
 
         parts = text.split()
         words = len(parts)

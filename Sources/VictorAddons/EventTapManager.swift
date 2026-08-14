@@ -17,8 +17,9 @@ private let tapCallbackFunc: CGEventTapCallBack = { proxy, type, event, userInfo
 class EventTapManager {
 
     // MARK: Callbacks (set before calling start())
-    var onCaptureClipboard: ((String) -> Void)?
-    var onEmotionalPaste: (() -> Void)?
+    /// ⌘⌃V — the last minute of transcript, cleaned, offered at five lengths
+    /// (`TranscriptPasteController`).
+    var onTranscriptPicker: (() -> Void)?
     var onScreenshot: (() -> Void)?
     /// ⌃P **held** — macOS's crosshair crop (see `ScreenshotHoldPolicy`).
     var onScreenshotCrop: (() -> Void)?
@@ -481,18 +482,16 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Ctrl+V → emotional paste (suppress)
+        // Cmd+Ctrl+V → the 🎙️ transcript picker (suppress). This used to be the
+        // "emotional paste" (re-clean the text you had just pasted, via Haiku),
+        // which was replaced rather than moved: both answer "give me a tidied
+        // version of some text", but that one could only ever act on something
+        // already on the clipboard, i.e. on words that had already been written
+        // down somewhere. What is actually lost mid-workshop is the sentence
+        // just *said* out loud, and only the transcript has it.
         if hasCmd && hasCtrl {
-            DispatchQueue.global().async { [weak self] in self?.onEmotionalPaste?() }
+            DispatchQueue.global().async { [weak self] in self?.onTranscriptPicker?() }
             return nil
-        }
-
-        // Cmd+V → capture clipboard (pass through)
-        if hasCmd && !hasCtrl {
-            if let text = getClipboardText() {
-                let captured = text
-                DispatchQueue.global().async { [weak self] in self?.onCaptureClipboard?(captured) }
-            }
         }
 
         // Ctrl+V → pass the paste through, then advance the clipboard image stack
@@ -528,14 +527,6 @@ class EventTapManager {
         }
         wheelPendingWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + wheelClickWindow, execute: work)
-    }
-
-    // MARK: - Clipboard helper
-
-    private func getClipboardText() -> String? {
-        // Runs on the EventTapRunLoop thread — must go through the gate
-        // (raced the clip-stack poller → 2026-07-22 workshop crashes).
-        return PasteboardGate.sync { $0.string(forType: .string) }
     }
 
     // MARK: - Frontmost app tracking (for Cmd+scroll zoom targeting)

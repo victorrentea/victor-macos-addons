@@ -276,12 +276,14 @@ final class KeymapOverlayTests: XCTestCase {
     }
 
     func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
-        // a c e g k l m n q r s t z — the ⌘⌃ branches in EventTapManager / the menu
-        // — plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet for
+        // a c e g k l m n q r s t v z — the ⌘⌃ branches in EventTapManager / the
+        // menu — plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet for
         // reference only (the tap's ⌃W whip branch excludes Cmd, so we never
-        // intercept it), and MINUS v: ⌘⌃V is still bound to the emotional paste
-        // but is off the sheet, so "paste" points at exactly one key.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 46, 45, 12, 15, 1, 17, 13, 6])
+        // intercept it). V joined the sheet when ⌘⌃V stopped being the emotional
+        // paste (a second key reading "paste") and became the 🎙️ transcript
+        // picker, which nothing else on the board says.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6])
+        XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
