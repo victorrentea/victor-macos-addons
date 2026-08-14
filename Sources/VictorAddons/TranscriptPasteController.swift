@@ -32,7 +32,12 @@ final class TranscriptPasteController {
     /// no-op rather than a second run: the first thing the shortcut does is
     /// wait ~10 s in silence, which is exactly the situation that invites an
     /// impatient second press.
-    func trigger() {
+    ///
+    /// - Parameter pretendItIs: rewind to a stamp earlier in today's transcript
+    ///   (`GET /test/transcript-picker?at=14:30`). Testing this on the live tail
+    ///   only works while somebody is talking — and on battery, or after hours,
+    ///   nobody is; the rewind turns any minute of the day into a test case.
+    func trigger(pretendItIs: (hour: Int, minute: Int)? = nil) {
         guard !running else { return }
         if picker.isShowing { picker.close(); return }
         running = true
@@ -45,10 +50,16 @@ final class TranscriptPasteController {
                 self.running = false
             }
             do {
-                let outcome = await self.waitForWhisperToCatchUp()
-                let lines = TranscriptTail.lastMinutes(
-                    TranscriptTail.parse(TranscriptTail.readTail(of: self.todayFile())),
-                    windowMinutes: self.windowMinutes)
+                // Waiting only makes sense for "now": a rewind is reading a
+                // minute that was transcribed hours ago, so there is nothing
+                // in flight to wait for and the 8 s floor would be pure delay.
+                let outcome = pretendItIs == nil ? await self.waitForWhisperToCatchUp() : .ready
+
+                var parsed = TranscriptTail.parse(TranscriptTail.readTail(of: self.todayFile()))
+                if let at = pretendItIs {
+                    parsed = TranscriptTail.upTo(parsed, hour: at.hour, minute: at.minute)
+                }
+                let lines = TranscriptTail.lastMinutes(parsed, windowMinutes: self.windowMinutes)
                 guard !lines.isEmpty else {
                     overlayInfo("⌘⌃V: nothing transcribed in the last \(self.windowMinutes) min")
                     NSSound(named: "Basso")?.play()

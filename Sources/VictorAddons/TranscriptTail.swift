@@ -24,8 +24,35 @@ enum TranscriptTail {
         chunk.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
             guard let stamp = TranscriptActivity.speechStamp(in: line) else { return nil }
             let text = String(Array(line)[7...]).trimmingCharacters(in: .whitespaces)
-            return Line(minuteOfDay: stamp.hour * 60 + stamp.minute, text: text)
+            return Line(minuteOfDay: stamp.hour * 60 + stamp.minute, text: stripSpeaker(text))
         }
+    }
+
+    /// Take `Victor 🎙️: ` / `Audience: ` off the front of a line.
+    ///
+    /// Whisper stopped writing those on 2026-08-14 — both channels hear the whole
+    /// room, so the label was a coin flip — but every transcript written before
+    /// that still carries them, and this reads the *history* as often as today.
+    /// Left in, the prefix travels through the cleaner and out onto the clipboard:
+    /// "Victor: Da!" is not something anybody said, it is filing metadata.
+    ///
+    /// Deliberately matched against the **two labels whisper could ever write**
+    /// (`WHISPER_ME_SPEAKER` / `WHISPER_AUDIENCE_SPEAKER`) plus an optional
+    /// source glyph, rather than a general `^word:` rule — speech genuinely
+    /// contains colons ("regula e asta:") and eating a real clause to tidy a
+    /// legacy prefix is the worse trade.
+    static func stripSpeaker(_ text: String) -> String {
+        for label in ["Victor", "Audience"] where text.hasPrefix(label) {
+            let rest = text.dropFirst(label.count)
+            // Anything between the name and the colon must be the mic glyph:
+            // one or two non-alphanumeric characters (🎙️ is a glyph plus a
+            // variation selector), never a word.
+            guard let colon = rest.firstIndex(of: ":") else { continue }
+            let between = rest[rest.startIndex..<colon]
+            guard between.allSatisfy({ !$0.isLetter && !$0.isNumber }) else { continue }
+            return rest[rest.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        }
+        return text
     }
 
     /// The last `windowMinutes` of speech, anchored on the **newest line in the
@@ -48,6 +75,25 @@ enum TranscriptTail {
             let age = anchor - line.minuteOfDay
             return age >= 0 && age <= windowMinutes
         }
+    }
+
+    /// Everything up to and including a given stamp — the "pretend it is
+    /// `HH:MM`" knob behind `GET /test/transcript-picker?at=14:30`. Without it
+    /// the feature can only ever be exercised on the tail of the file, i.e. only
+    /// while somebody is actually talking; with it, any minute of any past
+    /// session is a test case.
+    static func upTo(_ lines: [Line], hour: Int, minute: Int) -> [Line] {
+        let cutoff = hour * 60 + minute
+        return lines.filter { $0.minuteOfDay <= cutoff }
+    }
+
+    /// Parse an `HH:MM` test parameter. Returns nil for anything malformed, so a
+    /// typo in a URL falls back to "now" rather than to midnight.
+    static func parseStamp(_ raw: String) -> (hour: Int, minute: Int)? {
+        let parts = raw.split(separator: ":")
+        guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]),
+              (0...23).contains(hour), (0...59).contains(minute) else { return nil }
+        return (hour, minute)
     }
 
     /// Render for the LLM: one `[HH:MM] text` line per entry, oldest first.

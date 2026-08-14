@@ -33,11 +33,55 @@ final class TranscriptTailTests: XCTestCase {
         XCTAssertEqual(lines.map(\.text), ["intact"])
     }
 
-    func testSpeakerPrefixesAreJustText() {
-        // Old files still carry `Victor 🎙️:` prefixes. They must not crash or
-        // vanish — they are simply part of the line now.
-        let lines = TranscriptTail.parse("[09:05] Victor 🎙️: hello")
-        XCTAssertEqual(lines.map(\.text), ["Victor 🎙️: hello"])
+    // MARK: legacy speaker prefixes
+
+    func testStripsLegacySpeakerPrefixes() {
+        // Whisper stopped writing labels on 2026-08-14, but every earlier
+        // transcript still carries them — and left in, the prefix travels
+        // through the cleaner onto the clipboard as "Victor: Da!", which is
+        // filing metadata, not something anybody said.
+        XCTAssertEqual(TranscriptTail.parse("[09:05] Victor 🎙️: hello").map(\.text), ["hello"])
+        XCTAssertEqual(TranscriptTail.parse("[09:05] Victor 💻: hello").map(\.text), ["hello"])
+        XCTAssertEqual(TranscriptTail.parse("[09:05] Victor: hello").map(\.text), ["hello"])
+        XCTAssertEqual(TranscriptTail.parse("[09:05] Audience:  hello").map(\.text), ["hello"])
+    }
+
+    func testDoesNotEatRealSpeechThatHappensToContainAColon() {
+        // The reason this matches the two known labels instead of a general
+        // `^word:` rule: speech genuinely has colons in it.
+        XCTAssertEqual(TranscriptTail.stripSpeaker("regula e asta: nu dai push vineri"),
+                       "regula e asta: nu dai push vineri")
+        XCTAssertEqual(TranscriptTail.stripSpeaker("Victor a spus: nu"), "Victor a spus: nu")
+        XCTAssertEqual(TranscriptTail.stripSpeaker("Audience members asked: why"),
+                       "Audience members asked: why")
+    }
+
+    func testALineThatIsOnlyAPrefixBecomesEmptyNotGarbage() {
+        XCTAssertEqual(TranscriptTail.stripSpeaker("Victor 🎙️:"), "")
+    }
+
+    // MARK: rewind (?at=HH:MM)
+
+    func testUpToCutsAtTheGivenStamp() {
+        let lines = TranscriptTail.parse("[09:00] a\n[09:05] b\n[09:10] c")
+        XCTAssertEqual(TranscriptTail.upTo(lines, hour: 9, minute: 5).map(\.text), ["a", "b"])
+    }
+
+    func testRewindThenWindowReadsAMinuteFromTheMiddleOfTheDay() {
+        let lines = TranscriptTail.parse("[09:00] old\n[09:04] before\n[09:05] at\n[10:00] later")
+        let window = TranscriptTail.lastMinutes(TranscriptTail.upTo(lines, hour: 9, minute: 5),
+                                                windowMinutes: 1)
+        XCTAssertEqual(window.map(\.text), ["before", "at"])
+    }
+
+    func testParseStampAcceptsValidTimesAndRejectsJunk() {
+        XCTAssertTrue(TranscriptTail.parseStamp("14:30")! == (14, 30))
+        XCTAssertTrue(TranscriptTail.parseStamp("00:00")! == (0, 0))
+        // A typo must fall back to "now", never silently to midnight.
+        XCTAssertNil(TranscriptTail.parseStamp("1430"))
+        XCTAssertNil(TranscriptTail.parseStamp("24:00"))
+        XCTAssertNil(TranscriptTail.parseStamp("12:60"))
+        XCTAssertNil(TranscriptTail.parseStamp(""))
     }
 
     // MARK: lastMinutes

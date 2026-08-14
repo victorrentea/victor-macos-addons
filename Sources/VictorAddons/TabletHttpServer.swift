@@ -47,8 +47,10 @@ class TabletHttpServer {
         case testTile
         /// 🎙️ Open the transcript picker — same action as ⌘⌃V (test hook). Not
         /// read-only and not instant: it waits ~10 s for whisper, then really
-        /// spends a Haiku call and puts a modal up on the cursor's screen.
-        case testTranscriptPicker
+        /// runs the local cleanup and puts a modal up on the cursor's screen.
+        /// `?at=HH:MM` rewinds to that minute of today's transcript and skips
+        /// the wait — the only way to exercise this outside a live session.
+        case testTranscriptPicker(String?)
         /// ✂️ Interactive crop — puts macOS's crosshair up, so this one WAITS for a
         /// human to drag (or Esc). Not read-only: it really writes a file and
         /// really replaces the clipboard.
@@ -157,7 +159,7 @@ class TabletHttpServer {
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
     var onTestTile: (() -> Void)?
-    var onTestTranscriptPicker: (() -> Void)?
+    var onTestTranscriptPicker: ((String?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
@@ -323,8 +325,8 @@ class TabletHttpServer {
                 self.onTestBreakPicker?(q)
             case .testTile:
                 self.onTestTile?()
-            case .testTranscriptPicker:
-                self.onTestTranscriptPicker?()
+            case .testTranscriptPicker(let at):
+                self.onTestTranscriptPicker?(at)
             case .testScreenshotCrop:
                 self.onTestScreenshotCrop?()
             case .testWhip:
@@ -463,7 +465,7 @@ class TabletHttpServer {
         case "/test/tile":
             return .testTile
         case "/test/transcript-picker":
-            return .testTranscriptPicker
+            return .testTranscriptPicker(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/screenshot/crop":
             return .testScreenshotCrop
         case "/test/whip":
