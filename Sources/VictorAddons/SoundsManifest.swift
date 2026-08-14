@@ -13,14 +13,28 @@ import Foundation
 ///   - one line per file: "<filename>:<sha256-hex-lowercase>\n"
 ///   - combined hash = SHA-256 hex of the concatenated lines
 enum SoundsManifest {
-    /// filename → SHA-256 hex, computed once on first access (~15MB, <100ms).
-    static let files: [String: String] = computeFiles()
+    /// filename → SHA-256 hex, computed on first access (~15MB, <100ms) and
+    /// cached — but ONLY a non-empty result is cached. An empty one means the
+    /// folder wasn't resolvable at that instant (a `swift build` had just put
+    /// the unresolvable symlink back, see `SoundManager.sharedSoundsDir`), and
+    /// caching that would have this app advertise a bogus hash to the tablet
+    /// for the rest of its life — telling it every sound differs, i.e. "play
+    /// them yourself" — long after the folder came back.
+    static var files: [String: String] {
+        if let cached = cachedFiles { return cached }
+        let computed = computeFiles()
+        if !computed.isEmpty { cachedFiles = computed }
+        return computed
+    }
+
+    private static var cachedFiles: [String: String]?
 
     /// The single value the tablet compares on every /ping.
-    static let combinedHash: String = {
-        let joined = files.keys.sorted().map { "\($0):\(files[$0]!)\n" }.joined()
+    static var combinedHash: String {
+        let f = files
+        let joined = f.keys.sorted().map { "\($0):\(f[$0]!)\n" }.joined()
         return SHA256.hash(data: Data(joined.utf8)).hexString
-    }()
+    }
 
     /// JSON for GET /sounds/manifest — fetched by the tablet only on a
     /// combined-hash mismatch, to compute the per-file fallback set.
@@ -32,9 +46,10 @@ enum SoundsManifest {
     }
 
     private static func computeFiles() -> [String: String] {
-        // bundleURL, not resourceURL — see SoundManager.soundURL(for:).
-        let dir = Bundle.module.bundleURL.appendingPathComponent("Resources/sounds")
-        guard let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+        // Same resolution as playback, so the manifest can never advertise a
+        // folder the /sound/play path can't read (or vice versa).
+        guard let dir = SoundManager.sharedSoundsDir(),
+              let urls = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             overlayError("SoundsManifest: Resources/sounds not found in bundle")
             return [:]
         }

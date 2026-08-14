@@ -65,17 +65,53 @@ class SoundManager {
 
     private init() {}
 
+    /// The shared tablet-sounds folder (the Android app's assets, reached
+    /// through `Resources/sounds`).
+    ///
+    /// `build-app.sh` replaces that symlink with a dereferenced copy — but any
+    /// later `swift build` / `swift test` puts the verbatim symlink back
+    /// (`../../../../victor-android/app/src/main/assets`, which resolves in the
+    /// source tree and NOT from inside `.build/`). The running app then answers
+    /// every `/sound/play/<file>` with a 404, and the tablet — seeing no
+    /// duration come back — falls back to its own speaker. That failure is
+    /// invisible from the outside: the USB link is up, the manifest hash still
+    /// matches, only the audio comes out of the wrong device. So when the
+    /// bundle copy doesn't resolve we fall back to the source tree, where the
+    /// same symlink does. Not cached: the folder flips between the two forms
+    /// with every build, so each lookup asks the disk (two `fileExists` calls).
+    static func sharedSoundsDir() -> URL? {
+        let bundled = Bundle.module.bundleURL.appendingPathComponent("Resources/sounds")
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: bundled.path, isDirectory: &isDir), isDir.boolValue {
+            return bundled
+        }
+        let binaryDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
+        let envRoot = ProcessInfo.processInfo.environment["VICTOR_ADDONS_ROOT"] ?? ""
+        let home = NSHomeDirectory()
+        var candidates = ["\(binaryDir)/../../../Sources/VictorAddons/Resources/sounds"]
+        if !envRoot.isEmpty { candidates.append("\(envRoot)/Sources/VictorAddons/Resources/sounds") }
+        candidates.append("\(home)/workspace/victor-macos-addons/Sources/VictorAddons/Resources/sounds")
+        for c in candidates {
+            let url = URL(fileURLWithPath: c).standardized
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                return url
+            }
+        }
+        return nil
+    }
+
     /// Resolve a sound file: shared tablet sounds (Resources/sounds — a
     /// symlink to the Android app's assets folder, dereferenced by
     /// build-app.sh) first, then Mac-only sounds in Resources/.
     func soundURL(for filename: String) -> URL? {
+        if let dir = Self.sharedSoundsDir() {
+            let shared = dir.appendingPathComponent(filename)
+            if FileManager.default.fileExists(atPath: shared.path) { return shared }
+        }
         // bundleURL, not resourceURL: NSBundle reports <bundle>/Resources as
         // the resource dir for this flat SPM bundle, which would double the
         // "Resources" path component.
-        let base = Bundle.module.bundleURL
-        let shared = base.appendingPathComponent("Resources/sounds/\(filename)")
-        if FileManager.default.fileExists(atPath: shared.path) { return shared }
-        let local = base.appendingPathComponent("Resources/\(filename)")
+        let local = Bundle.module.bundleURL.appendingPathComponent("Resources/\(filename)")
         if FileManager.default.fileExists(atPath: local.path) { return local }
         return nil
     }
