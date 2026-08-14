@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 14, 21:07"
+    static let BUILD_TIME = "Aug 14, 21:51"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -532,17 +532,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     /// F8 / ⌘⌃C global hotkey lands here.
     @objc func openDreamPlainWorkspace() {
-        openWorkspaceTerminal(command: "claude", tag: "claude")
+        openWorkspaceTerminal(command: "claude")
     }
 
-    /// ⌘⌃Q — the same window with permissions bypassed. This used to type `cx`,
-    /// Victor's ~/.zshrc alias, into an interactive shell; the command is now
-    /// carried by a script file (see `openWorkspaceTerminal`), which is a
-    /// NON-interactive login shell, so .zshrc — and therefore the alias — never
-    /// loads. The expansion is spelled out instead, which also means renaming
-    /// `cx` in ~/.zshrc no longer breaks this hotkey.
+    /// ⌘⌃Q — the same window with permissions bypassed. The shell here is again
+    /// interactive (see `openWorkspaceTerminal`), so `cx` — Victor's ~/.zshrc
+    /// alias — would work; the flag stays spelled out anyway, so renaming the
+    /// alias can never break the hotkey.
     @objc func openBypassClaudeWorkspace() {
-        openWorkspaceTerminal(command: "claude --dangerously-skip-permissions", tag: "claude_bypass")
+        openWorkspaceTerminal(command: "claude --dangerously-skip-permissions")
     }
 
     /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.
@@ -550,7 +548,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// already cds a shell that started in $HOME to ~/workspace, so an explicit
     /// `cd` would only print a redundant command line into a fresh window.
     @objc func openPlainTerminalWorkspace() {
-        openWorkspaceTerminal(command: nil, tag: "")
+        openWorkspaceTerminal(command: nil)
     }
 
     /// The screen a point is on — for the cursor, that is the screen Victor is
@@ -588,15 +586,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// Open a Terminal window in ~/workspace on the screen under the cursor,
     /// optionally running `command`.
     ///
-    /// **The command travels in a script file, never as text typed into the
-    /// window.** `do script "claude"` writes those characters into the new
-    /// window's tty, and a window that already has keyboard focus is also
-    /// receiving whatever Victor is typing — so anything typed in that gap gets
-    /// interleaved into the command line and the shell runs `clahelloude`.
-    /// Passing the command as the shell's *argv* removes the race by
-    /// construction, and the script then drains the tty of anything typed
-    /// early before handing the terminal to claude.
-    private func openWorkspaceTerminal(command: String?, tag: String) {
+    /// **The command is typed into the window by `do script`.** It used to travel
+    /// in a `/tmp/victor_*.sh` file passed as the shell's argv, which closed one
+    /// real race — `do script` writes its characters into a window that already
+    /// has keyboard focus, so anything typed in that gap interleaves and the shell
+    /// runs `clahelloude` — but paid for it with a **whole extra zsh per window**:
+    /// Terminal opens a document by running it from the window's own login shell,
+    /// so the tree was `login → zsh --login → zsh -l victor_claude.sh → claude`
+    /// instead of `login → zsh --login → claude`. The race is rare (it needs a
+    /// keystroke inside the ~200 ms the window takes to appear) and self-evident
+    /// when it happens; the extra process is permanent. So the simple shape is
+    /// back, deliberately.
+    ///
+    /// A second consequence, this one in our favour: `do script` runs in an
+    /// **interactive** login shell, so ~/.zshrc loads — which is what cds a window
+    /// started in $HOME to ~/workspace (no explicit `cd` to print) and what makes
+    /// aliases exist again.
+    private func openWorkspaceTerminal(command: String?) {
         // `do script` / `open` already spawn a NEW window (not a tab), but
         // without an explicit `set bounds` Terminal reopens it on whichever
         // display it last had a window on. Both the screen AND the quarter come
@@ -610,72 +616,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let displayID = displayID(of: screen)
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter(of: cursor, on: screen))
 
-        guard let command, !command.isEmpty else {
-            let script = """
-            tell application "Terminal"
-                do script ""
-                activate
-                set bounds of front window to {\(l), \(t), \(r), \(b)}
-            end tell
-            """
-            DispatchQueue.global().async {
-                _ = AppleScriptRunner.run(script, timeout: 10)
-                Self.tileAfterOpening(displayID: displayID)
-            }
-            return
-        }
-
-        // A non-interactive login shell: .zprofile (PATH) loads, .zshrc does not
-        // — which is why the cd is explicit here even though .zshrc would land an
-        // *interactive* shell in ~/workspace on its own. It costs nothing: this
-        // line is never shown, unlike the old typed `cd ~/workspace && …`.
-        // The `exec zsh -il` at the end leaves a normal interactive prompt behind
-        // when claude exits, as the typed-command version did.
-        let tmpPath = "/tmp/victor_\(tag).sh"
-        let shContent = """
-        #!/bin/zsh -l
-        cd "$HOME/workspace" 2>/dev/null
-        stty -echo 2>/dev/null
-        while read -t 0 -k 1 _ 2>/dev/null; do : ; done
-        stty echo 2>/dev/null
-        \(command)
-        exec /bin/zsh -il
-
-        """
-        try? shContent.write(toFile: tmpPath, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
-
-        // The window is *waited for*, not slept on. This used to be a flat
-        // `delay 0.5` between `open` and `set bounds`, which is both too long and
-        // too short: Terminal usually has the window up in well under 200 ms — so
-        // half a second of the launch was spent watching it sit in whatever corner
-        // it last occupied before jumping — and on a loaded Mac it can take longer
-        // than 0.5 s, in which case the bounds were written to the *previous*
-        // window (or nothing at all). Polling the window count against the count
-        // taken BEFORE the open answers exactly the question the delay was
-        // guessing at, and answers it as soon as it is true.
-        //
-        // The count must be read behind an `is running` guard: `tell application
-        // "Terminal"` on a quit Terminal would launch it, which is the one thing
-        // this branch must not do before `open` has chosen the script to run.
-        // The 0.05 s after the count moves is for the new window to become `front
-        // window` — it is the frontmost the moment it appears, but the two are not
-        // guaranteed to be observable in the same instant.
+        // `do script` opens the window AND returns only once it exists, so the
+        // bounds can be written on the next line — no `open -a Terminal` +
+        // window-count polling loop, which is what the script-file version needed
+        // because `open` is asynchronous and would otherwise resize the *previous*
+        // window. An empty command (⌘⌃T) opens the window and runs nothing.
         let script = """
-        set n0 to 0
-        if application "Terminal" is running then
-            tell application "Terminal" to set n0 to count of windows
-        end if
-        do shell script "open -a Terminal \(tmpPath)"
-        repeat 120 times
-            if application "Terminal" is running then
-                tell application "Terminal" to set n to count of windows
-                if n > n0 then exit repeat
-            end if
-            delay 0.025
-        end repeat
-        delay 0.05
         tell application "Terminal"
+            do script "\(Self.escapeForAppleScript(command ?? ""))"
             activate
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
@@ -684,6 +632,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             _ = AppleScriptRunner.run(script, timeout: 10)
             Self.tileAfterOpening(displayID: displayID)
         }
+    }
+
+    /// Both callers pass literals, but the command lands inside an AppleScript
+    /// string literal, so a quote or a backslash in it would end that string early
+    /// and turn the rest into (invalid) code rather than into arguments.
+    private static func escapeForAppleScript(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     /// Tile the screen the new window landed on, so the window that was already
@@ -706,15 +662,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
         let (l, t, r, b) = appleScriptBounds(screen: screen, quarter: quarter)
 
-        let tmpPath = "/tmp/dream_\(sessionName).sh"
-        let shContent = "#!/bin/zsh -l\ncd \(directory) && claude '/rename \(sessionName)'\n"
-        try? shContent.write(toFile: tmpPath, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
-
+        // Typed into the window rather than carried by a `/tmp/dream_*.sh` file,
+        // for the reason spelled out in `openWorkspaceTerminal`: a document opened
+        // through Terminal is run BY the window's shell, so the script file cost an
+        // extra zsh process for the lifetime of every one of these windows.
+        let command = "cd \(directory) && claude '/rename \(sessionName)'"
         let script = """
-        do shell script "open -a Terminal \(tmpPath)"
-        delay 0.5
         tell application "Terminal"
+            do script "\(Self.escapeForAppleScript(command))"
             activate
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
