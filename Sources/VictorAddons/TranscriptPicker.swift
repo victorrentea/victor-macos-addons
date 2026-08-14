@@ -55,18 +55,71 @@ final class TranscriptPicker: NSObject {
         override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
         private func refreshFill() {
+            guard !isChosen else { return }   // the flash owns the fill
             let alpha: CGFloat = (hovering || isHighlighted) ? 0.16 : 0.05
             layer?.backgroundColor = NSColor(white: 1, alpha: alpha).cgColor
             layer?.borderWidth = isHighlighted ? 1.5 : 0
             layer?.borderColor = NSColor.systemYellow.withAlphaComponent(0.85).cgColor
         }
+
+        private var isChosen = false
+
+        /// The confirmation flash: a fast rise to a bright amber and a slow decay
+        /// back, over `TranscriptPicker.flashDuration`.
+        ///
+        /// Pressing `4` is a blind gesture — the eye is on the row it wants, the
+        /// finger is on a number, and nothing on screen connects the two. Without
+        /// this, the panel simply vanishes and you are left trusting that the
+        /// digit you pressed was the row you meant. The asymmetry is what makes
+        /// it read as a flash rather than a fade: it arrives at once and leaves
+        /// slowly, so the row is unmistakable at the instant of the press and the
+        /// glow is still there while the panel closes underneath it.
+        func flashChosen() {
+            isChosen = true
+            guard let layer else { return }
+            let rest = NSColor(white: 1, alpha: 0.16).cgColor
+            let bright = NSColor.systemYellow.withAlphaComponent(0.6).cgColor
+
+            let fill = CAKeyframeAnimation(keyPath: "backgroundColor")
+            fill.values = [rest, bright, bright, rest]
+            fill.keyTimes = [0, 0.12, 0.28, 1]
+            fill.duration = TranscriptPicker.flashDuration
+            fill.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            // The panel is torn down at the end of this, so what the layer
+            // settles back to never matters — but leaving it lit for the whole
+            // duration is what keeps the glow visible until the very last frame.
+            layer.backgroundColor = bright
+            layer.borderWidth = 2
+            layer.borderColor = NSColor.systemYellow.cgColor
+            layer.add(fill, forKey: "chosen")
+        }
+
+        /// The rows that were NOT picked step back so the chosen one is the only
+        /// thing left to look at.
+        func dimUnchosen() {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1.0
+            fade.toValue = 0.25
+            fade.duration = TranscriptPicker.flashDuration * 0.45
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            layer?.add(fade, forKey: "dim")
+        }
     }
+
+    /// How long the confirmation flash runs before the panel closes. A second is
+    /// long for a confirmation and deliberately so — this is the one moment that
+    /// tells you the digit you pressed hit the row you meant.
+    static let flashDuration: CFTimeInterval = 1.0
 
     private var panel: PickerPanel?
     private var cards: [SegmentCard] = []
     private var segments: [String] = []
     private var highlighted = 0
     private var onPick: ((String) -> Void)?
+    /// Set the moment a row is picked: the panel is still on screen for the
+    /// length of the flash, but it is no longer a menu.
+    private var isDismissing = false
 
     private let pad: CGFloat = 16
     private let gap: CGFloat = 10
@@ -82,9 +135,14 @@ final class TranscriptPicker: NSObject {
         self.segments = segments
         self.onPick = onPick
         self.highlighted = 0
+        self.isDismissing = false
 
         let screen = screenUnderCursor()
-        let width = min(760, screen.frame.width * 0.62)
+        // 820, not 760: measured, two lines of 14 pt system text hold ~203
+        // characters at the narrower width and ~223 at this one. The distiller
+        // is asked for 180 and lands nearer 205, so the extra 60 pt is the
+        // difference between "two lines, as asked" and an occasional third.
+        let width = min(820, screen.frame.width * 0.62)
         let innerWidth = width - 2 * pad
         let textWidth = innerWidth - 2 * cardPad - badgeWidth - 8
 
@@ -257,10 +315,30 @@ final class TranscriptPicker: NSObject {
     }
 
     private func pick(_ index: Int) {
-        guard segments.indices.contains(index) else { return }
-        let text = segments[index]
-        let handler = onPick
-        close()
-        handler?(text)
+        guard !isDismissing, segments.indices.contains(index) else { return }
+        isDismissing = true
+
+        // The clipboard is written NOW, not after the flash. The animation is
+        // feedback, not a step in the work — and a second of it is exactly long
+        // enough that a fast hand would otherwise ⌘V an empty answer.
+        onPick?(segments[index])
+
+        for (i, card) in cards.enumerated() {
+            if i == index { card.flashChosen() } else { card.dimUnchosen() }
+        }
+        // Nothing must be pickable while the flash runs: a second press would
+        // copy a second thing over the one just confirmed on screen.
+        panel?.onKeyDown = { [weak self] event in
+            // …except Esc, which is the one key that should still get you out
+            // of a panel you are looking at.
+            guard event.keyCode == 53 else { return true }
+            self?.close()
+            return true
+        }
+        panel?.onResignKey = nil
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flashDuration) { [weak self] in
+            self?.close()
+        }
     }
 }

@@ -60,6 +60,55 @@ final class TranscriptTailTests: XCTestCase {
         XCTAssertEqual(TranscriptTail.stripSpeaker("Victor 🎙️:"), "")
     }
 
+    // MARK: lastSeconds — the 40 s window
+
+    func testTakesTheTrailingLinesWorthTheAskedForSeconds() {
+        // One line ≈ 5 s of speech (a 6 s chunk minus 1 s overlap), so 40 s is
+        // the last 8 lines. The stamps are `[HH:MM]` and cannot express 40 s at
+        // all, which is why this counts lines rather than reading the clock.
+        let lines = TranscriptTail.parse((1...20).map { "[09:05] line \($0)" }.joined(separator: "\n"))
+        let window = TranscriptTail.lastSeconds(lines, seconds: 40)
+        XCTAssertEqual(window.count, 8)
+        XCTAssertEqual(window.first?.text, "line 13")
+        XCTAssertEqual(window.last?.text, "line 20")
+    }
+
+    func testKeepsEverythingWhenThereIsLessThanTheWindow() {
+        let lines = TranscriptTail.parse("[09:05] a\n[09:05] b")
+        XCTAssertEqual(TranscriptTail.lastSeconds(lines, seconds: 40).map(\.text), ["a", "b"])
+    }
+
+    func testDoesNotReachBackAcrossALongPause() {
+        // Eight lines of *speech* can span half an hour once there are breaks in
+        // it, and distilling "the last 40 seconds" out of a conversation that
+        // ended before the coffee break would be confidently wrong.
+        let lines = TranscriptTail.parse("""
+        [09:00] before the break
+        [09:01] also before the break
+        [10:30] after the break
+        """)
+        XCTAssertEqual(TranscriptTail.lastSeconds(lines, seconds: 40).map(\.text), ["after the break"])
+    }
+
+    func testAlwaysReturnsAtLeastTheNewestLine() {
+        // Something said beats an empty panel.
+        let lines = TranscriptTail.parse("[09:05] the only thing")
+        XCTAssertEqual(TranscriptTail.lastSeconds(lines, seconds: 1).map(\.text), ["the only thing"])
+        XCTAssertEqual(TranscriptTail.lastSeconds(lines, seconds: 0).map(\.text), ["the only thing"])
+    }
+
+    func testEmptyInputYieldsEmptySecondsWindow() {
+        XCTAssertTrue(TranscriptTail.lastSeconds([], seconds: 40).isEmpty)
+    }
+
+    func testWindowKeepsChronologicalOrder() {
+        // The model reads oldest-first; walking backwards to take the tail must
+        // not leave the window reversed.
+        let lines = TranscriptTail.parse("[09:05] one\n[09:05] two\n[09:05] three")
+        XCTAssertEqual(TranscriptTail.lastSeconds(lines, seconds: 40).map(\.text),
+                       ["one", "two", "three"])
+    }
+
     // MARK: rewind (?at=HH:MM)
 
     func testUpToCutsAtTheGivenStamp() {

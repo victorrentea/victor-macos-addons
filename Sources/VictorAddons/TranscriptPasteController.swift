@@ -4,8 +4,8 @@ import AppKit
 ///
 /// Four steps, each in its own file: **wait** for whisper to catch up
 /// (`TranscriptSettlePolicy`, with a spinner at the cursor because the wait is
-/// long enough to look like a dead key), **read** the last minute
-/// (`TranscriptTail`), **distill** it into five things worth pasting
+/// long enough to look like a dead key), **read** the last 40 seconds
+/// (`TranscriptTail`), **distill** them into seven things worth pasting
 /// (`TranscriptDistiller`), **choose** one (`TranscriptPicker`) — and the choice
 /// lands on the pasteboard.
 ///
@@ -21,8 +21,14 @@ final class TranscriptPasteController {
     private let spinner = BusyCursorSpinner()
     private var running = false
 
-    /// How far back the ladder's longest rung reaches.
-    private let windowMinutes = 1
+    /// How much speech goes into the distillation.
+    ///
+    /// Was a full minute; 40 s is the better window because the options are
+    /// *distillations*, not excerpts — over a whole minute the model has to
+    /// average two or three separate thoughts into one "point of view", and the
+    /// answer comes out true but bland. 40 s is usually one thought, and one
+    /// thought is what compresses into a line worth pasting.
+    private let windowSeconds: Double = 40
 
     init(transcriptionFolder: URL) {
         self.transcriptionFolder = transcriptionFolder
@@ -59,9 +65,9 @@ final class TranscriptPasteController {
                 if let at = pretendItIs {
                     parsed = TranscriptTail.upTo(parsed, hour: at.hour, minute: at.minute)
                 }
-                let lines = TranscriptTail.lastMinutes(parsed, windowMinutes: self.windowMinutes)
+                let lines = TranscriptTail.lastSeconds(parsed, seconds: self.windowSeconds)
                 guard !lines.isEmpty else {
-                    overlayInfo("⌘⌃V: nothing transcribed in the last \(self.windowMinutes) min")
+                    overlayInfo("⌘⌃V: nothing transcribed in the last \(Int(self.windowSeconds))s")
                     NSSound(named: "Basso")?.play()
                     return
                 }

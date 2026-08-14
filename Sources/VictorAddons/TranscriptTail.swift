@@ -77,6 +77,46 @@ enum TranscriptTail {
         }
     }
 
+    /// How much *speech* one transcript line is worth.
+    ///
+    /// Whisper emits one line per transcribed audio chunk: `WHISPER_CHUNK_SECONDS`
+    /// (6) minus `WHISPER_OVERLAP_SECONDS` (1) of genuinely new audio each. This
+    /// is the only handle there is on sub-minute duration — the file's stamps are
+    /// `[HH:MM]`, so nothing finer than a minute can be read off them directly.
+    static let secondsPerLine: Double = 5
+
+    /// The last `seconds` of **speech**, counted in lines rather than off the
+    /// clock.
+    ///
+    /// Two things make this speech-time and not wall-clock, and both are what you
+    /// want here. Whisper only writes a line when a chunk was loud enough to
+    /// transcribe, so silence costs nothing — "the last 40 seconds" means the
+    /// last 40 seconds somebody was *talking*, not 40 seconds that might be 35 s
+    /// of nobody saying anything. And the count is exact where a stamp read could
+    /// never be: `[HH:MM]` cannot express 40 s at all.
+    ///
+    /// `maxMinutesBack` is the guard on the other side. After a long pause, eight
+    /// lines of speech can reach back half an hour, and distilling "the last 40
+    /// seconds" out of a conversation that ended before the break would be
+    /// confidently wrong. Past that bound the window is simply shorter.
+    ///
+    /// Always returns at least the newest line: something said is always better
+    /// than an empty panel.
+    static func lastSeconds(_ lines: [Line], seconds: Double, maxMinutesBack: Int = 2) -> [Line] {
+        guard let anchor = lines.last?.minuteOfDay else { return [] }
+        let maxLines = max(1, Int((seconds / secondsPerLine).rounded()))
+
+        var kept: [Line] = []
+        for line in lines.reversed() {
+            let age = anchor - line.minuteOfDay
+            guard age >= 0, age <= maxMinutesBack else { break }
+            guard kept.count < maxLines else { break }
+            kept.append(line)
+        }
+        if kept.isEmpty, let newest = lines.last { kept = [newest] }
+        return kept.reversed()
+    }
+
     /// Everything up to and including a given stamp — the "pretend it is
     /// `HH:MM`" knob behind `GET /test/transcript-picker?at=14:30`. Without it
     /// the feature can only ever be exercised on the tail of the file, i.e. only

@@ -37,10 +37,22 @@ enum TranscriptDistiller {
     static let kinds = [
         "punctul de vedere, o linie",
         "ideea, 1-2 fraze",
-        "replica / ancora emoțională",
+        "replica amuzantă",
+        "ancora emoțională",
         "prompt gata de dat unui agent",
+        "titlu / hook",
         "tot, dens",
     ]
+
+    /// Budget per option, in characters. The panel is scanned, not read — seven
+    /// rows that each need a paragraph of attention is not a menu, it is homework.
+    ///
+    /// **Measured, not guessed, and set deliberately under the real ceiling.**
+    /// Two lines at the picker's text width (730 pt, 14 pt system font) hold
+    /// ~223 characters. The budget is 180 because the model treats a stated
+    /// limit as a target and lands ~15 % over it — asking for 220 produced 250,
+    /// which wraps to three lines. Asking for 180 lands around 205, which fits.
+    static let maxCharsPerOption = 180
 
     static var model: String {
         ProcessInfo.processInfo.environment["TRANSCRIPT_DISTILL_MODEL"] ?? "sonnet"
@@ -56,27 +68,38 @@ enum TranscriptDistiller {
     private static let timeout: TimeInterval = 60
 
     private static let instructions = """
-    You receive one minute of a live speech-to-text transcript — raw Whisper \
-    output: filler words, false starts, missing punctuation, duplicated fragments \
-    where audio chunks overlapped, and no speaker labels (the microphones pick up \
-    the whole room, so do not invent attributions).
+    You receive the last ~40 seconds of a live speech-to-text transcript — raw \
+    Whisper output: filler words, false starts, missing punctuation, duplicated \
+    fragments where audio chunks overlapped, and no speaker labels (the \
+    microphones pick up the whole room, so do not invent attributions).
 
     DISTILL it. Do NOT return it verbatim and do NOT merely clean it up: compress \
     it to its idea. The reader is the speaker himself, about to paste one of these \
     somewhere — into a message, a slide, a post, or as a prompt to a coding agent.
 
-    Return exactly 5 options, in this exact order:
+    Return exactly 7 options, in this exact order:
     1. THE POINT OF VIEW — one line. The claim, the stance, the thing he is \
     actually arguing.
     2. THE IDEA — the same thing in one or two sentences, with just enough of the \
     reasoning to stand on its own.
-    3. THE LINE — the most quotable or emotionally striking moment in the minute: \
-    the joke, the image, the sentence that landed. Keep it close to how he said it.
-    4. THE AGENT PROMPT — the actionable intent rewritten as a direct, imperative \
-    instruction you could hand to a coding agent. If the minute contains no \
-    actionable intent, write the instruction the idea implies.
-    5. EVERYTHING, DENSE — the whole minute compressed into one tight paragraph: \
-    every distinct idea, none of the original words.
+    3. THE FUNNY LINE — the wittiest or most surprising thing said, kept close to \
+    how he said it. If nothing is genuinely funny, give the sharpest or most \
+    unexpected phrasing instead — never invent a joke that was not there.
+    4. THE EMOTIONAL ANCHOR — the moment that actually landed: the frustration, \
+    the stake, the human bit. What someone would still remember tomorrow.
+    5. THE AGENT PROMPT — the actionable intent rewritten as a direct, imperative \
+    instruction you could hand to a coding agent. If there is no actionable \
+    intent, write the instruction the idea implies.
+    6. THE HOOK — a title: the opening line of a post, or a slide heading. Short, \
+    concrete, no clickbait.
+    7. EVERYTHING, DENSE — every distinct idea in the window, none of the \
+    original words.
+
+    HARD LIMIT: every option must be at most \(maxCharsPerOption) characters — \
+    option 7 included, it is not an exception. Count the characters before you \
+    answer, and if one is over, cut content until it fits; never cut a sentence \
+    in half and never let it run on. Options 1, 3, 4 and 6 should be far shorter \
+    than the limit.
 
     Write every option in the SAME LANGUAGE AS THE TRANSCRIPT — if the transcript \
     is in English, answer in English; if it is in Romanian, answer in Romanian. \
@@ -84,7 +107,7 @@ enum TranscriptDistiller {
     Write in first person, the way he speaks — never "the speaker says that…". \
     No preamble, no labels, no surrounding quotes, no emoji.
 
-    Return ONLY a JSON object: {"options": ["...", "...", "...", "...", "..."]}
+    Return ONLY a JSON object: {"options": ["...", …7 strings in total…]}
     """
 
     enum DistillError: LocalizedError {

@@ -52,21 +52,35 @@ final class TranscriptDistillerTests: XCTestCase {
 
     // MARK: slot captions
 
-    func testTheFiveSlotsAreTheFiveThingsVictorActuallyReachesFor() {
+    func testTheSevenSlotsAreTheSevenThingsVictorActuallyReachesFor() {
         // Fixed in Swift rather than asked of the model: the shape is the same
         // every run, so the caption under each row never drifts and the hand can
-        // learn "the agent prompt is the fourth one".
-        XCTAssertEqual(TranscriptDistiller.kinds.count, 5)
+        // learn "the agent prompt is the fifth one".
+        XCTAssertEqual(TranscriptDistiller.kinds.count, 7)
         XCTAssertEqual(TranscriptDistiller.kind(at: 0), "punctul de vedere, o linie")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 3), "prompt gata de dat unui agent")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 4), "tot, dens")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 2), "replica amuzantă")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 3), "ancora emoțională")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 4), "prompt gata de dat unui agent")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 6), "tot, dens")
+    }
+
+    func testEverySlotIsDigitReachable() {
+        // The digit shortcuts only go to 9, and the badge falls back to a bare
+        // "·" past that — seven rows all stay pressable.
+        XCTAssertLessThanOrEqual(TranscriptDistiller.kinds.count, 9)
     }
 
     func testAnExtraOptionGetsNoCaptionRatherThanAWrongOne() {
-        // The model occasionally returns six; captioning the sixth with the
-        // fifth's label would be a confident lie about what the row is.
-        XCTAssertNil(TranscriptDistiller.kind(at: 5))
+        // The model occasionally returns eight; captioning the eighth with the
+        // seventh's label would be a confident lie about what the row is.
+        XCTAssertNil(TranscriptDistiller.kind(at: 7))
         XCTAssertNil(TranscriptDistiller.kind(at: -1))
+    }
+
+    func testTwoLineBudgetIsWhatFitsThePanel() {
+        // The panel is scanned, not read: seven rows that each need a paragraph
+        // of attention is not a menu, it is homework.
+        XCTAssertEqual(TranscriptDistiller.maxCharsPerOption, 180)
     }
 
     func testModelDefaultsToSonnet() {
