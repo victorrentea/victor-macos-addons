@@ -282,6 +282,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "gong":            self?.animator.showGong(playSound: false)
             case "rainbow":         self?.animator.showRainbow(playSound: false)
             case "rainbow/stop":    self?.animator.stopRainbow()
+            case "snow":            self?.animator.showSnow()
+            case "snow/stop":       self?.animator.stopSnow()
             case "cavalry":         self?.animator.showCavalry(playSound: false)
             case "counter-strike":  self?.animator.showCounterStrike(playSound: false)
             // Like the sonar: the door's cue lives INSIDE the clip, so the effect
@@ -934,6 +936,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "star-wars":       self.animator.showStarWars(playSound: false); stopAfter { self.animator.stopStarWars() }
                 case "gong":            self.animator.showGong(playSound: false)
                 case "rainbow":         self.animator.showRainbow(playSound: false); stopAfter { self.animator.stopRainbow() }
+                case "snow":            self.animator.showSnow(); stopAfter { self.animator.stopSnow() }
                 case "cavalry":         self.animator.showCavalry(playSound: false)
                 case "counter-strike":  self.animator.showCounterStrike(playSound: false)
                 // The one menu effect that is NOT silent: the whole gag is the

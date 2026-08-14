@@ -212,6 +212,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Death Star ☠️",    "star-wars"),
             ("Gong 🔔",          "gong"),
             ("Rainbow 🌈",       "rainbow"),
+            ("Snow ❄️",          "snow"),
             ("Cavalry 🐎",       "cavalry"),
             ("Counter-Strike 🔫", "counter-strike"),
             ("Microwave ⏲️",      "microwave"),

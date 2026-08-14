@@ -44,6 +44,10 @@ enum SoundEffectMap {
         "26_drum.mp3":           "drum-roll",
         "44_laugh_emoji.mp3":    "laugh",
         "40_joker.mp3":          "blood-drip",
+        // Tile 46 IS the Christmas tile — Michael Bublé's "It's Beginning to Look
+        // a Lot Like Christmas", snow already falling in the artwork. The desktop
+        // now snows for as long as the clip plays.
+        "46_michael_buble.mp3":  "snow",
         // Tile 34: a phoenix rises up the desktop with its cry. The tablet's
         // paired `34_phoenix.mp3` is silent; the real sound (`phoenix.mp3`) is a
         // Mac-owned resource played inside showPhoenix and faded out in unison
@@ -92,6 +96,7 @@ enum SoundEffectMap {
         "55_star_wars.mp3":      "star-wars/stop",
         "26_drum.mp3":           "drum-roll/stop",
         "59_game_over.mp3":      "game-over/stop",
+        "46_michael_buble.mp3":  "snow/stop",
     ]
 
     /// The effect name a pressed sound should start, or nil if the sound has no

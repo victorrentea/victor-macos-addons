@@ -473,6 +473,10 @@ class TabletHttpServer {
             return .effect("coffee/pop")
         case "/test/iris":
             return .effect("iris")
+        case "/test/snow":
+            return .effect("snow")
+        case "/test/snow/stop":
+            return .effect("snow/stop")
         case "/test/minion":
             return .effect("minion")
         case "/test/counter-strike":

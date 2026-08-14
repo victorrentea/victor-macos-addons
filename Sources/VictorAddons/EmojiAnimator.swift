@@ -4511,6 +4511,220 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
+    // MARK: - ❄️ Snow (tile #46, Michael Bublé — "It's Beginning to Look a Lot Like Christmas")
+
+    /// Flakes per second while the clip plays.
+    private static let snowSpawnRate: Double = 16
+    /// Flakes already in the air on the first frame (see `showSnow`).
+    private static let snowSeedCount = 30
+    /// How long a landed flake lingers on the floor before it has melted away.
+    private static let snowSettleSeconds: Double = 1.4
+    private static let snowFadeSeconds: CFTimeInterval = 1.2
+
+    /// Pending spawn (and self-stop) work items for the current snowfall, kept so
+    /// an explicit stop — the song stopped on the tablet — can cancel the ones
+    /// that haven't fired yet. Same pattern as the spiral hearts: without this the
+    /// sky keeps filling for the full clip length after it has been silenced.
+    private var snowSpawns: [DispatchWorkItem] = []
+
+    /// ❄️ Snow falls over the whole desktop for as long as the Bublé clip plays.
+    /// Drawn, not emoji: ❄️ renders as the system's blue-tinted glyph, and what is
+    /// being asked for here is *white snow* over whatever is on screen.
+    func showSnow() {
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        // Re-press: clear any in-flight snowfall so containers don't stack.
+        clearSnow(fadeDuration: 0)
+
+        // Snow for exactly as long as the tablet's clip plays.
+        var sfxDuration = 10.5
+        if let url = SoundManager.shared.soundURL(for: "46_michael_buble.mp3") {
+            let d = AVURLAsset(url: url).duration
+            if d.isNumeric { sfxDuration = CMTimeGetSeconds(d) }
+        }
+
+        // One container so a stop can fade the whole snowfall out together.
+        let container = CALayer()
+        container.frame = bounds
+        hostLayer.addSublayer(container)
+        activeEffects["snow"] = container
+
+        // The sky starts ALREADY FULL. Spawning only from the top edge means the
+        // first seconds of the song play over an empty desktop and the snow only
+        // arrives once the room has stopped looking — so the opening frame gets a
+        // batch of flakes dropped in mid-fall, at random points down the screen.
+        for _ in 0..<Self.snowSeedCount {
+            spawnSnowflake(into: container, startProgress: CGFloat.random(in: 0.05...0.95))
+        }
+
+        snowSpawns = []
+        let total = max(1, Int((Self.snowSpawnRate * sfxDuration).rounded()))
+        for i in 0..<total {
+            let delay = (Double(i) / Double(total)) * sfxDuration
+            let work = DispatchWorkItem { [weak self, weak container] in
+                guard let self, let container else { return }
+                self.spawnSnowflake(into: container)
+            }
+            snowSpawns.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+
+        // Authoritative self-stop (the lifecycle rule): the tablet's
+        // `/sound/stopped` → `snow/stop` is best-effort and is lost on a flaky
+        // venue network, which would otherwise leave it snowing on the desktop
+        // forever. Identity-guarded so an old run's timer can't kill a newer run.
+        let selfStop = DispatchWorkItem { [weak self, weak container] in
+            guard let self, let container, self.activeEffects["snow"] === container else { return }
+            self.clearSnow(fadeDuration: Self.snowFadeSeconds)
+        }
+        snowSpawns.append(selfStop)
+        DispatchQueue.main.asyncAfter(deadline: .now() + sfxDuration + 0.3, execute: selfStop)
+    }
+
+    /// Stop the snowfall now: cancel pending flakes and melt away the ones on
+    /// screen. Wired to "snow/stop" (the song stopped on the tablet).
+    func stopSnow() {
+        clearSnow(fadeDuration: Self.snowFadeSeconds)
+    }
+
+    private func clearSnow(fadeDuration: CFTimeInterval) {
+        snowSpawns.forEach { $0.cancel() }
+        snowSpawns = []
+        guard let container = activeEffects["snow"] else { return }
+        activeEffects.removeValue(forKey: "snow")
+        guard fadeDuration > 0 else { container.removeFromSuperlayer(); return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(fadeDuration)
+        container.opacity = 0
+        CATransaction.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration) { [weak container] in
+            container?.removeFromSuperlayer()
+        }
+    }
+
+    /// One flake, falling from above the top edge to the floor, where it settles
+    /// briefly and melts. `startProgress` > 0 drops it in already part-way down
+    /// (used to pre-fill the sky on the first frame).
+    private func spawnSnowflake(into container: CALayer, startProgress: CGFloat = 0) {
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        // ONE number carries the depth — size, speed, brightness and how wide it
+        // swings all come off it — so a flake can never read as a contradiction
+        // (big but distant, tiny but racing). 0 = far, 1 = near.
+        let depth = CGFloat.random(in: 0...1)
+        let radius = 5 + depth * 15
+        let brightness = Float(0.35 + depth * 0.55)
+        let fallSeconds = 9.5 - Double(depth) * 4.5   // near flakes fall faster
+
+        let flake = CAShapeLayer()
+        flake.path = Self.snowflakePath(radius: radius)
+        flake.bounds = CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)
+        flake.strokeColor = NSColor.white.cgColor
+        flake.fillColor = nil
+        flake.lineWidth = max(1.0, radius * 0.13)
+        flake.lineCap = .round
+        flake.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        // The halo is what makes it read as snow rather than as line art.
+        flake.shadowColor = NSColor.white.cgColor
+        flake.shadowRadius = radius * 0.55
+        flake.shadowOpacity = 0.9
+        flake.shadowOffset = .zero
+        flake.masksToBounds = false
+
+        // Falling = decreasing y (hostLayer is not geometry-flipped).
+        let topY = bounds.height + radius * 2
+        let floorY = radius * 0.6
+        let startY = topY + (floorY - topY) * startProgress
+        let startX = CGFloat.random(in: -radius...(bounds.width + radius))
+
+        // A net sideways drift (a draught across the room) plus a sine sway, both
+        // scaled by depth so near flakes swing wider than distant ones.
+        let drift = CGFloat.random(in: -0.06...0.06) * bounds.width * (0.4 + depth)
+        let amplitude = (10 + depth * 26) * CGFloat.random(in: 0.6...1.4)
+        let frequency = Double.random(in: 0.8...2.0)   // full sine cycles over the fall
+        let phase = Double.random(in: 0...(2 * .pi))
+
+        let steps = 48
+        var points: [NSValue] = []
+        for step in 0...steps {
+            let t = CGFloat(step) / CGFloat(steps)
+            let y = startY + (floorY - startY) * t
+            let x = startX + drift * t
+                + amplitude * CGFloat(sin(phase + Double(t) * frequency * 2 * .pi))
+            points.append(NSValue(point: NSPoint(x: x, y: y)))
+        }
+
+        let descent = max(0.4, fallSeconds * Double(1 - startProgress))
+        let total = descent + Self.snowSettleSeconds
+        let landed = descent / total                    // keyTime at which it touches down
+
+        flake.position = points[0].pointValue
+        container.addSublayer(flake)
+
+        var animations: [CAAnimation] = []
+
+        // The descent occupies the first `landed` of the timeline; the repeated
+        // final point holds the flake on the floor while it melts.
+        let move = CAKeyframeAnimation(keyPath: "position")
+        move.values = points + [points[steps]]
+        var keyTimes = (0...steps).map { NSNumber(value: Double($0) / Double(steps) * landed) }
+        keyTimes.append(1.0)
+        move.keyTimes = keyTimes
+        move.calculationMode = .linear
+        animations.append(move)
+
+        // Slow tumble. Only the rotation is animated (the size is baked into the
+        // path), so nothing fights over `transform`.
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = (Bool.random() ? 1.0 : -1.0) * Double.random(in: 0.4...1.6) * 2 * .pi
+        spin.duration = total
+        animations.append(spin)
+
+        // Fade in as it enters, hold, then melt away once it has landed.
+        let fadeIn = min(0.06, landed * 0.5)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.0, brightness, brightness, 0.0]
+        fade.keyTimes = [0.0, NSNumber(value: fadeIn), NSNumber(value: landed), 1.0]
+        animations.append(fade)
+
+        let group = CAAnimationGroup()
+        group.animations = animations
+        group.duration = total
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak flake] in flake?.removeFromSuperlayer() }
+        flake.add(group, forKey: "snowflake")
+        CATransaction.commit()
+    }
+
+    /// A six-spoke snowflake centred on (0,0): each arm carries two pairs of
+    /// branches, which is the least detail that still reads as a snowflake rather
+    /// than as an asterisk.
+    private static func snowflakePath(radius r: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        for i in 0..<6 {
+            let angle = Double(i) * .pi / 3
+            let tip = CGPoint(x: cos(angle) * Double(r), y: sin(angle) * Double(r))
+            path.move(to: .zero)
+            path.addLine(to: tip)
+            for (along, length) in [(0.45, 0.34), (0.72, 0.24)] {
+                let base = CGPoint(x: tip.x * along, y: tip.y * along)
+                for side in [1.0, -1.0] {
+                    let branch = angle + side * (.pi / 4)
+                    path.move(to: base)
+                    path.addLine(to: CGPoint(x: base.x + cos(branch) * Double(r) * length,
+                                             y: base.y + sin(branch) * Double(r) * length))
+                }
+            }
+        }
+        return path
+    }
+
     /// Current mouse position expressed in hostLayer-local coordinates,
     /// clamped to the built-in screen (reuses the heartbeat anchor mapping).
     private func mousePointInHostLayer() -> CGPoint {
@@ -6048,6 +6262,9 @@ class EmojiAnimator {
         // below would drop the rising hearts but leave it beating forever. Tear
         // it (and any pending spawns) down explicitly.
         clearSpiralHearts(fadeDuration: 0)
+        // Same for the snowfall: the loop below drops the container but the
+        // pending spawn work items would keep firing into a detached layer.
+        clearSnow(fadeDuration: 0)
         // The minigun aiming reticle also lives OUTSIDE activeEffects (its own
         // follow timer + hidden cursor), so tear it down explicitly or it would
         // keep tracking forever after a stop-all.
