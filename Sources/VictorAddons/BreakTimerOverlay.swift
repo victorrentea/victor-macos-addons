@@ -1727,9 +1727,19 @@ final class BreakTimerView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        // Become key (without activating the app) so our cursor rects are honored.
-        window?.makeKey()
-        window?.invalidateCursorRects(for: self)
+        // Deliberately NOT `window?.makeKey()`. A `.nonactivatingPanel` doesn't
+        // activate the app when it becomes key, but becoming key still resigns
+        // key status from whatever window had it — so merely *passing the cursor
+        // over the timer* took the caret out of the text field being typed in,
+        // in another app, without a single click. The mouse crossing a widget is
+        // not a decision to leave what you were doing, and the timer parks itself
+        // in a corner precisely so it can be ignored.
+        //
+        // The only thing key status bought was AppKit honoring `resetCursorRects`
+        // (cursor *rects* are a key-window mechanism). `updateHover` below already
+        // sets every cursor imperatively via `NSCursor.set()`, which needs no key
+        // status at all, and the tracking area is `.activeAlways`, so enter/exit/
+        // moved keep arriving while the app is inactive. Nothing is lost.
         mouseInside = true
         cornerHoldTimer?.invalidate(); cornerHoldTimer = nil
         cornerFadeTimer?.invalidate(); cornerFadeTimer = nil
@@ -1780,7 +1790,9 @@ final class BreakTimerView: NSView {
         let h = buttonHit(p, L)
         if h != hoveredButton { hoveredButton = h; needsDisplay = true }
         // Set the cursor for the hovered region (resize on corners, pointer on
-        // buttons, open-hand on the body) — works because we became key on enter.
+        // buttons, open-hand on the body). Imperative `NSCursor.set()`, so it
+        // works with the panel un-key — which is the whole point: hovering must
+        // not take focus off whatever the user was typing in (see `mouseEntered`).
         if let corner = cornerHit(p, L) {
             Self.cursor(forCorner: corner).set()
         } else if h != nil {
