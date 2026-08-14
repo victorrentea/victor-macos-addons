@@ -27,6 +27,7 @@ enum CommandControlShortcuts {
         // G (key 5) is drawn from `artworkNames` below, not from a word.
         40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
         37: "📅",        // L — Google Calendar
+        46: "todo",      // M — Gmail draft to myself, clipboard in the body
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
         // Google Doc, and the Docs mark says that faster than any word could.
         15: "SRL",       // R — paste the company's invoicing details
@@ -57,6 +58,7 @@ enum CommandControlShortcuts {
         1:  "🚀",  // S — the selection is launched into the notes
         15: "📋",  // R — the SRL details are pasted, not opened
         40: "📕",  // K — the training catalog
+        46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
     ]
 
     /// Keys whose payload is a bundled picture rather than a word, by key code.

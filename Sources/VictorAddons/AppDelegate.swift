@@ -1204,6 +1204,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenNotesDoc = { [weak self] in
             DispatchQueue.main.async { self?.openUrlInChrome(Self.notesDocUrl) }
         }
+        eventTap.onComposeTodoMail = { [weak self] in
+            // The clipboard is read here, on the tap's background queue, and the
+            // whole draft is a URL by the time Chrome is asked to open it — so
+            // nothing races the browser and nothing is typed into a window that
+            // may not have focus yet.
+            let draft = GmailCompose.draft(clipboard: ClipboardManager.read())
+            DispatchQueue.main.async {
+                self?.openUrlInChrome(draft.url)
+                // Only the shortened case says anything: the draft on screen is
+                // its own confirmation, but a body that was cut short doesn't
+                // look cut short, and the clipboard still holds the rest.
+                if draft.truncated {
+                    self?.statusBanner?.showNow(text: "✉️ TO DO — text scurtat, întregul e în clipboard (⌘V)",
+                                                sound: nil, visibleDuration: 6.0)
+                }
+            }
+        }
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
             guard KeymapOverlaySettings.isEnabled else {
                 self?.keymapHoldCoordinator?.reset()

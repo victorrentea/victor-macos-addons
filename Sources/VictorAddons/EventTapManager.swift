@@ -46,6 +46,8 @@ class EventTapManager {
     var onPasteCompanyDetails: (() -> Void)?
     /// ⌘⌃N — open the "notes" Google Doc in Chrome.
     var onOpenNotesDoc: (() -> Void)?
+    /// ⌘⌃M — open a Gmail draft to Victor, subject "TO DO", clipboard as body.
+    var onComposeTodoMail: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
@@ -74,6 +76,7 @@ class EventTapManager {
     private let VK_E: CGKeyCode = 0x0E
     private let VK_R: CGKeyCode = 0x0F
     private let VK_N: CGKeyCode = 0x2D
+    private let VK_M: CGKeyCode = 0x2E
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -442,6 +445,15 @@ class EventTapManager {
         // Cmd+Ctrl+N → open the "notes" Google Doc in Chrome (suppress).
         if keyCode == VK_N && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenNotesDoc?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+M → Gmail draft to Victor, subject "TO DO", clipboard as the
+        // body (suppress). M for "mail to myself"; it is the write half of ⌘⌃G,
+        // which only opens the inbox. Nothing is sent — the draft waits in the
+        // browser, so the note can still be edited before it goes.
+        if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onComposeTodoMail?() }
             return nil
         }
 

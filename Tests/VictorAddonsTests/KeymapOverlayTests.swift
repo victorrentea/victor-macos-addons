@@ -276,12 +276,12 @@ final class KeymapOverlayTests: XCTestCase {
     }
 
     func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
-        // a c e g k l n q r s t z — the ⌘⌃ branches in EventTapManager / the menu
+        // a c e g k l m n q r s t z — the ⌘⌃ branches in EventTapManager / the menu
         // — plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet for
         // reference only (the tap's ⌃W whip branch excludes Cmd, so we never
         // intercept it), and MINUS v: ⌘⌃V is still bound to the emotional paste
         // but is off the sheet, so "paste" points at exactly one key.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 45, 12, 15, 1, 17, 13, 6])
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 8, 14, 5, 40, 37, 46, 45, 12, 15, 1, 17, 13, 6])
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
@@ -293,6 +293,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.labels[40], "catalog")
         XCTAssertEqual(CommandControlShortcuts.labels[37], "📅")
         XCTAssertEqual(CommandControlShortcuts.labels[1], "notes")
+        XCTAssertEqual(CommandControlShortcuts.labels[46], "todo")
         XCTAssertNil(CommandControlShortcuts.labels[5])
         XCTAssertNil(CommandControlShortcuts.labels[45])
         XCTAssertEqual(CommandControlShortcuts.artworkNames[5], "gmail-logo")
@@ -308,6 +309,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[1], "🚀")   // S — into the notes
         XCTAssertEqual(CommandControlShortcuts.accents[15], "📋")  // R — a paste, not a doc
         XCTAssertEqual(CommandControlShortcuts.accents[40], "📕")  // K — the catalog
+        XCTAssertEqual(CommandControlShortcuts.accents[46], "✉️")  // M — it arrives as mail
         // An accent on an unbound key would decorate a dimmed, meaningless key.
         for code in CommandControlShortcuts.accents.keys {
             XCTAssertTrue(CommandControlShortcuts.boundKeyCodes.contains(code),
