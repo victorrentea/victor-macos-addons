@@ -1,14 +1,15 @@
 import Foundation
 
-/// Compresses the last minute of transcript into **five things worth pasting**.
+/// Compresses the last 40 seconds of transcript into **five things worth
+/// pasting**.
 ///
-/// The first version of this cleaned the minute up *verbatim* and offered it at
-/// growing lengths. That was the wrong product: tidied speech is still speech,
-/// and nobody wants a paragraph of their own hesitations on the clipboard. What
-/// is actually being reached for is the **idea** — a point of view, a line worth
+/// The first version cleaned that window up *verbatim* and offered it at growing
+/// lengths. That was the wrong product: tidied speech is still speech, and
+/// nobody wants a paragraph of their own hesitations on the clipboard. What is
+/// actually being reached for is the **idea** — a point of view, a line worth
 /// quoting, the bit that landed emotionally, or an instruction ready to hand to
 /// an agent. So the model compresses rather than transcribes, and the five slots
-/// are five *kinds*, in a rough short→long order so the eye can still scan them.
+/// are five *kinds* rather than five lengths.
 ///
 /// ## Which model, and why through the CLI
 ///
@@ -19,7 +20,7 @@ import Foundation
 /// here starts with `env -u ANTHROPIC_API_KEY`: exported, it shadows the
 /// subscription and fails auth. Same reason applies here.
 ///
-/// **Sonnet, not Haiku** — measured on the same minute, on this Mac:
+/// **Sonnet, not Haiku** — measured on the same window, on this Mac:
 /// sonnet **13 s**, haiku **17 s**. Sonnet being both better *and* faster is
 /// counterintuitive and worth writing down: the cost here is dominated by output
 /// tokens, and the weaker model spends more of them saying the same thing.
@@ -29,28 +30,34 @@ import Foundation
 /// `TRANSCRIPT_DISTILL_MODEL`.
 enum TranscriptDistiller {
 
-    /// The five slots, in order. Captions are **fixed in Swift, not asked of the
-    /// model**: the shape is the same every time, so labelling it here means one
-    /// less thing that can be hallucinated, and the caption under each row stays
-    /// identical from run to run — which is what lets the hand learn "the agent
-    /// prompt is the fourth one" and stop reading.
-    /// English, while the options themselves come back in whatever language was
-    /// spoken. The two are different things: an option is *content* and has to
-    /// stay in the speaker's own words, while a caption is chrome — and every
-    /// other label this app draws is in English, so a Romanian caption above an
-    /// English option would be the only mixed surface on the Mac.
+    /// The five slots, in order: the four things Victor said he actually reaches
+    /// for — a point of view, a funny line, an emotional anchor, a prompt for an
+    /// agent — plus the idea itself as the workhorse.
+    ///
+    /// Two slots from a wider draft were dropped rather than shuffled.
+    /// **"Everything, dense"** stopped being a distinct answer the moment options
+    /// were capped at two lines: at 180 characters it converges on "the idea,
+    /// 1–2 sentences", and the dedup filter below was catching them as one row.
+    /// **"Title / hook"** was never asked for — it was a guess, and a guess does
+    /// not earn a permanent slot on a panel scanned under time pressure.
+    ///
+    /// Captions are **fixed here, never asked of the model**: the shape is the
+    /// same every run, so there is one less thing that can be hallucinated and
+    /// the row labels cannot drift — which is what lets the hand learn "the agent
+    /// prompt is the last one" and stop reading. They are in **English while the
+    /// options are not**, deliberately: an option is *content* and has to stay in
+    /// the speaker's own words, a caption is chrome and matches every other label
+    /// this app draws.
     static let kinds = [
         "the point — one line",
         "the idea, 1–2 sentences",
         "the funny line",
         "the emotional anchor",
         "agent-ready prompt",
-        "title / hook",
-        "everything, dense",
     ]
 
-    /// Budget per option, in characters. The panel is scanned, not read — seven
-    /// rows that each need a paragraph of attention is not a menu, it is homework.
+    /// Budget per option, in characters. The panel is scanned, not read — rows
+    /// that each need a paragraph of attention are not a menu, they are homework.
     ///
     /// **Measured, not guessed, and set deliberately under the real ceiling.**
     /// Two lines at the picker's text width (730 pt, 14 pt system font) hold
@@ -82,7 +89,7 @@ enum TranscriptDistiller {
     it to its idea. The reader is the speaker himself, about to paste one of these \
     somewhere — into a message, a slide, a post, or as a prompt to a coding agent.
 
-    Return exactly 7 options, in this exact order:
+    Return exactly 5 options, in this exact order:
     1. THE POINT OF VIEW — one line. The claim, the stance, the thing he is \
     actually arguing.
     2. THE IDEA — the same thing in one or two sentences, with just enough of the \
@@ -95,16 +102,16 @@ enum TranscriptDistiller {
     5. THE AGENT PROMPT — the actionable intent rewritten as a direct, imperative \
     instruction you could hand to a coding agent. If there is no actionable \
     intent, write the instruction the idea implies.
-    6. THE HOOK — a title: the opening line of a post, or a slide heading. Short, \
-    concrete, no clickbait.
-    7. EVERYTHING, DENSE — every distinct idea in the window, none of the \
-    original words.
 
-    HARD LIMIT: every option must be at most \(maxCharsPerOption) characters — \
-    option 7 included, it is not an exception. Count the characters before you \
-    answer, and if one is over, cut content until it fits; never cut a sentence \
-    in half and never let it run on. Options 1, 3, 4 and 6 should be far shorter \
-    than the limit.
+    The five must be five genuinely different answers. If two of them would come \
+    out saying the same thing, push each further into its own job — sharper for \
+    1, more concrete for 2, closer to his exact words for 3, more human for 4, \
+    more directly actionable for 5.
+
+    HARD LIMIT: every option must be at most \(maxCharsPerOption) characters. \
+    Count the characters before you answer, and if one is over, cut content until \
+    it fits; never cut a sentence in half and never let it run on. Options 1, 3 \
+    and 4 should be far shorter than the limit.
 
     Write every option in the SAME LANGUAGE AS THE TRANSCRIPT — if the transcript \
     is in English, answer in English; if it is in Romanian, answer in Romanian. \
@@ -112,12 +119,12 @@ enum TranscriptDistiller {
     Write in first person, the way he speaks — never "the speaker says that…". \
     No preamble, no labels, no surrounding quotes, no emoji.
 
-    If the window is very short or barely says anything, STILL return 7 options — \
+    If the window is very short or barely says anything, STILL return 5 options — \
     work with what little is there. Never answer with an explanation, an apology, \
     or a note that the input is insufficient: the reply is parsed by a program, \
     and prose reaches the user as an error.
 
-    Return ONLY a JSON object: {"options": ["...", …7 strings in total…]}
+    Return ONLY a JSON object: {"options": ["...", …5 strings in total…]}
     """
 
     /// Below this many words the window is not worth a model call.

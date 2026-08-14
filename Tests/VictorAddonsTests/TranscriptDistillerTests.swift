@@ -83,28 +83,27 @@ final class TranscriptDistillerTests: XCTestCase {
 
     // MARK: slot captions
 
-    func testTheSevenSlotsAreTheSevenThingsVictorActuallyReachesFor() {
+    func testTheFiveSlotsAreWhatVictorActuallyReachesFor() {
         // Fixed in Swift rather than asked of the model: the shape is the same
         // every run, so the caption under each row never drifts and the hand can
-        // learn "the agent prompt is the fifth one".
-        XCTAssertEqual(TranscriptDistiller.kinds.count, 7)
+        // learn "the agent prompt is the last one".
+        XCTAssertEqual(TranscriptDistiller.kinds.count, 5)
         XCTAssertEqual(TranscriptDistiller.kind(at: 0), "the point — one line")
         XCTAssertEqual(TranscriptDistiller.kind(at: 2), "the funny line")
         XCTAssertEqual(TranscriptDistiller.kind(at: 3), "the emotional anchor")
         XCTAssertEqual(TranscriptDistiller.kind(at: 4), "agent-ready prompt")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 6), "everything, dense")
     }
 
     func testEverySlotIsDigitReachable() {
         // The digit shortcuts only go to 9, and the badge falls back to a bare
-        // "·" past that — seven rows all stay pressable.
+        // "·" past that — every row must stay pressable.
         XCTAssertLessThanOrEqual(TranscriptDistiller.kinds.count, 9)
     }
 
     func testAnExtraOptionGetsNoCaptionRatherThanAWrongOne() {
-        // The model occasionally returns eight; captioning the eighth with the
-        // seventh's label would be a confident lie about what the row is.
-        XCTAssertNil(TranscriptDistiller.kind(at: 7))
+        // The model occasionally returns six; captioning the sixth with the
+        // fifth's label would be a confident lie about what the row is.
+        XCTAssertNil(TranscriptDistiller.kind(at: 5))
         XCTAssertNil(TranscriptDistiller.kind(at: -1))
     }
 
