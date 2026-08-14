@@ -74,6 +74,12 @@ cp "$DIR/.build/arm64-apple-macosx/$BUILD_CONFIG/VictorAddons" "$MACOS/$APP_NAME
 # (Accessibility / Mic / Screen Recording re-prompt on every rebuild). The
 # trade-off: ALWAYS deploy from this permanent checkout (never a worktree) and do
 # not `swift package clean`, so that .build path keeps resolving.
+#
+# The dereferencing above is undone by the NEXT plain `swift build`/`swift test`
+# (SwiftPM re-copies the symlink verbatim), which used to silently 404 every
+# tablet-routed sound in the app already running. `SoundManager.sharedSoundsDir`
+# now falls back to the source tree in that state, so the order of commands no
+# longer decides whether the soundboard plays on the Mac or on the tablet.
 
 # Info.plist (must be written before signing)
 cat > "$CONTENTS/Info.plist" <<PLIST
