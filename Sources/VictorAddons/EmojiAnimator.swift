@@ -4515,11 +4515,14 @@ class EmojiAnimator {
 
     /// Flakes per second while the clip plays.
     private static let snowSpawnRate: Double = 16
-    /// Flakes already in the air on the first frame (see `showSnow`).
-    private static let snowSeedCount = 30
+    /// Flakes released in the opening cascade (see `showSnow`).
+    private static let snowSeedCount = 26
     /// How long a landed flake lingers on the floor before it has melted away.
     private static let snowSettleSeconds: Double = 1.4
-    private static let snowFadeSeconds: CFTimeInterval = 1.2
+    private static let snowFadeSeconds: CFTimeInterval = 1.0
+    /// No new flake is released this close to the end of the clip — one entering
+    /// the frame just as everything melts reads as a glitch, not as snow.
+    private static let snowLastSpawnBeforeEnd: Double = 1.5
 
     /// Pending spawn (and self-stop) work items for the current snowfall, kept so
     /// an explicit stop — the song stopped on the tablet — can cancel the ones
@@ -4550,18 +4553,22 @@ class EmojiAnimator {
         hostLayer.addSublayer(container)
         activeEffects["snow"] = container
 
-        // The sky starts ALREADY FULL. Spawning only from the top edge means the
-        // first seconds of the song play over an empty desktop and the snow only
-        // arrives once the room has stopped looking — so the opening frame gets a
-        // batch of flakes dropped in mid-fall, at random points down the screen.
+        // EVERY flake enters from above the top edge — none is ever dropped in
+        // mid-screen, which reads as flakes materialising out of nowhere rather
+        // than as snow falling. The opening cascade is therefore stacked *above*
+        // the screen instead: a batch released at staggered heights over the top
+        // edge, so the sky fills within the first couple of seconds while each
+        // flake still makes the whole journey down.
         for _ in 0..<Self.snowSeedCount {
-            spawnSnowflake(into: container, startProgress: CGFloat.random(in: 0.05...0.95))
+            spawnSnowflake(into: container, startAbove: CGFloat.random(in: 0...0.9) * bounds.height)
         }
 
         snowSpawns = []
-        let total = max(1, Int((Self.snowSpawnRate * sfxDuration).rounded()))
+        // Emission stops before the clip does (see snowLastSpawnBeforeEnd).
+        let emitFor = max(0.5, sfxDuration - Self.snowLastSpawnBeforeEnd)
+        let total = max(1, Int((Self.snowSpawnRate * emitFor).rounded()))
         for i in 0..<total {
-            let delay = (Double(i) / Double(total)) * sfxDuration
+            let delay = (Double(i) / Double(total)) * emitFor
             let work = DispatchWorkItem { [weak self, weak container] in
                 guard let self, let container else { return }
                 self.spawnSnowflake(into: container)
@@ -4570,16 +4577,19 @@ class EmojiAnimator {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
 
-        // Authoritative self-stop (the lifecycle rule): the tablet's
-        // `/sound/stopped` → `snow/stop` is best-effort and is lost on a flaky
-        // venue network, which would otherwise leave it snowing on the desktop
-        // forever. Identity-guarded so an old run's timer can't kill a newer run.
+        // The snowfall lasts EXACTLY as long as the song: the melt starts on the
+        // clip's last moment, so the desktop is clear a beat after the music has
+        // stopped. This is also the authoritative self-stop required by the
+        // lifecycle rule — the tablet's `/sound/stopped` → `snow/stop` is
+        // best-effort and is lost on a flaky venue network, which would otherwise
+        // leave it snowing forever. Identity-guarded so an old run's timer can't
+        // kill a newer run.
         let selfStop = DispatchWorkItem { [weak self, weak container] in
             guard let self, let container, self.activeEffects["snow"] === container else { return }
             self.clearSnow(fadeDuration: Self.snowFadeSeconds)
         }
         snowSpawns.append(selfStop)
-        DispatchQueue.main.asyncAfter(deadline: .now() + sfxDuration + 0.3, execute: selfStop)
+        DispatchQueue.main.asyncAfter(deadline: .now() + sfxDuration, execute: selfStop)
     }
 
     /// Stop the snowfall now: cancel pending flakes and melt away the ones on
@@ -4604,9 +4614,11 @@ class EmojiAnimator {
     }
 
     /// One flake, falling from above the top edge to the floor, where it settles
-    /// briefly and melts. `startProgress` > 0 drops it in already part-way down
-    /// (used to pre-fill the sky on the first frame).
-    private func spawnSnowflake(into container: CALayer, startProgress: CGFloat = 0) {
+    /// briefly and melts. `startAbove` stacks it that much FURTHER above the top
+    /// edge (used by the opening cascade) — it always enters through the top, and
+    /// the fall speed is held constant so starting higher just means entering
+    /// later, not falling faster.
+    private func spawnSnowflake(into container: CALayer, startAbove: CGFloat = 0) {
         let bounds = hostLayer.bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
 
@@ -4634,9 +4646,8 @@ class EmojiAnimator {
         flake.masksToBounds = false
 
         // Falling = decreasing y (hostLayer is not geometry-flipped).
-        let topY = bounds.height + radius * 2
         let floorY = radius * 0.6
-        let startY = topY + (floorY - topY) * startProgress
+        let startY = bounds.height + radius * 2 + startAbove
         let startX = CGFloat.random(in: -radius...(bounds.width + radius))
 
         // A net sideways drift (a draught across the room) plus a sine sway, both
@@ -4656,7 +4667,9 @@ class EmojiAnimator {
             points.append(NSValue(point: NSPoint(x: x, y: y)))
         }
 
-        let descent = max(0.4, fallSeconds * Double(1 - startProgress))
+        // Constant fall speed: `fallSeconds` is the time to cross the screen, so a
+        // flake stacked higher simply takes proportionally longer to arrive.
+        let descent = max(0.4, fallSeconds * Double((startY - floorY) / bounds.height))
         let total = descent + Self.snowSettleSeconds
         let landed = descent / total                    // keyTime at which it touches down
 

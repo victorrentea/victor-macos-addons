@@ -222,13 +222,19 @@ rule from the start.
   `transform.rotation.z` is animated — the size is baked into the path, so nothing
   fights over `transform`), then **lands on the bottom edge and melts** over 1.4 s:
   the descent is the first `landed` fraction of the timeline and the repeated final
-  point is the hold. **The sky starts already full** — `snowSeedCount` = 30 flakes are
-  dropped in mid-fall at random heights on the first frame, since spawning only from
-  the top edge means the song's opening plays over an empty desktop and the snow
-  arrives after the room has stopped looking. Then 16 flakes/s for the clip's length.
-  Self-terminating per the lifecycle rule (an identity-guarded stop at
-  `sfxDuration + 0.3`), with the tablet's `/sound/stopped` → `snow/stop` melting it
-  early through the same 1.2 s fade; pending spawns are cancelled by `clearSnow`,
+  point is the hold. **Every flake enters through the top edge** — none is ever
+  dropped in mid-screen, which reads as flakes materialising out of nowhere rather
+  than as snow falling. So the opening cascade is stacked *above* the screen instead:
+  `snowSeedCount` = 26 flakes released at staggered heights over the top edge, at the
+  same constant fall speed (starting higher means entering *later*, never falling
+  faster), which fills the sky within ~2 s while each flake still makes the whole
+  journey down. Then 16 flakes/s, stopping `snowLastSpawnBeforeEnd` = 1.5 s before the
+  clip does — a flake entering the frame just as everything melts reads as a glitch.
+  **The snowfall lasts exactly as long as the song**: the melt starts on the clip's
+  last moment (an identity-guarded self-stop at `sfxDuration`, which is also the
+  lifecycle rule's authoritative teardown) and the desktop is clear a second later.
+  The tablet's `/sound/stopped` → `snow/stop` melts it early through the same 1 s
+  fade, so stopping the sound stops the snow; pending spawns are cancelled by `clearSnow`,
   which `stopAllActiveEffects` calls explicitly (they live outside `activeEffects`,
   like the spiral hearts'). `/test/snow`, `/test/snow/stop`, `/effect/snow` and the
   menu item **Snow ❄️** fire it silently.
@@ -356,7 +362,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 - `GET /test/money` — fire one round of the 💸 Money rising-dollars overlay now; same as `/effect/money`. The tablet drives it by routing `GET /sound/play/53_rain.mp3` to the Mac (handled in `onSoundPlay`), which also plays the #57 checkmark "ching"
 - `GET /test/iris` — fire the 🕳️ Iris-close blackout now (5s close → 1s hold → auto fade-out reveal); same as `/effect/iris`. The tablet drives it via `GET /sound/pressed/31_tarzan.mp3` (mapped to `iris` in `SoundEffectMap`); a second press before the auto-reveal cancels it early. The `/test/iris` visual itself is silent; the tablet-routed press pairs it with the gong (`50_gong.mp3`) via `onSoundPlay`
 - `GET /test/counter-strike` — fire the 🔫 Counter-Strike overlay now (silent, ~1.4 s in the bottom-left quarter); same as `/effect/counter-strike`. The tablet drives it via `GET /sound/pressed/73_counter_strike.mp3` (mapped to `counter-strike` in `SoundEffectMap`) while the routed `/sound/play/73_counter_strike.mp3` plays the clip
-- `GET /test/snow` — snow on the desktop now (silent, ~10.5 s of falling flakes + a 1.2 s melt); same as `/effect/snow`. `GET /test/snow/stop` melts it early, which is what the tablet sends when the 🎄 Bublé clip (tile #46) ends — the press itself arrives as `GET /sound/pressed/46_michael_buble.mp3`, mapped to `snow` in `SoundEffectMap`, while the routed `/sound/play/46_michael_buble.mp3` plays the song
+- `GET /test/snow` — snow on the desktop now (silent, exactly the clip's ~10.5 s, then a 1 s melt); same as `/effect/snow`. `GET /test/snow/stop` melts it early, which is what the tablet sends when the 🎄 Bublé clip (tile #46) ends — the press itself arrives as `GET /sound/pressed/46_michael_buble.mp3`, mapped to `snow` in `SoundEffectMap`, while the routed `/sound/play/46_michael_buble.mp3` plays the song
 - `GET /test/microwave` — fire the ⏲️ Microwave overlay now, **with its sound** (~4.4 s: 2.7 s of ticking at a closed door, then the BING and the door swinging open); same as `/effect/microwave`. Unlike the other effect hooks this one is not silent — the sync between the bell and the door is the whole thing being tested. The tablet drives it via the routed `GET /sound/play/61_dinner.mp3` (handled in `onSoundPlay`, deliberately not in `SoundEffectMap`)
 - `GET /test/coffee` — spawn 3 rising ☕ so the **coffee hold-charge** gesture can be exercised headlessly (no live session needed). Rest the cursor on one (or on several at once — they all inflate): each freezes, grows for 3 s, then shatters into its own pixels (`EmojiAnimator.tickCoffeeCharge`, which returns where each one popped). With no break showing the first explosion opens the 10-min "UNTIL BREAK" timer, which flies in from the blast; while a break runs each explosion sends a `−1` floating to the clock and the **1 minute** comes off when it lands
 - `GET /test/coffee/pop` — pop ONE fully-charged ☕ mid-screen right now and run the whole payoff — pixel dissolve, then either the timer flying in from the blast or a `−1` floating to it — without holding a cursor still for three seconds. NB not read-only: it really starts the "UNTIL BREAK" timer, or really takes a minute off a running break. Verify the deduction with `defaults read ro.victorrentea.macos-addons BreakTimer.finishAt` before and ~4 s after (it must move back exactly 60 s, and only *after* the token's flight)
