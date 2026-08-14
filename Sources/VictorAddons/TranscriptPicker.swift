@@ -25,19 +25,24 @@ final class TranscriptPicker: NSObject {
         override func resignKey() { super.resignKey(); onResignKey?() }
     }
 
-    /// One rung of the ladder. Draws its own hover highlight — a row you can
-    /// click has to say so before you click it.
+    /// One option's row. Draws its own hover highlight — a row you can click
+    /// has to say so before you click it.
     private final class SegmentCard: NSView {
         let index: Int
         var onClick: ((Int) -> Void)?
         var isHighlighted = false { didSet { refreshFill() } }
         private var hovering = false { didSet { refreshFill() } }
+        /// Passed in rather than read off the owner: a nested type has no path
+        /// to the outer instance, and a corner radius left at its 1× value on a
+        /// scaled-up box reads as a squarer card, not a smaller one.
+        private let cornerRadius: CGFloat
 
-        init(index: Int, frame: NSRect) {
+        init(index: Int, frame: NSRect, cornerRadius: CGFloat) {
             self.index = index
+            self.cornerRadius = cornerRadius
             super.init(frame: frame)
             wantsLayer = true
-            layer?.cornerRadius = 8
+            layer?.cornerRadius = cornerRadius
             refreshFill()
         }
         required init?(coder: NSCoder) { fatalError("not used") }
@@ -121,11 +126,29 @@ final class TranscriptPicker: NSObject {
     /// length of the flash, but it is no longer a menu.
     private var isDismissing = false
 
-    private let pad: CGFloat = 16
-    private let gap: CGFloat = 10
-    private let cardPad: CGFloat = 12
-    private let badgeWidth: CGFloat = 26
-    private let textFont = NSFont.systemFont(ofSize: 14)
+    /// Everything below — box, padding and type alike — is drawn at this
+    /// multiple of the size it was first built at. The panel is read from a
+    /// normal sitting distance while something else has your attention, and at
+    /// 1× the options were legible rather than *glanceable*.
+    ///
+    /// Scaling **uniformly** is what makes this safe to change: the text column
+    /// and the font grow by the same factor, so the number of characters that
+    /// fit on a line is unchanged and `TranscriptDistiller.maxCharsPerOption`
+    /// still means two lines. Growing the type alone would silently turn every
+    /// two-line option into three.
+    private let scale: CGFloat = 1.3
+
+    private var pad: CGFloat { 16 * scale }
+    private var gap: CGFloat { 10 * scale }
+    private var cardPad: CGFloat { 12 * scale }
+    private var badgeWidth: CGFloat { 26 * scale }
+    /// Between the number and the text it labels.
+    private var badgeGap: CGFloat { 8 * scale }
+    private var textFont: NSFont { .systemFont(ofSize: 14 * scale) }
+    /// Between the title and the keyboard hint under it.
+    private var headerHintGap: CGFloat { 4 * scale }
+    /// Between an option's text and its caption.
+    private var bodyCaptionGap: CGFloat { 3 * scale }
 
     // MARK: Present
 
@@ -138,29 +161,35 @@ final class TranscriptPicker: NSObject {
         self.isDismissing = false
 
         let screen = screenUnderCursor()
-        // 820, not 760: measured, two lines of 14 pt system text hold ~203
-        // characters at the narrower width and ~223 at this one. The distiller
-        // is asked for 180 and lands nearer 205, so the extra 60 pt is the
-        // difference between "two lines, as asked" and an occasional third.
-        let width = min(820, screen.frame.width * 0.62)
+        // 820 at 1×: measured, two lines of 14 pt system text hold ~203
+        // characters at 760 pt and ~223 at this width. The distiller is asked
+        // for 180 and lands nearer 205, so those extra 60 pt are the difference
+        // between "two lines, as asked" and an occasional third.
+        //
+        // The screen cap is a fraction of the *visible* frame and is generous,
+        // because it is the one thing that can break the uniform scale: if a
+        // narrow display clamps the width while the font keeps its full size,
+        // the character budget no longer buys two lines. On anything Victor
+        // presents from, the 820·scale wins and the cap never binds.
+        let width = min(820 * scale, screen.visibleFrame.width * 0.85)
         let innerWidth = width - 2 * pad
-        let textWidth = innerWidth - 2 * cardPad - badgeWidth - 8
+        let textWidth = innerWidth - 2 * cardPad - badgeWidth - badgeGap
 
         let content = NSView()
         content.wantsLayer = true
         content.layer?.backgroundColor = NSColor(white: 0.11, alpha: 0.98).cgColor
-        content.layer?.cornerRadius = 14
+        content.layer?.cornerRadius = 14 * scale
 
         // "Recently spoke…", not "The last 40 seconds": the number is an
         // implementation detail that would go stale the moment the window is
         // retuned, and nobody reading this panel is checking a duration — they
         // are looking for the thing they just said.
         let header = label(text: "🎙️ Recently spoke…",
-                           font: .systemFont(ofSize: 15, weight: .semibold),
+                           font: .systemFont(ofSize: 15 * scale, weight: .semibold),
                            color: NSColor(white: 0.95, alpha: 1), width: innerWidth)
         let hintText = note.map { "\($0)  ·  1–\(min(9, segments.count)) / ↑↓ ⏎ · Esc" }
             ?? "1–\(min(9, segments.count)) / ↑↓ ⏎ · Esc"
-        let hint = label(text: hintText, font: .systemFont(ofSize: 11),
+        let hint = label(text: hintText, font: .systemFont(ofSize: 11 * scale),
                          color: NSColor(white: 0.55, alpha: 1), width: innerWidth)
 
         cards = segments.enumerated().map { index, text in
@@ -170,13 +199,13 @@ final class TranscriptPicker: NSObject {
         // Lay out bottom-up in flipped-free AppKit coordinates: total height
         // first, then walk down from the top placing each card.
         let cardsHeight = cards.reduce(0) { $0 + $1.frame.height } + CGFloat(max(0, cards.count - 1)) * gap
-        let headerBlock = header.frame.height + 4 + hint.frame.height + gap
+        let headerBlock = header.frame.height + headerHintGap + hint.frame.height + gap
         let totalHeight = pad + headerBlock + cardsHeight + pad
 
         content.frame = NSRect(x: 0, y: 0, width: width, height: totalHeight)
         var y = totalHeight - pad - header.frame.height
         header.setFrameOrigin(NSPoint(x: pad, y: y))
-        y -= 4 + hint.frame.height
+        y -= headerHintGap + hint.frame.height
         hint.setFrameOrigin(NSPoint(x: pad, y: y))
         y -= gap
         content.addSubview(header)
@@ -249,20 +278,21 @@ final class TranscriptPicker: NSObject {
         // question nobody is asking. The `└` ties it to the text above it.
         let caption = TranscriptDistiller.kind(at: index).map { "└ \($0)" }
             ?? "\(text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count) words"
-        let meta = label(text: caption, font: .systemFont(ofSize: 10),
+        let meta = label(text: caption, font: .systemFont(ofSize: 10 * scale),
                          color: NSColor(white: 0.5, alpha: 1), width: textWidth)
 
-        let height = cardPad + body.frame.height + 3 + meta.frame.height + cardPad
-        let card = SegmentCard(index: index, frame: NSRect(x: 0, y: 0, width: innerWidth, height: height))
+        let height = cardPad + body.frame.height + bodyCaptionGap + meta.frame.height + cardPad
+        let card = SegmentCard(index: index, frame: NSRect(x: 0, y: 0, width: innerWidth, height: height),
+                               cornerRadius: 8 * scale)
 
         // Digit shortcuts only go to 9; past that the badge shows the number as
         // a plain ordinal rather than promising a key that does nothing.
         let badge = label(text: index < 9 ? "\(index + 1)" : "·",
-                          font: .monospacedDigitSystemFont(ofSize: 13, weight: .bold),
+                          font: .monospacedDigitSystemFont(ofSize: 13 * scale, weight: .bold),
                           color: NSColor.systemYellow.withAlphaComponent(0.9), width: badgeWidth)
         badge.setFrameOrigin(NSPoint(x: cardPad, y: height - cardPad - badge.frame.height))
-        body.setFrameOrigin(NSPoint(x: cardPad + badgeWidth + 8, y: height - cardPad - body.frame.height))
-        meta.setFrameOrigin(NSPoint(x: cardPad + badgeWidth + 8, y: cardPad))
+        body.setFrameOrigin(NSPoint(x: cardPad + badgeWidth + badgeGap, y: height - cardPad - body.frame.height))
+        meta.setFrameOrigin(NSPoint(x: cardPad + badgeWidth + badgeGap, y: cardPad))
 
         card.addSubview(badge)
         card.addSubview(body)
