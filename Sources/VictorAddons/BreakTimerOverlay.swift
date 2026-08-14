@@ -277,6 +277,20 @@ final class BreakTimerController {
         persist()
     }
 
+    /// Exactly what the watch is showing right now — the digits and the finish-time
+    /// label as rendered, not a re-derivation. `/test/break/state` and
+    /// `/test/break/pause` return it so "the finish time keeps advancing while
+    /// paused" can be asserted from a script instead of read off the projector,
+    /// which during a workshop is the wall in front of the room.
+    func stateJSON() -> String {
+        guard panel != nil else { return "{\"showing\":false}" }
+        let finish = BreakTimerModel.finishLabel(now: Date(), remaining: remaining,
+                                                 timeZone: selectedCountry.timeZone)
+        return "{\"showing\":true,\"paused\":\(paused),\"remaining\":\(remaining)," +
+               "\"digits\":\"\(BreakTimerModel.format(remaining: remaining))\"," +
+               "\"finish\":\"\(finish)\",\"title\":\"\(titleText)\"}"
+    }
+
     func close() {
         epoch += 1                                       // cancels pending gong/expiry blocks
         let wasShowing = panel != nil

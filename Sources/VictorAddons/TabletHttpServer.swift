@@ -37,6 +37,10 @@ class TabletHttpServer {
         case testBreakUntil        // the ☕-click variant: half-size "UNTIL BREAK"
         /// Close the Break countdown overlay (test hook).
         case testBreakClose
+        /// Toggle ⏸ on the Break overlay and return the resulting on-screen state (test hook).
+        case testBreakPause
+        /// Read-only snapshot of what the Break overlay is displaying (test hook).
+        case testBreakState
         /// Open the country picker on the Break overlay, optionally pre-filtered (test hook).
         case testBreakPicker(String?)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
@@ -146,6 +150,8 @@ class TabletHttpServer {
     var onTestBreakUntil: (() -> Void)?
     var onTestBreakClose: (() -> Void)?
     var onTestBreakPicker: ((String?) -> Void)?
+    var onTestBreakPause: (() -> String)?
+    var onTestBreakState: (() -> String)?
     var onTestTile: (() -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
     var onTestWhip: (() -> Void)?
@@ -302,6 +308,12 @@ class TabletHttpServer {
                 self.onTestBreakUntil?()
             case .testBreakClose:
                 self.onTestBreakClose?()
+            case .testBreakPause:
+                contentType = "application/json"
+                body = self.onTestBreakPause?() ?? "{\"error\":\"break timer unavailable\"}"
+            case .testBreakState:
+                contentType = "application/json"
+                body = self.onTestBreakState?() ?? "{\"error\":\"break timer unavailable\"}"
             case .testBreakPicker(let q):
                 self.onTestBreakPicker?(q)
             case .testTile:
@@ -435,6 +447,10 @@ class TabletHttpServer {
             return .testWisprRecording
         case "/test/break/close":
             return .testBreakClose
+        case "/test/break/pause":
+            return .testBreakPause
+        case "/test/break/state":
+            return .testBreakState
         case "/test/break/picker":
             return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/tile":

@@ -801,6 +801,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestBreakPicker = { [weak self] q in
             DispatchQueue.main.async { self?.breakTimer.openCountryPicker(query: q) }
         }
+        // /test/break/pause + /test/break/state — the ⏸ button and a read of what the
+        // watch says, headlessly. The pair exists to assert that a paused countdown's
+        // finish time keeps sliding into the future: poll `state`, wait, poll again.
+        // (The route switch already runs inside `DispatchQueue.main.sync`, so these
+        // touch the overlay on the main thread and can answer synchronously.)
+        tabletServer?.onTestBreakPause = { [weak self] in
+            self?.breakTimer.togglePause()
+            return self?.breakTimer.stateJSON() ?? "{\"error\":\"break timer unavailable\"}"
+        }
+        tabletServer?.onTestBreakState = { [weak self] in
+            self?.breakTimer.stateJSON() ?? "{\"error\":\"break timer unavailable\"}"
+        }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
