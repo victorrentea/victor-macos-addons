@@ -39,11 +39,13 @@ final class TranscriptPasteController {
     /// wait ~10 s in silence, which is exactly the situation that invites an
     /// impatient second press.
     ///
-    /// - Parameter pretendItIs: rewind to a stamp earlier in today's transcript
-    ///   (`GET /test/transcript-picker?at=14:30`). Testing this on the live tail
-    ///   only works while somebody is talking — and on battery, or after hours,
-    ///   nobody is; the rewind turns any minute of the day into a test case.
-    func trigger(pretendItIs: (hour: Int, minute: Int)? = nil) {
+    /// - Parameter pretendItIs: rewind to a moment in the archive
+    ///   (`GET /test/transcript-picker?at=14:30`, or
+    ///   `?at=2026-08-14%2019:18` for a past session). Testing this on the live
+    ///   tail only works while somebody is talking — and on battery, after
+    ///   hours, or past midnight nobody is and today's file may not even exist;
+    ///   the rewind turns any minute of any recorded day into a test case.
+    func trigger(pretendItIs: TranscriptTail.Moment? = nil) {
         guard !running else { return }
         if picker.isShowing { picker.close(); return }
         running = true
@@ -59,9 +61,22 @@ final class TranscriptPasteController {
                 // Waiting only makes sense for "now": a rewind is reading a
                 // minute that was transcribed hours ago, so there is nothing
                 // in flight to wait for and the 8 s floor would be pure delay.
+                //
+                // The wait is logged because it is the one part of this that is
+                // invisible when it works and invisible when it doesn't — a run
+                // that skipped it looks exactly like a run that waited, right up
+                // until the newest sentence is missing from the options.
+                let startedWaiting = Date()
                 let outcome = pretendItIs == nil ? await self.waitForWhisperToCatchUp() : .ready
+                if pretendItIs == nil {
+                    overlayInfo(String(format: "⌘⌃V: waited %.1fs for whisper (%@)",
+                                       Date().timeIntervalSince(startedWaiting),
+                                       outcome == .timedOut ? "gave up, still busy" : "caught up"))
+                }
 
-                var parsed = TranscriptTail.parse(TranscriptTail.readTail(of: self.todayFile()))
+                let file = pretendItIs?.day.map { TranscriptTail.file(in: self.transcriptionFolder, day: $0) }
+                    ?? self.todayFile()
+                var parsed = TranscriptTail.parse(TranscriptTail.readTail(of: file))
                 if let at = pretendItIs {
                     parsed = TranscriptTail.upTo(parsed, hour: at.hour, minute: at.minute)
                 }
@@ -71,8 +86,19 @@ final class TranscriptPasteController {
                     NSSound(named: "Basso")?.play()
                     return
                 }
+                let transcript = TranscriptTail.render(lines)
+                let words = TranscriptDistiller.speechWordCount(in: transcript)
+                guard words >= TranscriptDistiller.minWordsWorthDistilling else {
+                    // Press after a lull and the window can come down to a single
+                    // "Da!". There is nothing to distill, and finding that out
+                    // costs twelve seconds and an error if the model is asked.
+                    overlayInfo("⌘⌃V: only \(words) words in the last \(Int(self.windowSeconds))s — nothing to distill")
+                    NSSound(named: "Basso")?.play()
+                    return
+                }
+
                 let startedDistilling = Date()
-                let segments = try await TranscriptDistiller.distill(TranscriptTail.render(lines))
+                let segments = try await TranscriptDistiller.distill(transcript)
                 overlayInfo(String(format: "⌘⌃V: %d options from %d lines (%@, %.1fs)",
                                    segments.count, lines.count, TranscriptDistiller.model,
                                    Date().timeIntervalSince(startedDistilling)))

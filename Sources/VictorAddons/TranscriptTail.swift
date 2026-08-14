@@ -127,13 +127,60 @@ enum TranscriptTail {
         return lines.filter { $0.minuteOfDay <= cutoff }
     }
 
-    /// Parse an `HH:MM` test parameter. Returns nil for anything malformed, so a
-    /// typo in a URL falls back to "now" rather than to midnight.
-    static func parseStamp(_ raw: String) -> (hour: Int, minute: Int)? {
-        let parts = raw.split(separator: ":")
+    /// A point in the archive to rewind to: a minute, and optionally a day other
+    /// than today.
+    struct Moment: Equatable {
+        /// `yyyy-MM-dd`, or nil for today's file.
+        let day: String?
+        let hour: Int
+        let minute: Int
+    }
+
+    /// Parse the `?at=` test parameter: `HH:MM` for today, or
+    /// `YYYY-MM-DD HH:MM` / `YYYY-MM-DDTHH:MM` for any past session.
+    ///
+    /// The day half exists because the feature is most in need of testing at the
+    /// times it is least testable — after hours, on battery, past midnight, when
+    /// today's file is empty or does not exist yet. Every past session is a
+    /// corpus of real, messy Whisper output; being unable to reach it meant
+    /// waiting for a live room to try anything.
+    ///
+    /// Returns nil for anything malformed, so a typo in a URL falls back to
+    /// "now" rather than to midnight of year zero.
+    static func parseMoment(_ raw: String) -> Moment? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        // Split on the separator between date and time, accepting either the
+        // ISO `T` or the space a human would type (which arrives as `%20`).
+        let halves = trimmed.split(separator: trimmed.contains("T") ? "T" : " ", maxSplits: 1)
+
+        let day: String?
+        let clock: Substring
+        switch halves.count {
+        case 1:
+            day = nil
+            clock = halves[0]
+        case 2:
+            guard isDayStamp(halves[0]) else { return nil }
+            day = String(halves[0])
+            clock = halves[1]
+        default:
+            return nil
+        }
+
+        let parts = clock.split(separator: ":")
         guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]),
               (0...23).contains(hour), (0...59).contains(minute) else { return nil }
-        return (hour, minute)
+        return Moment(day: day, hour: hour, minute: minute)
+    }
+
+    /// `yyyy-MM-dd`, shape-checked only — a day that never had a session simply
+    /// resolves to a file that does not exist, which the caller already handles.
+    static func isDayStamp(_ candidate: Substring) -> Bool {
+        let chars = Array(candidate)
+        guard chars.count == 10, chars[4] == "-", chars[7] == "-" else { return false }
+        return chars.enumerated().allSatisfy { index, ch in
+            index == 4 || index == 7 || ch.isNumber
+        }
     }
 
     /// Render for the LLM: one `[HH:MM] text` line per entry, oldest first.
@@ -152,7 +199,11 @@ enum TranscriptTail {
     static func todayFile(in folder: URL, now: Date = Date()) -> URL {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
-        return folder.appendingPathComponent("\(fmt.string(from: now))-transcription.txt")
+        return file(in: folder, day: fmt.string(from: now))
+    }
+
+    static func file(in folder: URL, day: String) -> URL {
+        folder.appendingPathComponent("\(day)-transcription.txt")
     }
 
     /// Byte size of today's transcript, or 0 when it doesn't exist yet. This is

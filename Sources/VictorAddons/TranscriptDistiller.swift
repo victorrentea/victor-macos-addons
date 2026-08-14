@@ -34,14 +34,19 @@ enum TranscriptDistiller {
     /// less thing that can be hallucinated, and the caption under each row stays
     /// identical from run to run — which is what lets the hand learn "the agent
     /// prompt is the fourth one" and stop reading.
+    /// English, while the options themselves come back in whatever language was
+    /// spoken. The two are different things: an option is *content* and has to
+    /// stay in the speaker's own words, while a caption is chrome — and every
+    /// other label this app draws is in English, so a Romanian caption above an
+    /// English option would be the only mixed surface on the Mac.
     static let kinds = [
-        "punctul de vedere, o linie",
-        "ideea, 1-2 fraze",
-        "replica amuzantă",
-        "ancora emoțională",
-        "prompt gata de dat unui agent",
-        "titlu / hook",
-        "tot, dens",
+        "the point — one line",
+        "the idea, 1–2 sentences",
+        "the funny line",
+        "the emotional anchor",
+        "agent-ready prompt",
+        "title / hook",
+        "everything, dense",
     ]
 
     /// Budget per option, in characters. The panel is scanned, not read — seven
@@ -107,8 +112,22 @@ enum TranscriptDistiller {
     Write in first person, the way he speaks — never "the speaker says that…". \
     No preamble, no labels, no surrounding quotes, no emoji.
 
+    If the window is very short or barely says anything, STILL return 7 options — \
+    work with what little is there. Never answer with an explanation, an apology, \
+    or a note that the input is insufficient: the reply is parsed by a program, \
+    and prose reaches the user as an error.
+
     Return ONLY a JSON object: {"options": ["...", …7 strings in total…]}
     """
+
+    /// Below this many words the window is not worth a model call.
+    ///
+    /// Found the hard way: pressed after a lull, the window came down to the
+    /// single word "Da!", and sonnet answered — quite reasonably — with a
+    /// sentence explaining there was nothing to distill, which the parser could
+    /// only report as a failure. Twelve seconds and a Basso to be told what the
+    /// word count already knew.
+    static let minWordsWorthDistilling = 10
 
     enum DistillError: LocalizedError {
         case launchFailed(String)
@@ -123,6 +142,19 @@ enum TranscriptDistiller {
             case .failed(let code, let err): return "claude exited \(code): \(err.prefix(200))"
             case .badReply(let what): return "unexpected reply: \(what)"
             }
+        }
+    }
+
+    /// Words of actual speech in a rendered window, ignoring the `[HH:MM]`
+    /// stamps — which would otherwise count as one word per line and make a
+    /// window of eight grunts look substantial.
+    static func speechWordCount(in transcript: String) -> Int {
+        transcript.split(separator: "\n").reduce(0) { total, line in
+            var text = line
+            if line.hasPrefix("["), let close = line.firstIndex(of: "]") {
+                text = line[line.index(after: close)...]
+            }
+            return total + text.split(whereSeparator: { $0 == " " || $0 == "\t" }).count
         }
     }
 
@@ -226,13 +258,19 @@ enum TranscriptDistiller {
     /// rest of it. Slicing from the first `{` to the last `}` covers both and
     /// costs nothing when the reply was already clean.
     static func parseOptions(_ reply: String) throws -> [String] {
+        // The reply itself rides in the error. When the model answers with prose
+        // instead of JSON it is *saying why* — "there is nothing here to
+        // distill" — and a bare "no `options` array" throws that away and turns
+        // a legible refusal into a mystery.
+        let quoted = reply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160)
+
         guard let start = reply.firstIndex(of: "{"), let end = reply.lastIndex(of: "}"), start < end else {
-            throw DistillError.badReply("no JSON object")
+            throw DistillError.badReply("no JSON, model said: \(quoted)")
         }
         guard let obj = try? JSONSerialization.jsonObject(with: Data(String(reply[start...end]).utf8))
                 as? [String: Any],
               let raw = obj["options"] as? [Any] else {
-            throw DistillError.badReply("no `options` array")
+            throw DistillError.badReply("no `options` array, model said: \(quoted)")
         }
         let options = raw.compactMap { $0 as? String }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

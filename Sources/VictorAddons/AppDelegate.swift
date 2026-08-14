@@ -821,7 +821,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // block wires the server long before `transcriptPasteController` is
         // built further down `applicationDidFinishLaunching`.
         tabletServer?.onTestTranscriptPicker = { [weak self] at in
-            let stamp = at.flatMap(TranscriptTail.parseStamp)
+            let stamp = at.flatMap(TranscriptTail.parseMoment)
             DispatchQueue.main.async { self?.transcriptPasteController?.trigger(pretendItIs: stamp) }
         }
         tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }

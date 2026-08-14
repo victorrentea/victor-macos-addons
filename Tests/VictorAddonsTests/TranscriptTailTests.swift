@@ -123,14 +123,36 @@ final class TranscriptTailTests: XCTestCase {
         XCTAssertEqual(window.map(\.text), ["before", "at"])
     }
 
-    func testParseStampAcceptsValidTimesAndRejectsJunk() {
-        XCTAssertTrue(TranscriptTail.parseStamp("14:30")! == (14, 30))
-        XCTAssertTrue(TranscriptTail.parseStamp("00:00")! == (0, 0))
-        // A typo must fall back to "now", never silently to midnight.
-        XCTAssertNil(TranscriptTail.parseStamp("1430"))
-        XCTAssertNil(TranscriptTail.parseStamp("24:00"))
-        XCTAssertNil(TranscriptTail.parseStamp("12:60"))
-        XCTAssertNil(TranscriptTail.parseStamp(""))
+    func testParseMomentAcceptsABareTimeForToday() {
+        XCTAssertEqual(TranscriptTail.parseMoment("14:30"),
+                       TranscriptTail.Moment(day: nil, hour: 14, minute: 30))
+        XCTAssertEqual(TranscriptTail.parseMoment("00:00"),
+                       TranscriptTail.Moment(day: nil, hour: 0, minute: 0))
+    }
+
+    func testParseMomentAcceptsAPastSessionWithEitherSeparator() {
+        // The day half is what makes an old session testable at all — and past
+        // midnight, or on battery, today's file may not even exist.
+        let expected = TranscriptTail.Moment(day: "2026-08-14", hour: 19, minute: 18)
+        XCTAssertEqual(TranscriptTail.parseMoment("2026-08-14T19:18"), expected)
+        XCTAssertEqual(TranscriptTail.parseMoment("2026-08-14 19:18"), expected)
+    }
+
+    func testParseMomentRejectsJunk() {
+        // A typo must fall back to "now", never silently to midnight of an
+        // arbitrary day.
+        XCTAssertNil(TranscriptTail.parseMoment("1430"))
+        XCTAssertNil(TranscriptTail.parseMoment("24:00"))
+        XCTAssertNil(TranscriptTail.parseMoment("12:60"))
+        XCTAssertNil(TranscriptTail.parseMoment(""))
+        XCTAssertNil(TranscriptTail.parseMoment("14-08-2026 19:18"))
+        XCTAssertNil(TranscriptTail.parseMoment("yesterday 19:18"))
+    }
+
+    func testFileNameForAGivenDay() {
+        let folder = URL(fileURLWithPath: "/tmp/x")
+        XCTAssertEqual(TranscriptTail.file(in: folder, day: "2026-08-14").lastPathComponent,
+                       "2026-08-14-transcription.txt")
     }
 
     // MARK: lastMinutes

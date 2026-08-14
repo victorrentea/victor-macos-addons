@@ -151,7 +151,11 @@ final class TranscriptPicker: NSObject {
         content.layer?.backgroundColor = NSColor(white: 0.11, alpha: 0.98).cgColor
         content.layer?.cornerRadius = 14
 
-        let header = label(text: "🎙️ Ultimul minut — ce copiez?",
+        // "Recently spoke…", not "The last 40 seconds": the number is an
+        // implementation detail that would go stale the moment the window is
+        // retuned, and nobody reading this panel is checking a duration — they
+        // are looking for the thing they just said.
+        let header = label(text: "🎙️ Recently spoke…",
                            font: .systemFont(ofSize: 15, weight: .semibold),
                            color: NSColor(white: 0.95, alpha: 1), width: innerWidth)
         let hintText = note.map { "\($0)  ·  1–\(min(9, segments.count)) / ↑↓ ⏎ · Esc" }
@@ -244,7 +248,7 @@ final class TranscriptPicker: NSObject {
         // now, not five lengths of one thing, and a word count answers the
         // question nobody is asking. The `└` ties it to the text above it.
         let caption = TranscriptDistiller.kind(at: index).map { "└ \($0)" }
-            ?? "\(text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count) cuvinte"
+            ?? "\(text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count) words"
         let meta = label(text: caption, font: .systemFont(ofSize: 10),
                          color: NSColor(white: 0.5, alpha: 1), width: textWidth)
 

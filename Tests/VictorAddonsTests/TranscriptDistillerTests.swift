@@ -50,6 +50,37 @@ final class TranscriptDistillerTests: XCTestCase {
         XCTAssertThrowsError(try TranscriptDistiller.parseOptions(#"{"options": []}"#))
     }
 
+    func testAProseRefusalIsQuotedBackInTheError() {
+        // When the model answers in prose it is *saying why*; swallowing that
+        // turns a legible refusal into a mystery in the log.
+        XCTAssertThrowsError(try TranscriptDistiller.parseOptions(
+            "There is nothing here to distill — the transcript is a single word.")) { error in
+            XCTAssertTrue("\(error)".contains("nothing here to distill"), "\(error)")
+        }
+    }
+
+    // MARK: too little speech
+
+    func testCountsSpeechWordsIgnoringTheStamps() {
+        // Counting the raw line would score a `[HH:MM]` per line and make a
+        // window of eight grunts look substantial.
+        XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "[09:05] one two three"), 3)
+        XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "[09:05] a b\n[09:06] c"), 3)
+        XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "no stamp here"), 3)
+        XCTAssertEqual(TranscriptDistiller.speechWordCount(in: ""), 0)
+    }
+
+    func testTheSingleWordWindowFallsUnderTheThreshold() {
+        // The case that found this: pressed after a lull, the window came down
+        // to "Da!" and the model answered with a sentence the parser could only
+        // report as a failure — twelve seconds to be told what a word count knew.
+        XCTAssertLessThan(TranscriptDistiller.speechWordCount(in: "[22:05] Da!"),
+                          TranscriptDistiller.minWordsWorthDistilling)
+        XCTAssertGreaterThanOrEqual(
+            TranscriptDistiller.speechWordCount(in: "[22:05] " + Array(repeating: "word", count: 12).joined(separator: " ")),
+            TranscriptDistiller.minWordsWorthDistilling)
+    }
+
     // MARK: slot captions
 
     func testTheSevenSlotsAreTheSevenThingsVictorActuallyReachesFor() {
@@ -57,11 +88,11 @@ final class TranscriptDistillerTests: XCTestCase {
         // every run, so the caption under each row never drifts and the hand can
         // learn "the agent prompt is the fifth one".
         XCTAssertEqual(TranscriptDistiller.kinds.count, 7)
-        XCTAssertEqual(TranscriptDistiller.kind(at: 0), "punctul de vedere, o linie")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 2), "replica amuzantă")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 3), "ancora emoțională")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 4), "prompt gata de dat unui agent")
-        XCTAssertEqual(TranscriptDistiller.kind(at: 6), "tot, dens")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 0), "the point — one line")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 2), "the funny line")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 3), "the emotional anchor")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 4), "agent-ready prompt")
+        XCTAssertEqual(TranscriptDistiller.kind(at: 6), "everything, dense")
     }
 
     func testEverySlotIsDigitReachable() {
