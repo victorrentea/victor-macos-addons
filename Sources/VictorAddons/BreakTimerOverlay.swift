@@ -37,7 +37,6 @@ final class BreakTimerController {
 
     private var remaining = 0                  // seconds
     private var paused = false
-    private var freezeNow: Date?              // wall-clock frozen while paused
     private var timer: Timer?
     private var blinkTimer: Timer?            // drives the expiry blink
     private var shakeTimer: Timer?            // drives the whole-window expiry shake
@@ -124,7 +123,6 @@ final class BreakTimerController {
         blinkTimer?.invalidate(); blinkTimer = nil
         remaining = max(0, minutes) * 60
         paused = false
-        freezeNow = nil
         titleText = title
         nextFreshScale = sizeScale
         // Day-scoped: first start of the day auto-picks "where I am now" (by the
@@ -158,10 +156,9 @@ final class BreakTimerController {
         skipBlackoutOnClose = false           // …and the verdict that expiry reached
         blinkTimer?.invalidate(); blinkTimer = nil
         remaining = max(0, remaining + s)
-        if paused { freezeNow = Date() }      // re-anchor frozen finish time
         view?.setDigitsVisible(true)
         panel?.alphaValue = 1
-        if !paused { startTicking() }
+        startTicking()                        // ticks while paused too — to keep the finish time moving
         refresh()
         persist()
     }
@@ -267,16 +264,15 @@ final class BreakTimerController {
         RunLoop.main.add(t, forMode: .common)
     }
 
+    /// Pause/resume the countdown. The 1 s timer keeps running while paused: what a
+    /// pause freezes is the *duration* left, not the wall clock — so the finish time
+    /// on screen must keep sliding into the future for as long as the break is held,
+    /// otherwise the room reads an `HH:mm` that silently became a lie the moment
+    /// Victor pressed ⏸ (and they come back to a break that isn't over).
     func togglePause() {
         guard panel != nil else { return }
         paused.toggle()
-        if paused {
-            freezeNow = Date()
-            timer?.invalidate(); timer = nil
-        } else {
-            freezeNow = nil
-            startTicking()
-        }
+        startTicking()
         refresh()
         persist()
     }
@@ -372,7 +368,6 @@ final class BreakTimerController {
         blinkTimer?.invalidate(); blinkTimer = nil
         remaining = rem
         paused = isPaused
-        freezeNow = isPaused ? Date() : nil
         // Restore the label + size the break had before the redeploy/restart.
         titleText = UserDefaults.standard.string(forKey: Self.kTitle) ?? "BREAK"
         let s = UserDefaults.standard.double(forKey: Self.kScale)
@@ -382,7 +377,7 @@ final class BreakTimerController {
         v.setDigitsVisible(true)
         panel?.alphaValue = 1
         panel?.orderFrontRegardless()
-        if !isPaused { startTicking() }
+        startTicking()
         startActivityMonitor()
         refresh()
     }
@@ -632,7 +627,9 @@ final class BreakTimerController {
     }
 
     private func tick() {
-        guard !paused else { return }
+        // Paused: the digits stand still, but `now` doesn't — redraw so the finish
+        // time keeps advancing second by second while the break is held.
+        guard !paused else { refresh(); return }
         remaining -= 1
         if remaining <= 0 {
             remaining = 0
@@ -649,10 +646,12 @@ final class BreakTimerController {
 
     private func refresh() {
         guard let view else { return }
-        let basis = (paused ? freezeNow : nil) ?? Date()
+        // Always `now + remaining`, paused or not: the countdown owes the room a
+        // duration, and the clock time it lands on is whatever the wall clock says
+        // when it is finally released.
         view.update(
             digits: BreakTimerModel.format(remaining: remaining),
-            finishText: BreakTimerModel.finishLabel(now: basis, remaining: remaining, timeZone: selectedCountry.timeZone),
+            finishText: BreakTimerModel.finishLabel(now: Date(), remaining: remaining, timeZone: selectedCountry.timeZone),
             flag: selectedCountry.flag,
             paused: paused
         )
