@@ -93,7 +93,8 @@ final class TranscriptPicker: NSObject {
         content.layer?.backgroundColor = NSColor(white: 0.11, alpha: 0.98).cgColor
         content.layer?.cornerRadius = 14
 
-        let header = label(text: "🎙️ Ultimul minut — ce copiez?", font: .systemFont(ofSize: 15, weight: .semibold),
+        let header = label(text: "🎙️ Ultimul minut — ce copiez?",
+                           font: .systemFont(ofSize: 15, weight: .semibold),
                            color: NSColor(white: 0.95, alpha: 1), width: innerWidth)
         let hintText = note.map { "\($0)  ·  1–\(min(9, segments.count)) / ↑↓ ⏎ · Esc" }
             ?? "1–\(min(9, segments.count)) / ↑↓ ⏎ · Esc"
@@ -180,9 +181,14 @@ final class TranscriptPicker: NSObject {
         body.frame.size = NSSize(width: textWidth,
                                  height: body.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude)).height)
 
-        let words = text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
-        let meta = label(text: "\(words) cuvinte", font: .systemFont(ofSize: 10),
-                         color: NSColor(white: 0.45, alpha: 1), width: textWidth)
+        // The caption says what KIND of thing this row is ("prompt gata de dat
+        // unui agent"), not how long it is. The rows are five different things
+        // now, not five lengths of one thing, and a word count answers the
+        // question nobody is asking. The `└` ties it to the text above it.
+        let caption = TranscriptDistiller.kind(at: index).map { "└ \($0)" }
+            ?? "\(text.split(whereSeparator: { $0 == " " || $0 == "\n" }).count) cuvinte"
+        let meta = label(text: caption, font: .systemFont(ofSize: 10),
+                         color: NSColor(white: 0.5, alpha: 1), width: textWidth)
 
         let height = cardPad + body.frame.height + 3 + meta.frame.height + cardPad
         let card = SegmentCard(index: index, frame: NSRect(x: 0, y: 0, width: innerWidth, height: height))

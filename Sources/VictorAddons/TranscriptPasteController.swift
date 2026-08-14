@@ -1,13 +1,13 @@
 import AppKit
 
-/// ⌘⌃V — "put what I just said on the clipboard, cleaned up."
+/// ⌘⌃V — "give me the essence of what I just said, ready to paste."
 ///
-/// Five steps, each in its own file: **wait** for whisper to catch up
+/// Four steps, each in its own file: **wait** for whisper to catch up
 /// (`TranscriptSettlePolicy`, with a spinner at the cursor because the wait is
 /// long enough to look like a dead key), **read** the last minute
-/// (`TranscriptTail`), **clean** it with the local model (`TranscriptCleaner`),
-/// cut it into growing excerpts (`TranscriptLadder`), **choose** one
-/// (`TranscriptPicker`) — and the choice lands on the pasteboard.
+/// (`TranscriptTail`), **distill** it into five things worth pasting
+/// (`TranscriptDistiller`), **choose** one (`TranscriptPicker`) — and the choice
+/// lands on the pasteboard.
 ///
 /// It only ever writes the clipboard. Simulating the paste too was tempting and
 /// is wrong: by the time the picker has been read and clicked, the app that had
@@ -65,17 +65,11 @@ final class TranscriptPasteController {
                     NSSound(named: "Basso")?.play()
                     return
                 }
-                let startedCleaning = Date()
-                let cleaned = try await TranscriptCleaner.clean(TranscriptTail.render(lines))
-                let segments = TranscriptLadder.rungs(from: cleaned)
-                guard !segments.isEmpty else {
-                    overlayError("⌘⌃V: the cleaner returned nothing usable")
-                    NSSound(named: "Basso")?.play()
-                    return
-                }
-                overlayInfo(String(format: "⌘⌃V: %d rungs from %d lines (%@, %.1fs)",
-                                   segments.count, lines.count, TranscriptCleaner.model,
-                                   Date().timeIntervalSince(startedCleaning)))
+                let startedDistilling = Date()
+                let segments = try await TranscriptDistiller.distill(TranscriptTail.render(lines))
+                overlayInfo(String(format: "⌘⌃V: %d options from %d lines (%@, %.1fs)",
+                                   segments.count, lines.count, TranscriptDistiller.model,
+                                   Date().timeIntervalSince(startedDistilling)))
                 self.spinner.hide()
                 self.picker.present(segments: segments,
                                     note: outcome == .timedOut ? "⚠️ whisper still busy" : nil) { text in
