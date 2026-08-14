@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 14, 20:36"
+    static let BUILD_TIME = "Aug 14, 21:07"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -645,9 +645,36 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         try? shContent.write(toFile: tmpPath, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
 
+        // The window is *waited for*, not slept on. This used to be a flat
+        // `delay 0.5` between `open` and `set bounds`, which is both too long and
+        // too short: Terminal usually has the window up in well under 200 ms — so
+        // half a second of the launch was spent watching it sit in whatever corner
+        // it last occupied before jumping — and on a loaded Mac it can take longer
+        // than 0.5 s, in which case the bounds were written to the *previous*
+        // window (or nothing at all). Polling the window count against the count
+        // taken BEFORE the open answers exactly the question the delay was
+        // guessing at, and answers it as soon as it is true.
+        //
+        // The count must be read behind an `is running` guard: `tell application
+        // "Terminal"` on a quit Terminal would launch it, which is the one thing
+        // this branch must not do before `open` has chosen the script to run.
+        // The 0.05 s after the count moves is for the new window to become `front
+        // window` — it is the frontmost the moment it appears, but the two are not
+        // guaranteed to be observable in the same instant.
         let script = """
+        set n0 to 0
+        if application "Terminal" is running then
+            tell application "Terminal" to set n0 to count of windows
+        end if
         do shell script "open -a Terminal \(tmpPath)"
-        delay 0.5
+        repeat 120 times
+            if application "Terminal" is running then
+                tell application "Terminal" to set n to count of windows
+                if n > n0 then exit repeat
+            end if
+            delay 0.025
+        end repeat
+        delay 0.05
         tell application "Terminal"
             activate
             set bounds of front window to {\(l), \(t), \(r), \(b)}
