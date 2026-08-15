@@ -49,8 +49,14 @@ enum WisprRelayBinder {
         let label = (bound["label"] as? String) ?? "?"
         let address = (bound["address"] as? String) ?? ""
         let guarded = (bound["guarded"] as? Bool) ?? true
-        // 📍 is the relay's own mark for a bound target, on the chip beside the
-        // cursor; this banner uses it so the two surfaces are one language.
+        // **`🎙️ → petclinic@main · ✳ fixing the tax bug`.** The mic already says
+        // "what you say", so the word *dictation* beside it was the glyph again
+        // in letters; the arrow says "goes to", which is the whole message. It is
+        // also the shape every other banner in this app uses, and the shape this
+        // one had before it briefly grew a pin.
+        //
+        // The relay's own chip keeps 📍 — that one sits beside the cursor with no
+        // arrow and no room for one, and has to say *this is a place* on its own.
         //
         // **The guard's absence is spelled out rather than glyphed.** For targets
         // the relay cannot interrogate before it types — VS Code, IntelliJ — a
@@ -60,9 +66,9 @@ enum WisprRelayBinder {
         // else on screen.
         let caveat = guarded ? "" : " — no shell guard"
         guard let title = bound["title"] as? String, !title.isEmpty else {
-            return "📍 dictation → \(label) · \(address)\(caveat)"
+            return "🎙️ → \(label) · \(address)\(caveat)"
         }
-        return "📍 dictation → \(label) · \(title)\(caveat)"
+        return "🎙️ → \(label) · \(title)\(caveat)"
     }
 
     /// **`-g`, and the whole feature depends on it.** The relay decides what to
