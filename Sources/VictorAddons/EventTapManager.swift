@@ -30,6 +30,8 @@ class EventTapManager {
     /// ⌘⌃Q — Claude Code with `--dangerously-skip-permissions` (Victor's `cx`).
     var onClaudeBypassHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
+    /// ⌘⌃D — bind Wispr Relay to the terminal in front, starting it if needed.
+    var onBindRelayHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
@@ -349,6 +351,21 @@ class EventTapManager {
         // Cmd+Opt+Ctrl+D → toggle dark mode (suppress)
         if keyCode == VK_D && hasCmd && hasCtrl && hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onToggleDarkMode?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+D → point Wispr Relay at the terminal in front, so dictation
+        // is typed into that session (suppress).
+        //
+        // Distinguished from the dark-mode toggle above by `!hasOpt` alone —
+        // that one is ⌘⌃⌥D — so the order of these two branches does not matter,
+        // but the `hasOpt` on both of them does.
+        //
+        // NB this shadows the system-wide ⌘⌃D "look up in dictionary" that many
+        // apps bind: the session tap sees the key first and swallows it, so the
+        // definition popover no longer appears on that combination.
+        if keyCode == VK_D && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onBindRelayHotkey?() }
             return nil
         }
 

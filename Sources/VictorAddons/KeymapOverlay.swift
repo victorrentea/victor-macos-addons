@@ -23,6 +23,10 @@ enum CommandControlShortcuts {
     static let labels: [Int: String] = [
         0:  "tile",      // A — tile Terminal windows
         8:  "claude",    // C — Claude Code in a new Terminal
+        2:  "relay",     // D — point Wispr Relay at the terminal in front, so
+                         // dictation is typed into that session (the 🎯 rides in
+                         // the corner). NB ⌘⌃⌥D is the dark-mode toggle and is a
+                         // different key on this board only by its ⌥.
         14: "email",     // E — paste Victor's email address
         // G (key 5) is drawn from `artworkNames` below, not from a word.
         40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
@@ -64,6 +68,7 @@ enum CommandControlShortcuts {
         40: "📕",  // K — the training catalog
         46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
+        2:  "🎯",  // D — "relay" is the thing; the target says the key aims it
     ]
 
     /// Keys whose payload is a bundled picture rather than a word, by key code.

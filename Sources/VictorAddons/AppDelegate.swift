@@ -1189,6 +1189,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onPlainTerminalHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openPlainTerminalWorkspace() }
         }
+        eventTap.onBindRelayHotkey = { [weak self] in
+            // Already off the main thread (the tap dispatches globally), which
+            // this needs: a cold press launches the relay and waits for its
+            // listener, and the banner has to name what was actually bound.
+            let outcome = WisprRelayBinder.bindFrontmostTerminal()
+            DispatchQueue.main.async {
+                self?.statusBanner?.showNow(text: outcome, sound: StatusBannerSound.start,
+                                            visibleDuration: 5.0)
+            }
+        }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
             audioManager?.notifyMouseButton5Pressed()
         }
