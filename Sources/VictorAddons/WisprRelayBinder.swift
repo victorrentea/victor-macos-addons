@@ -49,15 +49,20 @@ enum WisprRelayBinder {
         let label = (bound["label"] as? String) ?? "?"
         let address = (bound["address"] as? String) ?? ""
         let guarded = (bound["guarded"] as? Bool) ?? true
-        // ⌨️ is not decoration: it is the targets the relay cannot check before
-        // it types — VS Code, IntelliJ — where the words are pasted into
-        // whatever holds the caret. Terminal.app and tmux get 🎯 because there
-        // the relay can refuse to hand a sentence to a shell.
-        let glyph = guarded ? "🎯" : "⌨️"
+        // 📍 is the relay's own mark for a bound target, on the chip beside the
+        // cursor; this banner uses it so the two surfaces are one language.
+        //
+        // **The guard's absence is spelled out rather than glyphed.** For targets
+        // the relay cannot interrogate before it types — VS Code, IntelliJ — a
+        // dictation is pasted into whatever holds the caret and cannot be refused
+        // at a shell prompt. Binding is the moment that fact can still change
+        // what Victor does about it, so it is said in words here and nowhere
+        // else on screen.
+        let caveat = guarded ? "" : " — no shell guard"
         guard let title = bound["title"] as? String, !title.isEmpty else {
-            return "\(glyph) dictation → \(label) · \(address)"
+            return "📍 dictation → \(label) · \(address)\(caveat)"
         }
-        return "\(glyph) dictation → \(label) · \(title)"
+        return "📍 dictation → \(label) · \(title)\(caveat)"
     }
 
     /// **`-g`, and the whole feature depends on it.** The relay decides what to
