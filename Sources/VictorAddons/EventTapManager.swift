@@ -365,6 +365,12 @@ class EventTapManager {
         // apps bind: the session tap sees the key first and swallows it, so the
         // definition popover no longer appears on that combination.
         if keyCode == VK_D && hasCmd && hasCtrl && !hasOpt {
+            // **Autorepeat is swallowed, not acted on.** Pressing this key twice
+            // now means "stop the relay", so a key held a moment too long would
+            // otherwise bind and immediately end the session it just started —
+            // the one input mistake this gesture cannot afford. The event is
+            // still eaten, so nothing downstream sees the repeat either.
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
             DispatchQueue.global().async { [weak self] in self?.onBindRelayHotkey?() }
             return nil
         }

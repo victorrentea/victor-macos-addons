@@ -48,6 +48,12 @@ enum WisprRelayBinder {
     private static func describe(_ bound: [String: Any]) -> String {
         let label = (bound["label"] as? String) ?? "?"
         let address = (bound["address"] as? String) ?? ""
+        // Pressed again on the session it was already pointed at: the relay has
+        // ended. Said as a full stop rather than as another arrow — the arrow
+        // means "words go here", and there is now nowhere for them to go.
+        if (bound["stopped"] as? Bool) == true {
+            return "🎙️ relay stopped — \(label)"
+        }
         let guarded = (bound["guarded"] as? Bool) ?? true
         // **`🎙️ → petclinic@main · ✳ fixing the tax bug`.** The mic already says
         // "what you say", so the word *dictation* beside it was the glyph again
