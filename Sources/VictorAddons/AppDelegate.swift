@@ -38,6 +38,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var bluetoothKeepAlive: BluetoothKeepAlive?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
+    /// ✋ The amber "an agent is driving" frame. Owned here rather than by a
+    /// feature, because any agent — codex, claude, a shell script — raises it
+    /// over the same HTTP door.
+    @MainActor private let handsOff = HandsOffOverlay()
     /// Outbound WS to the Railway bridge — the tablet's last-resort internet
     /// transport when LAN Wi-Fi and USB both fail (public-Wi-Fi client isolation).
     private var railwayBridge: RailwayBridgeClient?
@@ -379,6 +383,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start)}"
         }
         tabletServer?.onVideoStop = { VideoPlayer.shared.stop() }
+        // ✋ Hands off. Two curl calls bracket whatever GUI dance an agent is
+        // about to do; the watchdog inside means a crashed agent releases the
+        // machine on its own instead of leaving the frame up all afternoon.
+        // `respond` already runs these inside `DispatchQueue.main.sync`, so the
+        // isolation is real — `assumeIsolated` just says so to the compiler.
+        tabletServer?.onHandsOffStart = { [weak self] agent, what, ttl in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                self.handsOff.begin(agent: agent, what: what, ttl: ttl)
+                return self.handsOff.stateJSON()
+            }
+        }
+        tabletServer?.onHandsOffEnd = { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                self.handsOff.end()
+                return self.handsOff.stateJSON()
+            }
+        }
+        tabletServer?.onHandsOffState = { [weak self] in
+            MainActor.assumeIsolated { self?.handsOff.stateJSON() ?? "{\"active\":false}" }
+        }
         // Tablet → Mac sound routing: the tablet pings every 5s to detect the
         // Mac and compares soundsHash to detect a stale Mac bundle; when its
         // "MAC" toggle is pressed it routes soundboard playback here instead

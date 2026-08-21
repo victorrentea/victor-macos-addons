@@ -115,6 +115,14 @@ class TabletHttpServer {
         case videoPlay(String, Int?)
         /// Stop / close the video player.
         case videoStop
+        /// ✋ An agent is about to drive the mouse and keyboard: raise the
+        /// hands-off frame. Carries who is driving, what it is doing, and how
+        /// long to believe it before releasing on its own.
+        case handsOffStart(agent: String?, what: String?, ttl: TimeInterval?)
+        /// ✋ The agent is done — release the machine.
+        case handsOffEnd
+        /// Read-only snapshot of the hands-off state (test hook).
+        case handsOffState
         case unknown
     }
 
@@ -196,6 +204,12 @@ class TabletHttpServer {
     var onVideoPlay: ((String, Int?) -> String?)?
     /// Stop / close the video player.
     var onVideoStop: (() -> Void)?
+    /// ✋ Raise the hands-off frame (agent, what, ttl seconds); returns the state JSON.
+    var onHandsOffStart: ((String?, String?, TimeInterval?) -> String)?
+    /// ✋ Release it; returns the state JSON.
+    var onHandsOffEnd: (() -> String)?
+    /// ✋ Read-only snapshot.
+    var onHandsOffState: (() -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -399,6 +413,15 @@ class TabletHttpServer {
                 }
             case .videoStop:
                 self.onVideoStop?()
+            case .handsOffStart(let agent, let what, let ttl):
+                contentType = "application/json"
+                body = self.onHandsOffStart?(agent, what, ttl) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .handsOffEnd:
+                contentType = "application/json"
+                body = self.onHandsOffEnd?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .handsOffState:
+                contentType = "application/json"
+                body = self.onHandsOffState?() ?? "{\"active\":false}"
             case .unknown:
                 statusCode = 404
                 body = "not found"
@@ -528,6 +551,16 @@ class TabletHttpServer {
             return .promptCapture
         case "/intellij/file-opened":
             return .intellijFileOpened
+        case "/hands-off/start":
+            return .handsOffStart(
+                agent: queryItems.first(where: { $0.name == "agent" })?.value,
+                what: queryItems.first(where: { $0.name == "what" })?.value,
+                ttl: queryItems.first(where: { $0.name == "ttl" })?.value.flatMap(Double.init)
+            )
+        case "/hands-off/end":
+            return .handsOffEnd
+        case "/hands-off/state":
+            return .handsOffState
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)
