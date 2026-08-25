@@ -10,12 +10,18 @@ import Foundation
 /// tone (≈ -56 dBFS, inaudible in a room) to keep the stream — and the amp —
 /// alive.
 ///
-/// Scope: only the active output. We check the default output device's
-/// transport type and emit through the normal default route (AVAudioPlayer),
-/// so nothing fires when the default output is wired/built-in or the
-/// "🔊OS Output" loopback. No menu toggle — it self-gates on BT presence.
+/// Scope: only the active output, and only the speakers that actually need it
+/// — the JBL boxes. Other Bluetooth outputs (e.g. "Vic Bose" headphones) don't
+/// standby-mute, so pumping a tone into them is pointless. We check the default
+/// output device's transport type *and* its name, and emit through the normal
+/// default route (AVAudioPlayer), so nothing fires when the default output is
+/// wired/built-in, the "🔊OS Output" loopback, or a non-JBL Bluetooth device.
+/// No menu toggle — it self-gates on the name.
 final class BluetoothKeepAlive {
     private static let interval: TimeInterval = 30
+    /// Substring (case-insensitive) a Bluetooth output's name must contain for
+    /// the keep-alive to run.
+    private static let nameMatch = "JBL"
 
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.bt-keepalive", qos: .utility)
     private var pollTimer: DispatchSourceTimer?
@@ -27,9 +33,10 @@ final class BluetoothKeepAlive {
     /// thread only (AVAudioPlayer is not thread-safe).
     private var player: AVAudioPlayer?
 
-    /// Last observed "default output is Bluetooth" state, for transition-only
-    /// logging (avoids ~2880 log lines/day from a silent 30s heartbeat).
-    private var lastWasBluetooth = false
+    /// Last observed "default output is a JBL speaker" state, for
+    /// transition-only logging (avoids ~2880 log lines/day from a silent 30s
+    /// heartbeat).
+    private var lastWasTarget = false
 
     func start() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -39,20 +46,21 @@ final class BluetoothKeepAlive {
         timer.setEventHandler { [weak self] in self?.tick() }
         pollTimer = timer
         timer.resume()
-        overlayInfo("🔵 BT keep-alive started (every \(Int(Self.interval))s when default output is Bluetooth)")
+        overlayInfo("🔵 BT keep-alive started (every \(Int(Self.interval))s when default output is a Bluetooth '\(Self.nameMatch)' speaker)")
     }
 
     private func tick() {
         let (isBT, name) = BluetoothOutput.defaultOutput()
-        if isBT != lastWasBluetooth {
-            lastWasBluetooth = isBT
-            if isBT {
-                overlayInfo("🔵 BT keep-alive active → default output '\(name)' is Bluetooth")
+        let isTarget = isBT && name.range(of: Self.nameMatch, options: .caseInsensitive) != nil
+        if isTarget != lastWasTarget {
+            lastWasTarget = isTarget
+            if isTarget {
+                overlayInfo("🔵 BT keep-alive active → default output '\(name)' is a Bluetooth '\(Self.nameMatch)' speaker")
             } else {
-                overlayInfo("⚪️ BT keep-alive idle → default output '\(name)' is not Bluetooth")
+                overlayInfo("⚪️ BT keep-alive idle → default output '\(name)' is not a Bluetooth '\(Self.nameMatch)' speaker")
             }
         }
-        guard isBT else { return }
+        guard isTarget else { return }
         DispatchQueue.main.async { [weak self] in self?.playKeepAlive() }
     }
 
