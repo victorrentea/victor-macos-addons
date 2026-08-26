@@ -244,3 +244,24 @@ rule from the start.
   (`activeEffects["heartbeat"] === container`), including inside `scheduleHeartbeatPulses`,
   which still animates the capture layer but validates the container. The dog carries **no sound of its
   own** — the whole effect is scored by the one clip the same call started.
+
+  **🐶💨 It bolts from the cursor** (`watchHeartbeatDog` + the pure, unit-tested
+  `HeartbeatDogFlee`): land the pointer on the dog and it leaps to the *other* half of
+  the screen, turning to face the middle at the apex of the arc so it still looks into
+  the screen from either side. That is the joke the effect was missing — the screen is
+  having a panic attack around your pointer, and the one thing on it that is alive
+  treats the pointer as the thing to run from. Chase it and it keeps bouncing side to
+  side. Mechanics worth knowing before touching it: the overlay panel is **click-through
+  and receives no mouse events at all**, so the cursor is *polled* (`NSEvent.mouseLocation`,
+  20 Hz — well under the reaction time this imitates) for exactly as long as the effect
+  lives, and the timer cancels itself the moment this is no longer the active heartbeat,
+  so a stop-all never leaves it running. The hit box is **inset 14 % horizontally**: the
+  trimmed PNG still carries transparent corners either side of the ears, and bolting
+  from a cursor that is visibly beside the dog reads as a bug, not as a scare. After a
+  leap the cursor is **ignored for the length of the hop** — otherwise the dog is
+  re-startled by the very pointer it is still jumping away from and never lands. The two
+  resting positions are just the screen's quarter and three-quarter marks, since the dog
+  is centred inside its half — none of this needs to know how wide the dog is. The arc's
+  height is proportional to the distance, with a cap that on the retina never binds (a
+  full half-screen leap arcs ≈212 pt against a 216 pt cap); the cap is there for other
+  overlay shapes.
