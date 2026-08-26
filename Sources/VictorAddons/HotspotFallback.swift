@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IOBluetooth
 import Network
 
 /// Brings the phone's Wi-Fi hotspot up when this Mac is left without internet,
@@ -60,8 +61,12 @@ import Network
 /// order of the preferred-networks list.
 final class HotspotFallback {
 
-    /// The phone, as blueutil addresses it (Victor S24u).
+    /// The phone, as IOBluetooth addresses it (Victor S24u).
     private static let phoneBluetoothAddress = "a8-ba-69-cf-8d-58"
+    /// Serial Port Profile. The phone publishes an RFCOMM channel under it —
+    /// see the `victor-phone-addons` repo — and connecting to that channel is
+    /// the whole signal.
+    private static let sppUUID: UInt16 = 0x1101
 
     /// The hotspot's SSID, and the Wi-Fi interface to put on it. Not a secret —
     /// the password is not here and must never be: this repo is public. The join
@@ -93,14 +98,6 @@ final class HotspotFallback {
     private static let probePort: NWEndpoint.Port = 443
     private static let probeTimeout: TimeInterval = 2
 
-    /// blueutil, at the paths Homebrew uses. A GUI app launched by LaunchServices
-    /// inherits almost no PATH, so the binary has to be located explicitly —
-    /// same reason `UsbTunnelKeeper` hardcodes adb's.
-    static let blueutilPath: String? = {
-        ["/opt/homebrew/bin/blueutil", "/usr/local/bin/blueutil"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
-
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.hotspot-fallback", qos: .utility)
     /// The probe gets its own queue, and that is not a detail. `queue` is serial
     /// and `hasInternet()` blocks on it waiting for the handshake — so running
@@ -119,13 +116,10 @@ final class HotspotFallback {
     /// Transition-only logging: a path change that leaves us online is the
     /// overwhelmingly common case and must not write a line every time.
     private var lastKnownOnline: Bool?
+    private var channel: IOBluetoothRFCOMMChannel?
+    private var keeper: ChannelKeeper?
 
     func start() {
-        guard Self.blueutilPath != nil else {
-            overlayInfo("📵 Hotspot fallback disabled — blueutil not found")
-            return
-        }
-
         pathMonitor.pathUpdateHandler = { [weak self] _ in self?.scheduleEvaluation(reason: "network change") }
         pathMonitor.start(queue: queue)
 
@@ -173,20 +167,12 @@ final class HotspotFallback {
 
         overlayInfo("📵 No internet after \(Int(Self.grace))s (\(reason)) — asking the phone for its hotspot")
 
-        // Stage 1 — cheap. Produces an edge only if the link actually dropped.
-        Self.blueutil(["--connect", Self.phoneBluetoothAddress])
-        if waitForInternet(seconds: Self.waitAfterPlainConnect, stage: "connect") { return }
-
-        // Stage 2 — the link was already up, so there was no edge. Force one.
-        overlayInfo("📵 No edge from --connect (link was already up) — power-cycling Bluetooth")
-        Self.blueutil(["--power", "0"])
-        Thread.sleep(forTimeInterval: 2)
-        Self.blueutil(["--power", "1"])
-        Thread.sleep(forTimeInterval: 2)
-        Self.blueutil(["--connect", Self.phoneBluetoothAddress])
-        if waitForInternet(seconds: Self.waitAfterPowerCycle, stage: "power-cycle") { return }
-
-        overlayError("📵 Hotspot fallback failed — still no internet after power-cycling Bluetooth")
+        if let err = openChannel() {
+            overlayError("📵 Hotspot fallback failed — \(err)")
+            return
+        }
+        if waitForInternet(seconds: Self.waitAfterPlainConnect, stage: "rfcomm") { return }
+        overlayError("📵 Hotspot fallback failed — channel is open but no internet followed")
     }
 
     /// Polls once a second, and from the 6th second on also *asks* to join the
@@ -283,16 +269,50 @@ final class HotspotFallback {
         return ok
     }
 
-    @discardableResult
-    private static func blueutil(_ args: [String]) -> Int32 {
-        guard let path = blueutilPath else { return -1 }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        p.standardOutput = Pipe()
-        p.standardError = Pipe()
-        do { try p.run() } catch { return -1 }
-        p.waitUntilExit()
-        return p.terminationStatus
+    /// Opens (or re-opens) the RFCOMM channel to the phone. Returns `nil` on
+    /// success, or the reason it could not.
+    ///
+    /// `openRFCOMMChannelSync` with a nil delegate fails here with a bare
+    /// `kIOReturnError`, reproducibly; the async form with a real delegate
+    /// works. The channel is held in a property because releasing it closes it,
+    /// and a closed channel is no signal at all.
+    private func openChannel() -> String? {
+        if channel?.isOpen() == true { closeChannel() }   // a fresh open, so the phone sees a fresh connection
+
+        guard let dev = IOBluetoothDevice(addressString: Self.phoneBluetoothAddress) else {
+            return "phone not in the Bluetooth pairing list"
+        }
+        // Without a fresh SDP query the channel ID can come from a stale cache —
+        // the phone's service is re-registered on every reconnect, and its
+        // channel number is not promised to be stable.
+        _ = dev.performSDPQuery(nil)
+        Thread.sleep(forTimeInterval: 3)
+
+        guard let rec = dev.getServiceRecord(for: IOBluetoothSDPUUID(uuid16: Self.sppUUID)) else {
+            return "the phone is not publishing the SPP channel — is victor-phone-addons running?"
+        }
+        var chID: BluetoothRFCOMMChannelID = 0
+        rec.getRFCOMMChannelID(&chID)
+
+        let del = ChannelKeeper()
+        var ch: IOBluetoothRFCOMMChannel?
+        let r = dev.openRFCOMMChannelAsync(&ch, withChannelID: chID, delegate: del)
+        guard r == kIOReturnSuccess, let ch else { return "openRFCOMMChannelAsync failed (\(r))" }
+        keeper = del
+        channel = ch
+        overlayInfo("📶 RFCOMM channel open to the phone (channel \(chID))")
+        return nil
+    }
+
+    private func closeChannel() {
+        channel?.close()
+        channel = nil
+        keeper = nil
+    }
+
+    /// Holds the channel's delegate. IOBluetooth does not retain it, and a
+    /// deallocated delegate takes the channel down with it.
+    private final class ChannelKeeper: NSObject, IOBluetoothRFCOMMChannelDelegate {
+        func rfcommChannelData(_ ch: IOBluetoothRFCOMMChannel!, data: UnsafeMutableRawPointer!, length: Int) {}
     }
 }
