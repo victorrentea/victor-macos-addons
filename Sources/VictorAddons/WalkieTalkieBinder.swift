@@ -27,6 +27,20 @@ enum WalkieTalkieBinder {
 
     private static let appPath = "/Applications/Walkie Talkie.app"
 
+    /// The picture the bind banner wears instead of the word `walkie`.
+    ///
+    /// Bundled rather than taken from the installed app's icon: the relay is an
+    /// accessory with no icon worth showing at 40pt, and this is a drawing of the
+    /// thing the app is named after — which is what makes it readable at a glance
+    /// from across a room.
+    static let icon: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "walkie-talkie", withExtension: "png",
+                                          subdirectory: "Resources")
+                ?? Bundle.module.url(forResource: "walkie-talkie", withExtension: "png")
+        else { return nil }
+        return NSImage(contentsOf: url)
+    }()
+
     /// One press. Returns what to put in front of Victor.
     ///
     /// Runs off the main thread — it is HTTP and, in the cold case, an app
@@ -46,6 +60,11 @@ enum WalkieTalkieBinder {
     }
 
     private static func describe(_ bound: [String: Any]) -> String {
+        // **No `walkie:` in front of it.** The banner carries the app's own
+        // picture now (see `StatusBanner.showNow(icon:)`), which says who is
+        // talking in the space of a glyph instead of seven characters of prefix
+        // repeated on a pill that is only up for three seconds.
+        //
         // **The folder, and the app's name only when there is no folder.**
         // `label` is the relay's own name for the target, and for a terminal
         // inside an editor that name is the *editor* — so the banner read
@@ -64,7 +83,7 @@ enum WalkieTalkieBinder {
         // just ended it, and naming the repo invites a second reading ("stopped
         // *for that folder*") of something that has no per-folder half at all.
         if (bound["stopped"] as? Bool) == true {
-            return "walkie: stopped"
+            return "stopped"
         }
         let guarded = (bound["guarded"] as? Bool) ?? true
         // **`walkie: started in petclinic@main`.** Two banners a few seconds
@@ -83,7 +102,7 @@ enum WalkieTalkieBinder {
         // else on screen — and it survives the shortening for exactly that
         // reason: it is a warning, not a label.
         let caveat = guarded ? "" : " — no shell guard"
-        return "walkie: started in \(label)\(caveat)"
+        return "started in \(label)\(caveat)"
     }
 
     /// **`-g`, and the whole feature depends on it.** The relay decides what to

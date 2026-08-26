@@ -171,6 +171,28 @@ final class BottomLeftBanner {
     }
     private var panels: [PanelEntry] = []
 
+    /// A picture in front of the words, for banners whose subject is an app
+    /// rather than an event.
+    ///
+    /// The relay's banners used to start with the word `walkie:`, which spends
+    /// seven characters saying *who is talking* before getting to what happened —
+    /// on a pill that is on screen for three seconds, over Victor's work, often
+    /// on a projector. A picture says the same thing in the space of a glyph and
+    /// says it faster, which is the whole argument for the icon column in the
+    /// menu bar too.
+    ///
+    /// Set before `show`; carried into every panel that show builds. Nil is the
+    /// old behaviour to the pixel: the inset it contributes is zero.
+    var icon: NSImage?
+
+    /// The icon's box, and the gap between it and the text. Sized off the pill
+    /// rather than off the font: it is a picture, not a letter, and it reads as
+    /// part of the same object as the words only if it is as tall as they are
+    /// loud.
+    private static let iconSize: CGFloat = 40
+    private static let iconGap: CGFloat = 14
+    private var iconInset: CGFloat { icon == nil ? 0 : Self.iconSize + Self.iconGap }
+
     /// Fires once per `show()` after the cursor has *dwelled* inside the
     /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
     /// (0.5s by default) *while being moved* — see `HoverMotionGate`. A cursor
@@ -337,7 +359,7 @@ final class BottomLeftBanner {
         probe.maximumNumberOfLines = 1
         probe.lineBreakMode = .byClipping
         probe.sizeToFit()
-        let content = ceil(probe.frame.width) + Style.leftPadding + Style.rightPadding
+        let content = ceil(probe.frame.width) + Style.leftPadding + Style.rightPadding + iconInset
         let maxWidth = screen.frame.width * Style.maxWidthFraction
         // Countdown banners get a 30%-screen floor so the fixed hint chip and
         // the progress bar to its right both fit; plain banners hug their text.
@@ -358,7 +380,8 @@ final class BottomLeftBanner {
                              display: true)
         // The glass pill occupies the left region; its subviews autoresize with it.
         entry.pill.frame = NSRect(x: 0, y: 0, width: pillWidth, height: Style.boxHeight)
-        entry.label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: entry.font)
+        entry.label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: entry.font,
+                                                iconInset: iconInset)
         // Border host autoresizes within the pill, but its stroke paths are
         // absolute — rebuild them (and the gutter arrow) for the new width.
         updateBorderPaths(entry)
@@ -906,9 +929,23 @@ final class BottomLeftBanner {
         label.isEditable = false
         label.drawsBackground = false
         label.lineBreakMode = .byTruncatingTail
-        label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: font)
+        label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: font, iconInset: iconInset)
         label.autoresizingMask = [.width]
         pill.addSubview(label)
+
+        // Left of the text, vertically centred in the pill, and pinned to the
+        // left edge so it does not drift when the pill resizes around a longer
+        // sentence.
+        if let icon = icon {
+            let view = NSImageView(frame: NSRect(x: Style.leftPadding,
+                                                 y: (Style.boxHeight - Self.iconSize) / 2,
+                                                 width: Self.iconSize, height: Self.iconSize))
+            view.image = icon
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.imageAlignment = .alignCenter
+            view.autoresizingMask = [.maxXMargin]
+            pill.addSubview(view)
+        }
 
         // Progressive border: a transparent overlay view (topmost in the pill so
         // the strokes sit above the glass/tint/label) hosting the two orange
@@ -966,7 +1003,8 @@ final class BottomLeftBanner {
     /// given font's line height and the emoji font's (emoji is taller), so an
     /// emoji-bearing line neither clips nor throws off the centering. Shared by
     /// build + resize.
-    private static func mainLabelFrame(pillWidth: CGFloat, font: NSFont) -> NSRect {
+    private static func mainLabelFrame(pillWidth: CGFloat, font: NSFont,
+                                       iconInset: CGFloat = 0) -> NSRect {
         let lm = NSLayoutManager()
         var h = lm.defaultLineHeight(for: font)
         if let emoji = NSFont(name: "AppleColorEmoji", size: font.pointSize) {
@@ -974,9 +1012,9 @@ final class BottomLeftBanner {
         }
         h = ceil(h)
         return NSRect(
-            x: Style.leftPadding,
+            x: Style.leftPadding + iconInset,
             y: (Style.boxHeight - h) / 2,
-            width: pillWidth - Style.leftPadding - Style.rightPadding,
+            width: pillWidth - Style.leftPadding - Style.rightPadding - iconInset,
             height: h)
     }
 }

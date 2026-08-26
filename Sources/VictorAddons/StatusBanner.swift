@@ -45,11 +45,19 @@ final class StatusBanner {
     /// events the user is already looking at the screen for — e.g. a display
     /// reconfiguration, where the banner must appear the instant the layout
     /// changes rather than on the next mouse move. Latest-wins.
-    func showNow(text: String, sound: NSSound?, visibleDuration: TimeInterval = 5.0) {
+    ///
+    /// `icon` rides in front of the words for banners whose subject is an app —
+    /// the relay's, which used to spell `walkie:` out in letters. Set before the
+    /// pill is built, since the icon changes how wide it has to be; an already
+    /// visible pill keeps whatever icon it was built with, which is right for a
+    /// banner being *updated* with the next line from the same source.
+    func showNow(text: String, sound: NSSound?, visibleDuration: TimeInterval = 5.0,
+                 icon: NSImage? = nil) {
         presenceTimer?.invalidate(); presenceTimer = nil
         pendingText = text
         pendingSound = sound
         pendingVisibleDuration = visibleDuration
+        banner.icon = icon
         if banner.isVisible {
             banner.updateText(text)
         } else {

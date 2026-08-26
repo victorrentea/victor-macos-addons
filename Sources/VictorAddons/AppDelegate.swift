@@ -1254,7 +1254,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 // Submarine on every stop is a sound with nothing to add to a
                 // message he is looking at. Sounds are for things that happen
                 // while he is *not* looking.
-                self?.statusBanner?.showNow(text: outcome, sound: nil, visibleDuration: 5.0)
+                self?.statusBanner?.showNow(text: outcome, sound: nil, visibleDuration: 5.0,
+                                            icon: WalkieTalkieBinder.icon)
             }
         }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
