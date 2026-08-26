@@ -282,7 +282,7 @@ final class KeymapOverlayTests: XCTestCase {
         // intercept it). V joined the sheet when ⌘⌃V stopped being the emotional
         // paste (a second key reading "paste") and became the 🎙️ transcript
         // picker, which nothing else on the board says. D joined it with the
-        // Wispr Relay binding — the key that decides which session a dictation
+        // Walkie Talkie binding — the key that decides which session a dictation
         // is typed into, which nothing on screen would otherwise reveal.
         XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6])
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
