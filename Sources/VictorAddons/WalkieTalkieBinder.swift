@@ -47,40 +47,36 @@ enum WalkieTalkieBinder {
 
     private static func describe(_ bound: [String: Any]) -> String {
         let label = (bound["label"] as? String) ?? "?"
-        let address = (bound["address"] as? String) ?? ""
         // Pressed again on the session it was already pointed at: the relay has
-        // ended. Said as a full stop rather than as another arrow — the arrow
+        // ended. Said as a full stop rather than as a destination — a destination
         // means "words go here", and there is now nowhere for them to go.
         //
         // **And with nothing after it.** The folder was there by symmetry with the
-        // bind banner, where it answers "which session did it grab?" — a question
+        // start banner, where it answers "which session did it grab?" — a question
         // worth a panel. Stopping has no such question: there is one relay, he
         // just ended it, and naming the repo invites a second reading ("stopped
         // *for that folder*") of something that has no per-folder half at all.
         if (bound["stopped"] as? Bool) == true {
-            return "🎙️ relay stopped"
+            return "walkie: stopped"
         }
         let guarded = (bound["guarded"] as? Bool) ?? true
-        // **`🎙️ → petclinic@main · ✳ fixing the tax bug`.** The mic already says
-        // "what you say", so the word *dictation* beside it was the glyph again
-        // in letters; the arrow says "goes to", which is the whole message. It is
-        // also the shape every other banner in this app uses, and the shape this
-        // one had before it briefly grew a pin.
-        //
-        // The relay's own chip keeps 📍 — that one sits beside the cursor with no
-        // arrow and no room for one, and has to say *this is a place* on its own.
+        // **`walkie: started in petclinic@main`.** Two banners a few seconds
+        // apart — this one and the relay's own — now read as one sentence about
+        // one thing, which is why both say the app's name and the same word for
+        // the same event. The folder is the answer to "which session did it
+        // grab?"; the tab's title and its `ttysNNN` used to ride along here and
+        // said *which device file*, a question Victor has never once asked at
+        // this moment.
         //
         // **The guard's absence is spelled out rather than glyphed.** For targets
         // the relay cannot interrogate before it types — VS Code, IntelliJ — a
         // dictation is pasted into whatever holds the caret and cannot be refused
         // at a shell prompt. Binding is the moment that fact can still change
         // what Victor does about it, so it is said in words here and nowhere
-        // else on screen.
+        // else on screen — and it survives the shortening for exactly that
+        // reason: it is a warning, not a label.
         let caveat = guarded ? "" : " — no shell guard"
-        guard let title = bound["title"] as? String, !title.isEmpty else {
-            return "🎙️ → \(label) · \(address)\(caveat)"
-        }
-        return "🎙️ → \(label) · \(title)\(caveat)"
+        return "walkie: started in \(label)\(caveat)"
     }
 
     /// **`-g`, and the whole feature depends on it.** The relay decides what to

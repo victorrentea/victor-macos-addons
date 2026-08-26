@@ -5529,6 +5529,100 @@ class EmojiAnimator {
                     sound: playSound ? "73_counter_strike.mp3" : nil)
     }
 
+    // MARK: - Wasn't me (wagging finger in the SW quadrant — sound #76)
+
+    /// A 3D hand wagging its index finger "no-no" sits in the **bottom-left
+    /// quarter** of the desktop for exactly as long as `76_sfx_118.mp3` plays,
+    /// then fades out on its own.
+    ///
+    /// The art is a 24-frame transparent GIF looping in under a second, so unlike
+    /// the one-shot overlays (cavalry, counter-strike) the frames simply **repeat
+    /// forever** and the *sound* decides when it is over — the gesture is a denial
+    /// held for as long as the denial is being sung, not a thing that happens once.
+    /// The length is read off the mp3 rather than hardcoded so a re-cut clip stays
+    /// in sync, with the measured 6.55s as the fallback.
+    ///
+    /// It is **centred in the quadrant, not glued to the bottom-left corner** the
+    /// way the Counter-Strike operators are: those stand on the screen edge, this
+    /// is a floating hand, and a hand jammed into the corner reads as a cropping
+    /// accident rather than a gesture.
+    func showWasntMe(playSound: Bool = true) {
+        if cancelIfRunning("wasnt-me", sound: playSound ? "76_sfx_118.mp3" : nil) { return }
+
+        guard let url = Bundle.module.url(forResource: "wasnt-me", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("wasnt-me.gif not found in bundle")
+            return
+        }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return }
+
+        var images: [CGImage] = []
+        var loopDuration: Double = 0
+        for i in 0..<count {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            loopDuration += gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.04
+        }
+        guard let first = images.first, loopDuration > 0 else { return }
+
+        var duration: Double = 6.55
+        if let soundURL = SoundManager.shared.soundURL(for: "76_sfx_118.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
+
+        let bounds = hostLayer.bounds
+        // Aspect-fit inside 80% of the bottom-left quarter, centred in it. The
+        // 80% is the breathing room that keeps the hand off both screen edges.
+        let aspect = CGFloat(first.width) / CGFloat(first.height)
+        let quarter = CGSize(width: bounds.width / 2, height: bounds.height / 2)
+        var w = quarter.width * 0.8
+        var h = w / aspect
+        if h > quarter.height * 0.8 {
+            h = quarter.height * 0.8
+            w = h * aspect
+        }
+
+        let gifLayer = CALayer()
+        gifLayer.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+        // y = 0 is the BOTTOM edge here, so the bottom-left quarter is the
+        // quadrant whose centre sits a quarter of the way up and across.
+        gifLayer.position = CGPoint(x: quarter.width / 2, y: quarter.height / 2)
+        gifLayer.contents = first
+        gifLayer.contentsGravity = .resizeAspect
+        hostLayer.addSublayer(gifLayer)
+
+        let wag = CAKeyframeAnimation(keyPath: "contents")
+        wag.values = images
+        wag.duration = loopDuration
+        wag.repeatCount = .infinity
+        wag.calculationMode = .discrete
+        gifLayer.add(wag, forKey: "wag")
+
+        // Fades in fast, holds, then fades out by itself over the last 0.8s —
+        // one keyframe track rather than two animations, so the tail can never
+        // start before the head has finished on a very short clip.
+        let fadeTail = min(0.8, duration * 0.2)
+        let fadeHead = min(0.25, duration * 0.1)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.0, 1.0, 1.0, 0.0]
+        fade.keyTimes = [0,
+                         NSNumber(value: fadeHead / duration),
+                         NSNumber(value: (duration - fadeTail) / duration),
+                         1]
+        fade.duration = duration
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        gifLayer.add(fade, forKey: "fade")
+
+        if playSound { SoundManager.shared.play("76_sfx_118.mp3") }
+        trackEffect("wasnt-me", layer: gifLayer, duration: duration,
+                    sound: playSound ? "76_sfx_118.mp3" : nil)
+    }
+
     // MARK: - Microwave (kitchen timer ticks, then the door swings open on the BING — sound #61)
 
     /// Where the BING starts inside `61_dinner.mp3` — measured off the file as the

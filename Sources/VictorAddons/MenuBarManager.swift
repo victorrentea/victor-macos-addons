@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 26, 19:26"
+    static let BUILD_TIME = "Aug 26, 19:58"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -216,6 +216,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Snow ❄️",          "snow"),
             ("Cavalry 🐎",       "cavalry"),
             ("Counter-Strike 🔫", "counter-strike"),
+            ("Wasn't Me 🙅", "wasnt-me"),
             ("Microwave ⏲️",      "microwave"),
             ("Wrong X ❌",        "wrong-x"),
             ("Drum Roll 🥁",     "drum-roll"),

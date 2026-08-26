@@ -294,6 +294,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "snow/stop":       self?.animator.stopSnow()
             case "cavalry":         self?.animator.showCavalry(playSound: false)
             case "counter-strike":  self?.animator.showCounterStrike(playSound: false)
+            case "wasnt-me":        self?.animator.showWasntMe(playSound: false)
             // Like the sonar: the door's cue lives INSIDE the clip, so the effect
             // owns its own audio rather than trusting a separate routed play to
             // land on the same millisecond. (`/effect/microwave`, `/test/microwave`
@@ -988,6 +989,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "snow":            self.animator.showSnow(); stopAfter { self.animator.stopSnow() }
                 case "cavalry":         self.animator.showCavalry(playSound: false)
                 case "counter-strike":  self.animator.showCounterStrike(playSound: false)
+                case "wasnt-me":        self.animator.showWasntMe(playSound: false)
                 // The one menu effect that is NOT silent: the whole gag is the
                 // door opening on the BING, so a soundless microwave would just
                 // sit there for 2.7s and then open for no reason.
