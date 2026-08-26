@@ -9,6 +9,22 @@ class SoundManager {
     private var players: [String: AVAudioPlayer] = [:]
     private var overlappingPlayers: [AVAudioPlayer] = []
 
+    /// How long an INTERRUPTED sound takes to die away. Every way of cutting a
+    /// sound short goes through this: pressing its own tile again, pressing a
+    /// different tile (which preempts), `/effect/stop-all`, the ping watchdog.
+    /// An abrupt `stop()` is a hard edge the whole room hears — in a quiet lecture
+    /// room the silence lands harder than the sound did — so the clip is faded
+    /// instead. It stays audible for these 3 seconds *under* whatever was pressed
+    /// next, which is the point: a crossfade, not a gap.
+    static let interruptFade: TimeInterval = 3.0
+
+    /// Players that are mid-fade and no longer reachable from `players` /
+    /// `tabletPlayer`. They live here purely so ARC does not deallocate them —
+    /// a released AVAudioPlayer stops dead, which is the exact hard cut the fade
+    /// exists to avoid. Drained as each fade completes.
+    private var fadingOut: [AVAudioPlayer] = []
+
+
     /// Player for the single tablet-routed sound. The tablet routes its
     /// soundboard here when "play on Mac" is active: one sound at a time, a
     /// new play preempts the current one (mirrors the tablet's local
@@ -19,6 +35,24 @@ class SoundManager {
     /// tablet's volume buttons/wedge. Player-level only — the macOS system
     /// volume is never touched.
     private var tabletVolume: Float = 1.0
+
+    /// Fade `player` to silence over `seconds`, then stop it and let it go.
+    /// Retains it for the duration — the caller has already dropped its own
+    /// reference (see `fadingOut`). A zero/negative fade stops it immediately,
+    /// which is what a genuine "silence this now" caller wants.
+    /// Main thread only.
+    private func fadeOutAndStop(_ player: AVAudioPlayer, over seconds: TimeInterval) {
+        guard seconds > 0, player.isPlaying else {
+            player.stop()
+            return
+        }
+        fadingOut.append(player)
+        player.setVolume(0, fadeDuration: seconds)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) { [weak self] in
+            player.stop()
+            self?.fadingOut.removeAll { $0 === player }
+        }
+    }
 
     /// Per-sound playback start delay (seconds) for sounds paired with a
     /// visual effect: the animation gets a head start so it is on screen
@@ -292,7 +326,9 @@ class SoundManager {
     /// main thread (TabletHttpServer dispatches handlers via DispatchQueue.main.sync).
     func playTabletSound(_ filename: String, volume: Float? = nil) -> TimeInterval? {
         if let volume { tabletVolume = max(0.0, min(1.0, volume)) }
-        tabletPlayer?.stop()
+        // Preempt by fading, not by cutting: the outgoing clip keeps playing
+        // under the new one for `interruptFade` seconds.
+        if let outgoing = tabletPlayer { fadeOutAndStop(outgoing, over: Self.interruptFade) }
         tabletPlayer = nil
         guard let url = soundURL(for: filename) else {
             overlayError("Tablet sound not found: \(filename)")
@@ -341,7 +377,9 @@ class SoundManager {
     /// tablet's effect-stop chain. Main thread only.
     func playTabletSoundClipped(_ filename: String, fraction: Double, fade: TimeInterval = 0.6, volume: Float? = nil) -> TimeInterval? {
         if let volume { tabletVolume = max(0.0, min(1.0, volume)) }
-        tabletPlayer?.stop()
+        // Preempt by fading, not by cutting: the outgoing clip keeps playing
+        // under the new one for `interruptFade` seconds.
+        if let outgoing = tabletPlayer { fadeOutAndStop(outgoing, over: Self.interruptFade) }
         tabletPlayer = nil
         guard let url = soundURL(for: filename) else {
             overlayError("Tablet sound not found: \(filename)")
@@ -434,12 +472,17 @@ class SoundManager {
     /// mutated on main).
     var currentTabletVolume: Float { tabletVolume }
 
-    /// Stop the tablet-routed sound immediately (mirrors the tablet's abrupt
-    /// MediaPlayer.stop on re-press / preempt).
-    func stopTabletSound() {
+    /// Stop the tablet-routed sound, fading it out over `interruptFade` (3s)
+    /// rather than cutting it. Every route into here is an interruption — a
+    /// re-press of the playing tile, `/effect/stop-all` (which the tablet fires
+    /// before every press), the lost-ping watchdog — so they all get the fade.
+    /// `fade: 0` forces the old abrupt stop for a caller that truly needs silence
+    /// on the instant.
+    func stopTabletSound(fade: TimeInterval = SoundManager.interruptFade) {
         DispatchQueue.main.async { [weak self] in
-            self?.tabletPlayer?.stop()
-            self?.tabletPlayer = nil
+            guard let self else { return }
+            if let player = self.tabletPlayer { self.fadeOutAndStop(player, over: fade) }
+            self.tabletPlayer = nil
         }
     }
 
@@ -451,10 +494,15 @@ class SoundManager {
 
     /// Stop any overlapping instances of a given sound immediately (e.g. interrupt
     /// the break-timer gong when the user closes the watch mid-strike).
-    func stopOverlapping(_ filename: String) {
+    func stopOverlapping(_ filename: String, fade: TimeInterval = 0) {
         DispatchQueue.main.async { [weak self] in
             guard let self, let url = self.soundURL(for: filename) else { return }
-            for p in self.overlappingPlayers where p.url == url { p.stop() }
+            let matching = self.overlappingPlayers.filter { $0.url == url }
+            // Dropped from the pool FIRST, then faded: `fadeOutAndStop` is what
+            // keeps them alive now, and leaving them in the pool as well would
+            // have the next `removeAll { !$0.isPlaying }` decide their fate.
+            self.overlappingPlayers.removeAll { $0.url == url }
+            for p in matching { self.fadeOutAndStop(p, over: fade) }
             self.overlappingPlayers.removeAll { !$0.isPlaying }
         }
     }
@@ -465,27 +513,30 @@ class SoundManager {
     /// through this pool rather than the tablet-routed player. The money "ching"
     /// and other stacking clips ride the SEPARATE overlapping pool and are left
     /// alone (stop those by name via `stopOverlapping`).
-    func stopAllPlayers() {
+    func stopAllPlayers(fade: TimeInterval = SoundManager.interruptFade) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            for (_, p) in self.players { p.stop() }
+            let all = Array(self.players.values)
             self.players.removeAll()
+            for p in all { self.fadeOutAndStop(p, over: fade) }
         }
     }
 
-    /// Fade out over 300ms then stop. Called when the animation finishes —
-    /// the sound continues playing (fading) for 300ms after the visual ends.
-    func stop(_ filename: String) {
+    /// Fade a Mac-owned effect sound out, then stop it.
+    ///
+    /// Two very different callers, hence the parameter. When an effect reaches
+    /// its **natural** end the visual has just finished and the audio is already
+    /// over, so a 300ms tail is all that is wanted. When the effect is
+    /// **interrupted** (re-press), the caller passes `interruptFade` and the clip
+    /// dies away over 3 seconds like every other interrupted sound.
+    func stop(_ filename: String, fade: TimeInterval = 0.3) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let player = self.players[filename], player.isPlaying else {
                 self?.players[filename] = nil
                 return
             }
-            player.setVolume(0, fadeDuration: 0.3)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                player.stop()
-                self?.players[filename] = nil
-            }
+            self.players[filename] = nil
+            self.fadeOutAndStop(player, over: fade)
         }
     }
 }

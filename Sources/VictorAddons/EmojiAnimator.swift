@@ -115,7 +115,7 @@ class EmojiAnimator {
             layer.removeFromSuperlayer()
             activeEffects.removeValue(forKey: key)
             if let sound = sound {
-                SoundManager.shared.stop(sound)
+                SoundManager.shared.stop(sound, fade: SoundManager.interruptFade)
             }
             return true
         }
@@ -2569,7 +2569,7 @@ class EmojiAnimator {
         _bombStrikeLayer?.removeFromSuperlayer()
         _bombStrikeLayer = nil
         cancelIfRunning("explosion")
-        SoundManager.shared.stop("03_explosion.mp3")
+        SoundManager.shared.stop("03_explosion.mp3", fade: SoundManager.interruptFade)
         restoreBombCursor()   // back to the real pointer; next first-move re-arms the crosshair
     }
 
@@ -3282,7 +3282,7 @@ class EmojiAnimator {
         // rides playClip's overlapping player (not the `players` dict cancelIfRunning
         // touches), so stop it explicitly here.
         if cancelIfRunning("phoenix") {
-            SoundManager.shared.stopOverlapping("phoenix.mp3")
+            SoundManager.shared.stopOverlapping("phoenix.mp3", fade: SoundManager.interruptFade)
             return
         }
 
@@ -4343,7 +4343,7 @@ class EmojiAnimator {
     }
 
     func stopLoveHands() {
-        SoundManager.shared.stop("41_love_hearts.mp3")
+        SoundManager.shared.stop("41_love_hearts.mp3", fade: SoundManager.interruptFade)
         if let container = activeEffects["love-hands"] {
             fadeOutLoveHands(container)
         }
@@ -5064,7 +5064,7 @@ class EmojiAnimator {
     private func _stopPulse() {
         guard pulseRunning else { return }
         pulseRunning = false
-        SoundManager.shared.stop("15_flatline.mp3")
+        SoundManager.shared.stop("15_flatline.mp3", fade: SoundManager.interruptFade)
         let dim = _pulseDimLayer
         let grid = _pulseGridLayer
         let ecg = _pulseEcgLayer
@@ -5890,7 +5890,7 @@ class EmojiAnimator {
     func stopRainbow() {
         guard let layer = activeEffects["rainbow"] else { return }
         activeEffects.removeValue(forKey: "rainbow")
-        SoundManager.shared.stop("37_rainbow.mp3")
+        SoundManager.shared.stop("37_rainbow.mp3", fade: SoundManager.interruptFade)
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.8)
         CATransaction.setCompletionBlock { layer.removeFromSuperlayer() }
@@ -6394,7 +6394,7 @@ class EmojiAnimator {
 
     func stopDrumRoll() {
         guard let layer = activeEffects.removeValue(forKey: "drum-roll") else { return }
-        SoundManager.shared.stop("26_drum.mp3")
+        SoundManager.shared.stop("26_drum.mp3", fade: SoundManager.interruptFade)
         // Keep drumming while fading out, then clean up. The loop-restart timer
         // is NOT cancelled here — `drumRollTimer` may already belong to a newer
         // run started during the fade; each timer self-cancels on its next tick
@@ -6664,6 +6664,6 @@ class EmojiAnimator {
         // phoenix cry (overlapping pool). The money "ching" is intentionally left
         // (it's a restartable, stacking clip).
         SoundManager.shared.stopAllPlayers()
-        SoundManager.shared.stopOverlapping("phoenix.mp3")
+        SoundManager.shared.stopOverlapping("phoenix.mp3", fade: SoundManager.interruptFade)
     }
 }

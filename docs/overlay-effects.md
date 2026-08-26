@@ -193,6 +193,20 @@ rule from the start.
   instead of being wiped + restarted. `/test/iris` and `/effect/iris` call
   `showIrisClose` directly.
 
+- **🙅 Wasn't me** (tile #76 `76_sfx_118.mp3` → `wasnt-me`, `showWasntMe`): a 3D hand
+  wagging its index finger "no-no", parked in the **bottom-left (SW) quarter** of the desktop
+  for exactly as long as the clip runs, then fading out on its own over the last 0.8 s. The
+  art is a 24-frame transparent GIF looping in under a second, so unlike the one-shot overlays
+  (cavalry, counter-strike) the frames **repeat forever and the sound decides when it is
+  over** — the gesture is a denial held for as long as the denial is being sung, not a thing
+  that happens once. Length is read off the mp3 (6.55 s) rather than hardcoded, so a re-cut
+  clip stays in sync. It is **centred in the quadrant, not glued to the corner** the way the
+  Counter-Strike operators are: those stand on the screen edge, this is a floating hand, and a
+  hand jammed into the corner reads as a cropping accident rather than a gesture. Fitted
+  aspect-preserved inside **80 %** of the quarter — that margin is what keeps it off both
+  screen edges. Head and tail are **one keyframe opacity track**, not two animations, so the
+  fade-out can never begin before the fade-in has finished on a short clip.
+
 - **🌈 Rainbow + 🦄 unicorns** (tile #37 `37_rainbow.mp3` → `rainbow` /
   `rainbow/stop`, `showRainbow`): seven translucent bands drawn as a **quarter**-arc —
   the circle's centre is pushed onto the right screen edge, so only the left quarter of
