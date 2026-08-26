@@ -1242,22 +1242,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onPlainTerminalHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openPlainTerminalWorkspace() }
         }
-        eventTap.onBindRelayHotkey = { [weak self] in
-            // Already off the main thread (the tap dispatches globally), which
-            // this needs: a cold press launches the relay and waits for its
-            // listener, and the banner has to name what was actually bound.
-            let outcome = WalkieTalkieBinder.bindFrontmostTerminal()
-            DispatchQueue.main.async {
-                // **Silent, both ways.** The banner is already on screen and the
-                // gesture is one Victor makes several times an hour, often in the
-                // middle of a room he is teaching: a Pop on every bind and a
-                // Submarine on every stop is a sound with nothing to add to a
-                // message he is looking at. Sounds are for things that happen
-                // while he is *not* looking.
-                self?.statusBanner?.showNow(text: outcome, sound: nil, visibleDuration: 5.0,
-                                            icon: WalkieTalkieBinder.icon)
-            }
-        }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
             audioManager?.notifyMouseButton5Pressed()
         }

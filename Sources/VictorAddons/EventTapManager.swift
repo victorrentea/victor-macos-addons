@@ -30,8 +30,6 @@ class EventTapManager {
     /// ⌘⌃Q — Claude Code with `--dangerously-skip-permissions` (Victor's `cx`).
     var onClaudeBypassHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
-    /// ⌘⌃D — bind Walkie Talkie to the terminal in front, starting it if needed.
-    var onBindRelayHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
@@ -354,27 +352,14 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Ctrl+D → point Walkie Talkie at the terminal in front, so dictation
-        // is typed into that session (suppress).
-        //
-        // Distinguished from the dark-mode toggle above by `!hasOpt` alone —
-        // that one is ⌘⌃⌥D — so the order of these two branches does not matter,
-        // but the `hasOpt` on both of them does.
-        //
-        // NB this shadows the system-wide ⌘⌃D "look up in dictionary" that many
-        // apps bind: the session tap sees the key first and swallows it, so the
-        // definition popover no longer appears on that combination.
-        if keyCode == VK_D && hasCmd && hasCtrl && !hasOpt {
-            // **Autorepeat is swallowed, not acted on.** Pressing this key twice
-            // now means "stop the relay", so a key held a moment too long would
-            // otherwise bind and immediately end the session it just started —
-            // the one input mistake this gesture cannot afford. The event is
-            // still eaten, so nothing downstream sees the repeat either.
-            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
-            DispatchQueue.global().async { [weak self] in self?.onBindRelayHotkey?() }
-            return nil
-        }
-
+        // NB ⌘⌃D is **Walkie Talkie's**, not ours — it binds the relay to the
+        // terminal in front. It lived here until 2026-08-26 because the relay was
+        // started per session and this app is always up, so the key had to be
+        // owned by something already running. The relay now starts at login and
+        // serves its own key, and an app that is running cannot need another app
+        // to launch it. Nothing is intercepted here: the event falls through to
+        // the relay's tap, which swallows it. The cheat sheet still lists the
+        // key, the same way it lists Wispr's ⌘⌃W.
         // F8 → open Claude Code in ~/workspace (suppress). Bare F8, not fn+F8:
         // this Mac runs F1–F12 as standard function keys, so the key arrives as
         // a real keyDown rather than a media-key system event.

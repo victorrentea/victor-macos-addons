@@ -101,6 +101,16 @@ class EmojiAnimator {
     private var _chainsawTimer: Timer?
     private var _chainsawHidCursor = false            // balance hide/unhide of the real cursor
     private var _chainsawGeneration = 0               // guards a stale run's self-stop against a newer one
+    // The kerf the saw leaves, and the screen coming apart along it. The
+    // container holds the cut, the black holes and the pieces in mid-air, so
+    // teardown is one `removeFromSuperlayer` however much damage was done.
+    private var _chainsawDamage: CALayer?
+    private var _chainsawKerfLayer: CAShapeLayer?
+    private var _chainsawKerfPath: CGMutablePath?
+    private var _chainsawMask: ChainsawCutMask?
+    private var _chainsawScreenshot: CGImage?         // the sheet being sawn, grabbed before the saw appears
+    private var _chainsawLastCut: CGPoint?            // previous sample, so the kerf is a stroke and not dots
+    private var _chainsawTicksToSweep = 0             // connectivity runs at a fraction of the follow rate
 
     // 🕳️ Iris close: a black radial overlay (transparent centre, opaque edges)
     // whose clear hole shrinks from the screen-circumscribing circle down to
@@ -3016,21 +3026,47 @@ class EmojiAnimator {
         return frames
     }()
 
-    /// Where the blade TIP sits inside a frame, as a fraction of the cell — the
-    /// mean of the 16 frames' rightmost saw pixel (x≈380/418, y≈115/236 from the
-    /// top; the frames whose rightmost pixel is flying sawdust are excluded from
-    /// that mean). Used as the layer's `anchorPoint`, so the tip is what lands on
-    /// the pointer and the engine hangs down-left of it — the same relationship
-    /// the arrow cursor has with its own top-left hotspot.
-    private static let chainsawTipAnchor = CGPoint(x: 0.909, y: 1 - 0.487)
+    /// Where the saw's own centre sits inside a frame — the mean of the opaque
+    /// bounding box over the calm frames (x≈0.470, y≈0.548 from the top). Used
+    /// as the layer's `anchorPoint`, so THAT is the point riding the pointer.
+    ///
+    /// It used to be the blade tip, which read beautifully as a pointer but
+    /// stopped working the moment the saw started cutting: the kerf comes out
+    /// from under the saw's middle, and with the tip on the mouse that middle
+    /// was ~180 pt away from the thing the hand is aiming. You cannot saw
+    /// accurately around a window with the cut appearing a hand's width to the
+    /// left of the cursor. Centre-anchored, the pointer IS the cut.
+    private static let chainsawCentreAnchor = CGPoint(x: 0.470, y: 1 - 0.548)
+
+    /// Width of the kerf on screen, in points. The brief said "at least 10";
+    /// wider than that is not just cosmetic — the mask cells it clears are what
+    /// actually severs a piece, so a thin cut makes closing a loop fiddly.
+    private static let chainsawKerfWidth: CGFloat = 16
+
+    /// Side of a cut-mask cell, in points. Coarse enough that the connectivity
+    /// sweep is a few ms over the whole screen, fine enough that a torn edge
+    /// reads as torn rather than as a staircase.
+    private static let chainsawCellSize: CGFloat = 3
+
+    /// Below this many cells a loose piece is a crumb from the kerf itself, and
+    /// dropping it reads as a rendering glitch rather than as a piece of screen.
+    private static let chainsawMinPieceCells = 24
+
+    /// Connectivity runs every N follow ticks (60 fps / 6 = 10 Hz). A piece can
+    /// only come loose on a stroke, and a tenth of a second after the stroke
+    /// that freed it is not a delay anyone can see.
+    private static let chainsawSweepEveryTicks = 6
 
     /// Displayed width in points. Big enough to read as a chainsaw across a
     /// projected room, small enough that it still points at something.
-    private static let chainsawWidth: CGFloat = 300
+    private static let chainsawWidth: CGFloat = 450
 
-    /// 16 frames at 24 fps ≈ a 0.67 s rev cycle — fast enough to buzz rather
-    /// than flap, which is the whole reason the frames jitter.
-    private static let chainsawFPS: Double = 24
+    /// 16 frames at 15 fps ≈ a 1.07 s rev cycle. The source frames jitter in
+    /// position as well as in shape, so at the 24 fps this started on the saw
+    /// read as *twitching* rather than idling — the eye tracked the jumps
+    /// instead of the saw. Slowing it down turns the same jitter back into a
+    /// heavy vibration, which is what a chainsaw at rest actually looks like.
+    private static let chainsawFPS: Double = 15
 
     /// Fallback length if `18_chainsaw.mp3` can't be measured (its real one).
     private static let chainsawFallbackDuration: Double = 6.09
@@ -3052,6 +3088,14 @@ class EmojiAnimator {
 
         stopChainsawCursor(fade: 0)   // never leak a previous run's timer/hidden cursor
 
+        // Grab the sheet BEFORE the saw is on screen. A falling piece is made of
+        // this image, and the capture sees our own overlay, so a saw drawn first
+        // would be baked into whatever piece it happens to be standing on. The
+        // fast display grab (~20 ms) is what makes "before" affordable at all —
+        // the `screencapture` subprocess the other effects use costs hundreds of
+        // ms, which on a cursor replacement would read as the shortcut misfiring.
+        _chainsawScreenshot = Self.captureBuiltInDisplayFast() ?? Self.captureBuiltInDisplay()
+
         var duration = Self.chainsawFallbackDuration
         if let soundURL = SoundManager.shared.soundURL(for: "18_chainsaw.mp3") {
             let d = AVURLAsset(url: soundURL).duration
@@ -3063,7 +3107,7 @@ class EmojiAnimator {
 
         let saw = CALayer()
         saw.bounds = CGRect(x: 0, y: 0, width: w, height: h)
-        saw.anchorPoint = Self.chainsawTipAnchor
+        saw.anchorPoint = Self.chainsawCentreAnchor
         saw.contents = first
         saw.contentsGravity = .resizeAspect
         saw.zPosition = 9_500          // above every other effect: it's the pointer
@@ -3103,12 +3147,16 @@ class EmojiAnimator {
             _chainsawHidCursor = true
         }
 
+        beginChainsawDamage()
+
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self, self._chainsawTimer === t else { t.invalidate(); return }
+            let point = self.mousePointInHostLayer()
             CATransaction.begin()
             CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
-            self._chainsawLayer?.position = self.mousePointInHostLayer()
+            self._chainsawLayer?.position = point
             CATransaction.commit()
+            self.extendChainsawCut(to: point)
         }
         _chainsawTimer = timer
 
@@ -3141,28 +3189,218 @@ class EmojiAnimator {
             self._chainsawHidCursor = false
         }
 
-        guard let saw = _chainsawLayer else { restoreCursor(); return }
+        // The screen heals when the saw goes: kerf, holes and anything still in
+        // mid-air fade out together, on the same clock, so the desktop is never
+        // left with a black gash and no explanation for it.
+        let damage = _chainsawDamage
+        _chainsawDamage = nil
+        _chainsawKerfLayer = nil
+        _chainsawKerfPath = nil
+        _chainsawMask = nil
+        _chainsawScreenshot = nil
+        _chainsawLastCut = nil
+
+        let saw = _chainsawLayer
         _chainsawLayer = nil
 
-        guard fade > 0 else {
-            saw.removeAllAnimations()
-            saw.removeFromSuperlayer()
+        let teardown = {
+            for layer in [saw, damage].compactMap({ $0 }) {
+                layer.removeAllAnimations()
+                layer.removeFromSuperlayer()
+            }
             restoreCursor()
-            return
         }
 
-        let fadeOut = CABasicAnimation(keyPath: "opacity")
-        fadeOut.fromValue = saw.presentation()?.opacity ?? 1.0
-        fadeOut.toValue = 0.0
-        fadeOut.duration = fade
-        fadeOut.fillMode = .forwards
-        fadeOut.isRemovedOnCompletion = false
-        saw.add(fadeOut, forKey: "fadeOut")
-        DispatchQueue.main.asyncAfter(deadline: .now() + fade) {
-            saw.removeAllAnimations()
-            saw.removeFromSuperlayer()
-            restoreCursor()
+        guard fade > 0, saw != nil || damage != nil else { teardown(); return }
+
+        for layer in [saw, damage].compactMap({ $0 }) {
+            let fadeOut = CABasicAnimation(keyPath: "opacity")
+            fadeOut.fromValue = layer.presentation()?.opacity ?? 1.0
+            fadeOut.toValue = 0.0
+            fadeOut.duration = fade
+            fadeOut.fillMode = .forwards
+            fadeOut.isRemovedOnCompletion = false
+            layer.add(fadeOut, forKey: "fadeOut")
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + fade, execute: teardown)
+    }
+
+    // MARK: Sawing the screen apart
+
+    /// Set up the layer stack the cut lives in, and the mask that decides what
+    /// is still holding on. Ordered kerf → holes → pieces so a piece falls in
+    /// front of the black it came out of, and the whole stack sits under the saw.
+    private func beginChainsawDamage() {
+        let bounds = hostLayer.bounds
+        let damage = CALayer()
+        damage.frame = bounds
+        damage.zPosition = 9_000       // under the saw (9_500), over every other effect
+        hostLayer.addSublayer(damage)
+        _chainsawDamage = damage
+
+        let kerf = CAShapeLayer()
+        kerf.frame = bounds
+        kerf.fillColor = nil
+        kerf.strokeColor = NSColor.black.cgColor
+        kerf.lineWidth = Self.chainsawKerfWidth
+        // Round cap and join: the kerf is a slot a moving blade left, and mitred
+        // corners on a hand-drawn squiggle look like vector art, not like damage.
+        kerf.lineCap = .round
+        kerf.lineJoin = .round
+        damage.addSublayer(kerf)
+        _chainsawKerfLayer = kerf
+        _chainsawKerfPath = CGMutablePath()
+
+        _chainsawMask = ChainsawCutMask(size: bounds.size, cellSize: Self.chainsawCellSize)
+        _chainsawLastCut = nil
+        _chainsawTicksToSweep = Self.chainsawSweepEveryTicks
+    }
+
+    /// One mouse sample's worth of sawing: extend the drawn kerf, clear the same
+    /// band out of the mask, and every so often ask what has come loose.
+    private func extendChainsawCut(to point: CGPoint) {
+        guard let mask = _chainsawMask, let path = _chainsawKerfPath else { return }
+
+        if let last = _chainsawLastCut {
+            let dx = point.x - last.x, dy = point.y - last.y
+            let distance = (dx * dx + dy * dy).squareRoot()
+            // Sub-pixel jitter is not a cut; a jump is not one either. A pointer
+            // that teleports (a Space switch, a warp between displays) never
+            // passed through the middle, so joining those two samples would saw
+            // a long straight line the user never made.
+            if distance > 0.6 {
+                if distance > 220 {
+                    path.move(to: point)
+                } else {
+                    path.addLine(to: point)
+                    // A shade under half the drawn width, so the black stroke
+                    // always covers the cells this frees: a piece can then never
+                    // fall and leave a hairline of live desktop along its edge.
+                    mask.saw(from: last, to: point, radius: Self.chainsawKerfWidth / 2 - 1)
+                }
+                _chainsawKerfLayer?.path = path
+                _chainsawLastCut = point
+            }
+        } else {
+            path.move(to: point)
+            _chainsawLastCut = point
+        }
+
+        _chainsawTicksToSweep -= 1
+        guard _chainsawTicksToSweep <= 0 else { return }
+        _chainsawTicksToSweep = Self.chainsawSweepEveryTicks
+        guard mask.dirty else { return }
+        for piece in mask.detachedPieces(minCells: Self.chainsawMinPieceCells) {
+            mask.drop(piece)
+            dropChainsawPiece(piece, mask: mask)
+        }
+    }
+
+    /// Cut the piece out of the captured screen, leave black where it was, and
+    /// let it fall out of the frame.
+    private func dropChainsawPiece(_ piece: ChainsawCutMask.Piece, mask: ChainsawCutMask) {
+        guard let damage = _chainsawDamage else { return }
+        let rect = mask.rect(of: piece)
+        guard let silhouette = Self.chainsawImage(rgba: mask.silhouetteRGBA(of: piece),
+                                                 width: piece.cols, height: piece.rows) else { return }
+
+        // The hole first, and permanently: it is the screen's new state, not part
+        // of the fall. Nearest-neighbour on purpose — the mask is cell-resolution
+        // and smoothing it would give the tear a soft airbrushed edge.
+        let hole = CALayer()
+        hole.frame = rect
+        hole.contents = silhouette
+        hole.magnificationFilter = .nearest
+        damage.addSublayer(hole)
+
+        guard let shot = _chainsawScreenshot,
+              let sprite = Self.chainsawPieceSprite(screenshot: shot, rect: rect,
+                                                    silhouette: silhouette,
+                                                    screen: hostLayer.bounds.size) else { return }
+
+        let falling = CALayer()
+        falling.frame = rect
+        falling.contents = sprite
+        falling.zPosition = 100        // in front of the hole it just left
+        damage.addSublayer(falling)
+
+        // Gravity, not a slide: ease-in the whole way and let it leave the frame
+        // rather than fade, so it reads as having fallen out of the screen
+        // instead of having been switched off. It also tips as it goes — a slab
+        // that drops perfectly level looks like a UI transition.
+        let drop = rect.maxY + rect.height
+        let duration = 0.35 + (drop / 900).squareRoot() * 1.1
+        let fall = CABasicAnimation(keyPath: "position.y")
+        fall.fromValue = falling.position.y
+        fall.toValue = falling.position.y - drop
+        fall.duration = duration
+        fall.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        fall.fillMode = .forwards
+        fall.isRemovedOnCompletion = false
+        falling.add(fall, forKey: "fall")
+
+        let tilt = CABasicAnimation(keyPath: "transform.rotation.z")
+        tilt.fromValue = 0
+        tilt.toValue = CGFloat.random(in: 0.12...0.4) * (Bool.random() ? 1 : -1)
+        tilt.duration = duration
+        tilt.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        tilt.fillMode = .forwards
+        tilt.isRemovedOnCompletion = false
+        falling.add(tilt, forKey: "tilt")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak falling] in
+            falling?.removeFromSuperlayer()
+        }
+    }
+
+    /// The falling sprite: the captured screen, stencilled to the piece's
+    /// silhouette. `.destinationIn` does the stencilling, which needs no guess
+    /// about how CoreGraphics reads a clipping mask's polarity — the silhouette
+    /// is simply drawn over the screen pixels and keeps what it covers.
+    private static func chainsawPieceSprite(screenshot: CGImage, rect: CGRect,
+                                            silhouette: CGImage, screen: CGSize) -> CGImage? {
+        guard screen.width > 0 else { return nil }
+        let scale = CGFloat(screenshot.width) / screen.width
+        let width = Int((rect.width * scale).rounded()), height = Int((rect.height * scale).rounded())
+        guard width > 0, height > 0 else { return nil }
+        guard let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let full = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        // Draw the whole screenshot shifted so the piece's footprint lands on the
+        // bitmap: the piece then carries the pixels that were actually under it.
+        ctx.draw(screenshot, in: CGRect(x: -rect.minX * scale, y: -rect.minY * scale,
+                                        width: CGFloat(screenshot.width),
+                                        height: CGFloat(screenshot.height)))
+        ctx.setBlendMode(.destinationIn)
+        ctx.interpolationQuality = .none
+        ctx.draw(silhouette, in: full)
+        return ctx.makeImage()
+    }
+
+    private static func chainsawImage(rgba: [UInt8], width: Int, height: Int) -> CGImage? {
+        guard width > 0, height > 0, rgba.count == width * height * 4 else { return nil }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        return CGImage(width: width, height: height,
+                       bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                       space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false,
+                       intent: .defaultIntent)
+    }
+
+    /// The built-in display in one call, no subprocess. Deprecated in macOS 14
+    /// but still the only capture cheap enough to run *before* showing a cursor
+    /// replacement; `captureBuiltInDisplay()`'s `screencapture` remains the
+    /// fallback for the day it stops answering.
+    private static func captureBuiltInDisplayFast() -> CGImage? {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return nil }
+        let id: CGDirectDisplayID = displays.first { CGDisplayIsBuiltin($0) != 0 } ?? CGMainDisplayID()
+        return CGDisplayCreateImage(id)
     }
 
     private func _showExplosionGif(playSound: Bool = true, scaleDivisor: CGFloat = 1, center: CGPoint? = nil) {

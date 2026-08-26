@@ -23,7 +23,11 @@ enum CommandControlShortcuts {
     static let labels: [Int: String] = [
         0:  "tile",      // A — tile Terminal windows
         8:  "claude",    // C — Claude Code in a new Terminal
-        2:  "dictate",   // D — point Walkie Talkie at the terminal in front, so
+        2:  "dictate",   // D — NOT ours since 2026-08-26: Walkie Talkie serves this
+                         // key itself, and is on the sheet for the same reason
+                         // ⌘⌃W is (see W below) — the sheet answers "what does
+                         // this combination do on THIS Mac". Point the relay at
+                         // the terminal in front, so
                          // dictation is typed into that session (the 🎤 rides in
                          // the corner). The word says what you get, not which app
                          // does it: "relay" named our plumbing, "dictate" names
