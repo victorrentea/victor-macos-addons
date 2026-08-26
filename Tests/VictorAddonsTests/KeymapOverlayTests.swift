@@ -285,7 +285,7 @@ final class KeymapOverlayTests: XCTestCase {
         // Wispr Relay binding — the key that decides which session a dictation
         // is typed into, which nothing on screen would otherwise reveal.
         XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6])
-        XCTAssertEqual(CommandControlShortcuts.labels[2], "relay")
+        XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
