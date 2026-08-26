@@ -203,10 +203,17 @@ rule from the start.
   `makeHeartbeatDogLayer`), pinned to the **left half of the screen**, centred in that
   half and bottom-aligned — the photo is cropped at the chest, so letting the body run
   off the bottom edge is what makes it read as a dog leaning into frame rather than a
-  sticker floating in mid-air. The asset is the source photo with its caption painted
-  out and its white studio background flood-filled to **real alpha** (not a white box),
-  so the pulsing capture shows through around the fur, and it is **mirrored** so a dog
-  that tilted its head toward the edge of the original now leans *into* the screen.
+  sticker floating in mid-air. The asset is the source photo with its background
+  flood-filled from the corners to **real alpha** (not a coloured box), so the pulsing
+  capture shows through around the fur. **Which photo matters more than the fuzz value**:
+  the first attempt cut the dog out of a white studio shot, and a chihuahua's pale ear
+  fades into white so gradually that no single threshold separates the two — 10 % chewed
+  notches out of the ear, and dropping to 2 % (which spared it) left behind the very
+  background it was there to remove. The shot actually shipped sits on flat lavender
+  (`#A3ABCF`), nowhere near cream fur, so **8 % is clean at the edges *and* nowhere near
+  the ear**. It is **not mirrored**: this photo already faces the way the effect needs
+  (muzzle pointing right, i.e. into the screen from the left half) — the flop the
+  white-background version needed was a property of that framing, not a rule.
   The dog is a **sibling of the capture layer, not a child**: the pulse animation is
   added to the capture alone, so the screen zooms while the dog stays nailed down.
   Both live inside a **container**, and it is the container that goes into
