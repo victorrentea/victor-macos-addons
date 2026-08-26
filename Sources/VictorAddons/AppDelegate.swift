@@ -636,6 +636,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if let folder = self?.transcriptionFolder {
                 env["TRANSCRIPTION_FOLDER"] = folder.path
                 env["WHISPER_PREFERRED_SOURCE_FILE"] = folder.appendingPathComponent(".preferred-me-source").path
+                // Read at every launch, so arming the flag and letting the
+                // heartbeat restart whisper is enough — no click required, which
+                // is what lets a scheduled job arm it before a workshop.
+                env.merge(RawAudioRecording.env(for: folder)) { _, new in new }
             }
             DispatchQueue.global(qos: .userInitiated).async {
                 whisperManager?.start(env: env)
@@ -671,6 +675,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.menuBarManager.setTranscriptionPausedByBattery(paused)
         }
         self.transcriptionController = controller
+
+        // 🔴 Raw capture. Whisper only reads the flag at launch, so flipping it
+        // has to bounce the process — the same stop/start dance the watchdog
+        // uses, including the beat PortAudio needs to let go of the devices.
+        let refreshRecordRawTitle: () -> Void = { [weak self] in
+            guard let self else { return }
+            self.menuBarManager.setRecordingRaw(
+                RawAudioRecording.isEnabled(in: self.transcriptionFolder),
+                hours: RawAudioRecording.hoursRecorded(in: self.transcriptionFolder))
+        }
+        refreshRecordRawTitle()
+        menuBarManager.onToggleRecordRaw = { [weak self] in
+            guard let self else { return }
+            let folder = self.transcriptionFolder
+            let wanted = !RawAudioRecording.isEnabled(in: folder)
+            let actual = RawAudioRecording.set(wanted, in: folder)
+            refreshRecordRawTitle()
+            if actual != wanted {
+                overlayError("Could not \(wanted ? "arm" : "clear") raw audio capture")
+                return
+            }
+            self.statusBanner?.showOnPresence(
+                text: actual ? "recording raw audio" : "raw audio capture off",
+                sound: actual ? StatusBannerSound.start : StatusBannerSound.stop)
+            stopWhisper()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { startWhisper() }
+        }
 
         let pm = PowerMonitor()
         pm.onSwitchToBattery = { [weak self, weak controller] in

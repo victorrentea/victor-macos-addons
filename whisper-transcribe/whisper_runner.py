@@ -14,6 +14,7 @@ import re
 import sys
 import threading
 import time
+import wave
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -147,6 +148,25 @@ _SILENCE_FLUSH_SEC = float(os.environ.get("WHISPER_SILENCE_FLUSH_SECONDS", "0.6"
 _MIN_FLUSH_SEC = float(os.environ.get("WHISPER_MIN_FLUSH_SECONDS", "1.5"))
 
 _SAMPLE_RATE = 16000
+
+# Keep a copy of the raw microphone audio on disk. OFF by default — it writes
+# ~115 MB per hour and records a room full of people, so it is opt-in per
+# session and never a standing behaviour.
+#
+# It exists because the speaker-identification work has no far-field corpus.
+# Every recording that survived is a Zoom mix of *remote* participants; the hard
+# case — an audience in the room arriving through Victor's own lavalier — was
+# never captured, and the only two hybrid sessions on the calendar were not
+# recorded at all. This writes exactly the signal the classifier will see in
+# production: same device, same callback, before any gating.
+#
+# `1` records the mic channel; `all` also records the loopback channel, which in
+# a hybrid room is clean ground truth for the remote speakers (the mic is not).
+_RECORD_RAW = os.environ.get("WHISPER_RECORD_RAW", "0").strip().lower()
+_RECORD_RAW_ON = _RECORD_RAW not in {"0", "false", "no", ""}
+_RECORD_RAW_ALL = _RECORD_RAW == "all"
+# Bounded on purpose — see `_RawRecorder`. 600 blocks ≈ 60 s of slack.
+_RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
 
 _BATCH_MAX_WAIT_SEC = float(os.environ.get("WHISPER_BATCH_MAX_WAIT_SECONDS", "5"))
 _BATCH_MAX_ITEMS = int(os.environ.get("WHISPER_BATCH_MAX_ITEMS", "4"))
@@ -388,6 +408,115 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
 
 
 # ── Audio capture ────────────────────────────────────────────────────────────
+class _RawRecorder:
+    """Writes one channel's raw audio to a per-day WAV, off the audio thread.
+
+    The single rule: **never block `_cb`**. PortAudio's callback runs on a
+    realtime thread, and a disk that stalls for 50 ms there drops frames from the
+    *live* transcription — trading the thing that works for the thing we are only
+    collecting. So the callback does a non-blocking put onto a bounded queue and
+    a writer thread drains it. When the queue fills, audio is dropped and
+    counted: losing a second of corpus costs nothing, stuttering the transcript
+    in front of a room costs a lot.
+    """
+
+    def __init__(self, out_dir: Path, label: str):
+        self._dir = out_dir
+        self._label = re.sub(r"[^A-Za-z0-9]+", "-", label).strip("-") or "channel"
+        self._q: queue.Queue = queue.Queue(maxsize=_RECORD_QUEUE_BLOCKS)
+        self._running = True
+        self._dropped = 0
+        self._day: str | None = None
+        self._fh = None
+        threading.Thread(
+            target=self._supervised_writer, daemon=True, name=f"rec-{self._label}"
+        ).start()
+
+    def write(self, block: np.ndarray) -> None:
+        """Called from the audio callback. Must not block and must not raise.
+
+        The bare `except` is the point, not sloppiness: whatever goes wrong in
+        here, the one outcome that is unacceptable is an exception escaping into
+        PortAudio's realtime thread and killing live transcription for the sake
+        of a corpus.
+        """
+        try:
+            self._q.put_nowait(block.copy())
+        except queue.Full:
+            self._dropped += 1
+            if self._dropped % 100 == 1:
+                log.error(
+                    "transcript",
+                    f"🎙️ raw recorder [{self._label}] behind — dropped {self._dropped} blocks",
+                )
+        except BaseException as exc:  # noqa: BLE001 — deliberately everything
+            self._dropped += 1
+            if self._dropped % 100 == 1:
+                log.error("transcript", f"🎙️ raw recorder write failed: {exc!r}")
+
+    def _supervised_writer(self):
+        # Same rule as every other thread here: never die quietly. A recorder
+        # that stops is invisible — transcription carries on perfectly.
+        while self._running:
+            try:
+                self._writer_loop()
+                return
+            except BaseException as exc:  # noqa: BLE001 — deliberately everything
+                log.error("transcript", f"🎙️ raw recorder crashed, restarting: {exc!r}")
+                time.sleep(2)
+
+    def _writer_loop(self):
+        while self._running:
+            try:
+                block = self._q.get(timeout=1)
+            except queue.Empty:
+                continue
+            day = datetime.now().strftime("%Y-%m-%d")
+            if day != self._day:
+                self._open_for(day)
+            try:
+                self._fh.write((block * 32767).astype(np.int16).tobytes())
+                self._fh.flush()
+            except Exception as exc:
+                log.error("transcript", f"🎙️ raw write failed: {exc}")
+
+    def _open_for(self, day: str):
+        """Headerless PCM, appended — and both halves of that are deliberate.
+
+        **Appended**, because the heartbeat restarts whisper several times a day
+        and a fresh file per run would shatter the day into fragments that no
+        longer line up with the transcript's clock.
+
+        **Headerless**, because a WAV cannot do this. Python's `wave` module has
+        no append mode at all, and more importantly a WAV only writes its frame
+        count on `close()` — while this process is routinely killed outright
+        (the quiet-crash handlers `_exit`, the watchdog force-restarts it), which
+        would leave a file declaring itself empty. Raw PCM is just bytes: a
+        `kill -9` costs the last block and nothing else.
+
+        Read it back with the format that is in the filename:
+            ffmpeg -f s16le -ar 16000 -ac 1 -i <file> out.wav
+        """
+        self._close()
+        self._dir.mkdir(parents=True, exist_ok=True)
+        path = self._dir / f"{day}-{self._label}.s16le16k.pcm"
+        self._fh = open(path, "ab")
+        self._day = day
+        log.info("transcript", f"🔴 recording raw audio → {path}")
+
+    def _close(self):
+        if self._fh:
+            try:
+                self._fh.close()
+            except Exception:
+                pass
+            self._fh = None
+
+    def stop(self):
+        self._running = False
+        self._close()
+
+
 class _ChannelCapture:
     def __init__(
         self,
@@ -396,11 +525,13 @@ class _ChannelCapture:
         tx_queue: queue.Queue,
         device_name: str = "",
         resolve_fn=None,
+        recorder: "_RawRecorder | None" = None,
     ):
         self.device = device
         self.label = label
         self.device_name = device_name
         self._resolve_fn = resolve_fn  # callable() -> (idx, name) | None
+        self._recorder = recorder
         self._queue = tx_queue
         self._buf = np.zeros(0, dtype=np.float32)
         self._chunk = int(_SAMPLE_RATE * _CHUNK_SEC)
@@ -438,6 +569,8 @@ class _ChannelCapture:
 
     def stop(self):
         self._running = False
+        if self._recorder is not None:
+            self._recorder.stop()
         if self._stream:
             try:
                 self._stream.stop()
@@ -553,6 +686,11 @@ class _ChannelCapture:
         see `_SILENCE_FLUSH_SEC`.
         """
         block = indata[:, 0]
+        # Recorded BEFORE any gating: the corpus needs the silence and the
+        # below-threshold audio too, since the gate itself is one of the things
+        # the speaker work may want to change.
+        if self._recorder is not None:
+            self._recorder.write(block)
         self._buf = np.concatenate([self._buf, block])
         threshold = self._current_threshold()
 
@@ -776,6 +914,17 @@ class WhisperTranscriptionRunner:
         self._pref_watch_mtime: float = _preferred_source_mtime()
         self._device_check_event = threading.Event()
 
+    def _make_recorder(self, label: str) -> "_RawRecorder | None":
+        if not _RECORD_RAW_ON:
+            return None
+        try:
+            return _RawRecorder(self.output_dir / "raw-audio", label)
+        except Exception as exc:
+            # Recording is a nice-to-have for a corpus; transcription is the job.
+            # A recorder that cannot start must never take whisper down with it.
+            log.error("transcript", f"🎙️ raw recorder disabled: {exc}")
+            return None
+
     def start(self):
         tx_queue: queue.Queue = queue.Queue()
 
@@ -791,6 +940,7 @@ class WhisperTranscriptionRunner:
                 tx_queue,
                 me_name,
                 resolve_fn=lambda: _resolve_device_coreaudio(_ME_PATTERNS),
+                recorder=self._make_recorder(_ME_SPEAKER),
             )
             self._channels.append(self._me_channel)
         else:
@@ -802,7 +952,15 @@ class WhisperTranscriptionRunner:
             aud_idx, aud_name = resolved
             log.info("transcript", f"🎙️ Resolved Audience: {aud_name!r}")
             self._channels.append(
-                _ChannelCapture(aud_idx, _AUD_SPEAKER, tx_queue, aud_name)
+                _ChannelCapture(
+                    aud_idx,
+                    _AUD_SPEAKER,
+                    tx_queue,
+                    aud_name,
+                    recorder=(
+                        self._make_recorder(_AUD_SPEAKER) if _RECORD_RAW_ALL else None
+                    ),
+                )
             )
         else:
             log.error(

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 26, 22:14"
+    static let BUILD_TIME = "Aug 26, 23:06"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -21,6 +21,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
+    private(set) var recordRawItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
@@ -63,6 +64,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onQuit: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
+    var onToggleRecordRaw: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
@@ -157,6 +159,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeItem = addItem("Transcribing", action: nil)
         transcribeSubmenu = NSMenu()
         transcribeSubmenu.autoenablesItems = false
+
+        // 🔴 Raw audio capture. This earns a permanent row for one reason: while
+        // it is on, the mic is being written to disk, and there is no other way
+        // to find that out. A state you cannot see is a state you forget to turn
+        // off — and this one fills the disk and records a room full of people.
+        recordRawItem = addItem(RawAudioMenu.off, action: #selector(toggleRecordRawAction))
 
         // Tail (was Monitor)
         tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
@@ -475,6 +483,30 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func monitorAction() {
         onMonitor?()
+    }
+
+    @objc private func toggleRecordRawAction() {
+        onToggleRecordRaw?()
+    }
+
+    /// Titles for the 🔴 raw-capture row, kept together so the *on* state stays
+    /// unmistakable at a glance — this is the row that says a microphone is
+    /// being written to disk.
+    enum RawAudioMenu {
+        static let off = "Record raw audio"
+        static func on(hours: Double) -> String {
+            hours < 0.1
+                ? "🔴 Recording raw audio"
+                : String(format: "🔴 Recording raw audio — %.1f h", hours)
+        }
+    }
+
+    /// - Parameter hours: audio already on disk for today, so the row also
+    ///   answers "how much have I collected", which is the second question
+    ///   anyone asks after "is it on".
+    func setRecordingRaw(_ on: Bool, hours: Double = 0) {
+        guard let item = recordRawItem else { return }
+        item.title = on ? RawAudioMenu.on(hours: hours) : RawAudioMenu.off
     }
 
     @objc private func toggleDarkModeAction() {
