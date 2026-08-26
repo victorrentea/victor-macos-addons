@@ -1239,7 +1239,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // Already off the main thread (the tap dispatches globally), which
             // this needs: a cold press launches the relay and waits for its
             // listener, and the banner has to name what was actually bound.
-            let outcome = WisprRelayBinder.bindFrontmostTerminal()
+            let outcome = WalkieTalkieBinder.bindFrontmostTerminal()
             DispatchQueue.main.async {
                 // **Silent, both ways.** The banner is already on screen and the
                 // gesture is one Victor makes several times an hour, often in the

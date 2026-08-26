@@ -30,7 +30,7 @@ class EventTapManager {
     /// ⌘⌃Q — Claude Code with `--dangerously-skip-permissions` (Victor's `cx`).
     var onClaudeBypassHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
-    /// ⌘⌃D — bind Wispr Relay to the terminal in front, starting it if needed.
+    /// ⌘⌃D — bind Walkie Talkie to the terminal in front, starting it if needed.
     var onBindRelayHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
@@ -354,7 +354,7 @@ class EventTapManager {
             return nil
         }
 
-        // Cmd+Ctrl+D → point Wispr Relay at the terminal in front, so dictation
+        // Cmd+Ctrl+D → point Walkie Talkie at the terminal in front, so dictation
         // is typed into that session (suppress).
         //
         // Distinguished from the dark-mode toggle above by `!hasOpt` alone —

@@ -1,6 +1,6 @@
 import AppKit
 
-/// ⌘⌃D — point Wispr Relay at the terminal Victor is looking at, so everything
+/// ⌘⌃D — point Walkie Talkie at the terminal Victor is looking at, so everything
 /// he dictates from then on is typed straight into that session.
 ///
 /// **Why this key lives here and not in the relay.** The relay is started per
@@ -20,12 +20,12 @@ import AppKit
 /// than posting to all of them the way the extension does. Binding is not a
 /// broadcast — pointing every relay on the machine at one terminal would mean
 /// every dictation arriving there two or three times.
-enum WisprRelayBinder {
+enum WalkieTalkieBinder {
 
     /// Where the relay listens, in the order it claims the ports.
     private static let ports = [8917, 8918, 8919]
 
-    private static let appPath = "/Applications/Wispr Relay.app"
+    private static let appPath = "/Applications/Walkie Talkie.app"
 
     /// One press. Returns what to put in front of Victor.
     ///
@@ -36,8 +36,8 @@ enum WisprRelayBinder {
 
         // Nothing listening: the relay is not running, which for this key is not
         // an error but the ordinary first press of the day.
-        guard launchRelay() else { return "⚠️ Wispr Relay isn't installed" }
-        guard waitForListener() else { return "⚠️ Wispr Relay didn't come up" }
+        guard launchRelay() else { return "⚠️ Walkie Talkie isn't installed" }
+        guard waitForListener() else { return "⚠️ Walkie Talkie didn't come up" }
 
         guard let bound = post("/bind") else {
             return "⚠️ nothing bindable in front — click into a terminal first"
