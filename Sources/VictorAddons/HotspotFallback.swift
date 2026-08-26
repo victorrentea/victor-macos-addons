@@ -59,6 +59,16 @@ import Network
 /// the verdict is a real TCP probe, and this class never needs to know which
 /// network it is on — which network to *prefer* is macOS's job, decided by the
 /// order of the preferred-networks list.
+/// The menu toggle. Default on: the feature is a fallback that does nothing
+/// unless the Mac is already offline, so the safe default is armed.
+enum HotspotFallbackSettings {
+    static let enabledKey = "HotspotFallback.enabled"
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+}
+
 final class HotspotFallback {
 
     /// The phone, as IOBluetooth addresses it (Victor S24u).
@@ -117,6 +127,7 @@ final class HotspotFallback {
     /// overwhelmingly common case and must not write a line every time.
     private var lastKnownOnline: Bool?
     private var channel: IOBluetoothRFCOMMChannel?
+    private let geofence = HomeGeofence()
     private var keeper: ChannelKeeper?
 
     func start() {
@@ -131,6 +142,7 @@ final class HotspotFallback {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
         ) { [weak self] _ in self?.scheduleEvaluation(reason: "wake") }
 
+        geofence.start()
         overlayInfo("📶 Hotspot fallback armed (phone \(Self.phoneBluetoothAddress), grace \(Int(Self.grace))s)")
     }
 
@@ -155,6 +167,17 @@ final class HotspotFallback {
             return
         }
         lastKnownOnline = false
+
+        guard HotspotFallbackSettings.isEnabled else {
+            overlayInfo("📵 No internet (\(reason)) — but the hotspot fallback is switched off in the menu")
+            return
+        }
+        // Asked only once we already know there is no internet: a location fix
+        // costs radios and a menu-bar app sees network changes all day.
+        if geofence.isAtHome() {
+            overlayInfo("🏠 No internet (\(reason)) — but we are at home, so this stays manual")
+            return
+        }
 
         let since = Date().timeIntervalSince(lastAttemptAt)
         guard since >= Self.cooldown else {

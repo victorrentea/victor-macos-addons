@@ -105,6 +105,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>Victor Addons needs microphone access for live transcription.</string>
     <key>NSAccessibilityUsageDescription</key>
     <string>Victor Addons needs accessibility access for keyboard shortcuts and clipboard monitoring.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Victor Addons checks whether this Mac is at home, so it leaves the phone's hotspot alone there.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Victor Addons opens a Bluetooth channel to the phone to ask it for its hotspot when this Mac has no internet.</string>
     <key>NSUserNotificationAlertStyle</key>

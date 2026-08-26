@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 26, 16:04"
+    static let BUILD_TIME = "Aug 26, 17:33"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -19,6 +19,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
+    private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
     private var killSubmenu: NSMenu!
@@ -248,6 +249,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         appendNotesItem.isEnabled = true
         extraSubmenu.addItem(appendNotesItem)
 
+        hotspotFallbackItem = NSMenuItem(title: "📶 Hotspot Fallback", action: #selector(toggleHotspotFallbackAction), keyEquivalent: "")
+        hotspotFallbackItem.target = self
+        hotspotFallbackItem.isEnabled = true
+        hotspotFallbackItem.state = HotspotFallbackSettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(hotspotFallbackItem)
+
         emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
         emojiOverlayItem.target = self
         emojiOverlayItem.isEnabled = true
@@ -470,6 +477,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func toggleDarkModeAction() {
         onToggleDarkMode?()
+    }
+
+    @objc private func toggleHotspotFallbackAction() {
+        let enabled = !HotspotFallbackSettings.isEnabled
+        HotspotFallbackSettings.isEnabled = enabled
+        hotspotFallbackItem.state = enabled ? .on : .off
     }
 
     @objc private func toggleEmojiOverlayAction() {
