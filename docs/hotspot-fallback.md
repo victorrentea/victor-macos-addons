@@ -112,6 +112,18 @@ app sees network changes all day, and a location fix costs radios.
 (`HotspotFallback.enabled`, default on). Default on is safe: the feature does
 nothing at all unless the Mac is already offline and away from home.
 
+## After a phone reboot
+
+The phone side comes back on its own, but not at once: Android delivers
+`BOOT_COMPLETED` in priority waves and this app catches a late one. Measured on
+the S24 Ultra, **~90 s** from power-on to `listening on SPP`. Two earlier reboot
+tests looked like failures purely because they checked at 35 s.
+
+So in the first minute or two after restarting the phone, the fallback has
+nothing to connect to and the Mac will log
+`the phone is not publishing the SPP channel`. Opening the phone app by hand
+short-circuits the wait.
+
 ## The other half
 
 The phone side is a separate repo, `victor-phone-addons` — a foreground service
