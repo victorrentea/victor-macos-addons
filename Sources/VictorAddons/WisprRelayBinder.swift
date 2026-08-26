@@ -51,8 +51,14 @@ enum WisprRelayBinder {
         // Pressed again on the session it was already pointed at: the relay has
         // ended. Said as a full stop rather than as another arrow — the arrow
         // means "words go here", and there is now nowhere for them to go.
+        //
+        // **And with nothing after it.** The folder was there by symmetry with the
+        // bind banner, where it answers "which session did it grab?" — a question
+        // worth a panel. Stopping has no such question: there is one relay, he
+        // just ended it, and naming the repo invites a second reading ("stopped
+        // *for that folder*") of something that has no per-folder half at all.
         if (bound["stopped"] as? Bool) == true {
-            return "🎙️ relay stopped — \(label)"
+            return "🎙️ relay stopped"
         }
         let guarded = (bound["guarded"] as? Bool) ?? true
         // **`🎙️ → petclinic@main · ✳ fixing the tax bug`.** The mic already says

@@ -1241,8 +1241,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // listener, and the banner has to name what was actually bound.
             let outcome = WisprRelayBinder.bindFrontmostTerminal()
             DispatchQueue.main.async {
-                self?.statusBanner?.showNow(text: outcome, sound: StatusBannerSound.start,
-                                            visibleDuration: 5.0)
+                // **Silent, both ways.** The banner is already on screen and the
+                // gesture is one Victor makes several times an hour, often in the
+                // middle of a room he is teaching: a Pop on every bind and a
+                // Submarine on every stop is a sound with nothing to add to a
+                // message he is looking at. Sounds are for things that happen
+                // while he is *not* looking.
+                self?.statusBanner?.showNow(text: outcome, sound: nil, visibleDuration: 5.0)
             }
         }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
