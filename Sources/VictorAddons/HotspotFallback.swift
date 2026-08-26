@@ -63,6 +63,15 @@ final class HotspotFallback {
     /// The phone, as blueutil addresses it (Victor S24u).
     private static let phoneBluetoothAddress = "a8-ba-69-cf-8d-58"
 
+    /// The hotspot's SSID, and the Wi-Fi interface to put on it. Not a secret —
+    /// the password is not here and must never be: this repo is public. The join
+    /// normally needs no password at all (the keychain already holds one under
+    /// service `AirPort`, account `victor`); `HOTSPOT_PASSWORD` in
+    /// `~/.training-assistants-secrets.env` is only a fallback for when that
+    /// entry is missing.
+    private static let hotspotSSID = "victor"
+    private static let wifiInterface = "en0"
+
     /// How long macOS is left alone to join a known network on its own before we
     /// conclude there isn't one. Short, because it is paid on every wake in a
     /// room that has no Wi-Fi, and macOS re-associates with an in-range known AP
@@ -180,9 +189,29 @@ final class HotspotFallback {
         overlayError("📵 Hotspot fallback failed — still no internet after power-cycling Bluetooth")
     }
 
-    /// Polls once a second so the success line reports a real elapsed time; the
-    /// probe itself is what costs, and it is a single TCP handshake.
+    /// Polls once a second, and from the 6th second on also *asks* to join the
+    /// hotspot rather than waiting for macOS to do it.
+    ///
+    /// Waiting was the original design and it does not hold up. Auto-join is
+    /// opaque — it depends on the network's stored auto-join flag and on where
+    /// it sits in a 113-entry preferred list, both of which can silently stop
+    /// being what you think they are (observed live: the hotspot was up and
+    /// visible in the Wi-Fi menu, and the Mac sat there unassociated until it
+    /// was clicked by hand). Asking is deterministic, and it also makes the
+    /// preferred-list order irrelevant: we only ever join the hotspot at a
+    /// moment when we have already established there is no internet, so it
+    /// cannot steal the Mac away from a venue network.
+    ///
+    /// The first attempt waits ~6 s because the hotspot needs ~8 s to become
+    /// joinable and `-setairportnetwork` against an AP that isn't beaconing yet
+    /// just fails; retrying every 3 s covers the spread.
+    ///
+    /// This is also the only thing that tells the two failure modes apart. "The
+    /// network could not be found" means the phone never turned the hotspot on
+    /// and the routine is at fault; a join that succeeds but leaves us offline
+    /// means the hotspot is up and its own uplink is the problem.
     private func waitForInternet(seconds: Int, stage: String) -> Bool {
+        var lastJoinError: String?
         for elapsed in 1...seconds {
             Thread.sleep(forTimeInterval: 1)
             if hasInternet() {
@@ -190,8 +219,43 @@ final class HotspotFallback {
                 overlayInfo("📶 Online after \(elapsed)s (\(stage))")
                 return true
             }
+            if elapsed >= 6, elapsed % 3 == 0 {
+                let err = Self.joinHotspot()
+                if err == nil {
+                    overlayInfo("📶 Joined '\(Self.hotspotSSID)' at \(elapsed)s (\(stage))")
+                } else if err != lastJoinError {
+                    lastJoinError = err
+                    overlayInfo("📵 Join '\(Self.hotspotSSID)' refused at \(elapsed)s: \(err!)")
+                }
+            }
         }
         return false
+    }
+
+    /// Asks macOS to associate with the hotspot. Returns `nil` on success, or
+    /// the reason it refused.
+    ///
+    /// `networksetup -setairportnetwork` **exits 0 even when it fails** and
+    /// reports the failure only as text on stdout, so the exit status cannot be
+    /// trusted here — success is empty output.
+    private static func joinHotspot() -> String? {
+        var args = ["-setairportnetwork", wifiInterface, hotspotSSID]
+        // Normally unnecessary: the keychain holds this network's password
+        // already. Only used if that entry has gone missing.
+        if let pw = SecretsLoader.load()["HOTSPOT_PASSWORD"], !pw.isEmpty { args.append(pw) }
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+        p.arguments = args
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = Pipe()
+        do { try p.run() } catch { return "networksetup failed to launch" }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
     }
 
     /// A real TCP handshake, not `NWPath.status`. A captive portal, an
