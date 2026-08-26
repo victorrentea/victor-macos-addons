@@ -207,6 +207,46 @@ rule from the start.
   screen edges. Head and tail are **one keyframe opacity track**, not two animations, so the
   fade-out can never begin before the fade-in has finished on a short clip.
 
+- **🪚 Chainsaw cursor** (tile #18 `18_chainsaw.mp3` → `chainsaw` / `chainsaw/stop`,
+  `showChainsawCursor`): for the length of the clip **the mouse pointer IS a running
+  chainsaw** — the real cursor is hidden and a 16-frame sprite loops on it, chasing
+  `NSEvent.mouseLocation` at 60 fps. It is the third member of the hidden-cursor family
+  (💘 spiral-hearts' beating heart, 🔫 minigun's reticle) and follows their rules: it lives
+  **outside `activeEffects`** because it owns a follow timer *and* a hidden system cursor,
+  so `stopAllActiveEffects` tears it down **explicitly** — a generic sweep would drop the
+  layer and leave the desktop with **no visible pointer at all**. The hide is armed through
+  `armBackgroundCursorHiding()` (the private `SetsCursorInBackground` flag) so it also
+  applies while Victor is in someone else's app, and the unhide is balanced by a single
+  `_chainsawHidCursor` flag so a spurious stop can't force the cursor back mid-run.
+  - **Art**: `Resources/chainsaw-frames.png`, a **4×4 sprite sheet**, not a gif. The smoke
+    puff and the antialiased blade need real **8-bit alpha**, and gif carries 1-bit — a gif
+    of this fringes white against a dark desktop. The 16 equal cells are sliced once with
+    `cropping(to:)` into a **lazy static** (`chainsawFrames`): a press must be instant
+    because the cursor is already moving, so the ~1.7 MP sheet is never re-decoded per
+    press. The sheet is quantised to 255 colours (1.8 MB → 329 KB, visually identical at
+    300 pt) — palette PNG keeps per-entry alpha, so the soft edges survive.
+  - **Anchor**: the layer's `anchorPoint` is the **blade tip** (x ≈ 380/418, y ≈ 115/236
+    from the top — the mean of the 16 frames' rightmost saw pixel, excluding the frames
+    whose rightmost pixel is flying sawdust). The tip is what lands on the pointer and the
+    engine hangs down-left of it, the same relationship the arrow cursor has with its own
+    top-left hotspot; centring it instead would put the pointer in the middle of the engine
+    block and the saw would read as decoration rather than as the thing doing the pointing.
+    Sawdust therefore sprays to the **right of** the hotspot — i.e. out of the cut.
+  - **Timing**: 16 frames at **24 fps** (0.67 s rev cycle) — fast enough to buzz rather than
+    flap, which is the whole reason the source frames jitter. Width **300 pt**, height
+    aspect-derived; `zPosition` 9500 so it rides above every other effect (it is the
+    pointer). Fade-in is **0.12 s** — the cursor is a thing you are already looking at, and
+    a slow fade there reads as lag. The fade-out is 0.25 s and the real cursor comes back
+    only **after** it finishes, so the two are never on screen together.
+  - **Lifecycle**: length read off `18_chainsaw.mp3` via `AVURLAsset` (~6.09 s, with that
+    value as the fallback) and self-stopped at it, **generation-guarded** so an old run's
+    timer can't kill a newer one. The lifecycle rule matters more here than anywhere else:
+    a lost `/sound/stopped` on a flaky venue network would otherwise leave the desktop with
+    no cursor. The tablet's stop still shortens it through `onStop` → `chainsaw/stop`.
+    Press path only (`SoundEffectMap`), so the routed `/sound/play/18_chainsaw.mp3` supplies
+    the audio and the visual never double-triggers. `/test/chainsaw`, `/test/chainsaw/stop`,
+    `/effect/chainsaw` and the menu item **Chainsaw Cursor 🪚** fire it silently.
+
 - **🌈 Rainbow + 🦄 unicorns** (tile #37 `37_rainbow.mp3` → `rainbow` /
   `rainbow/stop`, `showRainbow`): seven translucent bands drawn as a **quarter**-arc —
   the circle's centre is pushed onto the right screen edge, so only the left quarter of

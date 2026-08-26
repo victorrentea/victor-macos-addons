@@ -515,6 +515,10 @@ class TabletHttpServer {
             return .effect("minion")
         case "/test/counter-strike":
             return .effect("counter-strike")
+        case "/test/chainsaw":
+            return .effect("chainsaw")
+        case "/test/chainsaw/stop":
+            return .effect("chainsaw/stop")
         case "/test/microwave":
             return .effect("microwave")
         case "/test/group-photo":

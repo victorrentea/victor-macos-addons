@@ -93,6 +93,15 @@ class EmojiAnimator {
     private var _minigunReticleTimer: Timer?
     private var _minigunReticleHidCursor = false      // balance hide/unhide of the real cursor
 
+    // 🪚 Chainsaw cursor: for the length of tile #18 the pointer IS a running
+    // chainsaw — a 16-frame sprite looping on the cursor, real cursor hidden.
+    // Lives OUTSIDE `activeEffects` (own follow timer + hidden cursor), like the
+    // minigun reticle, so `stopAllActiveEffects` tears it down explicitly.
+    private var _chainsawLayer: CALayer?
+    private var _chainsawTimer: Timer?
+    private var _chainsawHidCursor = false            // balance hide/unhide of the real cursor
+    private var _chainsawGeneration = 0               // guards a stale run's self-stop against a newer one
+
     // 🕳️ Iris close: a black radial overlay (transparent centre, opaque edges)
     // whose clear hole shrinks from the screen-circumscribing circle down to
     // nothing over ~5s — a cinematic "iris out" blackout. The layer itself is
@@ -2976,6 +2985,183 @@ class EmojiAnimator {
             NSCursor.unhide()
             CGDisplayShowCursor(CGMainDisplayID())
             _minigunReticleHidCursor = false
+        }
+    }
+
+    // MARK: - 🪚 Chainsaw cursor (tile #18 — the pointer becomes a running chainsaw)
+
+    /// The art is a 4×4 sprite SHEET (`chainsaw-frames.png`), not a gif, because
+    /// the smoke puff and the antialiased blade need real 8-bit alpha and gif
+    /// only carries 1-bit — a gif of it fringes white against a dark desktop. The 16
+    /// cells are equal-sized, so slicing is a pure `cropping(to:)` per frame.
+    private static let chainsawGrid = (cols: 4, rows: 4)
+
+    /// The 16 frames, decoded once. A press must be instant (the cursor is
+    /// already moving), so the ~1.7 MP sheet is not re-decoded per press.
+    private static let chainsawFrames: [CGImage] = {
+        guard let url = Bundle.module.url(forResource: "chainsaw-frames", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [] }
+        let cw = sheet.width / chainsawGrid.cols
+        let ch = sheet.height / chainsawGrid.rows
+        var frames: [CGImage] = []
+        // Row-major: the sheet reads left-to-right, top-to-bottom, and CGImage
+        // cropping is top-left origin too, so the cell order IS the frame order.
+        for row in 0..<chainsawGrid.rows {
+            for col in 0..<chainsawGrid.cols {
+                let rect = CGRect(x: col * cw, y: row * ch, width: cw, height: ch)
+                if let cell = sheet.cropping(to: rect) { frames.append(cell) }
+            }
+        }
+        return frames
+    }()
+
+    /// Where the blade TIP sits inside a frame, as a fraction of the cell — the
+    /// mean of the 16 frames' rightmost saw pixel (x≈380/418, y≈115/236 from the
+    /// top; the frames whose rightmost pixel is flying sawdust are excluded from
+    /// that mean). Used as the layer's `anchorPoint`, so the tip is what lands on
+    /// the pointer and the engine hangs down-left of it — the same relationship
+    /// the arrow cursor has with its own top-left hotspot.
+    private static let chainsawTipAnchor = CGPoint(x: 0.909, y: 1 - 0.487)
+
+    /// Displayed width in points. Big enough to read as a chainsaw across a
+    /// projected room, small enough that it still points at something.
+    private static let chainsawWidth: CGFloat = 300
+
+    /// 16 frames at 24 fps ≈ a 0.67 s rev cycle — fast enough to buzz rather
+    /// than flap, which is the whole reason the frames jitter.
+    private static let chainsawFPS: Double = 24
+
+    /// Fallback length if `18_chainsaw.mp3` can't be measured (its real one).
+    private static let chainsawFallbackDuration: Double = 6.09
+
+    /// Replace the mouse pointer with a running chainsaw for as long as
+    /// `18_chainsaw.mp3` lasts (or until the tile is stopped, whichever is
+    /// first). The real cursor is hidden — the saw IS the pointer.
+    ///
+    /// Not a `trackEffect` client: like the minigun reticle this owns a follow
+    /// timer and a hidden system cursor, so it must be torn down through
+    /// `stopChainsawCursor` and never by the generic `activeEffects` sweep,
+    /// which would drop the layer and leave the cursor invisible forever.
+    func showChainsawCursor(playSound: Bool = true) {
+        let frames = Self.chainsawFrames
+        guard let first = frames.first else {
+            overlayError("chainsaw-frames.png not found in bundle")
+            return
+        }
+
+        stopChainsawCursor(fade: 0)   // never leak a previous run's timer/hidden cursor
+
+        var duration = Self.chainsawFallbackDuration
+        if let soundURL = SoundManager.shared.soundURL(for: "18_chainsaw.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
+
+        let w = Self.chainsawWidth
+        let h = w * CGFloat(first.height) / CGFloat(first.width)
+
+        let saw = CALayer()
+        saw.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+        saw.anchorPoint = Self.chainsawTipAnchor
+        saw.contents = first
+        saw.contentsGravity = .resizeAspect
+        saw.zPosition = 9_500          // above every other effect: it's the pointer
+        saw.opacity = 0
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        saw.position = mousePointInHostLayer()
+        CATransaction.commit()
+        hostLayer.addSublayer(saw)
+        _chainsawLayer = saw
+
+        let rev = CAKeyframeAnimation(keyPath: "contents")
+        rev.values = frames
+        rev.duration = Double(frames.count) / Self.chainsawFPS
+        rev.repeatCount = .infinity
+        rev.calculationMode = .discrete
+        saw.add(rev, forKey: "rev")
+
+        // Snap in rather than drift in: the cursor is a thing you are already
+        // looking at, and a slow fade there reads as lag.
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = 0.12
+        fadeIn.fillMode = .forwards
+        fadeIn.isRemovedOnCompletion = false
+        saw.opacity = 1
+        saw.add(fadeIn, forKey: "fadeIn")
+
+        // Hide the real pointer for the run. The arm step lifts the "frontmost
+        // app only" restriction so it also works while the user is in another
+        // app (the common case for this overlay). Balanced in stopChainsawCursor.
+        if !_chainsawHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _chainsawHidCursor = true
+        }
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self, self._chainsawTimer === t else { t.invalidate(); return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
+            self._chainsawLayer?.position = self.mousePointInHostLayer()
+            CATransaction.commit()
+        }
+        _chainsawTimer = timer
+
+        if playSound { SoundManager.shared.play("18_chainsaw.mp3") }
+
+        // The lifecycle rule: the sound's length is the authoritative teardown,
+        // never the tablet's /sound/stopped (which a flaky venue network eats —
+        // and here that would leave the desktop with no visible cursor at all).
+        // Generation-guarded so an old run's timer can't kill a newer run.
+        _chainsawGeneration += 1
+        let generation = _chainsawGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self, self._chainsawGeneration == generation else { return }
+            self.stopChainsawCursor()
+        }
+    }
+
+    /// Put the real pointer back. Idempotent — the early stop from the tablet,
+    /// the natural end of the clip and `stopAllActiveEffects` all funnel here.
+    /// The system cursor is restored only once the saw has finished fading, so
+    /// the two are never on screen together.
+    func stopChainsawCursor(fade: Double = 0.25) {
+        _chainsawTimer?.invalidate(); _chainsawTimer = nil
+        _chainsawGeneration += 1      // any pending self-stop is now stale
+
+        let restoreCursor = { [weak self] in
+            guard let self, self._chainsawHidCursor else { return }
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            self._chainsawHidCursor = false
+        }
+
+        guard let saw = _chainsawLayer else { restoreCursor(); return }
+        _chainsawLayer = nil
+
+        guard fade > 0 else {
+            saw.removeAllAnimations()
+            saw.removeFromSuperlayer()
+            restoreCursor()
+            return
+        }
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = saw.presentation()?.opacity ?? 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.duration = fade
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        saw.add(fadeOut, forKey: "fadeOut")
+        DispatchQueue.main.asyncAfter(deadline: .now() + fade) {
+            saw.removeAllAnimations()
+            saw.removeFromSuperlayer()
+            restoreCursor()
         }
     }
 
@@ -6645,6 +6831,10 @@ class EmojiAnimator {
         // follow timer + hidden cursor), so tear it down explicitly or it would
         // keep tracking forever after a stop-all.
         stopMinigunReticle()
+        // 🪚 The chainsaw cursor is outside activeEffects for the same reason —
+        // and it also HIDES the real pointer, so leaving it behind would strand
+        // the desktop with no cursor at all.
+        stopChainsawCursor(fade: 0)
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()

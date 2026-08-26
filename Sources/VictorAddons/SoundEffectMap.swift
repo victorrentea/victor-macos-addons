@@ -35,6 +35,12 @@ enum SoundEffectMap {
         "70_cavalry.mp3":        "cavalry",
         "73_counter_strike.mp3": "counter-strike",
         "76_sfx_118.mp3":        "wasnt-me",
+        // Tile 18 (🪚 chainsaw): the mouse pointer itself becomes a running
+        // chainsaw for the length of the clip. Press starts it, stop puts the
+        // real pointer back (see onStop) — and the effect self-stops at the
+        // clip's length regardless, because a lost /sound/stopped here would
+        // leave the desktop with no visible cursor at all.
+        "18_chainsaw.mp3":       "chainsaw",
         "29_gangnam_style.mp3":  "gangnam",
         "41_love_hearts.mp3":    "love-hands",
         "55_star_wars.mp3":      "star-wars",
@@ -105,6 +111,7 @@ enum SoundEffectMap {
         "26_drum.mp3":           "drum-roll/stop",
         "59_game_over.mp3":      "game-over/stop",
         "46_michael_buble.mp3":  "snow/stop",
+        "18_chainsaw.mp3":       "chainsaw/stop",
     ]
 
     /// The effect name a pressed sound should start, or nil if the sound has no
