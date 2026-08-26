@@ -8,6 +8,7 @@ Uses CoreAudio for device detection (no stale devices) and sounddevice for captu
 """
 
 import contextlib
+import json
 import os
 import queue
 import re
@@ -167,6 +168,25 @@ _RECORD_RAW_ON = _RECORD_RAW not in {"0", "false", "no", ""}
 _RECORD_RAW_ALL = _RECORD_RAW == "all"
 # Bounded on purpose — see `_RawRecorder`. 600 blocks ≈ 60 s of slack.
 _RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
+
+# Speaker identification, **dark-launched**: it writes its verdicts to a file of
+# their own and never to the transcript.
+#
+# The transcript carried speaker labels once — `Victor 🎙️:` / `Audience:`,
+# derived from which input device happened to be louder — and they were removed
+# on 2026-08-14 because they were wrong often enough to poison every downstream
+# reader. Putting labels back is therefore not a code change to be trusted on
+# review; it is a claim to be proven against a day of real workshop audio first.
+# So the verdicts go to `<day>-speakers.jsonl`, where they can be scored against
+# the transcript afterwards at zero risk to a live session.
+_SPEAKER_ID = os.environ.get("WHISPER_SPEAKER_ID", "0").strip().lower()
+_SPEAKER_ID_ON = _SPEAKER_ID not in {"0", "false", "no", ""}
+_SPEAKER_MODEL = Path(
+    os.environ.get(
+        "WHISPER_SPEAKER_MODEL",
+        str(Path(__file__).resolve().parent / "models" / "wespeaker_resnet34_LM.onnx"),
+    )
+)
 
 _BATCH_MAX_WAIT_SEC = float(os.environ.get("WHISPER_BATCH_MAX_WAIT_SECONDS", "5"))
 _BATCH_MAX_ITEMS = int(os.environ.get("WHISPER_BATCH_MAX_ITEMS", "4"))
@@ -817,7 +837,38 @@ def _collect_batch(first_item, tx_queue: queue.Queue):
     return items, overflow
 
 
-def _supervised_transcriber_loop(tx_queue: queue.Queue, on_segment):
+def _make_speaker_scorer(output_dir: Path):
+    """Build the scorer, or return `None` and say why in one line.
+
+    Deliberately not fatal and deliberately loud. This is an observer bolted
+    onto a pipeline whose job is transcription; a missing model or voiceprint
+    must never cost a word. But it also must not fail *silently*, because
+    "scoring nothing" and "scoring and abstaining" produce the same empty
+    output and are completely different problems.
+    """
+    if not _SPEAKER_ID_ON:
+        return None
+    try:
+        from speaker_id import SpeakerScorer
+
+        scorer = SpeakerScorer(_SPEAKER_MODEL, output_dir)
+        if not scorer.available:
+            log.error("transcript", f"🗣️ speaker id disabled: {scorer.error}")
+            return None
+        vp = scorer.voiceprint
+        log.info(
+            "transcript",
+            f"🗣️ speaker id on (enrolled {vp.meta.get('enrolled_from', '?')}, "
+            f"victor≥{vp.thresholds.victor_at:.3f}, "
+            f"audience≤{vp.thresholds.audience_below:.3f})",
+        )
+        return scorer
+    except Exception as exc:  # noqa: BLE001
+        log.error("transcript", f"🗣️ speaker id unavailable: {exc!r}")
+        return None
+
+
+def _supervised_transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None):
     """Same rule as the capture threads: never die quietly.
 
     The batching code around `tx_queue.get` sits outside the per-item try/except
@@ -827,14 +878,14 @@ def _supervised_transcriber_loop(tx_queue: queue.Queue, on_segment):
     """
     while True:
         try:
-            _transcriber_loop(tx_queue, on_segment)
+            _transcriber_loop(tx_queue, on_segment, scorer)
             return
         except BaseException as exc:  # noqa: BLE001 — deliberately everything
             log.error("transcript", f"🎙️ transcriber loop crashed, restarting: {exc!r}")
             time.sleep(2)
 
 
-def _transcriber_loop(tx_queue: queue.Queue, on_segment):
+def _transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None):
     log.info("transcript", "🎙️ Transcription loop started")
     # Track last transcribed text per channel for context
     prev_text: dict[str, str] = {}
@@ -887,7 +938,13 @@ def _transcriber_loop(tx_queue: queue.Queue, on_segment):
                     continue
                 # Keep last ~200 chars as context for next chunk
                 prev_text[label] = text[-200:]
-                on_segment(label, lang, text, device_tag)
+                # Scored on the same thread as inference, after the text is
+                # known to be worth keeping. ~25 ms on top of whisper's ~375 ms,
+                # and on the CPU rather than the GPU whisper is holding — 64-90 %
+                # of a whisper call's wall time is already spent off-CPU, so
+                # this fits in a gap that exists anyway.
+                verdict = scorer.score(audio) if scorer is not None else None
+                on_segment(label, lang, text, device_tag, verdict)
         except Exception as exc:
             log.error("transcript", f"🎙️ Whisper error: {exc}")
 
@@ -976,7 +1033,7 @@ class WhisperTranscriptionRunner:
 
         threading.Thread(
             target=_supervised_transcriber_loop,
-            args=(tx_queue, self._on_segment),
+            args=(tx_queue, self._on_segment, _make_speaker_scorer(self.output_dir)),
             daemon=True,
             name="transcriber",
         ).start()
@@ -1139,7 +1196,38 @@ class WhisperTranscriptionRunner:
                 return True
         return False
 
-    def _on_segment(self, label: str, lang: str, text: str, device_tag: str = ""):
+    def _write_speaker_verdict(self, hhmm: str, verdict, text: str):
+        """A verdict goes to its OWN file, never into the transcript.
+
+        This is the dark launch. Labels were in the transcript once and were
+        wrong often enough to be taken out again; the way to earn them back is
+        to be scored against a day of real audio while costing that day nothing.
+        JSONL because it is append-only, survives a `kill -9` mid-line with the
+        loss of exactly one record, and can be read back with one `json.loads`
+        per line months from now.
+        """
+        try:
+            day = datetime.now().strftime("%Y-%m-%d")
+            row = {
+                "t": datetime.now().strftime("%H:%M:%S"),
+                "hhmm": hhmm,
+                "label": verdict.label,
+                "score": None if not np.isfinite(verdict.score) else round(verdict.score, 4),
+                "reason": verdict.reason,
+                # Enough to line the verdict up against the transcript line
+                # without duplicating a day of speech into a second file.
+                "text": text[:80],
+            }
+            with (self.output_dir / f"{day}-speakers.jsonl").open(
+                "a", encoding="utf-8"
+            ) as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001 — an observer never breaks the job
+            log.error("transcript", f"🗣️ speaker verdict write failed: {exc}")
+
+    def _on_segment(
+        self, label: str, lang: str, text: str, device_tag: str = "", verdict=None
+    ):
         now = datetime.now()
         hhmm = now.strftime("%H:%M")
 
@@ -1167,6 +1255,8 @@ class WhisperTranscriptionRunner:
             return
 
         self._write_to_transcript(f"[{hhmm}] {text}")
+        if verdict is not None:
+            self._write_speaker_verdict(hhmm, verdict, text)
 
         parts = text.split()
         words = len(parts)
