@@ -1,0 +1,194 @@
+# Live-Session Overlays & Desktop Effects
+
+WebSocket-driven emoji reactions, the join-link banner, and every sound-paired desktop effect.
+
+## Overlay Components (AppDelegate)
+Fullscreen overlay and WebSocket integration for live sessions:
+- **EmojiAnimator**: receives emoji reactions via WebSocket, animates sprites flying up the screen
+- **ButtonBar**: floating button bar for host controls (sound effects, overlay toggle)
+- **SoundManager**: plays sound effects (applause, drum roll, etc.) triggered by host
+- **OverlayPanel**: transparent always-on-top NSPanel covering full screen
+- **JoinLinkBanner**: displays participant join URL at top of screen; auto-hides after 20s with 3s fade-out
+
+Connects to the training-assistant backend via WebSocket at `/ws/__overlay__`.
+Receives session lifecycle events (`session_started`, `session_ended`) to enable/disable join link menu item.
+- **Interact Link** (menu: `🟢 Interact Link`) — shows participant join URL banner at top of screen (enabled when session active); banner auto-hides after 20s with fade-out animation
+
+**Sound → overlay-effect mapping (Mac-owned).** The tablet no longer decides
+which sound triggers which visual effect. On every sound press it fires
+`GET /sound/pressed/<file>` and on every stop `GET /sound/stopped/<file>` (bare
+filenames), and the Mac looks the effect up in `SoundEffectMap.swift` — the
+single source of truth (`onPress: [file → effect]`, `onStop: [file →
+effect/stop]`) — then dispatches through the existing `onEffect` switch (reusing
+all BT visual-compensation/sync logic). **Changing a mapping or adding a new
+effect needs only a Mac rebuild — no tablet redeploy.** The siren
+(`02_siren.mp3`) is the one exception: it drives the alarm overlay
+(`/alarm/start`,`/alarm/stop`) and stays special-cased on the tablet. Effects
+are CALayers on the overlay's `hostLayer`, animated via `CAKeyframeAnimation`
+on `contents` from bundled gif frames (`Bundle.module`).
+
+**Lifecycle rule (2026-07): every overlay effect MUST self-terminate at its
+sound's length — network stop messages are an optimization, never the only
+teardown.** The tablet's `/sound/stopped` → `onStop` chain (and even the
+pre-press `/effect/stop-all`) is best-effort: on a flaky venue network the
+tablet falls back to the Railway relay and those GETs get lost, which used to
+leave looping overlays (star-wars, brother, gangnam, drum-roll) on the desktop
+forever. Every `show*` therefore schedules its own authoritative stop —
+`trackEffect(duration:)` for one-shots, or an explicit
+`asyncAfter(realMp3Duration + 0.3s grace)` for loopers, reading the paired
+mp3's length via `AVURLAsset` — **in the silent (`playSound: false`) tablet
+path too**, since that's the path real presses take. Self-stop timers are
+**identity-guarded** (`activeEffects[key] === layer`, the love-hands pattern)
+so an old run's timer can never kill a newer run of the same effect. The one
+deliberate exception is the siren's alarm overlay (an unbounded toggle — its
+sound loops until explicitly stopped). When adding a new effect, follow this
+rule from the start.
+- **🩸 Blood drip** (sfx #40 `40_joker.mp3` → `blood-drip`): `blood-drip.gif`
+  (white bg made transparent via ImageMagick `-coalesce -fuzz 20% -transparent`,
+  full-canvas frames) shown as a blood band pinned to the **top of the screen**
+  at full width (aspect-preserved, transparent backdrop over the live screen),
+  drips/droplets falling; the ~1.6s loop plays **~1.5× slower**, repeating for
+  the joker track (~9.0s) with a 0.25s fade-in and 0.6s fade-out tail.
+- **🛰️ Sonar** (sfx #23 `23_radar.mp3` → `sonar`, `showSonar`): a full-screen
+  black wash fades in (0→45% over 1s; darker **70% disc** inside the radar
+  circle), then a phosphor-green radar **drawn entirely as CALayers** (no gif):
+  muted-grey concentric rings + radial spokes; a **conic-gradient sweep arc**
+  (bright +x leading edge, fading 100%→0% behind it, masked to the circle) that
+  rotates **clockwise**. The sweep carries **ultrasound-style "reception noise"**
+  (flickering green/black speckle frames generated in `makeSonarNoiseFrames`,
+  masked to the wedge), and a fainter copy of the same noise covers the circle
+  interior (background static; outside the circle is just the dark wash). A
+  **💩 blip** (3× emoji, green glow) sits at the front's detection angle, hidden
+  until found. It is drawn **over the sweep**, not under it — the green front and
+  its reception noise used to wash across the find at the exact instant the find
+  happens, which is the one moment it must be unmistakable; the wedge passing
+  *behind* it now reads as the thing that revealed it. Each detection also
+  **zooms it in**: it lands at **2×** and settles to its own size over **1 s**,
+  cubic-ease-out so the motion is spent in the first third (it arrives, it
+  doesn't creep). The zoom is sampled on the **same keyframe grid and the same
+  `detT[di]`** as the opacity flash, so it starts on the exact frame the 💩
+  becomes visible; between detections the scale is parked back at 2× ready for
+  the next one, and that 1×→2× reset is placed **after** the fade has fully
+  finished (`coverT + fadeT`) so it always happens at zero opacity and can never
+  be seen. The rotation is **keyframed** (not constant): ~0.5s beep-free
+  lead-in, then the front sweeps over the 💩 on **three radar beeps** in the clip
+  (clip times 0.104/2.211/3.879s; one full turn between detections). The Mac
+  **owns the audio** here — `showSonar(playSound:true)` plays `23_radar.mp3`
+  delayed (`soundStartRel` + 0.1s) so the beeps land on the three detections; the
+  effect ends (fading out **while still rotating**) the moment the 3rd detection's
+  1s fade finishes, so the front never sweeps the 💩 a 4th time unshown. Pure
+  formatting/timing is derived up-front from `beepClip`/`detT`/`animEnd`.
+  **Trigger:** the effect is driven from the **routed `/sound/play/23_radar.mp3`**
+  path (`onSoundPlay` special-cases it → `showSonar(playSound:true)` instead of
+  `playTabletSound`), so when the tablet routes its soundboard audio to the Mac,
+  the radar press plays the synced SFX **and** the visual with no double audio and
+  **no tablet change**. `23_radar.mp3` is therefore intentionally **absent from
+  `SoundEffectMap`** (the press path would otherwise double-trigger it). `/test/sonar`
+  and `/effect/sonar` call `showSonar` directly for headless testing.
+- **💸 Money** (tile #53, repurposed from rain): the Android tile #53 now shows
+  a plain **💸 emoji on white** but keeps its asset id `53_rain.mp3` (so the
+  routing protocol/manifest are unchanged). `onSoundPlay` **special-cases
+  `53_rain.mp3`** (like the radar): it fires `showMoneyRise()` and plays the
+  **#57 checkmark "ching"** (`57_checkmark.mp3`) instead of the original rain,
+  returning the checkmark's duration. `showMoneyRise` swarms ~16 money emojis
+  (`💸💵💰🤑`) **up from the bottom edge to off the top**, swaying + tumbling
+  while fading out — **one round per press ("ching")**. It is a fire-and-forget,
+  **non-tracked** burst (each emoji layer self-removes), so pressing the tile
+  repeatedly **stacks overlapping rounds**. `53_rain.mp3` is intentionally
+  **absent from `SoundEffectMap`** so a press = a single ching + single round (no
+  double-trigger). `/test/money` and `/effect/money` call `showMoneyRise` directly.
+- **🔫 Counter-Strike** (sfx #73 `73_counter_strike.mp3` → `counter-strike`,
+  `showCounterStrike`): the two CT operators (a transparent PNG,
+  `Resources/counter-strike.png`, **pre-trimmed to its opaque content** so there is
+  no transparent margin lifting them off the edge) stand in the **bottom-left
+  quarter** of the retina — fitted aspect-preserved inside half-width × half-height,
+  anchored at the bottom-left corner, **glued to the bottom screen edge** — snapping
+  up into place over 0.18 s. It lives exactly as long as the clip (**duration read
+  from the mp3** via `AVURLAsset`, ~1.36 s, falling back to that measured value) and
+  fades out over its last 0.3 s. Driven from the **press path** (`SoundEffectMap`),
+  so the routed `/sound/play/73_counter_strike.mp3` supplies the audio and the
+  visual never double-triggers. `/test/counter-strike` and `/effect/counter-strike`
+  fire it silently; the menu item **Counter-Strike 🔫** (Desktop Effects) too.
+- **❄️ Snow** (tile #46 `46_michael_buble.mp3` → `snow` / `snow/stop`, `showSnow`):
+  **tile #46 IS the Christmas tile** — Michael Bublé's *"It's Beginning to Look a Lot
+  Like Christmas"*, snow already falling in its artwork — so pressing it now snows on
+  the desktop for the length of the clip (~10.5 s, read off the mp3 via `AVURLAsset`).
+  The flakes are **drawn, not emoji** (`snowflakePath`: six spokes, two branch pairs
+  each — the least detail that still reads as a snowflake and not an asterisk), white
+  stroke with a white glow, because ❄️ renders as the system's blue-tinted glyph and
+  what is wanted here is white snow over whatever is on screen. **One number — depth
+  0…1 — drives size, fall speed, brightness and sway width together**, so a flake can
+  never read as a contradiction (big but distant, tiny but racing); near flakes are
+  20 px, bright and cross in ~5 s, far ones 5 px, faint and take ~9.5 s. Each falls
+  along a keyframed sine sway plus a net sideways drift, tumbling slowly (only
+  `transform.rotation.z` is animated — the size is baked into the path, so nothing
+  fights over `transform`), then **lands on the bottom edge and melts** over 1.4 s:
+  the descent is the first `landed` fraction of the timeline and the repeated final
+  point is the hold. **Every flake enters through the top edge** — none is ever
+  dropped in mid-screen, which reads as flakes materialising out of nowhere rather
+  than as snow falling. So the opening cascade is stacked *above* the screen instead:
+  `snowSeedCount` = 26 flakes released at staggered heights over the top edge, at the
+  same constant fall speed (starting higher means entering *later*, never falling
+  faster), which fills the sky within ~2 s while each flake still makes the whole
+  journey down. Then 16 flakes/s, stopping `snowLastSpawnBeforeEnd` = 1.5 s before the
+  clip does — a flake entering the frame just as everything melts reads as a glitch.
+  **The snowfall lasts exactly as long as the song**: the melt starts on the clip's
+  last moment (an identity-guarded self-stop at `sfxDuration`, which is also the
+  lifecycle rule's authoritative teardown) and the desktop is clear a second later.
+  The tablet's `/sound/stopped` → `snow/stop` melts it early through the same 1 s
+  fade, so stopping the sound stops the snow; pending spawns are cancelled by `clearSnow`,
+  which `stopAllActiveEffects` calls explicitly (they live outside `activeEffects`,
+  like the spiral hearts'). `/test/snow`, `/test/snow/stop`, `/effect/snow` and the
+  menu item **Snow ❄️** fire it silently.
+- **⏲️ Microwave** (tile #61, repurposed from "dinner"): a **kitchen timer ticks and
+  the microwave's door swings open on the BING**. `61_dinner.mp3` is now a few
+  seconds of ticking followed by a bell (the ticking was lifted +12 dB against the
+  bell so it survives a room PA; the bell keeps its full dynamic punch), and
+  `showMicrowave` puts a translucent (85%) cartoon microwave in the middle of the
+  desktop, fitted aspect-preserved inside **80% of the screen**. **The entire point
+  is one sync**, so the cue is *measured off the file*, not guessed:
+  `EmojiAnimator.microwaveBingOnset` = **2.695 s**, the beginning of the rising
+  front toward the peak (peak at 2.700 s) — re-cutting the clip means re-measuring
+  that number. The 16 gif frames are **NOT a loop** (frame 0 = closed door, frame
+  15 = fully open), so the layer holds frame 0 through the ticking and only then
+  runs the swing at the gif's native 25 fps (0.64 s), holding the open door through
+  the bell's decay before fading out with it. That fixed **in-clip** offset is why
+  the effect **owns its own audio** on the routed `/sound/play` path (the radar's
+  pattern) and is deliberately **absent from `SoundEffectMap`**: a separate press
+  round-trip cannot be trusted to land on the same millisecond, and mapping both
+  would open a second door with no bell behind it. On Bluetooth output the **whole
+  visual timeline shifts by the same A2DP compensation** the audio does
+  (`clock0 = CACurrentMediaTime() + btComp`), so the door never flies open ahead of
+  the sound reaching the speaker. The art (`Resources/microwave.gif`) is cropped to
+  its content **symmetrically about the source frame's centre** — minimal, but the
+  closed microwave still sits dead-centre and the door keeps room to swing out to
+  the left. The tablet thumbnail is the gif's **own first frame** (door shut), so
+  the tile shows the "before" of the animation it fires. `/test/microwave`,
+  `/effect/microwave` and the **Microwave ⏲️** menu item all fire it **with sound** —
+  the one Desktop-Effects item that is not silent, since a soundless microwave
+  would just sit there for 2.7 s and then open for no reason.
+- **🕳️ Iris close** (tile #31, repurposed from Tarzan): a cinematic "iris out"
+  blackout. The Android tile #31 is redrawn as a **black circle
+  with a white centre and four inward-pointing arrows** (vector `sfx_31_iris.xml`);
+  its own mp3 is a **silent clip** but keeps the asset id `31_tarzan.mp3` (protocol/
+  manifest stable). It **stays in `SoundEffectMap`** (`31_tarzan.mp3` → `iris`):
+  the **press path** drives the visual, so it isn't double-triggered. **Paired
+  sound:** the iris was originally soundless, but to keep **every** tablet
+  thumbnail audible on the Mac, `onSoundPlay` now special-cases `31_tarzan.mp3` to
+  play the **dramatic gong** (`50_gong.mp3`, ~8.6s ≈ the iris length) — like
+  radar/money, the routed play path owns the sound while the press path owns the
+  visual. `showIrisClose` itself stays silent (the CALayer effect plays no audio).
+  `showIrisClose` overlays a **radial
+  `CAGradientLayer`** (square, side = screen diagonal, so the gradient is a true
+  circle and location 1.0 lands on the corners) — transparent centre, opaque
+  black edge, with a soft transition band. Animating the gradient `locations`
+  shrinks the clear hole from the screen-circumscribing circle (nothing hidden)
+  to nothing over **5s** (`.easeIn`) — black creeps in **from the corners** and
+  swallows the screen. It then **dwells ~1s on full black and auto-fades back out
+  over ~1s** to reveal the screen (no second press needed). **Pressing the tile
+  again** before that auto-reveal cancels early with a quick (~0.35s) fade
+  (`cancelIris`). The effect is deliberately **kept out of `activeEffects`** so
+  `stopAllActiveEffects()` (which the tablet fires before *every* press) leaves it
+  alone — that's what lets the second press reach `showIrisClose` and toggle
+  instead of being wiped + restarted. `/test/iris` and `/effect/iris` call
+  `showIrisClose` directly.
