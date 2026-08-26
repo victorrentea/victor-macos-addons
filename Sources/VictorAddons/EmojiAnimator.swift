@@ -3889,30 +3889,77 @@ class EmojiAnimator {
                                       hostLayer: hostLayer)
 
         // Insert a placeholder layer so a second tap is debounced even while
-        // the screencapture subprocess is still running.
+        // the screencapture subprocess is still running. What gets tracked is a
+        // CONTAINER rather than the capture itself: the 🐶 rides on top of the
+        // beating screen and has to be torn down by the same stop-all and the
+        // same auto-cleanup, so the pair must be one tracked unit.
+        let container = CALayer()
+        container.frame = bounds
+
         let imgLayer = CALayer()
         imgLayer.frame = bounds
         imgLayer.anchorPoint = anchor
         imgLayer.position = CGPoint(x: anchor.x * bounds.width,
                                     y: anchor.y * bounds.height)
-        trackEffect("heartbeat", layer: imgLayer, duration: totalDuration)
+        container.addSublayer(imgLayer)
+        trackEffect("heartbeat", layer: container, duration: totalDuration)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let captured = Self.captureBuiltInDisplay()
             DispatchQueue.main.async {
                 guard let self = self,
-                      self.activeEffects["heartbeat"] === imgLayer else { return }
+                      self.activeEffects["heartbeat"] === container else { return }
                 if let captured = captured {
                     imgLayer.contents = captured
                     imgLayer.contentsGravity = .resize
                 }
-                self.hostLayer.addSublayer(imgLayer)
-                self.scheduleHeartbeatPulses(layer: imgLayer, beats: beats)
+                // Added after the capture => drawn above it. A SIBLING, not a
+                // child, on purpose: the lub-dub scales `imgLayer` alone, so the
+                // screen zooms around the cursor while the dog stays nailed down.
+                if let dog = Self.makeHeartbeatDogLayer(bounds: bounds) {
+                    container.addSublayer(dog)
+                }
+                self.hostLayer.addSublayer(container)
+                self.scheduleHeartbeatPulses(layer: imgLayer, effect: container, beats: beats)
             }
         }
     }
 
-    private func scheduleHeartbeatPulses(layer: CALayer, beats: [Double]) {
+    /// 🐶 The chihuahua pinned over the beating screen. It is cut out of its
+    /// white studio background as real alpha — not a white box — so the capture
+    /// pulsing behind it shows through around the fur, and it is mirrored, so a
+    /// dog that tilted its head toward the edge of the source photo now leans
+    /// INTO the screen. It sits on the **left half of the retina**, centred in
+    /// that half and bottom-aligned: the photo is cropped at the chest, so
+    /// letting the body run off the bottom edge is what makes it read as a dog
+    /// leaning into frame instead of a sticker floating in mid-air.
+    private static func makeHeartbeatDogLayer(bounds: CGRect) -> CALayer? {
+        guard let url = Bundle.module.url(forResource: "heartbeat-dog", withExtension: "png", subdirectory: "Resources")
+                ?? Bundle.module.url(forResource: "heartbeat-dog", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            overlayError("heartbeat-dog.png not found in bundle")
+            return nil
+        }
+        // Aspect-fit inside the left half with a small side margin. hostLayer is
+        // bottom-origin, so y = 0 is the floor of the screen.
+        let halfWidth = bounds.width / 2
+        let aspect = CGFloat(image.width) / CGFloat(image.height)
+        var w = halfWidth * 0.92
+        var h = w / aspect
+        let maxH = bounds.height * 0.80
+        if h > maxH {
+            h = maxH
+            w = h * aspect
+        }
+        let layer = CALayer()
+        layer.frame = CGRect(x: (halfWidth - w) / 2, y: 0, width: w, height: h)
+        layer.contents = image
+        layer.contentsGravity = .resizeAspect
+        return layer
+    }
+
+    private func scheduleHeartbeatPulses(layer: CALayer, effect: CALayer, beats: [Double]) {
         // A heartbeat is a lub-dub: two quick zoom-in-outs close together, then a
         // rest, repeated at a steady rate. We fire ONE self-contained lub-dub
         // animation per cycle (rather than a single render-server repeat) so that
@@ -3972,9 +4019,9 @@ class EmojiAnimator {
         let base = DispatchTime.now()
         for i in 0..<cycles {
             let deadline = base + firstLub + Double(i) * period
-            DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self, weak layer] in
-                guard let self = self, let layer = layer,
-                      self.activeEffects["heartbeat"] === layer else { return }
+            DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self, weak layer, weak effect] in
+                guard let self = self, let layer = layer, let effect = effect,
+                      self.activeEffects["heartbeat"] === effect else { return }
                 // Re-centre the pivot on the current mouse before this beat.
                 let anchor = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
                                               panelOrigin: self.hostLayer.bounds.origin,

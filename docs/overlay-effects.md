@@ -192,3 +192,27 @@ rule from the start.
   alone — that's what lets the second press reach `showIrisClose` and toggle
   instead of being wiped + restarted. `/test/iris` and `/effect/iris` call
   `showIrisClose` directly.
+
+- **💓 Heartbeat + 🐶 dog** (tile #13 `13_heartbeat.mp3` → `heartbeat`, `showHeartbeat`):
+  the built-in Retina is captured and redrawn full-screen, then scaled in a lub-dub
+  keyframe (1.0 → 1.30 → 1.0, twice per cycle) whose **pivot is re-centred on the live
+  mouse before every beat** — the screen beats wherever the cursor rests. Timing comes
+  from `heartbeat_beats.json` (`[lub, dub, lub, dub …]`), from which only `firstLub`,
+  `dubOffset` and `period` are taken; per-beat jitter is ignored so the cadence is
+  steady. Since 2026-08-26 a **chihuahua rides on top of it** (`heartbeat-dog.png`,
+  `makeHeartbeatDogLayer`), pinned to the **left half of the screen**, centred in that
+  half and bottom-aligned — the photo is cropped at the chest, so letting the body run
+  off the bottom edge is what makes it read as a dog leaning into frame rather than a
+  sticker floating in mid-air. The asset is the source photo with its caption painted
+  out and its white studio background flood-filled to **real alpha** (not a white box),
+  so the pulsing capture shows through around the fur, and it is **mirrored** so a dog
+  that tilted its head toward the edge of the original now leans *into* the screen.
+  The dog is a **sibling of the capture layer, not a child**: the pulse animation is
+  added to the capture alone, so the screen zooms while the dog stays nailed down.
+  Both live inside a **container**, and it is the container that goes into
+  `activeEffects` — one tracked unit, so `stopAllActiveEffects()` and `trackEffect`'s
+  auto-cleanup tear the pair down together instead of leaving a dog behind. The
+  container is also what the debounce and every re-entrancy guard compare against
+  (`activeEffects["heartbeat"] === container`), including inside `scheduleHeartbeatPulses`,
+  which still animates the capture layer but validates the container. **No sound of its
+  own** — the beat comes from the tablet's `13_heartbeat.mp3` on the routed play path.
