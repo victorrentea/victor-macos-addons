@@ -190,12 +190,15 @@ class SpeakerScorer:
         self._fbank = None
         self.voiceprint: Voiceprint | None = None
         self.error: str | None = None
+        # The model loads FIRST and the voiceprint separately, because enrolment
+        # needs the model in order to *create* the voiceprint. Loading them
+        # together made the first run impossible: no voiceprint yet, so the
+        # whole constructor aborted, so there was no embedder to enrol with.
         try:
             import onnxruntime as ort  # noqa: PLC0415 — deliberately lazy
 
             from kaldi_fbank import fbank_cmn
 
-            self.voiceprint = Voiceprint.load(voiceprint_folder)
             opts = ort.SessionOptions()
             # Pinned: onnxruntime's default (one thread per core) measured both
             # slower and much noisier at p90 than 4, and this shares a machine
@@ -216,10 +219,25 @@ class SpeakerScorer:
             self._input_name = self._session.get_inputs()[0].name
             self._fbank = fbank_cmn
         except Exception as exc:  # noqa: BLE001 — any failure disables, none propagates
-            self.error = f"{type(exc).__name__}: {exc}"
+            self.error = f"model: {type(exc).__name__}: {exc}"
+            return
+
+        try:
+            self.voiceprint = Voiceprint.load(voiceprint_folder)
+        except Exception as exc:  # noqa: BLE001
+            # Not fatal, and not always an error: on a first run there is
+            # nothing to load yet, and `enroll_voiceprint.py` is about to write
+            # the file this failed to find.
+            self.error = f"voiceprint: {type(exc).__name__}: {exc}"
+
+    @property
+    def model_ready(self) -> bool:
+        """Can embed, even with no voiceprint — what enrolment needs."""
+        return self._session is not None
 
     @property
     def available(self) -> bool:
+        """Can answer "is this Victor?" — what the live pipeline needs."""
         return self._session is not None and self.voiceprint is not None
 
     def embed(self, audio: np.ndarray) -> np.ndarray:

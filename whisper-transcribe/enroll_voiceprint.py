@@ -60,11 +60,10 @@ def main() -> int:
 
     from speaker_id import SpeakerScorer
 
-    # A folder with no voiceprint yet is the normal case on a first run, so the
-    # scorer is built only for its model; its own voiceprint load will fail and
-    # that is fine.
+    # `model_ready`, not `available`: on a first run there is no voiceprint to
+    # load — that is what this script is here to write.
     scorer = SpeakerScorer(args.model, args.out)
-    if scorer._session is None:
+    if not scorer.model_ready:
         print(f"cannot load model: {scorer.error}", file=sys.stderr)
         return 1
 
