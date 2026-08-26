@@ -193,6 +193,25 @@ rule from the start.
   instead of being wiped + restarted. `/test/iris` and `/effect/iris` call
   `showIrisClose` directly.
 
+- **🌈 Rainbow + 🦄 unicorns** (tile #37 `37_rainbow.mp3` → `rainbow` /
+  `rainbow/stop`, `showRainbow`): seven translucent bands drawn as a **quarter**-arc —
+  the circle's centre is pushed onto the right screen edge, so only the left quarter of
+  it is on screen, tucked into the bottom-right corner — smeared in over 2.5 s with a
+  `strokeEnd` wiper. The window is **read off the mp3** (13.9 s), not the old 5 s
+  default, because the tablet-routed path plays the same clip and used to fade the arc
+  ~9 s before the music ended; `stopRainbow()` then fades the container to 0 over 0.8 s.
+  Since 2026-08-26 **unicorns hop across it** (`spawnRainbowUnicorns`): seven 🦄 text
+  layers, alternating directions, each entering from one edge and bouncing to the other
+  along a six-hop quad-curve path (control point at 2× the hop height, so the apex lands
+  at 1×), `.paced` so the speed is even along the arcs rather than per-hop. Left→right
+  runners are **mirrored** (`CATransform3DMakeScale(-1, 1, 1)`) — the Apple 🦄 glyph
+  faces left, and a unicorn running backwards is the first thing the room notices. Each
+  fades out at 60 % of its own crossing, i.e. **while the arc is still unrolling**, and
+  the departures are spread across the whole window so one or two are in flight at any
+  moment instead of a herd leaving together. They are **children of the rainbow
+  container**, so they need no tracking of their own: the one identity-guarded
+  `activeEffects["rainbow"]` entry tears the whole scene down.
+
 - **💓 Heartbeat + 🐶 dog** (tile #13 `13_heartbeat.mp3`, `showHeartbeat`): the built-in
   Retina is captured and redrawn full-screen, then scaled in a lub-dub keyframe
   (1.0 → 1.30 → 1.0, twice per cycle) whose **pivot is re-centred on the live mouse

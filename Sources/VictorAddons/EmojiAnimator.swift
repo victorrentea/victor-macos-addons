@@ -5703,11 +5703,94 @@ class EmojiAnimator {
             let d = AVURLAsset(url: soundURL).duration
             if d.isNumeric { visibleFor = CMTimeGetSeconds(d) }
         }
+        // 🦄 Unicorns hop across the screen while the arc smears in — they live
+        // inside the same container, so stopRainbow() takes them with it.
+        spawnRainbowUnicorns(into: container, bounds: bounds, window: visibleFor)
+
         if playSound { SoundManager.shared.play("37_rainbow.mp3") }
         DispatchQueue.main.asyncAfter(deadline: .now() + visibleFor) { [weak self, weak container] in
             guard let self, let container, self.activeEffects["rainbow"] === container else { return }
             self.stopRainbow()
         }
+    }
+
+    /// Unicorns crossing the screen for as long as the rainbow is up: each one
+    /// hops in from one edge, bounces its way to the other, and fades out on the
+    /// far side. Directions alternate (left→right unicorns are mirrored so they
+    /// face where they're going — the Apple 🦄 glyph looks left by default), and
+    /// the departures are spread across the whole rainbow window so there is
+    /// always one or two in flight, never a herd all at once.
+    private func spawnRainbowUnicorns(into container: CALayer, bounds: CGRect, window: Double) {
+        let count = 7
+        // Each crossing is short enough that several fit inside the window, and
+        // the last one still lands before stopRainbow() fades everything.
+        let travel = min(4.8, max(2.5, window * 0.34))
+        let lastStart = max(0, window - travel - 0.6)
+
+        for i in 0..<count {
+            let progress = count > 1 ? Double(i) / Double(count - 1) : 0
+            let delay = lastStart * progress + Double.random(in: -0.25...0.25)
+            spawnRainbowUnicorn(into: container, bounds: bounds,
+                                leftToRight: i % 2 == 0,
+                                delay: max(0, delay),
+                                travel: travel * Double.random(in: 0.9...1.15))
+        }
+    }
+
+    private func spawnRainbowUnicorn(into container: CALayer, bounds: CGRect,
+                                     leftToRight: Bool, delay: Double, travel: Double) {
+        let fontSize = bounds.height * CGFloat.random(in: 0.10...0.16)
+        let box = fontSize * 1.25
+
+        let unicorn = CATextLayer()
+        unicorn.string = "🦄"
+        unicorn.fontSize = fontSize
+        unicorn.alignmentMode = .center
+        unicorn.bounds = CGRect(x: 0, y: 0, width: box, height: box)
+        unicorn.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        unicorn.opacity = 0            // invisible until its own start time
+        // Mirrored when running to the right so it always faces its direction.
+        if leftToRight { unicorn.transform = CATransform3DMakeScale(-1, 1, 1) }
+
+        // Lanes anywhere in the lower two thirds — the ground they "walk" on —
+        // with the hop apex reaching about half a body above it.
+        let groundY = bounds.height * CGFloat.random(in: 0.12...0.62)
+        let hop = box * CGFloat.random(in: 0.30...0.55)
+        let startX = leftToRight ? -box : bounds.width + box
+        let endX = leftToRight ? bounds.width + box : -box
+
+        let hops = 6
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: startX, y: groundY))
+        for h in 1...hops {
+            let x0 = startX + (endX - startX) * CGFloat(h - 1) / CGFloat(hops)
+            let x1 = startX + (endX - startX) * CGFloat(h) / CGFloat(hops)
+            // Quadratic control at 2× the hop height puts the arc's apex at 1×.
+            path.addQuadCurve(to: CGPoint(x: x1, y: groundY),
+                              control: CGPoint(x: (x0 + x1) / 2, y: groundY + hop * 2))
+        }
+        unicorn.position = CGPoint(x: startX, y: groundY)
+        container.addSublayer(unicorn)
+
+        let bounce = CAKeyframeAnimation(keyPath: "position")
+        bounce.path = path
+        bounce.calculationMode = .paced      // even speed along the arcs, not per-hop
+        bounce.duration = travel
+
+        // Pops in on the edge, holds, then fades out well before it leaves —
+        // Victor wants them dissolving while the rainbow is still unrolling.
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.0, 1.0, 1.0, 0.0]
+        fade.keyTimes = [0, 0.12, 0.6, 1]
+        fade.duration = travel
+
+        let group = CAAnimationGroup()
+        group.animations = [bounce, fade]
+        group.duration = travel
+        group.beginTime = CACurrentMediaTime() + delay
+        group.fillMode = .both               // stays at opacity 0 until it starts
+        group.isRemovedOnCompletion = false
+        unicorn.add(group, forKey: "unicornRun")
     }
 
     func stopRainbow() {
