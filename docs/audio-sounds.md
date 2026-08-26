@@ -18,7 +18,7 @@ soundboard playback here instead of playing locally:
 - Watchdog: the routed sound is stopped if pings cease >12s (tablet crash / network drop)
 
 **Anti-drift**: `Sources/VictorAddons/Resources/sounds` is a single folder symlink to
-`victor-android/app/src/main/assets` (the canonical sound library; dereferenced into the
+`victor-vibe-board/app/src/main/assets` (the canonical sound library; dereferenced into the
 bundle by `build-app.sh`), so the protocol identifies sounds by bare filename.
 `SoundsManifest` hashes every bundled mp3 (SHA-256, canonical "name:hash\n" lines);
 `GET /sounds/manifest` returns the per-file map. A hash mismatch in `/ping` means a stale

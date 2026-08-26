@@ -70,7 +70,7 @@ class SoundManager {
     ///
     /// `build-app.sh` replaces that symlink with a dereferenced copy — but any
     /// later `swift build` / `swift test` puts the verbatim symlink back
-    /// (`../../../../victor-android/app/src/main/assets`, which resolves in the
+    /// (`../../../../victor-vibe-board/app/src/main/assets`, which resolves in the
     /// source tree and NOT from inside `.build/`). The running app then answers
     /// every `/sound/play/<file>` with a 404, and the tablet — seeing no
     /// duration come back — falls back to its own speaker. That failure is

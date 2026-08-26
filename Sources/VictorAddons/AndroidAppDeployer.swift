@@ -122,7 +122,7 @@ final class AndroidAppDeployer {
             return
         }
         guard let repo = Self.repoDir() else {
-            NSLog("[AndroidDeploy] victor-android sources not found — auto-deploy disabled")
+            NSLog("[AndroidDeploy] victor-vibe-board sources not found — auto-deploy disabled")
             return
         }
         guard Self.deviceReady() else {
@@ -239,9 +239,9 @@ final class AndroidAppDeployer {
             candidates.append(env)
         }
         if let root = ProcessInfo.processInfo.environment["VICTOR_ADDONS_ROOT"], !root.isEmpty {
-            candidates.append("\(root)/../victor-android")
+            candidates.append("\(root)/../victor-vibe-board")
         }
-        candidates.append("\(home)/workspace/victor-android")
+        candidates.append("\(home)/workspace/victor-vibe-board")
         for c in candidates {
             let resolved = URL(fileURLWithPath: c).standardized.path
             if FileManager.default.fileExists(atPath: "\(resolved)/gradlew") { return resolved }

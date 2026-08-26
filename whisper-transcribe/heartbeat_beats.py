@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-AUDIO_PATH = Path.home() / "workspace/victor-android/app/src/main/assets/heartbeat.mp3"
+AUDIO_PATH = Path.home() / "workspace/victor-vibe-board/app/src/main/assets/heartbeat.mp3"
 OUTPUT_PATH = REPO_ROOT / "Sources/VictorAddons/Resources/heartbeat_beats.json"
 
 SAMPLE_RATE = 22_050

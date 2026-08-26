@@ -22,7 +22,7 @@ swift build -c "$BUILD_CONFIG"
 echo "VictorAddons built."
 
 # Dereference symlinked resources. Sources/VictorAddons/Resources/sounds is a
-# directory symlink ("../../../../victor-android/app/src/main/assets") that
+# directory symlink ("../../../../victor-vibe-board/app/src/main/assets") that
 # resolves in the source tree, but SwiftPM copies symlinks verbatim into
 # .build/.../bundle/Resources/, where the relative path no longer resolves
 # (AVAudioPlayer then fails with kAudioFileUnsupportedFileTypeError).
