@@ -21,7 +21,6 @@ enum SoundEffectMap {
         "59_game_over.mp3":      "game-over",
         "15_flatline.mp3":       "pulse",
         "27_clapping.mp3":       "applause",
-        "13_heartbeat.mp3":      "heartbeat",
         "42_saxophone.mp3":      "spiral-hearts",
         "89_fireworks.mp3":      "fireworks",
         "08_scream_man.mp3":     "fear",
@@ -77,6 +76,14 @@ enum SoundEffectMap {
         // must swing open on exactly that edge. Sound and visual therefore start
         // from one call on the routed /sound/play path (onSoundPlay); mapping the
         // press too would open a second door with no bell behind it.
+        // 13_heartbeat.mp3 is NOT here either. The zoom has to peak ON each
+        // thump, and the press path cannot know when the thump happens: it is a
+        // different HTTP request from the one that starts the audio, and the
+        // visual then waited on an async screencapture before starting its clock
+        // — so the beat landed a few hundred variable ms late, every time. Driven
+        // from the routed /sound/play path (onSoundPlay), which plays the clip and
+        // stamps the pulse clock in the same call; mapping the press too would
+        // double-trigger it.
         // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
         // effect is driven from the routed /sound/play path (onSoundPlay),
         // which plays the beep-synced audio itself — mapping the press too

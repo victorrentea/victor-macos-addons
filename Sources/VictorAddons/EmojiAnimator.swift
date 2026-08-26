@@ -3860,20 +3860,52 @@ class EmojiAnimator {
         trackEffect("sonar", layer: container, duration: btComp + total, sound: soundKey)
     }
 
-    func showHeartbeat() {
-        guard activeEffects["heartbeat"] == nil else { return }
+    /// 💓 The screen beats around the cursor. Returns the routed sound's length
+    /// (0 when it plays none) so `onSoundPlay` can answer the tablet with it.
+    ///
+    /// **The Mac plays the clip itself, from this same call.** It used to arrive
+    /// as a press→`SoundEffectMap` visual while a *second* HTTP request started
+    /// the audio, and the pulse clock then started from whenever the async
+    /// `screencapture` happened to finish — so every zoom landed a few hundred ms
+    /// behind its thump, by a margin that changed from press to press. Sound and
+    /// visual now hang off one instant (`clock0`), the way the radar and the
+    /// microwave already did.
+    @discardableResult
+    func showHeartbeat(playSound: Bool = false, volume: Float? = nil) -> TimeInterval {
+        // A press PREEMPTS a running heartbeat rather than being swallowed by it.
+        // The old guard debounced a second tap while the screencapture subprocess
+        // was still in flight, but now that the same call also starts the audio,
+        // being swallowed would answer the tablet with "no sound" and send it back
+        // to local playback. Restarting is also what `playTabletSound` does to the
+        // audio anyway, so the two halves agree. The dropped container leaves
+        // `activeEffects`, so its in-flight capture completion sees the identity
+        // check fail and discards itself.
+        _ = cancelIfRunning("heartbeat")
         let bounds = hostLayer.bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
+        guard bounds.width > 0, bounds.height > 0 else { return 0 }
 
         let beats = Self.loadHeartbeatBeats()
-        guard !beats.isEmpty else {
-            overlayInfo("showHeartbeat: no beats in heartbeat_beats.json")
-            return
+        guard beats.count >= 2 else {
+            overlayInfo("showHeartbeat: need at least one lub-dub pair in heartbeat_beats.json")
+            return 0
         }
+
+        // Start the audio FIRST and stamp the clock every pulse hangs off, before
+        // anything slow (the capture) runs. On Bluetooth output `playTabletSound`
+        // prepends `btComp` of warm-up silence, so the audio really starts that
+        // much later and the whole visual timeline shifts with it — same bargain
+        // as the microwave. Zero on wired/built-in output.
+        let btComp = playSound ? SoundTimingConfig.shared.currentBluetoothCompensation : 0
+        var soundDuration: TimeInterval = 0
+        if playSound {
+            soundDuration = SoundManager.shared.playTabletSound("13_heartbeat.mp3", volume: volume) ?? 0
+        }
+        let clock0 = CACurrentMediaTime() + btComp
+
         let lastBeat = beats.last ?? 0
         // 1.0s tail: the pulse animation only begins after the async screen
         // capture, so leave enough margin that cleanup never clips the last cycle.
-        let totalDuration = lastBeat + 1.0
+        let totalDuration = btComp + lastBeat + 1.0
 
         // Initial pivot = where the cursor is now (a sensible default for the
         // first beat). The pivot is NOT frozen, though: scheduleHeartbeatPulses
@@ -3920,9 +3952,11 @@ class EmojiAnimator {
                     container.addSublayer(dog)
                 }
                 self.hostLayer.addSublayer(container)
-                self.scheduleHeartbeatPulses(layer: imgLayer, effect: container, beats: beats)
+                self.scheduleHeartbeatPulses(layer: imgLayer, effect: container,
+                                             beats: beats, clock0: clock0)
             }
         }
+        return soundDuration
     }
 
     /// 🐶 The chihuahua pinned over the beating screen. It is cut out of its
@@ -3933,6 +3967,8 @@ class EmojiAnimator {
     /// that half and bottom-aligned: the photo is cropped at the chest, so
     /// letting the body run off the bottom edge is what makes it read as a dog
     /// leaning into frame instead of a sticker floating in mid-air.
+    private static let heartbeatDogScale: CGFloat = 2.0 / 3.0
+
     private static func makeHeartbeatDogLayer(bounds: CGRect) -> CALayer? {
         guard let url = Bundle.module.url(forResource: "heartbeat-dog", withExtension: "png", subdirectory: "Resources")
                 ?? Bundle.module.url(forResource: "heartbeat-dog", withExtension: "png"),
@@ -3941,8 +3977,10 @@ class EmojiAnimator {
             overlayError("heartbeat-dog.png not found in bundle")
             return nil
         }
-        // Aspect-fit inside the left half with a small side margin. hostLayer is
-        // bottom-origin, so y = 0 is the floor of the screen.
+        // Aspect-fit inside the left half with a small side margin, then take
+        // TWO THIRDS of that: filling the half outright made the dog the subject
+        // and the beating screen its backdrop, which is the wrong way round.
+        // hostLayer is bottom-origin, so y = 0 is the floor of the screen.
         let halfWidth = bounds.width / 2
         let aspect = CGFloat(image.width) / CGFloat(image.height)
         var w = halfWidth * 0.92
@@ -3952,6 +3990,8 @@ class EmojiAnimator {
             h = maxH
             w = h * aspect
         }
+        w *= Self.heartbeatDogScale
+        h *= Self.heartbeatDogScale
         let layer = CALayer()
         layer.frame = CGRect(x: (halfWidth - w) / 2, y: 0, width: w, height: h)
         layer.contents = image
@@ -3959,70 +3999,68 @@ class EmojiAnimator {
         return layer
     }
 
-    private func scheduleHeartbeatPulses(layer: CALayer, effect: CALayer, beats: [Double]) {
-        // A heartbeat is a lub-dub: two quick zoom-in-outs close together, then a
-        // rest, repeated at a steady rate. We fire ONE self-contained lub-dub
-        // animation per cycle (rather than a single render-server repeat) so that
-        // during the rest gap before each cycle we can re-centre the zoom pivot on
-        // the live mouse position — the heart "beats" wherever the cursor rests.
-        // At the cycle boundary the scale is back to 1.0 (full-screen), so moving
-        // the anchorPoint there causes no visible jump. The cadence is driven by
-        // absolute dispatch deadlines off one base time, so it does not drift.
-        //
-        // Timing comes from heartbeat_beats.json, laid out as [lub, dub, lub, dub …]:
-        //   firstLub  = beats[0]              (when the first lub lands)
-        //   dubOffset = beats[1] - beats[0]   (dub after lub, within a cycle)
-        //   period    = beats[2] - beats[0]   (lub-to-lub spacing)
-        // We impose that period uniformly and ignore per-beat jitter.
-        guard beats.count >= 3 else { return }
-        let firstLub  = beats[0]
-        let dubOffset = beats[1] - beats[0]
-        let period    = beats[2] - beats[0]
-        guard period > 0, dubOffset > 0 else { return }
-        let cycles = max(1, Int((((beats.last ?? firstLub) - firstLub) / period).rounded()) + 1)
+    /// How far ahead of the rise the per-cycle callback is armed. It only has to
+    /// re-centre the pivot and hand CoreAnimation an animation whose `beginTime`
+    /// is already the exact instant — so this absorbs main-thread jitter without
+    /// putting any of it on screen.
+    private static let heartbeatArmLead: CFTimeInterval = 0.06
 
-        // Each zoom-in-out is a symmetric easeInOut bell (rise == fall). Keep the
-        // lub pulse fully clear of the dub so the two never blend.
-        let pulseDur = min(0.22, max(0.08, dubOffset - 0.02))
-        let rise     = pulseDur / 2.0
-
-        // Key times within a single period (seconds), normalised to [0,1] below.
-        let times: [Double] = [
-            0.0,                    // lub: start rise
-            rise,                   // lub: peak
-            pulseDur,               // lub: back to rest
-            dubOffset,              // dub: start rise
-            dubOffset + rise,       // dub: peak
-            dubOffset + pulseDur,   // dub: back to rest
-            period,                 // rest until next cycle
-        ]
-        // One self-contained lub-dub, rebuilt per cycle (CAKeyframeAnimation is
-        // single-use once added, so we make a fresh instance each time).
-        func makeCyclePulse() -> CAKeyframeAnimation {
-            let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-            pulse.values   = [1.0, 1.30, 1.0, 1.0, 1.30, 1.0, 1.0]
-            pulse.keyTimes = times.map { NSNumber(value: $0 / period) }
-            pulse.timingFunctions = [
-                CAMediaTimingFunction(name: .easeInEaseOut), // lub rise
-                CAMediaTimingFunction(name: .easeInEaseOut), // lub fall
-                CAMediaTimingFunction(name: .linear),        // rest between lub and dub
-                CAMediaTimingFunction(name: .easeInEaseOut), // dub rise
-                CAMediaTimingFunction(name: .easeInEaseOut), // dub fall
-                CAMediaTimingFunction(name: .linear),        // rest until cycle end
-            ]
-            pulse.duration = period
-            return pulse
-        }
+    /// One self-contained lub-dub per cycle, each pinned to the real onset times
+    /// in `heartbeat_beats.json` — the *rising edges* measured off the clip, laid
+    /// out `[lub, dub, lub, dub …]`.
+    ///
+    /// Two things decide whether this reads as synced, and both used to be wrong:
+    ///
+    /// 1. **What the clock zero is.** `clock0` is the moment the audio starts, not
+    ///    the moment the screen capture came back — the capture is async and cost
+    ///    a variable couple of hundred ms, all of which used to be added to every
+    ///    beat.
+    /// 2. **Which part of the zoom lands on the beat.** The zoom *peak* is what
+    ///    the eye takes as the hit, so a cycle begins `rise` seconds BEFORE its
+    ///    onset and the scale tops out exactly on it. Starting the rise on the
+    ///    onset (what it did before) puts the peak half a pulse late, which reads
+    ///    as lagging even with a perfect clock.
+    ///
+    /// The per-cycle deadlines are absolute and independent, so a beat whose
+    /// moment has already passed (a slow capture, a late press) is **skipped**
+    /// rather than fired late — one missing thump is invisible, a whole timeline
+    /// shifted behind the audio is exactly the ugly part.
+    private func scheduleHeartbeatPulses(layer: CALayer, effect: CALayer,
+                                         beats: [Double], clock0: CFTimeInterval) {
+        // Pair the onsets up: even index = lub, the odd one after it = its dub.
+        let pairs = stride(from: 0, to: beats.count - 1, by: 2).map { (beats[$0], beats[$0 + 1]) }
+        guard !pairs.isEmpty else { return }
 
         let bounds = layer.bounds
-        // Absolute deadlines off one base => no per-cycle accumulation drift.
-        let base = DispatchTime.now()
-        for i in 0..<cycles {
-            let deadline = base + firstLub + Double(i) * period
-            DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self, weak layer, weak effect] in
+        for (lub, dub) in pairs {
+            let dubOffset = dub - lub
+            guard dubOffset > 0 else { continue }
+            // Each zoom-in-out is a symmetric easeInOut bell (rise == fall). Keep
+            // the lub pulse fully clear of the dub so the two never blend.
+            let pulseDur = min(0.22, max(0.08, dubOffset - 0.02))
+            let rise     = pulseDur / 2.0
+            // beginTime such that the FIRST peak lands on the lub onset; the dub
+            // peak then lands on its own onset, dubOffset later.
+            let startAt = clock0 + lub - rise
+            let armAt   = startAt - Self.heartbeatArmLead
+            let wait    = armAt - CACurrentMediaTime()
+            guard wait > 0 else { continue }   // already past — skip, never fire late
+
+            let times: [Double] = [
+                0.0,                    // lub: start rise
+                rise,                   // lub: PEAK, on the onset
+                pulseDur,               // lub: back to rest
+                dubOffset,              // dub: start rise
+                dubOffset + rise,       // dub: PEAK, on its onset
+                dubOffset + pulseDur,   // dub: back to rest
+            ]
+            let cycleDur = dubOffset + pulseDur
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self, weak layer, weak effect] in
                 guard let self = self, let layer = layer, let effect = effect,
                       self.activeEffects["heartbeat"] === effect else { return }
-                // Re-centre the pivot on the current mouse before this beat.
+                // Re-centre the pivot on the current mouse before this beat. The
+                // scale is back at 1.0 here, so moving the anchor is invisible.
                 let anchor = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
                                               panelOrigin: self.hostLayer.bounds.origin,
                                               hostLayer: self.hostLayer)
@@ -4032,8 +4070,22 @@ class EmojiAnimator {
                 layer.position = CGPoint(x: anchor.x * bounds.width,
                                          y: anchor.y * bounds.height)
                 CATransaction.commit()
-                let pulse = makeCyclePulse()
-                pulse.beginTime = CACurrentMediaTime()
+
+                let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
+                pulse.values   = [1.0, 1.30, 1.0, 1.0, 1.30, 1.0]
+                pulse.keyTimes = times.map { NSNumber(value: $0 / cycleDur) }
+                pulse.timingFunctions = [
+                    CAMediaTimingFunction(name: .easeInEaseOut), // lub rise
+                    CAMediaTimingFunction(name: .easeInEaseOut), // lub fall
+                    CAMediaTimingFunction(name: .linear),        // rest between lub and dub
+                    CAMediaTimingFunction(name: .easeInEaseOut), // dub rise
+                    CAMediaTimingFunction(name: .easeInEaseOut), // dub fall
+                ]
+                pulse.duration = cycleDur
+                // Absolute, in CoreAnimation's own clock: the render server places
+                // the pulse on the exact frame even though this callback was armed
+                // early and may itself have jittered.
+                pulse.beginTime = startAt
                 layer.add(pulse, forKey: "heartbeatPulse")
             }
         }

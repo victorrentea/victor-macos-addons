@@ -193,15 +193,36 @@ rule from the start.
   instead of being wiped + restarted. `/test/iris` and `/effect/iris` call
   `showIrisClose` directly.
 
-- **💓 Heartbeat + 🐶 dog** (tile #13 `13_heartbeat.mp3` → `heartbeat`, `showHeartbeat`):
-  the built-in Retina is captured and redrawn full-screen, then scaled in a lub-dub
-  keyframe (1.0 → 1.30 → 1.0, twice per cycle) whose **pivot is re-centred on the live
-  mouse before every beat** — the screen beats wherever the cursor rests. Timing comes
-  from `heartbeat_beats.json` (`[lub, dub, lub, dub …]`), from which only `firstLub`,
-  `dubOffset` and `period` are taken; per-beat jitter is ignored so the cadence is
-  steady. Since 2026-08-26 a **chihuahua rides on top of it** (`heartbeat-dog.png`,
-  `makeHeartbeatDogLayer`), pinned to the **left half of the screen**, centred in that
-  half and bottom-aligned — the photo is cropped at the chest, so letting the body run
+- **💓 Heartbeat + 🐶 dog** (tile #13 `13_heartbeat.mp3`, `showHeartbeat`): the built-in
+  Retina is captured and redrawn full-screen, then scaled in a lub-dub keyframe
+  (1.0 → 1.30 → 1.0, twice per cycle) whose **pivot is re-centred on the live mouse
+  before every beat** — the screen beats wherever the cursor rests. **Driven from the
+  routed `/sound/play` path** (`onSoundPlay`), like the radar and the microwave, and
+  therefore **out of `SoundEffectMap`** so the press cannot fire it a second time. That
+  is what makes it land: the visual used to come off the press while a *separate* HTTP
+  request started the audio, and the pulse clock then started from whenever the async
+  `screencapture` happened to return — so every zoom sat a few hundred variable ms
+  behind its thump. Sound and visual now share one origin, `clock0`, stamped the moment
+  the clip is handed to `playTabletSound` (plus `btComp`, which is warm-up silence that
+  really does delay the audio). The second half of the fix is **which part of the zoom
+  lands on the beat**: the eye reads the *peak* as the hit, so a cycle begins `rise`
+  seconds BEFORE its onset and tops out exactly on it — starting the rise on the onset,
+  as it did, puts the peak half a pulse late and reads as lag even off a perfect clock.
+  `heartbeat_beats.json` holds the **rising edges measured off the clip itself** (20 ms
+  RMS envelope, `[lub, dub, lub, dub …]`, 9 pairs), and each pair is now played at its
+  own onset instead of on an imposed uniform period. Each cycle's callback is armed
+  `heartbeatArmLead` (60 ms) early and only hands CoreAnimation an animation whose
+  `beginTime` is already the exact instant, so main-thread jitter never reaches the
+  screen; deadlines are absolute and independent, so a beat whose moment has already
+  passed is **skipped rather than fired late** — one missing thump is invisible, a whole
+  timeline shifted behind the audio is the ugly part. A press **preempts** a running
+  heartbeat (`cancelIfRunning`) rather than being swallowed: being swallowed would
+  answer the tablet with "no sound" and send it back to local playback, and restarting
+  is what `playTabletSound` does to the audio anyway. Since 2026-08-26 a **chihuahua rides on top of it** (`heartbeat-dog.png`,
+  `makeHeartbeatDogLayer`), sized to **two thirds** of the aspect-fit of the
+  **left half of the screen** (`heartbeatDogScale` — filling that half outright made the
+  dog the subject and the beating screen its backdrop, which is the wrong way round),
+  centred in the half and bottom-aligned — the photo is cropped at the chest, so letting the body run
   off the bottom edge is what makes it read as a dog leaning into frame rather than a
   sticker floating in mid-air. The asset is the source photo with its background
   flood-filled from the corners to **real alpha** (not a coloured box), so the pulsing
@@ -221,5 +242,5 @@ rule from the start.
   auto-cleanup tear the pair down together instead of leaving a dog behind. The
   container is also what the debounce and every re-entrancy guard compare against
   (`activeEffects["heartbeat"] === container`), including inside `scheduleHeartbeatPulses`,
-  which still animates the capture layer but validates the container. **No sound of its
-  own** — the beat comes from the tablet's `13_heartbeat.mp3` on the routed play path.
+  which still animates the capture layer but validates the container. The dog carries **no sound of its
+  own** — the whole effect is scored by the one clip the same call started.
