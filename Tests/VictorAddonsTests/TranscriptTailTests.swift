@@ -63,13 +63,18 @@ final class TranscriptTailTests: XCTestCase {
     // MARK: lastSeconds — the 40 s window
 
     func testTakesTheTrailingLinesWorthTheAskedForSeconds() {
-        // One line ≈ 5 s of speech (a 6 s chunk minus 1 s overlap), so 40 s is
-        // the last 8 lines. The stamps are `[HH:MM]` and cannot express 40 s at
-        // all, which is why this counts lines rather than reading the clock.
+        // One line ≈ `secondsPerLine` of speech, so 40 s is the last 5 lines.
+        // The stamps are `[HH:MM]` and cannot express 40 s at all, which is why
+        // this counts lines rather than reading the clock.
+        //
+        // It was 8 lines while chunks were a fixed 6 s minus 1 s of overlap.
+        // Chunks are now (12, 2) and can also be flushed early on a pause, so a
+        // line is worth more speech than it used to be and fewer of them fill
+        // the same window.
         let lines = TranscriptTail.parse((1...20).map { "[09:05] line \($0)" }.joined(separator: "\n"))
         let window = TranscriptTail.lastSeconds(lines, seconds: 40)
-        XCTAssertEqual(window.count, 8)
-        XCTAssertEqual(window.first?.text, "line 13")
+        XCTAssertEqual(window.count, 5)
+        XCTAssertEqual(window.first?.text, "line 16")
         XCTAssertEqual(window.last?.text, "line 20")
     }
 

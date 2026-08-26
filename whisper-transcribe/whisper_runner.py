@@ -105,8 +105,47 @@ _MODEL_BALANCED = os.environ.get(
     "WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo"
 )
 _MODEL_FAST = os.environ.get("WHISPER_MODEL_FAST", _MODEL_BALANCED)
-_CHUNK_SEC = float(os.environ.get("WHISPER_CHUNK_SECONDS", "6"))
-_OVERLAP_SEC = float(os.environ.get("WHISPER_OVERLAP_SECONDS", "1"))
+# 12 s chunks with 2 s overlap, and both numbers are measured rather than felt.
+#
+# mlx-whisper pads every input to a fixed 30 s mel window, so the encoder costs
+# the same whether it is handed 2 s of audio or 15 s: measured on this Mac over
+# four hours of a real workshop recording, 7.5x more audio costs 1.27x more
+# compute (0.79 s at 2 s -> 1.00 s at 15 s). Short chunks were therefore paying
+# for a 30 s encoder pass to transcribe five seconds. Going from (6,1) to (12,2)
+# halves the number of inference calls for the same speech -- 12 calls per
+# minute down to 6, and 49.7% less compute.
+#
+# The wider overlap is free in the same trade. Nothing merges the overlap at the
+# text level, so re-transcribed audio shows up as duplicated words at chunk
+# boundaries -- but doubling the overlap while halving the number of boundaries
+# is a net win, and monotonically so: boundary duplication measured 12.8% at
+# (6,1), 8.3% at (8,1.5), 6.5% at (12,2), 5.5% at (15,2).
+#
+# One thing NOT to claim here: that long chunks avoid whisper's repetition
+# hallucinations (a chunk decoding "Ter Ter Ter..." for 5-10x a normal call's
+# cost). On synthetic speech they looked length-dependent; on real audio they
+# fire on *true silence* (RMS < 0.001) at every length, and the per-device RMS
+# gate in `_cb` already screens that case. Fewer calls per minute still means
+# less exposure, but the mechanism is silence, not brevity.
+_CHUNK_SEC = float(os.environ.get("WHISPER_CHUNK_SECONDS", "12"))
+_OVERLAP_SEC = float(os.environ.get("WHISPER_OVERLAP_SECONDS", "2"))
+
+# Flush a partial buffer once the room goes quiet, instead of waiting for it to
+# fill. This is what keeps 12 s chunks from doubling the transcript's tail
+# latency: without it the last sentence spoken can sit unemitted for up to a
+# full chunk, and `TranscriptSettlePolicy.minWait` (8 s, "longer than a whole
+# chunk plus inference") would have had to grow to ~18 s -- turning the ⌘⌃V
+# picker from a ~16 s wait into a ~27 s one. With the flush, a keypress after a
+# sentence costs 0.6 s of silence detection + at most 5 s of batch collection +
+# ~1 s of inference, so the 8 s floor stays honest.
+#
+# It is also a better cut than the clock: a pause is exactly where no word is
+# being sliced in half, so a flushed chunk needs no overlap at all, and it tends
+# to hold one utterance by one speaker -- which is what the speaker-identity
+# work downstream wants.
+_SILENCE_FLUSH_SEC = float(os.environ.get("WHISPER_SILENCE_FLUSH_SECONDS", "0.6"))
+_MIN_FLUSH_SEC = float(os.environ.get("WHISPER_MIN_FLUSH_SECONDS", "1.5"))
+
 _SAMPLE_RATE = 16000
 
 _BATCH_MAX_WAIT_SEC = float(os.environ.get("WHISPER_BATCH_MAX_WAIT_SECONDS", "5"))
@@ -368,6 +407,8 @@ class _ChannelCapture:
         self._overlap = int(_SAMPLE_RATE * _OVERLAP_SEC)
         self._running = False
         self._stream = None
+        # Consecutive below-threshold callback blocks, for the silence flush.
+        self._silent_blocks = 0
 
     def start(self):
         self._running = True
@@ -505,20 +546,57 @@ class _ChannelCapture:
                     )
 
     def _cb(self, indata, frames, time_info, status):
-        self._buf = np.concatenate([self._buf, indata[:, 0]])
+        """PortAudio callback — must stay cheap; it runs on the audio thread.
+
+        Two ways a chunk leaves here: the buffer fills (the clock), or the room
+        goes quiet (the pause). The second one is what makes 12 s chunks safe —
+        see `_SILENCE_FLUSH_SEC`.
+        """
+        block = indata[:, 0]
+        self._buf = np.concatenate([self._buf, block])
+        threshold = self._current_threshold()
+
         while len(self._buf) >= self._chunk:
             chunk = self._buf[: self._chunk].copy()
             self._buf = self._buf[self._chunk - self._overlap :]
-            rms = float(np.sqrt(np.mean(chunk**2)))
-            threshold = self._current_threshold()
-            if rms >= threshold:
-                tag = _short_device_name(self.device_name)
-                self._queue.put((self.label, chunk, tag))
-            elif rms > 0.001:  # non-silent but below threshold — log for debugging
-                ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
-                print(
-                    f"{ts} [transcript  ] 🎙️ [{self.label}] below threshold: rms={rms:.4f} < {threshold:.4f}"
-                )
+            self._emit(chunk, threshold)
+
+        # A quiet block only counts once the buffer holds something worth
+        # sending; otherwise every gap between two words would fire a flush.
+        block_rms = float(np.sqrt(np.mean(block**2)))
+        if block_rms < threshold:
+            self._silent_blocks += 1
+        else:
+            self._silent_blocks = 0
+
+        silent_sec = self._silent_blocks * (len(block) / _SAMPLE_RATE)
+        # Measure the SPEECH in the buffer, not the buffer. The trailing silence
+        # is sitting in `_buf` too, so a half-word followed by a long enough
+        # pause would otherwise clear the bar on silence alone and emit a
+        # fragment — and once it did, every gap would keep doing it.
+        speech_samples = len(self._buf) - self._silent_blocks * len(block)
+        if silent_sec >= _SILENCE_FLUSH_SEC and speech_samples >= int(
+            _SAMPLE_RATE * _MIN_FLUSH_SEC
+        ):
+            pending = self._buf.copy()
+            # No overlap carried over: the cut is a pause, so there is no word
+            # straddling it to protect. Re-transcribing silence only buys
+            # duplicated text.
+            self._buf = np.zeros(0, dtype=np.float32)
+            self._silent_blocks = 0
+            self._emit(pending, threshold, why="silence")
+
+    def _emit(self, chunk: np.ndarray, threshold: float, why: str = "full"):
+        rms = float(np.sqrt(np.mean(chunk**2)))
+        if rms >= threshold:
+            tag = _short_device_name(self.device_name)
+            self._queue.put((self.label, chunk, tag))
+        elif rms > 0.001:  # non-silent but below threshold — log for debugging
+            ts = datetime.now().strftime("%H:%M:%S.%f")[:10]
+            print(
+                f"{ts} [transcript  ] 🎙️ [{self.label}] below threshold ({why}): "
+                f"rms={rms:.4f} < {threshold:.4f}"
+            )
 
 
 # ── Transcription thread ────────────────────────────────────────────────────

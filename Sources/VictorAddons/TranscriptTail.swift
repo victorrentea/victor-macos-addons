@@ -79,11 +79,21 @@ enum TranscriptTail {
 
     /// How much *speech* one transcript line is worth.
     ///
-    /// Whisper emits one line per transcribed audio chunk: `WHISPER_CHUNK_SECONDS`
-    /// (6) minus `WHISPER_OVERLAP_SECONDS` (1) of genuinely new audio each. This
-    /// is the only handle there is on sub-minute duration — the file's stamps are
-    /// `[HH:MM]`, so nothing finer than a minute can be read off them directly.
-    static let secondsPerLine: Double = 5
+    /// Whisper emits one line per transcribed audio chunk, and this is the only
+    /// handle there is on sub-minute duration — the file's stamps are `[HH:MM]`,
+    /// so nothing finer than a minute can be read off them directly.
+    ///
+    /// It used to be exact: chunks were a fixed `WHISPER_CHUNK_SECONDS` (6) minus
+    /// `WHISPER_OVERLAP_SECONDS` (1), so every line was worth 5 s. Since chunks
+    /// went to (12, 2) a line is no longer a fixed size — a full chunk carries
+    /// 10 s of new audio, but `whisper_runner` also flushes a partial buffer when
+    /// the room goes quiet, so an utterance-shaped line can be as short as 1.5 s.
+    /// A line is therefore worth somewhere in 1.5…10 s and 8 is the working
+    /// estimate, deliberately biased low: this number divides the window, so
+    /// under-estimating keeps *more* lines. For a panel that distills the last
+    /// 40 s, reaching slightly too far back is recoverable; stopping one sentence
+    /// short is the failure this whole feature exists to avoid.
+    static let secondsPerLine: Double = 8
 
     /// The last `seconds` of **speech**, counted in lines rather than off the
     /// clock.
