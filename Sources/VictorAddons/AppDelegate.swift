@@ -1002,10 +1002,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
         menuBarManager.onOpenCalendar = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/") }
+            DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/", target: .screenUnderMouse) }
         }
         menuBarManager.onOpenGmail = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome("https://mail.google.com/") }
+            DispatchQueue.main.async { self?.openUrlInChrome("https://mail.google.com/", target: .screenUnderMouse) }
         }
         menuBarManager.onOpenCatalog = {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -1261,7 +1261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.companyDetails) }
         }
         eventTap.onOpenNotesDoc = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome(Self.notesDocUrl) }
+            DispatchQueue.main.async { self?.openUrlInChrome(Self.notesDocUrl, target: .screenUnderMouse) }
         }
         eventTap.onComposeTodoMail = { [weak self] in
             // The clipboard is read here, on the tap's background queue, and the
@@ -1270,7 +1270,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // may not have focus yet.
             let draft = GmailCompose.draft(clipboard: ClipboardManager.read())
             DispatchQueue.main.async {
-                self?.openUrlInChrome(draft.url)
+                self?.openUrlInChrome(draft.url, target: .screenUnderMouse)
                 // Only the shortened case says anything: the draft on screen is
                 // its own confirmation, but a body that was cut short doesn't
                 // look cut short, and the clipboard still holds the rest.
@@ -1348,15 +1348,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     // teardown path) and restart it after wake once CoreAudio has settled.
     private var wasTranscribingBeforeSleep = false
 
-    /// Open the URL as a new tab in the user's frontmost Chrome window so it
-    /// inherits that window's profile — YouTube Premium / signed-in / no ads.
-    /// `make new window` and `--user-data-dir=…` were tried first but both
-    /// fell back to Chrome's empty "Default" profile.
     /// The "notes" Google Doc (⌘⌃N).
     static let notesDocUrl =
         "https://docs.google.com/document/d/1_SfS83iRqGxnrBixqOg66a-OYqH1dd6leV42B56_Juk/edit?tab=t.0"
 
-    private func openUrlInChrome(_ url: String) {
+    /// Where the window carrying the URL should end up.
+    enum ChromeTarget {
+        /// Yank the front window onto the built-in Retina display. For links the
+        /// tablet fires: the room is watching that screen, so the page has to
+        /// land there no matter where Chrome happened to be.
+        case retina
+        /// Use the Chrome window that is already on the screen under the mouse
+        /// (a new window there if there is none), leaving every other window
+        /// where it is. For the ⌘⌃ shortcuts: they follow the eyes, they don't
+        /// rearrange the desk.
+        case screenUnderMouse
+    }
+
+    private func openUrlInChrome(_ url: String, target: ChromeTarget = .retina) {
+        switch target {
+        case .retina: openUrlInFrontChromeThenMoveToRetina(url)
+        case .screenUnderMouse: openUrlInChromeOnMouseScreen(url)
+        }
+    }
+
+    /// Open the URL as a new tab in the user's frontmost Chrome window so it
+    /// inherits that window's profile — YouTube Premium / signed-in / no ads —
+    /// then drag that window onto the Retina display. `--user-data-dir=…` was
+    /// tried first but fell back to Chrome's empty "Default" profile.
+    private func openUrlInFrontChromeThenMoveToRetina(_ url: String) {
         overlayInfo("Opening Chrome (front-window profile): \(url)")
         let openTask = Process()
         openTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -1375,26 +1395,90 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
+    /// Open the URL on the display the mouse is on, without moving any window:
+    /// a new tab in the first normal Chrome window centred on that screen, or —
+    /// only if Chrome has none there — a new window sized to that screen.
+    ///
+    /// The new window is made inside the running Chrome (AppleScript), not by
+    /// spawning a second instance with `--user-data-dir=…`, so it keeps the
+    /// user's profile and stays signed into Google.
+    ///
+    /// Must be called on the main thread: it samples `NSEvent.mouseLocation`.
+    private func openUrlInChromeOnMouseScreen(_ url: String) {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) }
+            ?? NSScreen.main
+            ?? AppDelegate.findRetinaScreen()
+        overlayInfo("Opening Chrome on \(screen.localizedName): \(url)")
+
+        // Where a window has to sit to count as "on this screen" (full frame),
+        // and where a brand-new one is placed (usable area, clear of menu bar
+        // and Dock).
+        let hit = AppDelegate.appleScriptBounds(of: screen.frame)
+        let place = AppDelegate.appleScriptBounds(of: screen.visibleFrame)
+        // AppleScript string literal — escape backslashes and double-quotes.
+        let escaped = url
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Google Chrome"
+            set targetIndex to 0
+            repeat with i from 1 to (count of windows)
+                try
+                    set w to window i
+                    if (visible of w) and not (minimized of w) and (mode of w) is "normal" then
+                        set b to bounds of w
+                        set cx to ((item 1 of b) + (item 3 of b)) / 2
+                        set cy to ((item 2 of b) + (item 4 of b)) / 2
+                        if cx >= \(hit.x1) and cx <= \(hit.x2) and cy >= \(hit.y1) and cy <= \(hit.y2) then
+                            set targetIndex to i
+                            exit repeat
+                        end if
+                    end if
+                end try
+            end repeat
+            if targetIndex is 0 then
+                set w to make new window
+                set bounds of w to {\(place.x1), \(place.y1), \(place.x2), \(place.y2)}
+                set URL of active tab of w to "\(escaped)"
+            else
+                set w to window targetIndex
+                tell w
+                    make new tab at end of tabs with properties {URL:"\(escaped)"}
+                    set active tab index to (count of tabs)
+                end tell
+            end if
+            set index of w to 1
+            activate
+        end tell
+        """
+        DispatchQueue.global().async {
+            _ = AppleScriptRunner.run(script, timeout: 8)
+        }
+    }
+
     private func moveFrontChromeWindowToRetina() {
-        let screen = AppDelegate.findRetinaScreen()
-        let primaryHeight = (NSScreen.screens.first { $0.frame.origin == .zero } ?? screen).frame.height
-        let f = screen.visibleFrame
-        // AppleScript window bounds use a top-left origin where Y grows down,
-        // measured from the top of the primary (menu-bar) display.
-        let x1 = Int(f.minX)
-        let y1 = Int(primaryHeight - f.maxY)
-        let x2 = Int(f.maxX)
-        let y2 = Int(primaryHeight - f.minY)
+        let b = AppDelegate.appleScriptBounds(of: AppDelegate.findRetinaScreen().visibleFrame)
         let script = """
         tell application "Google Chrome"
             if (count of windows) > 0 then
-                set bounds of front window to {\(x1), \(y1), \(x2), \(y2)}
+                set bounds of front window to {\(b.x1), \(b.y1), \(b.x2), \(b.y2)}
             end if
         end tell
         """
         DispatchQueue.global().async {
             _ = AppleScriptRunner.run(script)
         }
+    }
+
+    /// AppleScript window bounds ({left, top, right, bottom}) for a Cocoa rect.
+    /// AppleScript uses a top-left origin where Y grows down, measured from the
+    /// top of the primary (menu-bar) display.
+    private static func appleScriptBounds(of rect: NSRect) -> (x1: Int, y1: Int, x2: Int, y2: Int) {
+        let primaryHeight = (NSScreen.screens.first { $0.frame.origin == .zero }
+            ?? NSScreen.main ?? NSScreen.screens[0]).frame.height
+        return (Int(rect.minX), Int(primaryHeight - rect.maxY),
+                Int(rect.maxX), Int(primaryHeight - rect.minY))
     }
 
     private func registerSleepWakeObservers() {
