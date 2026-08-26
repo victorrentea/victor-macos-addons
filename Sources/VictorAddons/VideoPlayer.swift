@@ -12,7 +12,7 @@ import Foundation
 /// trivially replaced/killed by process name — matching "the media player should
 /// be killed by the macos-addons".
 ///
-/// Three things IINA does *not* give for free, and which this class therefore
+/// Four things IINA does *not* give for free, and which this class therefore
 /// takes over — each one learned from watching it misbehave in a room:
 ///
 /// 1. **Which screen.** The clip must land on the **built-in Retina**, whatever
@@ -47,6 +47,12 @@ import Foundation
 ///    replays the clip**. Resuming re-arms both the watch and the auto-kill, so
 ///    a replay gets a full 60s of its own rather than being cut off by the
 ///    original deadline.
+///
+/// 4. **Subtitles, when a clip has them.** A `<name>.srt` sidecar is hardlinked
+///    into the staging folder with the clip and named on the command line
+///    (`--mpv-sub-file` + `--mpv-sub-visibility=yes`) rather than left to mpv's
+///    `sub-auto`: the clip plays from the staging folder, and a personal
+///    `sub-visibility=no` in mpv.conf would otherwise swallow it silently.
 final class VideoPlayer {
     static let shared = VideoPlayer()
 
@@ -86,7 +92,9 @@ final class VideoPlayer {
 
         // Play from a folder holding this file alone (see the class comment):
         // whatever playlist IINA builds around it has nowhere to continue to.
-        let playURL = stagedURL(for: fileURL) ?? fileURL
+        let staged = stage(fileURL)
+        let playURL = staged?.video ?? fileURL
+        let subtitleURL = staged?.subtitle ?? Self.sidecarSubtitle(for: fileURL)
         try? FileManager.default.removeItem(atPath: ipcSocket)
 
         let p = Process()
@@ -94,14 +102,27 @@ final class VideoPlayer {
         // `--no-stdin` makes iina-cli return immediately after launching IINA
         // (without it, it blocks reading stdin). NB no `--mpv-fullscreen`: the
         // window has to stay movable until it is on the Retina.
-        p.arguments = [
+        var arguments = [
             "--no-stdin",
             "--mpv-start=\(max(0, startSeconds))",
             "--mpv-force-window=yes",
             "--mpv-keep-open=yes",
             "--mpv-input-ipc-server=\(ipcSocket)",
-            playURL.path,
         ]
+        // Subtitles are passed EXPLICITLY rather than left to mpv's `sub-auto`:
+        // the clip plays from the staging folder, and IINA/mpv would only find a
+        // sidecar there if it had been copied along — and even then a user
+        // `sub-visibility=no` in mpv.conf would silently swallow it. Naming the
+        // file (and forcing visibility) makes the room see the text either way.
+        if let subtitleURL {
+            arguments += [
+                "--mpv-sub-file=\(subtitleURL.path)",
+                "--mpv-sub-visibility=yes",
+            ]
+            overlayInfo("VideoPlayer: subtitles \(subtitleURL.lastPathComponent)")
+        }
+        arguments.append(playURL.path)
+        p.arguments = arguments
         do {
             try p.run()
         } catch {
@@ -125,10 +146,29 @@ final class VideoPlayer {
 
     // MARK: - One file, one folder
 
-    /// Hardlink the clip into `videos/.play/`, emptied first, and return the link.
-    /// Nil when the staging fails, in which case the caller falls back to the
-    /// real path (auto-advance risk beats not playing at all).
-    private func stagedURL(for fileURL: URL) -> URL? {
+    /// Subtitle sidecar extensions understood by mpv, in the order they win.
+    private static let subtitleExtensions = ["srt", "ass", "ssa", "vtt", "sub"]
+
+    /// The subtitle file sitting next to a clip under the same basename
+    /// (`KLSdOY-6R_U.mp4` → `KLSdOY-6R_U.srt`), or nil when the clip has none.
+    /// Sidecars, not a muxed track: the mp4s are downloaded artefacts that get
+    /// re-fetched, so the subtitles must survive independently of them.
+    static func sidecarSubtitle(for fileURL: URL) -> URL? {
+        let base = fileURL.deletingPathExtension()
+        return subtitleExtensions
+            .map { base.appendingPathExtension($0) }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Hardlink the clip into `videos/.play/`, emptied first, and return the link
+    /// plus its subtitle sidecar if it has one. Nil when the staging fails, in
+    /// which case the caller falls back to the real path (auto-advance risk
+    /// beats not playing at all).
+    ///
+    /// The sidecar is hardlinked too even though it is passed by absolute path:
+    /// a subtitle that only exists outside the staging folder disappears the
+    /// moment anything decides to resolve it relative to the clip.
+    private func stage(_ fileURL: URL) -> (video: URL, subtitle: URL?)? {
         let fm = FileManager.default
         let dir = fileURL.deletingLastPathComponent().appendingPathComponent(".play")
         do {
@@ -141,7 +181,17 @@ final class VideoPlayer {
             }
             let link = dir.appendingPathComponent(fileURL.lastPathComponent)
             try fm.linkItem(at: fileURL, to: link)
-            return link
+
+            // A failed subtitle link is not a failed staging: play the clip
+            // silently subtitle-less rather than fall back to the real folder,
+            // where IINA would auto-advance into the rest of the library.
+            var subLink: URL? = nil
+            if let sidecar = Self.sidecarSubtitle(for: fileURL) {
+                let target = dir.appendingPathComponent(sidecar.lastPathComponent)
+                if (try? fm.linkItem(at: sidecar, to: target)) != nil { subLink = target }
+                else { subLink = sidecar }
+            }
+            return (link, subLink)
         } catch {
             overlayInfo("VideoPlayer: could not stage \(fileURL.lastPathComponent) (\(error)) — playing in place")
             return nil
