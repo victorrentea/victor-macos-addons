@@ -46,7 +46,14 @@ enum WalkieTalkieBinder {
     }
 
     private static func describe(_ bound: [String: Any]) -> String {
-        let label = (bound["label"] as? String) ?? "?"
+        // **The folder, and the app's name only when there is no folder.**
+        // `label` is the relay's own name for the target, and for a terminal
+        // inside an editor that name is the *editor* — so the banner read
+        // `walkie: started in IntelliJ IDEA` while the panel it had just grabbed
+        // was plainly in `petclinic`, which is the one thing the sentence is
+        // there to say. The chip beside the cursor has always preferred the
+        // folder; this is the same preference, one banner later.
+        let label = (bound["folder"] as? String) ?? (bound["label"] as? String) ?? "?"
         // Pressed again on the session it was already pointed at: the relay has
         // ended. Said as a full stop rather than as a destination — a destination
         // means "words go here", and there is now nowhere for them to go.
