@@ -36,6 +36,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptPasteController: TranscriptPasteController?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
+    /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
+    /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
+    /// the transport, and why the escalation has two stages.
+    private var hotspotFallback: HotspotFallback?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// ✋ The amber "an agent is driving" frame. Owned here rather than by a
@@ -1186,6 +1190,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let btKeepAlive = BluetoothKeepAlive()
         self.bluetoothKeepAlive = btKeepAlive
         btKeepAlive.start()
+
+        let hotspot = HotspotFallback()
+        self.hotspotFallback = hotspot
+        hotspot.start()
 
         let eventTap = EventTapManager()
         // The tap fires this off a background queue; the controller is main-actor
