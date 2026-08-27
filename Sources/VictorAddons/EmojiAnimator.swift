@@ -6028,14 +6028,14 @@ class EmojiAnimator {
 
     // MARK: - Counter-Strike (CT duo holds the bottom-left quarter — sound #73)
 
-    /// The two Counter-Strike operators stand in the BOTTOM-LEFT QUARTER of the
-    /// screen, glued to the bottom edge, for exactly as long as `73_counter_strike.mp3`
+    /// The two Counter-Strike operators hold the WEST side of the screen, glued
+    /// to the bottom edge, for exactly as long as `73_counter_strike.mp3`
     /// plays (~1.36s, measured from the file so a re-cut clip stays in sync).
     /// The bundled PNG is pre-trimmed to its opaque content, so "glued to the
     /// bottom" is literal — the layer's bottom edge IS the boots, with no
-    /// transparent margin lifting them off the edge. It fits inside the quarter
-    /// aspect-preserved (the art is wider than the quarter is tall, so height is
-    /// usually the binding constraint) and rises quickly into place.
+    /// transparent margin lifting them off the edge. Width is the driver: they
+    /// fill exactly HALF the screen width, aspect preserved, and the height
+    /// falls out of that (only clamped if it would overflow the screen).
     func showCounterStrike(playSound: Bool = true) {
         if cancelIfRunning("counter-strike", sound: playSound ? "73_counter_strike.mp3" : nil) { return }
 
@@ -6054,13 +6054,14 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        // Fit the art inside the bottom-left quarter (half width × half height),
-        // aspect preserved, anchored at the bottom-left corner of the screen.
+        // Half the screen width is the target, aspect preserved, anchored at the
+        // bottom-left (west) corner. Height only binds in the degenerate case
+        // where that would push the art off the top of the screen.
         let aspect = CGFloat(image.width) / CGFloat(image.height)
         var w = bounds.width / 2
         var h = w / aspect
-        if h > bounds.height / 2 {
-            h = bounds.height / 2
+        if h > bounds.height {
+            h = bounds.height
             w = h * aspect
         }
 
