@@ -2950,26 +2950,43 @@ class EmojiAnimator {
 
     // MARK: The gun itself (minigun.gif)
 
-    /// The muzzle end of `minigun.gif` points RIGHT, which is the direction the
-    /// gun has to fire once it sits on the west side of the screen — it shoots
-    /// *into* the desktop, along the bullets' trajectory. Flip this to `true` if
-    /// the sprite should face west instead; nothing else needs to change.
-    private static let minigunSpriteFacesWest = false
-    /// Width of the sprite as a fraction of the screen. Just under a quarter: big
-    /// enough to read as the source of the burst, and — since it is centred on
-    /// `W/8` — narrow enough to leave a sliver of margin at the left edge. Flush
-    /// against the edge the gun's rear reads as a cropping accident, the same
-    /// trap the wasn't-me hand has in its corner.
-    private static let minigunSpriteWidthFraction: CGFloat = 0.22
-    /// One turn of the 8-frame barrel/muzzle-flash loop. The source gif runs at
-    /// 0.1s/frame (~1.4 flashes/s), far too lazy for a minigun; ~4 flashes/s
-    /// reads as continuous fire without strobing into mush.
-    private static let minigunSpriteLoopDuration: Double = 0.24
+    /// `minigun.gif` is drawn firing up-and-to-the-LEFT (muzzle flash north-west,
+    /// spent casings arcing off the same way). Standing on the west side of the
+    /// screen it has to fire the other way — *into* the desktop, along the
+    /// bullets' trajectory — so the sprite gets mirrored on the X axis. Flip this
+    /// to `false` to show it as drawn; nothing else needs to change.
+    private static let minigunSpriteFacesWest = true
+    /// Where the gun's **body** sits inside the sprite frame (x from the left,
+    /// y from the BOTTOM, both 0…1), measured as the bounding box of the pixels
+    /// that are opaque in every frame — i.e. the receiver and barrel, excluding
+    /// the muzzle flash and the flying casings. The frame is mostly empty sky for
+    /// the casings, so positioning by frame centre would park that emptiness on
+    /// the target and shove the gun off-screen; this is the point that actually
+    /// gets placed. Mirrored along with the sprite when `minigunSpriteFacesWest`.
+    private static let minigunSpriteGunCentre = CGPoint(x: 0.758, y: 0.215)
+    /// The gun is drawn first-person: its mount runs off the bottom of the sprite
+    /// frame, so anything that floats it above the desktop shows a sawn-off base
+    /// hanging in mid-air. Sitting it **flush on the screen's bottom edge** is what
+    /// the art expects — the gun rises out of the edge instead of being cropped by
+    /// it. Only the vertical placement is pinned; horizontally it stays on `W/8`.
+    private static let minigunSpriteSitsOnScreenBottom = true
+    /// Width of the whole sprite frame as a fraction of the screen. The gun body
+    /// is only ~46% of that frame (the rest is the casing spray), so 0.44 puts
+    /// the gun itself at ~0.20 of the screen — big enough to read as the source
+    /// of the burst — while the ejected brass arcs up and to the right over the
+    /// lower-left of the desktop.
+    private static let minigunSpriteWidthFraction: CGFloat = 0.44
+    /// One turn of the 64-frame loop, kept at the source gif's own 0.02s/frame.
+    /// The muzzle flash cycles every 8 frames — ~6 flashes/s, a believable
+    /// cyclic rate — while the casings need all 64 to complete their arc, so
+    /// speeding the loop up would fling the brass out at a comic speed.
+    private static let minigunSpriteLoopDuration: Double = 1.28
 
-    /// Build the firing-minigun sprite, parked in the **north-west sub-sector of
-    /// the screen's south-west quadrant** — left edge, a little above the lower
-    /// third, which is where the barrel lines up with the bullet holes punched
-    /// around the cursor out in the middle of the desktop.
+    /// Build the firing-minigun sprite, its body parked in the **north-west
+    /// sub-sector of the screen's south-west quadrant** — left edge, a little
+    /// above the lower third, from where the mirrored barrel points up and to the
+    /// right, at the bullet holes punched around the cursor out in the middle of
+    /// the desktop.
     ///
     /// Returns nil (silently) when the asset is missing: the burst itself must
     /// still run.
@@ -2995,7 +3012,20 @@ class EmojiAnimator {
         gun.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         // y = 0 is the BOTTOM edge. The SW quadrant is x ∈ [0, W/2], y ∈ [0, H/2];
         // its NW sub-sector is the upper-left quarter of that — centre (W/8, 3H/8).
-        gun.position = CGPoint(x: bounds.width * 0.125, y: bounds.height * 0.375)
+        // Only the x half of that survives: `minigunSpriteSitsOnScreenBottom` pins
+        // the gun to the bottom edge rather than floating it at 3H/8.
+        let target = CGPoint(x: bounds.width * 0.125, y: bounds.height * 0.375)
+        // `position` places the layer's CENTRE, but what belongs on `target` is
+        // the gun body — so shift the layer by however far the body is off-centre
+        // inside the frame. Mirroring happens about the layer centre, so on a
+        // flipped sprite the body's x reflects across 0.5 as well.
+        let centre = Self.minigunSpriteGunCentre
+        let bodyX = Self.minigunSpriteFacesWest ? 1 - centre.x : centre.x
+        // The gun body's own bottom IS the frame's bottom (it is cut off there),
+        // so "flush with the screen edge" is simply the layer's bottom at y = 0.
+        let y = Self.minigunSpriteSitsOnScreenBottom ? h / 2
+                                                     : target.y - (centre.y - 0.5) * h
+        gun.position = CGPoint(x: target.x - (bodyX - 0.5) * w, y: y)
         gun.contents = first
         gun.contentsGravity = .resizeAspect
         // Pixel art: bilinear smoothing at this magnification turns the barrels

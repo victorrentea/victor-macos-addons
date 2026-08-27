@@ -209,18 +209,28 @@ rule from the start.
 
 - **🔫 Minigun** (sfx #22 `22_minigun.mp3` → `bullet-holes`, `showBulletHoles`): the burst
   that punches bullet holes around the cursor now has a **visible shooter**. A pixel-art
-  minigun sprite (`Resources/minigun.gif`, 8 frames, transparent, cropped to its content)
-  sits in the **north-west sub-sector of the screen's south-west quadrant** — centre
-  `(W/8, 3H/8)`, i.e. hard against the left edge a little above the lower third — which is
-  where its barrel lines up with the holes appearing out in the middle of the desktop: the
-  gun is **on the bullets' trajectory**, not decoration parked in a corner. The sprite's
-  muzzle points **east, into the desktop**; `minigunSpriteFacesWest` flips it in one line if
-  the other orientation is ever wanted. Width is 22 % of the screen (just under a quarter: centred on `W/8`, that leaves a
-  sliver of margin so the gun's rear does not read as clipped), aspect-preserved, drawn
+  minigun sprite (`Resources/minigun.gif`, 64 frames, transparent, top empty rows cropped)
+  sits on the **west side, flush with the screen's bottom edge** — `x = W/8`, the horizontal
+  half of the "north-west sub-sector of the south-west quadrant", but pinned to `y = 0`
+  rather than floating at `3H/8`. The art is first-person: the mount runs off the bottom of
+  the sprite frame, so floating it shows a sawn-off base hanging in mid-air, while sitting it
+  on the edge reads as the gun *rising out of* it (`minigunSpriteSitsOnScreenBottom = false`
+  restores the floating placement). From there the barrel lines up with the holes appearing
+  out in the middle of the desktop: the gun is **on the bullets' trajectory**, not decoration
+  parked in a corner. The sprite is drawn firing **north-west**, so it is **mirrored on the
+  X axis** to fire east, into the desktop; `minigunSpriteFacesWest = false` shows it as drawn
+  if the other orientation is ever wanted. What gets placed on `x = W/8` is not the frame
+  centre but the **gun body** (`minigunSpriteGunCentre`, the bbox of the pixels opaque in
+  *every* frame — receiver and barrel, no muzzle flash, no casings): most of the frame is
+  empty sky for the ejected brass, and centring that emptiness would shove the gun off-screen.
+  Width is 44 % of the screen *for the whole frame*, which puts the gun body itself at ~20 %
+  and lets the casings arc up and to the right over the lower-left of the desktop;
+  aspect-preserved, drawn
   with **`.nearest` magnification** — bilinear smoothing at that scale turns the barrels into
-  grey mush. The 8-frame barrel/flash loop is re-timed from the source gif's lazy 0.1 s/frame
-  to **0.24 s a turn (~4 flashes/s)**: fast enough to read as continuous fire, slow enough not
-  to strobe into mush. It rides **inside the burst's own container**, so `trackEffect` and a
+  grey mush. The 64-frame loop keeps the source gif's own **0.02 s/frame — 1.28 s a turn**:
+  the muzzle flash cycles every 8 frames (~6 flashes/s, a believable cyclic rate) while the
+  casings need all 64 to finish their arc, so speeding the loop up would fling the brass out
+  at a comic speed. It rides **inside the burst's own container**, so `trackEffect` and a
   cancelling re-press take it down with the holes; the tail's "resorb" shrink pass skips it
   **by identity** (`hole !== gun`) so the gun doesn't implode along with the bullet holes.
   Its opacity is **one keyframe track** (the wasn't-me pattern) with `beginTime` at
