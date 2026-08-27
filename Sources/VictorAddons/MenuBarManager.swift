@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 26, 23:06"
+    static let BUILD_TIME = "Aug 27, 18:28"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -139,6 +139,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("☕️ Break: 10 minutes", 10),
             ("☕️ Break: 12 minutes", 12),
             ("☕️ Break: 15 minutes", 15),
+            ("☕️ Break: 30 minutes", 30),
             ("☕️ Break: 1 hour", 60),
         ]
         for (title, minutes) in breakDurations {

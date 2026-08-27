@@ -17,14 +17,14 @@ soundboard playback here instead of playing locally:
   + plays `click.wav` (the tablet's generated 1800Hz tap) at the new level as feedback
 - Watchdog: the routed sound is stopped if pings cease >12s (tablet crash / network drop)
 
-**Interrupted sounds fade over 3s, they never cut** (`SoundManager.interruptFade`, since
-2026-08-26). Every way of ending a sound early routes through one helper,
+**Interrupted sounds fade over 0.2s, they never cut** (`SoundManager.interruptFade`, since
+2026-08-26; shortened from 3s to 0.2s on 2026-08-27 — 3s was audibly too long). Every way of ending a sound early routes through one helper,
 `fadeOutAndStop(_:over:)`: re-pressing the playing tile, pressing a *different* tile (which
 preempts), `/effect/stop-all` (which the tablet fires before every press), the lost-ping
 watchdog, and each effect's own toggle-off (`stopRainbow`, `stopLoveHands`, `_stopPulse`,
 `stopDrumRoll`, `interruptNuke`, the phoenix re-press). An abrupt `AVAudioPlayer.stop()` is a
 hard edge a whole room hears — in a quiet training room the silence lands harder than the
-sound did. **The outgoing clip keeps playing under the incoming one** for those 3 seconds:
+sound did. **The outgoing clip keeps playing under the incoming one** for those 0.2 seconds:
 it is a crossfade, not a gap.
 
 Two mechanics make it work. **A fading player is retained in a `fadingOut` pool**: the caller
@@ -32,10 +32,10 @@ has already dropped it from `players` / `tabletPlayer`, and a released `AVAudioP
 dead — the exact hard cut the fade exists to remove. And **`fadeOutAndStop` no-ops on a player
 that is not playing**, which is what keeps the fade off the *natural* end of a sound: the
 `onStop` chain (`/sound/stopped/<file>` → `rainbow/stop` &c.) calls the same stop functions
-when the clip has already finished, so passing the 3s fade there is free. The natural-end path
+when the clip has already finished, so passing the interrupt fade there is free. The natural-end path
 that *does* still hold audio — `trackEffect`'s auto-cleanup and the vignette's completion block
 — deliberately keeps the old **0.3s** tail (`stop(_:fade:)`'s default): the visual has just
-ended and a 3s tail would outlive it. `fade: 0` anywhere forces the old instant stop; the
+ended and a longer tail would outlive it. `fade: 0` anywhere forces the old instant stop; the
 break-timer gong (`stopOverlapping("50_gong.mp3")` on closing the watch) is the one caller that
 keeps it, since closing the watch means silence now.
 

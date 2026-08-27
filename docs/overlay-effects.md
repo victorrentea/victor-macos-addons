@@ -263,7 +263,7 @@ rule from the start.
     `cropping(to:)` into a **lazy static** (`chainsawFrames`): a press must be instant
     because the cursor is already moving, so the ~1.7 MP sheet is never re-decoded per
     press. The sheet is quantised to 255 colours (1.8 MB → 329 KB, visually identical at
-    300 pt) — palette PNG keeps per-entry alpha, so the soft edges survive.
+    450 pt) — palette PNG keeps per-entry alpha, so the soft edges survive.
   - **Anchor**: the layer's `anchorPoint` is the **blade tip** (x ≈ 380/418, y ≈ 115/236
     from the top — the mean of the 16 frames' rightmost saw pixel, excluding the frames
     whose rightmost pixel is flying sawdust). The tip is what lands on the pointer and the
@@ -271,8 +271,10 @@ rule from the start.
     top-left hotspot; centring it instead would put the pointer in the middle of the engine
     block and the saw would read as decoration rather than as the thing doing the pointing.
     Sawdust therefore sprays to the **right of** the hotspot — i.e. out of the cut.
-  - **Timing**: 16 frames at **24 fps** (0.67 s rev cycle) — fast enough to buzz rather than
-    flap, which is the whole reason the source frames jitter. Width **300 pt**, height
+  - **Timing**: 16 frames at **15 fps** (1.07 s rev cycle). It started at 24 fps and read as
+    *twitching* — the source frames jitter in position as well as in shape, and at that speed
+    the eye tracks the jumps instead of the saw; slowing it turns the same jitter back into
+    the heavy vibration a chainsaw at rest actually has. Width **450 pt**, height
     aspect-derived; `zPosition` 9500 so it rides above every other effect (it is the
     pointer). Fade-in is **0.12 s** — the cursor is a thing you are already looking at, and
     a slow fade there reads as lag. The fade-out is 0.25 s and the real cursor comes back

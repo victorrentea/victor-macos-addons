@@ -14,9 +14,10 @@ class SoundManager {
     /// different tile (which preempts), `/effect/stop-all`, the ping watchdog.
     /// An abrupt `stop()` is a hard edge the whole room hears — in a quiet lecture
     /// room the silence lands harder than the sound did — so the clip is faded
-    /// instead. It stays audible for these 3 seconds *under* whatever was pressed
-    /// next, which is the point: a crossfade, not a gap.
-    static let interruptFade: TimeInterval = 3.0
+    /// instead. It stays audible for these 0.2 seconds *under* whatever was pressed
+    /// next, which is the point: a short crossfade, not a gap — long enough to
+    /// take the edge off, short enough that the room hears the new sound clean.
+    static let interruptFade: TimeInterval = 0.2
 
     /// Players that are mid-fade and no longer reachable from `players` /
     /// `tabletPlayer`. They live here purely so ARC does not deallocate them —
@@ -472,7 +473,7 @@ class SoundManager {
     /// mutated on main).
     var currentTabletVolume: Float { tabletVolume }
 
-    /// Stop the tablet-routed sound, fading it out over `interruptFade` (3s)
+    /// Stop the tablet-routed sound, fading it out over `interruptFade` (0.2s)
     /// rather than cutting it. Every route into here is an interruption — a
     /// re-press of the playing tile, `/effect/stop-all` (which the tablet fires
     /// before every press), the lost-ping watchdog — so they all get the fade.
@@ -528,7 +529,7 @@ class SoundManager {
     /// its **natural** end the visual has just finished and the audio is already
     /// over, so a 300ms tail is all that is wanted. When the effect is
     /// **interrupted** (re-press), the caller passes `interruptFade` and the clip
-    /// dies away over 3 seconds like every other interrupted sound.
+    /// dies away over 0.2 seconds like every other interrupted sound.
     func stop(_ filename: String, fade: TimeInterval = 0.3) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let player = self.players[filename], player.isPlaying else {
