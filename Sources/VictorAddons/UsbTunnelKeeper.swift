@@ -66,6 +66,8 @@ final class UsbTunnelKeeper {
     /// when the tablet unplugs. Lives only on `queue`, so reads/writes are
     /// sequential. Logged only when it flips (no per-tick spam).
     private var armed = false
+    /// So a phone left on the cable doesn't write the same line every tick.
+    private var tabletMissingLogged = false
 
     /// Fired on the armed edge — the cable is in *and* adb is answering. This is
     /// the moment `AndroidAppDeployer` can talk to the tablet, so it hangs off
@@ -134,12 +136,27 @@ final class UsbTunnelKeeper {
         attemptArm()
     }
 
-    /// Run `adb reverse` once; on success flip `armed` true. Assumes the caller
-    /// already confirmed the device is present. Returns whether it stuck.
+    /// Run `adb reverse` once **against the tablet**; on success flip `armed`
+    /// true. Assumes the caller already confirmed a device is present. Returns
+    /// whether it stuck.
+    ///
+    /// The serial is explicit because the IOKit check above only knows that
+    /// *some* ADB interface enumerated, and the phone goes on the same cable.
+    /// A bare `adb reverse` would then arm a tunnel to the phone — which nothing
+    /// on the phone listens to — and, worse, would report the tunnel armed, so
+    /// `onTunnelArmed` would fire and hand the phone to `AndroidAppDeployer`.
     @discardableResult
     private func attemptArm() -> Bool {
         guard let adb = Self.adbPath else { return false }
-        let status = Self.run(adb, ["reverse", "tcp:\(Self.port)", "tcp:\(Self.port)"])
+        guard case .tablet(let tablet) = AndroidAppDeployer.tabletSerial() else {
+            if !tabletMissingLogged {
+                tabletMissingLogged = true
+                NSLog("[UsbTunnelKeeper] a device is on USB but it is not the tablet — leaving the tunnel down")
+            }
+            return false
+        }
+        tabletMissingLogged = false
+        let status = Self.run(adb, ["-s", tablet.serial, "reverse", "tcp:\(Self.port)", "tcp:\(Self.port)"])
         if status == 0 {
             setArmed(true)
             return true
@@ -157,6 +174,7 @@ final class UsbTunnelKeeper {
             return
         }
         armed = false
+        tabletMissingLogged = false   // a fresh cable deserves a fresh verdict
         armWithRetries(attemptsLeft: Self.attachRetries)
     }
 

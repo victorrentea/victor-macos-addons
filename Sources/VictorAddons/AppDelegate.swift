@@ -1259,6 +1259,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         let hotspot = HotspotFallback()
         self.hotspotFallback = hotspot
+        tabletServer?.onTestHotspot = { [weak hotspot] in
+            hotspot?.forceAttemptJSON() ?? "{\"error\":\"hotspot fallback unavailable\"}"
+        }
         hotspot.start()
 
         let eventTap = EventTapManager()

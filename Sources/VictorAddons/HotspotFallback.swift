@@ -104,6 +104,10 @@ final class HotspotFallback {
     /// stay there.
     private static let cooldown: TimeInterval = 180
 
+    /// Total budget for one SDP-query + open (+ one retry after a fresh query).
+    /// Generous, because it is paid only when we already know we are offline.
+    private static let channelOpenBudget: TimeInterval = 20
+
     private static let probeHost = "1.1.1.1"
     private static let probePort: NWEndpoint.Port = 443
     private static let probeTimeout: TimeInterval = 2
@@ -128,9 +132,20 @@ final class HotspotFallback {
     private var lastKnownOnline: Bool?
     private var channel: IOBluetoothRFCOMMChannel?
     private let geofence = HomeGeofence()
-    private var keeper: ChannelKeeper?
+    private var opener: ChannelOpener?
+    /// What the last channel open did, for the test hook to report.
+    private var lastChannelError: String?
+    private var lastChannelAt: Date?
+    /// IOBluetooth's async callbacks are delivered on the run loop of the thread
+    /// that started the operation, and a `DispatchQueue` has no run loop — which
+    /// is why the first version could not hear `rfcommChannelOpenComplete` at
+    /// all. The main thread does have one, but an SDP query plus a channel open
+    /// plus a retry is up to 20 seconds, and the menu bar (and the `/test/*`
+    /// HTTP handler, which runs there) must not be held that long.
+    private let bluetooth = RunLoopThread(name: "ro.victorrentea.macos-addons.bluetooth")
 
     func start() {
+        bluetooth.start()
         pathMonitor.pathUpdateHandler = { [weak self] _ in self?.scheduleEvaluation(reason: "network change") }
         pathMonitor.start(queue: queue)
 
@@ -144,6 +159,48 @@ final class HotspotFallback {
 
         geofence.start()
         overlayInfo("📶 Hotspot fallback armed (phone \(Self.phoneBluetoothAddress), grace \(Int(Self.grace))s)")
+    }
+
+    /// `GET /test/hotspot` — run the phone half of the chain *now*, whatever the
+    /// Mac's connectivity, whether or not we are at home, and regardless of the
+    /// cooldown. Only the RFCOMM open is forced: the routine on the phone still
+    /// has to do its own part, which is precisely what this is for testing.
+    ///
+    /// It exists because the honest test used to be "take the Mac somewhere with
+    /// no Wi-Fi and wait", and a chain that fails silently cannot be debugged
+    /// that way — the bug this was written for survived weeks of looking healthy.
+    /// The attempt runs in the background — an SDP query and a channel open far
+    /// outlast an HTTP response, and this handler is on the main thread — so the
+    /// snapshot describes the **previous** attempt. Call it twice: the first call
+    /// starts one, the second reports how it went.
+    func forceAttemptJSON() -> String {
+        let snapshot = queue.sync { () -> String in
+            var parts: [String] = []
+            parts.append("\"last_channel_open\":\(lastChannelAt != nil && lastChannelError == nil)")
+            parts.append("\"last_error\":\(Self.jsonString(lastChannelError ?? ""))")
+            parts.append("\"last_attempt_at\":\(Self.jsonString(lastChannelAt.map { ISO8601DateFormatter().string(from: $0) } ?? ""))")
+            parts.append("\"channel_is_open\":\(channel?.isOpen() ?? false)")
+            parts.append("\"at_home\":\(geofence.isAtHome())")
+            parts.append("\"enabled\":\(HotspotFallbackSettings.isEnabled)")
+            return "{\(parts.joined(separator: ","))}"
+        }
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.lastAttemptAt = Date()
+            let err = self.openChannel()
+            if let err {
+                overlayError("📵 /test/hotspot — \(err)")
+            } else {
+                overlayInfo("📶 /test/hotspot — channel open, the phone's routine should be firing now")
+            }
+        }
+        return snapshot
+    }
+
+    private static func jsonString(_ s: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data()
+        let arr = String(data: data, encoding: .utf8) ?? "[\"\"]"
+        return String(arr.dropFirst().dropLast())
     }
 
     /// Debounced: a single wake or reconnect emits a burst of path updates, and
@@ -295,47 +352,171 @@ final class HotspotFallback {
     /// Opens (or re-opens) the RFCOMM channel to the phone. Returns `nil` on
     /// success, or the reason it could not.
     ///
-    /// `openRFCOMMChannelSync` with a nil delegate fails here with a bare
-    /// `kIOReturnError`, reproducibly; the async form with a real delegate
-    /// works. The channel is held in a property because releasing it closes it,
-    /// and a closed channel is no signal at all.
+    /// **The channel number is not stable and the stale one fails silently.**
+    /// The phone re-creates its listening socket after every connection, and the
+    /// Bluetooth stack hands the new socket a *different* RFCOMM channel — so the
+    /// number that worked last time is wrong from then on. macOS caches the SDP
+    /// record, `getServiceRecord` happily returns the cached one, and an open
+    /// against a channel nobody is listening on fails *asynchronously*, in a
+    /// delegate callback. The first version had no such callback, so it logged
+    /// "channel open" and returned success every single time. Measured, that is
+    /// exactly what happened: the chain worked once (channel 10), the phone then
+    /// re-listened on channel 9, and every attempt after that opened nothing at
+    /// all while reporting success — the hotspot simply never came on again.
+    ///
+    /// So this waits for `rfcommChannelOpenComplete`, and on failure re-runs the
+    /// SDP query and retries with whatever channel the phone is on *now*.
+    ///
+    /// IOBluetooth delivers those callbacks on the run loop of the thread that
+    /// started the operation, and `queue` has no run loop — which is why the work
+    /// is kicked onto the main thread and awaited here with a semaphore rather
+    /// than driven from `queue` directly. (The same missing run loop is why
+    /// `openRFCOMMChannelSync` with a nil delegate fails with a bare
+    /// `kIOReturnError`.) The channel is held in a property because releasing it
+    /// closes it, and a closed channel is no signal at all.
     private func openChannel() -> String? {
-        if channel?.isOpen() == true { closeChannel() }   // a fresh open, so the phone sees a fresh connection
+        closeChannel()   // a fresh open, so the phone sees a fresh connection
 
-        guard let dev = IOBluetoothDevice(addressString: Self.phoneBluetoothAddress) else {
-            return "phone not in the Bluetooth pairing list"
+        var result: String? = "the phone never answered the channel open"
+        let done = DispatchSemaphore(value: 0)
+        var signalled = false
+        let finish: (String?) -> Void = { why in
+            guard !signalled else { return }
+            signalled = true
+            result = why
+            done.signal()
         }
-        // Without a fresh SDP query the channel ID can come from a stale cache —
-        // the phone's service is re-registered on every reconnect, and its
-        // channel number is not promised to be stable.
-        _ = dev.performSDPQuery(nil)
-        Thread.sleep(forTimeInterval: 3)
 
-        guard let rec = dev.getServiceRecord(for: IOBluetoothSDPUUID(uuid16: Self.sppUUID)) else {
-            return "the phone is not publishing the SPP channel — is victor-phone-addons running?"
+        bluetooth.async { [weak self] in
+            guard let self else { return finish("the app is shutting down") }
+            guard let dev = IOBluetoothDevice(addressString: Self.phoneBluetoothAddress) else {
+                return finish("phone not in the Bluetooth pairing list")
+            }
+            let opener = ChannelOpener(device: dev, sppUUID: Self.sppUUID) { [weak self] outcome in
+                switch outcome {
+                case .opened(let ch, let chID):
+                    self?.channel = ch
+                    overlayInfo("📶 RFCOMM channel open to the phone (channel \(chID))")
+                    finish(nil)
+                case .failed(let why):
+                    self?.opener = nil
+                    finish(why)
+                }
+            }
+            self.opener = opener
+            opener.start()
         }
-        var chID: BluetoothRFCOMMChannelID = 0
-        rec.getRFCOMMChannelID(&chID)
 
-        let del = ChannelKeeper()
-        var ch: IOBluetoothRFCOMMChannel?
-        let r = dev.openRFCOMMChannelAsync(&ch, withChannelID: chID, delegate: del)
-        guard r == kIOReturnSuccess, let ch else { return "openRFCOMMChannelAsync failed (\(r))" }
-        keeper = del
-        channel = ch
-        overlayInfo("📶 RFCOMM channel open to the phone (channel \(chID))")
-        return nil
+        _ = done.wait(timeout: .now() + Self.channelOpenBudget)
+        lastChannelAt = Date()
+        lastChannelError = result
+        return result
     }
 
     private func closeChannel() {
         channel?.close()
         channel = nil
-        keeper = nil
+        opener = nil
     }
 
-    /// Holds the channel's delegate. IOBluetooth does not retain it, and a
-    /// deallocated delegate takes the channel down with it.
-    private final class ChannelKeeper: NSObject, IOBluetoothRFCOMMChannelDelegate {
+    /// Runs one SDP query + RFCOMM open against the phone, on the main thread's
+    /// run loop, and reports what actually happened — including a retry with a
+    /// freshly queried channel number when the first open is refused.
+    ///
+    /// It is also the channel's delegate, and it is retained by `HotspotFallback`
+    /// for as long as the channel is meant to stay up: IOBluetooth does not
+    /// retain the delegate, and a deallocated delegate takes the channel with it.
+    private final class ChannelOpener: NSObject, IOBluetoothRFCOMMChannelDelegate {
+        enum Outcome {
+            case opened(IOBluetoothRFCOMMChannel, BluetoothRFCOMMChannelID)
+            case failed(String)
+        }
+
+        /// How long the phone gets to answer one SDP query.
+        private static let sdpTimeout: TimeInterval = 6
+
+        private let device: IOBluetoothDevice
+        private let sppUUID: UInt16
+        private var report: ((Outcome) -> Void)?
+        private var channel: IOBluetoothRFCOMMChannel?
+        private var channelID: BluetoothRFCOMMChannelID = 0
+        /// One retry, and only after a *fresh* SDP query — the whole point is to
+        /// stop trusting a channel number that has gone stale.
+        private var triesLeft = 2
+        private var sdpWatchdog: Timer?
+
+        init(device: IOBluetoothDevice, sppUUID: UInt16, report: @escaping (Outcome) -> Void) {
+            self.device = device
+            self.sppUUID = sppUUID
+            self.report = report
+        }
+
+        func start() { querySDP() }
+
+        private func finish(_ outcome: Outcome) {
+            sdpWatchdog?.invalidate()
+            sdpWatchdog = nil
+            let r = report
+            report = nil
+            r?(outcome)
+        }
+
+        private func querySDP() {
+            guard triesLeft > 0 else {
+                return finish(.failed("the phone refused the RFCOMM channel twice"))
+            }
+            triesLeft -= 1
+            // A query that never comes back would otherwise hang the attempt for
+            // the whole outer budget with nothing in the log to say why.
+            sdpWatchdog = Timer.scheduledTimer(withTimeInterval: Self.sdpTimeout, repeats: false) { [weak self] _ in
+                self?.finish(.failed("the phone did not answer the SDP query in \(Int(Self.sdpTimeout))s"))
+            }
+            let status = device.performSDPQuery(self)
+            if status != kIOReturnSuccess {
+                finish(.failed("performSDPQuery failed (\(status))"))
+            }
+        }
+
+        /// `IOBluetoothDeviceAsyncCallbacks` — the SDP cache has just been
+        /// refreshed, so this is the first moment the channel number can be
+        /// trusted.
+        @objc func sdpQueryComplete(_ device: IOBluetoothDevice!, status: IOReturn) {
+            sdpWatchdog?.invalidate()
+            sdpWatchdog = nil
+            guard status == kIOReturnSuccess else {
+                return finish(.failed("SDP query failed (\(status)) — is the phone in range?"))
+            }
+            guard let rec = self.device.getServiceRecord(for: IOBluetoothSDPUUID(uuid16: sppUUID)) else {
+                return finish(.failed("the phone is not publishing the SPP channel — is victor-phone-addons running?"))
+            }
+            var chID: BluetoothRFCOMMChannelID = 0
+            guard rec.getRFCOMMChannelID(&chID) == kIOReturnSuccess, chID != 0 else {
+                return finish(.failed("the SPP record carries no RFCOMM channel number"))
+            }
+            channelID = chID
+
+            var ch: IOBluetoothRFCOMMChannel?
+            let r = self.device.openRFCOMMChannelAsync(&ch, withChannelID: chID, delegate: self)
+            guard r == kIOReturnSuccess, let ch else {
+                return finish(.failed("openRFCOMMChannelAsync failed on channel \(chID) (\(r))"))
+            }
+            channel = ch
+        }
+
+        func rfcommChannelOpenComplete(_ ch: IOBluetoothRFCOMMChannel!, status: IOReturn) {
+            guard status == kIOReturnSuccess else {
+                overlayInfo("📵 channel \(channelID) refused (\(status)) — re-reading the phone's SDP record")
+                channel = nil
+                return querySDP()   // the number was stale; ask again and retry
+            }
+            guard let ch else { return finish(.failed("channel opened with no channel object")) }
+            finish(.opened(ch, channelID))
+        }
+
+        func rfcommChannelClosed(_ ch: IOBluetoothRFCOMMChannel!) {
+            overlayInfo("📵 RFCOMM channel to the phone closed")
+        }
+
         func rfcommChannelData(_ ch: IOBluetoothRFCOMMChannel!, data: UnsafeMutableRawPointer!, length: Int) {}
     }
 }

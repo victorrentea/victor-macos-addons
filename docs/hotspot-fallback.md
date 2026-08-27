@@ -35,6 +35,104 @@ flipping. Shizuku would also work and was rejected deliberately: it has to be
 re-armed after every reboot, and the moment that hurts most — a new room, no
 Wi-Fi, phone freshly restarted — is exactly when re-arming is hardest.
 
+**Android 16 closed the last door, so stop looking for one.** Re-checked on the
+S24 Ultra (27 Aug 2026), because "surely an app can just do this" is a question
+that comes back:
+
+- `pm grant … TETHER_PRIVILEGED` → `SecurityException: … is not a changeable
+  permission type`. It is `signature|privileged`; there is nothing to grant.
+- `cmd wifi start-softap` is not even *listed* by `cmd wifi help` for uid 2000 —
+  the uid gate inside `WifiShellCommand` is unchanged.
+- The reflection trick every automation app used (`ConnectivityManager.startTethering`
+  via a Dexmaker proxy, allowed by holding `WRITE_SETTINGS`) is **gone in
+  Android 16**. The check is still in `TetheringService.hasTetherChangePermission`,
+  and it now reads: *"After TetheringManager moves to public API, prevent
+  third-party apps from being able to change tethering with only WRITE_SETTINGS
+  permission"* → `if (mTethering.isTetheringWithSoftApConfigEnabled()) return false;`.
+  Non-privileged callers get `TETHER_ERROR_NO_CHANGE_TETHERING_PERMISSION` (14).
+  This is what killed Tasker's and MacroDroid's hotspot toggles too.
+- The only escape hatches left in that method are **Device Owner** and
+  **carrier-privileged**, neither of which this phone can be — `dpm
+  set-device-owner` refuses on a device with accounts on it.
+- And even on Android ≤15 the bypass would have been closed here anyway: this
+  phone reports `isDunRequired: true` and
+  `isCarrierConfigAffirmsEntitlementCheckRequired: true`, so
+  `isTetherProvisioningRequired()` is satisfied and the WRITE_SETTINGS path is
+  skipped regardless.
+
+So the routine is not a workaround to be replaced later. It is the mechanism.
+
+## The stale RFCOMM channel — the failure that looked like success
+
+The chain worked once and then never again, and every log line said it was fine.
+Traced 27 Aug 2026:
+
+**The phone's channel number changes after every connection.** The beacon
+re-creates its listening socket per connection (deliberately — a reused socket
+goes silently deaf), and the Bluetooth stack assigns the new socket a *different*
+RFCOMM channel. macOS caches the SDP record, `getServiceRecord` returns the
+cached one, and `performSDPQuery(nil)` + a fixed 3 s sleep was not enough to be
+sure the cache had been refreshed.
+
+**And a wrong channel fails asynchronously.** `openRFCOMMChannelAsync` returns
+`kIOReturnSuccess` for the *request*; the verdict arrives later in
+`rfcommChannelOpenComplete`. The original delegate implemented only
+`rfcommChannelData`, so the failure was never heard — the app logged
+`RFCOMM channel open to the phone` and returned success every single time.
+
+The evidence, from the Mac's own log:
+
+```
+17:35:56  RFCOMM channel open to the phone (channel 9)     ← worked
+05:01:25  RFCOMM channel open to the phone (channel 10)    ← stale, opened nothing
+05:47:30  RFCOMM channel open to the phone (channel 10)    ← stale, opened nothing
+05:48:18  Hotspot fallback failed — channel is open but no internet followed
+```
+
+and, on the phone, `dumpsys usagestats` shows **no `ACTIVITY_RESUMED` at all**
+for `ro.victorrentea.phoneaddons` at 05:47 — the socket was never accepted, so
+the activity was never launched, so the routine had no event to see. A live SDP
+query at 06:03 answered **channel 9**, while the Mac had been asking for 10 since
+the previous evening.
+
+Note what this does *not* look like: `dumpsys wifi` shows no `CMD_SET_AP` between
+17:51 the day before and the manual toggle the next morning, and every Mac-side
+line reads healthy. Nothing points at Bluetooth.
+
+The fix is in `HotspotFallback.ChannelOpener`:
+
+- a **callback-driven** SDP query (`sdpQueryComplete`), not a sleep, so the
+  channel number is read only once the cache has actually been refreshed;
+- `rfcommChannelOpenComplete` is implemented and **waited for**, so a refused
+  channel is an error and not a log line claiming success;
+- on refusal, the SDP query is re-run and the open retried **once** with whatever
+  channel the phone is on now.
+
+**IOBluetooth's callbacks need a run loop**, and they are delivered on the run
+loop of the thread that *started* the operation. `HotspotFallback`'s work queue
+is a `DispatchQueue` and has none — which is why the callbacks could not have
+been heard even if they had been implemented, and why `openRFCOMMChannelSync`
+with a nil delegate fails here with a bare `kIOReturnError`. So the Bluetooth
+work now runs on a dedicated `RunLoopThread`. Not the main thread: an SDP query
+plus an open plus a retry is up to 20 s, and the main thread serves the menu bar
+and the `/test/*` hooks.
+
+## Testing it without waiting for a real outage
+
+`GET /test/hotspot` opens the channel now, whatever the Mac's connectivity, the
+geofence and the cooldown. It answers with the **previous** attempt's outcome
+(`last_channel_open`, `last_error`, `channel_is_open`) — the attempt itself is
+slower than an HTTP response — so call it twice.
+
+That only proves the Mac's half. For the whole chain there is
+**`./test-hotspot-chain.sh`**, which turns the phone's hotspot off, waits for the
+Mac to genuinely lose the link, times the recovery, and **restores the hotspot
+and rejoins the Mac on the way out** whatever happens, including being killed.
+Run it detached (`nohup … &`) and read `/tmp/hotspot-chain-test.log`: the shell
+issuing the commands is sitting on the very link the test cuts. It needs the
+phone **unlocked**, because with no API left (see above) turning the hotspot off
+and back on is UI automation.
+
 ## Why "App opened", and not "Bluetooth device connected"
 
 The obvious trigger cannot be used. With the RFCOMM channel live and our app

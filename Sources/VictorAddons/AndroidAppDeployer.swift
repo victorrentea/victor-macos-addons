@@ -102,8 +102,26 @@ final class AndroidAppDeployer {
         parts.append("\"source_commit\":\(Self.jsonString(source?.commit ?? ""))")
         parts.append("\"source_dirty\":\(source?.dirty ?? false)")
         parts.append("\"adb\":\(Self.jsonString(UsbTunnelKeeper.adbPath ?? ""))")
-        parts.append("\"tablet_connected\":\(Self.deviceReady())")
-        parts.append("\"device_stamp\":\(Self.jsonString(Self.readDeviceStamp() ?? ""))")
+        let tablet = Self.tabletSerial()
+        let devices = Self.attachedDevices().map { d -> String in
+            let serial = Self.jsonString(d.serial)
+            let model = Self.jsonString(d.model)
+            let chars = Self.jsonString(d.characteristics)
+            return "{\"serial\":\(serial),\"model\":\(model),\"characteristics\":\(chars)}"
+        }
+        parts.append("\"devices\":[\(devices.joined(separator: ","))]")
+        switch tablet {
+        case .tablet(let d):
+            let serial = d.serial
+            parts.append("\"tablet_serial\":\(Self.jsonString(serial))")
+            parts.append("\"tablet_connected\":true")
+            parts.append("\"device_stamp\":\(Self.jsonString(Self.readDeviceStamp(serial: serial) ?? ""))")
+        case .none(let why):
+            parts.append("\"tablet_serial\":\"\"")
+            parts.append("\"tablet_connected\":false")
+            parts.append("\"tablet_error\":\(Self.jsonString(why))")
+            parts.append("\"device_stamp\":\"\"")
+        }
         parts.append("\"last_outcome\":\(Self.jsonString(lastOutcome))")
         parts.append("\"last_run_at\":\(Self.jsonString(lastRunAt.map { ISO8601DateFormatter().string(from: $0) } ?? ""))")
         parts.append("\"in_flight\":\(inFlight || pending)")
@@ -125,14 +143,24 @@ final class AndroidAppDeployer {
             NSLog("[AndroidDeploy] victor-vibe-board sources not found — auto-deploy disabled")
             return
         }
-        guard Self.deviceReady() else {
-            NSLog("[AndroidDeploy] no authorized adb device — skipping")
+        // Which device — never "whichever one adb happens to have". Plugging the
+        // *phone* in used to install the tablet's app onto the phone.
+        let serial: String
+        switch Self.tabletSerial() {
+        case .tablet(let d): serial = d.serial
+        case .none(let why):
+            lastOutcome = "no tablet: \(why)"
+            NSLog("[AndroidDeploy] \(why) — skipping")
+            // Silent on the passive path: the phone goes on the same cable all
+            // day and a notification each time would be noise. When someone
+            // *asked* for a deploy, they get told why nothing happened.
+            if force { notify(AndroidDeployPolicy.failureTitle, "no tablet attached — \(why)") }
             return
         }
 
         let source = Self.readSourceState(repo: repo)
         if !force {
-            let onDevice = Self.readDeviceStamp()
+            let onDevice = Self.readDeviceStamp(serial: serial)
             guard AndroidDeployPolicy.shouldDeploy(source: source, deviceStamp: onDevice) else {
                 lastOutcome = "up to date (\(source.stamp))"
                 NSLog("[AndroidDeploy] tablet is up to date (\(source.stamp)) — nothing to do")
@@ -172,7 +200,7 @@ final class AndroidAppDeployer {
         var installOut = ""
         var installed = false
         for attempt in 1...Self.installAttempts {
-            let install = Self.run(adb, ["install", "-r", apk], timeout: Self.adbTimeout)
+            let install = Self.run(adb, ["-s", serial, "install", "-r", apk], timeout: Self.adbTimeout)
             installOut = install.output
             if install.status == 0, !installOut.contains("Failure"), !installOut.contains("Error") {
                 installed = true
@@ -181,7 +209,7 @@ final class AndroidAppDeployer {
             NSLog("[AndroidDeploy] install attempt \(attempt)/\(Self.installAttempts) failed: \(Self.lastLines(installOut))")
             guard attempt < Self.installAttempts else { break }
             Thread.sleep(forTimeInterval: Self.installRetryDelay)
-            guard Self.deviceReady() else { break }   // cable pulled — stop trying
+            guard Self.attachedDevices().contains(where: { $0.serial == serial }) else { break }   // cable pulled
         }
         guard installed else {
             return fail(step: "adb install", detail: Self.lastLines(installOut), source: source)
@@ -191,17 +219,17 @@ final class AndroidAppDeployer {
         //    good install over: the grant + safe-volume reset keep Android's
         //    headphone-safety dialog from covering the soundboard mid-workshop
         //    (see the android repo's CLAUDE.md), and are no-ops when already set.
-        Self.run(adb, ["shell", "pm", "grant", Self.packageName, "android.permission.WRITE_SECURE_SETTINGS"], timeout: 60)
-        Self.run(adb, ["shell", "settings", "put", "global", "audio_safe_volume_state", "0"], timeout: 60)
+        Self.run(adb, ["-s", serial, "shell", "pm", "grant", Self.packageName, "android.permission.WRITE_SECURE_SETTINGS"], timeout: 60)
+        Self.run(adb, ["-s", serial, "shell", "settings", "put", "global", "audio_safe_volume_state", "0"], timeout: 60)
 
         // 4. Restart the app: `install -r` leaves the old process running the old
         //    code, so without this the deploy isn't visible until Victor kills it.
-        Self.run(adb, ["shell", "am", "force-stop", Self.packageName], timeout: 60)
-        Self.run(adb, ["shell", "am", "start", "-n", Self.launchActivity], timeout: 60)
+        Self.run(adb, ["-s", serial, "shell", "am", "force-stop", Self.packageName], timeout: 60)
+        Self.run(adb, ["-s", serial, "shell", "am", "start", "-n", Self.launchActivity], timeout: 60)
 
         // 5. Only now write the marker — it must never claim an install that
         //    didn't happen, or the tablet stays behind forever.
-        if !Self.writeDeviceStamp(source.stamp) {
+        if !Self.writeDeviceStamp(source.stamp, serial: serial) {
             NSLog("[AndroidDeploy] WARNING: could not write the marker to the tablet — the next plug-in will deploy again")
         }
 
@@ -296,21 +324,38 @@ final class AndroidAppDeployer {
         (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
     }
 
-    /// True when adb lists an **authorized** device — a cable that is only
-    /// charging, or a tablet showing the "allow USB debugging?" dialog, reads
-    /// `unauthorized` / `offline` and must not start a deploy.
-    static func deviceReady() -> Bool {
-        guard let adb = UsbTunnelKeeper.adbPath else { return false }
-        let out = run(adb, ["devices"], timeout: 30).output
-        return out
-            .split(separator: "\n")
-            .dropFirst()   // "List of devices attached"
-            .contains { $0.hasSuffix("\tdevice") || $0.hasSuffix(" device") }
+    /// Every **authorized** device adb currently lists, with enough of its
+    /// identity to tell the tablet from the phone. A cable that is only
+    /// charging, or a device showing the "allow USB debugging?" dialog, reads
+    /// `unauthorized` / `offline` and is left out.
+    static func attachedDevices() -> [AndroidDeployPolicy.Device] {
+        guard let adb = UsbTunnelKeeper.adbPath else { return [] }
+        let out = run(adb, ["devices", "-l"], timeout: 30).output
+        return out.split(separator: "\n").dropFirst().compactMap { line -> AndroidDeployPolicy.Device? in
+            let fields = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            guard fields.count >= 2, fields[1] == "device" else { return nil }
+            let serial = fields[0]
+            let model = fields.first { $0.hasPrefix("model:") }?
+                .replacingOccurrences(of: "model:", with: "") ?? ""
+            let chars = run(adb, ["-s", serial, "shell", "getprop", "ro.build.characteristics"], timeout: 30)
+                .output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AndroidDeployPolicy.Device(serial: serial, model: model, characteristics: chars)
+        }
     }
 
-    static func readDeviceStamp() -> String? {
+    /// The tablet's adb serial, or why we could not name one. An explicit
+    /// `VICTOR_TABLET_SERIAL` wins over the sniffing, for a device that refuses
+    /// to identify itself.
+    static func tabletSerial() -> AndroidDeployPolicy.TabletPick {
+        if let env = ProcessInfo.processInfo.environment["VICTOR_TABLET_SERIAL"], !env.isEmpty {
+            return .tablet(AndroidDeployPolicy.Device(serial: env, model: "", characteristics: "tablet"))
+        }
+        return AndroidDeployPolicy.pickTablet(attachedDevices())
+    }
+
+    static func readDeviceStamp(serial: String) -> String? {
         guard let adb = UsbTunnelKeeper.adbPath else { return nil }
-        let r = run(adb, ["shell", "cat", deviceStampPath], timeout: 60)
+        let r = run(adb, ["-s", serial, "shell", "cat", deviceStampPath], timeout: 60)
         guard r.status == 0 else { return nil }
         let s = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
         // A missing file answers on stdout/stderr, not with a non-zero status.
@@ -320,13 +365,13 @@ final class AndroidAppDeployer {
 
     /// Written via `adb push` rather than `adb shell echo >`, so the stamp never
     /// has to survive a round trip through the device's shell quoting.
-    private static func writeDeviceStamp(_ stamp: String) -> Bool {
+    private static func writeDeviceStamp(_ stamp: String, serial: String) -> Bool {
         guard let adb = UsbTunnelKeeper.adbPath else { return false }
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("victor-launchbreak-deploy.stamp")
         do { try stamp.write(to: tmp, atomically: true, encoding: .utf8) } catch { return false }
         defer { try? FileManager.default.removeItem(at: tmp) }
-        return run(adb, ["push", tmp.path, deviceStampPath], timeout: 120).status == 0
+        return run(adb, ["-s", serial, "push", tmp.path, deviceStampPath], timeout: 120).status == 0
     }
 
     // MARK: - Process plumbing

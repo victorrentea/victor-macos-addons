@@ -100,6 +100,10 @@ class TabletHttpServer {
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
+        /// Open the RFCOMM channel to the phone now — the signal that asks it for
+        /// its hotspot — whatever the Mac's connectivity, the geofence or the
+        /// cooldown; returns a JSON snapshot (test hook).
+        case testHotspot
         /// JSON snapshot of the 📱 phone low-battery mirror (read-only): whether
         /// the tablet is being told to blink, at what charge, and how fresh the
         /// underlying Soduto notification is (test hook).
@@ -189,6 +193,7 @@ class TabletHttpServer {
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
+    var onTestHotspot: (() -> String)?
     /// Read-only JSON snapshot of the 📱 phone low-battery mirror.
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
@@ -386,6 +391,10 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
                 if self.onTestAndroidDeploy == nil { statusCode = 503 }
+            case .testHotspot:
+                contentType = "application/json"
+                body = self.onTestHotspot?() ?? "{\"error\":\"hotspot fallback unavailable\"}"
+                if self.onTestHotspot == nil { statusCode = 503 }
             case .testPhoneBattery:
                 contentType = "application/json"
                 body = self.onTestPhoneBattery?() ?? "{\"error\":\"phone battery monitor unavailable\"}"
@@ -549,6 +558,8 @@ class TabletHttpServer {
             return .testEmailPoll
         case "/test/android-deploy":
             return .testAndroidDeploy
+        case "/test/hotspot":
+            return .testHotspot
         case "/test/phone-battery":
             return .testPhoneBattery
         case "/training/prompt-capture":
