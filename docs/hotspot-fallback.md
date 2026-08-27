@@ -200,6 +200,47 @@ the currently-joined network back to the top, so the order will not hold.
 `networksetup` also **exits 0 when the join fails**, reporting the failure only
 as text on stdout — so success is empty output, never the exit status.
 
+## The link has to be up before the SDP query
+
+This is the one that made the lid-open fail while every deliberate test passed:
+**`performSDPQuery` on a phone whose ACL link is down never comes back.** Not
+slowly — at all. It returns `kIOReturnSuccess` and `sdpQueryComplete` simply
+never fires.
+
+Measured 27 Aug 2026, power-cycling the adapter to imitate a lid-close:
+
+```
+ 6.1s  adapter power-cycled: connected=false
+ 6.1s  performSDPQuery -> 0
+48.2s  TIMED OUT                              ← 42 s, no callback
+```
+
+and with `openConnection()` first:
+
+```
+ 6.1s  adapter power-cycled: connected=false
+10.2s  openConnection -> 0 after 4.0s, connected=true
+10.2s  sdpQueryComplete status=0 after 0.0s
+10.2s  channel from SDP = 9
+10.4s  openComplete status=0
+```
+
+macOS will not page the phone on an SDP query's behalf; `openConnection()` will,
+in **4.0 s**, after which the query answers instantly. So `ChannelOpener` brings
+the baseband link up first whenever the device is disconnected, with a bounded
+page timeout so an out-of-range phone costs one page rather than the thread.
+
+**This is also why the old code appeared to work at all.** Its channel open —
+against a cached number — *did* page the phone, so the link came up as a side
+effect; it just opened a channel nobody was listening on. Every test run with
+the link already warm passed. The only failing case was the only one that
+matters: the lid opening in a new room.
+
+A second consequence: with the link up, macOS answers an SDP query **out of its
+own cache, in 0.0 s** — so re-querying after a refused channel would hand back
+the same stale number. The retry therefore drops the link (`closeConnection()`)
+before asking again, which is what forces a real fetch from the phone.
+
 ## Two numbers that made it look broken
 
 Both found by running the chain for real, both fixed:

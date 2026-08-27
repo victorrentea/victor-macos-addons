@@ -464,6 +464,10 @@ final class HotspotFallback {
             case failed(String)
         }
 
+        /// Page timeout for bringing the baseband link up, in 0.625 ms slots:
+        /// 0x2000 ≈ 5.1 s. Measured cold, the phone answers in 4.0 s.
+        private static let pageTimeout: BluetoothHCIPageTimeout = 0x2000
+
         /// How long the phone gets to answer one SDP query.
         ///
         /// 6 s was too tight and produced a false negative on the first
@@ -499,11 +503,35 @@ final class HotspotFallback {
             r?(outcome)
         }
 
+        /// **The link has to be up before the SDP query, or the query never
+        /// comes back at all.** Measured 27 Aug 2026, with the adapter
+        /// power-cycled to imitate a lid-close: `performSDPQuery` returns
+        /// `kIOReturnSuccess` and `sdpQueryComplete` then simply never fires —
+        /// 42 s and counting. macOS will not page the phone on an SDP query's
+        /// behalf. `openConnection()` will, and takes **4.0 s** from cold; after
+        /// it the query answers in 0.0 s and the channel opens in 0.2 s.
+        ///
+        /// This is exactly what a lid-open hits, and it is why the chain kept
+        /// failing in the one situation it exists for while working perfectly
+        /// whenever it was tested with the link already warm.
         private func querySDP() {
             guard triesLeft > 0 else {
                 return finish(.failed("the phone refused the RFCOMM channel twice"))
             }
             triesLeft -= 1
+
+            if !device.isConnected() {
+                let began = Date()
+                // Bounded, so a phone that is out of range or switched off costs
+                // one page timeout rather than blocking this thread indefinitely.
+                let r = device.openConnection(nil, withPageTimeout: Self.pageTimeout, authenticationRequired: false)
+                let took = String(format: "%.1f", Date().timeIntervalSince(began))
+                guard r == kIOReturnSuccess else {
+                    return finish(.failed("the phone did not answer the Bluetooth page in \(took)s (\(r)) — out of range or switched off?"))
+                }
+                overlayInfo("📶 Bluetooth link to the phone up in \(took)s")
+            }
+
             // A query that never comes back would otherwise hang the attempt for
             // the whole outer budget with nothing in the log to say why.
             sdpWatchdog = Timer.scheduledTimer(withTimeInterval: Self.sdpTimeout, repeats: false) { [weak self] _ in
@@ -543,9 +571,15 @@ final class HotspotFallback {
 
         func rfcommChannelOpenComplete(_ ch: IOBluetoothRFCOMMChannel!, status: IOReturn) {
             guard status == kIOReturnSuccess else {
-                overlayInfo("📵 channel \(channelID) refused (\(status)) — re-reading the phone's SDP record")
+                // Re-querying on its own would not help: with the link up, macOS
+                // answers an SDP query out of its own cache in 0.0 s — the same
+                // cache that just gave us a number nobody is listening on. The
+                // link has to go down and come back for the record to be fetched
+                // from the phone again.
+                overlayInfo("📵 channel \(channelID) refused (\(status)) — dropping the link to re-read the phone's SDP record")
                 channel = nil
-                return querySDP()   // the number was stale; ask again and retry
+                device.closeConnection()
+                return querySDP()
             }
             guard let ch else { return finish(.failed("channel opened with no channel object")) }
             finish(.opened(ch, channelID))
