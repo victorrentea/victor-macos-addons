@@ -6,16 +6,19 @@ with `./test-hotspot-chain.sh` (27 Aug 2026), from the hotspot being switched
 off to the Mac being back online: **9 s**. Timestamped on both sides:
 
 ```
-06:26:02.6  phone   hotspot switched off
-06:26:09.4  Mac     4 s grace elapsed, no internet — opening the channel
-06:26:10.5  Mac     RFCOMM channel open (channel 9)
-06:26:10    phone   ACTIVITY_RESUMED — the routine's trigger
-06:26:11.9  phone   CMD_SET_AP 1 — the routine turned the hotspot on
-06:26:14.7  Mac     online
+07:29:09.5  phone   hotspot switched off
+07:29:16.8  Mac     4 s grace elapsed, no internet — asking the phone
+07:29:22.4  Mac     Bluetooth link to the phone up in 5.6 s   (cold — see below)
+07:29:22.7  Mac     RFCOMM channel open (channel 9)
+07:29:22    phone   ACTIVITY_RESUMED — the routine's trigger
+07:29:24.1  phone   CMD_SET_AP 1 — the routine turned the hotspot on
+07:29:25.8  Mac     online
 ```
 
-The routine fires **1.5 s** after the signal; the rest is the Mac noticing and
-the soft AP coming up.
+That run was made deliberately hard: the Bluetooth adapter was power-cycled
+first, so the link had to be paged from cold — the state a lid-open lands in, and
+the only state this ever failed in. The routine fires **1.4 s** after the signal;
+most of the rest is the page.
 
 ## The chain
 
@@ -268,6 +271,16 @@ from the outside as "closed the lid, reopened it, Bluetooth didn't reconnect for
 a minute". The floor is now **45 s**, and a **wake gets 10 s** — a lid-open is a
 new room and a new situation by definition, which is the whole point of the
 feature.
+
+**The loop counted its own turns and called them seconds.** `waitForInternet`
+ran `for elapsed in 1...seconds` with a 1 s sleep — plus a connectivity probe
+that blocks for up to 2 s whenever we are offline, which on this path is always,
+since being offline is the premise. So a turn was ~3 s, "join at 6 s" happened at
+about 18 s, and a 45 s budget was really 135 s. Measured cost, end to end: the
+phone had the hotspot up **1.5 s after the signal** and the Mac then sat there
+not asking to join it for another **25 s** — three quarters of the whole
+recovery, spent on a counter that was lying about what it counted. It is a wall
+clock now, and the first join moved to 4 s.
 
 **The recovery budget was shorter than the recovery.** `waitAfterPlainConnect`
 was 12 s, sized against a measured ~8 s hotspot spin-up. With the phone's Wi-Fi

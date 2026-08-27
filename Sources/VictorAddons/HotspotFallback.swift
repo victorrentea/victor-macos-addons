@@ -124,6 +124,14 @@ final class HotspotFallback {
     /// updates behind it.
     private static let wakeCooldown: TimeInterval = 10
 
+    /// When we start *asking* to join rather than waiting for macOS, and how
+    /// often after that. The phone needs a couple of seconds to bring the soft
+    /// AP up and `-setairportnetwork` against an AP that isn't beaconing yet
+    /// simply fails, so there is no point asking instantly; measured, the
+    /// routine flips the hotspot 1.5 s after the signal.
+    private static let firstJoinAfter: TimeInterval = 4
+    private static let joinRetryEvery: TimeInterval = 3
+
     /// Breathing room for the phone to stand a new listening socket up after we
     /// close a channel ourselves.
     private static let reopenSettle: TimeInterval = 2
@@ -302,23 +310,38 @@ final class HotspotFallback {
     /// network could not be found" means the phone never turned the hotspot on
     /// and the routine is at fault; a join that succeeds but leaves us offline
     /// means the hotspot is up and its own uplink is the problem.
+    /// **The clock is the wall clock, not the iteration count**, and that is not
+    /// a detail. This loop used to count its own turns and call them seconds,
+    /// but each turn is a 1 s sleep *plus* a probe that blocks for up to 2 s
+    /// whenever we are offline — which here is always, since being offline is
+    /// the premise. So a turn was ~3 s, "join at 6 s" happened at about 18 s,
+    /// and a 45 s budget was really 135 s.
+    ///
+    /// Measured cost of that, end to end: the phone had the hotspot up **1.5 s**
+    /// after the signal, and the Mac sat there not asking to join it for another
+    /// **25 s** — three quarters of the whole recovery, spent waiting on a
+    /// counter that was lying about what it counted.
     private func waitForInternet(seconds: Int, stage: String) -> Bool {
+        let began = Date()
         var lastJoinError: String?
-        for elapsed in 1...seconds {
+        var nextJoinAt: TimeInterval = Self.firstJoinAfter
+        func elapsed() -> TimeInterval { Date().timeIntervalSince(began) }
+
+        while elapsed() < Double(seconds) {
             Thread.sleep(forTimeInterval: 1)
             if hasInternet() {
                 lastKnownOnline = true
-                overlayInfo("📶 Online after \(elapsed)s (\(stage))")
+                overlayInfo("📶 Online after \(Int(elapsed()))s (\(stage))")
                 return true
             }
-            if elapsed >= 6, elapsed % 3 == 0 {
-                let err = Self.joinHotspot()
-                if err == nil {
-                    overlayInfo("📶 Joined '\(Self.hotspotSSID)' at \(elapsed)s (\(stage))")
-                } else if err != lastJoinError {
-                    lastJoinError = err
-                    overlayInfo("📵 Join '\(Self.hotspotSSID)' refused at \(elapsed)s: \(err!)")
-                }
+            guard elapsed() >= nextJoinAt else { continue }
+            nextJoinAt = elapsed() + Self.joinRetryEvery
+            let err = Self.joinHotspot()
+            if err == nil {
+                overlayInfo("📶 Joined '\(Self.hotspotSSID)' at \(Int(elapsed()))s (\(stage))")
+            } else if err != lastJoinError {
+                lastJoinError = err
+                overlayInfo("📵 Join '\(Self.hotspotSSID)' refused at \(Int(elapsed()))s: \(err!)")
             }
         }
         return false
