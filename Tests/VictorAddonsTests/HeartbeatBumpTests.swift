@@ -8,20 +8,37 @@ private let H: CGFloat = 982
 
 final class HeartbeatBumpTests: XCTestCase {
 
-    // The whole point of the rewrite: the lens covers the tenth of the screen
-    // Victor asked for, measured as AREA (πr² = 0.10 · W · H), not as width.
-    func testLensCoversATenthOfTheScreenByArea() {
+    // The whole point of the rewrite: the lens covers the share of the screen
+    // Victor asked for, measured as AREA (πr² = fraction · W · H), not as width.
+    func testLensCoversTheAskedShareOfTheScreenByArea() {
         let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
         let area = CGFloat.pi * r * r
         XCTAssertEqual(area / (W * H), HeartbeatBump.areaFraction, accuracy: 0.0001)
     }
 
-    // …which is a lens roughly a seventh of the screen wide. Stated as a plain
-    // number so a future tweak to `areaFraction` has to face what it looks like.
+    // …a lens a bit over half the screen wide since the beat was asked to be
+    // twice the size. Stated as a plain number so a future tweak to
+    // `areaFraction` has to face what it actually looks like.
     func testLensRadiusOnTheRetina() {
         let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
-        XCTAssertEqual(r, 217.4, accuracy: 0.1)
-        XCTAssertLessThan(2 * r, W / 3)
+        XCTAssertEqual(r, 434.8, accuracy: 0.1)
+        // Still a lens, not the whole screen: a still margin survives all round.
+        XCTAssertLessThan(2 * r, H)
+    }
+
+    // "Twice as big" was asked of the SIZE, and the size of a disc is how wide
+    // it reads — so the radius doubled against the original tenth-of-the-area
+    // lens, which is why the fraction had to go 0.10 → 0.40 and not → 0.20.
+    func testTheLensIsTwiceAsWideAsTheOriginalTenth() {
+        let bounds = CGRect(x: 0, y: 0, width: W, height: H)
+        let tenth = (W * H * 0.10 / CGFloat.pi).squareRoot()
+        XCTAssertEqual(HeartbeatBump.radius(in: bounds), 2 * tenth, accuracy: 0.1)
+    }
+
+    // …and it grew without getting punchier: `inputScale` is relative to the
+    // radius, so the convexity constant must stay exactly where it was.
+    func testAmplitudeWasNotTouchedWhenTheLensGrew() {
+        XCTAssertEqual(HeartbeatBump.peakScale, 0.5, accuracy: 0.0001)
     }
 
     // A degenerate overlay (no screen yet) must not produce a NaN radius that

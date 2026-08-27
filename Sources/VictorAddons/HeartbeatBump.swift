@@ -19,15 +19,27 @@ import CoreGraphics
 /// tested without a screen.
 enum HeartbeatBump {
 
-    /// How much of the screen the lens covers. Victor asked for "those 10% of
+    /// How much of the screen the lens covers. The first ask was "those 10% of
     /// the screen under the mouse", and area — not width — is what the eye
     /// judges that by, hence `radius(in:)` solving πr² = fraction · W · H.
-    static let areaFraction: CGFloat = 0.10
+    ///
+    /// On 2026-08-27 Victor asked for the beat to be **twice as big — its size,
+    /// not its amplitude**. The size of a disc is how wide it reads, i.e. its
+    /// radius, so doubling that quadruples the surface it sits on: 10% → 40%.
+    /// The bargain the rewrite made survives it untouched — outside the radius
+    /// `CIBumpDistortion` is still the identity, so a wider lens costs the
+    /// periphery exactly nothing, it just leaves a thinner still margin.
+    static let areaFraction: CGFloat = 0.40
 
     /// Peak `inputScale` of the bump, i.e. how convex the lens gets at the top
     /// of a lub or a dub. 0.5 roughly doubles the middle of the disc — the same
     /// punch the old 1.30 zoom had, minus the swept periphery. Past ~0.7 the
     /// centre stretches into a fisheye smear.
+    ///
+    /// This is the *amplitude* Victor explicitly did NOT want changed when the
+    /// lens grew: `inputScale` is relative to the radius, so a lens of twice the
+    /// size bulges by the same factor over twice the distance — bigger, not
+    /// punchier. Leave it where it is when tuning `areaFraction`.
     static let peakScale: CGFloat = 0.5
 
     /// The residual whole-screen breathe, kept deliberately tiny (the old value
@@ -38,7 +50,7 @@ enum HeartbeatBump {
 
     /// Radius of the lens, in the overlay's points: the disc whose area is
     /// `areaFraction` of the screen. On the retina (1728 × 1117 pt) that is
-    /// ~248 pt — a lens about a seventh of the screen wide.
+    /// ~496 pt — a lens about four sevenths of the screen wide.
     static func radius(in bounds: CGRect) -> CGFloat {
         guard bounds.width > 0, bounds.height > 0 else { return 0 }
         return (bounds.width * bounds.height * areaFraction / .pi).squareRoot()

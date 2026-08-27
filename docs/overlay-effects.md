@@ -295,8 +295,11 @@ rule from the start.
   looking: a corner 1500 pt from the pivot swept ~450 pt per thump, so the periphery
   lurched while the thing under the cursor barely moved — dizzying rather than alive.
   It is now a **`CIBumpDistortion` in `imgLayer.filters`** (`HeartbeatBump`): a convex
-  lens over the **10% of the screen area** around the pointer (πr² = 0.10·W·H, ~248 pt
-  on the Retina), `inputScale` 0 → 0.5 → 0 driven by a keyframe animation on the
+  lens over the **40% of the screen area** around the pointer (πr² = 0.40·W·H, ~496 pt
+  on the Retina). It started at 10% / ~248 pt; on 2026-08-27 Victor asked for the beat
+  to be **twice as big — the size, not the amplitude** — and the size of a disc is how
+  wide it reads, so the radius doubled and the area it sits on quadrupled. `inputScale`
+  is unchanged at 0 → 0.5 → 0, driven by a keyframe animation on the
   `filters.bump.inputScale` key path — which is why the filter is installed with a
   `name`. Outside its radius the filter is the **identity**, so the periphery is not
   merely moved less, it is not moved at all; what is left of the old zoom is a 2%
