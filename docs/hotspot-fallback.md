@@ -1,8 +1,21 @@
 # 📶 Hotspot fallback — asking the phone for its hotspot
 
 When this Mac is left without internet, `HotspotFallback` gets the phone
-(Galaxy S24 Ultra) to turn its hotspot on, and joins it. Measured end to end:
-**~15 s** from losing the connection to being back online.
+(Galaxy S24 Ultra) to turn its hotspot on, and joins it. Measured end to end
+with `./test-hotspot-chain.sh` (27 Aug 2026), from the hotspot being switched
+off to the Mac being back online: **9 s**. Timestamped on both sides:
+
+```
+06:26:02.6  phone   hotspot switched off
+06:26:09.4  Mac     4 s grace elapsed, no internet — opening the channel
+06:26:10.5  Mac     RFCOMM channel open (channel 9)
+06:26:10    phone   ACTIVITY_RESUMED — the routine's trigger
+06:26:11.9  phone   CMD_SET_AP 1 — the routine turned the hotspot on
+06:26:14.7  Mac     online
+```
+
+The routine fires **1.5 s** after the signal; the rest is the Mac noticing and
+the soft AP coming up.
 
 ## The chain
 
@@ -186,6 +199,32 @@ attempt to reorder `victor` to the end was for. It was abandoned: macOS promotes
 the currently-joined network back to the top, so the order will not hold.
 `networksetup` also **exits 0 when the join fails**, reporting the failure only
 as text on stdout — so success is empty output, never the exit status.
+
+## Two numbers that made it look broken
+
+Both found by running the chain for real, both fixed:
+
+**The cooldown swallowed the lid-open.** The floor between attempts was 180 s,
+inherited from when the escalation power-cycled the Bluetooth adapter and a
+retry was genuinely expensive. What is left is an SDP query and a channel open,
+which cost nothing — and 180 s was actively harmful: a wake landing inside it
+did *nothing*, for up to three minutes, with one line in a log nobody is reading
+(`📵 No internet (wake) but only 82s since last attempt — holding`). Observed
+from the outside as "closed the lid, reopened it, Bluetooth didn't reconnect for
+a minute". The floor is now **45 s**, and a **wake gets 10 s** — a lid-open is a
+new room and a new situation by definition, which is the whole point of the
+feature.
+
+**The recovery budget was shorter than the recovery.** `waitAfterPlainConnect`
+was 12 s, sized against a measured ~8 s hotspot spin-up. With the phone's Wi-Fi
+switched off beforehand the soft AP has to tear the STA down first, and the same
+chain took **30 s** — so the app gave up and logged `channel is open but no
+internet followed` on a run that succeeded seconds later. Now 45 s; the loop
+exits the moment the probe answers, so overshooting is free.
+
+Related: the SDP watchdog was 6 s and produced a false negative on a cold ACL
+link (a query answers in ~1 s once the link is up, but the phone has to be paged
+first). Now 15 s.
 
 ## Home geofence
 

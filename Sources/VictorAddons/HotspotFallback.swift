@@ -93,20 +93,44 @@ final class HotspotFallback {
     /// well inside it.
     private static let grace: TimeInterval = 4
 
-    /// Poll budget after a plain `--connect` (seconds). Covers the ~8 s hotspot
-    /// spin-up with room to spare; overshooting only delays the escalation.
-    private static let waitAfterPlainConnect = 12
+    /// How long we keep polling (and asking to join) after the signal is
+    /// delivered. Measured 27 Aug 2026 with the phone's Wi-Fi off beforehand:
+    /// **30 s** from channel open to the Mac being online — the routine fires at
+    /// once, but a soft-AP that has to tear the STA down first is nowhere near
+    /// the ~8 s spin-up measured when Wi-Fi was already on. At 12 s the app gave
+    /// up and logged `channel is open but no internet followed` on a run that
+    /// then succeeded seconds later, which is a lie in the log at the worst
+    /// possible moment. Overshooting costs nothing: the loop exits the second
+    /// the probe answers.
+    private static let waitAfterPlainConnect = 45
     /// Poll budget after the power cycle (seconds).
     private static let waitAfterPowerCycle = 15
 
-    /// Floor between attempts. Somewhere with genuinely no coverage, retrying
-    /// tight would power-cycle Bluetooth every few seconds for as long as we
-    /// stay there.
-    private static let cooldown: TimeInterval = 180
+    /// Floor between attempts, so a place with genuinely no coverage doesn't get
+    /// an SDP query and a channel open every few seconds for as long as we sit
+    /// there.
+    ///
+    /// It was 180 s, inherited from when the escalation power-cycled the
+    /// Bluetooth adapter and a retry was genuinely expensive. What is left is an
+    /// SDP query and a channel open, which are not — and 180 s was actively
+    /// harmful: **a lid-open landed inside it and did nothing at all.** Observed
+    /// live, `📵 No internet (wake) but only 82s since last attempt — holding`,
+    /// which from the outside is the feature being broken for a minute and a
+    /// half with no hotspot and no explanation.
+    private static let cooldown: TimeInterval = 45
+    /// A wake is a new room, a new lid-open, a new situation — the exact moment
+    /// this feature exists for — so it is not held back by the ordinary floor.
+    /// It still gets a small one, because a single wake emits a burst of path
+    /// updates behind it.
+    private static let wakeCooldown: TimeInterval = 10
+
+    /// Breathing room for the phone to stand a new listening socket up after we
+    /// close a channel ourselves.
+    private static let reopenSettle: TimeInterval = 2
 
     /// Total budget for one SDP-query + open (+ one retry after a fresh query).
     /// Generous, because it is paid only when we already know we are offline.
-    private static let channelOpenBudget: TimeInterval = 20
+    private static let channelOpenBudget: TimeInterval = 40
 
     private static let probeHost = "1.1.1.1"
     private static let probePort: NWEndpoint.Port = 443
@@ -236,9 +260,11 @@ final class HotspotFallback {
             return
         }
 
+        // A wake gets the short floor; everything else gets the ordinary one.
+        let floor = reason == "wake" ? Self.wakeCooldown : Self.cooldown
         let since = Date().timeIntervalSince(lastAttemptAt)
-        guard since >= Self.cooldown else {
-            overlayInfo("📵 No internet (\(reason)) but only \(Int(since))s since last attempt — holding")
+        guard since >= floor else {
+            overlayInfo("📵 No internet (\(reason)) but only \(Int(since))s of \(Int(floor))s since last attempt — holding")
             return
         }
         lastAttemptAt = Date()
@@ -375,7 +401,13 @@ final class HotspotFallback {
     /// `kIOReturnError`.) The channel is held in a property because releasing it
     /// closes it, and a closed channel is no signal at all.
     private func openChannel() -> String? {
-        closeChannel()   // a fresh open, so the phone sees a fresh connection
+        // A fresh open, so the phone sees a fresh connection. If we are the ones
+        // dropping the old channel, give the phone a moment: its accept loop
+        // closes the old socket and stands a new one up, and a query fired into
+        // that window reads a record that is about to stop being true.
+        let hadChannel = channel != nil
+        closeChannel()
+        if hadChannel { Thread.sleep(forTimeInterval: Self.reopenSettle) }
 
         var result: String? = "the phone never answered the channel open"
         let done = DispatchSemaphore(value: 0)
@@ -433,7 +465,13 @@ final class HotspotFallback {
         }
 
         /// How long the phone gets to answer one SDP query.
-        private static let sdpTimeout: TimeInterval = 6
+        ///
+        /// 6 s was too tight and produced a false negative on the first
+        /// automatic attempt of a real test: a query answers in about a second
+        /// once the ACL link is up, but when it is cold the phone has to be
+        /// paged first, and that is where the seconds go. This is paid only when
+        /// the phone is genuinely unreachable.
+        private static let sdpTimeout: TimeInterval = 15
 
         private let device: IOBluetoothDevice
         private let sppUUID: UInt16

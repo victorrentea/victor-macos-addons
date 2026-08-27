@@ -39,20 +39,37 @@ hotspot_on() { "$ADB" shell ip -4 addr show ap_br_swlan0 2>/dev/null | grep -q "
 # is re-opened before every read: our own activity coming to the front (which is
 # exactly what the test provokes) would otherwise make the switch unreadable and
 # look like "the hotspot did not come on".
-tap_hotspot_toggle() {
+# The page carries four switches (Mobile Hotspot, Bluetooth tethering and two
+# more), so "the first switch" is a coin flip waiting to land wrong. The row is
+# identified by its content-desc, which is also what carries `checked=`.
+hotspot_row() {
     "$ADB" shell am start -a android.settings.TETHER_SETTINGS >/dev/null 2>&1
     sleep 2
     "$ADB" shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-    local xml; xml=$("$ADB" shell cat /sdcard/ui.xml 2>/dev/null)
-    # The switch sits in the row whose text is the hotspot's own name.
-    local bounds
-    bounds=$(echo "$xml" | tr '>' '\n' | grep -i "switch" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
-    if [ -z "$bounds" ]; then
-        say "FAILED to find the hotspot switch on screen — is the phone unlocked?"
+    "$ADB" shell cat /sdcard/ui.xml 2>/dev/null \
+        | tr '>' '\n' \
+        | grep 'class="android.widget.Switch"' \
+        | grep 'content-desc="Mobile Hotspot"' \
+        | head -1
+}
+
+# What the phone itself says the switch is set to — a second opinion on
+# `hotspot_on`, and the one that reads right during the seconds the interface is
+# coming up or going down.
+switch_checked() {
+    hotspot_row | grep -q 'checked="true"'
+}
+
+tap_hotspot_toggle() {
+    local row; row=$(hotspot_row)
+    if [ -z "$row" ]; then
+        say "FAILED to find the Mobile Hotspot switch — is the phone unlocked?"
         return 1
     fi
+    local bounds; bounds=$(echo "$row" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"')
     local x1 y1 x2 y2
     read -r x1 y1 x2 y2 <<<"$(echo "$bounds" | grep -o '[0-9]\+' | tr '\n' ' ')"
+    say "tapping the Mobile Hotspot switch at $(( (x1 + x2) / 2 )),$(( (y1 + y2) / 2 ))"
     "$ADB" shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 )) >/dev/null 2>&1
     sleep 3
 }
@@ -61,7 +78,7 @@ tap_hotspot_toggle() {
 restore() {
     say "--- restoring ---"
     for attempt in 1 2 3; do
-        if hotspot_on; then break; fi
+        if hotspot_on || switch_checked; then break; fi
         say "hotspot still off, turning it back on (attempt $attempt)"
         tap_hotspot_toggle
         sleep 4
