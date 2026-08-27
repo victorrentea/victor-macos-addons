@@ -69,6 +69,19 @@ What does *not* follow, and was believed briefly on synthetic audio: that long c
 
 **It is verification, not diarization.** Diarization asks "how many voices, and who spoke when": clustering, global state, and the right to relabel the past. The question here is narrower and far cheaper — one enrolled voiceprint, one cosine per segment, no state, no retroactive edits.
 
+**Calibration, measured on Victor's own voice (2026-08-27).** Enrolled from 151 segments (17.1 min) of one session; scored against 217 of his own segments and 620 impostor segments from *other* sessions 6 and 12 months away. Held-out separation is wide — his mean cosine 0.706 (p5 0.500) against an impostor mean of 0.135 (p95 0.293) — but the tail is what sets the thresholds:
+
+| errors/side | `audience ≤` | `victor ≥` | his speech mislabelled | impostor mislabelled | **abstains on his speech** | abstains overall |
+|---|---|---|---|---|---|---|
+| 2.0 % | 0.333 | 0.506 | 2.30 % | 2.10 % | 3.2 % | 2.4 % |
+| **1.5 % (shipped)** | **0.321** | **0.643** | **1.84 %** | **1.61 %** | **17.5 %** | **6.5 %** |
+| 1.0 % | 0.316 | 0.666 | 1.38 % | 1.13 % | 26.3 % | 9.1 % |
+| 0.5 % | 0.230 | 0.707 | 0.92 % | 0.65 % | 38.7 % | 19.7 % |
+
+The knee is sharp: buying half a point of accuracy past 1.5 % costs ten points of coverage, because a single colliding voice sets the upper threshold almost by itself. **`Ciprian` (accenture-0211) accounts for 6 of the 9 false accepts in the whole corpus, peaking at 0.752 — above Victor's own 5th percentile of 0.462.** All false accepts come from that one session, the only one with several Romanian male participants; 21 of the 32 speakers never exceed 0.334. If this becomes a problem the fix is to enrol a known collider as a second speaker and take the nearest, not to raise the threshold on everyone.
+
+1.5 % is shipped because the governing rule here is *a wrong label is worse than no label* — the reason the old labels were removed. **These numbers are from remote Zoom audio and will move for a room**; they are a starting point to be re-fitted once the raw far-field capture exists.
+
 - **Three answers, not two** (`speaker_id.decide`, pure + unit-tested). Two thresholds carve out a band in the middle where the honest answer is *nothing*. A single threshold would force a guess on every segment, which is precisely how the old labels earned their removal. Abstaining is a correct outcome, not a failure.
 - **Calibrated on cross-session data.** Enrolment comes from one session; the thresholds are fitted against segments recorded 6–12 months later, on a possibly different mic, because that is the condition this runs in — enrolled once, used for years. The same-session number flatters and is not used. `enroll_voiceprint.py` **refuses to invent thresholds**; they are required arguments.
 - **A degenerate embedding scores `NaN`, not `0.0`.** The tempting shortcut is fatal: `0.0` is an ordinary *low* score, and a low score means `Audience` — so "the measurement failed" would silently become "somebody else was speaking". `NaN` cannot be mistaken for a score, and `decide` abstains on it explicitly rather than letting it fall through the comparisons (all of which are `False` against `NaN`, which would give the right answer with an unreadable reason).

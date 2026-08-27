@@ -57,11 +57,19 @@ class TestDecide:
         assert sid.decide(0.35, LONG, TH).label == sid.AUDIENCE
 
     def test_a_short_segment_is_never_labelled_however_confident_it_looks(self):
-        # Every model measured sits at 3-5 % EER below ~1.5 s. A 0.99 there is
-        # not evidence, and it is exactly the shape of a confidently wrong label.
+        # Measured on Victor's own corpus: EER 1.03 % on 5-10 s segments,
+        # 3.6-4.8 % below 5 s. A 0.99 down there is not evidence, it is the
+        # shape of a confidently wrong label.
         v = sid.decide(0.99, 0.4, TH)
         assert v.label is None
         assert "0.4s" in v.reason
+
+    def test_the_label_floor_sits_above_the_embed_floor(self):
+        # Between the two we still measure and still record the score: the band
+        # can only ever be retuned from numbers we kept, and that population is
+        # exactly what the dark launch is collecting.
+        assert sid.EMBED_FLOOR < sid.MIN_SECONDS
+        assert sid.decide(0.99, (sid.EMBED_FLOOR + sid.MIN_SECONDS) / 2, TH).label is None
 
     def test_the_duration_gate_is_checked_before_the_score(self):
         assert sid.decide(-1.0, 0.2, TH).label is None

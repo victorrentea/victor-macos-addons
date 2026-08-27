@@ -35,10 +35,21 @@ SAMPLE_RATE = 16000
 VICTOR = "Victor"
 AUDIENCE = "Audience"
 
-# Below this much *voiced* audio, every model measured sits at 3-5 % EER —
-# indistinguishable from guessing for our purposes. Short segments are not
-# scored at all rather than scored badly.
-MIN_SECONDS = float(os.environ.get("WHISPER_SPEAKER_MIN_SECONDS", "1.5"))
+# Two floors, because "too short to trust" and "too short to bother" are
+# different lengths.
+#
+# `MIN_SECONDS` is where a label stops being honest. Measured on Victor's own
+# corpus, EER is 1.03 % on 5-10 s segments and 3.6-4.8 % below 5 s, and the
+# calibrated band already abstains on 49-74 % of everything under 5 s — so a
+# short segment mostly gets refused anyway, and refusing it up front is both
+# cheaper and clearer in the log than refusing it after the fact.
+MIN_SECONDS = float(os.environ.get("WHISPER_SPEAKER_MIN_SECONDS", "3.0"))
+
+# `EMBED_FLOOR` is where the *measurement* stops being worth taking at all.
+# Between the two we still embed and still record the score, because the band
+# can only ever be retuned from numbers we kept — the dark launch is collecting
+# exactly this population. Below the floor there is nothing to learn.
+EMBED_FLOOR = float(os.environ.get("WHISPER_SPEAKER_EMBED_FLOOR", "1.5"))
 
 
 @dataclass(frozen=True)
@@ -218,8 +229,25 @@ class SpeakerScorer:
             )
             self._input_name = self._session.get_inputs()[0].name
             self._fbank = fbank_cmn
+
+            # Prove the graph actually computes before trusting it. This is not
+            # paranoia: onnxruntime's CoreML EP with `ModelFormat=MLProgram`
+            # returns **all-NaN** for this model — no exception, no warning,
+            # correct output shape, every element NaN. We do not ask for that
+            # format, but the default is the sort of thing a version bump
+            # changes, and the failure is invisible: every segment would score
+            # NaN, every verdict would abstain, and the feature would look like
+            # a quiet room rather than a broken model. One 2 s embedding at
+            # startup costs ~40 ms and turns that into a log line.
+            probe = self.embed(np.zeros(int(SAMPLE_RATE * 2), dtype=np.float32))
+            if not np.isfinite(probe).all():
+                raise RuntimeError(
+                    "embedding model returned non-finite values on a silent probe "
+                    "(a CoreML ModelFormat/EP mismatch does exactly this)"
+                )
         except Exception as exc:  # noqa: BLE001 — any failure disables, none propagates
             self.error = f"model: {type(exc).__name__}: {exc}"
+            self._session = None
             return
 
         try:
@@ -249,9 +277,8 @@ class SpeakerScorer:
             return None
         try:
             seconds = len(audio) / SAMPLE_RATE
-            if seconds < MIN_SECONDS:
-                # Cheap exit before the model runs — nothing under the floor is
-                # scored, so there is no reason to pay for it.
+            if seconds < EMBED_FLOOR:
+                # Nothing to learn from audio this short, so do not pay for it.
                 return decide(float("nan"), seconds, self.voiceprint.thresholds)
             sim = cosine(self.embed(audio), self.voiceprint.embedding)
             return decide(sim, seconds, self.voiceprint.thresholds)
