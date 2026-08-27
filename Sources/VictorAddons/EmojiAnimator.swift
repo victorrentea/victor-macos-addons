@@ -93,6 +93,10 @@ class EmojiAnimator {
     private var _minigunReticleLayer: CALayer?
     private var _minigunReticleTimer: Timer?
     private var _minigunReticleHidCursor = false      // balance hide/unhide of the real cursor
+    // The gun sprite rides the same 60fps timer as the reticle, so it can never
+    // outlive it or lag a frame behind it: one tick moves both. Held weakly —
+    // the layer itself belongs to the burst's container.
+    private weak var _minigunGunLayer: CALayer?
 
     // 🪚 Chainsaw cursor: for the length of tile #18 the pointer IS a running
     // chainsaw — a 16-frame sprite looping on the cursor, real cursor hidden.
@@ -2968,8 +2972,34 @@ class EmojiAnimator {
     /// frame, so anything that floats it above the desktop shows a sawn-off base
     /// hanging in mid-air. Sitting it **flush on the screen's bottom edge** is what
     /// the art expects — the gun rises out of the edge instead of being cropped by
-    /// it. Only the vertical placement is pinned; horizontally it stays on `W/8`.
+    /// it. Only the vertical placement is pinned; horizontally the gun tracks the
+    /// cursor (see `minigunSpriteMouseFollowRatio`).
     private static let minigunSpriteSitsOnScreenBottom = true
+    /// The gun slides along the bottom edge with the mouse, but at **half** its
+    /// travel — you swing the crosshair across the desktop and the gun swings
+    /// after it, as if you were hauling the thing around to keep it on target.
+    /// Half-rate isn't just "slower": mapping body-x to `mouseX / 2` keeps the
+    /// gun in the west half at all times, so it stays *behind* the bullets it is
+    /// firing however far right you aim — and at `mouseX = W/4` it lands exactly
+    /// on the `W/8` the burst used to be nailed to.
+    private static let minigunSpriteMouseFollowRatio: CGFloat = 0.5
+
+    /// Where the gun **body** should sit on screen for a given cursor x, both in
+    /// hostLayer coordinates. Pure so the half-rate mapping is testable without
+    /// a screen.
+    static func minigunBodyX(forMouseX mouseX: CGFloat) -> CGFloat {
+        mouseX * minigunSpriteMouseFollowRatio
+    }
+
+    /// `CALayer.position` places the sprite frame's CENTRE, but what has to land
+    /// on `bodyX` is the gun body — which sits off-centre inside the mostly-empty
+    /// frame (and reflects across the middle when the sprite is mirrored). This
+    /// converts the one into the other.
+    static func minigunLayerX(forBodyX bodyX: CGFloat, spriteWidth: CGFloat) -> CGFloat {
+        let centreX = minigunSpriteFacesWest ? 1 - minigunSpriteGunCentre.x
+                                             : minigunSpriteGunCentre.x
+        return bodyX - (centreX - 0.5) * spriteWidth
+    }
     /// Width of the whole sprite frame as a fraction of the screen. The gun body
     /// is only ~46% of that frame (the rest is the casing spray), so 0.44 puts
     /// the gun itself at ~0.20 of the screen — big enough to read as the source
@@ -3012,20 +3042,18 @@ class EmojiAnimator {
         gun.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         // y = 0 is the BOTTOM edge. The SW quadrant is x ∈ [0, W/2], y ∈ [0, H/2];
         // its NW sub-sector is the upper-left quarter of that — centre (W/8, 3H/8).
-        // Only the x half of that survives: `minigunSpriteSitsOnScreenBottom` pins
-        // the gun to the bottom edge rather than floating it at 3H/8.
+        // Neither half of that survives as a fixed point any more: the gun is
+        // pinned to the bottom edge, and its x rides the cursor at half rate —
+        // but the mapping still passes through W/8, so a cursor in the middle of
+        // the west half parks the gun exactly where it used to stand.
         let target = CGPoint(x: bounds.width * 0.125, y: bounds.height * 0.375)
-        // `position` places the layer's CENTRE, but what belongs on `target` is
-        // the gun body — so shift the layer by however far the body is off-centre
-        // inside the frame. Mirroring happens about the layer centre, so on a
-        // flipped sprite the body's x reflects across 0.5 as well.
-        let centre = Self.minigunSpriteGunCentre
-        let bodyX = Self.minigunSpriteFacesWest ? 1 - centre.x : centre.x
         // The gun body's own bottom IS the frame's bottom (it is cut off there),
         // so "flush with the screen edge" is simply the layer's bottom at y = 0.
         let y = Self.minigunSpriteSitsOnScreenBottom ? h / 2
-                                                     : target.y - (centre.y - 0.5) * h
-        gun.position = CGPoint(x: target.x - (bodyX - 0.5) * w, y: y)
+                                                     : target.y - (Self.minigunSpriteGunCentre.y - 0.5) * h
+        gun.position = CGPoint(x: Self.minigunLayerX(forBodyX: Self.minigunBodyX(forMouseX: mousePointInHostLayer().x),
+                                                     spriteWidth: w),
+                               y: y)
         gun.contents = first
         gun.contentsGravity = .resizeAspect
         // Pixel art: bilinear smoothing at this magnification turns the barrels
@@ -3050,8 +3078,13 @@ class EmojiAnimator {
     /// 60fps for the whole minigun burst (the real cursor is hidden, the crosshair
     /// stands in). Tears itself down `duration`s later — keyed to this exact
     /// reticle so a re-press (fresh reticle) isn't torn down by an old schedule.
-    private func startMinigunReticle(autoStopAfter duration: Double) {
-        stopMinigunReticle()   // never leak a previous burst's reticle
+    ///
+    /// `gun`, if given, is dragged along the bottom edge by the same tick, at half
+    /// the cursor's travel — the burst reads as the trainer swinging the weapon
+    /// after the crosshair rather than as a gun bolted to the corner.
+    private func startMinigunReticle(following gun: CALayer?, autoStopAfter duration: Double) {
+        stopMinigunReticle()   // never leak a previous burst's reticle (and its gun)
+        _minigunGunLayer = gun
 
         let reticle = Self.makeSniperReticle(scale: Self.minigunReticleScale, armed: true)
         CATransaction.begin()
@@ -3071,9 +3104,16 @@ class EmojiAnimator {
 
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self, self._minigunReticleTimer === t else { t.invalidate(); return }
+            let mouse = self.mousePointInHostLayer()
             CATransaction.begin()
             CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
-            self._minigunReticleLayer?.position = self.mousePointInHostLayer()
+            self._minigunReticleLayer?.position = mouse
+            if let gun = self._minigunGunLayer {
+                // x only: the gun stays welded to the bottom edge, so its y (and
+                // the mirroring transform) are left exactly as built.
+                gun.position.x = Self.minigunLayerX(forBodyX: Self.minigunBodyX(forMouseX: mouse.x),
+                                                    spriteWidth: gun.bounds.width)
+            }
             CATransaction.commit()
         }
         _minigunReticleTimer = timer
@@ -3090,6 +3130,9 @@ class EmojiAnimator {
     private func stopMinigunReticle() {
         _minigunReticleTimer?.invalidate(); _minigunReticleTimer = nil
         _minigunReticleLayer?.removeFromSuperlayer(); _minigunReticleLayer = nil
+        // The gun is owned by the burst's container (which fades and is torn down
+        // with the holes) — just stop steering it.
+        _minigunGunLayer = nil
         if _minigunReticleHidCursor {
             NSCursor.unhide()
             CGDisplayShowCursor(CGMainDisplayID())
@@ -5847,7 +5890,7 @@ class EmojiAnimator {
 
         // A bigger, always-red sniper crosshair appears immediately, giving the
         // trainer a short aiming window before sound + bullets start.
-        startMinigunReticle(autoStopAfter: resorbStart + resorbDuration + 0.1)
+        startMinigunReticle(following: gun, autoStopAfter: resorbStart + resorbDuration + 0.1)
     }
 
     // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)

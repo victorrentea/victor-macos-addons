@@ -97,6 +97,51 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertEqual(EmojiAnimator.minigunBulletHoleScale, 0.7, accuracy: 0.001)
     }
 
+    /// The gun slides along the bottom edge at HALF the cursor's travel: swing the
+    /// crosshair 400px right and the gun follows 200px. Because the mapping is
+    /// `mouseX / 2` (not an offset from a rest point), it also keeps the gun in the
+    /// west half whatever you aim at — always behind the bullets it fires.
+    func testMinigunGunTracksTheMouseAtHalfSpeedAndStaysInTheWestHalf() {
+        let width: CGFloat = 1600
+
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: 0), 0, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: width), width / 2, accuracy: 0.001,
+                       "cursor at the east edge must still leave the gun in the west half")
+
+        // Half travel, measured as a ratio between two cursor positions.
+        let near = EmojiAnimator.minigunBodyX(forMouseX: 300)
+        let far = EmojiAnimator.minigunBodyX(forMouseX: 700)
+        XCTAssertEqual(far - near, 200, accuracy: 0.001)
+
+        // The gun is never to the right of the cursor it is shooting at.
+        for mouseX in stride(from: CGFloat(0), through: width, by: 50) {
+            XCTAssertLessThanOrEqual(EmojiAnimator.minigunBodyX(forMouseX: mouseX), mouseX)
+        }
+
+        // Continuity with the placement this replaced: a cursor in the middle of
+        // the west half parks the gun on the old fixed W/8.
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: width / 4), width * 0.125, accuracy: 0.001)
+    }
+
+    /// `position` moves the sprite FRAME, but the gun body sits off-centre in a
+    /// frame that is mostly empty sky for the casings — so the layer x has to be
+    /// biased by that offset, or the emptiness lands on target and the gun walks
+    /// off the west edge.
+    func testMinigunLayerXOffsetsForTheGunBodySittingOffCentreInTheFrame() {
+        let spriteWidth: CGFloat = 800
+        let layerX = EmojiAnimator.minigunLayerX(forBodyX: 200, spriteWidth: spriteWidth)
+
+        // Mirrored sprite: the body's 0.758 reflects to 0.242, i.e. left of centre,
+        // so the frame must be pushed RIGHT to bring the body back onto 200.
+        XCTAssertGreaterThan(layerX, 200)
+        XCTAssertEqual(layerX, 200 + (0.5 - 0.242) * spriteWidth, accuracy: 0.5)
+
+        // And the mapping is a pure translation: same shift at any target x.
+        let shiftA = EmojiAnimator.minigunLayerX(forBodyX: 0, spriteWidth: spriteWidth)
+        let shiftB = EmojiAnimator.minigunLayerX(forBodyX: 640, spriteWidth: spriteWidth) - 640
+        XCTAssertEqual(shiftA, shiftB, accuracy: 0.001)
+    }
+
     /// The 🔥 Phoenix asset must bundle into the app AND decode as the full
     /// 28-frame transparent animation the effect loops — this calls the exact
     /// `CGImageSource` loader `showPhoenix()` uses, so we catch a missing,
