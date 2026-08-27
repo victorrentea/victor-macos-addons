@@ -230,6 +230,19 @@ in **4.0 s**, after which the query answers instantly. So `ChannelOpener` brings
 the baseband link up first whenever the device is disconnected, with a bounded
 page timeout so an out-of-range phone costs one page rather than the thread.
 
+Verified through the app itself, adapter power-cycled first (27 Aug 2026):
+
+```
+07:24:30.9  Mac     RFCOMM channel to the phone closed
+07:24:42.3  Mac     Bluetooth link to the phone up in 2.6s   ← the new step
+07:24:42.5  Mac     RFCOMM channel open (channel 9)
+07:24:42    phone   ACTIVITY_RESUMED — the routine's trigger
+```
+
+**2.8 s** from a cold link to the signal delivered. The same situation before the
+fix produced `the phone did not answer the SDP query in 15s`, twice, and nothing
+at all on the phone.
+
 **This is also why the old code appeared to work at all.** Its channel open —
 against a cached number — *did* page the phone, so the link came up as a side
 effect; it just opened a channel nobody was listening on. Every test run with

@@ -11,6 +11,12 @@
 #   nohup ./test-hotspot-chain.sh > /dev/null 2>&1 &
 #   tail -f /tmp/hotspot-chain-test.log
 #
+# Pass `cold` to power-cycle the Bluetooth adapter first, which drops the ACL
+# link the way closing the lid does. That is the case the feature exists for and
+# the only one that was ever failing — with the link warm everything passes, so a
+# warm run proves much less than it looks. Costs every Bluetooth device on this
+# Mac about two seconds, a mouse included.
+#
 # Requirements: the phone on USB, and **unlocked** — the hotspot has no
 # programmatic switch on Android 16 (see docs/hotspot-fallback.md), so both
 # turning it off and putting it back is UI automation, and UI automation cannot
@@ -20,6 +26,10 @@ set -uo pipefail
 
 ADB="$HOME/Library/Android/sdk/platform-tools/adb"
 LOG=/tmp/hotspot-chain-test.log
+COLD=no
+[ "${1:-}" = cold ] && COLD=yes
+PHONE_BT=a8-ba-69-cf-8d-58
+BLUEUTIL=/opt/homebrew/bin/blueutil
 SSID=victor
 IFACE=en0
 PORT=55123
@@ -105,6 +115,15 @@ tap_hotspot_toggle || exit 1
 for _ in $(seq 1 15); do hotspot_on || break; sleep 1; done
 if hotspot_on; then say "the toggle did not take — aborting"; exit 1; fi
 say "hotspot is off"
+
+if [ "$COLD" = yes ]; then
+    # `blueutil --disconnect` does NOT drop the link (measured: exit 0, and the
+    # phone still reports ACL BR/EDR:Y twelve seconds later). Power-cycling the
+    # adapter does.
+    say "power-cycling Bluetooth to drop the ACL link"
+    "$BLUEUTIL" -p 0 >/dev/null 2>&1; sleep 2; "$BLUEUTIL" -p 1 >/dev/null 2>&1; sleep 3
+    say "BT link connected=$("$BLUEUTIL" --is-connected "$PHONE_BT" 2>/dev/null)"
+fi
 
 # Confirm the Mac has actually lost the link before starting the clock: a ping
 # keeps succeeding for a few seconds after the AP goes away, and a test that
