@@ -207,6 +207,26 @@ rule from the start.
   screen edges. Head and tail are **one keyframe opacity track**, not two animations, so the
   fade-out can never begin before the fade-in has finished on a short clip.
 
+- **🔫 Minigun** (sfx #22 `22_minigun.mp3` → `bullet-holes`, `showBulletHoles`): the burst
+  that punches bullet holes around the cursor now has a **visible shooter**. A pixel-art
+  minigun sprite (`Resources/minigun.gif`, 8 frames, transparent, cropped to its content)
+  sits in the **north-west sub-sector of the screen's south-west quadrant** — centre
+  `(W/8, 3H/8)`, i.e. hard against the left edge a little above the lower third — which is
+  where its barrel lines up with the holes appearing out in the middle of the desktop: the
+  gun is **on the bullets' trajectory**, not decoration parked in a corner. The sprite's
+  muzzle points **east, into the desktop**; `minigunSpriteFacesWest` flips it in one line if
+  the other orientation is ever wanted. Width is 22 % of the screen (just under a quarter: centred on `W/8`, that leaves a
+  sliver of margin so the gun's rear does not read as clipped), aspect-preserved, drawn
+  with **`.nearest` magnification** — bilinear smoothing at that scale turns the barrels into
+  grey mush. The 8-frame barrel/flash loop is re-timed from the source gif's lazy 0.1 s/frame
+  to **0.24 s a turn (~4 flashes/s)**: fast enough to read as continuous fire, slow enough not
+  to strobe into mush. It rides **inside the burst's own container**, so `trackEffect` and a
+  cancelling re-press take it down with the holes; the tail's "resorb" shrink pass skips it
+  **by identity** (`hole !== gun`) so the gun doesn't implode along with the bullet holes.
+  Its opacity is **one keyframe track** (the wasn't-me pattern) with `beginTime` at
+  `minigunAimLeadIn`, so during the 0.5 s aiming window only the reticle is on screen, the
+  gun appears on the first shot, and it has faded out by the time the last hole is resorbed.
+
 - **🪚 Chainsaw cursor** (tile #18 `18_chainsaw.mp3` → `chainsaw` / `chainsaw/stop`,
   `showChainsawCursor`): for the length of the clip **the mouse pointer IS a running
   chainsaw** — the real cursor is hidden and a 16-frame sprite loops on it, chasing

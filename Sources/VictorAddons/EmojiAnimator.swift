@@ -2947,6 +2947,74 @@ class EmojiAnimator {
     static let minigunAimLeadIn: Double = 0.5
     static let minigunBulletHoleScale: CGFloat = 0.7
 
+    // MARK: The gun itself (minigun.gif)
+
+    /// The muzzle end of `minigun.gif` points RIGHT, which is the direction the
+    /// gun has to fire once it sits on the west side of the screen — it shoots
+    /// *into* the desktop, along the bullets' trajectory. Flip this to `true` if
+    /// the sprite should face west instead; nothing else needs to change.
+    private static let minigunSpriteFacesWest = false
+    /// Width of the sprite as a fraction of the screen. Just under a quarter: big
+    /// enough to read as the source of the burst, and — since it is centred on
+    /// `W/8` — narrow enough to leave a sliver of margin at the left edge. Flush
+    /// against the edge the gun's rear reads as a cropping accident, the same
+    /// trap the wasn't-me hand has in its corner.
+    private static let minigunSpriteWidthFraction: CGFloat = 0.22
+    /// One turn of the 8-frame barrel/muzzle-flash loop. The source gif runs at
+    /// 0.1s/frame (~1.4 flashes/s), far too lazy for a minigun; ~4 flashes/s
+    /// reads as continuous fire without strobing into mush.
+    private static let minigunSpriteLoopDuration: Double = 0.24
+
+    /// Build the firing-minigun sprite, parked in the **north-west sub-sector of
+    /// the screen's south-west quadrant** — left edge, a little above the lower
+    /// third, which is where the barrel lines up with the bullet holes punched
+    /// around the cursor out in the middle of the desktop.
+    ///
+    /// Returns nil (silently) when the asset is missing: the burst itself must
+    /// still run.
+    private func makeMinigunSprite(in bounds: CGRect) -> CALayer? {
+        guard let url = Bundle.module.url(forResource: "minigun", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            overlayError("minigun.gif not found in bundle")
+            return nil
+        }
+        let frameCount = CGImageSourceGetCount(source)
+        guard frameCount > 0 else { return nil }
+        var frames: [CGImage] = []
+        for i in 0..<frameCount {
+            if let cg = CGImageSourceCreateImageAtIndex(source, i, nil) { frames.append(cg) }
+        }
+        guard let first = frames.first else { return nil }
+
+        let aspect = CGFloat(first.width) / CGFloat(first.height)
+        let w = bounds.width * Self.minigunSpriteWidthFraction
+        let h = w / aspect
+
+        let gun = CALayer()
+        gun.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+        // y = 0 is the BOTTOM edge. The SW quadrant is x ∈ [0, W/2], y ∈ [0, H/2];
+        // its NW sub-sector is the upper-left quarter of that — centre (W/8, 3H/8).
+        gun.position = CGPoint(x: bounds.width * 0.125, y: bounds.height * 0.375)
+        gun.contents = first
+        gun.contentsGravity = .resizeAspect
+        // Pixel art: bilinear smoothing at this magnification turns the barrels
+        // into grey mush, so keep the hard pixel edges.
+        gun.magnificationFilter = .nearest
+        gun.minificationFilter = .nearest
+        if Self.minigunSpriteFacesWest {
+            gun.transform = CATransform3DMakeScale(-1, 1, 1)
+        }
+        gun.opacity = 0
+
+        let spin = CAKeyframeAnimation(keyPath: "contents")
+        spin.values = frames
+        spin.duration = Self.minigunSpriteLoopDuration
+        spin.repeatCount = .infinity
+        spin.calculationMode = .discrete
+        gun.add(spin, forKey: "spin")
+        return gun
+    }
+
     /// Float a bigger, always-red sniper crosshair on the cursor and follow it at
     /// 60fps for the whole minigun burst (the real cursor is hidden, the crosshair
     /// stands in). Tears itself down `duration`s later — keyed to this exact
@@ -5595,6 +5663,12 @@ class EmojiAnimator {
         container.frame = bounds
         hostLayer.addSublayer(container)
 
+        // The gun that is doing the shooting. It rides inside `container` so the
+        // burst's teardown (trackEffect, or a cancelling re-press) takes it down
+        // with the holes; the resorb pass below skips it by identity.
+        let gun = makeMinigunSprite(in: bounds)
+        if let gun { container.addSublayer(gun) }
+
         let interval = (spawnEnd - spawnStart) / Double(count - 1)
         let scale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
         let holeW: CGFloat = image.size.width * Self.minigunBulletHoleScale
@@ -5659,9 +5733,30 @@ class EmojiAnimator {
         // "resorbed" instead of fading out.
         let resorbDuration = 1.0
         let resorbStart = Self.minigunAimLeadIn + spawnEnd + 0.05  // just after the last bullet lands
+        // The gun swings in as the sound starts, hammers away for the whole
+        // spawn window and is gone by the time the last hole is resorbed. One
+        // keyframe track (not two animations) so the tail can never overtake the
+        // head, and `beginTime` puts the entrance on the same instant as the
+        // first shot — during the aiming lead-in only the reticle is on screen.
+        if let gun {
+            let gunEnd = resorbStart + resorbDuration
+            let visible = gunEnd - Self.minigunAimLeadIn
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            fade.values = [0.0, 1.0, 1.0, 0.0]
+            fade.keyTimes = [0,
+                             NSNumber(value: 0.15 / visible),
+                             NSNumber(value: (visible - 0.5) / visible),
+                             1]
+            fade.duration = visible
+            fade.beginTime = CACurrentMediaTime() + Self.minigunAimLeadIn
+            fade.fillMode = .both
+            fade.isRemovedOnCompletion = false
+            gun.add(fade, forKey: "fade")
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + resorbStart) { [weak container] in
             guard let holes = container?.sublayers else { return }
-            for hole in holes {
+            for hole in holes where hole !== gun {
                 let shrink = CABasicAnimation(keyPath: "transform.scale")
                 shrink.fromValue = 1.0
                 shrink.toValue = 0.0
