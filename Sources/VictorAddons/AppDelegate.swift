@@ -66,6 +66,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
+    /// Re-reads the 🔴 raw-capture flag for the menu row. Stored because the
+    /// flag is a *file* — armable from outside this process — so the row cannot
+    /// be updated only when it is clicked.
+    private var refreshRecordRawTitle: (() -> Void)?
     /// Keeps the wired USB tunnel (`adb reverse`) armed so the tablet can reach
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
@@ -636,9 +640,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if let folder = self?.transcriptionFolder {
                 env["TRANSCRIPTION_FOLDER"] = folder.path
                 env["WHISPER_PREFERRED_SOURCE_FILE"] = folder.appendingPathComponent(".preferred-me-source").path
-                // Read at every launch, so arming the flag and letting the
-                // heartbeat restart whisper is enough — no click required, which
-                // is what lets a scheduled job arm it before a workshop.
+                // Read at every launch. Note what that does NOT mean: the
+                // 60 s heartbeat only revives a whisper that has died or gone
+                // mute for five minutes, so a flag armed while a healthy
+                // whisper is running is not picked up on its own. Something has
+                // to bounce the process — the menu toggle, or a `pkill -f
+                // whisper_runner` from a scheduled job, which the heartbeat
+                // then restarts within a minute.
                 env.merge(RawAudioRecording.env(for: folder)) { _, new in new }
             }
             DispatchQueue.global(qos: .userInitiated).async {
@@ -699,9 +707,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self.statusBanner?.showOnPresence(
                 text: actual ? "recording raw audio" : "raw audio capture off",
                 sound: actual ? StatusBannerSound.start : StatusBannerSound.stop)
-            stopWhisper()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { startWhisper() }
+            // Through the controller, never a bare stop/start: on battery a
+            // direct bounce started Whisper with nothing left to stop it again.
+            controller.restartIfShouldBeRunning(stop: stopWhisper, start: startWhisper)
         }
+        self.refreshRecordRawTitle = refreshRecordRawTitle
 
         let pm = PowerMonitor()
         pm.onSwitchToBattery = { [weak self, weak controller] in
@@ -1089,6 +1099,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if self?.joinLinkBanner?.bannerIsVisible == true {
                 self?.joinLinkBanner?.hide()
             }
+            // Opening the menu is also the only moment the 🔴 row can be read,
+            // so it is the right moment to re-read the flag behind it: it may
+            // have been armed by something other than a click, and the hours
+            // counter would otherwise be frozen at whatever it said when
+            // recording started.
+            self?.refreshRecordRawTitle?()
         }
         menuBarManager.onTakeScreenshot = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() }

@@ -152,3 +152,22 @@ def test_channel_capture_records_before_the_silence_gate(tmp_path):
 
     assert ch._queue.qsize() == 0, "silence must not be transcribed"
     assert _only_file(tmp_path).stat().st_size == 10 * BYTES_PER_BLOCK, "but recorded"
+
+
+def test_samples_beyond_full_scale_are_clipped_not_wrapped(tmp_path):
+    """PortAudio's float32 is not bounded to +-1.0.
+
+    `.astype(np.int16)` wraps on overflow, so 1.2 becomes -26216 — a
+    polarity-flipped spike. It would corrupt exactly the loud in-room speech
+    this corpus exists to capture, it is inaudible in the live path, and it
+    stays invisible until the data is used.
+    """
+    rec = wr._RawRecorder(tmp_path, "Victor")
+    rec.write(np.full(BLOCK, 1.8, dtype=np.float32))
+    rec.write(np.full(BLOCK, -2.5, dtype=np.float32))
+    _drain(rec)
+    rec.stop()
+
+    s = np.frombuffer(_only_file(tmp_path).read_bytes(), dtype=np.int16)
+    assert s[:BLOCK].min() == 32767, "positive overload must clip to full scale"
+    assert s[BLOCK:].max() == -32767, "negative overload must clip to full scale"

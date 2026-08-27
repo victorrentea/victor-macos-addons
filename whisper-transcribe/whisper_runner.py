@@ -15,7 +15,6 @@ import re
 import sys
 import threading
 import time
-import wave
 from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -163,9 +162,15 @@ _SAMPLE_RATE = 16000
 #
 # `1` records the mic channel; `all` also records the loopback channel, which in
 # a hybrid room is clean ground truth for the remote speakers (the mic is not).
+# `all` is reachable only by setting this variable by hand for a manual run —
+# the menu toggle and its flag file only ever ask for `1`.
+# An ALLOW-list, not a deny-list. A deny-list on a privacy opt-in fails the
+# wrong way: `WHISPER_RECORD_RAW=off` -- or `disabled`, or a typo -- is not in
+# {"0","false","no",""}, so it would switch recording ON and start capturing a
+# room that was never asked. Anything unrecognised means off.
 _RECORD_RAW = os.environ.get("WHISPER_RECORD_RAW", "0").strip().lower()
-_RECORD_RAW_ON = _RECORD_RAW not in {"0", "false", "no", ""}
 _RECORD_RAW_ALL = _RECORD_RAW == "all"
+_RECORD_RAW_ON = _RECORD_RAW in {"1", "true", "yes", "on", "all"}
 # Bounded on purpose — see `_RawRecorder`. 600 blocks ≈ 60 s of slack.
 _RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
 
@@ -180,7 +185,7 @@ _RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
 # So the verdicts go to `<day>-speakers.jsonl`, where they can be scored against
 # the transcript afterwards at zero risk to a live session.
 _SPEAKER_ID = os.environ.get("WHISPER_SPEAKER_ID", "0").strip().lower()
-_SPEAKER_ID_ON = _SPEAKER_ID not in {"0", "false", "no", ""}
+_SPEAKER_ID_ON = _SPEAKER_ID in {"1", "true", "yes", "on"}  # allow-list, as above
 _SPEAKER_MODEL = Path(
     os.environ.get(
         "WHISPER_SPEAKER_MODEL",
@@ -495,7 +500,13 @@ class _RawRecorder:
             if day != self._day:
                 self._open_for(day)
             try:
-                self._fh.write((block * 32767).astype(np.int16).tobytes())
+                # Clip, do not wrap. PortAudio's float32 is not bounded to +-1.0, and
+                # `.astype(np.int16)` wraps on overflow: 1.2 becomes -26216, a
+                # polarity-flipped spike. That corrupts exactly the loud in-room
+                # speech this corpus exists to capture, it is inaudible in the
+                # live path, and it stays invisible until the data is used.
+                clipped = np.clip(block, -1.0, 1.0)
+                self._fh.write((clipped * 32767).astype(np.int16).tobytes())
                 self._fh.flush()
             except Exception as exc:
                 log.error("transcript", f"🎙️ raw write failed: {exc}")
@@ -560,6 +571,10 @@ class _ChannelCapture:
         self._stream = None
         # Consecutive below-threshold callback blocks, for the silence flush.
         self._silent_blocks = 0
+        # Samples at the FRONT of `_buf` that a previous clock emit already sent
+        # to whisper as its trailing overlap. They are audio, but they are not
+        # *new* audio, and the silence flush must not count or re-send them.
+        self._carried_overlap = 0
 
     def start(self):
         self._running = True
@@ -612,6 +627,7 @@ class _ChannelCapture:
                 pass
             self._stream = None
         self._buf = np.zeros(0, dtype=np.float32)
+        self._carried_overlap = 0
         # Reset the silence counter with the buffer, or the two disagree about
         # the same audio. `_cb` computes the speech in the buffer as
         # `len(_buf) - _silent_blocks * blocksize`; leaving a stale count behind
@@ -726,6 +742,8 @@ class _ChannelCapture:
         while len(self._buf) >= self._chunk:
             chunk = self._buf[: self._chunk].copy()
             self._buf = self._buf[self._chunk - self._overlap :]
+            # What stays behind is the overlap, and whisper has just seen it.
+            self._carried_overlap = self._overlap
             self._emit(chunk, threshold)
 
         # A quiet block only counts once the buffer holds something worth
@@ -737,19 +755,36 @@ class _ChannelCapture:
             self._silent_blocks = 0
 
         silent_sec = self._silent_blocks * (len(block) / _SAMPLE_RATE)
-        # Measure the SPEECH in the buffer, not the buffer. The trailing silence
-        # is sitting in `_buf` too, so a half-word followed by a long enough
-        # pause would otherwise clear the bar on silence alone and emit a
-        # fragment — and once it did, every gap would keep doing it.
-        speech_samples = len(self._buf) - self._silent_blocks * len(block)
+        # Measure the NEW SPEECH in the buffer — not the buffer, and not the
+        # overlap. Two different things in `_buf` are not new speech and both
+        # have to come off:
+        #
+        #  * the trailing silence, which is appended like any other audio, so a
+        #    half-word followed by a long enough pause would clear the bar on
+        #    silence alone and emit a fragment;
+        #  * the leading `_carried_overlap`, which whisper already transcribed
+        #    as the tail of the previous chunk. Counting it meant that every
+        #    utterance longer than a chunk ended by re-sending its own last two
+        #    seconds: speak 12 s and pause, and the flush emitted 2.6 s whose
+        #    entire speech content was already in the file. Nothing merges
+        #    overlap at the text level, so that landed in the transcript as
+        #    duplicated words — several times per teaching hour, since "talk,
+        #    then pause" is simply how talking works.
+        speech_samples = (
+            len(self._buf) - self._carried_overlap - self._silent_blocks * len(block)
+        )
         if silent_sec >= _SILENCE_FLUSH_SEC and speech_samples >= int(
             _SAMPLE_RATE * _MIN_FLUSH_SEC
         ):
-            pending = self._buf.copy()
-            # No overlap carried over: the cut is a pause, so there is no word
-            # straddling it to protect. Re-transcribing silence only buys
-            # duplicated text.
+            # Send only what whisper has not seen. Dropping the leading overlap
+            # is safe precisely because it was already transcribed — the reason
+            # to keep an overlap at all is to protect a word cut in half, and
+            # this end of it is not cut.
+            pending = self._buf[self._carried_overlap :].copy()
+            # Nothing is carried forward: the cut is a pause, so no word
+            # straddles it, and re-transcribing silence only buys duplicates.
             self._buf = np.zeros(0, dtype=np.float32)
+            self._carried_overlap = 0
             self._silent_blocks = 0
             self._emit(pending, threshold, why="silence")
 
@@ -1216,9 +1251,13 @@ class WhisperTranscriptionRunner:
         per line months from now.
         """
         try:
-            day = datetime.now().strftime("%Y-%m-%d")
+            # ONE clock read. `t` and `hhmm` were two separate `now()` calls,
+            # so they could straddle a minute boundary and disagree — defeating
+            # the transcript join that `hhmm` exists for.
+            now = datetime.now()
+            day = now.strftime("%Y-%m-%d")
             row = {
-                "t": datetime.now().strftime("%H:%M:%S"),
+                "t": now.strftime("%H:%M:%S"),
                 "hhmm": hhmm,
                 "label": verdict.label,
                 "score": None if not np.isfinite(verdict.score) else round(verdict.score, 4),

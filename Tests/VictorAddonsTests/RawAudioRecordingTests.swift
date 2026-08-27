@@ -44,10 +44,14 @@ final class RawAudioRecordingTests: XCTestCase {
         XCTAssertFalse(RawAudioRecording.set(false, in: folder))
     }
 
-    func testEnvIsEmptyRatherThanZeroWhenOff() {
+    func testEnvIsEmptyRatherThanCarryingAnExplicitOff() {
         // One place decides what "off" means — the runner's own default. An
-        // explicit "0" here would be a second one, free to drift.
-        XCTAssertTrue(RawAudioRecording.env(for: folder).isEmpty)
+        // explicit "0" here would be a second one, free to drift. (Asserting
+        // emptiness alone duplicated the default-state test above; what is
+        // actually distinct is that the KEY never appears.)
+        RawAudioRecording.set(true, in: folder)
+        RawAudioRecording.set(false, in: folder)
+        XCTAssertNil(RawAudioRecording.env(for: folder)["WHISPER_RECORD_RAW"])
     }
 
     func testHoursRecordedCountsOnlyTodaysFiles() throws {

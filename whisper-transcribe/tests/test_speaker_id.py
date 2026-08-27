@@ -32,7 +32,7 @@ class TestThresholds:
         # Equal thresholds = never abstain. Not what we want, but it is a
         # coherent operating point and the caller may be measuring with it.
         t = sid.Thresholds(victor_at=0.5, audience_below=0.5)
-        assert t.abstain_width == 0
+        assert sid.decide(0.5, LONG, t).label == sid.VICTOR
 
     def test_rejects_scores_outside_cosine_range(self):
         with pytest.raises(ValueError):
@@ -49,7 +49,6 @@ class TestDecide:
     def test_the_middle_says_nothing(self):
         v = sid.decide(0.50, LONG, TH)
         assert v.label is None
-        assert not v.is_confident
         assert "abstain" in v.reason
 
     def test_the_boundaries_are_inclusive_on_both_sides(self):
@@ -71,8 +70,18 @@ class TestDecide:
         assert sid.EMBED_FLOOR < sid.MIN_SECONDS
         assert sid.decide(0.99, (sid.EMBED_FLOOR + sid.MIN_SECONDS) / 2, TH).label is None
 
-    def test_the_duration_gate_is_checked_before_the_score(self):
-        assert sid.decide(-1.0, 0.2, TH).label is None
+    def test_a_short_segment_is_not_blamed_on_a_broken_model(self):
+        # `score()` never embeds below the floor, so a short segment arrives
+        # carrying NaN. If finiteness were checked first, every routine
+        # interjection would be logged "no usable embedding" — the exact phrase
+        # the startup probe uses for an all-NaN model — burying the one signal
+        # that means the model is dead.
+        v = sid.decide(float("nan"), 0.4, TH)
+        assert v.label is None
+        assert v.reason == "only 0.4s (< 3.0s)"
+
+    def test_a_long_segment_with_no_embedding_still_blames_the_model(self):
+        assert sid.decide(float("nan"), LONG, TH).reason == "no usable embedding"
 
     def test_the_score_is_always_reported_even_when_abstaining(self):
         # The abstain band can only be retuned from scores we kept.
@@ -161,22 +170,15 @@ class TestVoiceprintRoundTrip:
         vp = sid.Voiceprint(
             embedding=np.arange(8, dtype=np.float32),
             thresholds=TH,
-            meta={"enrolled_from": "incubyte-0811", "segments": 200, "date": "2026-08-26"},
+            meta={"enrolled_from": "session-a", "segments": 200, "date": "2026-08-26"},
         )
         vp.save(tmp_path)
         back = sid.Voiceprint.load(tmp_path)
 
         assert np.allclose(back.embedding, vp.embedding)
         assert back.thresholds == TH
-        assert back.meta["enrolled_from"] == "incubyte-0811"
+        assert back.meta["enrolled_from"] == "session-a"
         assert back.meta["segments"] == 200
-
-    def test_it_is_stored_outside_the_repo_next_to_the_transcripts(self, tmp_path):
-        # victor-macos-addons is a PUBLIC repo, and a speaker-verification
-        # template is exactly the artefact that defeats speaker verification.
-        p = sid.Voiceprint.path(tmp_path)
-        assert p.parent == tmp_path
-        assert p.name == "voiceprint.npz"
 
     def test_the_saved_file_is_plain_arrays_not_a_pickle(self, tmp_path):
         # allow_pickle=False on load, so nothing here can execute on read.

@@ -60,10 +60,6 @@ class Verdict:
     score: float
     reason: str
 
-    @property
-    def is_confident(self) -> bool:
-        return self.label is not None
-
 
 @dataclass(frozen=True)
 class Thresholds:
@@ -85,10 +81,6 @@ class Thresholds:
                 f"thresholds must satisfy -1 <= audience_below ({self.audience_below})"
                 f" <= victor_at ({self.victor_at}) <= 1"
             )
-
-    @property
-    def abstain_width(self) -> float:
-        return self.victor_at - self.audience_below
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -114,14 +106,19 @@ def decide(score: float, seconds: float, thresholds: Thresholds) -> Verdict:
     score on 0.4 s of audio is exactly the kind of number that is confidently
     wrong.
     """
-    if not np.isfinite(score):
-        # No measurement at all. Note this cannot be left to fall through: NaN
-        # compares False against everything, so it would reach the final branch
-        # and be reported as "in abstain band" — the right answer for the wrong
-        # reason, and unreadable in a log when this starts happening often.
-        return Verdict(None, score, "no usable embedding")
     if seconds < MIN_SECONDS:
+        # Duration first, and the order is load-bearing: a segment below the
+        # floor is never scored, so it arrives carrying NaN. Checking finiteness
+        # first labelled every routine interjection "no usable embedding" — the
+        # exact phrase the startup probe uses for a model returning all-NaN,
+        # which would have buried the one signal that means the model is dead.
         return Verdict(None, score, f"only {seconds:.1f}s (< {MIN_SECONDS}s)")
+    if not np.isfinite(score):
+        # Long enough to score, and the score came back unusable. This cannot be
+        # left to fall through: NaN compares False against everything, so it
+        # would reach the final branch and be reported as "in abstain band" —
+        # the right answer for the wrong reason.
+        return Verdict(None, score, "no usable embedding")
     if score >= thresholds.victor_at:
         return Verdict(VICTOR, score, f"{score:.3f} >= {thresholds.victor_at:.3f}")
     if score <= thresholds.audience_below:
@@ -201,6 +198,9 @@ class SpeakerScorer:
         self._fbank = None
         self.voiceprint: Voiceprint | None = None
         self.error: str | None = None
+        # Set when a per-call failure disabled us, to tell "never started" apart
+        # from "started and then died".
+        self.failed = False
         # The model loads FIRST and the voiceprint separately, because enrolment
         # needs the model in order to *create* the voiceprint. Loading them
         # together made the first run impossible: no voiceprint yet, so the
@@ -282,7 +282,15 @@ class SpeakerScorer:
                 return decide(float("nan"), seconds, self.voiceprint.thresholds)
             sim = cosine(self.embed(audio), self.voiceprint.embedding)
             return decide(sim, seconds, self.voiceprint.thresholds)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # Swallowing this silently made "scoring nothing" identical to "a
+            # quiet room". A voiceprint enrolled with a different model, say,
+            # loads fine and reports `available`, then raises on every single
+            # call — and a whole day of dark-launch data is lost while the log
+            # says the feature is on. So: say it once, then stop pretending.
+            self.error = f"scoring: {type(exc).__name__}: {exc}"
+            self.failed = True
+            self.voiceprint = None  # `available` goes False; nothing retries
             return None
 
 

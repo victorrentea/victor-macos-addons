@@ -34,10 +34,19 @@ from speaker_id import MIN_SECONDS, SAMPLE_RATE, Thresholds, Voiceprint, cosine,
 
 def read_wav(path: Path) -> np.ndarray:
     with wave.open(str(path), "rb") as w:
-        if w.getnchannels() != 1 or w.getframerate() != SAMPLE_RATE:
+        # Sample width is checked as carefully as rate and channels, because it
+        # is the one that fails quietly: a 24- or 32-bit file read as int16 is
+        # not an error, it is garbage that gets averaged into the voiceprint and
+        # degrades every comparison forever after.
+        if (
+            w.getnchannels() != 1
+            or w.getframerate() != SAMPLE_RATE
+            or w.getsampwidth() != 2
+        ):
             raise ValueError(
-                f"{path.name}: expected mono {SAMPLE_RATE} Hz, "
-                f"got {w.getnchannels()}ch {w.getframerate()} Hz"
+                f"{path.name}: expected mono {SAMPLE_RATE} Hz 16-bit, got "
+                f"{w.getnchannels()}ch {w.getframerate()} Hz "
+                f"{w.getsampwidth() * 8}-bit"
             )
         raw = w.readframes(w.getnframes())
     return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0

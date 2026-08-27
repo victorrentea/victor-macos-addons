@@ -112,3 +112,40 @@ def test_silence_alone_never_emits():
     ch, _ = _channel()
     _feed(ch, wr._CHUNK_SEC * 2, 0.0)
     assert ch._queue.qsize() == 0
+
+
+def test_a_pause_after_a_full_chunk_does_not_re_send_the_overlap():
+    """The regression that made this whole mechanism dangerous.
+
+    A clock emit leaves `_overlap` seconds in the buffer, and whisper has just
+    transcribed them. Counting those as new speech meant every utterance longer
+    than a chunk ended by re-sending its own last two seconds: 12 s of speech
+    then a pause emitted 12.0 s and then 2.6 s whose entire speech content was
+    already in the file. Nothing merges overlap at the text level, so that
+    landed in the transcript as duplicated words — several times per teaching
+    hour, because "talk, then pause" is simply how talking works.
+    """
+    ch, thr = _channel()
+    _feed(ch, wr._CHUNK_SEC, thr * 4)        # exactly one full chunk
+    _feed(ch, wr._SILENCE_FLUSH_SEC, 0.0)    # then a pause
+
+    emitted = []
+    while not ch._queue.empty():
+        emitted.append(len(ch._queue.get()[1]) / wr._SAMPLE_RATE)
+
+    assert emitted[0] == pytest.approx(wr._CHUNK_SEC, abs=0.01)
+    # Only the pause itself may follow — never the speech already transcribed.
+    assert len(emitted) == 1 or emitted[1] <= wr._SILENCE_FLUSH_SEC + 0.11
+
+
+def test_speech_after_a_full_chunk_still_flushes_but_only_the_new_part():
+    ch, thr = _channel()
+    _feed(ch, wr._CHUNK_SEC, thr * 4)
+    ch._queue.get()                          # drop the clock chunk
+    _feed(ch, 3.0, thr * 4)                  # 3 s of genuinely new speech
+    _feed(ch, wr._SILENCE_FLUSH_SEC, 0.0)
+
+    assert ch._queue.qsize() == 1
+    flushed = len(ch._queue.get()[1]) / wr._SAMPLE_RATE
+    # 3 s of new speech plus the pause — and NOT the 2 s of carried overlap.
+    assert flushed == pytest.approx(3.0 + wr._SILENCE_FLUSH_SEC, abs=0.15)

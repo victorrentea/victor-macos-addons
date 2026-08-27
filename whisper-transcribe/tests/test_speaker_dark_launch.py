@@ -121,3 +121,74 @@ class TestScorerDegradesToNothing:
 
     def test_it_is_off_unless_asked_for(self, tmp_path):
         assert wr._make_speaker_scorer(tmp_path) is None
+
+
+MODEL = Path(__file__).resolve().parent.parent / "models" / "wespeaker_resnet34_LM.onnx"
+
+
+@pytest.mark.skipif(not MODEL.exists(), reason="embedding model not present")
+class TestItActuallyRuns:
+    """The happy path, and it is here because its absence cost a whole commit.
+
+    `d013c25` shipped `speaker_id.py` importing a `kaldi_fbank` module that did
+    not exist. Every test passed — 57 of them — because every test exercised a
+    degraded path, and a degraded path is exactly what a missing import
+    produces. The suite proved the feature failed safely without ever noticing
+    it could not succeed at all.
+    """
+
+    def _tone(self, seconds=4.0, freq=140.0):
+        t = np.arange(int(sid.SAMPLE_RATE * seconds)) / sid.SAMPLE_RATE
+        return (0.3 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+
+    def test_the_model_loads_and_embeds(self, tmp_path):
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        assert s.model_ready, f"model would not load: {s.error}"
+        e = s.embed(self._tone())
+        assert e.shape == (256,)
+        assert np.isfinite(e).all(), "an all-NaN graph is the CoreML failure mode"
+        assert np.linalg.norm(e) > 0
+
+    def test_a_real_scorer_returns_a_real_verdict(self, tmp_path):
+        # Enrol from one tone, then score the same tone: whatever the thresholds
+        # say, this must produce a Verdict with a finite score — not None, which
+        # is what every failure path returns.
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        sid.Voiceprint(
+            embedding=s.embed(self._tone()),
+            thresholds=sid.Thresholds(victor_at=0.6, audience_below=0.3),
+            meta={"enrolled_from": "a test tone"},
+        ).save(tmp_path)
+
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        assert s.available, f"voiceprint would not load: {s.error}"
+        v = s.score(self._tone())
+        assert v is not None, "a working scorer must not return the failure value"
+        assert np.isfinite(v.score)
+        assert v.label == sid.VICTOR, f"scored {v.score} against itself"
+
+    def test_a_different_voice_does_not_score_as_victor(self, tmp_path):
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        sid.Voiceprint(
+            embedding=s.embed(self._tone(freq=140.0)),
+            thresholds=sid.Thresholds(victor_at=0.6, audience_below=0.3),
+            meta={"enrolled_from": "a test tone"},
+        ).save(tmp_path)
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        assert s.score(self._tone(freq=430.0)).label != sid.VICTOR
+
+    def test_a_per_call_failure_disables_instead_of_returning_None_forever(self, tmp_path):
+        # Silently returning None on every call made "scoring nothing"
+        # indistinguishable from "a quiet room", and would lose a whole
+        # dark-launch day while the log said the feature was on.
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        sid.Voiceprint(
+            embedding=np.ones(7, dtype=np.float32),   # wrong dimension
+            thresholds=sid.Thresholds(victor_at=0.6, audience_below=0.3),
+            meta={"enrolled_from": "a mismatched model"},
+        ).save(tmp_path)
+        s = sid.SpeakerScorer(MODEL, tmp_path)
+        assert s.available
+        assert s.score(self._tone()) is None
+        assert s.failed and s.error
+        assert not s.available, "it must stop claiming to work"

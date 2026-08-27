@@ -94,6 +94,35 @@ final class TranscriptionController {
         applyPowerState()
     }
 
+    /// Re-launch Whisper so it picks up changed launch settings — but only if
+    /// the power rule says it should be running at all.
+    ///
+    /// Callers used to do this themselves, with a bare `stop()` then `start()`.
+    /// Two things went wrong and both are invisible until they bite. On
+    /// **battery** that started Whisper and nothing ever stopped it again:
+    /// `heartbeatTick` returns immediately off AC and `applyPowerState` only
+    /// runs on a power *transition*, so a 1.8 GB model would sit there burning
+    /// the battery until the next time the charger was plugged in — with the
+    /// menu still reading "paused on battery". And skipping `noteStarted()`
+    /// left the warm-up grace unset, so a quiet room could trip the
+    /// output watchdog into force-restarting a process that had only just
+    /// started loading its model.
+    func restartIfShouldBeRunning(stop: @escaping () -> Void,
+                                  start: @escaping () -> Void,
+                                  delay: TimeInterval = 1.5) {
+        guard isOnAC() else {
+            // Off AC there is nothing to restart: the setting will be picked up
+            // whenever the power rule next starts Whisper.
+            if isWhisperRunning() { stop() }
+            return
+        }
+        stop()
+        noteStarted()
+        // PortAudio needs a beat to release the devices before the replacement
+        // grabs them, or the new process inherits the same mess.
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { start() }
+    }
+
     /// Sync Whisper to the current power source.
     private func applyPowerState() {
         let onAC = isOnAC()
