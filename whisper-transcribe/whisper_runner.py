@@ -612,6 +612,15 @@ class _ChannelCapture:
                 pass
             self._stream = None
         self._buf = np.zeros(0, dtype=np.float32)
+        # Reset the silence counter with the buffer, or the two disagree about
+        # the same audio. `_cb` computes the speech in the buffer as
+        # `len(_buf) - _silent_blocks * blocksize`; leaving a stale count behind
+        # drives that negative and suppresses the flush until somebody speaks
+        # again — so the first words after a mic change would wait for a full
+        # 12 s chunk instead of a pause. (Negative is at least the *safe*
+        # direction: it under-reports speech, so it cannot cause a spurious
+        # flush. It still has to be cleared.)
+        self._silent_blocks = 0
         log.info("transcript", f"🎙️ [{self.label}] {old_name} → {new_name}")
 
     def _current_threshold(self) -> float:

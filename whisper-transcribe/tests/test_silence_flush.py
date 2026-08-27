@@ -77,6 +77,37 @@ def test_a_full_chunk_still_emits_on_the_clock_with_overlap():
     assert len(ch._buf) == pytest.approx(ch._overlap, abs=BLOCK)
 
 
+def test_a_device_switch_clears_the_silence_counter_with_the_buffer():
+    # The two describe the same audio, so they have to be cleared together:
+    # `_cb` derives the speech in the buffer as
+    # `len(_buf) - _silent_blocks * blocksize`, and a stale count drives that
+    # negative — suppressing the flush until somebody speaks again, so the
+    # first words after a mic change would wait for a whole 12 s chunk.
+    ch, thr = _channel()
+    _feed(ch, 2.0, 0.0)                      # 20 silent blocks accumulate
+    assert ch._silent_blocks == 20
+    ch.switch_device(1, "Wireless Mic")
+    assert ch._silent_blocks == 0
+    assert len(ch._buf) == 0
+
+    # ...and the flush works immediately on the new device.
+    ch, thr = _channel()
+    _feed(ch, 3.0, 0.0)
+    ch.switch_device(1, "Wireless Mic")
+    _feed(ch, 2.0, thr * 4)
+    _feed(ch, wr._SILENCE_FLUSH_SEC, 0.0)
+    assert ch._queue.qsize() == 1
+
+
+def test_the_speech_measure_never_lets_silence_alone_trigger_a_flush():
+    # The arithmetic can legitimately go negative — more silent blocks than the
+    # buffer holds — and negative is the safe direction: it under-reports
+    # speech, so it can only ever suppress a flush, never invent one.
+    ch, _ = _channel()
+    _feed(ch, 30.0, 0.0)
+    assert ch._queue.qsize() == 0
+
+
 def test_silence_alone_never_emits():
     ch, _ = _channel()
     _feed(ch, wr._CHUNK_SEC * 2, 0.0)
