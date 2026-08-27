@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CoreImage
 import QuartzCore
 
 class EmojiAnimator {
@@ -4399,8 +4400,8 @@ class EmojiAnimator {
         // capture, so leave enough margin that cleanup never clips the last cycle.
         let totalDuration = btComp + lastBeat + 1.0
 
-        // Initial pivot = where the cursor is now (a sensible default for the
-        // first beat). The pivot is NOT frozen, though: scheduleHeartbeatPulses
+        // Initial lens centre = where the cursor is now (a sensible default for
+        // the first beat). It is NOT frozen, though: scheduleHeartbeatPulses
         // re-centres it on the live mouse position before every lub-dub, so the
         // heart "beats" wherever the cursor currently rests.
         let mouseGlobal = NSEvent.mouseLocation
@@ -4420,11 +4421,26 @@ class EmojiAnimator {
         let container = CALayer()
         container.frame = bounds
 
+        // Pivot stays at the layer's centre: the beat itself is the lens below,
+        // and what little whole-screen breathe is left should be symmetric
+        // rather than hinged on the cursor — pivoting at the pointer is what
+        // made the far corner the fastest-moving thing on screen.
         let imgLayer = CALayer()
         imgLayer.frame = bounds
-        imgLayer.anchorPoint = anchor
-        imgLayer.position = CGPoint(x: anchor.x * bounds.width,
-                                    y: anchor.y * bounds.height)
+        // 💓 The lens. Installed here, before the capture comes back, so the
+        // first beat can never race it. `name` is what makes the per-beat
+        // `filters.bump.inputScale` key path resolve.
+        let bump = CIFilter(name: "CIBumpDistortion")
+        if let bump = bump {
+            let center = HeartbeatBump.center(forAnchor: anchor, bounds: bounds)
+            bump.name = Self.heartbeatBumpFilterName
+            bump.setValue(CIVector(x: center.x, y: center.y), forKey: kCIInputCenterKey)
+            bump.setValue(HeartbeatBump.radius(in: bounds), forKey: kCIInputRadiusKey)
+            bump.setValue(0.0, forKey: kCIInputScaleKey)   // at rest: identity
+            imgLayer.filters = [bump]
+        } else {
+            overlayError("CIBumpDistortion unavailable — heartbeat falls back to the breathe alone")
+        }
         container.addSublayer(imgLayer)
         trackEffect("heartbeat", layer: container, duration: totalDuration)
 
@@ -4438,8 +4454,9 @@ class EmojiAnimator {
                     imgLayer.contentsGravity = .resize
                 }
                 // Added after the capture => drawn above it. A SIBLING, not a
-                // child, on purpose: the lub-dub scales `imgLayer` alone, so the
-                // screen zooms around the cursor while the dog stays nailed down.
+                // child, on purpose: the lub-dub beats `imgLayer` alone (CALayer
+                // filters apply to a layer *and its sublayers*), so the screen
+                // bulges under the cursor while the dog stays nailed down.
                 if let dog = Self.makeHeartbeatDogLayer(bounds: bounds) {
                     container.addSublayer(dog)
                     self.watchHeartbeatDog(dog, effect: container, bounds: bounds,
@@ -4493,8 +4510,13 @@ class EmojiAnimator {
         return layer
     }
 
+    /// The `CIFilter.name` the lens is installed under, and therefore the middle
+    /// component of the `filters.<name>.inputScale` / `.inputCenter` key paths
+    /// the per-beat animation drives. One place, so the two can't drift apart.
+    private static let heartbeatBumpFilterName = "bump"
+
     /// How far ahead of the rise the per-cycle callback is armed. It only has to
-    /// re-centre the pivot and hand CoreAnimation an animation whose `beginTime`
+    /// re-centre the lens and hand CoreAnimation two animations whose `beginTime`
     /// is already the exact instant — so this absorbs main-thread jitter without
     /// putting any of it on screen.
     private static let heartbeatArmLead: CFTimeInterval = 0.06
@@ -4509,11 +4531,16 @@ class EmojiAnimator {
     ///    the moment the screen capture came back — the capture is async and cost
     ///    a variable couple of hundred ms, all of which used to be added to every
     ///    beat.
-    /// 2. **Which part of the zoom lands on the beat.** The zoom *peak* is what
-    ///    the eye takes as the hit, so a cycle begins `rise` seconds BEFORE its
-    ///    onset and the scale tops out exactly on it. Starting the rise on the
+    /// 2. **Which part of the swell lands on the beat.** The *peak* is what the
+    ///    eye takes as the hit, so a cycle begins `rise` seconds BEFORE its
+    ///    onset and the bump tops out exactly on it. Starting the rise on the
     ///    onset (what it did before) puts the peak half a pulse late, which reads
     ///    as lagging even with a perfect clock.
+    ///
+    /// Each cycle drives TWO animations off one set of key times: the
+    /// `HeartbeatBump` lens under the cursor (the beat proper) and a 2% breathe
+    /// of the whole capture (so the rest of the screen isn't stone dead). They
+    /// share `beginTime`, so they cannot drift apart on screen.
     ///
     /// The per-cycle deadlines are absolute and independent, so a beat whose
     /// moment has already passed (a slow capture, a late press) is **skipped**
@@ -4529,8 +4556,8 @@ class EmojiAnimator {
         for (lub, dub) in pairs {
             let dubOffset = dub - lub
             guard dubOffset > 0 else { continue }
-            // Each zoom-in-out is a symmetric easeInOut bell (rise == fall). Keep
-            // the lub pulse fully clear of the dub so the two never blend.
+            // Each swell-and-relax is a symmetric easeInOut bell (rise == fall).
+            // Keep the lub pulse fully clear of the dub so the two never blend.
             let pulseDur = min(0.22, max(0.08, dubOffset - 0.02))
             let rise     = pulseDur / 2.0
             // beginTime such that the FIRST peak lands on the lub onset; the dub
@@ -4553,34 +4580,52 @@ class EmojiAnimator {
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self, weak layer, weak effect] in
                 guard let self = self, let layer = layer, let effect = effect,
                       self.activeEffects["heartbeat"] === effect else { return }
-                // Re-centre the pivot on the current mouse before this beat. The
-                // scale is back at 1.0 here, so moving the anchor is invisible.
+                // Re-centre the LENS on the current mouse before this beat. The
+                // bump is back at 0 here, so moving its centre is invisible.
                 let anchor = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
                                               panelOrigin: self.hostLayer.bounds.origin,
                                               hostLayer: self.hostLayer)
+                let center = HeartbeatBump.center(forAnchor: anchor, bounds: bounds)
                 CATransaction.begin()
-                CATransaction.setDisableActions(true)   // move anchor instantly, no slide
-                layer.anchorPoint = anchor
-                layer.position = CGPoint(x: anchor.x * bounds.width,
-                                         y: anchor.y * bounds.height)
+                CATransaction.setDisableActions(true)   // move the lens instantly, no slide
+                layer.setValue(CIVector(x: center.x, y: center.y),
+                               forKeyPath: "filters.\(Self.heartbeatBumpFilterName).inputCenter")
                 CATransaction.commit()
 
-                let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-                pulse.values   = [1.0, 1.30, 1.0, 1.0, 1.30, 1.0]
-                pulse.keyTimes = times.map { NSNumber(value: $0 / cycleDur) }
-                pulse.timingFunctions = [
+                let keyTimes = times.map { NSNumber(value: $0 / cycleDur) }
+                let timings = [
                     CAMediaTimingFunction(name: .easeInEaseOut), // lub rise
                     CAMediaTimingFunction(name: .easeInEaseOut), // lub fall
                     CAMediaTimingFunction(name: .linear),        // rest between lub and dub
                     CAMediaTimingFunction(name: .easeInEaseOut), // dub rise
                     CAMediaTimingFunction(name: .easeInEaseOut), // dub fall
                 ]
-                pulse.duration = cycleDur
+
+                // The beat proper: the lens swells and relaxes under the cursor.
+                // Outside its radius CIBumpDistortion is the identity, so this
+                // costs the periphery exactly zero movement.
+                let lens = CAKeyframeAnimation(keyPath: "filters.\(Self.heartbeatBumpFilterName).inputScale")
+                let peak = HeartbeatBump.peakScale
+                lens.values   = [0, peak, 0, 0, peak, 0]
+                lens.keyTimes = keyTimes
+                lens.timingFunctions = timings
+                lens.duration = cycleDur
                 // Absolute, in CoreAnimation's own clock: the render server places
                 // the pulse on the exact frame even though this callback was armed
                 // early and may itself have jittered.
-                pulse.beginTime = startAt
-                layer.add(pulse, forKey: "heartbeatPulse")
+                lens.beginTime = startAt
+                layer.add(lens, forKey: "heartbeatLens")
+
+                // …plus a hair of whole-screen breathe, so the screen still reads
+                // as alive between lens pulses without the corners lurching.
+                let breathe = CAKeyframeAnimation(keyPath: "transform.scale")
+                let b = HeartbeatBump.breatheScale
+                breathe.values   = [1.0, b, 1.0, 1.0, b, 1.0]
+                breathe.keyTimes = keyTimes
+                breathe.timingFunctions = timings
+                breathe.duration = cycleDur
+                breathe.beginTime = startAt
+                layer.add(breathe, forKey: "heartbeatPulse")
             }
         }
     }

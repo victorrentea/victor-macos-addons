@@ -287,9 +287,24 @@ rule from the start.
   `activeEffects["rainbow"]` entry tears the whole scene down.
 
 - **💓 Heartbeat + 🐶 dog** (tile #13 `13_heartbeat.mp3`, `showHeartbeat`): the built-in
-  Retina is captured and redrawn full-screen, then scaled in a lub-dub keyframe
-  (1.0 → 1.30 → 1.0, twice per cycle) whose **pivot is re-centred on the live mouse
-  before every beat** — the screen beats wherever the cursor rests. **Driven from the
+  Retina is captured and redrawn full-screen, then **bulged under the cursor** in a
+  lub-dub keyframe, twice per cycle, with the lens **re-centred on the live mouse
+  before every beat** — the screen beats wherever the cursor rests.
+  Until 2026-08-27 the beat was a whole-screen `transform.scale` 1.0 → 1.30 → 1.0
+  pivoted on the pointer, and that put the *largest* displacement where nobody is
+  looking: a corner 1500 pt from the pivot swept ~450 pt per thump, so the periphery
+  lurched while the thing under the cursor barely moved — dizzying rather than alive.
+  It is now a **`CIBumpDistortion` in `imgLayer.filters`** (`HeartbeatBump`): a convex
+  lens over the **10% of the screen area** around the pointer (πr² = 0.10·W·H, ~248 pt
+  on the Retina), `inputScale` 0 → 0.5 → 0 driven by a keyframe animation on the
+  `filters.bump.inputScale` key path — which is why the filter is installed with a
+  `name`. Outside its radius the filter is the **identity**, so the periphery is not
+  merely moved less, it is not moved at all; what is left of the old zoom is a 2%
+  `breatheScale` pivoted at the *centre* (~17 pt of corner travel, versus 270), on the
+  same `beginTime` so the two halves cannot drift apart. Measured on screen, not
+  assumed: CoreAnimation resolves filter coordinates in **layer points and compensates
+  for `contentsScale`**, so the same numbers land identically on a 1x and a 2x display.
+  Past `inputScale` ≈ 0.7 the middle of the lens stretches into a fisheye smear. **Driven from the
   routed `/sound/play` path** (`onSoundPlay`), like the radar and the microwave, and
   therefore **out of `SoundEffectMap`** so the press cannot fire it a second time. That
   is what makes it land: the visual used to come off the press while a *separate* HTTP
