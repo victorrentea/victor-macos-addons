@@ -256,6 +256,11 @@ _HALLUCINATIONS = {
     "vă mulțumim!",
     "mulțumesc pentru vizionare!",
     "mulțumim pentru vizionare!",
+    # The recipe-channel variant. Seen 4 times in the first hour the verdicts
+    # ran live, each one confidently filed under `Audience` over a silent room.
+    "să ne vedem la următoarea mea rețetă!",
+    "să nu ne vedem la următoarea mea rețetă!",
+    "ne vedem la următoarea rețetă!",
     "grazie.",
     "grazie!",
 }
@@ -862,11 +867,23 @@ def _score_speakers(scorer, audio, result, text):
         return None
     from speaker_id import SEGMENT_MIN_SECONDS  # noqa: PLC0415 — deliberately lazy
 
+    duration = len(audio) / _SAMPLE_RATE
     spans = []
     for seg in result.get("segments") or []:
         try:
             start, end = float(seg.get("start", 0.0)), float(seg.get("end", 0.0))
         except (TypeError, ValueError):
+            continue
+        # Whisper pads every input to a fixed 30 s window, and a decode that
+        # found nothing to say hands back one segment spanning that whole
+        # window -- `end` of 29.98 on twelve seconds of audio. Seen 7 times in
+        # the first hour this ran. Clamping keeps the offsets honest, and a
+        # span that covers the entire chunk is not a segment at all: it is the
+        # decoder declining to segment, so it falls through to the whole-chunk
+        # verdict below, which is written without offsets precisely to say
+        # "this could not be cut any finer".
+        start, end = max(0.0, start), min(end, duration)
+        if end - start >= duration - 0.05:
             continue
         seg_text = (seg.get("text") or "").strip()
         if end - start < SEGMENT_MIN_SECONDS or not seg_text or _is_garbage(seg_text):

@@ -324,3 +324,25 @@ class TestHallucinationsWithoutTheirPunctuation:
     @pytest.mark.parametrize("text", ["Da, corect.", "Pleacă default pe all și la domain model."])
     def test_real_speech_still_gets_through(self, text):
         assert not wr._is_garbage(text)
+
+
+class TestWhisperPadsEveryInputToThirtySeconds:
+    """A decode that found nothing hands back one segment spanning the padded
+    window — `end` 29.98 on twelve seconds of audio. That is the decoder
+    declining to segment, not a segment."""
+
+    def test_a_span_covering_the_whole_chunk_falls_back_to_one_verdict(self):
+        scorer = _FakeScorer({12.0: "Victor"})
+        rows = wr._score_speakers(
+            scorer, _audio(12), _result((0.0, 29.98, "ceva")), "ceva"
+        )
+        assert len(rows) == 1
+        assert rows[0][0] is None and rows[0][1] is None
+        assert scorer.scored == [(12.0, None)]
+
+    def test_an_overhanging_end_is_clamped_to_the_audio(self):
+        scorer = _FakeScorer({8.0: "Victor"})
+        rows = wr._score_speakers(
+            scorer, _audio(12), _result((0.0, 4.0, "una"), (4.0, 29.98, "alta")), "x"
+        )
+        assert [(r[0], r[1]) for r in rows] == [(0.0, 4.0), (4.0, 12.0)]
