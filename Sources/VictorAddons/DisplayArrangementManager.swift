@@ -130,6 +130,18 @@ final class DisplayArrangementManager {
             // The signal must not wait for the probe: an unattributable display
             // is presentation enough.
             notifyUnknownExternal(unknownExternalPresent(displays))
+
+            if anonymousLayoutAlreadyCorrect(displays) {
+                // Already arranged the way we would arrange it — whatever those
+                // displays turn out to be, there is nothing to fix, so don't pay
+                // the probe's blink on the room screen. Record the scene as a
+                // projector scene, since that is what the slave is doing.
+                lastScene = Scene(projector: true, asus: displays.asus != nil)
+                applyAttempt = 0
+                overlayInfo("Anonymous mirror slave(s) already arranged correctly — left alone")
+                return
+            }
+
             let anon = displays.unidentified.map(String.init).joined(separator: ",")
             overlayInfo("Anonymous mirror slave(s) [\(anon)] — breaking mirrors to identify them")
             breakAllMirrorsAndReresolve()
@@ -163,6 +175,20 @@ final class DisplayArrangementManager {
         }
 
         apply(scene: target, displays: displays)
+    }
+
+    /// True when the anonymous displays are already doing exactly what the
+    /// projector is supposed to do — mirroring the Retina — with the rest of the
+    /// rig in its target shape. In the failure this all guards against (the ASUS
+    /// swept into the room TV's mirror set) the ASUS is neither un-mirrored nor
+    /// main, so this correctly refuses to skip the probe there.
+    private func anonymousLayoutAlreadyCorrect(_ displays: DisplaySet) -> Bool {
+        guard let retina = displays.retina else { return false }
+        guard displays.unidentified.allSatisfy({ CGDisplayMirrorsDisplay($0) == retina }) else { return false }
+        if let asus = displays.asus {
+            return CGDisplayIsInMirrorSet(asus) == 0 && CGMainDisplayID() == asus
+        }
+        return CGDisplayIsInMirrorSet(retina) != 0 && CGMainDisplayID() == retina
     }
 
     /// Break **every** mirror set, then re-resolve ~0.9 s later. The only way to
