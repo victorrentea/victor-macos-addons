@@ -1262,6 +1262,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestHotspot = { [weak hotspot] in
             hotspot?.forceAttemptJSON() ?? "{\"error\":\"hotspot fallback unavailable\"}"
         }
+        // The menu row. Its outcome goes to Notification Center rather than the
+        // log window: this is the one path started by a click, so there is
+        // someone waiting for an answer, and the answer arrives up to a minute
+        // later — long after the menu has closed.
+        menuBarManager.onHotspotNow = { [weak hotspot, weak self] in
+            hotspot?.triggerNow { ok, message in
+                DispatchQueue.main.async {
+                    self?.postAndroidDeployNotification(
+                        title: ok ? "📶 Hotspot pornit" : "📵 Hotspotul nu a pornit",
+                        body: message,
+                        identifier: "hotspot-now"
+                    )
+                }
+            }
+        }
         hotspot.start()
 
         let eventTap = EventTapManager()

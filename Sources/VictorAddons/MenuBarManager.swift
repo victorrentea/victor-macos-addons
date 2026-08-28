@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Aug 27, 18:28"
+    static let BUILD_TIME = "Aug 28, 03:02"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -20,6 +20,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
+    private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
@@ -84,6 +85,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onWhip: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
+    /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
+    var onHotspotNow: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
@@ -265,6 +268,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotFallbackItem.isEnabled = true
         hotspotFallbackItem.state = HotspotFallbackSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(hotspotFallbackItem)
+
+        // A row of its own, next to the toggle, because the toggle only says
+        // whether the *automatic* fallback is armed — and the whole reason this
+        // exists is the case where the automatic path never fires and the repair
+        // is otherwise to pick up the phone and open the app by hand.
+        hotspotNowItem = NSMenuItem(title: "📱 Start Phone Hotspot Now", action: #selector(hotspotNowAction), keyEquivalent: "")
+        hotspotNowItem.target = self
+        hotspotNowItem.isEnabled = true
+        extraSubmenu.addItem(hotspotNowItem)
 
         emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
         emojiOverlayItem.target = self
@@ -518,6 +530,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !HotspotFallbackSettings.isEnabled
         HotspotFallbackSettings.isEnabled = enabled
         hotspotFallbackItem.state = enabled ? .on : .off
+    }
+
+    @objc private func hotspotNowAction() {
+        onHotspotNow?()
     }
 
     @objc private func toggleEmojiOverlayAction() {

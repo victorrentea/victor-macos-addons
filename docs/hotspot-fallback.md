@@ -316,6 +316,52 @@ app sees network changes all day, and a location fix costs radios.
 (`HotspotFallback.enabled`, default on). Default on is safe: the feature does
 nothing at all unless the Mac is already offline and away from home.
 
+## The night it never asked — and the heartbeat that fixes it
+
+Measured, 27–28 Aug 2026, from `/tmp/victor-macos-addons.log` and the phone's
+`dumpsys usagestats`:
+
+```
+21:18:55  channel 9 open  → ACTIVITY_RESUMED → hotspot on → online at 21:19:08
+21:45:12  channel closed (the Mac walked out of range)
+21:45:13  attempt → 21:45:31 failed: no answer to the Bluetooth page in 15.4s
+          ← nothing at all for five hours, while the Mac had no internet
+02:49:30  ACTIVITY_RESUMED — Victor, by hand, on the phone
+02:49:48  online
+```
+
+The 21:45 failure is unremarkable: the phone was in a pocket, the link was cold,
+the page timed out. What matters is the blank line after it. **Every trigger in
+this class was an edge** — an `NWPathMonitor` update or `didWakeNotification` —
+and between 21:45 and 02:49 neither arrived. So one unlucky attempt was also the
+last one, and the Mac sat offline all night with a working fallback that was
+never asked to run again.
+
+Being offline is a **state**, not an event, and the other side of this chain —
+the phone coming back into range — produces no local notification whatsoever.
+Nothing was going to arrive. So `heartbeat` (60 s) re-evaluates on a clock as
+well as on edges. While online that is one TCP probe a minute; while offline the
+attempts stay bounded by `cooldown` exactly as before.
+
+## Starting it by hand: 📱 Start Phone Hotspot Now
+
+**💬 → 👩🏻‍💻 Extra → 📱 Start Phone Hotspot Now**, right under the toggle.
+
+It runs the whole chain immediately — signal, then join — and skips *every*
+guard: the connectivity probe, the geofence, the cooldown, and the enabled
+toggle. Those exist to keep the automatic path polite; a click is not the
+automatic path.
+
+The row exists because the manual repair it replaces is the same signal done by
+hand: unlocking the phone and opening the app *is* what the RFCOMM channel makes
+the phone do (see "Why 'App opened'"). Reaching for the phone to fix the Mac's
+network was never the last resort it looked like — it was the mechanism, entered
+manually.
+
+Its outcome goes to Notification Center, not the log window: this is the one
+path with somebody waiting on the answer, and the answer can take up to 45 s —
+long after the menu has closed.
+
 ## After a phone reboot
 
 The phone side comes back on its own, but not at once: Android delivers

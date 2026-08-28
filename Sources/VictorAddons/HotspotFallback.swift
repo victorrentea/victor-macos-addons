@@ -124,6 +124,22 @@ final class HotspotFallback {
     /// updates behind it.
     private static let wakeCooldown: TimeInterval = 10
 
+    /// How often we look at the connection on our own, with nothing having
+    /// happened to prompt it.
+    ///
+    /// Everything else here is edge-triggered — a path update or a wake — and
+    /// that is precisely how this Mac spent a night offline without ever asking
+    /// again: one attempt at 21:45 failed because the phone was in a pocket and
+    /// never answered the Bluetooth page, and from then until 02:49 no edge
+    /// arrived, so nothing retried. The hotspot was eventually turned on by
+    /// hand, on the phone.
+    ///
+    /// Being offline is a *state*, not an event, and the phone becoming
+    /// reachable again produces no notification on this side at all — so it has
+    /// to be re-read on a clock. Costs one TCP probe a minute while online, and
+    /// while offline it is bounded by `cooldown` like every other attempt.
+    private static let heartbeat: TimeInterval = 60
+
     /// When we start *asking* to join rather than waiting for macOS, and how
     /// often after that. The phone needs a couple of seconds to bring the soft
     /// AP up and `-setairportnetwork` against an AP that isn't beaconing yet
@@ -134,7 +150,19 @@ final class HotspotFallback {
 
     /// Breathing room for the phone to stand a new listening socket up after we
     /// close a channel ourselves.
-    private static let reopenSettle: TimeInterval = 2
+    ///
+    /// Was 2 s, which is exactly the phone's own retry sleep — so the two
+    /// timers raced, and on 28 Aug 2026 the Mac lost by 60 ms: it closed the
+    /// channel at 03:00:32.056, queried SDP at 03:00:34.00, and the phone only
+    /// published its new record at 03:00:34.06. The query was answered from
+    /// macOS's cache with the dead socket's channel, and the open that followed
+    /// never came back at all — no `rfcommChannelOpenComplete`, not even the SDP
+    /// watchdog — so the attempt burned the whole 40 s budget and reported "the
+    /// phone never answered the channel open". The very next attempt, with no
+    /// channel to close first, connected in 0.3 s.
+    ///
+    /// It has to be *longer* than the phone's retry, not equal to it.
+    private static let reopenSettle: TimeInterval = 5
 
     /// Total budget for one SDP-query + open (+ one retry after a fresh query).
     /// Generous, because it is paid only when we already know we are offline.
@@ -159,6 +187,7 @@ final class HotspotFallback {
     private var lastAttemptAt = Date.distantPast
     private var attemptInFlight = false
     private var pendingEvaluation: DispatchWorkItem?
+    private var heartbeatTimer: DispatchSourceTimer?
     /// Transition-only logging: a path change that leaves us online is the
     /// overwhelmingly common case and must not write a line every time.
     private var lastKnownOnline: Bool?
@@ -188,6 +217,14 @@ final class HotspotFallback {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
         ) { [weak self] _ in self?.scheduleEvaluation(reason: "wake") }
+
+        // See `heartbeat`: without a clock, one failed attempt is the last one
+        // until macOS happens to mention a path change, which it need not ever do.
+        let ticker = DispatchSource.makeTimerSource(queue: queue)
+        ticker.schedule(deadline: .now() + Self.heartbeat, repeating: Self.heartbeat)
+        ticker.setEventHandler { [weak self] in self?.scheduleEvaluation(reason: "heartbeat") }
+        ticker.resume()
+        heartbeatTimer = ticker
 
         geofence.start()
         overlayInfo("📶 Hotspot fallback armed (phone \(Self.phoneBluetoothAddress), grace \(Int(Self.grace))s)")
@@ -227,6 +264,45 @@ final class HotspotFallback {
             }
         }
         return snapshot
+    }
+
+    /// The menu row — and the answer to "why did I have to pick up the phone?".
+    ///
+    /// The automatic path is only ever as good as its triggers, and when none of
+    /// them fires there is nothing to nudge: the fallback sits there, correct
+    /// and idle, while the Mac has no internet. The manual repair Victor was
+    /// left with — unlock the phone, open the app so the routine sees
+    /// "App opened" — is exactly the signal this class sends. So there is now a
+    /// button that sends it.
+    ///
+    /// A click is an explicit instruction, so it outranks every guard that
+    /// exists to keep the *automatic* path polite: the connectivity probe, the
+    /// home geofence, the cooldown and the enabled toggle are all skipped. It
+    /// does run the full chain, not just the signal — opening the channel and
+    /// then actually getting this Mac onto `victor` — because "turn the hotspot
+    /// on" is never what is wanted, only ever a step towards being online.
+    func triggerNow(completion: ((_ ok: Bool, _ message: String) -> Void)? = nil) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.lastAttemptAt = Date()
+            self.attemptInFlight = true
+            defer { self.attemptInFlight = false }
+
+            overlayInfo("📶 Hotspot asked for from the menu — signalling the phone")
+            if let err = self.openChannel() {
+                overlayError("📵 Hotspot from the menu — \(err)")
+                completion?(false, err)
+                return
+            }
+            let began = Date()
+            if self.waitForInternet(seconds: Self.waitAfterPlainConnect, stage: "menu") {
+                completion?(true, "online in \(Int(Date().timeIntervalSince(began)))s")
+                return
+            }
+            let why = "the channel is open but no internet followed — is the routine still armed on the phone?"
+            overlayError("📵 Hotspot from the menu — \(why)")
+            completion?(false, why)
+        }
     }
 
     private static func jsonString(_ s: String) -> String {
