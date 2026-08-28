@@ -127,11 +127,13 @@ final class DisplayArrangementManager {
         // 2026-08-27 incident (the ASUS was taken for the projector and left
         // mirroring). Break every mirror, let the names come back, ask again.
         if displays.needsUnmirrorProbe && !afterProbe {
+            // `force` (the 🖥️ menu item / test hook) always probes: Victor is
+            // asking precisely because something looks wrong.
             // The signal must not wait for the probe: an unattributable display
             // is presentation enough.
             notifyUnknownExternal(unknownExternalPresent(displays))
 
-            if anonymousLayoutAlreadyCorrect(displays) {
+            if !force, anonymousLayoutAlreadyCorrect(displays) {
                 // Already arranged the way we would arrange it — whatever those
                 // displays turn out to be, there is nothing to fix, so don't pay
                 // the probe's blink on the room screen. Record the scene as a
@@ -185,6 +187,8 @@ final class DisplayArrangementManager {
     private func anonymousLayoutAlreadyCorrect(_ displays: DisplaySet) -> Bool {
         guard let retina = displays.retina else { return false }
         guard displays.unidentified.allSatisfy({ CGDisplayMirrorsDisplay($0) == retina }) else { return false }
+        // The mirrored Retina must also already carry the 1080p signal we'd set.
+        if find1080Mode(retina) != nil, CGDisplayCopyDisplayMode(retina)?.width != 1920 { return false }
         if let asus = displays.asus {
             return CGDisplayIsInMirrorSet(asus) == 0 && CGMainDisplayID() == asus
         }
