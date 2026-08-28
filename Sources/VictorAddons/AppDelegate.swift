@@ -390,6 +390,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // IINA seeking to its manifest start-second (a new play replaces the
         // previous player; VideoPlayer auto-kills it ~60s after start).
         tabletServer?.onVideos = { VideoLibrary.manifestJSON() }
+        // Render any missing tile thumbnail into videos/<id>.jpg now, in the
+        // background, so that first list call answers from cache instead of
+        // seeking through a dozen mp4s while the tablet waits.
+        VideoLibrary.warmThumbnails()
         tabletServer?.onVideoPlay = { id, tOverride in
             guard let entry = VideoLibrary.entry(id: id) else { return nil }
             let start = tOverride ?? entry.startSeconds
