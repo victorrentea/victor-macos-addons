@@ -155,13 +155,20 @@ enum TranscriptDistiller {
     /// Words of actual speech in a rendered window, ignoring the `[HH:MM]`
     /// stamps — which would otherwise count as one word per line and make a
     /// window of eight grunts look substantial.
+    ///
+    /// The speaker glyph gets the same treatment for the same reason. Since
+    /// 2026-08-28 a labelled line reads `[HH:MM] 🎙️ text`, and counting the
+    /// glyph would quietly re-introduce exactly the inflation the stamp
+    /// stripping exists to prevent.
     static func speechWordCount(in transcript: String) -> Int {
         transcript.split(separator: "\n").reduce(0) { total, line in
             var text = line
             if line.hasPrefix("["), let close = line.firstIndex(of: "]") {
                 text = line[line.index(after: close)...]
             }
-            return total + text.split(whereSeparator: { $0 == " " || $0 == "\t" }).count
+            let words = text.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                .filter { $0 != "🎙️" && $0 != "👥" }
+            return total + words.count
         }
     }
 

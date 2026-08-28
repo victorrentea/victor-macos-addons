@@ -68,6 +68,10 @@ final class TranscriptDistillerTests: XCTestCase {
         XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "[09:05] a b\n[09:06] c"), 3)
         XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "no stamp here"), 3)
         XCTAssertEqual(TranscriptDistiller.speechWordCount(in: ""), 0)
+        // The speaker glyph is not a word. Counting it would re-introduce the
+        // per-line inflation the stamp stripping exists to prevent.
+        XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "[09:05] 🎙️ one two three"), 3)
+        XCTAssertEqual(TranscriptDistiller.speechWordCount(in: "[09:05] 👥 one two"), 2)
     }
 
     func testTheSingleWordWindowFallsUnderTheThreshold() {

@@ -39,13 +39,38 @@ def _verdicts(tmp_path) -> list[dict]:
     return [json.loads(l) for l in files[0].read_text(encoding="utf-8").splitlines() if l]
 
 
-def test_the_transcript_line_is_unchanged_when_a_verdict_exists(tmp_path):
+def test_the_transcript_carries_the_glyph_but_never_the_score(tmp_path):
+    """Labels returned to the transcript on 2026-08-28 — the glyph, and only
+    the glyph. A score in the line would invite it to be read as certainty."""
     r = _runner(tmp_path)
     r._on_segment("Victor", "ro", "salut lume", "🎙️", _Verdict("Victor", 0.88))
     line = _transcript(tmp_path).strip()
-    assert line.endswith("] salut lume")
-    for forbidden in ("Victor:", "Audience:", "0.88", "🗣️"):
+    assert line.endswith("] 🎙️ salut lume")
+    for forbidden in ("Victor:", "Audience:", "0.88"):
         assert forbidden not in line, f"{forbidden!r} leaked into the transcript"
+
+
+def test_an_abstention_looks_exactly_like_the_old_unlabelled_line(tmp_path):
+    """Not a third glyph. Nobody is claiming anything about this line."""
+    r = _runner(tmp_path)
+    r._on_segment("Victor", "ro", "hmm ceva", "🎙️", _Verdict(None, 0.31, "abstain band"))
+    assert _transcript(tmp_path).strip().endswith("] hmm ceva")
+
+
+def test_the_line_survives_with_no_scorer_at_all(tmp_path):
+    """The one failure this must never have: losing the transcript along with
+    the label."""
+    r = _runner(tmp_path)
+    r._on_segment("Victor", "ro", "salut lume", "🎙️", None)
+    assert _transcript(tmp_path).strip().endswith("] salut lume")
+
+
+def test_the_stamp_stays_first_so_the_watchdog_still_counts_speech(tmp_path):
+    r = _runner(tmp_path)
+    r._on_segment("Victor", "ro", "salut", "🎙️", _Verdict("Audience", 0.05))
+    import re
+
+    assert re.match(r"^\[\d\d:\d\d\] ", _transcript(tmp_path).strip())
 
 
 def test_the_verdict_lands_in_its_own_file(tmp_path):
@@ -218,6 +243,13 @@ def _result(*segments):
     }
 
 
+def _chunk_text(result):
+    """What the transcriber loop passes alongside `result`. It matters that
+    these agree: the transcript is written from the rows, so `_score_speakers`
+    refuses to split a chunk whose segments do not join back into its text."""
+    return result["text"]
+
+
 class TestOneVerdictPerWhisperSegment:
     """The mixed chunk is the whole reason this exists.
 
@@ -228,38 +260,34 @@ class TestOneVerdictPerWhisperSegment:
 
     def test_each_segment_is_scored_separately(self):
         scorer = _FakeScorer({3.0: "Audience", 4.0: "Victor"})
-        rows = wr._score_speakers(
-            scorer,
-            _audio(12),
-            _result((0.0, 3.0, "și cum facem cu retry-ul?"), (3.0, 7.0, "hai să vedem")),
-            "și cum facem cu retry-ul? hai să vedem",
-        )
+        res = _result((0.0, 3.0, "și cum facem cu retry-ul?"), (3.0, 7.0, "hai să vedem"))
+        rows = wr._score_speakers(scorer, _audio(12), res, _chunk_text(res))
         assert [r[3].label for r in rows] == ["Audience", "Victor"]
         assert [(r[0], r[1]) for r in rows] == [(0.0, 3.0), (3.0, 7.0)]
 
     def test_a_segment_is_scored_against_the_segment_floor_not_the_chunk_floor(self):
         scorer = _FakeScorer({3.0: "Victor"})
-        wr._score_speakers(scorer, _audio(12), _result((0.0, 3.0, "da")), "da")
-        assert scorer.scored == [(3.0, sid.SEGMENT_MIN_SECONDS)]
+        res = _result((0.0, 3.0, "da"), (3.0, 6.0, "sigur că da"))
+        wr._score_speakers(scorer, _audio(12), res, _chunk_text(res))
+        assert scorer.scored == [(3.0, sid.SEGMENT_MIN_SECONDS)] * 2
 
-    def test_a_segment_under_the_floor_is_not_scored_at_all(self):
+    def test_a_segment_under_the_floor_is_kept_but_not_scored(self):
+        """Its words still belong in the transcript; it just gets no name."""
         scorer = _FakeScorer({})
-        wr._score_speakers(
-            scorer, _audio(12), _result((0.0, 1.0, "mhm"), (1.0, 5.0, "spuneam că")), "x"
-        )
+        res = _result((0.0, 1.0, "mhm"), (1.0, 5.0, "spuneam că"))
+        rows = wr._score_speakers(scorer, _audio(12), res, _chunk_text(res))
         assert [s for s, _ in scorer.scored] == [4.0]
+        assert [r[2] for r in rows] == ["mhm", "spuneam că"]
+        assert rows[0][3] is None
 
     def test_a_hallucinated_segment_gets_no_verdict(self):
         """A hallucinated line has no speaker, and calling a cough somebody
         else is worse than saying nothing about it."""
         scorer = _FakeScorer({})
-        wr._score_speakers(
-            scorer,
-            _audio(12),
-            _result((0.0, 3.0, "Vă mulțumesc!"), (3.0, 7.0, "revenim la subiect")),
-            "x",
-        )
+        res = _result((0.0, 3.0, "Vă mulțumesc!"), (3.0, 7.0, "revenim la subiect"))
+        rows = wr._score_speakers(scorer, _audio(12), res, _chunk_text(res))
         assert [s for s, _ in scorer.scored] == [4.0]
+        assert rows[0][3] is None and rows[1][3] is not None
 
     def test_a_chunk_with_no_usable_segments_still_gets_one_verdict(self):
         """Falling silent here would lose the chunk from the dark launch
@@ -270,11 +298,39 @@ class TestOneVerdictPerWhisperSegment:
         assert rows[0][0] is None and rows[0][1] is None
         assert scorer.scored == [(12.0, None)]
 
-    def test_a_decode_that_explodes_into_segments_is_capped(self):
-        scorer = _FakeScorer({})
+    def test_a_decode_that_explodes_into_segments_falls_back_whole(self):
+        """The cap drops segments, so the words no longer add up — and a
+        missing sentence is worse than a missing label."""
+        scorer = _FakeScorer({200.0: "Victor"})
         many = _result(*[(i * 3.0, i * 3.0 + 3.0, f"linia {i}") for i in range(40)])
-        wr._score_speakers(scorer, _audio(200), many, "x")
-        assert len(scorer.scored) == wr._SPEAKER_MAX_SEGMENTS
+        rows = wr._score_speakers(scorer, _audio(200), many, _chunk_text(many))
+        assert len(rows) == 1 and rows[0][0] is None
+        assert rows[0][2] == _chunk_text(many)
+
+    def test_a_mixed_chunk_becomes_two_attributed_transcript_lines(self, tmp_path):
+        r = _runner(tmp_path)
+        r._on_segment(
+            "Victor", "ro", "și cum facem cu retry-ul? hai să vedem", "🎙️",
+            [
+                (0.0, 3.0, "și cum facem cu retry-ul?", _Verdict("Audience", 0.09)),
+                (3.0, 7.0, "hai să vedem", _Verdict("Victor", 0.71)),
+            ],
+        )
+        lines = [l for l in _transcript(tmp_path).splitlines() if l.strip()]
+        assert len(lines) == 2
+        assert lines[0].endswith("] 👥 și cum facem cu retry-ul?")
+        assert lines[1].endswith("] 🎙️ hai să vedem")
+
+    def test_an_unscored_segment_still_gets_its_words_into_the_transcript(self, tmp_path):
+        r = _runner(tmp_path)
+        r._on_segment(
+            "Victor", "ro", "mhm spuneam că", "🎙️",
+            [(0.0, 1.0, "mhm", None), (1.0, 5.0, "spuneam că", _Verdict("Victor", 0.7))],
+        )
+        lines = [l for l in _transcript(tmp_path).splitlines() if l.strip()]
+        assert lines[0].endswith("] mhm")
+        assert lines[1].endswith("] 🎙️ spuneam că")
+        assert len(_verdicts(tmp_path)) == 1
 
     def test_every_segment_lands_in_the_jsonl_with_its_own_offsets(self, tmp_path):
         r = _runner(tmp_path)
@@ -289,7 +345,6 @@ class TestOneVerdictPerWhisperSegment:
         assert [x["label"] for x in rows] == ["Audience", "Victor"]
         assert [x["text"] for x in rows] == ["și cum facem cu retry-ul?", "hai să vedem"]
         assert (rows[0]["start"], rows[0]["end"]) == (0.0, 3.0)
-        assert _transcript(tmp_path).strip().endswith("] întrebare și răspuns")
 
     def test_a_whole_chunk_verdict_carries_no_offsets(self, tmp_path):
         """Their absence is information: this chunk could not be cut finer."""
@@ -333,16 +388,14 @@ class TestWhisperPadsEveryInputToThirtySeconds:
 
     def test_a_span_covering_the_whole_chunk_falls_back_to_one_verdict(self):
         scorer = _FakeScorer({12.0: "Victor"})
-        rows = wr._score_speakers(
-            scorer, _audio(12), _result((0.0, 29.98, "ceva")), "ceva"
-        )
+        res = _result((0.0, 29.98, "ceva"))
+        rows = wr._score_speakers(scorer, _audio(12), res, _chunk_text(res))
         assert len(rows) == 1
         assert rows[0][0] is None and rows[0][1] is None
         assert scorer.scored == [(12.0, None)]
 
     def test_an_overhanging_end_is_clamped_to_the_audio(self):
         scorer = _FakeScorer({8.0: "Victor"})
-        rows = wr._score_speakers(
-            scorer, _audio(12), _result((0.0, 4.0, "una"), (4.0, 29.98, "alta")), "x"
-        )
+        res = _result((0.0, 4.0, "una"), (4.0, 29.98, "alta"))
+        rows = wr._score_speakers(scorer, _audio(12), res, _chunk_text(res))
         assert [(r[0], r[1]) for r in rows] == [(0.0, 4.0), (4.0, 12.0)]

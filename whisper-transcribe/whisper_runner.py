@@ -829,6 +829,22 @@ class _ChannelCapture:
             )
 
 
+def _speaker_glyph(verdict) -> str:
+    """`🎙️ ` for Victor, `👥 ` for the room, and nothing at all when unsure.
+
+    The empty string is the important case and the reason this is not a
+    two-way mapping. Abstaining has to look like the old, unlabelled
+    transcript rather than like a third label, because that is exactly what it
+    means: nobody is claiming anything about this line.
+    """
+    label = getattr(verdict, "label", None) if verdict is not None else None
+    if label == _ME_SPEAKER:
+        return "🎙️ "
+    if label == _AUD_SPEAKER:
+        return "👥 "
+    return ""
+
+
 def _score_speakers(scorer, audio, result, text):
     """A verdict per *whisper segment*, not one per 12 s chunk.
 
@@ -858,10 +874,11 @@ def _score_speakers(scorer, audio, result, text):
     set were exactly that, whisper writing "Să vă mulțumim pentru a avea" over
     a cough and the scorer dutifully calling the cough somebody else.
 
-    Returns a list of `(start, end, text, verdict)`, or a single-element list
-    with `start`/`end` of `None` when the chunk yielded nothing scorable — a
-    chunk that whisper did not segment usefully is still worth a verdict, it
-    just cannot be attributed any finer than the chunk itself.
+    Returns `(start, end, text, verdict)` for **every** whisper segment, with
+    `verdict` of `None` for the ones that were skipped — since 2026-08-28 these
+    rows are also what the transcript is written from, and a row dropped here
+    would be words dropped from the transcript. A single-element list with
+    `start`/`end` of `None` means the chunk could not be cut any finer.
     """
     if scorer is None:
         return None
@@ -886,23 +903,35 @@ def _score_speakers(scorer, audio, result, text):
         if end - start >= duration - 0.05:
             continue
         seg_text = (seg.get("text") or "").strip()
-        if end - start < SEGMENT_MIN_SECONDS or not seg_text or _is_garbage(seg_text):
+        if not seg_text:
             continue
-        spans.append((start, end, seg_text))
+        # Short and hallucinated segments are kept but not scored: their words
+        # still belong in the transcript, they just get no name attached. A
+        # hallucinated line has no speaker, which is a different thing from an
+        # uncertain one.
+        scorable = end - start >= SEGMENT_MIN_SECONDS and not _is_garbage(seg_text)
+        spans.append((start, end, seg_text, scorable))
         if len(spans) >= _SPEAKER_MAX_SEGMENTS:
             break
 
-    if not spans:
+    # The transcript is written from these rows, so they have to account for
+    # every word the chunk contained. Whisper's segment texts normally join
+    # back into `text` exactly; when they do not -- a capped list, a decode
+    # that dropped a piece -- the chunk goes out whole and unattributed. A
+    # missing sentence is a far worse outcome than a missing label.
+    joined = " ".join(s[2] for s in spans).split()
+    if not spans or joined != text.split():
         verdict = scorer.score(audio)
-        return [(None, None, text, verdict)] if verdict is not None else None
+        return [(None, None, text, verdict)]
 
     rows = []
-    for start, end, seg_text in spans:
-        piece = audio[int(start * _SAMPLE_RATE) : int(end * _SAMPLE_RATE)]
-        verdict = scorer.score(piece, min_seconds=SEGMENT_MIN_SECONDS)
-        if verdict is not None:
-            rows.append((start, end, seg_text, verdict))
-    return rows or None
+    for start, end, seg_text, scorable in spans:
+        verdict = None
+        if scorable:
+            piece = audio[int(start * _SAMPLE_RATE) : int(end * _SAMPLE_RATE)]
+            verdict = scorer.score(piece, min_seconds=SEGMENT_MIN_SECONDS)
+        rows.append((start, end, seg_text, verdict))
+    return rows
 
 
 # ── Transcription thread ────────────────────────────────────────────────────
@@ -1355,7 +1384,10 @@ class WhisperTranscriptionRunner:
         `try`, where the transcript line is already safely on disk.
         """
         if verdicts is None:
-            return []
+            # Scoring off, or the scorer failed. Exactly one unlabelled line —
+            # returning nothing here would delete the transcript along with the
+            # label, which is the one failure this must never have.
+            return [(None, None, text, None)]
         if isinstance(verdicts, list):
             return verdicts
         return [(None, None, text, verdicts)]
@@ -1406,22 +1438,35 @@ class WhisperTranscriptionRunner:
         now = datetime.now()
         hhmm = now.strftime("%H:%M")
 
-        # NO SPEAKER PREFIX, no mic glyph — just `[HH:MM] text`.
+        # Speaker glyphs are back in the transcript as of 2026-08-28, and the
+        # reason they were removed on 2026-08-14 is the reason they can return.
         #
-        # The two channels do not separate two speakers. The room's audio and
-        # the mic pick each other up, so both channels hear *everyone*: whoever
-        # happened to be louder on that chunk decided whether a sentence was
-        # filed under `Victor 🎙️:` or `Audience:`. A label that is wrong half
-        # the time is worse than no label — it invites every downstream reader
-        # (the summarizer, the ⌘⌃V picker, Victor himself) to attribute words
-        # to the wrong mouth. The channels stay separate for *capture* (two
-        # devices, two threads, the echo dedup below); they just no longer
-        # claim to know who spoke.
+        # The old labels came from *which input device was louder* on a 12 s
+        # chunk. In a room both channels hear everyone, so that was a coin
+        # flip with a microphone attached, and a label that is wrong half the
+        # time is worse than no label: every downstream reader — the
+        # summarizer, the ⌘⌃V picker, Victor re-reading his own day —
+        # attributes words to the wrong mouth.
         #
-        # The `[HH:MM] ` stamp is load-bearing and stays: `TranscriptActivity`
-        # counts only stamped lines as speech, which is what keeps the whisper
-        # watchdog from mistaking a `--- Victor → 💻 ---` device marker for
-        # somebody talking.
+        # What is written now is a different claim, made by a different
+        # mechanism, and measured before being made: an enrolled voiceprint,
+        # one cosine per *whisper segment* rather than per chunk, thresholds
+        # refitted on a full day of real room audio (2026-08-27) against 62
+        # clips Victor labelled by ear. On that day 81 % of his segments are
+        # labelled and 4.8 % mislabelled, every audience segment lands on the
+        # right side, and the middle band stays deliberately unlabelled —
+        # silence is still a correct answer here, and most of what used to be
+        # a coin flip now simply gets no glyph.
+        #
+        # Two invariants hold this together:
+        #   * **no word is ever lost to a label.** The lines below are written
+        #     from whisper's own segments, and `_score_speakers` refuses to
+        #     split a chunk whose segments do not join back into its text.
+        #   * **the `[HH:MM] ` stamp stays first.** `TranscriptActivity` counts
+        #     only stamped lines as speech, which is what keeps the whisper
+        #     watchdog from mistaking a `--- Victor → 💻 ---` device marker for
+        #     somebody talking — and every reader that parses the stamp keeps
+        #     working, glyph or no glyph.
         if label == _ME_SPEAKER:
             # Still tracked, purely so the audience channel can recognise an
             # echo of what this channel just wrote and drop it.
@@ -1429,13 +1474,10 @@ class WhisperTranscriptionRunner:
         elif self._is_duplicate_of_victor(text):
             return
 
-        self._write_to_transcript(f"[{hhmm}] {text}")
-        # The transcript line above is written first and is never touched by
-        # what follows. One chunk can now produce several verdicts — one per
-        # whisper segment — and they are still, deliberately, incapable of
-        # reaching the line they describe.
         for start, end, seg_text, verdict in self._verdict_rows(verdicts, text):
-            self._write_speaker_verdict(hhmm, verdict, seg_text, start, end)
+            self._write_to_transcript(f"[{hhmm}] {_speaker_glyph(verdict)}{seg_text}")
+            if verdict is not None:
+                self._write_speaker_verdict(hhmm, verdict, seg_text, start, end)
 
         parts = text.split()
         words = len(parts)
