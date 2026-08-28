@@ -376,7 +376,28 @@ class TestHallucinationsWithoutTheirPunctuation:
     def test_a_known_hallucination_is_caught_either_way(self, text):
         assert wr._is_garbage(text)
 
-    @pytest.mark.parametrize("text", ["Da, corect.", "Pleacă default pe all și la domain model."])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Mă ne vedem la următoarea mea rețetă.",
+            "Să nu ne vedem la următoarea mea rețetă!",
+            "Nu uitați să vă abonați la canalul meu",
+        ],
+    )
+    def test_a_whole_family_is_caught_by_its_phrase(self, text):
+        """Whisper writes the same outro with a different leading word every
+        time; collecting the variants one by one is always one behind."""
+        assert wr._is_garbage(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Da, corect.",
+            "Pleacă default pe all și la domain model.",
+            "Ne vedem la următoarea sesiune de curs.",
+            "Hai să vedem la următoarea metodă ce se întâmplă.",
+        ],
+    )
     def test_real_speech_still_gets_through(self, text):
         assert not wr._is_garbage(text)
 

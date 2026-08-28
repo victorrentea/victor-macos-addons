@@ -273,6 +273,21 @@ _HALLUCINATIONS = {
 # decoder felt like. A hallucination is not less of one for lacking a full stop.
 _HALLUCINATIONS_UNPUNCTUATED = {h.rstrip(" .!?…") for h in _HALLUCINATIONS}
 
+# Substrings, not exact matches, because these are not phrases — they are
+# *families*. Whisper writes the same YouTube outro with a different leading
+# word almost every time ("Să ne vedem la următoarea mea rețetă", "Mă ne vedem
+# la următoarea mea rețetă", "Să nu ne vedem…"), and 30 variants of one
+# hallucination collected one by one is a list that is always one variant
+# behind. Each entry is chosen to be something nobody says in a training room:
+# "la următoarea sesiune" is real speech and stays out of here, "la următoarea
+# mea rețetă" is not.
+_HALLUCINATION_PHRASES = (
+    "la următoarea mea rețetă",
+    "abonați la canal",
+    "mulțumim pentru vizionare",
+    "mulțumesc pentru vizionare",
+)
+
 # Regex: a short syllable/char pattern repeated many times within a single token
 # e.g. "iriiriiriiri...", "Tidyidyidyidy...", "doppiriiriiri..."
 _CHAR_REPEAT_RE = re.compile(r'(.{2,4})\1{8,}', re.IGNORECASE)
@@ -290,6 +305,8 @@ def _is_garbage(text: str) -> bool:
 
     # Exact-match known hallucination phrases, with or without their punctuation
     if lower in _HALLUCINATIONS or lower.rstrip(" .!?…") in _HALLUCINATIONS_UNPUNCTUATED:
+        return True
+    if any(phrase in lower for phrase in _HALLUCINATION_PHRASES):
         return True
 
     # Single token that's purely digits or punctuation (e.g. "2", "123", "...")
