@@ -26,7 +26,13 @@ class CoreAudioManager {
     private static let monitoredOutputName = "🔊OS Output"
     private static let dictationVolumeLow: Float = 0.01
     private static let wisprBundlePrefix = "com.electron.wispr-flow"
-    private static let normalPollInterval: TimeInterval = 0.3
+    /// Safety net only. The Wispr-recording edges arrive instantly from the
+    /// CoreAudio process-list listener (`startProcessListListener`) — Wispr's
+    /// audio process object is *published when it starts recording and removed
+    /// when it stops*, so the list change IS the edge. This poll exists purely
+    /// in case a listener callback is ever missed; it used to be 300ms, when it
+    /// was the only source.
+    private static let normalPollInterval: TimeInterval = 1.0
     private static let boostedPollInterval: TimeInterval = 0.1
     private static let boostDuration: TimeInterval = 1.0
     // Asymmetric debounce on restore: mute on the first "recording=true" read,
@@ -47,6 +53,28 @@ class CoreAudioManager {
     // Timestamp of the first "recording=false" read since the current mute.
     // Cleared on any "recording=true" read or after a successful restore.
     private var firstNotRecordingAt: Date?
+
+    /// 🎵 The "dictation is happening" window handed to the Chrome bridge, so
+    /// audible tabs can be paused and resumed. Deliberately *independent* of
+    /// `volumePushedDown`: the mute path needs to know whether music is playing
+    /// (loopback RMS, which only works while `🔊OS Output` is the default
+    /// output), whereas pausing does not — the extension asks Chrome which tabs
+    /// are audible. So this latch survives any output-device choice.
+    private var dictationActive = false
+    /// First "not recording" read since `dictationActive` went true — the same
+    /// 1s debounce the volume restore uses, so a sub-second flicker in Wispr's
+    /// isRunningInput doesn't stutter the music.
+    private var dictationFirstNotRecordingAt: Date?
+    /// Fired on the dictation window's edges (true = pause the music now).
+    /// Invoked on `pollQueue`; the handler must hop wherever it needs.
+    var onDictationActiveChanged: ((Bool) -> Void)?
+
+    /// Retained CoreAudio listener on the process list (see `startProcessListListener`).
+    private var processListListener: AudioObjectPropertyListenerBlock?
+    private var processListAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyProcessObjectList,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
 
     // Latch for the output-route drift alert (see OutputDriftPolicy). Alert once
     // per drift episode, re-arm when a Wispr-start sees the correct output again.
@@ -71,7 +99,47 @@ class CoreAudioManager {
             self?.scheduleNext(in: Self.normalPollInterval)
         }
         timer.resume()
+        startProcessListListener()
         overlayInfo("🎤 Wispr-watch started (poll \(Int(Self.normalPollInterval * 1000))ms, boost \(Int(Self.boostedPollInterval * 1000))ms for \(Int(Self.boostDuration * 1000))ms after Mouse5, mute target=\(Self.monitoredOutputName) @ \(Int(Self.dictationVolumeLow * 100))%)")
+    }
+
+    /// Observe the CoreAudio process list instead of polling it.
+    ///
+    /// Measured on this Mac: Wispr Flow's audio process object
+    /// (`com.electron.wispr-flow.helper`) is **present in
+    /// `kAudioHardwarePropertyProcessObjectList` only while it is recording**
+    /// and vanishes when dictation ends — so a list change *is* a dictation
+    /// edge, delivered by `coreaudiod` as a push with no timer wakeups at all.
+    /// (Our own live transcription, `org.python.python`, sits in that list with
+    /// `IsRunningInput` permanently true; filtering by bundle id in
+    /// `isWisprRecording` is what keeps it out of the decision.)
+    private func startProcessListListener() {
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.tick()   // already on pollQueue → serialized with the timer
+        }
+        processListListener = block
+        let status = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &processListAddress, pollQueue, block)
+        if status != noErr {
+            overlayError("Wispr-watch: could not observe the audio process list (OSStatus \(status)) — falling back to the poll alone")
+            processListListener = nil
+        }
+    }
+
+    private func stopProcessListListener() {
+        guard let block = processListListener else { return }
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &processListAddress, pollQueue, block)
+        processListListener = nil
+    }
+
+    deinit { stopProcessListListener() }
+
+    /// Flip the dictation window and tell the bridge. Must be on pollQueue.
+    private func setDictationActive(_ active: Bool) {
+        guard dictationActive != active else { return }
+        dictationActive = active
+        onDictationActiveChanged?(active)
     }
 
     /// Called from the event tap when Mouse 5 (Wispr push-to-talk) is pressed.
@@ -85,6 +153,11 @@ class CoreAudioManager {
         pollQueue.async { [weak self] in
             guard let self = self else { return }
             let now = Date()
+            // Pausing needs no loopback probe, so it can happen on the press
+            // itself — ahead of any Wispr confirmation. If Wispr never
+            // confirms, the debounce below closes the window again.
+            self.dictationFirstNotRecordingAt = now
+            self.setDictationActive(true)
             self.boostedUntil = now.addingTimeInterval(Self.boostDuration)
             let desired = now.addingTimeInterval(Self.boostedPollInterval)
             if desired < self.nextDeadline {
@@ -132,6 +205,8 @@ class CoreAudioManager {
         lastWisprRecording = recording
 
         if recording {
+            dictationFirstNotRecordingAt = nil
+            setDictationActive(true)
             // On the Wispr-start edge, verify the music-mute path is actually
             // wired: it only works if the system output is the monitored
             // loopback. Warn (once per drift) if it has drifted elsewhere.
@@ -160,6 +235,17 @@ class CoreAudioManager {
             // If volumePushedDown is already true: do nothing. Loopback would
             // read silent and mislead us.
         } else {
+            if dictationActive {
+                let now = Date()
+                if let started = dictationFirstNotRecordingAt {
+                    if now.timeIntervalSince(started) >= Self.restoreDebounceDuration {
+                        dictationFirstNotRecordingAt = nil
+                        setDictationActive(false)
+                    }
+                } else {
+                    dictationFirstNotRecordingAt = now
+                }
+            }
             if volumePushedDown {
                 let now = Date()
                 if let started = firstNotRecordingAt {

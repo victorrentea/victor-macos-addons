@@ -66,6 +66,9 @@ class TabletHttpServer {
         /// Post the "Wispr started but output ≠ 🔊OS Output" notification now,
         /// using the real current default-output name (test hook).
         case testWisprOutputDrift
+    /// Force the dictation window open/closed, to exercise the Chrome
+    /// pause/resume bridge without actually dictating (`?active=0|1`).
+    case testDictation(Bool)
         /// Force-apply the projector/standard display arrangement now and return
         /// a JSON snapshot of the detected displays + applied scene (test hook).
         case testProjector
@@ -177,6 +180,8 @@ class TabletHttpServer {
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestWisprOutputDrift: (() -> Void)?
+    /// Force the dictation window; returns the bridge's JSON snapshot.
+    var onTestDictation: ((Bool) -> String)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
     var onTestProjector: (() -> String)?
     /// JSON snapshot of the presenting state + display classification.
@@ -391,6 +396,9 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
                 if self.onTestAndroidDeploy == nil { statusCode = 503 }
+            case .testDictation(let active):
+                contentType = "application/json"
+                body = self.onTestDictation?(active) ?? "{\"error\":\"dictation bridge unavailable\"}"
             case .testHotspot:
                 contentType = "application/json"
                 body = self.onTestHotspot?() ?? "{\"error\":\"hotspot fallback unavailable\"}"
@@ -532,6 +540,9 @@ class TabletHttpServer {
             return .effect("microwave")
         case "/test/group-photo":
             return .testGroupPhoto
+        case "/test/dictation":
+            let raw = queryItems.first(where: { $0.name == "active" })?.value ?? "1"
+            return .testDictation(raw != "0" && raw.lowercased() != "false")
         case "/test/wispr-output-drift":
             return .testWisprOutputDrift
         case "/test/projector":

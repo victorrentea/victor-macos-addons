@@ -36,6 +36,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptPasteController: TranscriptPasteController?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
+    /// 🎵 Pushes the dictation window to the Chrome extension that pauses music.
+    private var dictationBridge: DictationBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
     private var bluetoothAutoOutput: BluetoothAutoOutput?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
@@ -1252,6 +1254,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         self.coreAudioManager = audioManager
         audioManager.onWisprOutputDrift = { [weak self] outputName in
             DispatchQueue.main.async { self?.postWisprOutputDriftNotification(output: outputName) }
+        }
+        let bridge = DictationBridge()
+        self.dictationBridge = bridge
+        bridge.start()
+        audioManager.onDictationActiveChanged = { [weak bridge] active in
+            bridge?.setActive(active)
+        }
+        tabletServer?.onTestDictation = { [weak bridge] active in
+            bridge?.setActive(active)
+            return "{\"ok\":true,\"active\":\(active)}"
         }
         audioManager.start()
 
