@@ -30,12 +30,21 @@ final class KnownDisplays {
     /// match). Callers only ask this about non-builtin displays.
     func isKnown(_ id: CGDirectDisplayID) -> Bool {
         guard let name = Self.name(for: id) else { return false }
+        return isKnown(name: name)
+    }
+
+    /// Name-only form, for callers that already resolved the display's name
+    /// (`DisplayRolePolicy`, which is deliberately Quartz-free).
+    func isKnown(name: String) -> Bool {
         let upper = name.uppercased()
         return Self.trustedNameSubstrings.contains { upper.contains($0.uppercased()) }
     }
 
     // MARK: - Static CG helpers
 
+    /// The display's name. Falls back to `DisplayNameCache` because a display
+    /// swept into a **mirror set has no `NSScreen`** — mirrored displays collapse
+    /// into one — and would otherwise read as anonymous.
     static func name(for id: CGDirectDisplayID) -> String? {
         for screen in NSScreen.screens {
             if let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
@@ -43,7 +52,7 @@ final class KnownDisplays {
                 return screen.localizedName
             }
         }
-        return nil
+        return DisplayNameCache.name(for: id)
     }
 
     static func onlineDisplayIDs() -> [CGDirectDisplayID] {

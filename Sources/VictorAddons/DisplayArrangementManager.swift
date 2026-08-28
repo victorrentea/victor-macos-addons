@@ -47,18 +47,10 @@ final class DisplayArrangementManager {
         self.knownDisplays = knownDisplays
     }
 
-    /// A resolved set of the displays we care about at one instant.
-    private struct DisplaySet {
-        var retina: CGDirectDisplayID?
-        var asus: CGDirectDisplayID?
-        /// First unknown external (venue projector / room TV), if any.
-        var projector: CGDirectDisplayID?
-        /// Known non-ASUS externals (home monitors / TV). Their presence means
-        /// we're at home / a familiar rig, so auto-arrange keeps its hands off —
-        /// except we never allow one to stay *mirroring* the Retina (see below).
-        var knownExternals: [CGDirectDisplayID] = []
-        var hasKnownExternal: Bool { !knownExternals.isEmpty }
-    }
+    /// A resolved set of the displays we care about at one instant. Roles come
+    /// from `DisplayRolePolicy` (pure, unit-tested); this class only feeds it
+    /// Quartz facts and acts on the answer.
+    private typealias DisplaySet = DisplayRolePolicy.Resolution
 
     /// The decision key: re-apply only when this changes.
     private struct Scene: Equatable {
@@ -72,6 +64,13 @@ final class DisplayArrangementManager {
     private var lastScene: Scene?
     /// Deduplicates the unknown-external (presentation) signal.
     private var lastUnknownExternal: Bool?
+    /// How many times the current arrangement has been re-applied because the
+    /// verification pass found macOS had not honoured it. Reset on every fresh
+    /// evaluation; capped by `maxApplyAttempts`.
+    private var applyAttempt = 0
+    private let maxApplyAttempts = 3
+    /// Guards against re-entering the un-mirror probe in a loop.
+    private var probeInFlight = false
 
     /// The Retina's user-normal (native HiDPI) mode, captured the first time we
     /// observe a projector-free state. Restored verbatim when reverting, so we
@@ -101,7 +100,7 @@ final class DisplayArrangementManager {
             + "baseline scene=\(describe(lastScene)); \(describe(displays))")
         // Propagate the initial presentation signal (e.g. launched at a venue
         // with the projector already plugged in).
-        notifyUnknownExternal(displays.projector != nil)
+        notifyUnknownExternal(unknownExternalPresent(displays))
     }
 
     // MARK: - Detection
@@ -119,12 +118,28 @@ final class DisplayArrangementManager {
     /// Re-read the displays and apply the arrangement. `force` bypasses the
     /// "scene unchanged" guard (used by the menu item + `/test/projector`), so a
     /// venue projector that came up in a weird state can be re-fixed on demand.
-    private func evaluateAndApply(force: Bool) {
+    private func evaluateAndApply(force: Bool, afterProbe: Bool = false) {
         let displays = resolveDisplays()
+
+        // Anonymous displays: macOS swept one or more displays into a mirror
+        // set, and a mirror slave has no NSScreen — hence no name — so we cannot
+        // tell the ASUS from the room TV. Guessing is what produced the
+        // 2026-08-27 incident (the ASUS was taken for the projector and left
+        // mirroring). Break every mirror, let the names come back, ask again.
+        if displays.needsUnmirrorProbe && !afterProbe {
+            // The signal must not wait for the probe: an unattributable display
+            // is presentation enough.
+            notifyUnknownExternal(unknownExternalPresent(displays))
+            let anon = displays.unidentified.map(String.init).joined(separator: ",")
+            overlayInfo("Anonymous mirror slave(s) [\(anon)] — breaking mirrors to identify them")
+            breakAllMirrorsAndReresolve()
+            return
+        }
+
         captureStandardRetinaModeIfNeeded(displays)
         // Always refresh the presentation signal first — even when the arrange
         // scene is unchanged or suppressed below.
-        notifyUnknownExternal(displays.projector != nil)
+        notifyUnknownExternal(unknownExternalPresent(displays))
 
         let target = scene(for: displays)
         if !force, target == lastScene {
@@ -132,6 +147,7 @@ final class DisplayArrangementManager {
             return
         }
         lastScene = target
+        applyAttempt = 0
 
         // A familiar multi-display rig: when KNOWN non-ASUS externals (home
         // monitors / TV) are present, Victor's own layout — the exact positions
@@ -147,6 +163,56 @@ final class DisplayArrangementManager {
         }
 
         apply(scene: target, displays: displays)
+    }
+
+    /// Break **every** mirror set, then re-resolve ~0.9 s later. The only way to
+    /// give an anonymous mirror slave its name back is to take it out of the
+    /// mirror set: `NSScreen` then lists it again. The follow-up evaluation is
+    /// forced, because the scene key can easily look unchanged while the actual
+    /// roles were wrong.
+    private func breakAllMirrorsAndReresolve() {
+        guard !probeInFlight else { return }
+        probeInFlight = true
+        isApplying = true
+
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
+            overlayError("CGBeginDisplayConfiguration failed — could not un-mirror to identify displays")
+            probeInFlight = false
+            isApplying = false
+            return
+        }
+        for id in onlineDisplayIDs() where CGDisplayIsInMirrorSet(id) != 0 {
+            CGConfigureDisplayMirrorOfDisplay(config, id, kCGNullDirectDisplay)
+            // Breaking a mirror drops the ex-slave to a fallback mode (800×600),
+            // and the probe must not be the thing that leaves it there — the
+            // follow-up may well decide to keep the layout as it is.
+            if CGDisplayIsBuiltin(id) == 0, let m = bestMode(id) {
+                CGConfigureDisplayWithDisplayMode(config, id, m, nil)
+            }
+        }
+        let result = CGCompleteDisplayConfiguration(config, .permanently)
+        guard result == .success else {
+            overlayError("CGCompleteDisplayConfiguration failed (\(result.rawValue)) — could not un-mirror to identify displays")
+            probeInFlight = false
+            isApplying = false
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+            guard let self else { return }
+            self.probeInFlight = false
+            self.isApplying = false
+            self.evaluateAndApply(force: true, afterProbe: true)
+        }
+    }
+
+    /// The presentation signal: some connected display cannot be attributed to
+    /// Victor's own gear. An **anonymous mirror slave counts** — staying silent
+    /// through a real room-TV session is a worse failure than arming the warning
+    /// while the ASUS alone happens to be mirrored.
+    private func unknownExternalPresent(_ d: DisplaySet) -> Bool {
+        d.projector != nil || !d.extraExternals.isEmpty || !d.unidentified.isEmpty
     }
 
     /// Notify the presentation layer (deduped) that the unknown-external signal
@@ -189,10 +255,13 @@ final class DisplayArrangementManager {
             retinaModeStr = "null"
         }
         let has1080 = d.retina.flatMap { find1080Mode($0) } != nil
+        let extras = (d.extraExternals + d.unidentified).map { "\(nm($0))" }.joined(separator: ",")
         return "{"
             + "\"retina\":\(nm(d.retina)),"
             + "\"asus\":\(nm(d.asus)),"
             + "\"projector\":\(nm(d.projector)),"
+            + "\"otherExternals\":[\(extras)],"
+            + "\"anonymousMirrorSlaves\":\(d.unidentified.count),"
             + "\"scene\":\"\(s.projector ? "projector" : "standard")\","
             + "\"retinaMode\":\(retinaModeStr),"
             + "\"retina1080Available\":\(has1080),"
@@ -203,31 +272,17 @@ final class DisplayArrangementManager {
     // MARK: - Role resolution
 
     private func resolveDisplays() -> DisplaySet {
-        var set = DisplaySet()
-        for id in onlineDisplayIDs() {
-            switch role(of: id) {
-            case .retina:        if set.retina == nil { set.retina = id }
-            case .asus:          if set.asus == nil { set.asus = id }
-            case .knownExternal: set.knownExternals.append(id)
-            case .projector:     if set.projector == nil { set.projector = id }
-            }
+        // Learn the names of everything currently visible, so a display that
+        // gets mirrored (and loses its NSScreen) can still be recognised later.
+        DisplayNameCache.learn()
+        let facts = onlineDisplayIDs().map { id in
+            DisplayFacts(id: id,
+                         isBuiltin: CGDisplayIsBuiltin(id) != 0,
+                         name: screenName(for: id),
+                         isMirrored: CGDisplayIsInMirrorSet(id) != 0)
         }
-        return set
-    }
-
-    private enum Role { case retina, asus, knownExternal, projector }
-
-    private func role(of id: CGDirectDisplayID) -> Role {
-        if CGDisplayIsBuiltin(id) != 0 { return .retina }
-        // The ASUS travel monitor gets its own arrangement role (primary/right).
-        if let name = screenName(for: id), name.uppercased().contains("ASUS") {
-            return .asus
-        }
-        // Any other display Victor has marked as his own (home monitors / TV):
-        // a normal extended desktop — never mirrored, never "presenting".
-        if knownDisplays.isKnown(id) { return .knownExternal }
-        // Anything else external = a venue projector / room TV = unknown.
-        return .projector
+        let known = knownDisplays
+        return DisplayRolePolicy.resolve(facts) { known.isKnown(name: $0) }
     }
 
     private func onlineDisplayIDs() -> [CGDirectDisplayID] {
@@ -239,14 +294,9 @@ final class DisplayArrangementManager {
         return Array(ids.prefix(Int(count)))
     }
 
+    /// Cache-backed so a mirror slave (no `NSScreen`) still reports its name.
     private func screenName(for id: CGDirectDisplayID) -> String? {
-        for screen in NSScreen.screens {
-            if let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
-               n.uint32Value == id {
-                return screen.localizedName
-            }
-        }
-        return nil
+        KnownDisplays.name(for: id)
     }
 
     private func scene(for displays: DisplaySet) -> Scene {
@@ -282,10 +332,10 @@ final class DisplayArrangementManager {
         }
 
         let banner: String
-        if scene.projector, let projector = displays.projector, let retina = displays.retina {
-            banner = configureProjectorModes(config: config, retina: retina, projector: projector, asus: displays.asus)
-        } else if let retina = displays.retina {
-            banner = configureStandardModes(config: config, retina: retina, asus: displays.asus)
+        if scene.projector, displays.projector != nil, displays.retina != nil {
+            banner = configureProjectorModes(config: config, displays: displays)
+        } else if displays.retina != nil {
+            banner = configureStandardModes(config: config, displays: displays)
         } else {
             _ = CGCancelDisplayConfiguration(config)
             scheduleApplyingReset()
@@ -306,6 +356,70 @@ final class DisplayArrangementManager {
             self.applyOrigins(scene: scene, displays: displays, banner: banner)
             self.scheduleApplyingReset()
         }
+    }
+
+    /// Phase 3 — **check that macOS actually did it.** Quartz reports success
+    /// for a configuration it then quietly recomputes (the Epson PU100 bug), and
+    /// a display that is still settling (or flapping, as the ASUS did on
+    /// 2026-08-27) can swallow the origins outright. So we read the live layout
+    /// back 1.5 s later and re-apply if it isn't what we asked for, up to
+    /// `maxApplyAttempts`. Deliberately short-lived: a manual re-layout Victor
+    /// makes seconds later is still left alone, because verification only runs
+    /// in the few seconds following an apply we ourselves performed.
+    private func scheduleVerification(scene: Scene, displays: DisplaySet, banner: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.verifyAndRetry(scene: scene, displays: displays, banner: banner)
+        }
+    }
+
+    private func verifyAndRetry(scene: Scene, displays: DisplaySet, banner: String) {
+        // Hardware moved on: a fresh evaluation is already queued, don't fight it.
+        let live = resolveDisplays()
+        guard live.retina == displays.retina,
+              live.asus == displays.asus,
+              live.projector == displays.projector else {
+            overlayInfo("Arrangement verification skipped — displays changed since applying")
+            return
+        }
+
+        guard let problem = mismatch(scene: scene, displays: displays) else {
+            overlayInfo("Display arrangement verified: \(banner)")
+            return
+        }
+        guard applyAttempt + 1 < maxApplyAttempts else {
+            overlayError("Display arrangement NOT honoured by macOS after \(applyAttempt + 1) attempts "
+                + "(\(problem)) — \(banner). Use 🖥️ Arrange Monitors to retry.")
+            return
+        }
+        applyAttempt += 1
+        overlayInfo("Display arrangement not honoured (\(problem)) — re-applying "
+            + "(attempt \(applyAttempt + 1)/\(maxApplyAttempts))")
+        apply(scene: scene, displays: displays)
+    }
+
+    /// `nil` when the live layout is what we asked for; otherwise the first
+    /// broken invariant, in words, for the log.
+    private func mismatch(scene: Scene, displays: DisplaySet) -> String? {
+        guard let retina = displays.retina else { return nil }
+        if scene.projector {
+            if let projector = displays.projector, CGDisplayMirrorsDisplay(projector) != retina {
+                return "projector is not mirroring the Retina"
+            }
+            if find1080Mode(retina) != nil, let mode = CGDisplayCopyDisplayMode(retina), mode.width != 1920 {
+                return "Retina is at \(mode.width)×\(mode.height), not 1920×1080"
+            }
+            if let asus = displays.asus {
+                if CGDisplayIsInMirrorSet(asus) != 0 { return "the ASUS is still mirroring" }
+                if CGMainDisplayID() != asus { return "the ASUS is not the main display" }
+            }
+        } else {
+            if CGDisplayIsInMirrorSet(retina) != 0 { return "the Retina is still in a mirror set" }
+            if CGMainDisplayID() != retina { return "the Retina is not the main display" }
+            if let asus = displays.asus, CGDisplayIsInMirrorSet(asus) != 0 {
+                return "the ASUS is still mirroring"
+            }
+        }
+        return nil
     }
 
     /// Keep swallowing our own reconfiguration callbacks briefly after the last
@@ -329,31 +443,42 @@ final class DisplayArrangementManager {
         // the actual point width being extended next to.
         let retinaPointWidth = Int32(displays.retina.flatMap { CGDisplayCopyDisplayMode($0)?.width } ?? 1920)
 
+        var rightEdge: Int32 = 0
         if scene.projector, let asus = displays.asus, let retina = displays.retina {
             CGConfigureDisplayOrigin(config, asus, 0, 0)                   // (0,0) ⇒ main
             CGConfigureDisplayOrigin(config, retina, -retinaPointWidth, 0) // to ASUS's left
+            rightEdge = Int32(CGDisplayCopyDisplayMode(asus)?.width ?? 1920)
         } else if let retina = displays.retina {
             CGConfigureDisplayOrigin(config, retina, 0, 0)                 // Retina main
+            rightEdge = retinaPointWidth
             if let asus = displays.asus {
                 CGConfigureDisplayOrigin(config, asus, retinaPointWidth, 0) // extended right
+                rightEdge += Int32(CGDisplayCopyDisplayMode(asus)?.width ?? 1920)
             }
+        }
+        // Any further unknown external (a second venue screen) is parked to the
+        // right rather than left stacked on top of the others at (0,0).
+        for extra in displays.extraExternals {
+            CGConfigureDisplayOrigin(config, extra, rightEdge, 0)
+            rightEdge += Int32(CGDisplayCopyDisplayMode(extra)?.width ?? 1920)
         }
 
         let result = CGCompleteDisplayConfiguration(config, .permanently)
         if result == .success {
             overlayInfo("Display arrangement applied: \(banner)")
             onArrangementApplied?(banner)
+            scheduleVerification(scene: scene, displays: displays, banner: banner)
         } else {
             overlayError("CGCompleteDisplayConfiguration failed on origins (\(result.rawValue)) — \(banner)")
         }
     }
 
     /// Projector present (phase 1): Retina→1080p, mirrored by the projector;
-    /// ASUS (if any) un-mirrored + pinned to its native mode.
+    /// ASUS + any extra external un-mirrored and pinned to their native mode.
     private func configureProjectorModes(config: CGDisplayConfigRef,
-                                         retina: CGDirectDisplayID,
-                                         projector: CGDirectDisplayID,
-                                         asus: CGDirectDisplayID?) -> String {
+                                         displays: DisplaySet) -> String {
+        guard let retina = displays.retina, let projector = displays.projector else { return "🖥️ —" }
+        let asus = displays.asus
         if let mode = find1080Mode(retina) {
             CGConfigureDisplayWithDisplayMode(config, retina, mode, nil)
         } else {
@@ -362,6 +487,14 @@ final class DisplayArrangementManager {
 
         // Projector mirrors the Retina (shares its bounds — do not place it).
         CGConfigureDisplayMirrorOfDisplay(config, projector, retina)
+
+        // Every other external is taken out of the mirror set explicitly. macOS
+        // sweeps whatever is already attached into the new display's mirror set
+        // on hot-plug, and anything we don't name here stays mirrored.
+        for extra in displays.extraExternals {
+            CGConfigureDisplayMirrorOfDisplay(config, extra, kCGNullDirectDisplay)
+            if let m = bestMode(extra) { CGConfigureDisplayWithDisplayMode(config, extra, m, nil) }
+        }
 
         if let asus = asus {
             CGConfigureDisplayMirrorOfDisplay(config, asus, kCGNullDirectDisplay)
@@ -376,15 +509,21 @@ final class DisplayArrangementManager {
         }
     }
 
-    /// No projector (phase 1): Retina un-mirrored at its native mode; ASUS (if
-    /// any) un-mirrored + pinned to its native mode.
+    /// No projector (phase 1): Retina un-mirrored at its native mode; ASUS and
+    /// any extra external un-mirrored + pinned to their native mode.
     private func configureStandardModes(config: CGDisplayConfigRef,
-                                        retina: CGDirectDisplayID,
-                                        asus: CGDirectDisplayID?) -> String {
+                                        displays: DisplaySet) -> String {
+        guard let retina = displays.retina else { return "🖥️ —" }
+        let asus = displays.asus
         CGConfigureDisplayMirrorOfDisplay(config, retina, kCGNullDirectDisplay)
 
         if let std = standardRetinaMode {
             CGConfigureDisplayWithDisplayMode(config, retina, std, nil)
+        }
+
+        for extra in displays.extraExternals {
+            CGConfigureDisplayMirrorOfDisplay(config, extra, kCGNullDirectDisplay)
+            if let m = bestMode(extra) { CGConfigureDisplayWithDisplayMode(config, extra, m, nil) }
         }
 
         if let asus = asus {
@@ -526,5 +665,7 @@ final class DisplayArrangementManager {
             return screenName(for: id) ?? "display \(id)"
         }
         return "retina=\(nm(d.retina)) asus=\(nm(d.asus)) projector=\(nm(d.projector))"
+            + (d.extraExternals.isEmpty ? "" : " extra=\(d.extraExternals.map { nm($0) }.joined(separator: ","))")
+            + (d.unidentified.isEmpty ? "" : " anonymous=\(d.unidentified.count)")
     }
 }
