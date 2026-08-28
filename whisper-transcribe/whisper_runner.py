@@ -184,8 +184,23 @@ _RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
 # review; it is a claim to be proven against a day of real workshop audio first.
 # So the verdicts go to `<day>-speakers.jsonl`, where they can be scored against
 # the transcript afterwards at zero risk to a live session.
-_SPEAKER_ID = os.environ.get("WHISPER_SPEAKER_ID", "0").strip().lower()
+#
+# **On by default since 2026-08-28**, and the reason it was off until then is
+# also the reason it is on now. It shipped behind an env var that nothing sets,
+# so it never ran once: the day of room audio recorded on 2026-08-27 produced
+# no `-speakers.jsonl` at all, and the calibration had to be reconstructed
+# offline from the raw PCM. A dark launch that is dark to itself collects
+# nothing. The cost is 25 ms of CPU per chunk against whisper's 375 ms on the
+# GPU, every failure path disables the feature and returns `None`, and the
+# wiring is unit-tested to be incapable of writing a label into the transcript
+# — so "off" was buying no safety that "on" does not already have.
+_SPEAKER_ID = os.environ.get("WHISPER_SPEAKER_ID", "1").strip().lower()
 _SPEAKER_ID_ON = _SPEAKER_ID in {"1", "true", "yes", "on"}  # allow-list, as above
+# How many of whisper's own segments inside one chunk get a verdict. The cap is
+# not about cost — it is about a decode that has gone wrong: a hallucinating
+# chunk can come back with fifty zero-length segments, and scoring a list like
+# that is fifty ways to be confidently wrong about nothing.
+_SPEAKER_MAX_SEGMENTS = int(os.environ.get("WHISPER_SPEAKER_MAX_SEGMENTS", "8"))
 _SPEAKER_MODEL = Path(
     os.environ.get(
         "WHISPER_SPEAKER_MODEL",
@@ -245,6 +260,14 @@ _HALLUCINATIONS = {
     "grazie!",
 }
 
+# The same phrases with their end punctuation removed. Whisper writes
+# "Nu uitați să vă abonați la canalul meu" without the "!" often enough that the
+# exact-match set missed it — and it started mattering on 2026-08-28, when
+# `_is_garbage` began screening each whisper *segment* as well as the whole
+# chunk: a segment is cut mid-utterance, so its punctuation is whatever the
+# decoder felt like. A hallucination is not less of one for lacking a full stop.
+_HALLUCINATIONS_UNPUNCTUATED = {h.rstrip(" .!?…") for h in _HALLUCINATIONS}
+
 # Regex: a short syllable/char pattern repeated many times within a single token
 # e.g. "iriiriiriiri...", "Tidyidyidyidy...", "doppiriiriiri..."
 _CHAR_REPEAT_RE = re.compile(r'(.{2,4})\1{8,}', re.IGNORECASE)
@@ -260,8 +283,8 @@ def _is_garbage(text: str) -> bool:
 
     lower = stripped.lower()
 
-    # Exact-match known hallucination phrases
-    if lower in _HALLUCINATIONS:
+    # Exact-match known hallucination phrases, with or without their punctuation
+    if lower in _HALLUCINATIONS or lower.rstrip(" .!?…") in _HALLUCINATIONS_UNPUNCTUATED:
         return True
 
     # Single token that's purely digits or punctuation (e.g. "2", "123", "...")
@@ -801,6 +824,70 @@ class _ChannelCapture:
             )
 
 
+def _score_speakers(scorer, audio, result, text):
+    """A verdict per *whisper segment*, not one per 12 s chunk.
+
+    This is the whole diarisation step, and it is small because the hard part
+    was already done twice by someone else. Whisper returns its segments cut at
+    the pauses in speech, which is exactly where a speaker change happens; and
+    there is an enrolled reference, so the question is never the diarisation
+    question ("how many voices, and who") but only "is this stretch him".
+
+    Scoring the chunk was the bug. A 12 s chunk in a room routinely holds a
+    question from the floor and Victor's answer over the top of it — 17 % of a
+    measured teaching day — and one cosine over the whole thing averages the
+    two into a number in the middle, which is precisely the band that used to
+    look like "the classifier is unsure". It was not unsure. It was being asked
+    about two people at once.
+
+    Measured on 2026-08-27 against 62 clips Victor labelled by ear: chunk-level
+    scoring exposed the second voice in none of the mixed chunks (there is only
+    one number), while segment-level scoring puts a high and a low verdict on
+    the same chunk in 60 % of them, and does so on **0 %** of the chunks that
+    were only ever him. The false-alarm rate is the number that matters: a
+    split that is invented is a sentence attributed to a stranger.
+
+    Garbage segments are skipped rather than scored. A hallucinated line has no
+    speaker at all, so a verdict on it is meaningless in a way that abstaining
+    does not capture — and two of the three worst errors in the whole labelled
+    set were exactly that, whisper writing "Să vă mulțumim pentru a avea" over
+    a cough and the scorer dutifully calling the cough somebody else.
+
+    Returns a list of `(start, end, text, verdict)`, or a single-element list
+    with `start`/`end` of `None` when the chunk yielded nothing scorable — a
+    chunk that whisper did not segment usefully is still worth a verdict, it
+    just cannot be attributed any finer than the chunk itself.
+    """
+    if scorer is None:
+        return None
+    from speaker_id import SEGMENT_MIN_SECONDS  # noqa: PLC0415 — deliberately lazy
+
+    spans = []
+    for seg in result.get("segments") or []:
+        try:
+            start, end = float(seg.get("start", 0.0)), float(seg.get("end", 0.0))
+        except (TypeError, ValueError):
+            continue
+        seg_text = (seg.get("text") or "").strip()
+        if end - start < SEGMENT_MIN_SECONDS or not seg_text or _is_garbage(seg_text):
+            continue
+        spans.append((start, end, seg_text))
+        if len(spans) >= _SPEAKER_MAX_SEGMENTS:
+            break
+
+    if not spans:
+        verdict = scorer.score(audio)
+        return [(None, None, text, verdict)] if verdict is not None else None
+
+    rows = []
+    for start, end, seg_text in spans:
+        piece = audio[int(start * _SAMPLE_RATE) : int(end * _SAMPLE_RATE)]
+        verdict = scorer.score(piece, min_seconds=SEGMENT_MIN_SECONDS)
+        if verdict is not None:
+            rows.append((start, end, seg_text, verdict))
+    return rows or None
+
+
 # ── Transcription thread ────────────────────────────────────────────────────
 def _transcribe(audio, language=None, initial_prompt=None, model=None):
     import mlx_whisper
@@ -987,8 +1074,8 @@ def _transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None):
                 # and on the CPU rather than the GPU whisper is holding — 64-90 %
                 # of a whisper call's wall time is already spent off-CPU, so
                 # this fits in a gap that exists anyway.
-                verdict = scorer.score(audio) if scorer is not None else None
-                on_segment(label, lang, text, device_tag, verdict)
+                verdicts = _score_speakers(scorer, audio, result, text)
+                on_segment(label, lang, text, device_tag, verdicts)
         except Exception as exc:
             log.error("transcript", f"🎙️ Whisper error: {exc}")
 
@@ -1240,7 +1327,23 @@ class WhisperTranscriptionRunner:
                 return True
         return False
 
-    def _write_speaker_verdict(self, hhmm: str, verdict, text: str):
+    @staticmethod
+    def _verdict_rows(verdicts, text):
+        """Accept a list of rows, or one bare verdict for the whole chunk.
+
+        The bare form is not legacy tolerance: a chunk whisper did not segment
+        usefully still gets exactly one verdict, and it would be silly to make
+        every caller wrap it. Nothing here touches the verdict's attributes —
+        a verdict that explodes when read must still explode inside the writer's
+        `try`, where the transcript line is already safely on disk.
+        """
+        if verdicts is None:
+            return []
+        if isinstance(verdicts, list):
+            return verdicts
+        return [(None, None, text, verdicts)]
+
+    def _write_speaker_verdict(self, hhmm: str, verdict, text: str, start=None, end=None):
         """A verdict goes to its OWN file, never into the transcript.
 
         This is the dark launch. Labels were in the transcript once and were
@@ -1266,6 +1369,13 @@ class WhisperTranscriptionRunner:
                 # without duplicating a day of speech into a second file.
                 "text": text[:80],
             }
+            if start is not None:
+                # Seconds from the start of the chunk. Present only when the
+                # verdict is about a whisper segment rather than the whole
+                # chunk, so its absence is information too: it says this chunk
+                # could not be cut any finer.
+                row["start"] = round(start, 2)
+                row["end"] = round(end, 2)
             with (self.output_dir / f"{day}-speakers.jsonl").open(
                 "a", encoding="utf-8"
             ) as f:
@@ -1274,7 +1384,7 @@ class WhisperTranscriptionRunner:
             log.error("transcript", f"🗣️ speaker verdict write failed: {exc}")
 
     def _on_segment(
-        self, label: str, lang: str, text: str, device_tag: str = "", verdict=None
+        self, label: str, lang: str, text: str, device_tag: str = "", verdicts=None
     ):
         now = datetime.now()
         hhmm = now.strftime("%H:%M")
@@ -1303,8 +1413,12 @@ class WhisperTranscriptionRunner:
             return
 
         self._write_to_transcript(f"[{hhmm}] {text}")
-        if verdict is not None:
-            self._write_speaker_verdict(hhmm, verdict, text)
+        # The transcript line above is written first and is never touched by
+        # what follows. One chunk can now produce several verdicts — one per
+        # whisper segment — and they are still, deliberately, incapable of
+        # reaching the line they describe.
+        for start, end, seg_text, verdict in self._verdict_rows(verdicts, text):
+            self._write_speaker_verdict(hhmm, verdict, seg_text, start, end)
 
         parts = text.split()
         words = len(parts)

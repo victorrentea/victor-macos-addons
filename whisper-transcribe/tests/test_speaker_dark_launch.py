@@ -192,3 +192,135 @@ class TestItActuallyRuns:
         assert s.score(self._tone()) is None
         assert s.failed and s.error
         assert not s.available, "it must stop claiming to work"
+
+
+class _FakeScorer:
+    """Scores by length, so a test can say which piece is whose."""
+
+    def __init__(self, by_seconds):
+        self.by_seconds = by_seconds
+        self.scored = []
+
+    def score(self, audio, min_seconds=None):
+        seconds = round(len(audio) / sid.SAMPLE_RATE, 1)
+        self.scored.append((seconds, min_seconds))
+        return _Verdict(self.by_seconds.get(seconds, None), 0.5)
+
+
+def _audio(seconds):
+    return np.zeros(int(sid.SAMPLE_RATE * seconds), dtype=np.float32)
+
+
+def _result(*segments):
+    return {
+        "text": " ".join(t for _, _, t in segments),
+        "segments": [{"start": s, "end": e, "text": t} for s, e, t in segments],
+    }
+
+
+class TestOneVerdictPerWhisperSegment:
+    """The mixed chunk is the whole reason this exists.
+
+    A 12 s chunk in a room holds a question from the floor and the answer over
+    the top of it often enough (17 % of a measured teaching day) that one
+    verdict for the chunk is a verdict about two people.
+    """
+
+    def test_each_segment_is_scored_separately(self):
+        scorer = _FakeScorer({3.0: "Audience", 4.0: "Victor"})
+        rows = wr._score_speakers(
+            scorer,
+            _audio(12),
+            _result((0.0, 3.0, "și cum facem cu retry-ul?"), (3.0, 7.0, "hai să vedem")),
+            "și cum facem cu retry-ul? hai să vedem",
+        )
+        assert [r[3].label for r in rows] == ["Audience", "Victor"]
+        assert [(r[0], r[1]) for r in rows] == [(0.0, 3.0), (3.0, 7.0)]
+
+    def test_a_segment_is_scored_against_the_segment_floor_not_the_chunk_floor(self):
+        scorer = _FakeScorer({3.0: "Victor"})
+        wr._score_speakers(scorer, _audio(12), _result((0.0, 3.0, "da")), "da")
+        assert scorer.scored == [(3.0, sid.SEGMENT_MIN_SECONDS)]
+
+    def test_a_segment_under_the_floor_is_not_scored_at_all(self):
+        scorer = _FakeScorer({})
+        wr._score_speakers(
+            scorer, _audio(12), _result((0.0, 1.0, "mhm"), (1.0, 5.0, "spuneam că")), "x"
+        )
+        assert [s for s, _ in scorer.scored] == [4.0]
+
+    def test_a_hallucinated_segment_gets_no_verdict(self):
+        """A hallucinated line has no speaker, and calling a cough somebody
+        else is worse than saying nothing about it."""
+        scorer = _FakeScorer({})
+        wr._score_speakers(
+            scorer,
+            _audio(12),
+            _result((0.0, 3.0, "Vă mulțumesc!"), (3.0, 7.0, "revenim la subiect")),
+            "x",
+        )
+        assert [s for s, _ in scorer.scored] == [4.0]
+
+    def test_a_chunk_with_no_usable_segments_still_gets_one_verdict(self):
+        """Falling silent here would lose the chunk from the dark launch
+        entirely, which looks exactly like a quiet room."""
+        scorer = _FakeScorer({12.0: "Victor"})
+        rows = wr._score_speakers(scorer, _audio(12), {"segments": []}, "ceva")
+        assert len(rows) == 1
+        assert rows[0][0] is None and rows[0][1] is None
+        assert scorer.scored == [(12.0, None)]
+
+    def test_a_decode_that_explodes_into_segments_is_capped(self):
+        scorer = _FakeScorer({})
+        many = _result(*[(i * 3.0, i * 3.0 + 3.0, f"linia {i}") for i in range(40)])
+        wr._score_speakers(scorer, _audio(200), many, "x")
+        assert len(scorer.scored) == wr._SPEAKER_MAX_SEGMENTS
+
+    def test_every_segment_lands_in_the_jsonl_with_its_own_offsets(self, tmp_path):
+        r = _runner(tmp_path)
+        r._on_segment(
+            "Victor", "ro", "întrebare și răspuns", "🎙️",
+            [
+                (0.0, 3.0, "și cum facem cu retry-ul?", _Verdict("Audience", 0.09)),
+                (3.0, 7.0, "hai să vedem", _Verdict("Victor", 0.71)),
+            ],
+        )
+        rows = _verdicts(tmp_path)
+        assert [x["label"] for x in rows] == ["Audience", "Victor"]
+        assert [x["text"] for x in rows] == ["și cum facem cu retry-ul?", "hai să vedem"]
+        assert (rows[0]["start"], rows[0]["end"]) == (0.0, 3.0)
+        assert _transcript(tmp_path).strip().endswith("] întrebare și răspuns")
+
+    def test_a_whole_chunk_verdict_carries_no_offsets(self, tmp_path):
+        """Their absence is information: this chunk could not be cut finer."""
+        r = _runner(tmp_path)
+        r._on_segment("Victor", "ro", "ceva", "🎙️", [(None, None, "ceva", _Verdict("Victor", 0.8))])
+        row = _verdicts(tmp_path)[0]
+        assert "start" not in row and "end" not in row
+
+
+class TestHallucinationsWithoutTheirPunctuation:
+    """Started mattering when `_is_garbage` began screening whisper segments.
+
+    A segment is cut mid-utterance, so its punctuation is whatever the decoder
+    felt like — and the first real mixed chunk this feature ever split came back
+    with two segments of "Nu uitați să vă abonați la canalul meu", no "!", which
+    the exact-match set let straight through to be scored.
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Nu uitați să vă abonați la canalul meu",
+            "Nu uitați să vă abonați la canalul meu!",
+            "Să vă mulțumim pentru vizionare",
+            "Vă mulțumesc",
+            "Thank you",
+        ],
+    )
+    def test_a_known_hallucination_is_caught_either_way(self, text):
+        assert wr._is_garbage(text)
+
+    @pytest.mark.parametrize("text", ["Da, corect.", "Pleacă default pe all și la domain model."])
+    def test_real_speech_still_gets_through(self, text):
+        assert not wr._is_garbage(text)

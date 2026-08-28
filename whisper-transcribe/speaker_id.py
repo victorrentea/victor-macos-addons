@@ -51,6 +51,17 @@ MIN_SECONDS = float(os.environ.get("WHISPER_SPEAKER_MIN_SECONDS", "3.0"))
 # exactly this population. Below the floor there is nothing to learn.
 EMBED_FLOOR = float(os.environ.get("WHISPER_SPEAKER_EMBED_FLOOR", "1.5"))
 
+# A third floor, for a different population. `MIN_SECONDS` was fitted on whole
+# 12 s chunks; a whisper *segment* inside such a chunk is a different animal —
+# it is cut at a pause rather than at the clock, so its audio is one person
+# talking rather than an average over whoever spoke during those 12 s, and it
+# holds up further down. Measured on the room recording of 2026-08-27, against
+# 62 clips Victor labelled by ear: at a 2.0 s floor his segments score 81 %
+# above `victor_at` with 4.8 % mislabelled, and every one of the audience's
+# segments lands below `audience_below` — while a 1.0 s floor drags his tail
+# into their territory (his 10th percentile falls from 0.26 to 0.22).
+SEGMENT_MIN_SECONDS = float(os.environ.get("WHISPER_SPEAKER_SEGMENT_SECONDS", "2.0"))
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -99,20 +110,32 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (na * nb))
 
 
-def decide(score: float, seconds: float, thresholds: Thresholds) -> Verdict:
+def decide(
+    score: float,
+    seconds: float,
+    thresholds: Thresholds,
+    min_seconds: float | None = None,
+) -> Verdict:
     """Pure, and deliberately so — this is the rule the whole feature rests on.
 
     Order matters: the duration gate comes first, because a confident-looking
     score on 0.4 s of audio is exactly the kind of number that is confidently
     wrong.
+
+    `min_seconds` overrides the floor for callers scoring something other than a
+    whole chunk — see `SEGMENT_MIN_SECONDS`. It is a parameter rather than a
+    second module constant read in here because the floor belongs to the
+    *population being scored*, and this function has no way to know which one
+    it is looking at.
     """
-    if seconds < MIN_SECONDS:
+    floor = MIN_SECONDS if min_seconds is None else min_seconds
+    if seconds < floor:
         # Duration first, and the order is load-bearing: a segment below the
         # floor is never scored, so it arrives carrying NaN. Checking finiteness
         # first labelled every routine interjection "no usable embedding" — the
         # exact phrase the startup probe uses for a model returning all-NaN,
         # which would have buried the one signal that means the model is dead.
-        return Verdict(None, score, f"only {seconds:.1f}s (< {MIN_SECONDS}s)")
+        return Verdict(None, score, f"only {seconds:.1f}s (< {floor}s)")
     if not np.isfinite(score):
         # Long enough to score, and the score came back unusable. This cannot be
         # left to fall through: NaN compares False against everything, so it
@@ -272,16 +295,18 @@ class SpeakerScorer:
         feats = self._fbank(audio)[None, :, :].astype(np.float32)
         return np.asarray(self._session.run(None, {self._input_name: feats})[0][0])
 
-    def score(self, audio: np.ndarray) -> Verdict | None:
+    def score(self, audio: np.ndarray, min_seconds: float | None = None) -> Verdict | None:
         if not self.available:
             return None
         try:
             seconds = len(audio) / SAMPLE_RATE
             if seconds < EMBED_FLOOR:
                 # Nothing to learn from audio this short, so do not pay for it.
-                return decide(float("nan"), seconds, self.voiceprint.thresholds)
+                return decide(
+                    float("nan"), seconds, self.voiceprint.thresholds, min_seconds
+                )
             sim = cosine(self.embed(audio), self.voiceprint.embedding)
-            return decide(sim, seconds, self.voiceprint.thresholds)
+            return decide(sim, seconds, self.voiceprint.thresholds, min_seconds)
         except Exception as exc:  # noqa: BLE001
             # Swallowing this silently made "scoring nothing" identical to "a
             # quiet room". A voiceprint enrolled with a different model, say,
