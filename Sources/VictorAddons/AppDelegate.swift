@@ -36,6 +36,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var transcriptPasteController: TranscriptPasteController?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
+    /// 🔊 Grabs the default output the moment the JBL speakers connect.
+    private var bluetoothAutoOutput: BluetoothAutoOutput?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
@@ -1256,6 +1258,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let btKeepAlive = BluetoothKeepAlive()
         self.bluetoothKeepAlive = btKeepAlive
         btKeepAlive.start()
+
+        let btAutoOutput = BluetoothAutoOutput()
+        self.bluetoothAutoOutput = btAutoOutput
+        btAutoOutput.start()
 
         let hotspot = HotspotFallback()
         self.hotspotFallback = hotspot

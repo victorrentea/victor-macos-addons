@@ -21,7 +21,7 @@ final class BluetoothKeepAlive {
     private static let interval: TimeInterval = 30
     /// Substring (case-insensitive) a Bluetooth output's name must contain for
     /// the keep-alive to run.
-    private static let nameMatch = "JBL"
+    private static let nameMatch = BluetoothOutput.speakerNameMatch
 
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.bt-keepalive", qos: .utility)
     private var pollTimer: DispatchSourceTimer?

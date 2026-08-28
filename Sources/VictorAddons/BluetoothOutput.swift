@@ -15,6 +15,11 @@ import Foundation
 /// `SoundTimingConfig`). On built-in/wired output everything is a no-op.
 enum BluetoothOutput {
 
+    /// Substring (case-insensitive) a Bluetooth output's name must contain to
+    /// be "the speakers" — the boxes that standby-mute (`BluetoothKeepAlive`)
+    /// and that must grab the output when they connect (`BluetoothAutoOutput`).
+    static let speakerNameMatch = "JBL"
+
     // MARK: - Output device transport
 
     /// `(isBluetooth, deviceName)` for the current default output device.
@@ -48,7 +53,7 @@ enum BluetoothOutput {
     /// CoreAudio property read; safe to call on the main thread per effect.
     static var isDefaultOutputBluetooth: Bool { defaultOutput().isBluetooth }
 
-    private static func deviceName(_ devID: AudioDeviceID) -> String {
+    static func deviceName(_ devID: AudioDeviceID) -> String {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioObjectPropertyName,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -58,6 +63,93 @@ enum BluetoothOutput {
         var n: Unmanaged<CFString>?
         guard AudioObjectGetPropertyData(devID, &addr, 0, nil, &nameSize, &n) == noErr else { return "?" }
         return (n?.takeRetainedValue() as String?) ?? "?"
+    }
+
+    // MARK: - Device list / default-output selection
+
+    /// One entry per audio device that can play sound.
+    struct OutputDevice {
+        let id: AudioDeviceID
+        let name: String
+        let isBluetooth: Bool
+    }
+
+    /// Every device with at least one output channel, in CoreAudio's order.
+    /// Used to spot a Bluetooth speaker appearing in (or vanishing from) the
+    /// device list — a BT speaker is only listed while it is *connected*.
+    static func outputDevices() -> [OutputDevice] {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(sys, &addr, 0, nil, &size) == noErr else { return [] }
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        guard count > 0 else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            guard hasOutputChannels(id) else { return nil }
+            return OutputDevice(id: id, name: deviceName(id), isBluetooth: isBluetooth(id))
+        }
+    }
+
+    /// Whether `id` exposes any output channel (a Bluetooth headset also
+    /// registers an input-only HFP device we must not select as output).
+    private static func hasOutputChannels(_ id: AudioDeviceID) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else { return false }
+        let buf = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { buf.deallocate() }
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, buf) == noErr else { return false }
+        let list = UnsafeMutableAudioBufferListPointer(buf.assumingMemoryBound(to: AudioBufferList.self))
+        return list.contains { $0.mNumberChannels > 0 }
+    }
+
+    private static func isBluetooth(_ id: AudioDeviceID) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &transport) == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeBluetooth
+            || transport == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    /// The current default output device's id, or 0 if unreadable.
+    static func defaultOutputID() -> AudioDeviceID {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var devID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &size, &devID) == noErr else { return 0 }
+        return devID
+    }
+
+    /// Make `id` the macOS default output device (what the Sound menu calls
+    /// the output). Returns whether CoreAudio accepted the write — a device
+    /// that has just appeared but isn't ready yet answers with an error, which
+    /// is why the caller retries.
+    @discardableResult
+    static func setDefaultOutput(_ id: AudioDeviceID) -> Bool {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var dev = id
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectSetPropertyData(sys, &addr, 0, nil, size, &dev) == noErr
     }
 
     // MARK: - A2DP wake tone
