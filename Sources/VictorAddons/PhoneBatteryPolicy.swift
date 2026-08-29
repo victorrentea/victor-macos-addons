@@ -39,6 +39,16 @@ enum PhoneBatteryPolicy {
     /// window, so the cap costs nothing in the case that matters.
     static let staleAfter: TimeInterval = 90 * 60
 
+    /// Only a phone under this charge is worth blinking a tablet about. Soduto's
+    /// notification is normally its own threshold — it posts one only when the
+    /// phone says "low" — but it has been caught re-delivering one carrying a
+    /// *full* battery (100%), which parked the tablet in a permanent warning at
+    /// nothing. A warning that cries wolf all day stops being read at all, so the
+    /// percentage in the body gets the final say over the notification's presence.
+    /// The tablet applies the same floor on its side, so an old build of either
+    /// half is harmless on its own.
+    static let warnBelowPct = 30
+
     struct Reading: Equatable {
         let chargePct: Int
         /// When Soduto last (re-)delivered the notification.
@@ -76,7 +86,7 @@ enum PhoneBatteryPolicy {
     /// Whether the tablet should be blinking right now.
     static func shouldWarn(_ reading: Reading?, now: Date, staleAfter: TimeInterval = staleAfter) -> Bool {
         guard let reading else { return false }
-        guard (0...100).contains(reading.chargePct) else { return false }
+        guard (0..<warnBelowPct).contains(reading.chargePct) else { return false }
         let age = now.timeIntervalSince(reading.updatedAt)
         // A clock that jumped backwards (or a record stamped a hair in the
         // future) must not read as stale — only real age counts.
