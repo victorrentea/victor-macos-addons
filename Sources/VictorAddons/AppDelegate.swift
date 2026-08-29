@@ -1365,6 +1365,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onOpenNotesDoc = { [weak self] in
             DispatchQueue.main.async { self?.openUrlInChrome(Self.notesDocUrl, target: .screenUnderMouse) }
         }
+        eventTap.onOpenFocusPlaylist = { [weak self] in
+            // The screen is sampled NOW, on the keypress, and carried through the
+            // fetch: `FocusPlaylist` reads the mix page to learn which tracks are
+            // in it, which takes a beat, and by the time the tab opens the hand
+            // has usually moved on. Pinning it keeps ⌘⌃F answering "here", like
+            // every other ⌘⌃ opener.
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let screen = AppDelegate.screenUnderMouse()
+                FocusPlaylist.resolveRandomUrl { url in
+                    DispatchQueue.main.async { [weak self] in
+                        self?.openUrlInChromeOnMouseScreen(url, on: screen)
+                    }
+                }
+            }
+        }
         eventTap.onComposeTodoMail = { [weak self] in
             // The clipboard is read here, on the tap's background queue, and the
             // whole draft is a URL by the time Chrome is asked to open it — so
@@ -1506,11 +1522,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// user's profile and stays signed into Google.
     ///
     /// Must be called on the main thread: it samples `NSEvent.mouseLocation`.
-    private func openUrlInChromeOnMouseScreen(_ url: String) {
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) }
-            ?? NSScreen.main
-            ?? AppDelegate.findRetinaScreen()
+    ///
+    /// `on:` pins the destination for a caller that had to do slow work between
+    /// the keypress and the open (⌘⌃F fetches the mix first): the answer to
+    /// "where do you want this" is where the hand was when the key went down,
+    /// not where it wandered a second later.
+    private func openUrlInChromeOnMouseScreen(_ url: String, on pinnedScreen: NSScreen? = nil) {
+        let screen = pinnedScreen ?? AppDelegate.screenUnderMouse()
         overlayInfo("Opening Chrome on \(screen.localizedName): \(url)")
 
         // Where a window has to sit to count as "on this screen" (full frame),
@@ -2054,6 +2072,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.eventTapManager?.whipOverlayShowing = showing
         }
         controller.show()
+    }
+
+    /// The screen the cursor is on, with the same fallbacks the Chrome openers
+    /// have always used. Main-thread only — it samples `NSEvent.mouseLocation`.
+    static func screenUnderMouse() -> NSScreen {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(mouse) }
+            ?? NSScreen.main
+            ?? findRetinaScreen()
     }
 
     /// Always resolve the laptop's retina display when (re-)showing the banner,

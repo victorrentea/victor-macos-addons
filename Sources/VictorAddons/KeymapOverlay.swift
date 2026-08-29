@@ -35,6 +35,11 @@ enum CommandControlShortcuts {
                          // is the dark-mode toggle and is a different key on this
                          // board only by its ⌥.
         14: "email",     // E — paste Victor's email address
+        3:  "focus",     // F — the 🎧 YouTube focus mix, entered at a random track.
+                         // The word is what the music is *for*, not where it comes
+                         // from: "youtube" would name a site three other keys could
+                         // equally have claimed, while "focus" is the reason the
+                         // hand goes there.
         // G (key 5) is drawn from `artworkNames` below, not from a word.
         40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
         37: "📅",        // L — Google Calendar
@@ -73,6 +78,7 @@ enum CommandControlShortcuts {
         1:  "🚀",  // S — the selection is launched into the notes
         15: "📋",  // R — the SRL details are pasted, not opened
         40: "📕",  // K — the training catalog
+        3:  "🎧",  // F — headphones: the key plays music, it doesn't open a page
         46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
         2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this

@@ -7273,7 +7273,10 @@ class EmojiAnimator {
     /// Same sprite-SHEET reasoning as the chainsaw: fire is nothing but soft
     /// edges and glow, and gif carries 1-bit alpha, so a gif of it fringes black
     /// against every desktop. `fire-frames.png` is an 8×5 grid of 40 equal cells
-    /// keyed out of the original clip (alpha = luminance), read row-major.
+    /// keyed out of the original clip (alpha = luminance ×2, clamped) and read
+    /// row-major. The ×2 is not a brightness trick: straight luminance-as-alpha
+    /// leaves the flame's orange edges and every spark half-transparent, which
+    /// over a slide reads as a washed-out stain rather than as fire on top of it.
     private static let fireGrid = (cols: 8, rows: 5)
 
     /// The 40 frames, decoded once. Same reason as the chainsaw's: the press has

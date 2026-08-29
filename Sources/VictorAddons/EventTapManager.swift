@@ -47,6 +47,8 @@ class EventTapManager {
     var onPasteCompanyDetails: (() -> Void)?
     /// ⌘⌃N — open the "notes" Google Doc in Chrome.
     var onOpenNotesDoc: (() -> Void)?
+    /// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
+    var onOpenFocusPlaylist: (() -> Void)?
     /// ⌘⌃M — open a Gmail draft to Victor, subject "TO DO", clipboard as body.
     var onComposeTodoMail: (() -> Void)?
     var onWhip: (() -> Void)?
@@ -78,6 +80,7 @@ class EventTapManager {
     private let VK_R: CGKeyCode = 0x0F
     private let VK_N: CGKeyCode = 0x2D
     private let VK_M: CGKeyCode = 0x2E
+private let VK_F: CGKeyCode = 0x03
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -454,6 +457,13 @@ class EventTapManager {
         // Cmd+Ctrl+N → open the "notes" Google Doc in Chrome (suppress).
         if keyCode == VK_N && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenNotesDoc?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+F → open the 🎧 focus playlist on YouTube, entered at a random
+        // track (suppress). F for focus — the music is the point, not YouTube.
+        if keyCode == VK_F && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onOpenFocusPlaylist?() }
             return nil
         }
 

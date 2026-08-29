@@ -284,13 +284,14 @@ final class KeymapOverlayTests: XCTestCase {
         // picker, which nothing else on the board says. D joined it with the
         // Walkie Talkie binding — the key that decides which session a dictation
         // is typed into, which nothing on screen would otherwise reveal.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6])
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6])
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
         XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
+        XCTAssertEqual(CommandControlShortcuts.labels[3], "focus")
         XCTAssertEqual(CommandControlShortcuts.labels[15], "SRL")
         // L answers with a pictogram, G with the Gmail mark and N with the Docs
         // one — a picture is read faster than the word for it. K keeps its word
@@ -314,6 +315,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[1], "🚀")   // S — into the notes
         XCTAssertEqual(CommandControlShortcuts.accents[15], "📋")  // R — a paste, not a doc
         XCTAssertEqual(CommandControlShortcuts.accents[40], "📕")  // K — the catalog
+        XCTAssertEqual(CommandControlShortcuts.accents[3], "🎧")   // F — the focus mix
         XCTAssertEqual(CommandControlShortcuts.accents[46], "✉️")  // M — it arrives as mail
         // An accent on an unbound key would decorate a dimmed, meaningless key.
         for code in CommandControlShortcuts.accents.keys {
