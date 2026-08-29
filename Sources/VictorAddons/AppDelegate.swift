@@ -82,6 +82,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// 📱 Watches Soduto's low-battery notification for the paired Android and
     /// feeds it into `/ping` so the tablet can blink about it.
     private var phoneBattery: PhoneBatteryMonitor?
+    /// 🔒 Mac screen locked → the tablet goes into standby (dim, no thumbnails).
+    private var screenLock: ScreenLockMonitor?
     /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
@@ -453,7 +455,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // exactly what gets missed while presenting — the tablet is the
             // screen that's always in view.
             let phone = PhoneBatteryPolicy.pingFields(for: self?.phoneBattery?.reading, now: Date())
-            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)}"
+            // 🔒 A locked Mac screen means nobody is looking at either screen —
+            // the tablet dims itself to a sketch instead of lighting the room all
+            // night. Only the lock says this; a Mac that simply stopped answering
+            // does not (the tablet keeps its last-known false).
+            let locked = self?.screenLock?.pingField ?? ",\"macScreenLocked\":false"
+            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
         tabletServer?.onSoundPlay = { [weak self] name, volumePct in
@@ -825,6 +832,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestPhoneBattery = { [weak phoneBatteryMonitor] in
             phoneBatteryMonitor?.pollNow()
             return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
+        // 🔒 Screen lock → tablet standby. Nothing to poll: macOS posts the two
+        // distributed notifications, and the state is seeded once at startup.
+        let screenLockMonitor = ScreenLockMonitor()
+        screenLockMonitor.start()
+        self.screenLock = screenLockMonitor
+        tabletServer?.onTestScreenLock = { [weak screenLockMonitor] in
+            screenLockMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
+        tabletServer?.onTestScreenLockSimulate = { [weak screenLockMonitor] locked in
+            screenLockMonitor?.simulate(locked: locked)
+            return screenLockMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
         }
         tabletServer?.onTestPhoneBatterySimulate = { [weak phoneBatteryMonitor] pct in
             phoneBatteryMonitor?.simulate(chargePct: pct)

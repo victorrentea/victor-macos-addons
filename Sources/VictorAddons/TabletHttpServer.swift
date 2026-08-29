@@ -113,6 +113,13 @@ class TabletHttpServer {
         /// Pretend the phone is at N% for a couple of minutes, so the tablet's
         /// blink can be previewed without waiting for a genuinely flat phone.
         case testPhoneBatterySimulate(Int)
+        /// JSON snapshot of the 🔒 screen-lock mirror the tablet uses to go into
+        /// standby: whether the Mac reports itself locked right now (test hook).
+        case testScreenLock
+        /// Pretend the Mac's screen is locked (1) / unlocked (0) for a few
+        /// minutes, so the tablet's standby can be watched without locking the
+        /// very screen you'd be watching it from.
+        case testScreenLockSimulate(Bool)
         case promptCapture
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
@@ -201,6 +208,10 @@ class TabletHttpServer {
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
     var onTestPhoneBatterySimulate: ((Int) -> String)?
+    /// Read-only JSON snapshot of the 🔒 screen-lock mirror.
+    var onTestScreenLock: (() -> String)?
+    /// Force a synthetic lock state for a short while; returns the snapshot.
+    var onTestScreenLockSimulate: ((Bool) -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     var onPromptCapture: ((String) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -407,6 +418,14 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestPhoneBatterySimulate?(pct) ?? "{\"error\":\"phone battery monitor unavailable\"}"
                 if self.onTestPhoneBatterySimulate == nil { statusCode = 503 }
+            case .testScreenLock:
+                contentType = "application/json"
+                body = self.onTestScreenLock?() ?? "{\"error\":\"screen lock monitor unavailable\"}"
+                if self.onTestScreenLock == nil { statusCode = 503 }
+            case .testScreenLockSimulate(let locked):
+                contentType = "application/json"
+                body = self.onTestScreenLockSimulate?(locked) ?? "{\"error\":\"screen lock monitor unavailable\"}"
+                if self.onTestScreenLockSimulate == nil { statusCode = 503 }
             case .promptCapture:
                 contentType = "application/json"
                 body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
@@ -575,6 +594,8 @@ class TabletHttpServer {
             return .testHotspot
         case "/test/phone-battery":
             return .testPhoneBattery
+        case "/test/screen-lock":
+            return .testScreenLock
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":
@@ -637,6 +658,11 @@ class TabletHttpServer {
                 if let pct = Int(suffix), (0...100).contains(pct) {
                     return .testPhoneBatterySimulate(pct)
                 }
+            }
+            if pathOnly.hasPrefix("/test/screen-lock/simulate/") {
+                let suffix = String(pathOnly.dropFirst("/test/screen-lock/simulate/".count))
+                if suffix == "1" { return .testScreenLockSimulate(true) }
+                if suffix == "0" { return .testScreenLockSimulate(false) }
             }
             if pathOnly.hasPrefix("/test/break/") {
                 let suffix = String(pathOnly.dropFirst("/test/break/".count))
