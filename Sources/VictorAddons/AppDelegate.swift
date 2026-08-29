@@ -305,6 +305,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "wasnt-me":        self?.animator.showWasntMe(playSound: false)
             case "chainsaw":        self?.animator.showChainsawCursor(playSound: false)
             case "chainsaw/stop":   self?.animator.stopChainsawCursor()
+            case "fire":            self?.animator.showFireCursor(playSound: false)
+            case "fire/stop":       self?.animator.stopFireCursor()
             // Like the sonar: the door's cue lives INSIDE the clip, so the effect
             // owns its own audio rather than trusting a separate routed play to
             // land on the same millisecond. (`/effect/microwave`, `/test/microwave`
@@ -1044,6 +1046,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 // No stopAfter: it self-stops at 18_chainsaw.mp3's length, so a
                 // silent menu run lasts exactly as long as the tablet one.
                 case "chainsaw":        self.animator.showChainsawCursor(playSound: false)
+                // Same deal, and the menu run is where Escape earns its keep: no
+                // tablet is involved, so Escape is the only early way out of the
+                // 36 s the clip would otherwise run for.
+                case "fire":            self.animator.showFireCursor(playSound: false)
                 // The one menu effect that is NOT silent: the whole gag is the
                 // door opening on the BING, so a soundless microwave would just
                 // sit there for 2.7s and then open for no reason.

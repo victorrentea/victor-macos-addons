@@ -41,6 +41,13 @@ enum SoundEffectMap {
         // clip's length regardless, because a lost /sound/stopped here would
         // leave the desktop with no visible cursor at all.
         "18_chainsaw.mp3":       "chainsaw",
+        // Tile 11 (🔥 fire): the same cursor-replacement idea as the chainsaw —
+        // the pointer becomes a flame for the length of the clip. Two things are
+        // its own: Escape puts it out early (the clip is 36 s, far too long to
+        // sit through if it lands at the wrong moment), and the scroll wheel
+        // resizes it while it burns. onStop is still mapped: the tablet's stop is
+        // the polite exit, the clip's length is the guaranteed one.
+        "11_fire.mp3":           "fire",
         "29_gangnam_style.mp3":  "gangnam",
         "41_love_hearts.mp3":    "love-hands",
         "55_star_wars.mp3":      "star-wars",
@@ -112,6 +119,7 @@ enum SoundEffectMap {
         "59_game_over.mp3":      "game-over/stop",
         "46_michael_buble.mp3":  "snow/stop",
         "18_chainsaw.mp3":       "chainsaw/stop",
+        "11_fire.mp3":           "fire/stop",
     ]
 
     /// The effect name a pressed sound should start, or nil if the sound has no

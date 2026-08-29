@@ -7268,6 +7268,302 @@ class EmojiAnimator {
         }
     }
 
+    // MARK: - 🔥 Fire cursor (tile #11 — the pointer becomes a burning flame)
+
+    /// Same sprite-SHEET reasoning as the chainsaw: fire is nothing but soft
+    /// edges and glow, and gif carries 1-bit alpha, so a gif of it fringes black
+    /// against every desktop. `fire-frames.png` is an 8×5 grid of 40 equal cells
+    /// keyed out of the original clip (alpha = luminance), read row-major.
+    private static let fireGrid = (cols: 8, rows: 5)
+
+    /// The 40 frames, decoded once. Same reason as the chainsaw's: the press has
+    /// to be instant because the cursor is already moving under the user's hand.
+    private static let fireFrames: [CGImage] = {
+        guard let url = Bundle.module.url(forResource: "fire-frames", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return [] }
+        let cw = sheet.width / fireGrid.cols
+        let ch = sheet.height / fireGrid.rows
+        var frames: [CGImage] = []
+        for row in 0..<fireGrid.rows {
+            for col in 0..<fireGrid.cols {
+                let rect = CGRect(x: col * cw, y: row * ch, width: cw, height: ch)
+                if let cell = sheet.cropping(to: rect) { frames.append(cell) }
+            }
+        }
+        return frames
+    }()
+
+    /// The flame's own root, near the bottom edge of the frame and centred —
+    /// THAT is the point riding the pointer, so the fire grows *upward out of*
+    /// the cursor instead of swallowing it. Deliberately not the centre (the
+    /// chainsaw's choice): a centred flame would put half the smoke plume below
+    /// the hand, and the thing being pointed at is what should be on fire.
+    private static let fireRootAnchor = CGPoint(x: 0.5, y: 0.10)
+
+    /// Displayed width in points at scale 1 — the size the tile press starts at,
+    /// before the wheel is touched. Read as a torch rather than a bonfire; the
+    /// user scrolls up from here when they want the bonfire.
+    private static let fireBaseWidth: CGFloat = 280
+
+    /// The source clip's own rate (40 frames / 1.33 s). Kept at 30 rather than
+    /// halved like the chainsaw's 15: this one is on screen for the length of a
+    /// 36 s sound, and fire at 15 fps reads as a strobing loop within seconds.
+    private static let fireFPS: Double = 30
+
+    /// Fallback length if `11_fire.mp3` can't be measured (its real one).
+    private static let fireFallbackDuration: Double = 35.88
+
+    /// Wheel-resize envelope. One notch is a multiply, not an add, so the step
+    /// feels the same size at a candle and at a bonfire.
+    private static let fireScaleStep: CGFloat = 1.10
+    private static let fireMinScale: CGFloat = 0.30
+    private static let fireMaxScale: CGFloat = 3.50
+
+    private var _fireLayer: CALayer?
+    private var _fireTimer: Timer?
+    private var _fireHidCursor = false            // balance hide/unhide of the real cursor
+    private var _fireGeneration = 0               // guards a stale run's self-stop against a newer one
+    private var _fireScale: CGFloat = 1           // live wheel-driven size, reset per run
+    private var _fireInputTap: CFMachPort?
+    private var _fireInputTapSource: CFRunLoopSource?
+    private var _fireScrollAccum: CGFloat = 0     // trackpad pixels → notches
+
+    /// Replace the mouse pointer with a burning flame that follows it across the
+    /// built-in screen. Unlike every other tile effect this one has THREE ways to
+    /// end — the length of `11_fire.mp3`, an Escape keypress, or the tablet's
+    /// stop — and while it burns the scroll wheel resizes it.
+    ///
+    /// Not a `trackEffect` client, for the chainsaw's reason: it owns a follow
+    /// timer, an event tap and a hidden system cursor, so it must be torn down
+    /// through `stopFireCursor` and never by the generic `activeEffects` sweep,
+    /// which would drop the layer and leave the desktop with no cursor at all.
+    func showFireCursor(playSound: Bool = true) {
+        let frames = Self.fireFrames
+        guard let first = frames.first else {
+            overlayError("fire-frames.png not found in bundle")
+            return
+        }
+
+        stopFireCursor(fade: 0)   // never leak a previous run's timer/tap/hidden cursor
+
+        var duration = Self.fireFallbackDuration
+        if let soundURL = SoundManager.shared.soundURL(for: "11_fire.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { duration = CMTimeGetSeconds(d) }
+        }
+
+        _fireScale = 1
+        _fireScrollAccum = 0
+
+        let flame = CALayer()
+        flame.bounds = Self.fireBounds(for: first, scale: 1)
+        flame.anchorPoint = Self.fireRootAnchor
+        flame.contents = first
+        flame.contentsGravity = .resizeAspect
+        flame.zPosition = 9_500          // above every other effect: it's the pointer
+        flame.opacity = 0
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        flame.position = mousePointInHostLayer()
+        CATransaction.commit()
+        hostLayer.addSublayer(flame)
+        _fireLayer = flame
+
+        let burn = CAKeyframeAnimation(keyPath: "contents")
+        burn.values = frames
+        burn.duration = Double(frames.count) / Self.fireFPS
+        burn.repeatCount = .infinity
+        burn.calculationMode = .discrete
+        flame.add(burn, forKey: "burn")
+
+        // Snap in rather than drift in, same as the chainsaw: the cursor is a
+        // thing the user is already looking at, and a slow fade there reads as lag.
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0.0
+        fadeIn.toValue = 1.0
+        fadeIn.duration = 0.12
+        fadeIn.fillMode = .forwards
+        fadeIn.isRemovedOnCompletion = false
+        flame.opacity = 1
+        flame.add(fadeIn, forKey: "fadeIn")
+
+        // Hide the real pointer for the run. The arm step lifts the "frontmost
+        // app only" restriction so it also works while the user is in another
+        // app (the common case). Balanced in stopFireCursor.
+        if !_fireHidCursor {
+            Self.armBackgroundCursorHiding()
+            NSCursor.hide()
+            CGDisplayHideCursor(CGMainDisplayID())
+            _fireHidCursor = true
+        }
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self, self._fireTimer === t else { t.invalidate(); return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
+            self._fireLayer?.position = self.mousePointInHostLayer()
+            CATransaction.commit()
+        }
+        _fireTimer = timer
+
+        startFireInputCapture()
+
+        if playSound { SoundManager.shared.play("11_fire.mp3") }
+
+        // The sound's length is the authoritative teardown, never the tablet's
+        // /sound/stopped (which a flaky venue network eats — and here that would
+        // leave the desktop with no visible cursor at all). Escape is the second
+        // way out; both funnel through stopFireCursor. Generation-guarded so an
+        // old run's timer can't kill a newer run.
+        _fireGeneration += 1
+        let generation = _fireGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self, self._fireGeneration == generation else { return }
+            self.stopFireCursor()
+        }
+    }
+
+    /// Put the real pointer back. Idempotent — Escape, the early stop from the
+    /// tablet, the natural end of the clip and `stopAllActiveEffects` all funnel
+    /// here. The system cursor is restored only once the flame has finished
+    /// fading, so the two are never on screen together.
+    func stopFireCursor(fade: Double = 0.25) {
+        _fireTimer?.invalidate(); _fireTimer = nil
+        _fireGeneration += 1      // any pending self-stop is now stale
+        stopFireInputCapture()
+
+        let restoreCursor = { [weak self] in
+            guard let self, self._fireHidCursor else { return }
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            self._fireHidCursor = false
+        }
+
+        let flame = _fireLayer
+        _fireLayer = nil
+        _fireScale = 1
+
+        let teardown = {
+            flame?.removeAllAnimations()
+            flame?.removeFromSuperlayer()
+            restoreCursor()
+        }
+
+        guard fade > 0, let flame else { teardown(); return }
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = flame.presentation()?.opacity ?? 1.0
+        fadeOut.toValue = 0.0
+        fadeOut.duration = fade
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        flame.add(fadeOut, forKey: "fadeOut")
+        DispatchQueue.main.asyncAfter(deadline: .now() + fade, execute: teardown)
+    }
+
+    /// Layer box for a given wheel scale, keeping the sprite's aspect ratio.
+    private static func fireBounds(for frame: CGImage, scale: CGFloat) -> CGRect {
+        let w = fireBaseWidth * scale
+        let h = w * CGFloat(frame.height) / CGFloat(frame.width)
+        return CGRect(x: 0, y: 0, width: w, height: h)
+    }
+
+    // MARK: Escape to put it out, wheel to size it
+
+    /// One tap for both gestures, because both have to be *taken away* from the
+    /// app underneath: an Escape that also closed the user's dialog, or a scroll
+    /// that also scrolled their editor while they were sizing the flame, would
+    /// make the effect cost something. An `NSEvent` global monitor can only
+    /// observe; a tap can consume, which is why this isn't the whip's monitor pair.
+    private func startFireInputCapture() {
+        stopFireInputCapture()
+
+        let mask = CGEventMask(1 << CGEventType.scrollWheel.rawValue)
+            | CGEventMask(1 << CGEventType.keyDown.rawValue)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let animator = Unmanaged<EmojiAnimator>.fromOpaque(refcon).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = animator._fireInputTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                return Unmanaged.passUnretained(event)
+            }
+            if type == .keyDown,
+               CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == 53 {   // Esc
+                DispatchQueue.main.async {
+                    animator.stopFireCursor()
+                    // Put the sound out with the flame. Escape means "enough",
+                    // and 30 more seconds of crackling over a silent desktop is
+                    // the opposite of that. Reaches the routed tablet clip; a
+                    // press the tablet decided to play on its OWN speaker is not
+                    // ours to stop.
+                    SoundManager.shared.stopTabletSound()
+                    SoundManager.shared.stopAllPlayers()
+                }
+                return nil   // consume — the user is dismissing the fire, not their app
+            }
+            if type == .scrollWheel {
+                // Cmd+scroll is left alone: EventTapManager turns it into
+                // terminal font zoom, and silently eating that for 36 s would
+                // look like the zoom shortcut had broken.
+                if event.flags.contains(.maskCommand) { return Unmanaged.passUnretained(event) }
+                animator.handleFireScroll(event)
+                return nil   // consume — don't scroll the app below while sizing
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+                                          options: .defaultTap, eventsOfInterest: mask,
+                                          callback: callback, userInfo: refcon) else { return }
+        let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        _fireInputTap = tap
+        _fireInputTapSource = src
+    }
+
+    private func stopFireInputCapture() {
+        if let tap = _fireInputTap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+        if let src = _fireInputTapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes) }
+        _fireInputTap = nil
+        _fireInputTapSource = nil
+        _fireScrollAccum = 0
+    }
+
+    /// Scroll up = bigger fire, scroll down = smaller. Runs on the tap's thread,
+    /// so the layer edit is hopped to main.
+    fileprivate func handleFireScroll(_ event: CGEvent) {
+        var notches = 0
+        if event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 {
+            // Trackpad: continuous pixels, accumulated into notch-sized steps so
+            // a two-finger flick doesn't jump the flame from candle to inferno.
+            _fireScrollAccum += CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
+            while _fireScrollAccum >= 12 { notches += 1; _fireScrollAccum -= 12 }
+            while _fireScrollAccum <= -12 { notches -= 1; _fireScrollAccum += 12 }
+        } else {
+            let dy = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)   // + up, - down
+            if dy > 0 { notches = 1 } else if dy < 0 { notches = -1 }
+        }
+        guard notches != 0 else { return }
+
+        let factor = pow(Self.fireScaleStep, CGFloat(notches))
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let flame = self._fireLayer,
+                  let frame = Self.fireFrames.first else { return }
+            let scale = min(Self.fireMaxScale, max(Self.fireMinScale, self._fireScale * factor))
+            guard scale != self._fireScale else { return }
+            self._fireScale = scale
+            // Resizing `bounds` (not `transform`) keeps the anchor pinned, so the
+            // flame's root stays exactly on the pointer as it grows. No implicit
+            // animation: the wheel should feel like a physical dial, not a servo.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            flame.bounds = Self.fireBounds(for: frame, scale: scale)
+            CATransaction.commit()
+        }
+    }
+
     // MARK: - Stop all active effects (called when tablet stops any sound)
 
     func stopAllActiveEffects() {
@@ -7287,6 +7583,11 @@ class EmojiAnimator {
         // and it also HIDES the real pointer, so leaving it behind would strand
         // the desktop with no cursor at all.
         stopChainsawCursor(fade: 0)
+        // 🔥 The fire cursor is outside activeEffects for the same reasons, plus
+        // one of its own: it holds a CGEventTap that is swallowing Escape and the
+        // scroll wheel. Leaking that would cost the user their wheel long after
+        // the flame was gone, with nothing on screen to explain it.
+        stopFireCursor(fade: 0)
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()

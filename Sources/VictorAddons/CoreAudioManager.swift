@@ -7,7 +7,8 @@ class CoreAudioManager {
     // MARK: - Wispr Flow recording-state watcher
     //
     // Continuously poll Wispr Flow's recording state
-    // (kAudioProcessPropertyIsRunningInput on com.electron.wispr-flow.helper).
+    // (kAudioProcessPropertyIsRunningInput on either dictation app's process —
+    // see `dictationBundlePrefixes`).
     // When Wispr is recording AND audio is playing on 🔊OS Output, drop the
     // device's volume to 1% and remember the original. When Wispr stops,
     // restore the original — but only if we were the one who dropped it.
@@ -25,7 +26,18 @@ class CoreAudioManager {
 
     private static let monitoredOutputName = "🔊OS Output"
     private static let dictationVolumeLow: Float = 0.01
-    private static let wisprBundlePrefix = "com.electron.wispr-flow"
+    /// **Both dictation apps, because there are two now.** Wispr Flow on mouse 5,
+    /// and Walkie Talkie's own local Whisper on the wheel since 2026-08-29 — and
+    /// Victor's rule is "pause the music whenever I start dictating, however I
+    /// start it". Watching the *process* rather than a button is what makes that
+    /// literal: every way in — a button, the menu bar, a script — opens a
+    /// microphone, and that is the thing being observed.
+    ///
+    /// Walkie Talkie's bundle id still says `wispr-relay`: the app was renamed
+    /// and the id deliberately was not, because macOS keys its Accessibility,
+    /// Screen Recording and microphone grants to that string.
+    private static let dictationBundlePrefixes = ["com.electron.wispr-flow",
+                                                  "ro.victorrentea.wispr-relay"]
     /// Safety net only. The Wispr-recording edges arrive instantly from the
     /// CoreAudio process-list listener (`startProcessListListener`) — Wispr's
     /// audio process object is *published when it starts recording and removed
@@ -200,7 +212,8 @@ class CoreAudioManager {
     }
 
     private func tick() {
-        let recording = isWisprRecording()
+        let app = recordingDictationApp()
+        let recording = app != nil
         let prev = lastWisprRecording
         lastWisprRecording = recording
 
@@ -226,7 +239,7 @@ class CoreAudioManager {
                 // until we either mute or Wispr stops.
                 let playing = isLoopbackPlaying()
                 if !prev {
-                    overlayInfo("🟢 Wispr started → isMediaPlaying=\(playing)")
+                    overlayInfo("🟢 dictation started in \(app ?? "?") → isMediaPlaying=\(playing)")
                 }
                 if playing {
                     pushVolumeDown()
@@ -299,17 +312,23 @@ class CoreAudioManager {
 
     func probeWisprRecording() -> Bool { isWisprRecording() }
 
-    private func isWisprRecording() -> Bool {
+    private func isWisprRecording() -> Bool { recordingDictationApp() != nil }
+
+    /// The bundle id of whichever dictation app currently holds the microphone,
+    /// or nil. Returned rather than a bare Bool so the log says *which* — with
+    /// two apps on the watch list, "a dictation started" no longer identifies
+    /// itself, and this is the only place that can tell them apart.
+    private func recordingDictationApp() -> String? {
         var listAddr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyProcessObjectList,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         let sys = AudioObjectID(kAudioObjectSystemObject)
-        guard AudioObjectGetPropertyDataSize(sys, &listAddr, 0, nil, &size) == noErr else { return false }
+        guard AudioObjectGetPropertyDataSize(sys, &listAddr, 0, nil, &size) == noErr else { return nil }
         let count = Int(size) / MemoryLayout<AudioObjectID>.size
         var procs = [AudioObjectID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(sys, &listAddr, 0, nil, &size, &procs) == noErr else { return false }
+        guard AudioObjectGetPropertyData(sys, &listAddr, 0, nil, &size, &procs) == noErr else { return nil }
         for p in procs {
             var bidAddr = AudioObjectPropertyAddress(
                 mSelector: kAudioProcessPropertyBundleID,
@@ -320,7 +339,7 @@ class CoreAudioManager {
             var bid: Unmanaged<CFString>?
             guard AudioObjectGetPropertyData(p, &bidAddr, 0, nil, &bidSize, &bid) == noErr else { continue }
             let bundle = (bid?.takeRetainedValue() as String?) ?? ""
-            guard bundle.hasPrefix(Self.wisprBundlePrefix) else { continue }
+            guard Self.dictationBundlePrefixes.contains(where: bundle.hasPrefix) else { continue }
             var inAddr = AudioObjectPropertyAddress(
                 mSelector: kAudioProcessPropertyIsRunningInput,
                 mScope: kAudioObjectPropertyScopeGlobal,
@@ -328,10 +347,10 @@ class CoreAudioManager {
             var running: UInt32 = 0
             var inSize = UInt32(MemoryLayout<UInt32>.size)
             if AudioObjectGetPropertyData(p, &inAddr, 0, nil, &inSize, &running) == noErr, running != 0 {
-                return true
+                return bundle
             }
         }
-        return false
+        return nil
     }
 
     // MARK: - Loopback energy detector
