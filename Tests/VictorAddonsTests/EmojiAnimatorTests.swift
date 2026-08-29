@@ -78,6 +78,20 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertFalse(rotate.isRemovedOnCompletion)
     }
 
+    /// Every planted target must sit under EVERY blast, not just the one that
+    /// lands on it: targets clicked on top of each other still each get a bomb,
+    /// and a ring drawn over a neighbour's fireball is the artefact that shows.
+    /// Sibling layers sort by zPosition, so one comparison covers all pairings.
+    func testBombBlastsAlwaysRenderAboveEveryPlantedReticle() {
+        XCTAssertGreaterThan(EmojiAnimator.bombBlastZ, EmojiAnimator.bombReticleZ)
+    }
+
+    /// The planted target turns counter-clockwise (trigonometric) while its fuse
+    /// runs down — positive rotation.z in the host layer's y-up space.
+    func testBombReticleTurnsCounterClockwise() {
+        XCTAssertGreaterThan(EmojiAnimator.bombReticleRotationSpeed, 0)
+    }
+
     func testBombReticleUsesThreeFilledTrianglesOnCircle() {
         let layer = EmojiAnimator.makeBombReticleLayer()
         let shapes = layer.sublayers?.compactMap { $0 as? CAShapeLayer } ?? []

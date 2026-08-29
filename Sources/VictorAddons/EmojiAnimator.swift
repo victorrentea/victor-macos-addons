@@ -69,22 +69,25 @@ class EmojiAnimator {
     private var _fearTimer: Timer?
     private var _fearHidCursor = false                // balance hide/unhide of the real cursor
 
-    // ☢️ Nuke targeting: a sniper crosshair follows the mouse (real cursor hidden)
-    // after a press. The moment the user shakes it past the aim threshold it LOCKS
-    // on that exact spot — it freezes there (ignoring further mouse movement) and
-    // grows until the blast lands there, half-again bigger than before; if they
-    // never shake it, the bomb falls in the centre as before.
-    private var _bombTargetLayer: CALayer?
+    // ☢️ Nuke bombardment: a sniper crosshair replaces the pointer for the whole
+    // run, and CLICKING plants a target. The planted one stays where it was
+    // clicked, reddens and turns slowly counter-clockwise while its own fuse runs
+    // down, then a bomb lands on it. The crosshair comes back under the mouse on
+    // the next move, so several targets can be planted and the bombs land in the
+    // rhythm they were clicked. The run ends with the last bomb's animation.
+    private var _bombTargetLayer: CALayer?            // the aiming crosshair riding the mouse
     private var _bombTargetTimer: Timer?
     private var _bombTargetHidCursor = false          // balance hide/unhide of the real cursor
-    private var _bombMoveDistance: CGFloat = 0        // total cursor travel so far (px)
-    private var _bombLastSample: CGPoint?             // previous sample (global coords) for delta
-    private var _bombArmed = false                    // crossed the shake threshold → locked + frozen
-    private var _bombLockPoint: CGPoint = .zero       // frozen strike point captured at the lock instant
-    private var _bombStartTime: CFTimeInterval = 0    // press time, to size the lock→strike grow
-    private var _bombStrikeLayer: CALayer?            // the detached crosshair mid strike-pop/fade (for interrupt teardown)
-    private var _bombEpoch: Int = 0                   // bumped on every (re)press; stale strike continuations bail
-    private var _bombInitialMouse: CGPoint = .zero    // press-time cursor; crosshair appears only on the FIRST move away from it
+    private var _bombEpoch: Int = 0                   // bumped on every (re)press; stale continuations bail
+    private var _bombPlanted: [CALayer] = []          // clicked targets, fuse still running
+    private var _bombStrikeLayers: [CALayer] = []     // targets mid strike-pop/fade
+    private var _bombBlasts: [CALayer] = []           // explosion gifs currently on screen
+    private var _bombPending = 0                      // bombs neither landed nor finished burning
+    private var _bombSessionActive = false
+    private var _bombPlantedAny = false               // false → the idle window may still end the run
+    private var _bombRevealAnchor: CGPoint = .zero    // cursor at the last click; the crosshair returns on the first move off it
+    private var _bombInputTap: CFMachPort?
+    private var _bombInputTapSource: CFRunLoopSource?
 
     // 🔫 Minigun aiming reticle: during the bullet-holes (#22) burst a bigger,
     // always-red copy of the sniper crosshair tracks the cursor (where the
@@ -2536,106 +2539,141 @@ class EmojiAnimator {
     /// the strike, then — at the blast — pops out by `bombReticleStrikePop`× more
     /// and fades away over `bombReticleStrikeFade`s ("fades out when it's bigger").
     private static let bombReticleLockGrow: CGFloat = 2.2
-    static let bombReticleRotationSpeed: Double = -.pi / 8
+    /// Positive is counter-clockwise — the host layer is y-up, so this is the
+    /// trigonometric direction Victor asked the planted target to turn in.
+    static let bombReticleRotationSpeed: Double = .pi / 8
     private static let bombReticleStrikePop: CGFloat = 1.5
     private static let bombReticleStrikeFade: Double = 0.45
 
-    /// Total cursor travel (px) above which we treat it as a deliberate aim. Set
-    /// high enough that an accidental nudge won't lock it — you have to actually
-    /// *shake* the crosshair. Crossing it LOCKS the crosshair on that spot (it
-    /// turns red, stops following the mouse, and grows until the strike).
-    private static let bombAimTravelThreshold: CGFloat = 300
+    /// Every planted target sits BELOW every blast — not below the one bomb that
+    /// lands on it, below all of them. Three targets clicked on top of each other
+    /// therefore still get three explosions that all cover all three rings.
+    /// zPosition sorts siblings globally, which is exactly why this is two
+    /// constants rather than insertion order: order can't express "all of A under
+    /// all of B" once the two sets interleave in time.
+    static let bombReticleZ: CGFloat = 10_000
+    static let bombBlastZ: CGFloat = 11_000
+
+    /// How long a press waits for its FIRST click before giving up and handing
+    /// the pointer back. Once something is planted the run lives by its bombs
+    /// instead; this only covers the press nobody follows up on, which would
+    /// otherwise leave the desktop with a hidden cursor and a crosshair forever.
+    private static let bombIdleWindowFallback: Double = 6.0
+
+    /// The explosion gif's frames, decoded once. A bombardment can put several
+    /// blasts in the air within a second of each other, and re-decoding 400 KB of
+    /// gif on every click hitches exactly while the room is watching.
+    private static let explosionFrames: (images: [CGImage], duration: Double) = {
+        guard let url = Bundle.module.url(forResource: "explosion", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return ([], 0) }
+        var images: [CGImage] = []
+        var total: Double = 0
+        for i in 0..<CGImageSourceGetCount(source) {
+            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            images.append(cg)
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gif = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            total += gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
+        }
+        return (images, total)
+    }()
 
     func showExplosionGif(playSound: Bool = true) {
-        // A second press INTERRUPTS whatever is already in flight — the fuse +
-        // crosshair, the strike pop/fade, or a running explosion gif — and
-        // restarts the sequence from scratch (clicking the nuke always re-arms it).
-        interruptNuke()
-        let epoch = _bombEpoch   // captured post-bump; stale continuations bail below
-        // Start the boom NOW, at the head of the sequence. The blast lands at
-        // `explosionStrikeDelay` — 1s earlier than the sound's 2.10s peak (by
-        // request), so the flash leads the loudest moment rather than landing on it.
+        // A second press RESTARTS the bombardment: every target still ticking and
+        // every blast still burning goes, and the run begins again from an empty
+        // screen. Clicking the nuke has always re-armed it; with several bombs in
+        // the air the alternative would be two overlapping runs racing to hand the
+        // pointer back.
+        stopBombSession(fade: 0)
+        _bombEpoch &+= 1
+        let epoch = _bombEpoch
+        // The boom starts at the head of the run, as before. It is ONE clip for
+        // the whole bombardment — the tablet owns the audio on the routed path
+        // (playSound: false) and plays a single copy per tile press, so a boom per
+        // click isn't ours to give even if we wanted it.
         if playSound { SoundManager.shared.play("03_explosion.mp3") }
-        // Hide the real cursor and float a crosshair that tracks the mouse; the
-        // instant the user shakes it past the aim threshold it LOCKS on that spot
-        // and grows until the strike (startBombTargeting → lockReticle).
+
+        _bombSessionActive = true
+        _bombPending = 0
+        _bombPlantedAny = false
         startBombTargeting()
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionStrikeDelay) { [weak self] in
-            // A re-press during the fuse bumped the epoch → this stale strike bails.
-            guard let self, self._bombEpoch == epoch else { return }
-            let (aimed, center) = self.endBombTargeting()
-            // Sound already started; don't replay it here.
-            if aimed {
-                // Locked an aim → a small, precise strike on the locked point.
-                self._showExplosionGif(playSound: false, scaleDivisor: Self.aimedScaleDivisor, center: center)
-            } else {
-                self._showExplosionGif(playSound: false)
-            }
-            // Strike: the crosshair starts fading at the same moment the nuke
-            // animation starts, while preserving its current rotation.
-            self.strikeFadeReticle()
+        startBombInputCapture()
+
+        // Nothing planted by the end of the boom → hand the pointer back. Once
+        // the first target is down this timer is irrelevant: from then on the run
+        // is bounded by the last bomb instead.
+        var idle = Self.bombIdleWindowFallback
+        if let soundURL = SoundManager.shared.soundURL(for: "03_explosion.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric { idle = CMTimeGetSeconds(d) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + idle) { [weak self] in
+            guard let self, self._bombEpoch == epoch,
+                  self._bombSessionActive, !self._bombPlantedAny else { return }
+            self.stopBombSession()
         }
     }
 
-    /// Tear down any nuke already in flight so a fresh press starts clean: stop the
-    /// fuse timer + crosshair, drop a mid-strike pop/fade crosshair, and cancel a
-    /// running explosion gif (and its sound). Bumping `_bombEpoch` makes any
-    /// already-scheduled strike continuation bail when it fires. The real cursor is
-    /// restored so the new press shows the normal pointer until its first move
-    /// re-arms the crosshair.
-    private func interruptNuke() {
+    /// End the whole bombardment: the aiming crosshair, every planted target,
+    /// every blast still on screen, the event tap and the hidden pointer.
+    /// Idempotent — the last bomb finishing, Escape, a re-press and stop-all all
+    /// funnel here, which is the only reason it is safe for four callers to race.
+    private func stopBombSession(fade: Double = 0.25) {
         _bombEpoch &+= 1
+        _bombSessionActive = false
+        _bombPending = 0
+        _bombPlantedAny = false
         _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
-        _bombTargetLayer?.removeAllAnimations()
-        _bombTargetLayer?.removeFromSuperlayer()
+        stopBombInputCapture()
+
+        var layers: [CALayer] = _bombPlanted + _bombStrikeLayers + _bombBlasts
+        if let aiming = _bombTargetLayer { layers.append(aiming) }
         _bombTargetLayer = nil
-        _bombStrikeLayer?.removeAllAnimations()
-        _bombStrikeLayer?.removeFromSuperlayer()
-        _bombStrikeLayer = nil
-        cancelIfRunning("explosion")
-        SoundManager.shared.stop("03_explosion.mp3", fade: SoundManager.interruptFade)
-        restoreBombCursor()   // back to the real pointer; next first-move re-arms the crosshair
+        _bombPlanted = []
+        _bombStrikeLayers = []
+        _bombBlasts = []
+
+        let teardown = { [weak self] in
+            for layer in layers {
+                layer.removeAllAnimations()
+                layer.removeFromSuperlayer()
+            }
+            // A fresh press during the fade already hid the pointer for its own
+            // run; restoring here would strand it with a visible cursor.
+            if self?._bombSessionActive == false { self?.restoreBombCursor() }
+        }
+
+        guard fade > 0, !layers.isEmpty else { teardown(); return }
+        for layer in layers {
+            let out = CABasicAnimation(keyPath: "opacity")
+            out.fromValue = layer.presentation()?.opacity ?? 1.0
+            out.toValue = 0.0
+            out.duration = fade
+            out.fillMode = .forwards
+            out.isRemovedOnCompletion = false
+            layer.add(out, forKey: "bombSessionFade")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + fade, execute: teardown)
     }
 
-    /// Begin nuke targeting: sample cursor travel at 60fps. The crosshair does
-    /// NOT appear yet — the real pointer stays until the user's FIRST mouse move,
-    /// at which point `revealBombReticle()` swaps it for the crosshair and hides
-    /// the real cursor. `endBombTargeting()` then knows whether they aimed.
+    /// Hide the real pointer, put the aiming crosshair under it and keep it there
+    /// at 60 fps. It shows IMMEDIATELY, unlike the old shake-to-aim pass that
+    /// waited for the first mouse move: the click is the aim now, so the user has
+    /// to see where it would land before pressing the button.
     private func startBombTargeting() {
-        _bombMoveDistance = 0
-        _bombLastSample = nil
-        _bombArmed = false
-        _bombStartTime = CACurrentMediaTime()
-        _bombInitialMouse = NSEvent.mouseLocation   // baseline to detect the first move
-        _bombTargetLayer = nil                       // no crosshair until that first move
+        _bombRevealAnchor = NSEvent.mouseLocation
+        revealBombReticle()
 
-        // Accumulate total cursor travel; a resting hand reports the exact same
-        // point each tick (delta 0), so only deliberate movement adds distance.
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self, self._bombTargetTimer === t else { t.invalidate(); return }
-            // Once locked, the crosshair is frozen + growing — ignore the mouse
-            // entirely (it "stays put despite my mouse move").
-            if self._bombArmed { return }
-            let global = NSEvent.mouseLocation
-            // First move turns the real pointer into the crosshair; until then the
-            // normal cursor stays and no travel is counted.
             if self._bombTargetLayer == nil {
-                guard global != self._bombInitialMouse else { return }
+                // A click just handed the crosshair over to a planted target. It
+                // comes back on the first real move off that spot, so a hand
+                // resting on the trackpad doesn't drop a second crosshair on top
+                // of the one already counting down.
+                guard NSEvent.mouseLocation != self._bombRevealAnchor else { return }
                 self.revealBombReticle()
             }
-            if let last = self._bombLastSample {
-                self._bombMoveDistance += hypot(global.x - last.x, global.y - last.y)
-            }
-            self._bombLastSample = global
-            // First time we cross the shake threshold → LOCK on this exact spot:
-            // freeze the crosshair here and grow it until the strike.
-            if self._bombMoveDistance > Self.bombAimTravelThreshold {
-                self._bombArmed = true
-                self._bombLockPoint = self.mousePointInHostLayer()
-                self.lockReticle()
-                return
-            }
-            // Not locked yet → keep following the mouse.
             CATransaction.begin()
             CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
             self._bombTargetLayer?.position = self.mousePointInHostLayer()
@@ -2644,14 +2682,14 @@ class EmojiAnimator {
         _bombTargetTimer = timer
     }
 
-    /// Swap the real pointer for the sniper crosshair at the current cursor — done
-    /// on the FIRST mouse move after a nuke press — and hide the real cursor (also
-    /// while we aren't frontmost, via the background-cursor-hiding arm).
+    /// Put a fresh grey aiming crosshair under the cursor and hide the real
+    /// pointer (also while we aren't frontmost, via the background-hiding arm).
     private func revealBombReticle() {
         let target = Self.makeBombReticleLayer()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         target.position = mousePointInHostLayer()
+        target.zPosition = Self.bombReticleZ
         CATransaction.commit()
         hostLayer.addSublayer(target)
         _bombTargetLayer = target
@@ -2662,6 +2700,96 @@ class EmojiAnimator {
             CGDisplayHideCursor(CGMainDisplayID())
             _bombTargetHidCursor = true
         }
+    }
+
+    /// Plant a target where the user clicked and start its bomb falling.
+    ///
+    /// The aiming crosshair itself becomes the planted one, in place, so the
+    /// click has no seam: nothing jumps, nothing is redrawn a pixel off. It then
+    /// reddens, grows and turns counter-clockwise for the length of the fuse, and
+    /// the blast lands on the point that was under the cursor at the click — not
+    /// wherever the mouse has wandered to by then, which is the whole reason the
+    /// point is captured here rather than read again at strike time.
+    fileprivate func plantBombAtCursor() {
+        guard _bombSessionActive else { return }
+        let point = mousePointInHostLayer()
+
+        let reticle = _bombTargetLayer ?? Self.makeBombReticleLayer()
+        if reticle.superlayer == nil { hostLayer.addSublayer(reticle) }
+        _bombTargetLayer = nil
+        _bombRevealAnchor = NSEvent.mouseLocation
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        reticle.position = point
+        reticle.zPosition = Self.bombReticleZ
+        CATransaction.commit()
+        paintReticleArmed(reticle)
+
+        let fuse = Self.explosionStrikeDelay
+        let animations = Self.makeBombReticleLockAnimations(remaining: fuse)
+        reticle.add(animations.grow, forKey: "reticleLockGrow")
+        reticle.add(animations.rotate, forKey: "reticleLockRotate")
+
+        _bombPlanted.append(reticle)
+        _bombPlantedAny = true
+        _bombPending += 1
+
+        let epoch = _bombEpoch
+        DispatchQueue.main.asyncAfter(deadline: .now() + fuse) { [weak self] in
+            guard let self, self._bombEpoch == epoch else { return }
+            self._bombPlanted.removeAll { $0 === reticle }
+            self.spawnBombBlast(at: point)
+            self.strikeFadeReticle(reticle)
+        }
+    }
+
+    /// One bomb has finished burning. The run ends with the LAST one: while any
+    /// bomb is still in the air the crosshair stays live and more can be planted,
+    /// which is what makes a rhythm of clicks come back as a rhythm of blasts.
+    private func finishBomb() {
+        _bombPending = max(0, _bombPending - 1)
+        guard _bombSessionActive, _bombPending == 0 else { return }
+        stopBombSession()
+    }
+
+    /// Drop one blast onto a planted target. Sized like the old aimed strike and
+    /// anchored the same way: inside the square gif the bomb impacts about 25% up
+    /// from the bottom, horizontally centred, so anchoring THAT point to the
+    /// target makes the bomb fall onto the rings rather than be centred on them.
+    private func spawnBombBlast(at center: CGPoint) {
+        let (images, duration) = Self.explosionFrames
+        guard let first = images.first, duration > 0 else { finishBomb(); return }
+
+        let size = min(hostLayer.bounds.width, hostLayer.bounds.height) * 1.2 / Self.aimedScaleDivisor
+        let layer = CALayer()
+        layer.frame = CGRect(x: center.x - size / 2,
+                             y: center.y - size * Self.bombImpactFractionFromBottom,
+                             width: size, height: size)
+        layer.contentsGravity = .resizeAspect
+        layer.zPosition = Self.bombBlastZ
+        layer.contents = first
+        hostLayer.addSublayer(layer)
+        _bombBlasts.append(layer)
+
+        let anim = CAKeyframeAnimation(keyPath: "contents")
+        anim.values = images
+        anim.duration = duration
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false
+
+        let epoch = _bombEpoch
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak layer] in
+            guard let self, self._bombEpoch == epoch else { return }
+            if let layer {
+                layer.removeFromSuperlayer()
+                self._bombBlasts.removeAll { $0 === layer }
+            }
+            self.finishBomb()
+        }
+        layer.add(anim, forKey: "explosionFrames")
+        CATransaction.commit()
     }
 
     /// Recolour the reticle's strokes/fills red and thicken them — the "locked on
@@ -2679,27 +2807,6 @@ class EmojiAnimator {
             if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = red }
         }
         CATransaction.commit()
-    }
-
-    /// Lock the crosshair the instant the user shakes it past the aim threshold:
-    /// pin it at `_bombLockPoint`, snap it to the thick-red "locked on" look, and
-    /// grow + slowly rotate it over the remaining time until the strike (so it
-    /// keeps building right up to the blast). The follow timer has already
-    /// stopped touching its position, so it "stays put".
-    private func lockReticle() {
-        guard let target = _bombTargetLayer else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        target.position = _bombLockPoint   // freeze exactly where it locked
-        target.zPosition = 10_000          // above everything while it grows
-        CATransaction.commit()
-        paintReticleArmed(target)
-
-        // Grow + rotate from now until the strike, ending right as the blast lands.
-        let remaining = max(0.1, Self.explosionStrikeDelay - (CACurrentMediaTime() - _bombStartTime))
-        let animations = Self.makeBombReticleLockAnimations(remaining: remaining)
-        target.add(animations.grow, forKey: "reticleLockGrow")
-        target.add(animations.rotate, forKey: "reticleLockRotate")
     }
 
     static func makeBombReticleLockAnimations(remaining: CFTimeInterval) -> (grow: CABasicAnimation, rotate: CABasicAnimation) {
@@ -2733,32 +2840,17 @@ class EmojiAnimator {
         return rotate
     }
 
-    /// Stop tracking the mouse and report whether the user aimed. If they locked,
-    /// the strike point is the FROZEN `_bombLockPoint` (not wherever the mouse
-    /// drifted afterwards); otherwise it's the live cursor. The crosshair is *not*
-    /// torn down here — `strikeFadeReticle` pops + fades it as the blast lands.
-    private func endBombTargeting() -> (aimed: Bool, center: CGPoint) {
-        _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
-        let aimed = _bombArmed
-        let center = aimed ? _bombLockPoint : mousePointInHostLayer()
-        NSLog("☢️ nuke strike: travel=%.0fpx threshold=%.0f aimed=%@ center=(%.0f,%.0f)",
-              _bombMoveDistance, Self.bombAimTravelThreshold, aimed ? "YES" : "no", center.x, center.y)
-        return (aimed, center)
-    }
+    /// The blast has landed on this target: give it one last outward pop and
+    /// fade it out from wherever its rotation had got to, so the ring dissolves
+    /// under the explosion instead of blinking out from under it.
+    ///
+    /// It stays at `bombReticleZ` all the way through the fade — a dying target
+    /// still belongs UNDER every blast on screen, including the blasts of other
+    /// bombs that land on top of it a moment later.
+    private func strikeFadeReticle(_ target: CALayer) {
+        _bombStrikeLayers.append(target)
 
-    /// At the strike the crosshair fades out as the blast lands. It only grows +
-    /// reddens if it actually LOCKED on a target: a locked reticle is already red
-    /// and grown to `bombReticleLockGrow`×, and gives one last outward pop; an
-    /// un-locked one stays grey at full size and simply fades. The real cursor
-    /// returns once the fade completes.
-    private func strikeFadeReticle() {
-        guard let target = _bombTargetLayer else { restoreBombCursor(); return }
-        _bombTargetLayer = nil   // detach: the tracking timer is already gone
-        _bombStrikeLayer = target   // but keep a handle so a re-press can tear it down
-
-        // Pin the current transform values so the pop + fade starts with no jump,
-        // and keep a little clockwise rotation moving through the fade.
-        let base = _bombArmed ? Self.bombReticleLockGrow : 1.0
+        let base = Self.bombReticleLockGrow
         let currentRotation = (target.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double)
             ?? (target.value(forKeyPath: "transform.rotation.z") as? Double)
             ?? 0
@@ -2768,26 +2860,22 @@ class EmojiAnimator {
         target.removeAnimation(forKey: "reticleLockRotate")
         target.setValue(currentRotation, forKeyPath: "transform.rotation.z")
         target.setValue(base, forKeyPath: "transform.scale")
-        target.zPosition = 10_000
+        target.zPosition = Self.bombReticleZ
         CATransaction.commit()
 
         let dur = Self.bombReticleStrikeFade
 
-        // Only a locked-on reticle gets the final outward pop; an un-locked one
-        // just fades at its grey, full size (it never grows or reddens).
-        if _bombArmed {
-            let pop = CABasicAnimation(keyPath: "transform.scale")
-            pop.fromValue = base
-            pop.toValue = base * Self.bombReticleStrikePop
-            pop.duration = dur
-            pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            pop.fillMode = .forwards
-            pop.isRemovedOnCompletion = false
-            target.add(pop, forKey: "reticleStrikePop")
-            target.add(Self.makeBombReticleStrikeRotateAnimation(from: currentRotation, duration: dur), forKey: "reticleStrikeRotate")
-        }
+        let pop = CABasicAnimation(keyPath: "transform.scale")
+        pop.fromValue = base
+        pop.toValue = base * Self.bombReticleStrikePop
+        pop.duration = dur
+        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        pop.fillMode = .forwards
+        pop.isRemovedOnCompletion = false
+        target.add(pop, forKey: "reticleStrikePop")
+        target.add(Self.makeBombReticleStrikeRotateAnimation(from: currentRotation, duration: dur),
+                   forKey: "reticleStrikeRotate")
 
-        // Fade out as the blast lands.
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 1.0
         fade.toValue = 0.0
@@ -2796,26 +2884,82 @@ class EmojiAnimator {
         fade.fillMode = .forwards
         fade.isRemovedOnCompletion = false
 
+        let epoch = _bombEpoch
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak target] in
+            guard let self, self._bombEpoch == epoch else { return }
             target?.removeFromSuperlayer()
-            if self?._bombStrikeLayer === target { self?._bombStrikeLayer = nil }
-            self?.restoreBombCursor()
+            self._bombStrikeLayers.removeAll { $0 === target }
         }
         target.add(fade, forKey: "reticleStrikeFade")
         CATransaction.commit()
     }
 
-    /// Restore the real cursor hidden for the nuke fuse + lock flourish — but only
-    /// if no fresh targeting pass has started meanwhile, so a stale completion
-    /// can't unhide the pointer mid-aim of the next bomb.
+    /// Give the real pointer back. Only ever called with the run already over —
+    /// `stopBombSession` checks that no fresh press has taken the cursor since.
     private func restoreBombCursor() {
-        guard _bombTargetTimer == nil, _bombTargetLayer == nil else { return }
         if _bombTargetHidCursor {
             NSCursor.unhide()
             CGDisplayShowCursor(CGMainDisplayID())
             _bombTargetHidCursor = false
         }
+    }
+
+    // MARK: Click to plant, Escape to call it off
+
+    /// One tap for the click and for Escape, for the fire cursor's reason: both
+    /// have to be *taken away* from the app underneath. A click that also pressed
+    /// the button below would make dropping a bomb cost something, and an Escape
+    /// that also closed the user's dialog would too.
+    private func startBombInputCapture() {
+        stopBombInputCapture()
+
+        let mask = CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
+            | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
+            | CGEventMask(1 << CGEventType.keyDown.rawValue)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let animator = Unmanaged<EmojiAnimator>.fromOpaque(refcon).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let tap = animator._bombInputTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                return Unmanaged.passUnretained(event)
+            }
+            if type == .keyDown,
+               CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == 53 {   // Esc
+                DispatchQueue.main.async {
+                    animator.stopBombSession()
+                    SoundManager.shared.stopTabletSound()
+                    SoundManager.shared.stopAllPlayers()
+                }
+                return nil   // consume — the user is calling off the raid, not their app
+            }
+            if type == .leftMouseDown {
+                DispatchQueue.main.async { animator.plantBombAtCursor() }
+                return nil   // consume — while it's armed, a click means "bomb here"
+            }
+            if type == .leftMouseUp {
+                // The down was swallowed above, so delivering the up alone would
+                // hand the app underneath half a click. The pair goes together.
+                return nil
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+                                          options: .defaultTap, eventsOfInterest: mask,
+                                          callback: callback, userInfo: refcon) else { return }
+        let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        _bombInputTap = tap
+        _bombInputTapSource = src
+    }
+
+    private func stopBombInputCapture() {
+        if let tap = _bombInputTap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
+        if let src = _bombInputTapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes) }
+        _bombInputTap = nil
+        _bombInputTapSource = nil
     }
 
     /// Idle (un-aimed) vs armed (shaken-enough) crosshair styling: the idle
@@ -3543,65 +3687,6 @@ class EmojiAnimator {
         guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return nil }
         let id: CGDirectDisplayID = displays.first { CGDisplayIsBuiltin($0) != 0 } ?? CGMainDisplayID()
         return CGDisplayCreateImage(id)
-    }
-
-    private func _showExplosionGif(playSound: Bool = true, scaleDivisor: CGFloat = 1, center: CGPoint? = nil) {
-        guard activeEffects["explosion"] == nil else { return }
-        guard let url = Bundle.module.url(forResource: "explosion", withExtension: "gif"),
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
-
-        let count = CGImageSourceGetCount(source)
-        guard count > 0 else { return }
-
-        var images: [CGImage] = []
-        var totalDuration: Double = 0
-        for i in 0..<count {
-            guard let cg = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
-            images.append(cg)
-            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
-            let gif  = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
-            let delay = gif?[kCGImagePropertyGIFDelayTime as String] as? Double ?? 0.1
-            totalDuration += delay
-        }
-
-        let size = min(hostLayer.bounds.width, hostLayer.bounds.height) * 1.2 / scaleDivisor
-        let x: CGFloat
-        let y: CGFloat
-        if let center = center {
-            // Aimed strike: land the bomb *tip* on the cursor crosshair, not the
-            // frame centre. Within the square gif the bomb impacts at ~25% up
-            // from the bottom, horizontally centred (on the OY axis) — so anchor
-            // that point (0.5, 0.25) to the cursor. The frame then sits a touch
-            // above the crosshair and the bomb appears to fall exactly onto it.
-            x = center.x - size / 2
-            y = center.y - size * Self.bombImpactFractionFromBottom
-        } else {
-            // Default: centred, nudged up a touch from dead-centre.
-            x = (hostLayer.bounds.width - size) / 2
-            y = (hostLayer.bounds.height - size) / 2 + hostLayer.bounds.height / 6 - hostLayer.bounds.height * 0.1
-        }
-
-        let gifLayer = CALayer()
-        gifLayer.frame = CGRect(x: x, y: y, width: size, height: size)
-        gifLayer.contentsGravity = .resizeAspect
-        // Render the blast IN FRONT of the targeting crosshair (which sits at
-        // zPosition 10_000 while it grows + fades), so the explosion engulfs it.
-        gifLayer.zPosition = 11_000
-        if let first = images.first { gifLayer.contents = first }
-        hostLayer.addSublayer(gifLayer)
-        if playSound { SoundManager.shared.play("03_explosion.mp3") }
-        trackEffect("explosion", layer: gifLayer, duration: totalDuration)
-
-        let anim = CAKeyframeAnimation(keyPath: "contents")
-        anim.values = images
-        anim.duration = totalDuration
-        anim.fillMode = .forwards
-        anim.isRemovedOnCompletion = false
-
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak gifLayer] in gifLayer?.removeFromSuperlayer() }
-        gifLayer.add(anim, forKey: "explosionFrames")
-        CATransaction.commit()
     }
 
     // MARK: - Game Over overlay
@@ -7776,6 +7861,10 @@ class EmojiAnimator {
         // scroll wheel. Leaking that would cost the user their wheel long after
         // the flame was gone, with nothing on screen to explain it.
         stopFireCursor(fade: 0)
+        // ☢️ The bombardment is outside activeEffects for the same reasons again:
+        // its targets and blasts are the run's own layers, it hides the real
+        // pointer, and it holds a tap that is swallowing Escape and every click.
+        stopBombSession(fade: 0)
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()
