@@ -10,7 +10,7 @@ final class EmojiAnimatorTests: XCTestCase {
     // which now play "90_breaking-glass.mp3" directly). The stale references broke
     // compilation of the whole test target on master.
 
-    // MARK: - 🐘 Elephant in the room (⌘⌃⇧E)
+    // MARK: - 🐘 Elephant in the room (⌘⌃O)
 
     func testElephantStandsOnTheBottomEdgeOfTheLeftHalf() {
         let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1200)

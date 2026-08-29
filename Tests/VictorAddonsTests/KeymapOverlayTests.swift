@@ -276,7 +276,7 @@ final class KeymapOverlayTests: XCTestCase {
     }
 
     func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
-        // a c d e g k l m n q r s t v z — the ⌘⌃ branches in EventTapManager /
+        // a c d e g k l m n o q r s t v z — the ⌘⌃ branches in EventTapManager /
         // the menu — plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet
         // for reference only (the tap's ⌃W whip branch excludes Cmd, so we never
         // intercept it). V joined the sheet when ⌘⌃V stopped being the emotional
@@ -284,12 +284,13 @@ final class KeymapOverlayTests: XCTestCase {
         // picker, which nothing else on the board says. D joined it with the
         // Walkie Talkie binding — the key that decides which session a dictation
         // is typed into, which nothing on screen would otherwise reveal.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6])
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6, 31])
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
+        XCTAssertEqual(CommandControlShortcuts.labels[31], "trump")
         XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
         XCTAssertEqual(CommandControlShortcuts.labels[3], "focus")
         XCTAssertEqual(CommandControlShortcuts.labels[15], "SRL")
@@ -317,6 +318,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[40], "📕")  // K — the catalog
         XCTAssertEqual(CommandControlShortcuts.accents[3], "🎧")   // F — the focus mix
         XCTAssertEqual(CommandControlShortcuts.accents[46], "✉️")  // M — it arrives as mail
+        XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
         // An accent on an unbound key would decorate a dimmed, meaningless key.
         for code in CommandControlShortcuts.accents.keys {
             XCTAssertTrue(CommandControlShortcuts.boundKeyCodes.contains(code),

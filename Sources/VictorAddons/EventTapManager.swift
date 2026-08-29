@@ -43,10 +43,10 @@ class EventTapManager {
     var onPasteZoomLink: (() -> Void)?
     /// ⌘⌃E — paste Victor's email address.
     var onPasteEmail: (() -> Void)?
-    /// ⌘⌃⇧E — 🐘 the elephant in the room, standing in the left half of the
-    /// screen. It rides on E's ⇧ because E was asked for and E was taken: the
-    /// mnemonic is worth more than the missing modifier, and the paste below
-    /// now refuses ⇧ so one press can never mean both.
+    /// ⌘⌃O — 🐘 the elephant in the room, standing in the left half of the
+    /// screen. **O for the orange one**: T (Trump) is the empty Terminal and E
+    /// is the email paste, and this key is worth neither of those; O is the one
+    /// letter this picture can claim that nothing else on the board wants.
     var onShowElephant: (() -> Void)?
     /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
     var onPasteCompanyDetails: (() -> Void)?
@@ -85,6 +85,7 @@ class EventTapManager {
     private let VK_R: CGKeyCode = 0x0F
     private let VK_N: CGKeyCode = 0x2D
     private let VK_M: CGKeyCode = 0x2E
+    private let VK_O: CGKeyCode = 0x1F
 private let VK_F: CGKeyCode = 0x03
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
@@ -444,17 +445,19 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
-        // Cmd+Ctrl+Shift+E → 🐘 elephant in the room (suppress). Checked BEFORE
-        // the paste below, which now excludes ⇧ — ⌘⌃E was the key asked for and
-        // is taken, so the elephant took the same letter one modifier along.
-        if keyCode == VK_E && hasCmd && hasCtrl && hasShift && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onShowElephant?() }
+        // Cmd+Ctrl+E → paste Victor's email address (suppress)
+        if keyCode == VK_E && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onPasteEmail?() }
             return nil
         }
 
-        // Cmd+Ctrl+E → paste Victor's email address (suppress)
-        if keyCode == VK_E && hasCmd && hasCtrl && !hasOpt && !hasShift {
-            DispatchQueue.global().async { [weak self] in self?.onPasteEmail?() }
+        // Cmd+Ctrl+O → 🐘 elephant in the room (suppress). Two modifiers, like
+        // every other key on this board — the ⇧ it used to carry made it the
+        // only shortcut here needing three, which is a shortcut you think about
+        // before pressing. T and E, the two letters the picture actually wants,
+        // are the empty Terminal and the email paste; O is the orange one.
+        if keyCode == VK_O && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onShowElephant?() }
             return nil
         }
 

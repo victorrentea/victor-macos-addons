@@ -44,6 +44,12 @@ enum CommandControlShortcuts {
         40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
         37: "📅",        // L — Google Calendar
         46: "todo",      // M — Gmail draft to myself, clipboard in the body
+        31: "trump",     // O — 🐘 the elephant in the room, in the left half of
+                         // the screen. The word is the picture, not the key: the
+                         // letter is only "the Orange one" because T (Trump) is
+                         // the empty Terminal and E is the email paste, and a
+                         // sheet that answered "elefant" would leave you hunting
+                         // for the T you actually reached for.
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
         // Google Doc, and the Docs mark says that faster than any word could.
         15: "SRL",       // R — paste the company's invoicing details
@@ -81,6 +87,7 @@ enum CommandControlShortcuts {
         3:  "🎧",  // F — headphones: the key plays music, it doesn't open a page
         46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
+        31: "🐘",  // O — the word names the man, the mark names what appears
         2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this
                   // key is the one you speak *into* a session with, and two
                   // identical marks on one board would blur that apart.

@@ -37,7 +37,7 @@ final class TabletHttpServerTests: XCTestCase {
     }
 
     func testRouteElephantTestAndEffectEndpoints() {
-        // 🐘 ⌘⌃⇧E has a headless twin so the overlay can be exercised without
+        // 🐘 ⌘⌃O has a headless twin so the overlay can be exercised without
         // the keyboard — and a /stop, because the elephant is a toggle.
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/elephant"), .effect("elephant"))
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/elephant/stop"), .effect("elephant/stop"))

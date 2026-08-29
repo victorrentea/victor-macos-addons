@@ -7567,7 +7567,7 @@ class EmojiAnimator {
         }
     }
 
-    // MARK: - 🐘 The elephant in the room (⌘⌃⇧E)
+    // MARK: - 🐘 The elephant in the room (⌘⌃O)
 
     /// How long the elephant stays before it walks out on its own.
     static let elephantLifetime: Double = 25
