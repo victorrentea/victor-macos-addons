@@ -52,6 +52,9 @@ final class ZoomSharePrep {
     private static let shareSoundLabel = "Share sound"
     private static let layoutListLabel = "Choose a layout"
     private static let previewAreaLabel = "Presenter layout preview area"
+    /// The green confirm button, e.g. "Share - Desktop 1" — the target's name is
+    /// appended, so it is matched by prefix.
+    private static let shareButtonPrefix = "Share - "
     /// The cut-out's frame must keep the camera's own aspect, otherwise the
     /// 16:9 video is letterboxed inside it and leaves a gap under Victor's head
     /// instead of sitting on the bottom edge. Zoom's own default frame is
@@ -85,6 +88,14 @@ final class ZoomSharePrep {
     /// Set to nil to place the layout but leave the cut-out wherever Zoom put it.
     var cutoutWidthFraction: CGFloat? = 1.0 / 3.0
 
+    /// Select the built-in Retina's desktop tile and press the green Share
+    /// button, so opening the picker *is* starting the share of the right screen.
+    ///
+    /// The picker is also where the *target* is chosen, and this gives that up.
+    /// Holding **⇧ while opening the picker** suppresses it, for the times
+    /// Victor wants a different screen or a single application window.
+    var autoPressShare = true
+
     /// Shows the 🔊✅ / 🔊❌ confirmation. Injected so tests can run headless.
     var onResult: ((Result) -> Void)?
 
@@ -94,6 +105,7 @@ final class ZoomSharePrep {
         let layoutApplied: PresenterLayout?
         /// nil when placement wasn't attempted; false when it was and missed.
         let cutoutPlaced: Bool?
+        let sharePressed: Bool
     }
 
     // MARK: - Lifecycle
@@ -239,6 +251,15 @@ final class ZoomSharePrep {
             appliedLayout = wanted
         }
 
+        // ⇧ held while opening the picker = "let me choose what to share".
+        let shiftHeld = KeySimulator.heldModifiers().contains(.maskShift)
+        let takingOver = autoPressShare && !shiftHeld
+
+        // Pick the screen *before* placing the cut-out: switching tiles re-renders
+        // the presenter-layout preview, and a placement done first would be
+        // measured against the outgoing one.
+        if takingOver { Self.selectBuiltInDesktop(in: dialog) }
+
         var placed: Bool?
         if wantsPlacement {
             placementAttempts += 1
@@ -246,11 +267,20 @@ final class ZoomSharePrep {
             placementDone = placed == true
         }
 
+        // Last: this both starts the share and closes the picker.
+        var pressedShare = false
+        if takingOver {
+            pressedShare = Self.pressShareButton(in: dialog)
+        }
+
         let result = Result(soundWasAlreadyOn: wasOn, soundOnNow: onNow,
-                            layoutApplied: appliedLayout, cutoutPlaced: placed)
+                            layoutApplied: appliedLayout, cutoutPlaced: placed,
+                            sharePressed: pressedShare)
         overlayInfo("ZoomSharePrep: share sound \(wasOn ? "already on" : (onNow ? "ticked" : "FAILED to tick"))"
                     + (appliedLayout.map { ", layout → \($0.rawValue)" } ?? "")
-                    + (placed.map { ", cut-out \($0 ? "placed" : "NOT placed")" } ?? ""))
+                    + (placed.map { ", cut-out \($0 ? "placed" : "NOT placed")" } ?? "")
+                    + (shiftHeld ? ", ⇧ held → left the picker open"
+                                 : (pressedShare ? ", share started" : "")))
         DispatchQueue.main.async { [weak self] in self?.onResult?(result) }
     }
 
@@ -292,7 +322,9 @@ final class ZoomSharePrep {
         {"zoomRunning":true,"enabled":\(isEnabled),"dialogOpen":\(dialog != nil),\
         "shareSoundFound":\(checkbox != nil),\
         "shareSoundOn":\(checkbox.map { Self.isChecked($0) } ?? false),\
-        "presenterLayout":\(presenterLayout.map { "\"\($0.rawValue)\"" } ?? "null")}
+        "presenterLayout":\(presenterLayout.map { "\"\($0.rawValue)\"" } ?? "null"),\
+        "autoPressShare":\(autoPressShare),\
+        "builtInDesktop":\(Self.builtInDesktopIndex().map(String.init) ?? "null")}
         """
         queue.async { [weak self] in
             self?.dialogWasOpen = false
@@ -386,7 +418,13 @@ final class ZoomSharePrep {
     /// width comes off the left edge and height off the top edge, keeping the
     /// right and bottom edges pinned to the corner we just moved it into.
     private static func placeCutout(in dialog: AXUIElement, widthFraction: CGFloat) -> Bool {
-        // Never fight Victor for the cursor: if he's mid-drag, leave it alone.
+        // Never fight Victor for the cursor. The common case is not a real drag
+        // but the tail of the very click that opened the picker, so wait a beat
+        // for the release rather than giving up — with auto-share on there is no
+        // later scan to retry from, the dialog will already be gone.
+        for _ in 0..<12 where CGEventSource.buttonState(.hidSystemState, button: .left) {
+            usleep(100_000)
+        }
         guard !CGEventSource.buttonState(.hidSystemState, button: .left) else { return false }
         guard let preview = find(in: dialog, role: kAXUnknownRole,
                                  description: previewAreaLabel),
@@ -499,6 +537,64 @@ final class ZoomSharePrep {
         for child in children(root) {
             if string(child, kAXRoleAttribute) == kAXTabGroupRole { return child }
             if let hit = firstTabGroup(in: child, depth: depth + 1) { return hit }
+        }
+        return nil
+    }
+
+    /// Picks the desktop tile that corresponds to the **built-in Retina**, which
+    /// is what Victor always shares — and which is *not* always macOS's main
+    /// display, so the tile Zoom preselects cannot be trusted.
+    ///
+    /// Zoom's tiles are labelled `Desktop 1…N` with nothing in Accessibility
+    /// tying a tile to a display, so the mapping has to come from the order Zoom
+    /// itself enumerates screens in: `CGGetActiveDisplayList`, whose first entry
+    /// is by definition the **main** display. Mirror slaves are filtered out
+    /// because Zoom collapses a mirrored pair into a single tile (during a
+    /// workshop the venue projector mirrors the Retina, and the Retina is the
+    /// master, so it keeps its place). If the built-in can't be found — clamshell,
+    /// or an unexpected label — nothing is pressed and Zoom's own preselection
+    /// stands.
+    private static func selectBuiltInDesktop(in dialog: AXUIElement) {
+        guard let index = builtInDesktopIndex(),
+              let tile = findButtonWithDescriptionPrefix("Desktop \(index),", in: dialog)
+        else { return }
+        AXUIElementPerformAction(tile, kAXPressAction as CFString)
+        usleep(150_000)
+    }
+
+    /// 1-based position of the built-in display among the non-mirrored active
+    /// displays, i.e. the number Zoom puts on its tile.
+    static func builtInDesktopIndex() -> Int? {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return nil }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return nil }
+        let standalone = ids.filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
+        guard let idx = standalone.firstIndex(where: { CGDisplayIsBuiltin($0) != 0 }) else { return nil }
+        return idx + 1
+    }
+
+    /// Presses the green confirm button, which both starts the share and closes
+    /// the picker — so it must come last, after the checkbox, the layout and the
+    /// cut-out drag have all landed.
+    private static func pressShareButton(in dialog: AXUIElement) -> Bool {
+        guard let button = findButtonWithDescriptionPrefix(shareButtonPrefix, in: dialog),
+              (attr(button, kAXEnabledAttribute) as? Bool) != false else { return false }
+        return AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+    }
+
+    private static func findButtonWithDescriptionPrefix(_ prefix: String,
+                                                        in root: AXUIElement,
+                                                        depth: Int = 0) -> AXUIElement? {
+        if depth > 20 { return nil }
+        for child in children(root) {
+            if string(child, kAXRoleAttribute) == kAXButtonRole,
+               string(child, kAXDescriptionAttribute)?.hasPrefix(prefix) == true {
+                return child
+            }
+            if let hit = findButtonWithDescriptionPrefix(prefix, in: child, depth: depth + 1) {
+                return hit
+            }
         }
         return nil
     }
