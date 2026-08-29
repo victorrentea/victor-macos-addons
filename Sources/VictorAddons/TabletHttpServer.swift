@@ -65,7 +65,6 @@ class TabletHttpServer {
         case testGroupPhoto
         /// Post the "Wispr started but output ≠ 🔊OS Output" notification now,
         /// using the real current default-output name (test hook).
-        case testWisprOutputDrift
     /// Force the dictation window open/closed, to exercise the Chrome
     /// pause/resume bridge without actually dictating (`?active=0|1`).
     case testDictation(Bool)
@@ -179,7 +178,6 @@ class TabletHttpServer {
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
-    var onTestWisprOutputDrift: (() -> Void)?
     /// Force the dictation window; returns the bridge's JSON snapshot.
     var onTestDictation: ((Bool) -> String)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
@@ -359,8 +357,6 @@ class TabletHttpServer {
                 self.onTestWhipCrack?()
             case .testGroupPhoto:
                 self.onTestGroupPhoto?()
-            case .testWisprOutputDrift:
-                self.onTestWisprOutputDrift?()
             case .testProjector:
                 contentType = "application/json"
                 body = self.onTestProjector?() ?? "{\"error\":\"display manager unavailable\"}"
@@ -547,8 +543,6 @@ class TabletHttpServer {
         case "/test/dictation":
             let raw = queryItems.first(where: { $0.name == "active" })?.value ?? "1"
             return .testDictation(raw != "0" && raw.lowercased() != "false")
-        case "/test/wispr-output-drift":
-            return .testWisprOutputDrift
         case "/test/projector":
             return .testProjector
         case "/test/presentation":

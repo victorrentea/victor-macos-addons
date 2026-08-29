@@ -52,10 +52,6 @@ class CoreAudioManager {
     // restoring. Cancels audible flicker when Wispr's isRunningInput cycles.
     private static let restoreDebounceDuration: TimeInterval = 1.0
 
-    /// Fired on a Wispr-start when the macOS default output is NOT the monitored
-    /// loopback — the music-mute path is silently inert. Carries the wrong
-    /// output's name. Invoked on `pollQueue`; the handler must hop to main for UI.
-    var onWisprOutputDrift: ((String) -> Void)?
 
     private var pollTimer: DispatchSourceTimer?
     private let pollQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.wispr-watch", qos: .userInteractive)
@@ -87,10 +83,6 @@ class CoreAudioManager {
         mSelector: kAudioHardwarePropertyProcessObjectList,
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMain)
-
-    // Latch for the output-route drift alert (see OutputDriftPolicy). Alert once
-    // per drift episode, re-arm when a Wispr-start sees the correct output again.
-    private var outputDriftAlerted = false
 
     // Boost window: while Date() < boostedUntil, the next tick is scheduled
     // 100ms out instead of 300ms. Mouse-5 (Wispr push-to-talk) press extends
@@ -220,12 +212,6 @@ class CoreAudioManager {
         if recording {
             dictationFirstNotRecordingAt = nil
             setDictationActive(true)
-            // On the Wispr-start edge, verify the music-mute path is actually
-            // wired: it only works if the system output is the monitored
-            // loopback. Warn (once per drift) if it has drifted elsewhere.
-            if !prev {
-                checkOutputRouteOnWisprStart()
-            }
             // Any "recording" read cancels a pending restore: this covers both
             // (a) Wispr confirming a speculative Mouse-5 mute, and
             // (b) sub-500ms isRunningInput flicker after a real stop.
@@ -414,19 +400,6 @@ class CoreAudioManager {
 
     // MARK: - CoreAudio device helpers
 
-    /// Warn when Wispr starts but the system output isn't the monitored loopback
-    /// — the mute path is inert. Pure latch logic lives in `OutputDriftPolicy`.
-    /// Runs on pollQueue; the callback hops to main for the notification.
-    private func checkOutputRouteOnWisprStart() {
-        let output = currentDefaultOutputName()
-        let decision = OutputDriftPolicy.evaluate(output: output, alerted: outputDriftAlerted)
-        outputDriftAlerted = decision.alerted
-        if decision.alert {
-            let name = output ?? "?"
-            overlayInfo("⚠️ Wispr started but output=\(name) ≠ \(Self.monitoredOutputName) → music won't duck")
-            onWisprOutputDrift?(name)
-        }
-    }
 
     /// Current macOS default-output device name, or nil if unreadable.
     func currentDefaultOutputName() -> String? {
