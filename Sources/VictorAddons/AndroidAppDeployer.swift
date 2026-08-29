@@ -337,9 +337,15 @@ final class AndroidAppDeployer {
             let serial = fields[0]
             let model = fields.first { $0.hasPrefix("model:") }?
                 .replacingOccurrences(of: "model:", with: "") ?? ""
-            let chars = run(adb, ["-s", serial, "shell", "getprop", "ro.build.characteristics"], timeout: 30)
-                .output.trimmingCharacters(in: .whitespacesAndNewlines)
-            return AndroidDeployPolicy.Device(serial: serial, model: model, characteristics: chars)
+            // Both getprops in one shell, because this runs per device on every
+            // poll and each spawn is a round trip over USB or WiFi.
+            let props = run(adb, ["-s", serial, "shell",
+                                  "getprop ro.build.characteristics; getprop ro.serialno"], timeout: 30)
+                .output.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            let chars = props.first ?? ""
+            let hw = props.count > 1 ? props[1] : ""
+            return AndroidDeployPolicy.Device(serial: serial, model: model,
+                                              characteristics: chars, hardwareSerial: hw)
         }
     }
 
@@ -348,7 +354,8 @@ final class AndroidAppDeployer {
     /// to identify itself.
     static func tabletSerial() -> AndroidDeployPolicy.TabletPick {
         if let env = ProcessInfo.processInfo.environment["VICTOR_TABLET_SERIAL"], !env.isEmpty {
-            return .tablet(AndroidDeployPolicy.Device(serial: env, model: "", characteristics: "tablet"))
+            return .tablet(AndroidDeployPolicy.Device(serial: env, model: "", characteristics: "tablet",
+                                                      hardwareSerial: ""))
         }
         return AndroidDeployPolicy.pickTablet(attachedDevices())
     }

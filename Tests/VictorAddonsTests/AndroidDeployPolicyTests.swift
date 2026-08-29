@@ -141,6 +141,50 @@ final class AndroidDeployPolicyTests: XCTestCase {
         }
     }
 
+    /// The regression that arrived with wireless debugging: ONE tablet listing
+    /// itself three times (cable, ip:port, mDNS name) used to read as three
+    /// tablets and stop the auto-deploy dead — a silent failure, since the
+    /// passive path never notifies.
+    func testOneTabletOnSeveralTransportsIsStillOneTablet() {
+        let usb = wired("HVA5HP4L", "TB350FU", "tablet", hw: "HVA5HP4L")
+        let ip = wired("192.168.101.66:40633", "TB350FU", "tablet", hw: "HVA5HP4L")
+        let mdns = wired("adb-HVA5HP4L-b2mjKy._adb-tls-connect._tcp", "TB350FU", "tablet", hw: "HVA5HP4L")
+        XCTAssertEqual(AndroidDeployPolicy.pickTablet([usb, ip, mdns]), .tablet(usb),
+                       "one physical tablet on three transports is one tablet")
+    }
+
+    /// And when only the wireless doors are open, it still deploys — over one of
+    /// them rather than refusing.
+    func testWirelessOnlyTabletIsDeployable() {
+        let ip = wired("192.168.101.66:40633", "TB350FU", "tablet", hw: "HVA5HP4L")
+        let mdns = wired("adb-HVA5HP4L-b2mjKy._adb-tls-connect._tcp", "TB350FU", "tablet", hw: "HVA5HP4L")
+        guard case .tablet = AndroidDeployPolicy.pickTablet([ip, mdns]) else {
+            return XCTFail("a tablet reachable only over WiFi is still the tablet")
+        }
+    }
+
+    /// The cable wins when both are up: faster for a 25 MB APK, and the venue's
+    /// access point can't drop it mid-install.
+    func testCableIsPreferredOverWireless() {
+        let ip = wired("192.168.101.66:40633", "TB350FU", "tablet", hw: "HVA5HP4L")
+        let usb = wired("HVA5HP4L", "TB350FU", "tablet", hw: "HVA5HP4L")
+        XCTAssertEqual(AndroidDeployPolicy.pickTablet([ip, usb]), .tablet(usb))
+    }
+
+    /// Two genuinely different tablets must still refuse: the dedupe is by
+    /// hardware serial, not by "they both look like tablets".
+    func testTwoDistinctTabletsStillRefuse() {
+        let a = wired("A", "TB350FU", "tablet", hw: "HVA5HP4L")
+        let b = wired("B", "TB350FU", "tablet", hw: "OTHER123")
+        guard case .none = AndroidDeployPolicy.pickTablet([a, b]) else {
+            return XCTFail("two different tablets must not be resolved by guessing")
+        }
+    }
+
+    private func wired(_ serial: String, _ model: String, _ chars: String, hw: String) -> AndroidDeployPolicy.Device {
+        AndroidDeployPolicy.Device(serial: serial, model: model, characteristics: chars, hardwareSerial: hw)
+    }
+
     /// Two candidates is ambiguity, and guessing is how the phone got the app in
     /// the first place — refuse and say so.
     func testTwoTabletsRefuseRatherThanGuess() {

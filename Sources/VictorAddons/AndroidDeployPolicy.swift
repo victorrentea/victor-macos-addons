@@ -34,6 +34,17 @@ enum AndroidDeployPolicy {
         let model: String
         /// `ro.build.characteristics` — `tablet` on the Lenovo, `phone` on the S24.
         let characteristics: String
+        /// `ro.serialno` — the *hardware* identity, which the `serial` above is
+        /// not: one physical tablet shows up under a different adb serial on
+        /// every transport (`HVA5HP4L` on USB, `192.168.101.66:40633` and
+        /// `adb-HVA5HP4L-…._adb-tls-connect._tcp` over wireless debugging), and
+        /// all three can be listed at once. Empty when it could not be read.
+        var hardwareSerial: String = ""
+
+        /// Wireless transports name themselves after the network endpoint or the
+        /// mDNS service; a USB serial is the bare hardware one. Used only to
+        /// prefer the cable when the same tablet is reachable both ways.
+        var isWireless: Bool { serial.contains(":") || serial.hasPrefix("adb-") }
     }
 
     /// Which of the attached devices is **the tablet**, or why none of them is.
@@ -64,12 +75,24 @@ enum AndroidDeployPolicy {
     static func pickTablet(_ devices: [Device]) -> TabletPick {
         guard !devices.isEmpty else { return .none("no adb device attached") }
         let candidates = devices.filter { isTablet($0) }
-        if candidates.count == 1 { return .tablet(candidates[0]) }
         let seen = devices.map { "\($0.model)/\($0.characteristics)" }.joined(separator: ", ")
         if candidates.isEmpty {
             return .none("no tablet among the attached devices (\(seen))")
         }
-        return .none("more than one device looks like a tablet (\(seen)) — set VICTOR_TABLET_SERIAL")
+        // Collapse transports before counting. Turning wireless debugging on
+        // makes ONE tablet list itself two or three times over (cable + ip:port
+        // + mDNS name), and the ambiguity guard below — written for "the phone
+        // is also on the cable" — would read that as two tablets and refuse to
+        // deploy at all. The refusal is right for two devices and wrong for two
+        // doors into the same one, so identity is the hardware serial.
+        let identities = Set(candidates.map { $0.hardwareSerial.isEmpty ? $0.serial : $0.hardwareSerial })
+        guard identities.count == 1 else {
+            return .none("more than one device looks like a tablet (\(seen)) — set VICTOR_TABLET_SERIAL")
+        }
+        // Same tablet, several ways in: take the cable when it's there. It is
+        // faster than WiFi for a 25 MB APK and it cannot be dropped by the
+        // venue's access point halfway through the install.
+        return .tablet(candidates.first { !$0.isWireless } ?? candidates[0])
     }
 
     static func isTablet(_ d: Device) -> Bool {

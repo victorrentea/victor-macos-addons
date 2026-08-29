@@ -78,6 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
     private var androidDeployer: AndroidAppDeployer?
+    private var wirelessTabletLink: WirelessTabletLink?
     /// 📱 Watches Soduto's low-battery notification for the paired Android and
     /// feeds it into `/ping` so the tablet can blink about it.
     private var phoneBattery: PhoneBatteryMonitor?
@@ -783,8 +784,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             androidDeploy?.forceDeployJSON() ?? "{\"error\":\"deployer unavailable\"}"
         }
 
+        // The same deploy, reached the other way. The cable is an IOKit event the
+        // Mac cannot miss; WiFi is a thing you have to go and look for, which is
+        // why it needs a poll of its own rather than another hook.
+        let wirelessTablet = WirelessTabletLink()
+        wirelessTablet.onTabletReachable = { [weak androidDeploy] in androidDeploy?.tabletConnected() }
+
         usbTunnel.start()
         self.usbTunnelKeeper = usbTunnel
+        wirelessTablet.start()
+        self.wirelessTabletLink = wirelessTablet
 
         // 📱 Phone low-battery → tablet. Soduto already raises a macOS
         // notification when the paired Android drops below its threshold, but
