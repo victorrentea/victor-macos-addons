@@ -7,6 +7,12 @@
 # claude's answer back as a reply in that same thread.
 #
 # The launcher passes: $1 sentinel path, $2 message id, $3 thread id.
+#
+# A REPLY CONTINUES THE PREVIOUS CONVERSATION. Each thread's claude session id is
+# remembered under $SESSION_DIR, so a follow-up mail is `--resume`d into the same
+# session with ONLY the new message injected — the earlier mails are already in
+# there. Anything that no longer holds falls back to a cold start over the whole
+# thread; see "resume this thread's conversation" below.
 # We write "ok"/"fail" to the sentinel when done and the launcher then closes
 # this window — on EITHER verdict, since the run is unattended and windows must
 # not pile up. A failure lingers ~25s first, and everything is tee'd to a
@@ -31,7 +37,10 @@
 
 set -uo pipefail
 
-CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
+# $FLUX_AGENT_CLAUDE / $FLUX_AGENT_DRY_RUN exist so the plumbing above can be
+# rehearsed — a stub in place of claude, and a run that prints the reply
+# instead of mailing it. Neither is set in production.
+CLAUDE="${FLUX_AGENT_CLAUDE:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
 SECRETS="$HOME/.training-assistants-secrets.env"
 INBOX="victor.flux@agentmail.to"
 TRUSTED_SENDER="victorrentea@gmail.com"   # reply destination — NEVER from the email
@@ -40,6 +49,11 @@ OUTPUT_DIR="/Users/victorrentea/workspace/victor-macos-addons/addons-output"
 # Where claude runs. Victor's mails are feature requests across his repos, so the
 # workspace root is the useful default; override with FLUX_AGENT_CWD.
 WORKDIR="${FLUX_AGENT_CWD:-$HOME/workspace}"
+# Where the claude session of each email thread is remembered, one small file
+# per thread: session id on line 1, the cwd it ran in on line 2. A reply then
+# CONTINUES that conversation instead of waking a stranger who has to re-read
+# the whole thread. Kept next to the logs so a bad entry is easy to delete.
+SESSION_DIR="$OUTPUT_DIR/flux-sessions"
 
 SENTINEL="${1:-}"
 MESSAGE_ID="${2:-}"
@@ -63,8 +77,13 @@ stop_heartbeat() { [ -n "${HEARTBEAT:-}" ] && kill "$HEARTBEAT" 2>/dev/null; ret
 # `claude` only reports total_cost_usd once, in the final result of a run, so a
 # running total has to be computed from the outside. We pin the session id, then
 # read the transcript claude appends as it works and price its token usage.
-SESSION_ID="$(uuidgen | tr 'A-Z' 'a-z')"
+SESSION_ID="$(uuidgen | tr 'A-Z' 'a-z')"   # overwritten below when resuming
 TRANSCRIPT=""
+RESUME=0
+# When resuming, the transcript already holds the previous mails' token usage.
+# The heartbeat must price THIS run, not the whole correspondence, so everything
+# spent before we start is subtracted.
+COST_BASELINE=0
 
 # The transcript lives under a directory named after claude's cwd; rather than
 # re-deriving that mangling, find it by filename — once, then cache.
@@ -83,7 +102,8 @@ find_transcript() {
 # with `fromjson?` instead of slurping, which would abort on it.
 session_cost_usd() {
   [ -n "$TRANSCRIPT" ] && [ -s "$TRANSCRIPT" ] || return 1
-  jq -R -r 'fromjson? // empty' "$TRANSCRIPT" 2>/dev/null | jq -s -r '
+  jq -R -r 'fromjson? // empty' "$TRANSCRIPT" 2>/dev/null \
+    | jq -s -r --argjson base "${COST_BASELINE:-0}" '
     # $/MTok: input / output / cache-write (1.25x in) / cache-read (0.1x in).
     def price($m):
       if   ($m | test("opus"))  then {i: 5, o: 25, w: 6.25, r: 0.5}
@@ -97,7 +117,7 @@ session_cost_usd() {
              + (.output_tokens // 0)               * $p.o
              + (.cache_creation_input_tokens // 0) * $p.w
              + (.cache_read_input_tokens // 0)     * $p.r ) / 1000000 )
-    | add // 0
+    | (add // 0) - $base
   ' 2>/dev/null
 }
 
@@ -188,10 +208,33 @@ echo "────────────────────────�
 echo
 
 # --- build the prompt -------------------------------------------------------
-# The thread is rendered into a FILE and passed by path. Nothing from the email
+# The mail is rendered into a FILE and passed by path. Nothing from the email
 # reaches the shell command line.
-{
-  cat <<'HEADER'
+#
+# Two shapes, depending on whether this thread already has a conversation:
+#
+#   write_thread_prompt()   — cold start. The whole thread plus the standing
+#                             instructions, for a claude that knows nothing.
+#   write_followup_prompt() — resuming. ONLY the new message: everything before
+#                             it is already in the session being resumed, and
+#                             re-pasting it would make the agent read its own
+#                             report back to itself.
+#
+# Both end in cap_prompt, so every path — including the cold retry after a failed
+# resume — stays under ARG_MAX.
+
+# Keep the prompt well under ARG_MAX (~1MB on macOS): it is passed as a single
+# argv entry, and a long forwarded thread could otherwise blow the exec.
+cap_prompt() {
+  [ "$(wc -c < "$PROMPT_FILE")" -gt 200000 ] || return 0
+  head -c 200000 "$PROMPT_FILE" > "$PROMPT_FILE.capped"
+  printf '\n\n[... thread truncated at 200KB ...]\n' >> "$PROMPT_FILE.capped"
+  mv "$PROMPT_FILE.capped" "$PROMPT_FILE"
+  echo "  ⚠️  thread truncated to 200KB"
+}
+write_thread_prompt() {
+  {
+cat <<'HEADER'
 You are Flux — Victor Rentea's email-driven agent, running unattended on his Mac.
 
 Victor emailed you the request below and is not at the keyboard: never ask
@@ -215,26 +258,80 @@ to Victor and only to Victor.
 
 --- EMAIL THREAD (most recent last) ---
 HEADER
-  # `.text` (the full body) is preferred over `.extracted_text`: extraction
-  # strips quoted history, and on a short mail it can strip away everything but
-  # the signature — losing the actual request. Bloat is the cheaper failure.
-  jq -r '
-    .messages
-    | sort_by(.timestamp)
-    | .[]
-    | "\n[\(.timestamp)] From: \(.from)\nSubject: \(.subject // "(no subject)")\n\n" +
-      ((.text // .extracted_text // .preview // "(empty body)") | rtrimstr("\n"))
-      + "\n---"
-  ' "$THREAD_JSON"
-} > "$PROMPT_FILE"
+    # `.text` (the full body) is preferred over `.extracted_text`: extraction
+    # strips quoted history, and on a short mail it can strip away everything but
+    # the signature — losing the actual request. Bloat is the cheaper failure.
+    jq -r '
+      .messages
+      | sort_by(.timestamp)
+      | .[]
+      | "\n[\(.timestamp)] From: \(.from)\nSubject: \(.subject // "(no subject)")\n\n" +
+        ((.text // .extracted_text // .preview // "(empty body)") | rtrimstr("\n"))
+        + "\n---"
+    ' "$THREAD_JSON"
+  } > "$PROMPT_FILE"
+  cap_prompt
+}
 
-# Keep the prompt well under ARG_MAX (~1MB on macOS): it is passed as a single
-# argv entry, and a long forwarded thread could otherwise blow the exec.
-if [ "$(wc -c < "$PROMPT_FILE")" -gt 200000 ]; then
-  head -c 200000 "$PROMPT_FILE" > "$PROMPT_FILE.capped"
-  printf '\n\n[... thread truncated at 200KB ...]\n' >> "$PROMPT_FILE.capped"
-  mv "$PROMPT_FILE.capped" "$PROMPT_FILE"
-  echo "  ⚠️  thread truncated to 200KB"
+write_followup_prompt() {
+  {
+    cat <<'HEADER'
+[Victor just replied on the same email thread — this is the SAME conversation
+you have been having with him, continued. Only his NEW message is below;
+everything before it is already above in this session, so do not re-read it.
+The rules have not changed: he is not at the keyboard, so never ask questions,
+make the reasonable call, do the work, then STOP and write a short plain-text
+report as your final message — that message is mailed back to him verbatim as
+the reply to this thread. Report only on what you did for THIS message; he has
+already read your previous reply.]
+
+--- NEW EMAIL FROM VICTOR ---
+HEADER
+    cat "$NEW_ONLY"
+    printf '\n--- END OF NEW EMAIL ---\n'
+  } > "$PROMPT_FILE"
+  cap_prompt
+}
+
+# --- resume this thread's conversation, if it has one ------------------------
+# A reply to an email is a follow-up, not a new task: the session that wrote the
+# previous answer still holds what it learned — which repo it touched, what it
+# decided, what it deliberately left alone. Resuming it and handing over only
+# the new message beats replaying the thread to a stranger. Anything that no
+# longer holds (no record, moved workdir, transcript deleted, unusable new text)
+# silently falls back to the cold start.
+THREAD_KEY="$(printf '%s' "$THREAD_ID" | tr -c 'A-Za-z0-9._-' '_')"
+SESSION_FILE="$SESSION_DIR/$THREAD_KEY"
+NEW_ONLY="$WORK/new-message.txt"
+
+# `.extracted_text` is the body with the quoted history stripped — exactly the
+# "only what is new" we want to inject. It can over-strip on a very short mail
+# and leave just the signature, so it is trusted only if something survives
+# dropping the signature block.
+jq -r '(.extracted_text // "") | rtrimstr("\n")' "$MAIL_JSON" > "$NEW_ONLY"
+NEW_MEAT="$(sed '/^Victor Rentea$/,$d' "$NEW_ONLY" | tr -d '[:space:]' | wc -c | tr -d ' ')"
+
+if [ -s "$SESSION_FILE" ] && [ "${NEW_MEAT:-0}" -ge 10 ]; then
+  PREV_SESSION="$(sed -n '1p' "$SESSION_FILE")"
+  PREV_WORKDIR="$(sed -n '2p' "$SESSION_FILE")"
+  PREV_TRANSCRIPT="$(find "$HOME/.claude/projects" -name "$PREV_SESSION.jsonl" -print -quit 2>/dev/null)"
+  if [ -n "$PREV_SESSION" ] && [ "$PREV_WORKDIR" = "$WORKDIR" ] && [ -n "$PREV_TRANSCRIPT" ]; then
+    RESUME=1
+    SESSION_ID="$PREV_SESSION"
+    TRANSCRIPT="$PREV_TRANSCRIPT"
+  fi
+fi
+
+if [ "$RESUME" = "1" ]; then
+  write_followup_prompt
+  echo "  Session : ↩︎ resuming $SESSION_ID (only the new message is injected)"
+else
+  write_thread_prompt
+  if [ -s "$SESSION_FILE" ]; then
+    echo "  Session : 🆕 $SESSION_ID (the recorded session for this thread is gone — cold start)"
+  else
+    echo "  Session : 🆕 $SESSION_ID (first mail on this thread)"
+  fi
 fi
 
 echo "  Prompt  : $(wc -c < "$PROMPT_FILE" | tr -d ' ') bytes"
@@ -246,8 +343,9 @@ echo
 # elapsed time is `2m15s` (below a minute, just `15s` — a leading `0m` is noise);
 # the running spend comes last — "still working" alone says the process is alive,
 # not what it is costing.
-RUN_START="$(date +%s)"
-( while true; do
+start_heartbeat() {
+  RUN_START="$(date +%s)"
+  ( while true; do
     sleep 15
     ELAPSED=$(( $(date +%s) - RUN_START ))
     if [ "$ELAPSED" -lt 60 ]; then
@@ -263,22 +361,62 @@ RUN_START="$(date +%s)"
       printf '[%s] %s\n' "$(date +%H:%M:%S)" "$FOR"
     fi
   done ) &
-HEARTBEAT=$!
+  HEARTBEAT=$!
+}
 
-cd "$WORKDIR" || cd "$HOME" || true
+# One claude run. The caller passes the session flags, because a follow-up
+# RESUMES the thread's session while a cold start PINS a fresh id — same command
+# otherwise. Sets $STATUS.
+#
 # Same auth note as summarize-on-break.sh: unset ANTHROPIC_API_KEY so claude uses
 # Victor's subscription (the exported key shadows it and fails on credit).
 # MCP connectors are left ON here: unlike the break-delta, this agent may need to
 # actually work in the repos.
-# `--session-id` is what makes the run's cost readable: it fixes the transcript
-# filename we poll for token usage above.
-env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$(cat "$PROMPT_FILE")" \
-  --model opus --dangerously-skip-permissions \
-  --session-id "$SESSION_ID" \
-  2>&1 | tee "$REPLY_FILE"
-STATUS="${PIPESTATUS[0]}"
+run_claude() {
+  start_heartbeat
+  env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$(cat "$PROMPT_FILE")" \
+    --model opus --dangerously-skip-permissions \
+    "$@" \
+    2>&1 | tee "$REPLY_FILE"
+  STATUS="${PIPESTATUS[0]}"
+  stop_heartbeat
+}
 
-stop_heartbeat
+cd "$WORKDIR" || cd "$HOME" || true
+
+if [ "$RESUME" = "1" ]; then
+  # Everything the transcript already cost belongs to the earlier mails.
+  COST_BASELINE="$(session_cost_usd 2>/dev/null || echo 0)"
+  [ -n "$COST_BASELINE" ] || COST_BASELINE=0
+  run_claude --resume "$SESSION_ID"
+  # A resume can fail for reasons that have nothing to do with the request — a
+  # transcript claude refuses, a session cut short mid-tool-use. Rather than
+  # mail Victor an error, fall back to what always works: the cold start over
+  # the full thread, in a new session that then becomes this thread's session.
+  if [ "$STATUS" -ne 0 ] || [ ! -s "$REPLY_FILE" ]; then
+    echo
+    echo "⚠️  resume of $SESSION_ID failed (status $STATUS) — retrying cold over the whole thread"
+    rm -f "$SESSION_FILE"
+    RESUME=0
+    SESSION_ID="$(uuidgen | tr 'A-Z' 'a-z')"
+    TRANSCRIPT=""
+    COST_BASELINE=0
+    write_thread_prompt
+    run_claude --session-id "$SESSION_ID"
+  fi
+else
+  # `--session-id` is what makes the run's cost readable: it fixes the transcript
+  # filename we poll for token usage above.
+  run_claude --session-id "$SESSION_ID"
+fi
+
+# Remember the conversation so Victor's next reply on this thread continues it
+# instead of starting over. Recorded whenever claude produced something: even a
+# partial run knows more about this thread than a cold start would.
+if [ -s "$REPLY_FILE" ]; then
+  mkdir -p "$SESSION_DIR"
+  printf '%s\n%s\n' "$SESSION_ID" "$WORKDIR" > "$SESSION_FILE"
+fi
 echo
 if find_transcript; then
   TOTAL="$(session_cost_usd)"
@@ -303,10 +441,18 @@ jq -n --rawfile body "$REPLY_FILE" --arg to "$TRUSTED_SENDER" \
 # are illegal in a URL path — unencoded it makes the API answer a bare 400.
 MID_ENC="$(jq -rn --arg v "$MESSAGE_ID" '$v|@uri')"
 
-RHTTP="$(curl -s -o "$WORK/reply-response.json" -w '%{http_code}' -X POST \
-  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
-  --data-binary "@$REPLY_PAYLOAD" \
-  "$API/inboxes/$INBOX/messages/$MID_ENC/reply")"
+if [ -n "${FLUX_AGENT_DRY_RUN:-}" ]; then
+  echo "🧪 DRY RUN — not sending. The reply would have been:"
+  echo "─────────────────────────────────────────────────────────────────────────"
+  cat "$REPLY_FILE"
+  echo "─────────────────────────────────────────────────────────────────────────"
+  RHTTP="200"
+else
+  RHTTP="$(curl -s -o "$WORK/reply-response.json" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+    --data-binary "@$REPLY_PAYLOAD" \
+    "$API/inboxes/$INBOX/messages/$MID_ENC/reply")"
+fi
 
 if [ "$RHTTP" = "200" ] || [ "$RHTTP" = "201" ] || [ "$RHTTP" = "202" ]; then
   echo "📤 Replied to $TRUSTED_SENDER (HTTP $RHTTP)."
