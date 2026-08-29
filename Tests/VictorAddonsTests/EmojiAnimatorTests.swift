@@ -10,6 +10,50 @@ final class EmojiAnimatorTests: XCTestCase {
     // which now play "90_breaking-glass.mp3" directly). The stale references broke
     // compilation of the whole test target on master.
 
+    // MARK: - 🐘 Elephant in the room (⌘⌃⇧E)
+
+    func testElephantStandsOnTheBottomEdgeOfTheLeftHalf() {
+        let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1200)
+        let frame = EmojiAnimator.elephantFrame(in: bounds, aspect: 1082.0 / 881.0)
+
+        // Never crosses the middle: the right half is where the thing being
+        // talked about lives.
+        XCTAssertLessThanOrEqual(frame.maxX, bounds.midX)
+        // Left edge and bottom edge, one margin off each.
+        XCTAssertEqual(frame.minX, bounds.width * 0.015, accuracy: 0.01)
+        XCTAssertEqual(frame.minY, bounds.width * 0.015, accuracy: 0.01)
+        XCTAssertEqual(frame.width / frame.height, 1082.0 / 881.0, accuracy: 0.001)
+    }
+
+    func testElephantIsHeightCappedOnAScreenTooShortForHalfItsWidth() {
+        // A wide, short screen: half the width would be taller than the screen,
+        // and an elephant cropped at the knees is only ever seen on the projector.
+        let bounds = CGRect(x: 0, y: 0, width: 3840, height: 1080)
+        let aspect: CGFloat = 1082.0 / 881.0
+        let frame = EmojiAnimator.elephantFrame(in: bounds, aspect: aspect)
+
+        XCTAssertEqual(frame.height, bounds.height * 0.62, accuracy: 0.01)
+        XCTAssertEqual(frame.width / frame.height, aspect, accuracy: 0.001)
+        XCTAssertLessThan(frame.maxY, bounds.height)
+    }
+
+    /// The point of the picture is that it has no background of its own — a
+    /// white rectangle on the desktop reads as "an image opened", not as an
+    /// elephant standing in the room. Guards a future re-export from losing it.
+    func testElephantShipsCutOutWithAnAlphaChannel() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "elephant.png", withExtension: nil, subdirectory: "Resources"))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+
+        XCTAssertNotEqual(image.alphaInfo, .none)
+        XCTAssertNotEqual(image.alphaInfo, .noneSkipFirst)
+        XCTAssertNotEqual(image.alphaInfo, .noneSkipLast)
+        // Cropped to the animal itself, so the frame it is placed in is the
+        // elephant and not a transparent border around one.
+        XCTAssertGreaterThan(image.width, 500)
+        XCTAssertGreaterThan(image.height, 500)
+    }
+
     func testBreakingGlassResourceIsBundled() {
         let url = Bundle.module.url(forResource: "breaking-glass.mp3", withExtension: nil, subdirectory: "Resources")
         XCTAssertNotNil(url)

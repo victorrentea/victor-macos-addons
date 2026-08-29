@@ -36,6 +36,14 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/iris"), .effect("iris"))
     }
 
+    func testRouteElephantTestAndEffectEndpoints() {
+        // 🐘 ⌘⌃⇧E has a headless twin so the overlay can be exercised without
+        // the keyboard — and a /stop, because the elephant is a toggle.
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/elephant"), .effect("elephant"))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/elephant/stop"), .effect("elephant/stop"))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/elephant"), .effect("elephant"))
+    }
+
     func testRouteMapsBreakSummaryTestHook() {
         // Fires the ☕️ break-summary delta run now, bypassing the >= 5 min +
         // cooldown gates (same Terminal flow a real break triggers).

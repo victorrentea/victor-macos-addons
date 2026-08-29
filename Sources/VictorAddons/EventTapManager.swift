@@ -43,6 +43,11 @@ class EventTapManager {
     var onPasteZoomLink: (() -> Void)?
     /// ⌘⌃E — paste Victor's email address.
     var onPasteEmail: (() -> Void)?
+    /// ⌘⌃⇧E — 🐘 the elephant in the room, standing in the left half of the
+    /// screen. It rides on E's ⇧ because E was asked for and E was taken: the
+    /// mnemonic is worth more than the missing modifier, and the paste below
+    /// now refuses ⇧ so one press can never mean both.
+    var onShowElephant: (() -> Void)?
     /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
     var onPasteCompanyDetails: (() -> Void)?
     /// ⌘⌃N — open the "notes" Google Doc in Chrome.
@@ -439,8 +444,16 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
+        // Cmd+Ctrl+Shift+E → 🐘 elephant in the room (suppress). Checked BEFORE
+        // the paste below, which now excludes ⇧ — ⌘⌃E was the key asked for and
+        // is taken, so the elephant took the same letter one modifier along.
+        if keyCode == VK_E && hasCmd && hasCtrl && hasShift && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onShowElephant?() }
+            return nil
+        }
+
         // Cmd+Ctrl+E → paste Victor's email address (suppress)
-        if keyCode == VK_E && hasCmd && hasCtrl && !hasOpt {
+        if keyCode == VK_E && hasCmd && hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onPasteEmail?() }
             return nil
         }

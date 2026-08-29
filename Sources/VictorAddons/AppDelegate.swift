@@ -320,6 +320,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "money":           self?.animator.showMoneyRise()
             case "iris":            self?.animator.showIrisClose()
             case "minion":          self?.animator.showMinion()
+            case "elephant":        self?.animator.showElephant()
+            case "elephant/stop":   self?.animator.stopElephant()
             case "coffee":
                 // Test hook (/test/coffee): spawn a few rising ☕ so the hold-charge
                 // gesture can be exercised headlessly — hover one, hold 3s, watch it
@@ -1357,6 +1359,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onPasteEmail = {
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.email) }
+        }
+        eventTap.onShowElephant = { [weak self] in
+            // Straight to main: this draws into the overlay panel's layer tree,
+            // and the panel is pinned to the built-in screen, so its frame is
+            // refreshed first exactly as the tablet's effect path does.
+            DispatchQueue.main.async {
+                self?.overlayPanel?.refreshScreenFrame()
+                self?.animator.showElephant()
+            }
         }
         eventTap.onPasteCompanyDetails = {
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.companyDetails) }

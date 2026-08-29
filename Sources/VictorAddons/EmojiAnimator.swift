@@ -7567,6 +7567,105 @@ class EmojiAnimator {
         }
     }
 
+    // MARK: - 🐘 The elephant in the room (⌘⌃⇧E)
+
+    /// How long the elephant stays before it walks out on its own.
+    static let elephantLifetime: Double = 25
+
+    /// Where the elephant stands: the LEFT HALF of the screen, on the bottom
+    /// edge, as large as that half allows.
+    ///
+    /// Width is claimed first (half the screen, less a margin) and the height
+    /// then gets the final say — on a 16:10 screen half the width is taller
+    /// than the screen is, and an elephant cropped at the knees is a bug you
+    /// only see on the projector. It stands on the bottom edge on purpose:
+    /// floated at mid-height the same picture reads as a sticker somebody
+    /// dropped on the desktop, not as an animal that walked in.
+    ///
+    /// Pure so the geometry can be asserted without a screen.
+    static func elephantFrame(in bounds: CGRect, aspect: CGFloat) -> CGRect {
+        let margin = bounds.width * 0.015
+        var w = bounds.width / 2 - margin * 2
+        var h = w / max(aspect, 0.01)
+        let maxH = bounds.height * 0.62
+        if h > maxH {
+            h = maxH
+            w = h * aspect
+        }
+        // y = 0 is the bottom edge of the host layer.
+        return CGRect(x: margin, y: margin, width: w, height: h)
+    }
+
+    /// 🐘 The orange elephant with the comb-over and the red tie walks in from
+    /// the left edge and stands in the left half of the screen.
+    ///
+    /// It is a prop for one sentence — "there's an elephant in the room" — so
+    /// it arrives *beside* what is being discussed rather than over it, and it
+    /// is a cut-out PNG with a real alpha channel: a rectangle of white around
+    /// it would announce "a picture opened" instead of "an elephant is here".
+    /// macOS has no way to add a custom emoji to the character palette, so the
+    /// key draws the picture itself.
+    ///
+    /// Pressing the key again walks it back out, and it leaves on its own after
+    /// `elephantLifetime` — the lifecycle rule matters here because the overlay
+    /// is click-through, so a joke left on screen cannot be dismissed by
+    /// clicking it.
+    func showElephant() {
+        if activeEffects["elephant"] != nil { stopElephant(); return }
+
+        guard let url = Bundle.module.url(forResource: "elephant", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            overlayError("elephant.png is not in the bundle")
+            return
+        }
+
+        let bounds = hostLayer.bounds
+        let frame = Self.elephantFrame(in: bounds, aspect: CGFloat(image.width) / CGFloat(image.height))
+
+        let layer = CALayer()
+        layer.frame = frame
+        layer.contents = image
+        layer.contentsGravity = .resizeAspect
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        hostLayer.addSublayer(layer)
+        activeEffects["elephant"] = layer
+
+        // Walks in rather than fading in on the spot: the whole gag is that
+        // something *entered* the room.
+        let walkIn = CABasicAnimation(keyPath: "position.x")
+        walkIn.fromValue = layer.position.x - (frame.width + frame.minX)
+        walkIn.toValue = layer.position.x
+        walkIn.duration = 0.55
+        walkIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(walkIn, forKey: "walk-in")
+
+        // Self-termination, identity-guarded so a second press followed by a
+        // third can't have the first press's timer remove the newest elephant.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.elephantLifetime) { [weak self, weak layer] in
+            guard let self, let layer, self.activeEffects["elephant"] === layer else { return }
+            self.stopElephant()
+        }
+    }
+
+    /// Walks it back out the way it came in. Safe when nothing is showing.
+    func stopElephant() {
+        guard let layer = activeEffects["elephant"] else { return }
+        activeEffects.removeValue(forKey: "elephant")
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { layer.removeFromSuperlayer() }
+        let walkOut = CABasicAnimation(keyPath: "position.x")
+        walkOut.fromValue = layer.position.x
+        walkOut.toValue = layer.position.x - (layer.bounds.width + layer.frame.minX)
+        walkOut.duration = 0.4
+        walkOut.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        walkOut.fillMode = .forwards
+        walkOut.isRemovedOnCompletion = false
+        layer.add(walkOut, forKey: "walk-out")
+        CATransaction.commit()
+    }
+
     // MARK: - Stop all active effects (called when tablet stops any sound)
 
     func stopAllActiveEffects() {
