@@ -288,6 +288,49 @@ rule from the start.
     the audio and the visual never double-triggers. `/test/chainsaw`, `/test/chainsaw/stop`,
     `/effect/chainsaw` and the menu item **Chainsaw Cursor 🪚** fire it silently.
 
+- **🔥 Fire cursor** (tile #11 `11_fire.mp3` → `fire` / `fire/stop`, `showFireCursor`):
+  the chainsaw's trick with a flame — the real pointer is hidden and a 40-frame fire
+  sprite burns on it, chasing `NSEvent.mouseLocation` at 60 fps on the built-in screen.
+  Fourth member of the hidden-cursor family and bound by the same rule: **outside
+  `activeEffects`**, torn down explicitly by `stopAllActiveEffects`, hide armed through
+  `armBackgroundCursorHiding()` and balanced by `_fireHidCursor`. It replaced the tile's
+  old "Lady in Red" clip (tile art and asset renamed; the original mp3 is in `backup.zip`).
+  - **Art**: `Resources/fire-frames.png`, an **8×5 sprite sheet** of 40 cells, keyed out
+    of a black-background gif with **alpha = luminance × 2** (clamped). The ×2 is not a
+    brightness trick: straight luminance-as-alpha leaves the orange edges and every spark
+    half-transparent, which over a slide reads as a washed-out stain instead of fire *on
+    top of* it. Same sheet-not-gif reasoning as the chainsaw — gif's 1-bit alpha would
+    fringe the glow black on every desktop. Sliced once into a lazy static (`fireFrames`).
+  - **Anchor**: `(0.5, 0.10)` — the flame's **root**, near the bottom edge and centred, so
+    the fire grows *upward out of* the pointer rather than swallowing it. Deliberately not
+    the chainsaw's centre anchor: a centred flame puts half the smoke plume below the hand,
+    and the thing being pointed at is what should be on fire.
+  - **Timing**: 40 frames at **30 fps** (1.33 s loop) — the source clip's own rate, kept
+    rather than halved to the chainsaw's 15, because this one is on screen for a **36 s**
+    sound and fire at 15 fps reads as a strobing loop within seconds. Base width **280 pt**,
+    `zPosition` 9500, 0.12 s fade-in / 0.25 s fade-out with the real cursor restored only
+    after the fade.
+  - **Escape puts it out.** This is the first effect with a *user* exit, and it needs one:
+    36 s is far too long to sit through if the tile lands at the wrong moment. Escape is
+    taken by a **`CGEventTap`, not an `NSEvent` global monitor** — a monitor can only
+    observe, and an Escape that also closed the user's dialog would make the effect cost
+    something. The keypress is **consumed**, and it stops the routed clip too
+    (`stopTabletSound` + `stopAllPlayers`); a press the tablet chose to play on its **own**
+    speaker is not ours to stop.
+  - **The wheel sizes it while it burns.** Same tap: one notch is a **multiply** by 1.10
+    (clamped to 0.30…3.50 ×), so a step feels the same at a candle and at a bonfire.
+    Trackpad pixels are accumulated into 12-pt notches so a two-finger flick doesn't jump
+    from candle to inferno. The resize edits **`bounds`, not `transform`**, which keeps the
+    anchor pinned so the flame's root stays exactly on the pointer as it grows. Scroll is
+    consumed (no scrolling the app underneath while sizing) **except with ⌘ held** — that
+    belongs to `EventTapManager`'s terminal font zoom, and silently eating it for 36 s
+    would look like the zoom shortcut had broken.
+  - **Lifecycle**: three ways out — the length of `11_fire.mp3` (`AVURLAsset`, 35.88 s
+    fallback, generation-guarded), Escape, or the tablet's `onStop` → `fire/stop`. The
+    clip's length stays the authoritative one for the usual reason: a lost `/sound/stopped`
+    would otherwise strand the desktop with no cursor. `/test/fire`, `/test/fire/stop`,
+    `/effect/fire` and the menu item **Fire Cursor 🔥** fire it silently.
+
 - **🌈 Rainbow + 🦄 unicorns** (tile #37 `37_rainbow.mp3` → `rainbow` /
   `rainbow/stop`, `showRainbow`): seven translucent bands drawn as a **quarter**-arc —
   the circle's centre is pushed onto the right screen edge, so only the left quarter of
