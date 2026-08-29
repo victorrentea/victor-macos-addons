@@ -106,6 +106,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// participant rings the attention bell (via `wsServer.onBellRing`).
     private var bellCard: BellCard?
     private var meetingDetector: MeetingDetector?
+    /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
+    private var zoomSharePrep: ZoomSharePrep?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
     /// that the next `whisperManager.onStateChanged(true)` shows the
@@ -960,6 +962,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestPresentation = { [weak self] in
             self?.presentationSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
+        // /test/zoom-share — what the Zoom share-picker scanner sees right now,
+        // and a forced re-prepare of an open picker.
+        tabletServer?.onTestZoomShare = { [weak self] in
+            self?.zoomSharePrep?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
+        }
         // /test/presentation/warn — force-show the aggressive silent warning now.
         tabletServer?.onTestPresentationWarn = { [weak self] in
             self?.silentTranscriptionWarning?.forceShow()
@@ -1209,6 +1216,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // Start from a not-running UI; the controller flips it on once Whisper
         // is actually up (or shows the battery-paused state).
         menuBarManager.setTranscribing(false)
+
+        // 🔊 Zoom resets "Share sound" and the presenter layout at the start of
+        // every meeting, and there is no setting or plist key that persists
+        // them — so re-apply both the moment the share picker opens.
+        let zoomPrep = ZoomSharePrep()
+        zoomPrep.onResult = { [weak self] result in
+            guard let self else { return }
+            if result.soundOnNow {
+                // Nothing to announce when it was already ticked — a pill for a
+                // no-op is just noise on a screen that may be mirrored to the room.
+                guard !result.soundWasAlreadyOn else { return }
+                self.statusBanner?.showNow(text: "🔊✅", sound: nil, visibleDuration: 2.5)
+            } else {
+                // The one case Victor must catch before he starts talking.
+                self.statusBanner?.showNow(text: "🔊❌", sound: NSSound(named: NSSound.Name("Basso")),
+                                           visibleDuration: 8)
+            }
+        }
+        zoomSharePrep = zoomPrep
+        zoomPrep.start()
 
         let detector = MeetingDetector()
         // A live Zoom/Teams/Webex/Meet call (an app driving the 🎙️TO Zoom

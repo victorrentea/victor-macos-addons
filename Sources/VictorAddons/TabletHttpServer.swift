@@ -73,6 +73,8 @@ class TabletHttpServer {
         case testProjector
         /// JSON snapshot of the presenting state (meeting / unknown display).
         case testPresentation
+        /// JSON snapshot of Zoom's share picker + a forced re-prepare of it.
+        case testZoomShare
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -191,6 +193,8 @@ class TabletHttpServer {
     var onTestProjector: (() -> String)?
     /// JSON snapshot of the presenting state + display classification.
     var onTestPresentation: (() -> String)?
+    /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
+    var onTestZoomShare: (() -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -378,6 +382,10 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestPresentation == nil { statusCode = 503 }
+            case .testZoomShare:
+                contentType = "application/json"
+                body = self.onTestZoomShare?() ?? "{\"error\":\"unavailable\"}"
+                if self.onTestZoomShare == nil { statusCode = 503 }
             case .testEmojiLayer:
                 contentType = "application/json"
                 body = EmojiKeyLayer.statusJSON()
@@ -570,6 +578,8 @@ class TabletHttpServer {
             return .testProjector
         case "/test/presentation":
             return .testPresentation
+        case "/test/zoom-share":
+            return .testZoomShare
         case "/test/emoji-layer":
             return .testEmojiLayer
         case "/test/emoji-layer/on":
