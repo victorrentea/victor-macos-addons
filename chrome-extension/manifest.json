@@ -4,6 +4,6 @@
   "version": "1.0",
   "description": "While Wispr Flow is dictating, pause every Chrome tab that is making sound — and resume exactly those when the dictation ends.",
   "background": { "service_worker": "dictation-pause.js" },
-  "permissions": ["tabs", "scripting", "storage"],
+  "permissions": ["tabs", "scripting", "storage", "alarms"],
   "host_permissions": ["<all_urls>"]
 }

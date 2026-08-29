@@ -120,6 +120,19 @@ function connect() {
   socket.onerror = () => { try { socket.close(); } catch {} };
 }
 
+// **An alarm, because a sleeping worker cannot reconnect itself.** The socket
+// keeps this worker resident while it is open, and the retry above covers a drop
+// the worker is awake to see. Neither covers the case that actually happened: the
+// Mac app restarts, the socket closes, and Chrome recycles the worker before the
+// retry fires — after which nothing in this extension is running to notice, and
+// the pause silently stops working until something else wakes it. An alarm is the
+// only thing that wakes a dead MV3 worker on a schedule, so it is the floor under
+// the whole mechanism. `connect()` is a no-op while a socket is already open.
+chrome.alarms.create('reconnect', { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'reconnect') connect();
+});
+
 chrome.runtime.onStartup.addListener(connect);
 chrome.runtime.onInstalled.addListener(connect);
 connect();
