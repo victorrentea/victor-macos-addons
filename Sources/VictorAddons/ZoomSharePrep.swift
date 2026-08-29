@@ -2,10 +2,12 @@ import AppKit
 import ApplicationServices
 
 /// 🔊 Prepares Zoom's screen-share picker the instant it opens: ticks **Share
-/// sound** and selects the **presenter layout**, so Victor never again shares a
-/// demo the room can't hear.
+/// sound**, selects the **presenter layout**, and drags Victor's **camera
+/// cut-out** into the bottom-right third of the preview — so he never again
+/// shares a demo the room can't hear, or spends the first minute of a session
+/// dragging his own face into place while everyone watches.
 ///
-/// **Why this exists.** Zoom resets both of these at the start of every meeting.
+/// **Why this exists.** Zoom resets all three at the start of every meeting.
 /// "Share sound" is remembered only *within* one meeting; the presenter layout
 /// likewise. There is no user preference and no `us.zoom.config` mass-deployment
 /// key for either (`EnableShareAudio` only makes the option *available* — it does
@@ -49,21 +51,39 @@ final class ZoomSharePrep {
     private static let dialogTitle = "Share screen window"
     private static let shareSoundLabel = "Share sound"
     private static let layoutListLabel = "Choose a layout"
+    private static let previewAreaLabel = "Presenter layout preview area"
+    /// The cut-out's frame must keep the camera's own aspect, otherwise the
+    /// 16:9 video is letterboxed inside it and leaves a gap under Victor's head
+    /// instead of sitting on the bottom edge. Zoom's own default frame is
+    /// 124×70 = 1.771, i.e. 16:9 — we simply hold that ratio while shrinking.
+    private static let cutoutAspect: CGFloat = 16.0 / 9.0
+    private static let maxPlacementPasses = 3
     private static let zoomBundleID = "us.zoom.xos"
 
     /// Zoom's four presenter layouts, exactly as their buttons are titled.
-    /// `overTheShoulder` is the one that composites Victor's camera **over** the
-    /// shared content on the right — what the participants actually see.
+    /// The two that composite Victor's camera **over** the shared content — what
+    /// the participants actually see — are `asBackground` (the one he uses: the
+    /// shared screen becomes the backdrop and he is cut out over it, bottom-right)
+    /// and `overTheShoulder`.
     enum PresenterLayout: String, CaseIterable {
         case contentOnly = "Content only"
         case asBackground = "As background"
         case overTheShoulder = "Over the shoulder"
         case sideBySide = "Side by side"
+
+        /// The two layouts that composite the camera over the content, i.e. the
+        /// ones where a draggable cut-out exists at all.
+        var hasCameraCutout: Bool { self == .asBackground || self == .overTheShoulder }
     }
 
     /// Set to nil to leave the layout alone and only handle the sound checkbox.
-    var presenterLayout: PresenterLayout? = .overTheShoulder
+    var presenterLayout: PresenterLayout? = .asBackground
     var isEnabled = true
+
+    /// Where Victor's camera cut-out should sit inside the presenter-layout
+    /// preview: flush to the right and bottom edges, a third of the width.
+    /// Set to nil to place the layout but leave the cut-out wherever Zoom put it.
+    var cutoutWidthFraction: CGFloat? = 1.0 / 3.0
 
     /// Shows the 🔊✅ / 🔊❌ confirmation. Injected so tests can run headless.
     var onResult: ((Result) -> Void)?
@@ -72,6 +92,8 @@ final class ZoomSharePrep {
         let soundWasAlreadyOn: Bool
         let soundOnNow: Bool
         let layoutApplied: PresenterLayout?
+        /// nil when placement wasn't attempted; false when it was and missed.
+        let cutoutPlaced: Bool?
     }
 
     // MARK: - Lifecycle
@@ -81,8 +103,15 @@ final class ZoomSharePrep {
     private var observer: AXObserver?
     private var observedPID: pid_t?
     private var safetyTimer: DispatchSourceTimer?
-    /// Rising-edge guard: we act once per appearance of the picker, not per scan.
+    /// Rising-edge guard: sound + layout are applied once per appearance.
     private var dialogWasOpen = false
+    /// Placement is retried across scans — unlike the two presses, it can be
+    /// skipped for a reason that clears by itself (Victor still holding the
+    /// mouse button from the click that opened the picker). Capped so a layout
+    /// whose cut-out simply won't sit where we want doesn't drag forever.
+    private var placementAttempts = 0
+    private var placementDone = false
+    private static let maxPlacementAttempts = 4
 
     func start() {
         attachToZoomIfRunning()
@@ -175,9 +204,15 @@ final class ZoomSharePrep {
 
         guard let dialog = Self.shareDialog(in: appEl) else {
             dialogWasOpen = false
+            placementAttempts = 0
+            placementDone = false
             return
         }
-        guard !dialogWasOpen else { return }   // already handled this appearance
+        if dialogWasOpen {
+            // Sound + layout are done; the cut-out may still need another go.
+            retryPlacementIfNeeded(in: dialog)
+            return
+        }
 
         guard let checkbox = Self.find(in: dialog, role: kAXCheckBoxRole,
                                        description: Self.shareSoundLabel) else {
@@ -204,10 +239,40 @@ final class ZoomSharePrep {
             appliedLayout = wanted
         }
 
-        let result = Result(soundWasAlreadyOn: wasOn, soundOnNow: onNow, layoutApplied: appliedLayout)
+        var placed: Bool?
+        if wantsPlacement {
+            placementAttempts += 1
+            placed = Self.placeCutout(in: dialog, widthFraction: cutoutWidthFraction!)
+            placementDone = placed == true
+        }
+
+        let result = Result(soundWasAlreadyOn: wasOn, soundOnNow: onNow,
+                            layoutApplied: appliedLayout, cutoutPlaced: placed)
         overlayInfo("ZoomSharePrep: share sound \(wasOn ? "already on" : (onNow ? "ticked" : "FAILED to tick"))"
-                    + (appliedLayout.map { ", layout → \($0.rawValue)" } ?? ""))
+                    + (appliedLayout.map { ", layout → \($0.rawValue)" } ?? "")
+                    + (placed.map { ", cut-out \($0 ? "placed" : "NOT placed")" } ?? ""))
         DispatchQueue.main.async { [weak self] in self?.onResult?(result) }
+    }
+
+    /// True when a camera cut-out exists to place at all — only the two layouts
+    /// that composite the camera over the content have one.
+    private var wantsPlacement: Bool {
+        guard cutoutWidthFraction != nil, let layout = presenterLayout else { return false }
+        return layout.hasCameraCutout
+    }
+
+    /// The picker is already prepared, but the cut-out isn't where we want it —
+    /// most often because the first attempt landed while the mouse button was
+    /// still down from the click that opened the picker. Runs off the safety
+    /// poll, so the retries are naturally spaced ~1.5 s apart.
+    private func retryPlacementIfNeeded(in dialog: AXUIElement) {
+        guard wantsPlacement, !placementDone,
+              placementAttempts < Self.maxPlacementAttempts else { return }
+        placementAttempts += 1
+        if Self.placeCutout(in: dialog, widthFraction: cutoutWidthFraction!) {
+            placementDone = true
+            overlayInfo("ZoomSharePrep: cut-out placed on attempt \(placementAttempts)")
+        }
     }
 
     /// `GET /test/zoom-share` — reports what the scanner can see right now and
@@ -231,6 +296,8 @@ final class ZoomSharePrep {
         """
         queue.async { [weak self] in
             self?.dialogWasOpen = false
+            self?.placementAttempts = 0
+            self?.placementDone = false
             self?.scan()
         }
         return snapshot
@@ -288,6 +355,150 @@ final class ZoomSharePrep {
                 return child
             }
             if let hit = findButton(in: child, title: title, depth: depth + 1) { return hit }
+        }
+        return nil
+    }
+
+    // MARK: - Placing the camera cut-out
+
+    /// Drags Victor's camera cut-out to the **bottom-right corner** of the
+    /// presenter-layout preview and narrows it to `widthFraction` of the
+    /// preview's width.
+    ///
+    /// **Why a synthetic drag and not an attribute write.** The cut-out *is*
+    /// exposed — `AXTabGroup Description="<his name>"` inside
+    /// `Presenter layout preview area` — and its `AXPosition`/`AXSize` are
+    /// readable, but both are **read-only**: `AXUIElementIsAttributeSettable`
+    /// answers false and `AXUIElementSetAttributeValue` returns `-25200` while
+    /// nothing moves (probed against Zoom 6.6 on 2026-08-29). The composited
+    /// cut-out on the shared screen itself isn't an AX element at all — AX
+    /// hit-testing the shared surface returns the *shared app* underneath. So
+    /// the preview widget, driven by mouse events, is the only handle there is.
+    ///
+    /// Doing it **in the picker, before the share starts**, matters: the same
+    /// widget exists in the floating `Presenter layout` window during a share,
+    /// but by then the room is already watching the drag.
+    ///
+    /// The geometry is never assumed — every drag is followed by re-reading the
+    /// frames, and up to `maxAttempts` passes run until the result is inside
+    /// tolerance. Each edge drag changes **one** dimension — the cut-out crops
+    /// rather than scales (measured 191×110 → 128×110 from the left edge) — so
+    /// width comes off the left edge and height off the top edge, keeping the
+    /// right and bottom edges pinned to the corner we just moved it into.
+    private static func placeCutout(in dialog: AXUIElement, widthFraction: CGFloat) -> Bool {
+        // Never fight Victor for the cursor: if he's mid-drag, leave it alone.
+        guard !CGEventSource.buttonState(.hidSystemState, button: .left) else { return false }
+        guard let preview = find(in: dialog, role: kAXUnknownRole,
+                                 description: previewAreaLabel),
+              let previewRect = frame(of: preview) else { return false }
+
+        // The cut-out only materialises a beat after the layout is selected.
+        var cutout: AXUIElement?
+        for _ in 0..<12 {
+            if let c = firstTabGroup(in: preview) { cutout = c; break }
+            usleep(120_000)
+        }
+        guard let cutout, var rect = frame(of: cutout) else { return false }
+
+        let cursorBefore = CGEvent(source: nil)?.location
+        defer {
+            if let cursorBefore { CGWarpMouseCursorPosition(cursorBefore) }
+        }
+
+        let targetWidth = previewRect.width * widthFraction
+        let targetHeight = targetWidth / cutoutAspect
+        let tolerance = max(3, previewRect.width * 0.04)
+
+        /// Slide the cut-out so its bottom-right corner meets the preview's.
+        func moveToCorner() {
+            guard let current = frame(of: cutout) else { return }
+            let wantX = previewRect.maxX - current.width
+            let wantY = previewRect.maxY - current.height
+            guard abs(current.minX - wantX) > 1 || abs(current.minY - wantY) > 1 else { return }
+            drag(from: CGPoint(x: current.midX, y: current.midY),
+                 to: CGPoint(x: wantX + current.width / 2, y: wantY + current.height / 2))
+        }
+
+        for _ in 0..<maxPlacementPasses {
+            moveToCorner()
+            guard let afterMove = frame(of: cutout) else { return false }
+            rect = afterMove
+
+            // Narrow from the left edge — the right edge stays pinned.
+            if abs(rect.width - targetWidth) > tolerance {
+                drag(from: CGPoint(x: rect.minX + 1.5, y: rect.midY),
+                     to: CGPoint(x: previewRect.maxX - targetWidth, y: rect.midY))
+                guard let updated = frame(of: cutout) else { return false }
+                rect = updated
+            }
+
+            // Shorten from the top edge — the bottom edge stays pinned. Without
+            // this the frame stays as tall as Zoom made it while only the width
+            // shrinks, so the 16:9 video is letterboxed inside a squarish box
+            // and a visible gap opens up under Victor's head.
+            if abs(rect.height - targetHeight) > tolerance {
+                drag(from: CGPoint(x: rect.midX, y: rect.minY + 1.5),
+                     to: CGPoint(x: rect.midX, y: previewRect.maxY - targetHeight))
+                guard let updated = frame(of: cutout) else { return false }
+                rect = updated
+            }
+
+            // A resize can nudge the box off the corner; settle it again.
+            moveToCorner()
+            guard let settled = frame(of: cutout) else { return false }
+            rect = settled
+
+            let placed = abs(rect.width - targetWidth) <= tolerance
+                && abs(rect.height - targetHeight) <= tolerance
+                && abs(rect.maxX - previewRect.maxX) <= tolerance
+                && abs(rect.maxY - previewRect.maxY) <= tolerance
+            if placed { return true }
+        }
+        overlayInfo("ZoomSharePrep: cut-out ended at \(rect) inside preview \(previewRect)"
+                    + " — wanted \(Int(targetWidth))×\(Int(targetHeight)) flush bottom-right")
+        return false
+    }
+
+    /// A human-shaped drag: press, move in steps, release. One jump from press to
+    /// release is ignored by Zoom's preview, which tracks intermediate motion.
+    private static func drag(from start: CGPoint, to end: CGPoint) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        func post(_ type: CGEventType, _ at: CGPoint) {
+            CGEvent(mouseEventSource: source, mouseType: type,
+                    mouseCursorPosition: at, mouseButton: .left)?.post(tap: .cghidEventTap)
+        }
+        post(.mouseMoved, start)
+        usleep(30_000)
+        post(.leftMouseDown, start)
+        usleep(40_000)
+        let steps = 12
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            post(.leftMouseDragged, CGPoint(x: start.x + (end.x - start.x) * t,
+                                            y: start.y + (end.y - start.y) * t))
+            usleep(12_000)
+        }
+        usleep(40_000)
+        post(.leftMouseUp, end)
+        usleep(80_000)
+    }
+
+    private static func frame(of el: AXUIElement) -> CGRect? {
+        guard let posRef = attr(el, kAXPositionAttribute), let sizeRef = attr(el, kAXSizeAttribute)
+        else { return nil }
+        var origin = CGPoint.zero, size = CGSize.zero
+        guard AXValueGetValue(posRef as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
+    /// The cut-out is the only `AXTabGroup` under the preview area; it is titled
+    /// with the participant's display name, which we deliberately don't hardcode.
+    private static func firstTabGroup(in root: AXUIElement, depth: Int = 0) -> AXUIElement? {
+        if depth > 10 { return nil }
+        for child in children(root) {
+            if string(child, kAXRoleAttribute) == kAXTabGroupRole { return child }
+            if let hit = firstTabGroup(in: child, depth: depth + 1) { return hit }
         }
         return nil
     }
