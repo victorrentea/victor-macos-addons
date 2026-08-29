@@ -7331,11 +7331,20 @@ class EmojiAnimator {
     private var _fireInputTap: CFMachPort?
     private var _fireInputTapSource: CFRunLoopSource?
     private var _fireScrollAccum: CGFloat = 0     // trackpad pixels → notches
+    private var _firePlanted: [CALayer] = []      // fires dropped by clicking, oldest first
+
+    /// Ceiling on planted fires. Never reached by hand — it exists so a stuck
+    /// mouse button (or a tablet demo where the trackpad gets leaned on) can't
+    /// grow the layer tree without bound during the 36 s the clip runs. Past it
+    /// the oldest fire is put out to make room, which reads as the first one
+    /// having burnt itself out rather than as a limit.
+    private static let fireMaxPlanted = 60
 
     /// Replace the mouse pointer with a burning flame that follows it across the
     /// built-in screen. Unlike every other tile effect this one has THREE ways to
     /// end — the length of `11_fire.mp3`, an Escape keypress, or the tablet's
-    /// stop — and while it burns the scroll wheel resizes it.
+    /// stop — and while it burns the scroll wheel resizes it and a click leaves a
+    /// copy of it burning where it was clicked.
     ///
     /// Not a `trackEffect` client, for the chainsaw's reason: it owns a follow
     /// timer, an event tap and a hidden system cursor, so it must be torn down
@@ -7447,22 +7456,79 @@ class EmojiAnimator {
         _fireLayer = nil
         _fireScale = 1
 
+        // Every fire the user planted goes out with the one on the pointer. They
+        // are deliberately NOT in `activeEffects`: the whole set is this run's
+        // property, so the same Escape / clip-end / tablet-stop that restores the
+        // cursor also clears the desktop, and no sweep can take them separately.
+        let planted = _firePlanted
+        _firePlanted = []
+
         let teardown = {
+            for layer in planted {
+                layer.removeAllAnimations()
+                layer.removeFromSuperlayer()
+            }
             flame?.removeAllAnimations()
             flame?.removeFromSuperlayer()
             restoreCursor()
         }
 
-        guard fade > 0, let flame else { teardown(); return }
+        guard fade > 0, !(flame == nil && planted.isEmpty) else { teardown(); return }
 
-        let fadeOut = CABasicAnimation(keyPath: "opacity")
-        fadeOut.fromValue = flame.presentation()?.opacity ?? 1.0
-        fadeOut.toValue = 0.0
-        fadeOut.duration = fade
-        fadeOut.fillMode = .forwards
-        fadeOut.isRemovedOnCompletion = false
-        flame.add(fadeOut, forKey: "fadeOut")
+        for layer in planted + (flame.map { [$0] } ?? []) {
+            let fadeOut = CABasicAnimation(keyPath: "opacity")
+            fadeOut.fromValue = layer.presentation()?.opacity ?? 1.0
+            fadeOut.toValue = 0.0
+            fadeOut.duration = fade
+            fadeOut.fillMode = .forwards
+            fadeOut.isRemovedOnCompletion = false
+            layer.add(fadeOut, forKey: "fadeOut")
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + fade, execute: teardown)
+    }
+
+    /// Leave a burning copy of the pointer's flame where the user clicked, at the
+    /// size the wheel has it at right now. That size and place are the point:
+    /// the gesture reads as "set THIS on fire", so a planted fire that snapped
+    /// back to the default size, or drifted to the layer's centre, would look
+    /// like a different effect than the one under the hand a moment earlier.
+    ///
+    /// Each copy gets its own random phase into the 40-frame loop. Planted fires
+    /// started at frame 0 flicker in lockstep, and a row of perfectly
+    /// synchronised flames announces "sprite sheet" louder than any of them
+    /// announces "fire".
+    fileprivate func plantFireAtCursor() {
+        guard let flame = _fireLayer else { return }
+        let frames = Self.fireFrames
+        guard let first = frames.first else { return }
+
+        let copy = CALayer()
+        copy.bounds = flame.bounds                 // exactly the current wheel size
+        copy.anchorPoint = Self.fireRootAnchor     // same root, so it stands where it was clicked
+        copy.contents = first
+        copy.contentsGravity = .resizeAspect
+        copy.zPosition = 9_400                     // under the pointer's flame, over every other effect
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        copy.position = mousePointInHostLayer()
+        CATransaction.commit()
+
+        let burn = CAKeyframeAnimation(keyPath: "contents")
+        burn.values = frames
+        burn.duration = Double(frames.count) / Self.fireFPS
+        burn.repeatCount = .infinity
+        burn.calculationMode = .discrete
+        burn.timeOffset = Double.random(in: 0..<burn.duration)
+        copy.add(burn, forKey: "burn")
+
+        hostLayer.addSublayer(copy)
+        _firePlanted.append(copy)
+
+        while _firePlanted.count > Self.fireMaxPlanted {
+            let oldest = _firePlanted.removeFirst()
+            oldest.removeAllAnimations()
+            oldest.removeFromSuperlayer()
+        }
     }
 
     /// Layer box for a given wheel scale, keeping the sprite's aspect ratio.
@@ -7484,6 +7550,8 @@ class EmojiAnimator {
 
         let mask = CGEventMask(1 << CGEventType.scrollWheel.rawValue)
             | CGEventMask(1 << CGEventType.keyDown.rawValue)
+            | CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
+            | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
@@ -7505,6 +7573,17 @@ class EmojiAnimator {
                     SoundManager.shared.stopAllPlayers()
                 }
                 return nil   // consume — the user is dismissing the fire, not their app
+            }
+            if type == .leftMouseDown {
+                DispatchQueue.main.async { animator.plantFireAtCursor() }
+                return nil   // consume — while it burns, a click means "burn here"
+            }
+            if type == .leftMouseUp {
+                // The down was swallowed above, so delivering the up alone would
+                // hand the app underneath half a click: a button that highlights
+                // and never fires, a text view that loses its selection. The pair
+                // goes or stays together.
+                return nil
             }
             if type == .scrollWheel {
                 // Cmd+scroll is left alone: EventTapManager turns it into
