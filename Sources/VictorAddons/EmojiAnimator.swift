@@ -86,6 +86,7 @@ class EmojiAnimator {
     private var _bombSessionActive = false
     private var _bombPlantedAny = false               // false → the idle window may still end the run
     private var _bombRevealAnchor: CGPoint = .zero    // cursor at the last click; the crosshair returns on the first move off it
+    private var _bombRunStartedAt: Date = .distantPast // press time — the head boom's t=0, which is what a per-bomb boom is measured against
     private var _bombInputTap: CFMachPort?
     private var _bombInputTapSource: CFRunLoopSource?
 
@@ -2524,6 +2525,24 @@ class EmojiAnimator {
     /// shakes it past the aim threshold — then the bomb lands.
     private static let explosionStrikeDelay: Double = explosionSoundPeakOffset - explosionStrikeAdvance
 
+    /// How far AHEAD of a click its boom has to start for the clip's crescendo to
+    /// land on that click's blast: the peak is at `explosionSoundPeakOffset` into
+    /// the file, the blast is `explosionStrikeDelay` after the click.
+    ///
+    /// One offset, two jobs. It is how far into the clip a per-bomb copy is seeked
+    /// (start at the peak-minus-fuse mark and the crescendo arrives with the
+    /// bomb), and it is how long after the press the head-of-run boom still covers
+    /// a bomb on its own — a target planted exactly this late lands on the head
+    /// boom's own peak, so handing it a second copy would only double one sound.
+    private static let bombBoomLead: Double = explosionSoundPeakOffset - explosionStrikeDelay
+
+    /// Level of a per-bomb boom, before the equal-power thinning below. Under the
+    /// head boom on purpose: these copies are heard on top of it, not instead.
+    private static let bombBoomVolume: Float = 0.75
+
+    /// Floor for that thinning. Ten bombs in the air must not silence the tenth.
+    private static let bombBoomVolumeFloor: Float = 0.35
+
     /// Where, inside the square explosion gif, the bomb actually *lands* —
     /// expressed as a fraction up from the bottom of the frame (the OY centre
     /// horizontally). An aimed strike anchors this point to the cursor crosshair
@@ -2587,13 +2606,17 @@ class EmojiAnimator {
         stopBombSession(fade: 0)
         _bombEpoch &+= 1
         let epoch = _bombEpoch
-        // The boom starts at the head of the run, as before. It is ONE clip for
-        // the whole bombardment — the tablet owns the audio on the routed path
-        // (playSound: false) and plays a single copy per tile press, so a boom per
-        // click isn't ours to give even if we wanted it.
+        // The boom starts at the head of the run, as before — but it is no longer
+        // the ONLY one. The tablet owns that first clip on the routed path
+        // (playSound: false) and plays a single copy per tile press; every bomb
+        // planted after it is out of that copy's reach, so the Mac lays its own
+        // boom under each one (see playBombBoom). Both come out of the Mac's
+        // speakers whenever the tablet routes its audio here, which is the setup
+        // the room actually runs.
         if playSound { SoundManager.shared.play("03_explosion.mp3") }
 
         _bombSessionActive = true
+        _bombRunStartedAt = Date()
         _bombPending = 0
         _bombPlantedAny = false
         startBombTargeting()
@@ -2734,6 +2757,7 @@ class EmojiAnimator {
         _bombPlanted.append(reticle)
         _bombPlantedAny = true
         _bombPending += 1
+        playBombBoom()
 
         let epoch = _bombEpoch
         DispatchQueue.main.asyncAfter(deadline: .now() + fuse) { [weak self] in
@@ -2742,6 +2766,32 @@ class EmojiAnimator {
             self.spawnBombBlast(at: point)
             self.strikeFadeReticle(reticle)
         }
+    }
+
+    /// Give the bomb just planted its own boom, so a rhythm of clicks comes back
+    /// as a rhythm of explosions instead of one clip covering all of them.
+    ///
+    /// Three things keep that from turning into noise:
+    /// * the first `bombBoomLead` seconds of the run are skipped — a bomb clicked
+    ///   that early already lands on the head boom's peak and is covered;
+    /// * the copy is seeked to `bombBoomLead` so ITS crescendo arrives with ITS
+    ///   blast, and swells in over the whole fuse rather than banging in at once;
+    /// * simultaneous copies are thinned by 1/√n (n = bombs still in the air,
+    ///   this one included), the equal-power law: two booms together then land at
+    ///   about the loudness of one, not twice it.
+    private func playBombBoom() {
+        guard Date().timeIntervalSince(_bombRunStartedAt) > Self.bombBoomLead else { return }
+        let volume = max(Self.bombBoomVolumeFloor,
+                         Self.bombBoomVolume / Float(max(1, _bombPending)).squareRoot())
+        SoundManager.shared.playOverlapping(
+            "03_explosion.mp3",
+            volume: volume,
+            // The head boom has been sounding for at least `bombBoomLead` seconds,
+            // so the A2DP link is warm; adding the start delay on top would push
+            // the crescendo late off the blast it is supposed to land on.
+            bluetoothCompensated: false,
+            startAt: Self.bombBoomLead,
+            fadeIn: Self.explosionStrikeDelay)
     }
 
     /// One bomb has finished burning. The run ends with the LAST one: while any

@@ -440,3 +440,30 @@ rule from the start.
   height is proportional to the distance, with a cap that on the retina never binds (a
   full half-screen leap arcs ≈212 pt against a 216 pt cap); the cap is there for other
   overlay shapes.
+
+- **☢️ Nuke bombardment — one boom per bomb** (sfx #03 `03_explosion.mp3` → `explosion`,
+  `showExplosionGif` / `plantBombAtCursor`): the press hides the pointer and hands over a
+  sniper crosshair; every click plants a target that reddens, grows and turns for a
+  `explosionStrikeDelay` (1.10 s) fuse before its blast lands on it, so a rhythm of clicks
+  comes back as a rhythm of explosions. Until 2026-08-30 it came back as a rhythm of
+  *silent* explosions: the audio was **one clip at the head of the run** — the tablet's, on
+  the routed path — and bombs two, three and four landed with nothing under them.
+  Each plant now lays **its own boom** (`playBombBoom`), and the three numbers that keep a
+  stack of them from turning into noise are all derived, not tuned by ear:
+  - **Sync.** The clip's crescendo sits at `explosionSoundPeakOffset` (2.10 s) and a blast
+    is `explosionStrikeDelay` after its click, so the copy is **seeked to the difference**
+    (`bombBoomLead`, 1.00 s) and its peak arrives with the bomb rather than a beat behind it.
+  - **Which bomb the head boom already owns.** That same offset is how late a target can be
+    planted and still land on the *head* boom's peak — so a bomb clicked inside the first
+    `bombBoomLead` seconds gets **no copy at all**; it is already scored. This is why the
+    first bomb sounds exactly as it did before.
+  - **Loudness.** A copy swells from silence over the whole fuse (`fadeIn:` on
+    `playOverlapping`) instead of banging in at full level, at `bombBoomVolume` (0.75)
+    thinned by **1/√n** over the bombs still in the air, floored at `bombBoomVolumeFloor`
+    (0.35). The equal-power law is the point: two booms a beat apart land at roughly the
+    loudness of one, not twice it — the room hears more explosions, not more volume.
+
+  The copies are **not Bluetooth-compensated** (`bluetoothCompensated: false`), for the
+  same reason as the 🔥 whip crack but arrived at differently: something has been sounding
+  for at least `bombBoomLead` seconds by then, so the A2DP link is warm, and adding the
+  start delay would push the crescendo late off the blast it exists to land on.

@@ -257,7 +257,13 @@ class SoundManager {
     /// used to skip a sample's built-in lead-in so its transient bangs
     /// immediately (e.g. the whip cracks, whose samples carry up to ~170ms of
     /// wind-up swish before the actual snap). Clamped inside the clip.
-    func playOverlapping(_ filename: String, volume: Float = 1.0, bluetoothCompensated: Bool = true, startAt: TimeInterval = 0) {
+    ///
+    /// `fadeIn` (seconds) swells the copy up from silence to `volume` instead of
+    /// starting it at full level — for a sound that layers over copies of ITSELF
+    /// (the ☢️ bombardment plays one boom per bomb), where several hard starts a
+    /// beat apart stack into noise rather than into a rhythm. The ramp begins when
+    /// the sound actually starts, i.e. after any Bluetooth compensation.
+    func playOverlapping(_ filename: String, volume: Float = 1.0, bluetoothCompensated: Bool = true, startAt: TimeInterval = 0, fadeIn: TimeInterval = 0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             guard let url = self.soundURL(for: filename) else {
@@ -266,7 +272,8 @@ class SoundManager {
             }
             do {
                 let player = try AVAudioPlayer(contentsOf: url)
-                player.volume = max(0.0, min(1.0, volume))
+                let level = max(0.0, min(1.0, volume))
+                player.volume = fadeIn > 0 ? 0 : level
                 player.prepareToPlay()
                 if startAt > 0 { player.currentTime = min(startAt, max(0, player.duration - 0.05)) }
                 self.overlappingPlayers.append(player)
@@ -276,6 +283,14 @@ class SoundManager {
                 } else {
                     player.play()
                     comp = 0
+                }
+                if fadeIn > 0 {
+                    // Scheduled, not immediate: with a Bluetooth start delay the
+                    // player isn't sounding yet, and a ramp that ran during the
+                    // silence would be over before the first sample is audible.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + comp) {
+                        player.setVolume(level, fadeDuration: fadeIn)
+                    }
                 }
                 // Clean up finished players after this one ends
                 DispatchQueue.main.asyncAfter(deadline: .now() + comp + player.duration + 0.1) { [weak self] in
