@@ -6471,7 +6471,10 @@ class EmojiAnimator {
 
     private func spawnRainbowUnicorn(into container: CALayer, bounds: CGRect,
                                      leftToRight: Bool, delay: Double, travel: Double) {
-        let fontSize = bounds.height * CGFloat.random(in: 0.10...0.16)
+        // Twice the original 0.10...0.16 of screen height. At the old size they
+        // read as decoration under the arc; at this one they are the thing you
+        // watch, which is what they are there for on the projector.
+        let fontSize = bounds.height * CGFloat.random(in: 0.20...0.32)
         let box = fontSize * 1.25
 
         let unicorn = CATextLayer()
@@ -6485,9 +6488,13 @@ class EmojiAnimator {
         if leftToRight { unicorn.transform = CATransform3DMakeScale(-1, 1, 1) }
 
         // Lanes anywhere in the lower two thirds — the ground they "walk" on —
-        // with the hop apex reaching about half a body above it.
-        let groundY = bounds.height * CGFloat.random(in: 0.12...0.62)
+        // with the hop apex reaching about half a body above it. The lane is
+        // clamped so the apex plus half a body still fits: at double size a
+        // top-lane unicorn used to hop its horn off the top edge, and the
+        // beheaded frame is the one the projector holds on.
         let hop = box * CGFloat.random(in: 0.30...0.55)
+        let highestGround = max(bounds.height * 0.12, bounds.height - hop - box / 2)
+        let groundY = min(bounds.height * CGFloat.random(in: 0.12...0.62), highestGround)
         let startX = leftToRight ? -box : bounds.width + box
         let endX = leftToRight ? bounds.width + box : -box
 
