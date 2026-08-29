@@ -1,7 +1,8 @@
 import Cocoa
+import QuartzCore
 
 /// Bottom-left status banner with presence gating: calls to `showOnPresence`
-/// defer the actual fade-in until mouse movement is detected, so the user
+/// defer the actual fade-in until the laptop sees input again, so the user
 /// never misses a state change while they're away from the laptop. Latest-
 /// wins: a new call while already visible swaps text in place and resets
 /// the auto-fade timer.
@@ -14,6 +15,9 @@ final class StatusBanner {
     private var visibleTimer: Timer?
     private var hoverPollTimer: Timer?
     private var lastMousePosition: NSPoint?
+    /// Uptime when the current wait began; any input newer than this is the
+    /// user coming back (see `checkPresence`).
+    private var presenceWaitStartedAt: CFTimeInterval = 0
 
     private var pendingText: String?
     private var pendingSound: NSSound?
@@ -23,9 +27,9 @@ final class StatusBanner {
         banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: false)
     }
 
-    /// Schedule a banner to fade in after the next mouse movement.
-    /// Plays `sound` when it appears. Stays visible `visibleDuration`,
-    /// then fades out. Latest-wins.
+    /// Schedule a banner to fade in on the next sign of life from the laptop —
+    /// a keystroke counts, not only a mouse move. Plays `sound` when it appears.
+    /// Stays visible `visibleDuration`, then fades out. Latest-wins.
     func showOnPresence(text: String, sound: NSSound?, visibleDuration: TimeInterval = 5.0) {
         pendingText = text
         pendingSound = sound
@@ -82,16 +86,25 @@ final class StatusBanner {
     private func startPresencePolling() {
         presenceTimer?.invalidate()
         lastMousePosition = NSEvent.mouseLocation
+        presenceWaitStartedAt = CACurrentMediaTime()
         presenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             self?.checkPresence()
         }
     }
 
+    /// Presence is **any** input since the wait began, not just a moved cursor.
+    /// A break that ends while Victor is away is over the moment he sits back
+    /// down — and he sits back down by waking the Mac and typing, on a laptop
+    /// whose trackpad may never be touched. The polled mouse position stays as
+    /// the second opinion: it needs nothing from the event system at all, so a
+    /// stuck event-source clock still cannot swallow the banner.
     private func checkPresence() {
         let pos = NSEvent.mouseLocation
         defer { lastMousePosition = pos }
-        guard let last = lastMousePosition else { return }
-        if last != pos {
+        let inputAge = ScreenBlackout.secondsSinceLastInput()
+        let sawInput = inputAge < (CACurrentMediaTime() - presenceWaitStartedAt)
+        let mouseMoved = lastMousePosition.map { $0 != pos } ?? false
+        if sawInput || mouseMoved {
             presenceTimer?.invalidate(); presenceTimer = nil
             revealBanner()
         }

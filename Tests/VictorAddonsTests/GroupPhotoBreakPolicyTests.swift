@@ -61,4 +61,32 @@ final class GroupPhotoBreakPolicyTests: XCTestCase {
         // 12:xx is still before the 13:00 afternoon cutoff.
         XCTAssertFalse(shouldPrompt(15, atHour: 12))
     }
+
+    // MARK: - The second prompt, when the break ends
+
+    func testEndPromptOnlyWhenTheStartPromptArmedIt() {
+        // No latch = this break never asked for a photo (too short, or nobody
+        // connected to gather) — its end must stay quiet.
+        XCTAssertFalse(GroupPhotoBreakPolicy.shouldPromptAtEnd(breakStartedAt: nil, now: Date()))
+    }
+
+    func testLunchBreakPromptsAgainWhenItEnds() {
+        let now = Date()
+        let startedAnHourAgo = now.addingTimeInterval(-60 * 60)
+        XCTAssertTrue(GroupPhotoBreakPolicy.shouldPromptAtEnd(breakStartedAt: startedAnHourAgo, now: now))
+    }
+
+    func testABreakClosedSecondsAfterItStartedDoesNotPromptTwice() {
+        let now = Date()
+        let justStarted = now.addingTimeInterval(-30)
+        XCTAssertFalse(GroupPhotoBreakPolicy.shouldPromptAtEnd(breakStartedAt: justStarted, now: now))
+    }
+
+    func testAStaleLatchIsNotCashedInByALaterBreak() {
+        // The latch is persisted, so it can outlive the break that set it (app
+        // quit, machine slept). Yesterday's lunch must not fire during today.
+        let now = Date()
+        let yesterday = now.addingTimeInterval(-20 * 60 * 60)
+        XCTAssertFalse(GroupPhotoBreakPolicy.shouldPromptAtEnd(breakStartedAt: yesterday, now: now))
+    }
 }

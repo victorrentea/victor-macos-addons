@@ -855,6 +855,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestGroupPhoto = { [weak self] in
             DispatchQueue.main.async { self?.promptGroupPhoto() }
         }
+        // The *end*-of-break half of the prompt, without sitting out an hour of
+        // lunch: arm the latch as if a qualifying break had started long enough
+        // ago to earn its second prompt, then run the very code the break's
+        // `onEnded` runs.
+        tabletServer?.onTestGroupPhotoBreakEnd = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.groupPhotoBreakStartedAt =
+                    Date().addingTimeInterval(-(GroupPhotoBreakPolicy.endPromptMinElapsed + 60))
+                self.promptGroupPhotoAtBreakEndIfDue()
+            }
+        }
 
         // /test/bell(?name=…) — show the 🔔 bell card now (+ chime), bypassing the
         // daemon-connected gate so it can be previewed on the right-hand screen.
@@ -912,7 +924,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return "{\"recording\":\(recording)}"
         }
         tabletServer?.onTestBreakStart = { [weak self] minutes in
-            DispatchQueue.main.async { self?.breakTimer.start(minutes: minutes) }
+            DispatchQueue.main.async { self?.startBreak(minutes: minutes) }
         }
         tabletServer?.onTestBreakUntil = { [weak self] in
             // Same overlay a floating-☕ click produces: half-size "UNTIL BREAK".
@@ -1197,17 +1209,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // (The break no longer auto-launches the training-summary delta; that run is
         // now only triggered manually via the /test/break-summary hook.)
         menuBarManager.onBreak = { [weak self] minutes in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.breakTimer.start(minutes: minutes)
-                // A group photo makes sense during a longer break: the 1h lunch
-                // (any time) or an afternoon (≥13:00) break of ≥10 min — and only
-                // when there's an audience connected to gather for the shot.
-                if self.daemonConnected,
-                   GroupPhotoBreakPolicy.shouldPrompt(breakMinutes: minutes, at: Date()) {
-                    self.promptGroupPhoto()
-                }
-            }
+            DispatchQueue.main.async { self?.startBreak(minutes: minutes) }
         }
         // Resume an in-progress break after a redeploy/restart.
         DispatchQueue.main.async { [weak self] in self?.breakTimer.resumeIfNeeded() }
@@ -1259,8 +1261,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         breakTimer.onEnded = { [weak self] in
             DispatchQueue.main.async {
-                self?.menuBarManager.breakEndedAt = Date()
-                self?.scheduleBreakReminder()
+                guard let self else { return }
+                self.menuBarManager.breakEndedAt = Date()
+                self.scheduleBreakReminder()
+                self.promptGroupPhotoAtBreakEndIfDue()
             }
         }
         ScreenshotManager.onScreenshotTaken = { [weak menuBarManager] in
@@ -2298,13 +2302,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
+    /// When the break currently owing a group photo was started, or nil when no
+    /// break is owed one. Set only where the *start* prompt actually fires, read
+    /// once when the break ends. Persisted rather than held in memory because the
+    /// hour Victor spends away is exactly when a redeploy happens — an in-memory
+    /// latch would be dropped by the restart that resumes the countdown, and the
+    /// prompt he'd notice missing is the one at the end.
+    private var groupPhotoBreakStartedAt: Date? {
+        get { UserDefaults.standard.object(forKey: "GroupPhoto.breakStartedAt") as? Date }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue, forKey: "GroupPhoto.breakStartedAt")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "GroupPhoto.breakStartedAt")
+            }
+        }
+    }
+
+    /// Start (or restart) the break countdown, exactly as the menu's ☕ items do.
+    /// The menu and `/test/break/<minutes>` both come through here so the test
+    /// hook exercises the real thing, group-photo gate included, rather than a
+    /// thinner copy of it.
+    ///
+    /// A group photo makes sense during a longer break: the 1h lunch (any time)
+    /// or an afternoon (≥13:00) break of ≥10 min — and only when there's an
+    /// audience connected to gather for the shot. A qualifying break is prompted
+    /// TWICE, here and again when it ends, so this is the one place the latch is
+    /// armed; anything that does not qualify clears it, so a short coffee break
+    /// can never cash in the lunch break's photo.
+    private func startBreak(minutes: Int) {
+        breakTimer.start(minutes: minutes)
+        if daemonConnected, GroupPhotoBreakPolicy.shouldPrompt(breakMinutes: minutes, at: Date()) {
+            promptGroupPhoto()
+            groupPhotoBreakStartedAt = Date()
+        } else {
+            groupPhotoBreakStartedAt = nil
+        }
+    }
+
+    /// The second half of the group-photo prompt, run when a break ends: the
+    /// break that asked for a photo when it was set asks once more now that it is
+    /// over. The prompt at the start lands in a room already standing up to
+    /// leave, and an hour later nobody remembers the photo was owed; the end of
+    /// the break is when everyone is walking back in, which is when the shot
+    /// actually happens. The banner is presence-gated, so a break that expires
+    /// while Victor is still out surfaces on the first sign of life from the
+    /// laptop instead of fading into an empty room. One-shot: consumed here,
+    /// whether or not it fired.
+    private func promptGroupPhotoAtBreakEndIfDue() {
+        if GroupPhotoBreakPolicy.shouldPromptAtEnd(breakStartedAt: groupPhotoBreakStartedAt, now: Date()) {
+            promptGroupPhoto()
+        }
+        groupPhotoBreakStartedAt = nil
+    }
+
     /// Prompt Victor to take a group photo using the app's standard bottom-left
     /// status banner — the same overlay as "started" / "paused on battery" / etc.
     /// Presence-gated, so if he stepped away it fades in the moment he's back at
-    /// the Mac. Being the app's own always-on-top panel, it shows even while
-    /// PowerPoint is presenting fullscreen (unlike a macOS notification, which
-    /// gets suppressed into Notification Center). Called from break starts (gated)
-    /// and `/test/group-photo`.
+    /// the Mac — any input counts, not just the mouse. Being the app's own
+    /// always-on-top panel, it shows even while PowerPoint is presenting
+    /// fullscreen (unlike a macOS notification, which gets suppressed into
+    /// Notification Center). Called at the start of a qualifying break, again
+    /// when that break ends, and from `/test/group-photo`.
     private func promptGroupPhoto() {
         statusBanner?.showOnPresence(
             text: "📸 Group Photo",

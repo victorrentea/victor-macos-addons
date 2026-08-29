@@ -63,6 +63,10 @@ class TabletHttpServer {
         /// Post the 13:00 "Group Photo" notification now, bypassing the time +
         /// connection gates (test hook).
         case testGroupPhoto
+        /// Run the *end-of-break* Group Photo prompt now, as if a qualifying
+        /// break had just finished — the half that otherwise costs an hour of
+        /// lunch to see (test hook).
+        case testGroupPhotoBreakEnd
         /// Post the "Wispr started but output ≠ 🔊OS Output" notification now,
         /// using the real current default-output name (test hook).
     /// Force the dictation window open/closed, to exercise the Chrome
@@ -187,6 +191,7 @@ class TabletHttpServer {
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
+    var onTestGroupPhotoBreakEnd: (() -> Void)?
     /// Force the dictation window; returns the bridge's JSON snapshot.
     var onTestDictation: ((Bool) -> String)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
@@ -372,6 +377,8 @@ class TabletHttpServer {
                 self.onTestWhipCrack?()
             case .testGroupPhoto:
                 self.onTestGroupPhoto?()
+            case .testGroupPhotoBreakEnd:
+                self.onTestGroupPhotoBreakEnd?()
             case .testProjector:
                 contentType = "application/json"
                 body = self.onTestProjector?() ?? "{\"error\":\"display manager unavailable\"}"
@@ -571,6 +578,8 @@ class TabletHttpServer {
             return .effect("microwave")
         case "/test/group-photo":
             return .testGroupPhoto
+        case "/test/group-photo/break-end":
+            return .testGroupPhotoBreakEnd
         case "/test/dictation":
             let raw = queryItems.first(where: { $0.name == "active" })?.value ?? "1"
             return .testDictation(raw != "0" && raw.lowercased() != "false")
