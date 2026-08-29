@@ -24,6 +24,8 @@ class EventTapManager {
     /// ⌃P **held** — macOS's crosshair crop (see `ScreenshotHoldPolicy`).
     var onScreenshotCrop: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
+    /// ⌘⇧X **inside PowerPoint only** — toggle strikethrough on the selection.
+    var onPowerPointStrikethrough: (() -> Void)?
     var onRepaste: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
@@ -87,6 +89,7 @@ class EventTapManager {
     private let VK_M: CGKeyCode = 0x2E
     private let VK_O: CGKeyCode = 0x1F
 private let VK_F: CGKeyCode = 0x03
+    private let VK_X: CGKeyCode = 0x07
     private let VK_F8: CGKeyCode = 0x64
     private let VK_RETURN: CGKeyCode = 0x24       // Return
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
@@ -352,6 +355,20 @@ private let VK_F: CGKeyCode = 0x03
                 screenshotKeyDownAt = CFAbsoluteTimeGetCurrent()
                 screenshotCropFired = false
             }
+            return nil
+        }
+
+        // ⌘⇧X → strikethrough, but ONLY while PowerPoint is the focused app
+        // (suppress). PowerPoint for Mac ships no shortcut for it and cannot be
+        // taught one: the command exists only as a ribbon button — there is no
+        // Strikethrough menu item for macOS's App Shortcuts to bind, and unlike
+        // Word, PowerPoint has no Tools ▸ Customize Keyboard. So the key is
+        // served here instead. The app scope matters: ⌘⇧X is a real shortcut
+        // elsewhere (Cut in some apps, VS Code's Extensions pane), so it must
+        // fall through everywhere but PowerPoint.
+        if keyCode == VK_X && hasCmd && hasShift && !hasCtrl && !hasOpt,
+           currentFrontmost()?.bundleId == "com.microsoft.Powerpoint" {
+            DispatchQueue.global().async { [weak self] in self?.onPowerPointStrikethrough?() }
             return nil
         }
 

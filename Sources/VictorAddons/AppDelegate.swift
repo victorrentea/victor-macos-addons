@@ -1367,6 +1367,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
         }
+        eventTap.onPowerPointStrikethrough = {
+            DispatchQueue.global(qos: .userInitiated).async { PowerPointStrikethrough.toggle() }
+        }
+        eventTap.onPowerPointStrikethrough = {
+            DispatchQueue.global(qos: .userInitiated).async { PowerPointStrikethrough.toggle() }
+        }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
         eventTap.onWhipCrack = { [weak self] in self?.whipController?.forceCrack() }
