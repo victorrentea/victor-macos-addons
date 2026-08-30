@@ -60,7 +60,7 @@ final class ZoomSharePrep {
     /// instead of sitting on the bottom edge. Zoom's own default frame is
     /// 124×70 = 1.771, i.e. 16:9 — we simply hold that ratio while shrinking.
     private static let cutoutAspect: CGFloat = 16.0 / 9.0
-    private static let maxPlacementPasses = 3
+    private static let maxPlacementPasses = 4
     private static let zoomBundleID = "us.zoom.xos"
 
     /// Zoom's four presenter layouts, exactly as their buttons are titled.
@@ -92,8 +92,12 @@ final class ZoomSharePrep {
     /// button, so opening the picker *is* starting the share of the right screen.
     ///
     /// The picker is also where the *target* is chosen, and this gives that up.
-    /// Holding **⇧ while opening the picker** suppresses it, for the times
+    /// Holding **⌥ while opening the picker** suppresses it, for the times
     /// Victor wants a different screen or a single application window.
+    /// Deliberately not ⇧: Zoom's own shortcut for opening the picker is
+    /// **⇧⌘S**, so a shift-based hatch would fire on the very gesture that
+    /// opens it — and non-deterministically at that, depending on whether the
+    /// key is still down when our scan reads the modifiers.
     var autoPressShare = true
 
     /// Shows the 🔊✅ / 🔊❌ confirmation. Injected so tests can run headless.
@@ -251,9 +255,10 @@ final class ZoomSharePrep {
             appliedLayout = wanted
         }
 
-        // ⇧ held while opening the picker = "let me choose what to share".
-        let shiftHeld = KeySimulator.heldModifiers().contains(.maskShift)
-        let takingOver = autoPressShare && !shiftHeld
+        // ⌥ held while opening the picker = "let me choose what to share".
+        let mods = KeySimulator.heldModifiers()
+        let optionHeld = mods.contains(.maskAlternate)
+        let takingOver = autoPressShare && !optionHeld
 
         // Pick the screen *before* placing the cut-out: switching tiles re-renders
         // the presenter-layout preview, and a placement done first would be
@@ -279,7 +284,8 @@ final class ZoomSharePrep {
         overlayInfo("ZoomSharePrep: share sound \(wasOn ? "already on" : (onNow ? "ticked" : "FAILED to tick"))"
                     + (appliedLayout.map { ", layout → \($0.rawValue)" } ?? "")
                     + (placed.map { ", cut-out \($0 ? "placed" : "NOT placed")" } ?? "")
-                    + (shiftHeld ? ", ⇧ held → left the picker open"
+                    + (mods.isEmpty ? "" : " [mods=\(mods.rawValue)]")
+                    + (optionHeld ? ", ⌥ held → left the picker open"
                                  : (pressedShare ? ", share started" : "")))
         DispatchQueue.main.async { [weak self] in self?.onResult?(result) }
     }
@@ -445,7 +451,20 @@ final class ZoomSharePrep {
 
         let targetWidth = previewRect.width * widthFraction
         let targetHeight = targetWidth / cutoutAspect
-        let tolerance = max(3, previewRect.width * 0.04)
+        // Tolerances are per-dimension, and scaled to each *target* rather than
+        // to the preview's width: one shared tolerance is simultaneously too
+        // tight for the width and far too slack for the height (4 % of a 252 pt
+        // preview is 10 pt, i.e. 21 % of a ~47 pt target height — enough drift to
+        // bring back the band under Victor's head that this exists to remove).
+        //
+        // They are also not tighter than the mechanism can deliver: a correction
+        // of a few points does not register as a drag at all (measured — a box
+        // sitting at 88×51 would not go to 84×47, while a fresh 124×70 box
+        // reaches 85×48 in one pass). Demanding better only burns passes and
+        // reports failure for a placement that is in fact fine.
+        let widthTolerance = max(3, targetWidth * 0.08)
+        let heightTolerance = max(3, targetHeight * 0.10)
+        let edgeTolerance: CGFloat = 2
 
         /// Slide the cut-out so its bottom-right corner meets the preview's.
         func moveToCorner() {
@@ -457,13 +476,14 @@ final class ZoomSharePrep {
                  to: CGPoint(x: wantX + current.width / 2, y: wantY + current.height / 2))
         }
 
+        var lastRect: CGRect?
         for _ in 0..<maxPlacementPasses {
             moveToCorner()
             guard let afterMove = frame(of: cutout) else { return false }
             rect = afterMove
 
             // Narrow from the left edge — the right edge stays pinned.
-            if abs(rect.width - targetWidth) > tolerance {
+            if abs(rect.width - targetWidth) > widthTolerance {
                 drag(from: CGPoint(x: rect.minX + 1.5, y: rect.midY),
                      to: CGPoint(x: previewRect.maxX - targetWidth, y: rect.midY))
                 guard let updated = frame(of: cutout) else { return false }
@@ -474,7 +494,7 @@ final class ZoomSharePrep {
             // this the frame stays as tall as Zoom made it while only the width
             // shrinks, so the 16:9 video is letterboxed inside a squarish box
             // and a visible gap opens up under Victor's head.
-            if abs(rect.height - targetHeight) > tolerance {
+            if abs(rect.height - targetHeight) > heightTolerance {
                 drag(from: CGPoint(x: rect.midX, y: rect.minY + 1.5),
                      to: CGPoint(x: rect.midX, y: previewRect.maxY - targetHeight))
                 guard let updated = frame(of: cutout) else { return false }
@@ -486,10 +506,15 @@ final class ZoomSharePrep {
             guard let settled = frame(of: cutout) else { return false }
             rect = settled
 
-            let placed = abs(rect.width - targetWidth) <= tolerance
-                && abs(rect.height - targetHeight) <= tolerance
-                && abs(rect.maxX - previewRect.maxX) <= tolerance
-                && abs(rect.maxY - previewRect.maxY) <= tolerance
+            // Nothing moved this pass — the remaining error is below what a
+            // drag can express, so further passes are pure churn.
+            if let previous = lastRect, previous == rect { break }
+            lastRect = rect
+
+            let placed = abs(rect.width - targetWidth) <= widthTolerance
+                && abs(rect.height - targetHeight) <= heightTolerance
+                && abs(rect.maxX - previewRect.maxX) <= edgeTolerance
+                && abs(rect.maxY - previewRect.maxY) <= edgeTolerance
             if placed { return true }
         }
         overlayInfo("ZoomSharePrep: cut-out ended at \(rect) inside preview \(previewRect)"
