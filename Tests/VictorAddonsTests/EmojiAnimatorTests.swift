@@ -155,30 +155,11 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertEqual(EmojiAnimator.minigunBulletHoleScale, 0.7, accuracy: 0.001)
     }
 
-    /// The gun slides along the bottom edge at HALF the cursor's travel: swing the
-    /// crosshair 400px right and the gun follows 200px. Because the mapping is
-    /// `mouseX / 2` (not an offset from a rest point), it also keeps the gun in the
-    /// west half whatever you aim at — always behind the bullets it fires.
-    func testMinigunGunTracksTheMouseAtHalfSpeedAndStaysInTheWestHalf() {
-        let width: CGFloat = 1600
-
-        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: 0), 0, accuracy: 0.001)
-        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: width), width / 2, accuracy: 0.001,
-                       "cursor at the east edge must still leave the gun in the west half")
-
-        // Half travel, measured as a ratio between two cursor positions.
-        let near = EmojiAnimator.minigunBodyX(forMouseX: 300)
-        let far = EmojiAnimator.minigunBodyX(forMouseX: 700)
-        XCTAssertEqual(far - near, 200, accuracy: 0.001)
-
-        // The gun is never to the right of the cursor it is shooting at.
-        for mouseX in stride(from: CGFloat(0), through: width, by: 50) {
-            XCTAssertLessThanOrEqual(EmojiAnimator.minigunBodyX(forMouseX: mouseX), mouseX)
-        }
-
-        // Continuity with the placement this replaced: a cursor in the middle of
-        // the west half parks the gun on the old fixed W/8.
-        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: width / 4), width * 0.125, accuracy: 0.001)
+    /// The gun body sits dead centre of the screen on X, and stays there: it no
+    /// longer rides the cursor at half travel (which parked it in the west half).
+    func testMinigunGunBodyIsCentredHorizontally() {
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(inWidth: 1600), 800, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(inWidth: 3024), 1512, accuracy: 0.001)
     }
 
     /// `position` moves the sprite FRAME, but the gun body sits off-centre in a
