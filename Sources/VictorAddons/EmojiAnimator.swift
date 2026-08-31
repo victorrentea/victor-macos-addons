@@ -2573,11 +2573,16 @@ class EmojiAnimator {
     static let bombReticleZ: CGFloat = 10_000
     static let bombBlastZ: CGFloat = 11_000
 
-    /// How long a press waits for its FIRST click before giving up and handing
-    /// the pointer back. Once something is planted the run lives by its bombs
-    /// instead; this only covers the press nobody follows up on, which would
-    /// otherwise leave the desktop with a hidden cursor and a crosshair forever.
-    private static let bombIdleWindowFallback: Double = 6.0
+    /// How long a press waits for its FIRST click before dropping the bomb on the
+    /// centre of the screen by itself. A press nobody follows up on used to just
+    /// hand the pointer back; now it still gets its nuke, which is what the room
+    /// expects when the tile is pressed from the tablet and nobody touches the Mac.
+    ///
+    /// It is `bombBoomLead` on purpose: a target planted exactly this late lands on
+    /// the head boom's own peak, so a press left alone reads as one perfectly synced
+    /// explosion. It also means every run owns at least one bomb and therefore always
+    /// ends the same way — through `finishBomb` — instead of through an idle timer.
+    private static let bombAutoDropDelay: Double = bombBoomLead
 
     /// The explosion gif's frames, decoded once. A bombardment can put several
     /// blasts in the air within a second of each other, and re-decoding 400 KB of
@@ -2622,18 +2627,13 @@ class EmojiAnimator {
         startBombTargeting()
         startBombInputCapture()
 
-        // Nothing planted by the end of the boom → hand the pointer back. Once
-        // the first target is down this timer is irrelevant: from then on the run
-        // is bounded by the last bomb instead.
-        var idle = Self.bombIdleWindowFallback
-        if let soundURL = SoundManager.shared.soundURL(for: "03_explosion.mp3") {
-            let d = AVURLAsset(url: soundURL).duration
-            if d.isNumeric { idle = CMTimeGetSeconds(d) }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + idle) { [weak self] in
+        // Nobody aimed → the nuke lands dead centre anyway, in time with the boom.
+        // Once the first target is down this is a no-op: from then on the run is
+        // bounded by the last bomb instead.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.bombAutoDropDelay) { [weak self] in
             guard let self, self._bombEpoch == epoch,
                   self._bombSessionActive, !self._bombPlantedAny else { return }
-            self.stopBombSession()
+            self.plantBomb(at: self.hostLayerCenter(), boom: false)
         }
     }
 
@@ -2727,15 +2727,30 @@ class EmojiAnimator {
 
     /// Plant a target where the user clicked and start its bomb falling.
     ///
-    /// The aiming crosshair itself becomes the planted one, in place, so the
-    /// click has no seam: nothing jumps, nothing is redrawn a pixel off. It then
-    /// reddens, grows and turns counter-clockwise for the length of the fuse, and
-    /// the blast lands on the point that was under the cursor at the click — not
+    /// The blast lands on the point that was under the cursor at the click — not
     /// wherever the mouse has wandered to by then, which is the whole reason the
     /// point is captured here rather than read again at strike time.
     fileprivate func plantBombAtCursor() {
+        plantBomb(at: mousePointInHostLayer())
+    }
+
+    /// Centre of the overlay, in hostLayer-local coordinates — where an unaimed
+    /// press drops its bomb.
+    private func hostLayerCenter() -> CGPoint {
+        CGPoint(x: hostLayer.bounds.midX, y: hostLayer.bounds.midY)
+    }
+
+    /// Plant a target at `point` and start its bomb falling.
+    ///
+    /// The aiming crosshair itself becomes the planted one, moved into place, so a
+    /// click has no seam: nothing jumps, nothing is redrawn a pixel off. It then
+    /// reddens, grows and turns counter-clockwise for the length of the fuse.
+    ///
+    /// `boom` is false only for the auto-dropped centre bomb: it is planted early
+    /// enough that the head-of-run clip already covers it, and a second copy there
+    /// would only double one sound.
+    private func plantBomb(at point: CGPoint, boom: Bool = true) {
         guard _bombSessionActive else { return }
-        let point = mousePointInHostLayer()
 
         let reticle = _bombTargetLayer ?? Self.makeBombReticleLayer()
         if reticle.superlayer == nil { hostLayer.addSublayer(reticle) }
@@ -2757,7 +2772,7 @@ class EmojiAnimator {
         _bombPlanted.append(reticle)
         _bombPlantedAny = true
         _bombPending += 1
-        playBombBoom()
+        if boom { playBombBoom() }
 
         let epoch = _bombEpoch
         DispatchQueue.main.asyncAfter(deadline: .now() + fuse) { [weak self] in
