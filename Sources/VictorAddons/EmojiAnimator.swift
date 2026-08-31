@@ -2573,12 +2573,14 @@ class EmojiAnimator {
     static let bombReticleZ: CGFloat = 10_000
     static let bombBlastZ: CGFloat = 11_000
 
-    /// How long a press waits for its FIRST click before dropping the bomb on the
-    /// centre of the screen by itself. A press nobody follows up on used to just
-    /// hand the pointer back; now it still gets its nuke, which is what the room
-    /// expects when the tile is pressed from the tablet and nobody touches the Mac.
+    /// How long a press waits for its FIRST click before falling back to the
+    /// ORIGINAL nuke: one full-screen blast in the middle of the screen. Aiming is
+    /// an opt-in — you get the big one for free, and only trade it for the small
+    /// precise ones by actually clicking. A press nobody follows up on used to just
+    /// hand the pointer back, which is what made the big blast look like it had
+    /// been deleted.
     ///
-    /// It is `bombBoomLead` on purpose: a target planted exactly this late lands on
+    /// It is `bombBoomLead` on purpose: a bomb committed exactly this late lands on
     /// the head boom's own peak, so a press left alone reads as one perfectly synced
     /// explosion. It also means every run owns at least one bomb and therefore always
     /// ends the same way — through `finishBomb` — instead of through an idle timer.
@@ -2627,13 +2629,13 @@ class EmojiAnimator {
         startBombTargeting()
         startBombInputCapture()
 
-        // Nobody aimed → the nuke lands dead centre anyway, in time with the boom.
-        // Once the first target is down this is a no-op: from then on the run is
-        // bounded by the last bomb instead.
+        // Nobody aimed → the old full-screen nuke, in time with the boom. Once the
+        // first target is down this is a no-op: from then on the run is aimed, and
+        // bounded by the last small bomb instead.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.bombAutoDropDelay) { [weak self] in
             guard let self, self._bombEpoch == epoch,
                   self._bombSessionActive, !self._bombPlantedAny else { return }
-            self.plantBomb(at: self.hostLayerCenter(), boom: false)
+            self.dropFullScreenBomb()
         }
     }
 
@@ -2725,32 +2727,37 @@ class EmojiAnimator {
         }
     }
 
+    /// The press nobody aimed: the original full-screen nuke, no crosshair planted
+    /// and no small strike. It is counted like any other bomb so the run still ends
+    /// through `finishBomb`, and it is scheduled a fuse ahead so it lands on the
+    /// head boom's peak — the head clip covers it, hence no `playBombBoom` here.
+    ///
+    /// The aiming crosshair is left riding the mouse: a click during the fuse still
+    /// plants a small bomb, which is the "start clicking and you get the little
+    /// ones" half of the behaviour.
+    private func dropFullScreenBomb() {
+        guard _bombSessionActive else { return }
+        _bombPlantedAny = true
+        _bombPending += 1
+
+        let epoch = _bombEpoch
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionStrikeDelay) { [weak self] in
+            guard let self, self._bombEpoch == epoch else { return }
+            self.spawnBombBlast(at: .zero, fullScreen: true)
+        }
+    }
+
     /// Plant a target where the user clicked and start its bomb falling.
     ///
-    /// The blast lands on the point that was under the cursor at the click — not
+    /// The aiming crosshair itself becomes the planted one, in place, so the
+    /// click has no seam: nothing jumps, nothing is redrawn a pixel off. It then
+    /// reddens, grows and turns counter-clockwise for the length of the fuse, and
+    /// the blast lands on the point that was under the cursor at the click — not
     /// wherever the mouse has wandered to by then, which is the whole reason the
     /// point is captured here rather than read again at strike time.
     fileprivate func plantBombAtCursor() {
-        plantBomb(at: mousePointInHostLayer())
-    }
-
-    /// Centre of the overlay, in hostLayer-local coordinates — where an unaimed
-    /// press drops its bomb.
-    private func hostLayerCenter() -> CGPoint {
-        CGPoint(x: hostLayer.bounds.midX, y: hostLayer.bounds.midY)
-    }
-
-    /// Plant a target at `point` and start its bomb falling.
-    ///
-    /// The aiming crosshair itself becomes the planted one, moved into place, so a
-    /// click has no seam: nothing jumps, nothing is redrawn a pixel off. It then
-    /// reddens, grows and turns counter-clockwise for the length of the fuse.
-    ///
-    /// `boom` is false only for the auto-dropped centre bomb: it is planted early
-    /// enough that the head-of-run clip already covers it, and a second copy there
-    /// would only double one sound.
-    private func plantBomb(at point: CGPoint, boom: Bool = true) {
         guard _bombSessionActive else { return }
+        let point = mousePointInHostLayer()
 
         let reticle = _bombTargetLayer ?? Self.makeBombReticleLayer()
         if reticle.superlayer == nil { hostLayer.addSublayer(reticle) }
@@ -2772,7 +2779,7 @@ class EmojiAnimator {
         _bombPlanted.append(reticle)
         _bombPlantedAny = true
         _bombPending += 1
-        if boom { playBombBoom() }
+        playBombBoom()
 
         let epoch = _bombEpoch
         DispatchQueue.main.asyncAfter(deadline: .now() + fuse) { [weak self] in
@@ -2818,19 +2825,31 @@ class EmojiAnimator {
         stopBombSession()
     }
 
-    /// Drop one blast onto a planted target. Sized like the old aimed strike and
-    /// anchored the same way: inside the square gif the bomb impacts about 25% up
-    /// from the bottom, horizontally centred, so anchoring THAT point to the
-    /// target makes the bomb fall onto the rings rather than be centred on them.
-    private func spawnBombBlast(at center: CGPoint) {
+    /// Drop one blast: either the full-screen nuke (`center` is ignored) or the
+    /// small aimed strike onto a planted target.
+    ///
+    /// The aimed one is anchored by its impact point rather than its middle —
+    /// inside the square gif the bomb lands about 25% up from the bottom,
+    /// horizontally centred — so pinning THAT point to the target makes the bomb
+    /// fall onto the rings rather than be centred on them. The full-screen one
+    /// keeps the geometry it always had: centred, then lifted by `h/6 - h*0.1`,
+    /// which is what puts the fireball where the eye expects it instead of at the
+    /// gif's own middle.
+    private func spawnBombBlast(at center: CGPoint, fullScreen: Bool = false) {
         let (images, duration) = Self.explosionFrames
         guard let first = images.first, duration > 0 else { finishBomb(); return }
 
-        let size = min(hostLayer.bounds.width, hostLayer.bounds.height) * 1.2 / Self.aimedScaleDivisor
+        let bounds = hostLayer.bounds
+        let full = min(bounds.width, bounds.height) * 1.2
+        let size = fullScreen ? full : full / Self.aimedScaleDivisor
         let layer = CALayer()
-        layer.frame = CGRect(x: center.x - size / 2,
-                             y: center.y - size * Self.bombImpactFractionFromBottom,
-                             width: size, height: size)
+        layer.frame = fullScreen
+            ? CGRect(x: (bounds.width - size) / 2,
+                     y: (bounds.height - size) / 2 + bounds.height / 6 - bounds.height * 0.1,
+                     width: size, height: size)
+            : CGRect(x: center.x - size / 2,
+                     y: center.y - size * Self.bombImpactFractionFromBottom,
+                     width: size, height: size)
         layer.contentsGravity = .resizeAspect
         layer.zPosition = Self.bombBlastZ
         layer.contents = first
