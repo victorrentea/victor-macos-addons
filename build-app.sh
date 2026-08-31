@@ -119,7 +119,11 @@ PLIST
 # Example: export CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)"
 SIGNING_IDENTITY="${CODESIGN_IDENTITY:-}"
 if [ -z "$SIGNING_IDENTITY" ]; then
-    if security find-identity -v -p codesigning "$HOME/Library/Keychains/login.keychain-db" | rg -Fq "Victor Addons Local Code Signing"; then
+    # grep, not rg: this runs under bash, where `rg` is neither on PATH nor the
+    # zsh shim, so the lookup silently failed and every build fell through to the
+    # ad-hoc branch below — which is exactly what revokes Accessibility and kills
+    # the hotkeys after a rebuild.
+    if security find-identity -v -p codesigning "$HOME/Library/Keychains/login.keychain-db" | grep -Fq "Victor Addons Local Code Signing"; then
         SIGNING_IDENTITY="Victor Addons Local Code Signing"
     fi
 fi
