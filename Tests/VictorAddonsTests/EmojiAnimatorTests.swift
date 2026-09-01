@@ -155,11 +155,33 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertEqual(EmojiAnimator.minigunBulletHoleScale, 0.7, accuracy: 0.001)
     }
 
-    /// The gun body sits dead centre of the screen on X, and stays there: it no
-    /// longer rides the cursor at half travel (which parked it in the west half).
-    func testMinigunGunBodyIsCentredHorizontally() {
-        XCTAssertEqual(EmojiAnimator.minigunBodyX(inWidth: 1600), 800, accuracy: 0.001)
-        XCTAssertEqual(EmojiAnimator.minigunBodyX(inWidth: 3024), 1512, accuracy: 0.001)
+    /// Old-FPS weapon sway: the gun RESTS on the screen's horizontal centre and
+    /// follows the cursor from there at half its travel — symmetric about the
+    /// middle, unlike the earlier `mouseX / 2` that anchored it on the west edge
+    /// and never let it reach the east half.
+    func testMinigunGunRestsOnTheCentreAndSwaysWithTheCursorAtHalfSpeed() {
+        let width: CGFloat = 1600
+
+        // Cursor on the middle → gun exactly on the middle: that is its rest pose.
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: width / 2, inWidth: width),
+                       width / 2, accuracy: 0.001)
+
+        // Half travel, measured between two cursor positions.
+        let near = EmojiAnimator.minigunBodyX(forMouseX: 300, inWidth: width)
+        let far = EmojiAnimator.minigunBodyX(forMouseX: 700, inWidth: width)
+        XCTAssertEqual(far - near, 200, accuracy: 0.001)
+
+        // Symmetric about the centre, and it does reach the east half.
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: 0, inWidth: width),
+                       width * 0.25, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.minigunBodyX(forMouseX: width, inWidth: width),
+                       width * 0.75, accuracy: 0.001)
+
+        // Never swings further than the cursor it is chasing.
+        for mouseX in stride(from: CGFloat(0), through: width, by: 50) {
+            let bodyX = EmojiAnimator.minigunBodyX(forMouseX: mouseX, inWidth: width)
+            XCTAssertLessThanOrEqual(abs(bodyX - width / 2), abs(mouseX - width / 2) + 0.001)
+        }
     }
 
     /// `position` moves the sprite FRAME, but the gun body sits off-centre in a
