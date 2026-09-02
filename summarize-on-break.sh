@@ -102,7 +102,7 @@ echo
 HEARTBEAT=$!
 trap 'kill "$HEARTBEAT" 2>/dev/null; rm -f "$LOCK"; finish' EXIT
 
-PROMPT="Use the training-summarizer skill (victor-skills:training-summarizer) in HEADLESS BREAK-DELTA mode — an unattended run triggered by a coffee-break timer.
+PROMPT="Use the training-summarizer skill (victor-private:training-summarizer) in HEADLESS BREAK-DELTA mode — an unattended run triggered by a coffee-break timer.
 
 Do EXACTLY this and nothing else:
 - Auto-detect the newest training transcription and its session folder (Step 0). If you cannot resolve them, print one line saying why and exit WITHOUT writing anything.

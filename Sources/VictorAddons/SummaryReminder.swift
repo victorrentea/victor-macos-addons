@@ -100,7 +100,7 @@ final class SummaryReminder {
         // AppleScript string — so the prompt must contain no quote of either
         // kind. It doesn't, and a slash-command is all claude needs to load the
         // skill's own instructions.
-        let command = "cd '\(cwd)' && env -u ANTHROPIC_API_KEY claude '\(Self.prompt)'"
+        let command = "cd '\(cwd)' && env -u ANTHROPIC_API_KEY claude --model \(Self.model) '\(Self.prompt)'"
         let osa = """
         tell application "Terminal"
             activate
@@ -120,8 +120,15 @@ final class SummaryReminder {
         }
     }
 
-    /// The slash-command that loads the training-summarizer skill.
-    static let prompt = "/victor-skills:training-summarizer"
+    /// The model the wrap-up session runs on. The write-up is long-form
+    /// editorial work Victor then argues with, so it gets Fable rather than
+    /// whatever the CLI would default to.
+    static let model = "fable"
+
+    /// The slash-command that loads the training-summarizer skill. The skill
+    /// lives in the PRIVATE plugin (`victor-skills-private`), so the prefix is
+    /// `victor-private:`, not `victor-skills:`.
+    static let prompt = "/victor-private:training-summarizer"
 }
 
 /// When the wrap-up offer is due. Pure so the schedule can be tested without
