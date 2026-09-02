@@ -4817,10 +4817,12 @@ class EmojiAnimator {
     /// white studio background as real alpha — not a white box — so the capture
     /// pulsing behind it shows through around the fur, and it is mirrored, so a
     /// dog that tilted its head toward the edge of the source photo now leans
-    /// INTO the screen. It sits on the **left half of the retina**, centred in
-    /// that half and bottom-aligned: the photo is cropped at the chest, so
-    /// letting the body run off the bottom edge is what makes it read as a dog
-    /// leaning into frame instead of a sticker floating in mid-air.
+    /// INTO the screen. It is built centred in the **left half**, bottom-aligned:
+    /// the photo is cropped at the chest, so letting the body run off the bottom
+    /// edge is what makes it read as a dog leaning into frame instead of a
+    /// sticker floating in mid-air. The half is only a starting guess —
+    /// `watchHeartbeatDog` re-parks it on whichever half the cursor is not in
+    /// before the first frame.
     private static let heartbeatDogScale: CGFloat = 2.0 / 3.0
 
     private static func makeHeartbeatDogLayer(bounds: CGRect) -> CALayer? {
@@ -4978,57 +4980,92 @@ class EmojiAnimator {
     /// `NSEvent.mouseLocation` is the only reading available, and 20 Hz is well
     /// under the reaction time this is imitating.
     private static let heartbeatDogPollInterval: TimeInterval = 0.05
-    /// One leap, and the window during which the cursor is ignored. They are the
-    /// same number on purpose: the dog must not be re-startled by the very
-    /// pointer it is still jumping away from, and by the time it lands the hit
-    /// test is meaningful again.
+
+    /// A full leap between the two halves. Every shorter move is paced down from
+    /// it by `HeartbeatDogFlee.hopDuration`, and whatever a move ends up taking is
+    /// also the window during which the cursor is ignored: the dog must not be
+    /// re-startled by the very pointer it is still stepping away from, and by the
+    /// time it lands the reading is meaningful again.
     private static let heartbeatDogHopDuration: CFTimeInterval = 0.42
-    /// 🐶💨 The dog bolts to the other half of the screen when the cursor lands on
-    /// it. That is the whole joke of the effect: the screen is having a panic
+
+    /// 🐶💨 The dog keeps out of the cursor's way for as long as the heartbeat
+    /// runs. That is the whole joke of the effect: the screen is having a panic
     /// attack around your pointer, and the one thing on it that is alive treats
-    /// the pointer as the thing to run from.
+    /// the pointer as the thing to keep away from.
     ///
-    /// Because the dog is centred inside its half, the two resting positions are
-    /// simply the quarter and three-quarter marks of the screen — no need to know
-    /// the dog's width. It **turns to face the middle as it lands** (the flip is
-    /// applied at the apex, so it reads as the dog turning mid-leap rather than
-    /// snapping), which also keeps it looking into the screen from either side.
+    /// Two motions, both driven from the same poll:
+    ///
+    /// 1. **The half.** The dog is always on the half the cursor is *not* in, so
+    ///    crossing the midline sends it leaping to the other side — where it
+    ///    mirrors, so it still faces the middle. It does not wait to be touched.
+    /// 2. **The sidestep.** The beat is a lens well over half the screen wide,
+    ///    so being on the far half is not by itself enough to be out of it. The
+    ///    dog slides further out — no more than the frame allows — until its
+    ///    silhouette is clear of the disc that is about to pulse. That is also
+    ///    what happens when the cursor comes right over it: it gives way a
+    ///    little rather than bolting.
     ///
     /// The timer stops itself the moment this effect is no longer the active
     /// heartbeat, so a stop-all — or the next press — never leaves it polling.
     private func watchHeartbeatDog(_ dog: CALayer, effect: CALayer, bounds: CGRect,
                                    until deadline: CFTimeInterval) {
         var onRight = false
+        var placed = false
         var frozenUntil: CFTimeInterval = 0
+        let lens = HeartbeatBump.radius(in: bounds)
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + Self.heartbeatDogPollInterval,
-                       repeating: Self.heartbeatDogPollInterval)
-        timer.setEventHandler { [weak self, weak dog, weak effect] in
+
+        // Returns false once this effect is over — which is the timer's cue to
+        // stop. `animated` is false only for the placement before the first frame.
+        let advance: (Bool) -> Bool = { [weak self, weak dog, weak effect] animated in
             guard let self = self, let dog = dog, let effect = effect,
                   self.activeEffects["heartbeat"] === effect,
-                  CACurrentMediaTime() < deadline else {
-                timer.cancel()
-                return
-            }
+                  CACurrentMediaTime() < deadline else { return false }
             let now = CACurrentMediaTime()
-            guard now >= frozenUntil else { return }
+            guard now >= frozenUntil else { return true }
 
             let rel = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
                                        panelOrigin: self.hostLayer.bounds.origin,
                                        hostLayer: self.hostLayer)
-            let cursor = CGPoint(x: rel.x * bounds.width, y: rel.y * bounds.height)
-            guard HeartbeatDogFlee.isStartled(cursor: cursor, box: dog.frame) else { return }
-
-            onRight.toggle()
-            frozenUntil = now + Self.heartbeatDogHopDuration
+            let cursorX = rel.x * bounds.width
+            let wantsRight = HeartbeatDogFlee.shouldBeOnRight(cursorX: cursorX,
+                                                             wasOnRight: onRight,
+                                                             boundsWidth: bounds.width)
+            let targetX = HeartbeatDogFlee.parkedCenterX(onRight: wantsRight,
+                                                         cursorX: cursorX,
+                                                         boxWidth: dog.bounds.width,
+                                                         clearRadius: lens,
+                                                         boundsWidth: bounds.width)
+            let swappedHalves = wantsRight != onRight
             let from = dog.position
-            let to = CGPoint(x: HeartbeatDogFlee.restingCenterX(onRight: onRight,
-                                                               boundsWidth: bounds.width),
-                             y: from.y)
+            let to = CGPoint(x: targetX, y: from.y)
+            onRight = wantsRight
+
+            // The first evaluation is a placement, not a move: the layer is built
+            // on the left half, and if the cursor is already there the dog has to
+            // be on the right *before* the first frame — not leaping out of a
+            // position nobody ever saw it in.
+            guard placed else {
+                placed = true
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                dog.position = to
+                dog.transform = Self.heartbeatDogFacing(onRight: onRight)
+                CATransaction.commit()
+                return true
+            }
+            guard animated,
+                  swappedHalves || abs(to.x - from.x) >= HeartbeatDogFlee.minStep else { return true }
+
+            let duration = HeartbeatDogFlee.hopDuration(distance: abs(to.x - from.x),
+                                                        boundsWidth: bounds.width,
+                                                        full: Self.heartbeatDogHopDuration)
+            frozenUntil = now + duration
 
             // Leap, don't slide: a quadratic whose control point is twice the
-            // apex height puts the top of the arc that far above the floor.
+            // apex height puts the top of the arc that far above the floor. The
+            // apex follows the distance, so a sidestep gets a sidestep's arc.
             let apex = HeartbeatDogFlee.apex(fromX: from.x, toX: to.x, boundsHeight: bounds.height)
             let path = CGMutablePath()
             path.move(to: from)
@@ -5036,7 +5073,7 @@ class EmojiAnimator {
                                                        y: from.y + apex * 2))   // bottom-origin: +y is up
             let hop = CAKeyframeAnimation(keyPath: "position")
             hop.path = path
-            hop.duration = Self.heartbeatDogHopDuration
+            hop.duration = duration
             hop.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
 
             CATransaction.begin()
@@ -5045,17 +5082,36 @@ class EmojiAnimator {
             CATransaction.commit()
             dog.add(hop, forKey: "dogHop")
 
-            // Turn at the apex so the dog always looks toward the middle.
-            let facing = onRight ? CATransform3DMakeScale(-1, 1, 1) : CATransform3DIdentity
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.heartbeatDogHopDuration / 2) { [weak dog] in
+            // Turn at the apex, so changing halves reads as the dog turning
+            // mid-leap rather than snapping. A sidestep stays on its own half and
+            // therefore keeps the facing it already has.
+            guard swappedHalves else { return true }
+            let facing = Self.heartbeatDogFacing(onRight: onRight)
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration / 2) { [weak dog] in
                 guard let dog = dog else { return }
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
                 dog.transform = facing
                 CATransaction.commit()
             }
+            return true
+        }
+
+        _ = advance(false)
+
+        timer.schedule(deadline: .now() + Self.heartbeatDogPollInterval,
+                       repeating: Self.heartbeatDogPollInterval)
+        timer.setEventHandler {
+            if !advance(true) { timer.cancel() }
         }
         timer.resume()
+    }
+
+    /// The PNG is already mirrored on import so that the dog on the LEFT leans
+    /// into the screen; the right half is therefore the flip of it. Either way it
+    /// looks toward the middle — which is the half the cursor is in.
+    private static func heartbeatDogFacing(onRight: Bool) -> CATransform3D {
+        onRight ? CATransform3DMakeScale(-1, 1, 1) : CATransform3DIdentity
     }
 
     private static func loadHeartbeatBeats() -> [Double] {
