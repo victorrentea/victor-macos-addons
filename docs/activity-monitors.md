@@ -21,23 +21,34 @@ Polls IntelliJ via osascript every 10s (only when frontmost), sends `git_file_op
 **Tech**: Python 3.12, osascript, git CLI
 **Output**: WS message `{"type": "git_file_opened", "url": "...", "branch": "...", "file": "..."}`
 
-## Bottom-left flash: once per file, not once per open
+## Who deduplicates an opened file (three layers, one identity)
 
-Both editors POST to the same `/intellij/file-opened` on the add-on (the VS Code
-side is `victor-vsc/open-file-reporter.js`), and while a session is live the
-add-on flashes `📄 <basename>` bottom-left. The editors' own dedup only skips a
-file that repeats **consecutively**, which misses the way files are actually
-re-opened: A, B, back to A — and A flashed again. That second flash carries no
-information and pulls the eye away mid-sentence.
+The same event passes three filters, and they are deliberately not the same
+filter:
 
-`OpenedFileBannerLog` gates the banner on a path→timestamp log kept in
-`UserDefaults` (a plist on disk, so a `build-app.sh` restart doesn't hand back
-announcements already made this morning). A file flashes the first time it is
-seen and then stays silent for 20h — longer than a training day, short enough
-that tomorrow starts clean. Keyed by **full path**, since the banner shows only
-the basename and two modules' `pom.xml` are two different files. The log prunes
-expired entries on every write and caps at 500 paths, newest kept.
+| layer | key | scope | what it protects |
+|---|---|---|---|
+| editors (`live-coding` `OpenFileReporter.kt`, `victor-vsc/open-file-reporter.js`) | `rawRemoteUrl\|relPath` | **consecutive only** | a ⌘P walked through ten files flooding the wire |
+| add-on, banner only (`OpenedFileBannerLog`) | canonical repo + relPath | 20h, on disk | the bottom-left flash repeating for a file already announced |
+| daemon (`training-assistant` `files_md._record_into_folder`) | canonical repo + relPath | the whole session | `opened-files.md` growing duplicate rows |
 
-The WebSocket push to the daemon is **not** gated — it still gets every open, so
-the participants' git-repo list is unaffected. `OpenedFileBannerLog.reset()`
-forgets everything if the flashes are ever wanted back.
+**The WebSocket push is never gated on the banner log.** A repeat still carries
+information to the daemon: it refreshes the entry's timestamp, follows a branch
+switch, and retries a link that came back `rate-limited`, `unknown` or
+`not-pushed` the first time. Muting the banner must not cost the list an event —
+so `AppDelegate` pushes first and consults the log only for the flash.
+
+`files_md`'s key is the authoritative definition of "the same file", and
+`OpenedFileBannerLog.identity(url:file:)` mirrors its `_canonical_repo_url`:
+host lowercased, `.git` and trailing slash gone, everything past `owner/repo`
+dropped. The repo has to be in the key because `file` is **repo-relative** — a
+path-only key mutes `pom.xml` in every repo but the first one opened that day.
+Non-GitHub remotes still flash (the daemon refuses to list those, but the banner
+is local awareness); `(none)`, the sentinel for "project open, no file
+selected", flashes in neither.
+
+The banner window is 20h: longer than a training day, so a file opened at 9:00
+never flashes again at 16:00, short enough that tomorrow starts clean. It lives
+in `UserDefaults` so a `build-app.sh` restart doesn't replay the morning; the log
+prunes expired entries on every write and caps at 500 paths, newest kept.
+`OpenedFileBannerLog.reset()` forgets everything.

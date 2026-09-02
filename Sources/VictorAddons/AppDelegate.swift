@@ -1512,7 +1512,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // and only the *first* time each file shows up: switching back and forth
             // between two tabs must not re-announce either of them
             // (`OpenedFileBannerLog`). The daemon still gets every push.
-            if self?.isSessionActive == true, OpenedFileBannerLog.shouldAnnounce(path: file) {
+            if self?.isSessionActive == true,
+               OpenedFileBannerLog.shouldAnnounce(url: url, file: file) {
                 self?.statusBanner?.showOnPresence(text: "📄 " + (file as NSString).lastPathComponent,
                                                    sound: nil, visibleDuration: 3.0)
             }
