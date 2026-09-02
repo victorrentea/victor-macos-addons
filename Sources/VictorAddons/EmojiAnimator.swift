@@ -2625,7 +2625,14 @@ class EmojiAnimator {
     /// țintite" stays one number instead of two sizes: the aimed blast is already
     /// `aimedScaleDivisor` smaller, so its bomb shrinks with it automatically and
     /// the pairing can never drift.
-    static let fallingBombHeightPerBlast: CGFloat = 0.22
+    ///
+    /// Halved from 0.22 on 2026-09-02 ("fă 2× mai mică bomba, și aia mare și alea
+    /// mici") — and halving it is the entire change, for both sizes at once, which
+    /// is the payoff of stating this as one fraction rather than two sizes. Note
+    /// what it does NOT touch: the fall is timed and placed by the nose, so a
+    /// smaller bomb still crosses the top edge on the same beat and still lands on
+    /// the same pixel. Only the sprite got smaller.
+    static let fallingBombHeightPerBlast: CGFloat = 0.11
 
     /// A bomb in the air is above every crosshair (it is the thing the crosshair
     /// is waiting for) and below every fireball (it is consumed by its own).

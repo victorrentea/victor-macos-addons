@@ -474,7 +474,7 @@ rule from the start.
     layer's `anchorPoint` is its tip — bottom edge, 52.2 % across, slightly right of
     centre and worth honouring — so `position` *is* the point being bombed and the fall is
     a straight line between two impact points rather than two centres.
-  - **Size is a fraction of its own blast** (`fallingBombHeightPerBlast`, 0.22), so “big
+  - **Size is a fraction of its own blast** (`fallingBombHeightPerBlast`, 0.11), so “big
     bomb for the full-screen explosion, proportionally smaller for the aimed ones” is one
     number and the two can never drift apart.
   - `bombBlastFrame` / `bombBlastImpactPoint` exist so the bomb aims at the very pixel the
