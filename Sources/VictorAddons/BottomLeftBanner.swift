@@ -93,6 +93,28 @@ final class BottomLeftBanner {
         // MARK: Hover nudge — how far (points) the pill drifts up/down at full
         // dwell. Deliberately small: a subtle directional cue, not a jump.
         static let hoverNudgeDistance: CGFloat = 10
+
+        // MARK: Entrance wipe — the pill is revealed left-to-right, its right
+        // edge sliding out of the screen's left edge, instead of fading in on
+        // the spot. A fade at 75% opacity over someone's slides is easy to miss;
+        // motion out of the screen edge is not, and that is the whole point of a
+        // banner nobody is looking for.
+        //
+        // Constant SPEED, not constant duration: every pill's edge travels at
+        // the same rate, so a two-word flash snaps in and a full-width prompt
+        // takes visibly longer — they read as the same object arriving, not as
+        // two animations tuned separately. The speed is pinned so the widest
+        // pill the layout can produce (`maxWidthFraction` of the screen) takes
+        // `wipeFullWidthDuration`; everything narrower takes proportionally less.
+        static let wipeFullWidthDuration: TimeInterval = 0.5
+        /// Points per second on a screen `screenWidth` points wide, from the two
+        /// constants above.
+        static func wipeSpeed(screenWidth: CGFloat) -> CGFloat {
+            screenWidth * maxWidthFraction / CGFloat(wipeFullWidthDuration)
+        }
+        static func wipeSpeed(on screen: NSScreen) -> CGFloat {
+            wipeSpeed(screenWidth: screen.frame.width)
+        }
     }
 
     // MARK: - Theme
@@ -257,6 +279,12 @@ final class BottomLeftBanner {
     /// of see-through on top of the NSVisualEffectView glass.
     private static let visibleAlpha: CGFloat = 0.75
 
+    /// Drives the entrance wipe (see `Style.wipeFullWidthDuration`). Non-nil
+    /// only while a freshly-shown banner is still sliding out of the left edge.
+    private var wipeTimer: Timer?
+    /// Full width each panel must reach, captured before the wipe collapses it.
+    private var wipeTargets: [(panel: NSPanel, width: CGFloat)] = []
+
     init(screensProvider: @escaping () -> [NSScreen], hoverable: Bool = false) {
         self.screensProvider = screensProvider
         self.hoverable = hoverable
@@ -317,13 +345,10 @@ final class BottomLeftBanner {
                                      palette: palette))
         }
         for entry in panels {
-            entry.panel.alphaValue = 0
+            entry.panel.alphaValue = Self.visibleAlpha
             entry.panel.orderFrontRegardless()
         }
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.3
-            for entry in panels { entry.panel.animator().alphaValue = Self.visibleAlpha }
-        }
+        startEntranceWipe()
         applyArrow(hoverNudge)
         applyHoverCountdown(hoverCountdown)
     }
@@ -340,6 +365,7 @@ final class BottomLeftBanner {
     }
 
     func updateText(_ text: String) {
+        finishWipe()
         for entry in panels {
             entry.label.stringValue = text
             resize(entry, to: panelWidth(for: text, font: entry.font, screen: entry.screen))
@@ -412,8 +438,58 @@ final class BottomLeftBanner {
         }
     }
 
+    /// Reveal every freshly-built panel by growing it from the screen's left
+    /// edge to its full width at `Style.wipeSpeed`. The pill's contents keep
+    /// their own frames (the glass, label and border live in the `pill` subview,
+    /// which does not autoresize), so the window edge sweeping right *uncovers*
+    /// a finished pill rather than stretching a squashed one — the difference
+    /// between a wipe and a zoom.
+    private func startEntranceWipe() {
+        finishWipe()
+        guard !panels.isEmpty else { return }
+        wipeTargets = panels.map { ($0.panel, $0.panel.frame.width) }
+        let speeds = panels.map { Style.wipeSpeed(on: $0.screen) }
+        for (panel, _) in wipeTargets {
+            var f = panel.frame
+            f.size.width = 1          // 0 would be rejected; 1pt is invisible
+            panel.setFrame(f, display: false)
+        }
+        let start = Date()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
+            guard let self = self else { tm.invalidate(); return }
+            let elapsed = CGFloat(Date().timeIntervalSince(start))
+            var allDone = true
+            for (i, target) in self.wipeTargets.enumerated() {
+                let width = min(target.width, max(1, speeds[i] * elapsed))
+                var f = target.panel.frame
+                f.size.width = width
+                target.panel.setFrame(f, display: true)
+                if width < target.width { allDone = false }
+            }
+            if allDone { self.finishWipe() }
+        }
+        wipeTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// Stop the wipe and snap every panel still mid-wipe to its full width. Safe
+    /// to call at any time; called before anything that reads or writes panel
+    /// frames (a resize, an outcome dismissal, the next show).
+    private func finishWipe() {
+        guard wipeTimer != nil || !wipeTargets.isEmpty else { return }
+        wipeTimer?.invalidate()
+        wipeTimer = nil
+        for (panel, width) in wipeTargets where panel.frame.width != width {
+            var f = panel.frame
+            f.size.width = width
+            panel.setFrame(f, display: true)
+        }
+        wipeTargets.removeAll()
+    }
+
     func dismiss(animated: Bool = true) {
         guard isVisible else { return }
+        finishWipe()
         cancelHoverDwell()
         clearHoverCountdown()
         let toRemove = panels
@@ -456,6 +532,7 @@ final class BottomLeftBanner {
     /// position at full alpha.
     func dismissRisingFade() {
         guard isVisible else { return }
+        finishWipe()
         cancelHoverDwell(resetNudge: false)   // keep the raised y the hover-slide reached
         clearHoverCountdown()
         let toRemove = panels
@@ -503,6 +580,7 @@ final class BottomLeftBanner {
     /// being pulled back down), then the off-screen panels are torn down.
     func dismissSinking() {
         guard isVisible else { return }
+        finishWipe()
         cancelHoverDwell(resetNudge: false)   // keep the lowered y the hover-slide reached
         clearHoverCountdown()
         let toRemove = panels
@@ -639,6 +717,32 @@ final class BottomLeftBanner {
             return true
         }
         return false
+    }
+
+    /// A CLICK on the pill takes the same decision the hover-dwell takes, at
+    /// once. The dwell exists because a cursor that merely passes through the
+    /// bottom-left corner must not send anything — but a click is unambiguous,
+    /// so it does not need the 2s of proof, and mid-sentence in front of a room
+    /// those 2s (plus the travel that has to keep moving through them) are the
+    /// whole cost of sharing a prompt. The click is consumed by the panel and
+    /// never reaches the app underneath: that is what `ignoresMouseEvents =
+    /// false` on a hoverable banner already buys us.
+    fileprivate func commitFromClick() {
+        guard hoverable, onHover != nil, !hoverFired else { return }
+        cancelHoverDwell(resetNudge: false)   // keep the y the nudge reached
+        clearHoverCountdown()
+        fireHover()
+    }
+
+    /// A RIGHT-click takes the *other* exit — the one that happens on its own
+    /// when the countdown runs out un-hovered: a prompt offer is dropped, an
+    /// already-done paste is left standing. Without it the only way to refuse a
+    /// prompt was to wait out the window with the pill sitting over the slides.
+    fileprivate func dismissFromClick() {
+        guard hoverable, !hoverFired else { return }
+        cancelHoverDwell(resetNudge: false)
+        clearHoverCountdown()
+        onHoverCountdownExpired?()
     }
 
     private func fireHover() {
@@ -1032,6 +1136,19 @@ private final class HoverView: NSView {
             userInfo: nil
         )
         addTrackingArea(area)
+    }
+
+    /// Act on the very first click even though the panel is non-activating and
+    /// never becomes key — otherwise that click would be spent activating the
+    /// app and the pill would need a second one.
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with _: NSEvent) {
+        banner?.commitFromClick()
+    }
+
+    override func rightMouseDown(with _: NSEvent) {
+        banner?.dismissFromClick()
     }
 
     override func mouseEntered(with _: NSEvent) {
