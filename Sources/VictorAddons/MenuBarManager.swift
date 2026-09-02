@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 2, 08:25"
+    static let BUILD_TIME = "Sep 2, 09:17"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool

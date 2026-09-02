@@ -476,7 +476,13 @@ rule from the start.
     a straight line between two impact points rather than two centres.
   - **Size is a fraction of its own blast** (`fallingBombHeightPerBlast`, 0.11), so “big
     bomb for the full-screen explosion, proportionally smaller for the aimed ones” is one
-    number and the two can never drift apart.
+    number and the two can never drift apart — **except** the full-screen one, which
+    `fullScreenBombShrink` (0.5) holds deliberately *below* proportional. Strict
+    proportionality is the wrong law at that end: the full-screen blast is ≈2.67× wider
+    than an aimed one, so a bomb scaled straight off it fills a quarter of the screen
+    height for the whole fall and reads as an object being *lowered* rather than one
+    arriving from very far away. `fallingBombHeight(forBlast:fullScreen:)` is the single
+    place either size is computed.
   - `bombBlastFrame` / `bombBlastImpactPoint` exist so the bomb aims at the very pixel the
     fireball will cover. Deriving that point from a second copy of the arithmetic is
     exactly how the two drift.

@@ -2627,12 +2627,30 @@ class EmojiAnimator {
     /// the pairing can never drift.
     ///
     /// Halved from 0.22 on 2026-09-02 ("fă 2× mai mică bomba, și aia mare și alea
-    /// mici") — and halving it is the entire change, for both sizes at once, which
-    /// is the payoff of stating this as one fraction rather than two sizes. Note
-    /// what it does NOT touch: the fall is timed and placed by the nose, so a
-    /// smaller bomb still crosses the top edge on the same beat and still lands on
-    /// the same pixel. Only the sprite got smaller.
+    /// mici") — one fraction, both sizes at once, which is the payoff of stating
+    /// this as a fraction rather than as two sizes. Note what it does NOT touch:
+    /// the fall is timed and placed by the nose, so a smaller bomb still crosses
+    /// the top edge on the same beat and still lands on the same pixel. Only the
+    /// sprite got smaller.
     static let fallingBombHeightPerBlast: CGFloat = 0.11
+
+    /// …except the full-screen bomb, which is deliberately kept BELOW proportional
+    /// (halved a second time on 2026-09-02, while the aimed ones stayed).
+    ///
+    /// Strict proportionality is the wrong law at this end of the scale. The
+    /// full-screen blast is `aimedScaleDivisor` (≈2.67×) wider than an aimed one,
+    /// so a bomb scaled straight off it fills a quarter of the screen height for
+    /// the whole fall and stops reading as an object coming from very far away —
+    /// it reads as an object being lowered. The aimed bombs are small enough that
+    /// they need no such correction, which is why this factor belongs here and not
+    /// in the fraction above.
+    static let fullScreenBombShrink: CGFloat = 0.5
+
+    /// The one place either size is computed. Both call sites go through it, so
+    /// "how big is a bomb" has a single answer and the tests can ask it directly.
+    static func fallingBombHeight(forBlast blastSize: CGFloat, fullScreen: Bool) -> CGFloat {
+        blastSize * fallingBombHeightPerBlast * (fullScreen ? fullScreenBombShrink : 1)
+    }
 
     /// A bomb in the air is above every crosshair (it is the thing the crosshair
     /// is waiting for) and below every fireball (it is consumed by its own).
@@ -2790,9 +2808,10 @@ class EmojiAnimator {
     /// layer that is off-screen until it isn't, and one linear animation the
     /// window server can run without us.
     @discardableResult
-    private func spawnFallingBomb(to impact: CGPoint, blastSize: CGFloat, fall: Double) -> CALayer? {
+    private func spawnFallingBomb(to impact: CGPoint, blastSize: CGFloat,
+                                  fullScreen: Bool, fall: Double) -> CALayer? {
         guard let image = Self.fallingBombImage, fall > 0 else { return nil }
-        let height = blastSize * Self.fallingBombHeightPerBlast
+        let height = Self.fallingBombHeight(forBlast: blastSize, fullScreen: fullScreen)
 
         let bomb = CALayer()
         bomb.bounds = CGRect(x: 0, y: 0, width: height * Self.fallingBombAspect, height: height)
@@ -2850,7 +2869,7 @@ class EmojiAnimator {
         let fall = Self.explosionBlastOnset - Self.explosionWhistleForeground
         let bomb = spawnFallingBomb(to: Self.bombBlastImpactPoint(in: bounds, fullScreen: true, at: .zero),
                                     blastSize: Self.bombBlastFrame(in: bounds, fullScreen: true, at: .zero).width,
-                                    fall: fall)
+                                    fullScreen: true, fall: fall)
 
         let epoch = _bombEpoch
         DispatchQueue.main.asyncAfter(deadline: .now() + fall) { [weak self] in
@@ -2893,7 +2912,7 @@ class EmojiAnimator {
         let bomb = spawnFallingBomb(to: point,
                                     blastSize: Self.bombBlastFrame(in: hostLayer.bounds,
                                                                    fullScreen: false, at: point).width,
-                                    fall: fuse)
+                                    fullScreen: false, fall: fuse)
 
         _bombPlanted.append(reticle)
         _bombPlantedAny = true

@@ -215,16 +215,35 @@ final class EmojiAnimatorTests: XCTestCase {
     }
 
     /// "Bomba e mare pt explozia full screen și proporțional mai mică pt
-    /// exploziile țintite": one fraction of the blast it belongs to, so the two
-    /// sizes can never drift apart.
+    /// exploziile țintite": each bomb is a fraction of the blast it belongs to, so
+    /// the two sizes can never drift apart — with one deliberate exception below.
     func testBombIsSizedInProportionToItsOwnBlast() {
         let bounds = CGRect(x: 0, y: 0, width: 1728, height: 1117)
         let big = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: true, at: .zero).width
         let small = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: false, at: CGPoint(x: 800, y: 500)).width
 
         XCTAssertEqual(big / small, EmojiAnimator.aimedScaleDivisor, accuracy: 0.001)
-        XCTAssertEqual(big * EmojiAnimator.fallingBombHeightPerBlast / (small * EmojiAnimator.fallingBombHeightPerBlast),
-                       EmojiAnimator.aimedScaleDivisor, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.fallingBombHeight(forBlast: small, fullScreen: false),
+                       small * EmojiAnimator.fallingBombHeightPerBlast, accuracy: 0.001)
+    }
+
+    /// The exception, asked for by name: the full-screen bomb is kept BELOW
+    /// proportional, because at that scale a proportional bomb fills a quarter of
+    /// the screen for the whole fall and reads as an object being lowered rather
+    /// than one arriving from very far away. It is still comfortably the bigger of
+    /// the two — halving it must not overshoot into "smaller than the aimed ones".
+    func testFullScreenBombIsHeldBelowProportionalButStillTheBiggerOne() {
+        let bounds = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        let big = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: true, at: .zero).width
+        let small = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: false, at: CGPoint(x: 800, y: 500)).width
+
+        let bigBomb = EmojiAnimator.fallingBombHeight(forBlast: big, fullScreen: true)
+        let smallBomb = EmojiAnimator.fallingBombHeight(forBlast: small, fullScreen: false)
+
+        XCTAssertEqual(bigBomb, big * EmojiAnimator.fallingBombHeightPerBlast * 0.5, accuracy: 0.001)
+        XCTAssertEqual(bigBomb / smallBomb, EmojiAnimator.aimedScaleDivisor / 2, accuracy: 0.001)
+        XCTAssertGreaterThan(bigBomb, smallBomb)
+        XCTAssertLessThan(bigBomb, bounds.height * 0.15, "a falling bomb should not dominate the screen")
     }
 
     /// An aimed blast is placed around its impact point, so the bomb's nose and
