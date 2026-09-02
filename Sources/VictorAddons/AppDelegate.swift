@@ -1508,8 +1508,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let branch = (json["branch"] as? String) ?? ""
             self?.wsServer?.pushGitFileOpened(url: url, branch: branch, file: file)
             // Bottom-left flash only while a session is live — outside a session a file
-            // opening in IntelliJ is just noise (the daemon discards the push too).
-            if self?.isSessionActive == true {
+            // opening in IntelliJ is just noise (the daemon discards the push too) —
+            // and only the *first* time each file shows up: switching back and forth
+            // between two tabs must not re-announce either of them
+            // (`OpenedFileBannerLog`). The daemon still gets every push.
+            if self?.isSessionActive == true, OpenedFileBannerLog.shouldAnnounce(path: file) {
                 self?.statusBanner?.showOnPresence(text: "📄 " + (file as NSString).lastPathComponent,
                                                    sound: nil, visibleDuration: 3.0)
             }
