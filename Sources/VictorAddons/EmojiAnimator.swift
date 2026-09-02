@@ -69,23 +69,21 @@ class EmojiAnimator {
     private var _fearTimer: Timer?
     private var _fearHidCursor = false                // balance hide/unhide of the real cursor
 
-    // ☢️ Nuke bombardment: a sniper crosshair replaces the pointer for the whole
-    // run, and CLICKING plants a target. The planted one stays where it was
-    // clicked, reddens and turns slowly counter-clockwise while its own fuse runs
-    // down, then a bomb lands on it. The crosshair comes back under the mouse on
-    // the next move, so several targets can be planted and the bombs land in the
-    // rhythm they were clicked. The run ends with the last bomb's animation.
-    private var _bombTargetLayer: CALayer?            // the aiming crosshair riding the mouse
-    private var _bombTargetTimer: Timer?
-    private var _bombTargetHidCursor = false          // balance hide/unhide of the real cursor
+    // ☢️ Nuke bombardment: the pointer stays the ordinary pointer for the whole
+    // run — nothing is hidden and nothing rides the mouse — and CLICKING plants a
+    // red target. The planted one stays where it was clicked, turns slowly
+    // counter-clockwise while its own fuse runs down, and a bomb whistles down
+    // from the top of the screen onto it. Several targets can be planted, so the
+    // bombs land in the rhythm they were clicked; the run ends with the last
+    // bomb's animation.
     private var _bombEpoch: Int = 0                   // bumped on every (re)press; stale continuations bail
     private var _bombPlanted: [CALayer] = []          // clicked targets, fuse still running
+    private var _bombFalling: [CALayer] = []          // bomb sprites still in the air
     private var _bombStrikeLayers: [CALayer] = []     // targets mid strike-pop/fade
     private var _bombBlasts: [CALayer] = []           // explosion gifs currently on screen
     private var _bombPending = 0                      // bombs neither landed nor finished burning
     private var _bombSessionActive = false
-    private var _bombPlantedAny = false               // false → the idle window may still end the run
-    private var _bombRevealAnchor: CGPoint = .zero    // cursor at the last click; the crosshair returns on the first move off it
+    private var _bombPlantedAny = false               // false → the big bomb may still be the one that lands
     private var _bombRunStartedAt: Date = .distantPast // press time — the head boom's t=0, which is what a per-bomb boom is measured against
     private var _bombInputTap: CFMachPort?
     private var _bombInputTapSource: CFRunLoopSource?
@@ -2510,31 +2508,48 @@ class EmojiAnimator {
 
     // MARK: - Explosion GIF overlay
 
-    /// Top volume peak of `03_explosion.mp3`, measured at ~2.10s into the clip:
-    /// the boom is a slow rumble that builds from ~0.75s and crescendos to its
-    /// loudest sample at 2.10s. We used to land the blast exactly here, but by
-    /// request the strike now fires `explosionStrikeAdvance`s earlier (snappier).
-    private static let explosionSoundPeakOffset: Double = 2.10
-
-    /// How much earlier than the sound peak the blast lands — the nuke "happens 1s
-    /// earlier" than the old sound-synced timing.
-    private static let explosionStrikeAdvance: Double = 1.0
-
-    /// Total time from the press (boom start) to the blast: the crosshair tracks
-    /// the mouse for this whole window — locking + growing the instant the user
-    /// shakes it past the aim threshold — then the bomb lands.
-    private static let explosionStrikeDelay: Double = explosionSoundPeakOffset - explosionStrikeAdvance
-
-    /// How far AHEAD of a click its boom has to start for the clip's crescendo to
-    /// land on that click's blast: the peak is at `explosionSoundPeakOffset` into
-    /// the file, the blast is `explosionStrikeDelay` after the click.
+    /// **Where the blast actually starts inside `03_explosion.mp3`** — the one
+    /// number the whole ☢️ animation now hangs off. Measured, not guessed: the
+    /// clip (3.28 s) is a falling-bomb WHISTLE followed by the blast, and the
+    /// whistle is a clean descending tone (2.80 kHz at 0.50 s down to 2.13 kHz at
+    /// 1.50 s, narrowband — spectral peak/mean 30–50×) that stops dead at 1.52 s,
+    /// where the sub-400 Hz energy jumps ~20× in two 25 ms frames. That step *is*
+    /// the explosion.
     ///
-    /// One offset, two jobs. It is how far into the clip a per-bomb copy is seeked
-    /// (start at the peak-minus-fuse mark and the crescendo arrives with the
-    /// bomb), and it is how long after the press the head-of-run boom still covers
-    /// a bomb on its own — a target planted exactly this late lands on the head
-    /// boom's own peak, so handing it a second copy would only double one sound.
-    private static let bombBoomLead: Double = explosionSoundPeakOffset - explosionStrikeDelay
+    /// The blast's loudest sample is much later, ~2.20 s, and the old code landed
+    /// the fireball there. That is what "bomba nu mai cade sincron cu sunetul"
+    /// was: by the time the crescendo peaks, the ear has been hearing the
+    /// explosion for two thirds of a second and the picture is late. The eye
+    /// matches ONSETS, so the fireball's first frame goes here.
+    static let explosionBlastOnset: Double = 1.52
+
+    /// Where the whistle swells to the foreground: the 0.75 s frame is the biggest
+    /// single step in its envelope (1–6 kHz RMS 2.2 → 3.3, +50 %). The big bomb
+    /// crosses the top edge of the screen exactly here, so it appears on the
+    /// "here it comes" of the sound instead of sliding in under the quiet lead-in
+    /// — Victor's "intră în ecran doar pe partea de fluierătură din sfx".
+    static let explosionWhistleForeground: Double = 0.75
+
+    /// Click → fireball for an AIMED bomb. Unchanged at 1.10 s, and now a literal
+    /// rather than a subtraction: it is the rhythm the room reacts to (a rhythm of
+    /// clicks comes back as a rhythm of explosions) and it is short enough that
+    /// clicking never feels like queuing. The sound is fitted to it instead of the
+    /// other way round — see `bombBoomLead`.
+    static let explosionStrikeDelay: Double = 1.10
+
+    /// How far AHEAD of a click its own boom copy has to start for the clip's
+    /// BLAST to land on that click's fireball: the blast is at
+    /// `explosionBlastOnset` into the file, the fireball is `explosionStrikeDelay`
+    /// after the click.
+    ///
+    /// One offset, two jobs, as before. It is how far into the clip a per-bomb
+    /// copy is seeked, and it is how long after the press the head-of-run boom
+    /// still covers a bomb on its own — a target planted exactly this late
+    /// explodes on the head boom's own blast, so handing it a second copy would
+    /// only double one sound. A third job now falls out for free: the copy's first
+    /// `explosionStrikeDelay` seconds are the tail of the whistle, so every aimed
+    /// bomb whistles down exactly as long as it is falling.
+    static let bombBoomLead: Double = explosionBlastOnset - explosionStrikeDelay
 
     /// Level of a per-bomb boom, before the equal-power thinning below. Under the
     /// head boom on purpose: these copies are heard on top of it, not instead.
@@ -2547,11 +2562,11 @@ class EmojiAnimator {
     /// expressed as a fraction up from the bottom of the frame (the OY centre
     /// horizontally). An aimed strike anchors this point to the cursor crosshair
     /// so the blast appears to fall onto the cursor rather than be centred on it.
-    private static let bombImpactFractionFromBottom: CGFloat = 0.25
+    static let bombImpactFractionFromBottom: CGFloat = 0.25
 
     /// The aimed strike is 1.5× larger than before: it used to divide the blast
     /// size by 4, so dividing by `4/1.5` makes it half-again as big.
-    private static let aimedScaleDivisor: CGFloat = 4 / 1.5
+    static let aimedScaleDivisor: CGFloat = 4 / 1.5
 
     /// Once the crosshair locks (the user shook it past the aim threshold) it
     /// freezes in place and grows from 1× to this over the remaining time until
@@ -2573,18 +2588,48 @@ class EmojiAnimator {
     static let bombReticleZ: CGFloat = 10_000
     static let bombBlastZ: CGFloat = 11_000
 
-    /// How long a press waits for its FIRST click before falling back to the
+    /// How long a press waits for its FIRST click before committing to the
     /// ORIGINAL nuke: one full-screen blast in the middle of the screen. Aiming is
     /// an opt-in — you get the big one for free, and only trade it for the small
-    /// precise ones by actually clicking. A press nobody follows up on used to just
-    /// hand the pointer back, which is what made the big blast look like it had
-    /// been deleted.
+    /// precise ones by actually clicking.
     ///
-    /// It is `bombBoomLead` on purpose: a bomb committed exactly this late lands on
-    /// the head boom's own peak, so a press left alone reads as one perfectly synced
-    /// explosion. It also means every run owns at least one bomb and therefore always
-    /// ends the same way — through `finishBomb` — instead of through an idle timer.
-    private static let bombAutoDropDelay: Double = bombBoomLead
+    /// It is `explosionWhistleForeground` on purpose, because that is the instant
+    /// the big bomb crosses the top edge of the screen: **once you can see it
+    /// falling, it is too late to aim.** That is the rule Victor asked for, and it
+    /// is the only deadline that needs no explaining in the room — the screen
+    /// itself announces it. It also means every run owns at least one bomb and
+    /// therefore always ends the same way, through `finishBomb`, instead of
+    /// through an idle timer.
+    static let bombAutoDropDelay: Double = explosionWhistleForeground
+
+    // MARK: The bomb that falls into the blast
+
+    /// The falling-bomb sprite: nose down, tail alight, trimmed to its opaque box
+    /// so the geometry below can be stated in fractions of the artwork instead of
+    /// fractions of a transparent margin.
+    private static let fallingBombImage: CGImage? = {
+        guard let url = Bundle.module.url(forResource: "falling-bomb", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }()
+
+    /// Aspect and nose position, measured on the trimmed png (116 × 255 px). The
+    /// tip sits on the bottom edge at 52.2 % of the width — very slightly right of
+    /// centre, and worth honouring rather than rounding to 0.5: the entire point
+    /// of the fall is that the *nose* arrives on the crosshair.
+    static let fallingBombAspect: CGFloat = 116.0 / 255.0
+    static let fallingBombTipXFraction: CGFloat = 60.5 / 116.0
+
+    /// Bomb height as a fraction of ITS OWN blast's diameter. This is how "bomba e
+    /// mare pt explozia full screen și proporțional mai mică pt exploziile
+    /// țintite" stays one number instead of two sizes: the aimed blast is already
+    /// `aimedScaleDivisor` smaller, so its bomb shrinks with it automatically and
+    /// the pairing can never drift.
+    static let fallingBombHeightPerBlast: CGFloat = 0.22
+
+    /// A bomb in the air is above every crosshair (it is the thing the crosshair
+    /// is waiting for) and below every fireball (it is consumed by its own).
+    static let bombFallingZ: CGFloat = 10_500
 
     /// The explosion gif's frames, decoded once. A bombardment can put several
     /// blasts in the air within a second of each other, and re-decoding 400 KB of
@@ -2626,7 +2671,6 @@ class EmojiAnimator {
         _bombRunStartedAt = Date()
         _bombPending = 0
         _bombPlantedAny = false
-        startBombTargeting()
         startBombInputCapture()
 
         // Nobody aimed → the old full-screen nuke, in time with the boom. Once the
@@ -2639,33 +2683,31 @@ class EmojiAnimator {
         }
     }
 
-    /// End the whole bombardment: the aiming crosshair, every planted target,
-    /// every blast still on screen, the event tap and the hidden pointer.
-    /// Idempotent — the last bomb finishing, Escape, a re-press and stop-all all
-    /// funnel here, which is the only reason it is safe for four callers to race.
+    /// End the whole bombardment: every planted target, every bomb still in the
+    /// air, every blast still on screen, and the event tap. Idempotent — the last
+    /// bomb finishing, Escape, a re-press and stop-all all funnel here, which is
+    /// the only reason it is safe for four callers to race.
+    ///
+    /// Nothing here gives the cursor back any more: the run never took it. The
+    /// pointer stays the pointer from the first frame to the last.
     private func stopBombSession(fade: Double = 0.25) {
         _bombEpoch &+= 1
         _bombSessionActive = false
         _bombPending = 0
         _bombPlantedAny = false
-        _bombTargetTimer?.invalidate(); _bombTargetTimer = nil
         stopBombInputCapture()
 
-        var layers: [CALayer] = _bombPlanted + _bombStrikeLayers + _bombBlasts
-        if let aiming = _bombTargetLayer { layers.append(aiming) }
-        _bombTargetLayer = nil
+        let layers: [CALayer] = _bombPlanted + _bombFalling + _bombStrikeLayers + _bombBlasts
         _bombPlanted = []
+        _bombFalling = []
         _bombStrikeLayers = []
         _bombBlasts = []
 
-        let teardown = { [weak self] in
+        let teardown = {
             for layer in layers {
                 layer.removeAllAnimations()
                 layer.removeFromSuperlayer()
             }
-            // A fresh press during the fade already hid the pointer for its own
-            // run; restoring here would strand it with a visible cursor.
-            if self?._bombSessionActive == false { self?.restoreBombCursor() }
         }
 
         guard fade > 0, !layers.isEmpty else { teardown(); return }
@@ -2681,100 +2723,170 @@ class EmojiAnimator {
         DispatchQueue.main.asyncAfter(deadline: .now() + fade, execute: teardown)
     }
 
-    /// Hide the real pointer, put the aiming crosshair under it and keep it there
-    /// at 60 fps. It shows IMMEDIATELY, unlike the old shake-to-aim pass that
-    /// waited for the first mouse move: the click is the aim now, so the user has
-    /// to see where it would land before pressing the button.
-    private func startBombTargeting() {
-        _bombRevealAnchor = NSEvent.mouseLocation
-        revealBombReticle()
+    // MARK: The fall
 
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
-            guard let self, self._bombTargetTimer === t else { t.invalidate(); return }
-            if self._bombTargetLayer == nil {
-                // A click just handed the crosshair over to a planted target. It
-                // comes back on the first real move off that spot, so a hand
-                // resting on the trackpad doesn't drop a second crosshair on top
-                // of the one already counting down.
-                guard NSEvent.mouseLocation != self._bombRevealAnchor else { return }
-                self.revealBombReticle()
-            }
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
-            self._bombTargetLayer?.position = self.mousePointInHostLayer()
-            CATransaction.commit()
-        }
-        _bombTargetTimer = timer
+    /// Where a blast's gif goes. Split out of `spawnBombBlast` because the falling
+    /// bomb has to aim at the very point the fireball will later cover, and
+    /// deriving that point from a second copy of this arithmetic is exactly how
+    /// the two drift a few pixels apart.
+    ///
+    /// The full-screen one keeps the geometry it always had: centred, then lifted
+    /// by `h/6 - h*0.1`, which is what puts the fireball where the eye expects it
+    /// instead of at the gif's own middle. The aimed one is anchored by its impact
+    /// point rather than its middle, so the blast appears to fall ONTO the
+    /// crosshair rather than be centred on it.
+    static func bombBlastFrame(in bounds: CGRect, fullScreen: Bool, at center: CGPoint) -> CGRect {
+        let size = min(bounds.width, bounds.height) * 1.2 / (fullScreen ? 1 : aimedScaleDivisor)
+        return fullScreen
+            ? CGRect(x: (bounds.width - size) / 2,
+                     y: (bounds.height - size) / 2 + bounds.height / 6 - bounds.height * 0.1,
+                     width: size, height: size)
+            : CGRect(x: center.x - size / 2,
+                     y: center.y - size * bombImpactFractionFromBottom,
+                     width: size, height: size)
     }
 
-    /// Put a fresh grey aiming crosshair under the cursor and hide the real
-    /// pointer (also while we aren't frontmost, via the background-hiding arm).
-    private func revealBombReticle() {
-        let target = Self.makeBombReticleLayer()
+    /// The point a bomb is aimed at. For an aimed strike that is the crosshair
+    /// itself — the frame above is built around it — and for the full-screen nuke
+    /// it is wherever `bombImpactFractionFromBottom` lands inside that big centred
+    /// square, which on a 16:10 retina is roughly three quarters of the way down
+    /// the screen.
+    static func bombBlastImpactPoint(in bounds: CGRect, fullScreen: Bool, at center: CGPoint) -> CGPoint {
+        guard fullScreen else { return center }
+        let frame = bombBlastFrame(in: bounds, fullScreen: true, at: .zero)
+        return CGPoint(x: frame.midX, y: frame.minY + frame.height * bombImpactFractionFromBottom)
+    }
+
+    /// Constant fall speed in points per second, shared by EVERY bomb in the run —
+    /// the big one and the small ones alike, which is the "ideal cu o viteză
+    /// constantă" half of the request.
+    ///
+    /// It is derived, not tuned. The big bomb has to cross the top edge on
+    /// `explosionWhistleForeground` and put its nose down on
+    /// `explosionBlastOnset`, and those two instants plus the screen fix the
+    /// speed. The other half of the request then falls out for free: at one fixed
+    /// speed, a bomb aimed high on the screen has less screen to fall through than
+    /// one aimed near the dock, so it **enters later** — exactly the asymmetry
+    /// Victor described.
+    static func bombFallSpeed(in bounds: CGRect) -> CGFloat {
+        let impact = bombBlastImpactPoint(in: bounds, fullScreen: true, at: .zero)
+        let visibleFall = explosionBlastOnset - explosionWhistleForeground
+        return max(1, bounds.maxY - impact.y) / CGFloat(visibleFall)
+    }
+
+    /// Drop a bomb that arrives nose-first on `impact` in `fall` seconds.
+    ///
+    /// It starts `speed × fall` points higher, which for anything but a target on
+    /// the very bottom edge is off the top of the screen — and the overlay window
+    /// simply does not draw what is above it. That is the whole "enters the screen
+    /// partway down" effect: no clipping mask, no visibility scheduling, just a
+    /// layer that is off-screen until it isn't, and one linear animation the
+    /// window server can run without us.
+    @discardableResult
+    private func spawnFallingBomb(to impact: CGPoint, blastSize: CGFloat, fall: Double) -> CALayer? {
+        guard let image = Self.fallingBombImage, fall > 0 else { return nil }
+        let height = blastSize * Self.fallingBombHeightPerBlast
+
+        let bomb = CALayer()
+        bomb.bounds = CGRect(x: 0, y: 0, width: height * Self.fallingBombAspect, height: height)
+        // Anchored on the NOSE — bottom edge of the trimmed png, 52.2 % across —
+        // so `position` is literally the point being bombed and the fall is a
+        // straight line between two impact points rather than between two centres.
+        bomb.anchorPoint = CGPoint(x: Self.fallingBombTipXFraction, y: 0)
+        bomb.contents = image
+        bomb.contentsGravity = .resizeAspect
+        bomb.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        bomb.zPosition = Self.bombFallingZ
+
+        let start = CGPoint(x: impact.x, y: impact.y + CGFloat(fall) * Self.bombFallSpeed(in: hostLayer.bounds))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        target.position = mousePointInHostLayer()
-        target.zPosition = Self.bombReticleZ
+        bomb.position = start
         CATransaction.commit()
-        hostLayer.addSublayer(target)
-        _bombTargetLayer = target
+        hostLayer.addSublayer(bomb)
+        _bombFalling.append(bomb)
 
-        if !_bombTargetHidCursor {
-            Self.armBackgroundCursorHiding()
-            NSCursor.hide()
-            CGDisplayHideCursor(CGMainDisplayID())
-            _bombTargetHidCursor = true
-        }
+        let drop = CABasicAnimation(keyPath: "position.y")
+        drop.fromValue = start.y
+        drop.toValue = impact.y
+        drop.duration = fall
+        drop.timingFunction = CAMediaTimingFunction(name: .linear)   // constant speed, as asked
+        drop.fillMode = .forwards
+        drop.isRemovedOnCompletion = false
+        bomb.add(drop, forKey: "bombFall")
+        return bomb
     }
 
-    /// The press nobody aimed: the original full-screen nuke, no crosshair planted
-    /// and no small strike. It is counted like any other bomb so the run still ends
-    /// through `finishBomb`, and it is scheduled a fuse ahead so it lands on the
-    /// head boom's peak — the head clip covers it, hence no `playBombBoom` here.
+    /// The bomb has arrived; the fireball takes it from here.
+    private func consumeFallingBomb(_ bomb: CALayer?) {
+        guard let bomb else { return }
+        bomb.removeAllAnimations()
+        bomb.removeFromSuperlayer()
+        _bombFalling.removeAll { $0 === bomb }
+    }
+
+    /// The press nobody aimed: the original full-screen nuke. It is counted like
+    /// any other bomb so the run still ends through `finishBomb`, and it carries
+    /// no `playBombBoom` — the head clip is its sound, which is the entire reason
+    /// its timing has to be exact.
     ///
-    /// The aiming crosshair is left riding the mouse: a click during the fuse still
-    /// plants a small bomb, which is the "start clicking and you get the little
-    /// ones" half of the behaviour.
+    /// This fires at `bombAutoDropDelay`, i.e. the instant the bomb clears the top
+    /// edge. From here the fall is `explosionBlastOnset - explosionWhistleForeground`
+    /// long, so the fireball's first frame lands on the blast in the clip. Clicking
+    /// is still live during the fall — it just no longer cancels this one.
     private func dropFullScreenBomb() {
         guard _bombSessionActive else { return }
         _bombPlantedAny = true
         _bombPending += 1
 
+        let bounds = hostLayer.bounds
+        let fall = Self.explosionBlastOnset - Self.explosionWhistleForeground
+        let bomb = spawnFallingBomb(to: Self.bombBlastImpactPoint(in: bounds, fullScreen: true, at: .zero),
+                                    blastSize: Self.bombBlastFrame(in: bounds, fullScreen: true, at: .zero).width,
+                                    fall: fall)
+
         let epoch = _bombEpoch
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.explosionStrikeDelay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + fall) { [weak self] in
             guard let self, self._bombEpoch == epoch else { return }
+            self.consumeFallingBomb(bomb)
             self.spawnBombBlast(at: .zero, fullScreen: true)
         }
     }
 
     /// Plant a target where the user clicked and start its bomb falling.
     ///
-    /// The aiming crosshair itself becomes the planted one, in place, so the
-    /// click has no seam: nothing jumps, nothing is redrawn a pixel off. It then
-    /// reddens, grows and turns counter-clockwise for the length of the fuse, and
-    /// the blast lands on the point that was under the cursor at the click — not
-    /// wherever the mouse has wandered to by then, which is the whole reason the
-    /// point is captured here rather than read again at strike time.
+    /// There is no crosshair to hand over any more — the pointer stayed the
+    /// pointer — so the click MAKES the target, red and armed from its first
+    /// frame, and the arrow goes on moving over it. It then grows and turns
+    /// counter-clockwise for the length of the fuse while its own bomb whistles
+    /// down onto it, and the blast lands on the point that was under the cursor at
+    /// the click — not wherever the mouse has wandered to by then, which is the
+    /// whole reason the point is captured here rather than read again at strike
+    /// time.
     fileprivate func plantBombAtCursor() {
         guard _bombSessionActive else { return }
         let point = mousePointInHostLayer()
 
-        let reticle = _bombTargetLayer ?? Self.makeBombReticleLayer()
-        if reticle.superlayer == nil { hostLayer.addSublayer(reticle) }
-        _bombTargetLayer = nil
-        _bombRevealAnchor = NSEvent.mouseLocation
-
+        let reticle = Self.makeBombReticleLayer(armed: true)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         reticle.position = point
         reticle.zPosition = Self.bombReticleZ
         CATransaction.commit()
-        paintReticleArmed(reticle)
+        hostLayer.addSublayer(reticle)
 
         let fuse = Self.explosionStrikeDelay
         let animations = Self.makeBombReticleLockAnimations(remaining: fuse)
         reticle.add(animations.grow, forKey: "reticleLockGrow")
         reticle.add(animations.rotate, forKey: "reticleLockRotate")
+
+        // Same speed as the big one, so a target high on the screen gets a bomb
+        // that only appears near the end of its fuse — the small bombs read as
+        // part of the same raid, not as a separate effect with its own physics.
+        let bomb = spawnFallingBomb(to: point,
+                                    blastSize: Self.bombBlastFrame(in: hostLayer.bounds,
+                                                                   fullScreen: false, at: point).width,
+                                    fall: fuse)
 
         _bombPlanted.append(reticle)
         _bombPlantedAny = true
@@ -2785,6 +2897,7 @@ class EmojiAnimator {
         DispatchQueue.main.asyncAfter(deadline: .now() + fuse) { [weak self] in
             guard let self, self._bombEpoch == epoch else { return }
             self._bombPlanted.removeAll { $0 === reticle }
+            self.consumeFallingBomb(bomb)
             self.spawnBombBlast(at: point)
             self.strikeFadeReticle(reticle)
         }
@@ -2795,9 +2908,11 @@ class EmojiAnimator {
     ///
     /// Three things keep that from turning into noise:
     /// * the first `bombBoomLead` seconds of the run are skipped — a bomb clicked
-    ///   that early already lands on the head boom's peak and is covered;
-    /// * the copy is seeked to `bombBoomLead` so ITS crescendo arrives with ITS
-    ///   blast, and swells in over the whole fuse rather than banging in at once;
+    ///   that early already explodes on the head boom's own blast and is covered;
+    /// * the copy is seeked to `bombBoomLead` so ITS blast arrives with ITS
+    ///   fireball, and swells in over the whole fuse rather than banging in at
+    ///   once — which also means the fuse is scored by the tail of the whistle,
+    ///   under the bomb that is visibly falling;
     /// * simultaneous copies are thinned by 1/√n (n = bombs still in the air,
     ///   this one included), the equal-power law: two booms together then land at
     ///   about the loudness of one, not twice it.
@@ -2826,30 +2941,15 @@ class EmojiAnimator {
     }
 
     /// Drop one blast: either the full-screen nuke (`center` is ignored) or the
-    /// small aimed strike onto a planted target.
-    ///
-    /// The aimed one is anchored by its impact point rather than its middle —
-    /// inside the square gif the bomb lands about 25% up from the bottom,
-    /// horizontally centred — so pinning THAT point to the target makes the bomb
-    /// fall onto the rings rather than be centred on them. The full-screen one
-    /// keeps the geometry it always had: centred, then lifted by `h/6 - h*0.1`,
-    /// which is what puts the fireball where the eye expects it instead of at the
-    /// gif's own middle.
+    /// small aimed strike onto a planted target. The geometry lives in
+    /// `bombBlastFrame`, which the falling bomb aims by — see there for why it is
+    /// placed the way it is.
     private func spawnBombBlast(at center: CGPoint, fullScreen: Bool = false) {
         let (images, duration) = Self.explosionFrames
         guard let first = images.first, duration > 0 else { finishBomb(); return }
 
-        let bounds = hostLayer.bounds
-        let full = min(bounds.width, bounds.height) * 1.2
-        let size = fullScreen ? full : full / Self.aimedScaleDivisor
         let layer = CALayer()
-        layer.frame = fullScreen
-            ? CGRect(x: (bounds.width - size) / 2,
-                     y: (bounds.height - size) / 2 + bounds.height / 6 - bounds.height * 0.1,
-                     width: size, height: size)
-            : CGRect(x: center.x - size / 2,
-                     y: center.y - size * Self.bombImpactFractionFromBottom,
-                     width: size, height: size)
+        layer.frame = Self.bombBlastFrame(in: hostLayer.bounds, fullScreen: fullScreen, at: center)
         layer.contentsGravity = .resizeAspect
         layer.zPosition = Self.bombBlastZ
         layer.contents = first
@@ -2873,23 +2973,6 @@ class EmojiAnimator {
             self.finishBomb()
         }
         layer.add(anim, forKey: "explosionFrames")
-        CATransaction.commit()
-    }
-
-    /// Recolour the reticle's strokes/fills red and thicken them — the "locked on
-    /// target" look. Shared by the in-fuse shake-arm and the fire-instant lock.
-    private func paintReticleArmed(_ container: CALayer) {
-        let red = NSColor.systemRed.cgColor
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for layer in container.sublayers ?? [] {
-            guard let shape = layer as? CAShapeLayer else { continue }
-            if shape.strokeColor != nil {
-                shape.strokeColor = red
-                shape.lineWidth = max(shape.lineWidth, Self.bombReticleLineWidthArmed)
-            }
-            if let fill = shape.fillColor, fill.alpha > 0 { shape.fillColor = red }
-        }
         CATransaction.commit()
     }
 
@@ -2977,16 +3060,6 @@ class EmojiAnimator {
         }
         target.add(fade, forKey: "reticleStrikeFade")
         CATransaction.commit()
-    }
-
-    /// Give the real pointer back. Only ever called with the run already over —
-    /// `stopBombSession` checks that no fresh press has taken the cursor since.
-    private func restoreBombCursor() {
-        if _bombTargetHidCursor {
-            NSCursor.unhide()
-            CGDisplayShowCursor(CGMainDisplayID())
-            _bombTargetHidCursor = false
-        }
     }
 
     // MARK: Click to plant, Escape to call it off

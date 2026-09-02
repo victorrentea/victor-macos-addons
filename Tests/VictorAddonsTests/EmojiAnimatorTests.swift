@@ -150,6 +150,102 @@ final class EmojiAnimatorTests: XCTestCase {
         XCTAssertFalse(rotate.isRemovedOnCompletion)
     }
 
+    // MARK: - ☢️ The bomb that falls into the blast
+
+    func testFallingBombResourceIsBundled() {
+        XCTAssertNotNil(Bundle.module.url(forResource: "falling-bomb.png", withExtension: nil, subdirectory: "Resources"))
+    }
+
+    /// The bug this fixes: the full-screen fireball used to start on the clip's
+    /// loudest sample (~2.20 s), two thirds of a second after the ear already
+    /// heard the explosion. Its first frame belongs on the blast's ONSET, and
+    /// that has to survive anyone re-tuning the click deadline — which is why the
+    /// assertion is written as the sum the code actually walks: wait for the
+    /// deadline, then fall.
+    func testFullScreenFireballStartsOnTheBlastInTheClip() {
+        let fall = EmojiAnimator.explosionBlastOnset - EmojiAnimator.explosionWhistleForeground
+        XCTAssertEqual(EmojiAnimator.bombAutoDropDelay + fall,
+                       EmojiAnimator.explosionBlastOnset, accuracy: 0.0001)
+        XCTAssertGreaterThan(fall, 0, "the big bomb needs time on screen before it lands")
+    }
+
+    /// An aimed bomb's boom copy is seeked to `bombBoomLead`, so the fuse is
+    /// scored by the tail of the whistle and the copy's blast arrives with the
+    /// fireball. Both facts are the same equation.
+    func testAimedBoomCopyWhistlesForExactlyItsFuseThenBlasts() {
+        XCTAssertEqual(EmojiAnimator.bombBoomLead + EmojiAnimator.explosionStrikeDelay,
+                       EmojiAnimator.explosionBlastOnset, accuracy: 0.0001)
+        XCTAssertGreaterThan(EmojiAnimator.bombBoomLead, 0,
+                             "seeking before the start of the file would silence the copy")
+    }
+
+    /// The big bomb crosses the top edge of the screen exactly on the deadline for
+    /// aiming — "once you can see it falling it is too late to click". Stated as
+    /// geometry: at the shared speed, its whole fall covers exactly the distance
+    /// from the top edge down to the full-screen impact point.
+    func testBigBombEntersTheScreenPreciselyAtTheAimingDeadline() {
+        let bounds = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        let impact = EmojiAnimator.bombBlastImpactPoint(in: bounds, fullScreen: true, at: .zero)
+        let fall = EmojiAnimator.explosionBlastOnset - EmojiAnimator.explosionWhistleForeground
+        let start = impact.y + CGFloat(fall) * EmojiAnimator.bombFallSpeed(in: bounds)
+
+        XCTAssertEqual(start, bounds.maxY, accuracy: 0.001)
+        XCTAssertEqual(impact.x, bounds.midX, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.bombAutoDropDelay, EmojiAnimator.explosionWhistleForeground, accuracy: 0.0001)
+    }
+
+    /// One speed for the whole raid, so a target high on the screen has less
+    /// screen to fall through and its bomb appears LATER — Victor's "va intra în
+    /// ecran mai târziu la unele mai spre partea de sus a ecranului".
+    func testAimedBombsShareOneSpeedSoHigherTargetsAreEnteredLater() {
+        let bounds = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        let speed = EmojiAnimator.bombFallSpeed(in: bounds)
+        let fuse = CGFloat(EmojiAnimator.explosionStrikeDelay)
+
+        // Time from the click until the nose crosses the top edge, for a target
+        // near the dock and one near the menu bar.
+        func entry(atY y: CGFloat) -> CGFloat { fuse - (bounds.maxY - y) / speed }
+
+        XCTAssertGreaterThan(entry(atY: 900), entry(atY: 150))
+        XCTAssertGreaterThan(speed, 0)
+        // Both still enter within their own fuse, i.e. under their own whistle —
+        // a bomb that enters before its click would be a bomb from nowhere.
+        XCTAssertGreaterThanOrEqual(entry(atY: 150), 0)
+        XCTAssertLessThanOrEqual(entry(atY: 900), fuse)
+    }
+
+    /// "Bomba e mare pt explozia full screen și proporțional mai mică pt
+    /// exploziile țintite": one fraction of the blast it belongs to, so the two
+    /// sizes can never drift apart.
+    func testBombIsSizedInProportionToItsOwnBlast() {
+        let bounds = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        let big = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: true, at: .zero).width
+        let small = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: false, at: CGPoint(x: 800, y: 500)).width
+
+        XCTAssertEqual(big / small, EmojiAnimator.aimedScaleDivisor, accuracy: 0.001)
+        XCTAssertEqual(big * EmojiAnimator.fallingBombHeightPerBlast / (small * EmojiAnimator.fallingBombHeightPerBlast),
+                       EmojiAnimator.aimedScaleDivisor, accuracy: 0.001)
+    }
+
+    /// An aimed blast is placed around its impact point, so the bomb's nose and
+    /// the fireball's centre of impact are the same pixel.
+    func testAimedBlastIsAnchoredOnTheImpactPointTheBombFallsTo() {
+        let bounds = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        let target = CGPoint(x: 800, y: 500)
+        let frame = EmojiAnimator.bombBlastFrame(in: bounds, fullScreen: false, at: target)
+
+        XCTAssertEqual(frame.midX, target.x, accuracy: 0.001)
+        XCTAssertEqual(frame.minY + frame.height * EmojiAnimator.bombImpactFractionFromBottom, target.y, accuracy: 0.001)
+        XCTAssertEqual(EmojiAnimator.bombBlastImpactPoint(in: bounds, fullScreen: false, at: target), target)
+    }
+
+    /// The bomb in the air is above every crosshair (it is what they are waiting
+    /// for) and below every fireball (it is consumed by its own).
+    func testFallingBombLayersBetweenCrosshairsAndFireballs() {
+        XCTAssertGreaterThan(EmojiAnimator.bombFallingZ, EmojiAnimator.bombReticleZ)
+        XCTAssertLessThan(EmojiAnimator.bombFallingZ, EmojiAnimator.bombBlastZ)
+    }
+
     func testMinigunAllowsHalfSecondAimLeadInAndSmallerBulletHoles() {
         XCTAssertEqual(EmojiAnimator.minigunAimLeadIn, 0.5, accuracy: 0.001)
         XCTAssertEqual(EmojiAnimator.minigunBulletHoleScale, 0.7, accuracy: 0.001)

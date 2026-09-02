@@ -441,22 +441,77 @@ rule from the start.
   full half-screen leap arcs ≈212 pt against a 216 pt cap); the cap is there for other
   overlay shapes.
 
-- **☢️ Nuke bombardment — one boom per bomb** (sfx #03 `03_explosion.mp3` → `explosion`,
-  `showExplosionGif` / `plantBombAtCursor`): the press hides the pointer and hands over a
-  sniper crosshair; every click plants a target that reddens, grows and turns for a
-  `explosionStrikeDelay` (1.10 s) fuse before its blast lands on it, so a rhythm of clicks
-  comes back as a rhythm of explosions. Until 2026-08-30 it came back as a rhythm of
+- **☢️ Nuke bombardment — the clip, read frame by frame.** Everything below hangs off one
+  measurement of `03_explosion.mp3` (3.28 s), so it is worth stating once. The clip is a
+  falling-bomb **whistle** followed by the **blast**. The whistle is a clean descending
+  tone — 2.80 kHz at 0.50 s down to 2.13 kHz at 1.50 s, narrowband (spectral peak/mean
+  30–50×) — and it **stops dead at 1.52 s**, where the sub-400 Hz energy jumps ~20× in
+  two 25 ms frames. That step is the explosion; its loudest *sample* is much later, ~2.20 s.
+  Two constants come straight off that reading:
+  - `explosionBlastOnset` **1.52 s** — where a fireball's first frame belongs.
+  - `explosionWhistleForeground` **0.75 s** — the biggest single step in the whistle's
+    envelope (1–6 kHz RMS 2.2 → 3.3, +50 %), i.e. the “here it comes”.
+
+  Until 2026-09-02 the full-screen nuke landed on the **peak** (2.10 s in the old code),
+  which is why Victor reported it as out of sync: by the time the crescendo peaks the ear
+  has been hearing the explosion for two thirds of a second and the picture is visibly
+  late. **The eye matches onsets**, so the fireball now starts at `explosionBlastOnset`.
+
+- **☢️ The bomb that falls into it** (`spawnFallingBomb`, `bombFallSpeed`,
+  `falling-bomb.png`): a bomb sprite drops from off-screen and its **nose** arrives on the
+  impact point at the instant the fireball starts.
+  - **One speed for the whole raid.** `bombFallSpeed` is *derived*, never tuned: the big
+    bomb has to cross the top edge on `explosionWhistleForeground` and land on
+    `explosionBlastOnset`, and those two instants plus the screen fix the speed for every
+    bomb in the run. The asymmetry Victor asked for falls out for free — at one fixed
+    speed a target high on the screen has less screen to fall through, so **its bomb
+    enters later** than one aimed near the dock.
+  - **No clipping, no visibility scheduling.** A bomb is simply spawned `speed × fall`
+    points above its target, which for anything but a target on the bottom edge is off the
+    top of the screen, and the overlay window does not draw what is above it. One linear
+    `position.y` animation, run by the window server, is the whole fall.
+  - **The nose is the anchor.** The png is trimmed to its opaque box (116×255) and the
+    layer's `anchorPoint` is its tip — bottom edge, 52.2 % across, slightly right of
+    centre and worth honouring — so `position` *is* the point being bombed and the fall is
+    a straight line between two impact points rather than two centres.
+  - **Size is a fraction of its own blast** (`fallingBombHeightPerBlast`, 0.22), so “big
+    bomb for the full-screen explosion, proportionally smaller for the aimed ones” is one
+    number and the two can never drift apart.
+  - `bombBlastFrame` / `bombBlastImpactPoint` exist so the bomb aims at the very pixel the
+    fireball will cover. Deriving that point from a second copy of the arithmetic is
+    exactly how the two drift.
+
+- **☢️ Aiming is opt-in, and the screen announces the deadline.** `bombAutoDropDelay` is
+  `explosionWhistleForeground`, i.e. **the instant the big bomb clears the top edge**:
+  once you can see it falling it is too late to aim, and no one has to be told the rule.
+  A press left alone therefore always ends in the full-screen nuke, which also means every
+  run owns at least one bomb and ends the same way, through `finishBomb`, rather than
+  through an idle timer.
+
+- **☢️ The pointer stays the pointer.** The run no longer hides the cursor or rides a grey
+  crosshair on it (`startBombTargeting` / `revealBombReticle` / `restoreBombCursor` are
+  gone). A **click makes the target**, red and armed from its first frame
+  (`makeBombReticleLayer(armed: true)`), and the arrow goes on moving over it. The old
+  hand-the-crosshair-over dance existed to make the click seamless; with nothing under the
+  mouse to hand over there is no seam to hide.
+
+- **☢️ One boom per bomb** (sfx #03 `03_explosion.mp3` → `explosion`,
+  `showExplosionGif` / `plantBombAtCursor`): every click plants a target that grows and
+  turns for a `explosionStrikeDelay` (1.10 s) fuse while its own bomb whistles down onto
+  it, so a rhythm of clicks comes back as a rhythm of explosions. Until 2026-08-30 it came back as a rhythm of
   *silent* explosions: the audio was **one clip at the head of the run** — the tablet's, on
   the routed path — and bombs two, three and four landed with nothing under them.
   Each plant now lays **its own boom** (`playBombBoom`), and the three numbers that keep a
   stack of them from turning into noise are all derived, not tuned by ear:
-  - **Sync.** The clip's crescendo sits at `explosionSoundPeakOffset` (2.10 s) and a blast
-    is `explosionStrikeDelay` after its click, so the copy is **seeked to the difference**
-    (`bombBoomLead`, 1.00 s) and its peak arrives with the bomb rather than a beat behind it.
+  - **Sync.** The clip's blast starts at `explosionBlastOnset` (1.52 s) and a fireball is
+    `explosionStrikeDelay` after its click, so the copy is **seeked to the difference**
+    (`bombBoomLead`, 0.42 s) and its blast arrives with the bomb rather than a beat behind
+    it. A third job falls out for free: the copy's first 1.10 s are the *tail of the
+    whistle*, so every aimed bomb whistles down for exactly as long as it is falling.
   - **Which bomb the head boom already owns.** That same offset is how late a target can be
-    planted and still land on the *head* boom's peak — so a bomb clicked inside the first
-    `bombBoomLead` seconds gets **no copy at all**; it is already scored. This is why the
-    first bomb sounds exactly as it did before.
+    planted and still explode on the *head* boom's own blast — so a bomb clicked inside the
+    first `bombBoomLead` seconds gets **no copy at all**; it is already scored. This is why
+    the first bomb sounds exactly as it did before.
   - **Loudness.** A copy swells from silence over the whole fuse (`fadeIn:` on
     `playOverlapping`) instead of banging in at full level, at `bombBoomVolume` (0.75)
     thinned by **1/√n** over the bombs still in the air, floored at `bombBoomVolumeFloor`
@@ -466,4 +521,4 @@ rule from the start.
   The copies are **not Bluetooth-compensated** (`bluetoothCompensated: false`), for the
   same reason as the 🔥 whip crack but arrived at differently: something has been sounding
   for at least `bombBoomLead` seconds by then, so the A2DP link is warm, and adding the
-  start delay would push the crescendo late off the blast it exists to land on.
+  start delay would push the blast late off the fireball it exists to land on.
