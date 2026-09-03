@@ -5,6 +5,15 @@ import Network
 class TabletHttpServer {
     static let port: UInt16 = 55123
 
+    /// One JSON string literal, quotes and escaping included — the routes here
+    /// hand-assemble their JSON, and a session name like `AI@"MM"` must not be
+    /// able to break the body it is pasted into.
+    static func jsonString(_ s: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data()
+        let arr = String(data: data, encoding: .utf8) ?? "[\"\"]"
+        return String(arr.dropFirst().dropLast())
+    }
+
     enum Route: Equatable {
         case alarmStart
         case alarmStop
@@ -142,6 +151,18 @@ class TabletHttpServer {
         case handsOffEnd
         /// Read-only snapshot of the hands-off state (test hook).
         case handsOffState
+        /// Name of the training session that is live right now — the session
+        /// folder with its date prefix stripped ("2026-09-03 AI@MM" → "AI@MM").
+        /// The feedback-form robot uses it to name the survey it clones.
+        case sessionName
+        /// Put a link in front of the room in one call: copy it to the
+        /// clipboard, raise the 🔳 clipboard-link banner (URL + QR on the
+        /// projected screen) and append it to the session notes — the same
+        /// three things a hand does with ⌘⌃S plus the menu item.
+        case linkPublish(String)
+        /// Take the banner back down (the robot's counterpart to pressing the
+        /// menu item a second time).
+        case linkHide
         case unknown
     }
 
@@ -238,6 +259,13 @@ class TabletHttpServer {
     var onHandsOffEnd: (() -> String)?
     /// ✋ Read-only snapshot.
     var onHandsOffState: (() -> String)?
+    /// Returns JSON naming the live session, e.g. `{"ok":true,"name":"AI@MM"}`.
+    var onSessionName: (() -> String)?
+    /// Copies the URL, raises the clipboard-link banner and files it in the
+    /// session notes; returns JSON describing what happened.
+    var onLinkPublish: ((String) -> String)?
+    /// Hides the clipboard-link banner; returns JSON.
+    var onLinkHide: (() -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -469,6 +497,15 @@ class TabletHttpServer {
             case .handsOffState:
                 contentType = "application/json"
                 body = self.onHandsOffState?() ?? "{\"active\":false}"
+            case .sessionName:
+                contentType = "application/json"
+                body = self.onSessionName?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .linkPublish(let url):
+                contentType = "application/json"
+                body = self.onLinkPublish?(url) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .linkHide:
+                contentType = "application/json"
+                body = self.onLinkHide?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .unknown:
                 statusCode = 404
                 body = "not found"
@@ -629,6 +666,15 @@ class TabletHttpServer {
             return .handsOffEnd
         case "/hands-off/state":
             return .handsOffState
+        case "/session/name":
+            return .sessionName
+        case "/link/publish":
+            if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
+                return .linkPublish(url)
+            }
+            return .unknown
+        case "/link/hide":
+            return .linkHide
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)

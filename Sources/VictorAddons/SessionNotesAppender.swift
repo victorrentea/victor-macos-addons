@@ -315,7 +315,7 @@ enum SessionNotesAppender {
     /// Examples: "2026-05-15 Kafka@ITKonekt" → "Kafka@ITKonekt",
     /// "2026-05-18..22 Performance@Bloomberg" → "Performance@Bloomberg",
     /// "2026-06-05+06 AI@HEITS" → "AI@HEITS".
-    private static func stripDatePrefix(_ name: String) -> String {
+    static func stripDatePrefix(_ name: String) -> String {
         if let spaceIdx = name.firstIndex(of: " ") {
             let head = name[..<spaceIdx]
             if head.first?.isNumber == true {

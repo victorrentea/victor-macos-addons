@@ -433,6 +433,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onHandsOffState = { [weak self] in
             MainActor.assumeIsolated { self?.handsOff.stateJSON() ?? "{\"active\":false}" }
         }
+        // The feedback-form robot (skills-private/feedback-form) asks the app
+        // what today's session is called, so the survey it clones is named the
+        // same as the folder the notes and screenshots go to. The app is the
+        // only process that already knows — the daemon may be down.
+        tabletServer?.onSessionName = {
+            MainActor.assumeIsolated {
+                guard let folder = ScreenshotManager.sessionFolder else {
+                    return "{\"ok\":false,\"reason\":\"no-session\"}"
+                }
+                let name = SessionNotesAppender.stripDatePrefix(folder.lastPathComponent)
+                return "{\"ok\":true,\"name\":\(TabletHttpServer.jsonString(name)),\"folder\":\(TabletHttpServer.jsonString(folder.path))}"
+            }
+        }
+        // …and then hands the published link back through one call: clipboard,
+        // 🔳 banner on the projected screen, and a line in the session notes.
+        // Deliberately not the menu item's toggle — an HTTP call that hides the
+        // banner because it happened to be up is a coin flip, not an API.
+        tabletServer?.onLinkPublish = { [weak self] url in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                return self.publishLink(url)
+            }
+        }
+        tabletServer?.onLinkHide = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.joinLinkBanner?.hide()
+                return "{\"ok\":true}"
+            }
+        }
         // Tablet → Mac sound routing: the tablet pings every 5s to detect the
         // Mac and compares soundsHash to detect a stale Mac bundle; when its
         // "MAC" toggle is pressed it routes soundboard playback here instead
@@ -2189,6 +2218,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.setTargetScreen(AppDelegate.findRetinaScreen())
             banner.show(url: url, uppercaseLastSegment: true)
         }
+    }
+
+    /// Put a link in front of the room in one call — the scripted counterpart
+    /// of "copy it, hit the 🔳 menu item, then ⌘⌃S".
+    ///
+    /// Unlike the menu item this never toggles: an already-visible banner is
+    /// re-shown with the new URL rather than dismissed, so the robot that just
+    /// published a survey cannot end up hiding the very link it published.
+    /// The notes append is best-effort — outside a live session there is no
+    /// notes file, and that must not stop the banner going up.
+    @discardableResult
+    private func publishLink(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.scheme == "https" || url.scheme == "http" else {
+            return "{\"ok\":false,\"reason\":\"not-an-http-url\"}"
+        }
+        PasteboardGate.sync { pb in
+            pb.clearContents()
+            pb.setString(trimmed, forType: .string)
+        }
+        var bannerShown = false
+        if let banner = joinLinkBanner {
+            if banner.bannerIsVisible { banner.hide() }
+            let cleaned = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
+            banner.setTargetScreen(AppDelegate.findRetinaScreen())
+            banner.show(url: stripProtocolPrefix(from: cleaned))
+            bannerShown = true
+        }
+        let noted = ScreenshotManager.sessionFolder != nil
+        if noted { SessionNotesAppender.appendClipboard() }
+        return "{\"ok\":true,\"url\":\(TabletHttpServer.jsonString(trimmed)),\"banner\":\(bannerShown),\"notes\":\(noted)}"
     }
 
     private func displayClipboardLinkBanner() {
