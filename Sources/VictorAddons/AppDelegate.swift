@@ -465,6 +465,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.requestFeedbackForm(session: session) ?? "{\"ok\":false,\"reason\":\"app-gone\"}"
             }
         }
+        tabletServer?.onFeedbackPublished = { [weak self] url, title in
+            MainActor.assumeIsolated {
+                self?.feedbackFormPublished(url: url, title: title) ?? "{\"ok\":false,\"reason\":\"app-gone\"}"
+            }
+        }
         tabletServer?.onLinkHide = { [weak self] in
             MainActor.assumeIsolated {
                 self?.joinLinkBanner?.hide()
@@ -2239,6 +2244,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.setTargetScreen(AppDelegate.findRetinaScreen())
             banner.show(url: url, uppercaseLastSegment: true)
         }
+    }
+
+    /// The extension has a published survey. Do everything a fresh feedback
+    /// link deserves: clipboard, 🔳 banner, session notes — and the row in the
+    /// participants' own left-hand menu in Interact.
+    ///
+    /// That last one goes through the daemon (`POST :1234/feedback-form`),
+    /// which persists it and broadcasts `feedback_form_updated` so every open
+    /// participant page reveals the entry without a reload. It is a separate
+    /// route from `/link/publish` precisely so that putting an arbitrary link
+    /// on the projected screen never also pushes it to the room.
+    @discardableResult
+    private func feedbackFormPublished(url: String, title: String?) -> String {
+        let local = publishLink(url)
+        let name = title ?? ScreenshotManager.sessionFolder
+            .map { SessionNotesAppender.stripDatePrefix($0.lastPathComponent) } ?? "Feedback"
+        Self.pushFeedbackUrlToRoom(url: url, title: name)
+        return local
+    }
+
+    /// Fire-and-forget POST to the training daemon. Fire-and-forget because the
+    /// daemon is frequently not running (it is only up during a workshop) and a
+    /// link that reached the clipboard, the banner and the notes has already
+    /// done most of its job — a dead daemon must not turn that into a failure.
+    private static func pushFeedbackUrlToRoom(url: String, title: String) {
+        guard let endpoint = URL(string: "http://127.0.0.1:1234/feedback-form") else { return }
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 8
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["title": title, "url": url])
+        URLSession.shared.dataTask(with: req) { _, response, error in
+            if let error {
+                overlayInfo("feedback-form: daemon not reachable (\(error.localizedDescription)) — link not shown in Interact")
+            } else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                overlayInfo("feedback-form: daemon refused the link (HTTP \(http.statusCode))")
+            } else {
+                overlayInfo("feedback-form: link is in the participants' menu")
+            }
+        }.resume()
     }
 
     /// Ask the Chrome extension to clone, rename and publish this session's

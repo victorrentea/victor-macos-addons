@@ -15,8 +15,10 @@ AppDelegate.requestFeedbackForm()      ← session name from the session folder
    {"type":"publish-feedback-form","session":"AI@MassMutual"}
    ▼
 chrome-extension/feedback-form.js      ← does the whole dance in Victor's Chrome
-   ▼  GET 127.0.0.1:55123/link/publish?url=…
-AppDelegate.publishLink()              → clipboard + 🔳 banner + session notes
+   ▼  GET 127.0.0.1:55123/feedback-form/published?url=…&title=…
+AppDelegate.feedbackFormPublished()    → clipboard + 🔳 banner + session notes
+   ▼  POST 127.0.0.1:1234/feedback-form
+training-assistant daemon              → a row in every participant's left menu
 ```
 
 **Why the automation lives in the Chrome extension.** FreeOnlineSurveys signs in
@@ -38,12 +40,29 @@ the acknowledgement.
 |---|---|
 | `GET /session/name` | `{"ok":true,"name":"AI@MM","folder":"…"}` — the session folder with its date prefix stripped, or `{"ok":false,"reason":"no-session"}` |
 | `GET /feedback-form/publish` | asks Chrome for a fresh form; fails with `no-chrome-extension` when nothing is on the socket |
-| `GET /link/publish?url=…` | clipboard + 🔳 banner + a line in the session notes, in one call |
+| `GET /feedback-form/published?url=…&title=…` | the whole landing: clipboard + 🔳 banner + notes + the participants' menu |
+| `GET /link/publish?url=…` | clipboard + 🔳 banner + a line in the session notes — the generic one, no room involved |
 | `GET /link/hide` | takes the banner back down |
 
 `/link/publish` deliberately does **not** toggle the way the menu item does: an
 HTTP call that hides the banner because it happened to be up is a coin flip, not
 an API, so an already-visible banner is re-shown with the new URL.
+
+## The participants' end
+
+The daemon route `POST :1234/feedback-form` already existed for this, complete
+with an `#feedback-row` sitting hidden in `participant.html`: it persists the
+link, broadcasts `feedback_form_updated`, and every open participant page
+reveals a **Feedback form** row in its left-hand menu without a reload.
+`DELETE :1234/feedback-form` retracts it from the whole room.
+
+The Mac's push is fire-and-forget: the daemon is only up during a workshop, and
+a link that already reached the clipboard, the banner and the notes has done
+most of its job — a dead daemon must not turn that into a failure. It says which
+way it went in the log.
+
+This is also why it is a **separate route** from `/link/publish`: putting an
+arbitrary link on the projected screen must never also push it to the room.
 
 ## The menu item
 
@@ -54,10 +73,10 @@ noise on a menu read at a glance.
 ## The reminder
 
 `FeedbackFormReminder` puts a bottom-left **`Feedback form?`** pill up at
-**16:30 and 17:00**, hover-to-accept, exactly like the wrap-up offer. Earlier
-than that offer (16:45 / 17:15) on purpose: the link is only worth anything
-while the room is still in it, whereas the summary is written once everyone has
-gone.
+**16:50, 17:20 and 17:50**, hover-to-accept, exactly like the wrap-up offer —
+interleaved with that offer's 16:45 / 17:15 rather than aligned with it, since
+two pills in the same minute compete for the same glance. The third slot is for
+the days that run long.
 
 It is gated on a live session, and a slot whose gate fails is **not** marked
 fired — a session that starts late still gets the offer on the next tick inside

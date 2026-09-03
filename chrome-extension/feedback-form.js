@@ -5,10 +5,11 @@
 // live). This opens a tab, clones the most recent form, renames the clone to the
 // session, publishes it, and hands the URL straight back to the Mac:
 //
-//   GET 127.0.0.1:55123/link/publish?url=…
+//   GET 127.0.0.1:55123/feedback-form/published?url=…&title=…
 //
-// which copies it, raises the 🔳 URL+QR banner on the projected screen, and
-// appends it to the session notes — the three things a hand would otherwise do.
+// which copies it, raises the 🔳 URL+QR banner on the projected screen, appends
+// it to the session notes, and hands it to the training daemon so it appears as
+// a row in every participant's left-hand menu in Interact.
 //
 // ── What the site does, all of it learned the hard way ──────────────────────
 //
@@ -325,7 +326,14 @@ async function run(tabId, session) {
     45_000, 'the share URL');
 
   console.log('[feedback-form] published', url);
-  const res = await fetch(`${ADDONS}/link/publish?url=${encodeURIComponent(url)}`).catch(() => null);
+  /* /feedback-form/published, not /link/publish: this route does the same
+   * three local things (clipboard, 🔳 banner, notes) AND hands the link to the
+   * training daemon, which reveals it as a row in every participant's left-hand
+   * menu in Interact. The generic route stays generic — putting an arbitrary
+   * link on the projected screen must never also push it to the room. */
+  const res = await fetch(
+    `${ADDONS}/feedback-form/published?url=${encodeURIComponent(url)}&title=${encodeURIComponent(session)}`
+  ).catch(() => null);
   console.log('[feedback-form] handed to the Mac:', res && res.ok ? await res.text() : 'FAILED');
   return url;
 }

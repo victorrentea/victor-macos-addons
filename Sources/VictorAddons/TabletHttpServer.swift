@@ -168,6 +168,10 @@ class TabletHttpServer {
         /// Show the "Feedback form?" offer now, bypassing the 16:30 / 17:00
         /// schedule and the live-session gate (test hook).
         case testFeedbackReminder
+        /// The extension has published a survey: `?url=` (and the `?title=` it
+        /// was given). Everything `/link/publish` does, plus the participants'
+        /// left-hand menu in Interact.
+        case feedbackPublished(url: String, title: String?)
         case unknown
     }
 
@@ -274,6 +278,8 @@ class TabletHttpServer {
     /// Asks Chrome to publish the feedback form; returns JSON.
     var onFeedbackForm: ((String?) -> String)?
     var onTestFeedbackReminder: (() -> Void)?
+    /// Handles a freshly published survey; returns JSON.
+    var onFeedbackPublished: ((String, String?) -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -519,6 +525,10 @@ class TabletHttpServer {
                 body = self.onFeedbackForm?(session) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .testFeedbackReminder:
                 self.onTestFeedbackReminder?()
+            case .feedbackPublished(let url, let title):
+                contentType = "application/json"
+                body = self.onFeedbackPublished?(url, title) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+
             case .unknown:
                 statusCode = 404
                 body = "not found"
@@ -651,6 +661,12 @@ class TabletHttpServer {
             return .testBreakSummary
         case "/test/feedback-reminder":
             return .testFeedbackReminder
+        case "/feedback-form/published":
+            if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
+                return .feedbackPublished(url: url,
+                                          title: queryItems.first(where: { $0.name == "title" })?.value)
+            }
+            return .unknown
         case "/test/summary-reminder":
             return .testSummaryReminder
         case "/test/bell":
