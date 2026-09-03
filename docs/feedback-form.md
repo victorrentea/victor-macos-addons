@@ -47,7 +47,7 @@ an API, so an already-visible banner is re-shown with the new URL.
 
 ## The menu item
 
-Directly under 🟢 Interact Link — it is the other link the room is given — and
+**📝 Generate Feedback Form**, directly under 🟢 Interact Link — it is the other link the room is given — and
 **hidden**, not greyed, when no session is live. A row that cannot do anything is
 noise on a menu read at a glance.
 

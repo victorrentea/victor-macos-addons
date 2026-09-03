@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 3, 19:40"
+    static let BUILD_TIME = "Sep 3, 23:32"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -200,7 +200,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // room is given, and only ever during a session — refreshWsItem hides
         // it outright when there is none, rather than greying it out: a row
         // that cannot do anything is noise on a menu read at a glance.
-        feedbackFormItem = addItem("📝 Feedback form", action: #selector(publishFeedbackFormAction))
+        feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
         addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
 
         menu.addItem(.separator())
