@@ -18,14 +18,14 @@ import Network
 ///
 /// The state is also sent to each client the moment it connects, so a worker
 /// that *was* torn down comes back knowing whether it owes a resume.
-final class DictationBridge {
+final class ChromeBridge {
     static let port: UInt16 = 8766
     private static let keepAliveInterval: TimeInterval = 20
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
     private var keepAliveTimer: DispatchSourceTimer?
-    private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.dictation-bridge", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.chrome-bridge", qos: .userInitiated)
     /// Current window state, mirrored to every client. Queue only.
     private var active = false
     /// Bumped on every edge so a client can tell a fresh event from the state
@@ -45,7 +45,7 @@ final class DictationBridge {
         params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
 
         guard let l = try? NWListener(using: params, on: NWEndpoint.Port(rawValue: Self.port)!) else {
-            overlayError("DictationBridge: failed to bind port \(Self.port)")
+            overlayError("ChromeBridge: failed to bind port \(Self.port)")
             return
         }
         listener = l
@@ -53,7 +53,7 @@ final class DictationBridge {
         l.stateUpdateHandler = { state in
             switch state {
             case .ready: overlayInfo("🎵 Dictation bridge on ws://127.0.0.1:\(Self.port)")
-            case .failed(let e): overlayError("DictationBridge failed: \(e)")
+            case .failed(let e): overlayError("ChromeBridge failed: \(e)")
             default: break
             }
         }
@@ -71,6 +71,41 @@ final class DictationBridge {
             self.broadcast(self.stateJSON())
             overlayInfo(value ? "⏸️ dictation → pause audible Chrome tabs" : "▶️ dictation over → resume them")
         }
+    }
+
+    /// Ask the extension to publish a fresh feedback form for `session`.
+    ///
+    /// Fire-and-forget, and deliberately so: the extension answers by calling
+    /// `/link/publish` on the HTTP server rather than by replying here, because
+    /// the work takes many seconds and an MV3 worker may be torn down and
+    /// resurrected in the middle of it — a reply channel would have to survive
+    /// that, an HTTP call from whatever worker is alive at the end does not.
+    ///
+    /// Returns false when no Chrome is listening, which is the one failure
+    /// worth surfacing in the menu: everything else shows up as a link that
+    /// arrives, or does not.
+    @discardableResult
+    func publishFeedbackForm(session: String) -> Bool {
+        var listeners = 0
+        queue.sync {
+            listeners = self.connections.count
+            guard listeners > 0 else { return }
+            self.seq += 1
+            self.broadcast("{\"type\":\"publish-feedback-form\",\"session\":\(Self.jsonString(session)),\"seq\":\(self.seq)}")
+        }
+        overlayInfo(listeners > 0
+            ? "📝 asked Chrome to publish the feedback form for \(session)"
+            : "📝 no Chrome extension connected — feedback form not requested")
+        return listeners > 0
+    }
+
+    /// True while at least one Chrome extension is on the socket.
+    var hasClients: Bool { queue.sync { !connections.isEmpty } }
+
+    private static func jsonString(_ s: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data()
+        let arr = String(data: data, encoding: .utf8) ?? "[\"\"]"
+        return String(arr.dropFirst().dropLast())
     }
 
     // MARK: - Internals

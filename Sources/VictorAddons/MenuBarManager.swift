@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 3, 18:38"
+    static let BUILD_TIME = "Sep 3, 19:40"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -24,6 +24,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
     private(set) var wsStatusItem: NSMenuItem!
+    private var feedbackFormItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
     private var portItems: [Int: NSMenuItem] = [:]
@@ -71,6 +72,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
+    /// 📝 Ask Chrome to clone, rename and publish this session's feedback form.
+    var onPublishFeedbackForm: (() -> Void)?
     /// ⌘⌃K, from the event tap — the catalog has no menu row of its own.
     var onOpenCatalog: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
@@ -193,6 +196,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
         wsStatusItem = addItem("", action: nil)
+        // Directly under the Interact Link, because it is the other link the
+        // room is given, and only ever during a session — refreshWsItem hides
+        // it outright when there is none, rather than greying it out: a row
+        // that cannot do anything is noise on a menu read at a glance.
+        feedbackFormItem = addItem("📝 Feedback form", action: #selector(publishFeedbackFormAction))
         addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
 
         menu.addItem(.separator())
@@ -570,6 +578,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onKillPortPrompt?()
     }
 
+    @objc private func publishFeedbackFormAction() {
+        onPublishFeedbackForm?()
+    }
+
     @objc private func displayClipboardLinkAction() {
         onDisplayClipboardLink?()
     }
@@ -798,6 +810,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func refreshWsItem() {
+        feedbackFormItem?.isHidden = !sessionActive
         if sessionActive {
             wsStatusItem.title = "🟢 Interact Link"
             wsStatusItem.isEnabled = true

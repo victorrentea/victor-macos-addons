@@ -163,6 +163,8 @@ class TabletHttpServer {
         /// Take the banner back down (the robot's counterpart to pressing the
         /// menu item a second time).
         case linkHide
+        /// 📝 Ask the Chrome extension to publish this session's feedback form.
+        case feedbackForm
         case unknown
     }
 
@@ -266,6 +268,8 @@ class TabletHttpServer {
     var onLinkPublish: ((String) -> String)?
     /// Hides the clipboard-link banner; returns JSON.
     var onLinkHide: (() -> String)?
+    /// Asks Chrome to publish the feedback form; returns JSON.
+    var onFeedbackForm: (() -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -506,6 +510,9 @@ class TabletHttpServer {
             case .linkHide:
                 contentType = "application/json"
                 body = self.onLinkHide?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .feedbackForm:
+                contentType = "application/json"
+                body = self.onFeedbackForm?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .unknown:
                 statusCode = 404
                 body = "not found"
@@ -675,6 +682,8 @@ class TabletHttpServer {
             return .unknown
         case "/link/hide":
             return .linkHide
+        case "/feedback-form/publish":
+            return .feedbackForm
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)

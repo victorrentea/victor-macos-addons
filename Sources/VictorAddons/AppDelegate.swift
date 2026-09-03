@@ -37,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
     /// 🎵 Pushes the dictation window to the Chrome extension that pauses music.
-    private var dictationBridge: DictationBridge?
+    private var chromeBridge: ChromeBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
     private var bluetoothAutoOutput: BluetoothAutoOutput?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
@@ -454,6 +454,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             MainActor.assumeIsolated {
                 guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
                 return self.publishLink(url)
+            }
+        }
+        // …and the same thing over HTTP, so the form can be published from a
+        // script or another agent, not only from the menu.
+        tabletServer?.onFeedbackForm = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.requestFeedbackForm() ?? "{\"ok\":false,\"reason\":\"app-gone\"}"
             }
         }
         tabletServer?.onLinkHide = { [weak self] in
@@ -1210,6 +1217,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onDisplayClipboardLink = { [weak self] in
             self?.displayClipboardLinkBanner()
         }
+        menuBarManager.onPublishFeedbackForm = { [weak self] in
+            self?.requestFeedbackForm()
+        }
         menuBarManager.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
@@ -1345,8 +1355,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         let audioManager = CoreAudioManager()
         self.coreAudioManager = audioManager
-        let bridge = DictationBridge()
-        self.dictationBridge = bridge
+        let bridge = ChromeBridge()
+        self.chromeBridge = bridge
         bridge.start()
         audioManager.onDictationActiveChanged = { [weak bridge] active in
             bridge?.setActive(active)
@@ -2218,6 +2228,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             banner.setTargetScreen(AppDelegate.findRetinaScreen())
             banner.show(url: url, uppercaseLastSegment: true)
         }
+    }
+
+    /// Ask the Chrome extension to clone, rename and publish this session's
+    /// feedback form. The extension does the whole dance in Victor's own
+    /// browser — that is the entire reason it lives there and not in a scripted
+    /// browser of its own: the FreeOnlineSurveys session rides his Google
+    /// login, and a second browser would need a second sign-in to get it.
+    ///
+    /// The link comes back through `publishLink` (the extension calls
+    /// `/link/publish` when it has it), so there is nothing to await here.
+    @discardableResult
+    private func requestFeedbackForm() -> String {
+        guard let folder = ScreenshotManager.sessionFolder else {
+            return "{\"ok\":false,\"reason\":\"no-session\"}"
+        }
+        let name = SessionNotesAppender.stripDatePrefix(folder.lastPathComponent)
+        let asked = chromeBridge?.publishFeedbackForm(session: name) ?? false
+        if !asked {
+            postInvalidURLNotification("no Chrome")
+        }
+        return "{\"ok\":\(asked),\"session\":\(TabletHttpServer.jsonString(name))\(asked ? "" : ",\"reason\":\"no-chrome-extension\"")}"
     }
 
     /// Put a link in front of the room in one call — the scripted counterpart

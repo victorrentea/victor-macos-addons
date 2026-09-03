@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Victor Addons — Dictation Music Pause",
-  "version": "1.0",
-  "description": "While Wispr Flow is dictating, pause every Chrome tab that is making sound — and resume exactly those when the dictation ends.",
-  "background": { "service_worker": "dictation-pause.js" },
+  "name": "Victor Chrome Addons",
+  "version": "2.0",
+  "description": "The Chrome half of Victor Addons: pauses the music while Wispr Flow is dictating, and publishes the end-of-session feedback form on FreeOnlineSurveys when the Mac asks for one.",
+  "background": { "service_worker": "background.js", "type": "module" },
   "permissions": ["tabs", "scripting", "storage", "alarms"],
   "host_permissions": ["<all_urls>"]
 }
