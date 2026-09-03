@@ -165,6 +165,9 @@ class TabletHttpServer {
         case linkHide
         /// 📝 Ask the Chrome extension to publish this session's feedback form.
         case feedbackForm(String?)
+        /// Show the "Feedback form?" offer now, bypassing the 16:30 / 17:00
+        /// schedule and the live-session gate (test hook).
+        case testFeedbackReminder
         case unknown
     }
 
@@ -270,6 +273,7 @@ class TabletHttpServer {
     var onLinkHide: (() -> String)?
     /// Asks Chrome to publish the feedback form; returns JSON.
     var onFeedbackForm: ((String?) -> String)?
+    var onTestFeedbackReminder: (() -> Void)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -513,6 +517,8 @@ class TabletHttpServer {
             case .feedbackForm(let session):
                 contentType = "application/json"
                 body = self.onFeedbackForm?(session) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .testFeedbackReminder:
+                self.onTestFeedbackReminder?()
             case .unknown:
                 statusCode = 404
                 body = "not found"
@@ -643,6 +649,8 @@ class TabletHttpServer {
             return .testPresentationWarn
         case "/test/break-summary":
             return .testBreakSummary
+        case "/test/feedback-reminder":
+            return .testFeedbackReminder
         case "/test/summary-reminder":
             return .testSummaryReminder
         case "/test/bell":

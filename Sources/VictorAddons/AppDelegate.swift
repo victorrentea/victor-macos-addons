@@ -66,6 +66,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var promptCaptureBanner: BottomLeftBanner?
     /// Fires the 16:45 / 17:15 "Start summarization?" offer (see SummaryReminder).
     private var summaryReminder: SummaryReminder?
+    /// Fires the 16:30 / 17:00 "Feedback form?" offer (see FeedbackFormReminder).
+    private var feedbackFormReminder: FeedbackFormReminder?
     private var powerMonitor: PowerMonitor?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
@@ -940,6 +942,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // a real >= 5 min break fires, but bypassing the minutes + cooldown gates.
             BreakSummaryLauncher.launchNow(reason: "/test/break-summary")
         }
+        tabletServer?.onTestFeedbackReminder = { [weak self] in
+            DispatchQueue.main.async { self?.feedbackFormReminder?.offer(reason: "/test/feedback-reminder") }
+        }
         tabletServer?.onTestSummaryReminder = { [weak self] in
             // Headless trigger of the wrap-up offer, bypassing the 16:45 / 17:15
             // schedule. Hovering the pill still opens the real claude session.
@@ -1211,6 +1216,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         SessionNotesAppender.promptBanner = promptCaptureBanner
         summaryReminder = SummaryReminder(screensProvider: { NSScreen.screens })
         summaryReminder?.start()
+        feedbackFormReminder = FeedbackFormReminder(
+            screensProvider: { NSScreen.screens },
+            isSessionActive: { [weak self] in self?.isSessionActive ?? false },
+            onAccept: { [weak self] in self?.requestFeedbackForm() }
+        )
+        feedbackFormReminder?.start()
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
         }

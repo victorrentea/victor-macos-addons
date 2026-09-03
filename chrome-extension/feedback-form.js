@@ -64,10 +64,12 @@ function pageOp(op, arg) {
       return span && trim(span.innerText) === label;
     });
   const forms = () =>
-    rows().map((row) => ({
-      title: titleOf(row),
-      meta: trim((row.querySelector('.dashboard-project__meta') || {}).innerText).replace(/\s+/g, ' '),
-    }));
+    rows().map((row) => {
+      const meta = trim((row.querySelector('.dashboard-project__meta') || {}).innerText).replace(/\s+/g, ' ');
+      // "3 Sept 2026 10 Responses ADD LABEL" → "3 Sept 2026"
+      const date = (meta.match(/^\d{1,2}\s+\S+\s+\d{4}/) || [null])[0];
+      return { title: titleOf(row), meta, date };
+    });
   const expanded = (i) => {
     const row = rows()[i];
     return !!row && !!actionBtn(row, 'Copy');
@@ -95,6 +97,51 @@ function pageOp(op, arg) {
 
     case 'forms':
       return forms();
+
+    /* Is there already a form with this exact name carrying TODAY's date?
+     *
+     * The row's date is PARSED rather than string-compared against a date we
+     * format ourselves: matching "4 Sept 2026" by hand would mean matching the
+     * site's locale, its month abbreviations and its timezone, and would stop
+     * matching silently the day any of the three changed. "Sept" is not a month
+     * name JavaScript accepts, so it is clipped to three letters first.
+     *
+     * Same NAME and same DAY is the signal — a name reused months later is a
+     * different workshop and perfectly legitimate; a second one this afternoon
+     * means the automation is about to run twice for the same session.
+     */
+    case 'duplicate': {
+      const dayOf = (s) => {
+        const m = (s || '').match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+        if (!m) return null;
+        const d = new Date(`${m[1]} ${m[2].slice(0, 3)} ${m[3]}`);
+        return isNaN(d) ? null : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+      };
+      const now = new Date();
+      const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+      const dup = forms().find((f) => f.title === arg && dayOf(f.date) === today);
+      return dup ? { title: dup.title, date: dup.date, meta: dup.meta } : null;
+    }
+
+    /* Say why we stopped, in the page, where the eye already is. A console
+     * message would be invisible: this tab was opened by the automation and is
+     * the only thing on screen at that moment. */
+    case 'showError': {
+      const id = 'va-feedback-error';
+      document.getElementById(id)?.remove();
+      const el = document.createElement('div');
+      el.id = id;
+      el.textContent = arg;
+      el.style.cssText = [
+        'position:fixed', 'inset:0 0 auto 0', 'z-index:2147483647',
+        'background:#b3261e', 'color:#fff',
+        'font:600 20px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
+        'padding:18px 24px', 'text-align:center',
+        'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      ].join(';');
+      document.documentElement.appendChild(el);
+      return true;
+    }
 
     case 'expand': {
       // Only click if it is closed: a fresh clone arrives already expanded.
@@ -219,12 +266,36 @@ export async function publishFeedbackForm(session) {
   if (!session) throw new Error('no session name in the command');
   const tab = await chrome.tabs.create({ url: DASHBOARD, active: true });
   const tabId = tab.id;
+  try {
+    return await run(tabId, session);
+  } catch (e) {
+    /* Every failure ends up on the page, not just in the console: this tab was
+     * opened by the automation and is what Victor is looking at. Painting the
+     * reason there is the difference between "it stopped" and "it stopped
+     * because today already has one of these". */
+    console.log('[feedback-form] stopped:', e.message);
+    await exec(tabId, 'showError', `Feedback form not created — ${e.message}`).catch(() => {});
+    throw e;
+  }
+}
+
+async function run(tabId, session) {
   console.log('[feedback-form] publishing for', session);
 
   await reachDashboard(tabId);
 
   const list = await exec(tabId, 'forms');
   if (!list || !list.length) throw new Error('dashboard has no forms');
+
+  /* Anti-double-run. Checked BEFORE the Copy, because after it the damage is
+   * done: a second clone exists and has to be deleted by hand. The offer can be
+   * accepted twice easily enough — two reminder slots, plus the menu item — and
+   * a workshop wants exactly one link. */
+  const dup = await exec(tabId, 'duplicate', session);
+  if (dup) {
+    throw new Error(`"${session}" already exists for today (${dup.date}) — publish it from that form, or rename it first`);
+  }
+
   const source = list[0].title;                 // Recent view: newest first
   console.log('[feedback-form] cloning', source);
 

@@ -126,10 +126,14 @@ final class SummaryReminder {
     static let prompt = "/victor-private:training-summarizer"
 }
 
-/// When the wrap-up offer is due. Pure so the schedule can be tested without
+/// When an end-of-day offer is due. Pure so the schedule can be tested without
 /// waiting for 16:45 to come around.
+///
+/// Shared with `FeedbackFormReminder`, which asks the same shape of question at
+/// its own times — hence `slots` being a parameter of `dueSlot` rather than the
+/// only schedule this type knows.
 enum SummaryReminderPolicy {
-    /// Local times the offer appears at.
+    /// Local times the wrap-up offer appears at.
     static let slots: [(hour: Int, minute: Int)] = [(16, 45), (17, 15)]
 
     /// How late a slot may still fire. The app restarts several times a day, so
@@ -160,7 +164,8 @@ enum SummaryReminderPolicy {
     /// The key of the slot that should fire right now, or nil. A slot is due on
     /// a working day, from its own minute until `graceMinutes` later, and only
     /// if it hasn't already fired today.
-    static func dueSlot(now: Date, calendar: Calendar, alreadyFired: Set<String>) -> String? {
+    static func dueSlot(now: Date, calendar: Calendar, alreadyFired: Set<String>,
+                        slots: [(hour: Int, minute: Int)] = SummaryReminderPolicy.slots) -> String? {
         guard isWorkday(now, calendar: calendar) else { return nil }
         let c = calendar.dateComponents([.hour, .minute], from: now)
         guard let h = c.hour, let m = c.minute else { return nil }
