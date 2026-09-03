@@ -164,7 +164,7 @@ class TabletHttpServer {
         /// menu item a second time).
         case linkHide
         /// 📝 Ask the Chrome extension to publish this session's feedback form.
-        case feedbackForm
+        case feedbackForm(String?)
         case unknown
     }
 
@@ -269,7 +269,7 @@ class TabletHttpServer {
     /// Hides the clipboard-link banner; returns JSON.
     var onLinkHide: (() -> String)?
     /// Asks Chrome to publish the feedback form; returns JSON.
-    var onFeedbackForm: (() -> String)?
+    var onFeedbackForm: ((String?) -> String)?
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
@@ -510,9 +510,9 @@ class TabletHttpServer {
             case .linkHide:
                 contentType = "application/json"
                 body = self.onLinkHide?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
-            case .feedbackForm:
+            case .feedbackForm(let session):
                 contentType = "application/json"
-                body = self.onFeedbackForm?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+                body = self.onFeedbackForm?(session) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .unknown:
                 statusCode = 404
                 body = "not found"
@@ -683,7 +683,11 @@ class TabletHttpServer {
         case "/link/hide":
             return .linkHide
         case "/feedback-form/publish":
-            return .feedbackForm
+            // "?session=" is a test hook: it names the form without a live
+            // session, which is the only way to exercise the whole chain
+            // outside a workshop. The menu item has no such door — it stays
+            // hidden until a session is really running.
+            return .feedbackForm(queryItems.first(where: { $0.name == "session" })?.value)
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)

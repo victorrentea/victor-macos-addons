@@ -458,9 +458,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         // …and the same thing over HTTP, so the form can be published from a
         // script or another agent, not only from the menu.
-        tabletServer?.onFeedbackForm = { [weak self] in
+        tabletServer?.onFeedbackForm = { [weak self] session in
             MainActor.assumeIsolated {
-                self?.requestFeedbackForm() ?? "{\"ok\":false,\"reason\":\"app-gone\"}"
+                self?.requestFeedbackForm(session: session) ?? "{\"ok\":false,\"reason\":\"app-gone\"}"
             }
         }
         tabletServer?.onLinkHide = { [weak self] in
@@ -2239,11 +2239,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// The link comes back through `publishLink` (the extension calls
     /// `/link/publish` when it has it), so there is nothing to await here.
     @discardableResult
-    private func requestFeedbackForm() -> String {
-        guard let folder = ScreenshotManager.sessionFolder else {
+    private func requestFeedbackForm(session override: String? = nil) -> String {
+        var name = override
+        if name == nil, let folder = ScreenshotManager.sessionFolder {
+            name = SessionNotesAppender.stripDatePrefix(folder.lastPathComponent)
+        }
+        guard let name, !name.isEmpty else {
             return "{\"ok\":false,\"reason\":\"no-session\"}"
         }
-        let name = SessionNotesAppender.stripDatePrefix(folder.lastPathComponent)
         let asked = chromeBridge?.publishFeedbackForm(session: name) ?? false
         if !asked {
             postInvalidURLNotification("no Chrome")
