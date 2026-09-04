@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 4, 02:02"
+    static let BUILD_TIME = "Sep 4, 11:39"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -182,7 +182,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // "I'm in Amsterdam today". The parent's title carries the pick's whole
         // point — the flag and what time it is THERE right now — because that is
         // the number being read off the projector when the break ends.
-        countryItem = NSMenuItem(title: "🌍 Country", action: nil, keyEquivalent: "")
+        countryItem = NSMenuItem(title: "Country", action: nil, keyEquivalent: "")
         countryItem.isEnabled = true
         countrySubmenu = NSMenu()
         countrySubmenu.autoenablesItems = false
@@ -496,7 +496,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// last launched.
     private func refreshCountryItems() {
         let selected = BreakCountry.loadSelected()
-        countryItem.title = "🌍 \(selected.flag) \(selected.name) (now: \(selected.nowLabel()))"
+        countryItem.title = "\(selected.flag) \(selected.name) (now: \(selected.nowLabel()))"
 
         countrySubmenu.removeAllItems()
         for c in BreakCountry.trainingCountries {
