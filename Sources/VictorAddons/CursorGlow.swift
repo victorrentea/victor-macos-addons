@@ -16,18 +16,25 @@ enum CursorGlowSettings {
 
 /// macOS gives no API to re-skin the system pointer bitmap itself (whatever
 /// shape it currently is — arrow, I-beam, resize, …), so this fakes a glow by
-/// painting a soft yellow halo on a click-through panel that chases
-/// `NSEvent.mouseLocation` every frame, the same trick `BusyCursorSpinner`
-/// uses for its one-shot busy indicator. Unlike that spinner this one is a
-/// toggle meant to stay on indefinitely, so it lives across all
-/// spaces/screens and is centered exactly on the hotspot rather than offset
-/// beside it.
+/// painting a soft yellow halo on a click-through panel positioned on the
+/// hotspot. Unlike `BusyCursorSpinner` (a one-shot indicator that can afford
+/// a 30ms *polling* timer), this toggle stays on indefinitely, so polling
+/// visibly lagged behind fast mouse motion — up to a whole tick (30ms) plus
+/// whatever the window-server round trip costs, tick after tick. Instead
+/// this drives the panel from the mouse-moved/dragged events themselves
+/// (global monitor for every other app, local monitor for this app's own
+/// windows), so it repositions once per actual OS pointer report with no
+/// artificial delay — the same latency the real system cursor has.
 @MainActor
 final class CursorGlow {
     private var panel: NSPanel?
-    private var timer: Timer?
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
 
     private let diameter: CGFloat = 56
+    private static let trackedEvents: NSEvent.EventTypeMask = [
+        .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged
+    ]
 
     func start() {
         guard panel == nil else { return }
@@ -50,18 +57,20 @@ final class CursorGlow {
         follow()
         panel.orderFrontRegardless()
 
-        // Same 30ms cadence as BusyCursorSpinner — glued to a moving cursor
-        // without noticeable lag, at the cost of a window move per tick.
-        let timer = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.trackedEvents) { [weak self] _ in
             MainActor.assumeIsolated { self?.follow() }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.trackedEvents) { [weak self] event in
+            MainActor.assumeIsolated { self?.follow() }
+            return event
+        }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        globalMonitor = nil
+        localMonitor = nil
         panel?.orderOut(nil)
         panel = nil
     }
