@@ -95,6 +95,35 @@ extension BreakCountry {
         BreakCountry(name: "Vietnam", iso: "VN", tz: "Asia/Ho_Chi_Minh"),
     ].sorted { $0.name < $1.name }
 
+    // MARK: - The training shortlist (menu bar picker)
+
+    /// The countries Victor actually delivers trainings in — the short list the
+    /// menu bar's country submenu offers, so picking "where I am this week" is one
+    /// hop instead of a search through `all`. Romania is FIRST (home, the default),
+    /// the rest alphabetically. Entries are looked up **by timezone in `all`**
+    /// rather than re-declared, so a country only ever has one iso/tz pair.
+    static let trainingCountries: [BreakCountry] = {
+        let tzs = [
+            "Europe/Bucharest",              // Romania — home, pinned first
+            "Europe/Vienna", "Europe/Brussels", "America/Toronto", "Europe/Prague",
+            "Europe/Copenhagen", "Europe/Paris", "Europe/Berlin", "Europe/Athens",
+            "Europe/Budapest", "Asia/Kolkata", "Europe/Dublin", "Asia/Jerusalem",
+            "Europe/Rome", "Europe/Amsterdam", "Europe/Oslo", "Europe/Warsaw",
+            "Europe/Lisbon", "Europe/Madrid", "Europe/Stockholm", "Europe/Zurich",
+            "Europe/London", "America/New_York",
+        ]
+        return tzs.compactMap { tz in all.first(where: { $0.tz == tz }) }
+    }()
+
+    /// `HH:mm` right now in this country — the "(now: …)" readout the menu shows.
+    func nowLabel(at date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        f.timeZone = timeZone
+        return f.string(from: date)
+    }
+
     // MARK: - "Where am I now?" (live timezone → country)
 
     /// The country in `all` whose IANA zone equals `id`, if any. Pure so it can be

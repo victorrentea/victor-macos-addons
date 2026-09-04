@@ -84,9 +84,12 @@ final class BreakTimerController {
     // day-scoped (resets to Romania each new day). Clicking the flag opens the picker.
     private var selectedCountry = BreakCountry.loadSelected()
 
-    /// Apply a dropdown pick: persist it and repaint the second line in the new
-    /// country's flag + timezone.
-    private func selectCountry(_ c: BreakCountry) {
+    /// Apply a pick — from the overlay's own dropdown or from the menu bar's 🌍
+    /// submenu (which can pick before any break is showing): persist it and repaint
+    /// the finish-time line in the new country's flag + timezone. `refresh()` is a
+    /// no-op with no window up, so a pre-break pick just lands in UserDefaults and
+    /// is picked up by the next `start()`.
+    func selectCountry(_ c: BreakCountry) {
         selectedCountry = c
         c.saveSelected()
         view?.selectedCountryTZ = c.tz

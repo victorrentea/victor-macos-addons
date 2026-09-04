@@ -1266,6 +1266,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onBreak = { [weak self] minutes in
             DispatchQueue.main.async { self?.startBreak(minutes: minutes) }
         }
+        // 🌍 Pick the country whose local time the Break overlay shows.
+        menuBarManager.onPickCountry = { [weak self] country in
+            DispatchQueue.main.async { self?.breakTimer.selectCountry(country) }
+        }
         // Resume an in-progress break after a redeploy/restart.
         DispatchQueue.main.async { [weak self] in self?.breakTimer.resumeIfNeeded() }
 

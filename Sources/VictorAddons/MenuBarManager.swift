@@ -87,6 +87,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onAppendClipboardToNotes: (() -> Void)?
     var onWhip: (() -> Void)?
     var onBreak: ((Int) -> Void)?
+    /// A country picked from the 🌍 submenu — persists the day-scoped selection and
+    /// repaints a showing Break overlay in that timezone.
+    var onPickCountry: ((BreakCountry) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
@@ -96,6 +99,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTaskInboxStatus: (() -> (lastCheck: Date?, launches: Int))?
 
     // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
+
+    // 🌍 Break country picker (parent row + its submenu of training countries).
+    private var countryItem: NSMenuItem!
+    private var countrySubmenu: NSMenu!
 
     private var portHistoryURL: URL { PortKiller.portsFileURL }
 
@@ -136,25 +143,51 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killItem.submenu = killSubmenu
         menu.addItem(killItem)
 
-        // ☕️ Break — countdown "watch" overlay. The durations are FLAT items
-        // in the main menu (no submenu), each starting/resetting the overlay
-        // directly on click.
+        // ☕️ Break — countdown "watch" overlay. The seven durations used to be
+        // seven FLAT rows carrying the same "Break: " prefix seven times; they are
+        // now one ☕️ Break parent with the durations inside, so the top level reads
+        // as a list of features instead of a list of one feature's arguments. Inside
+        // the submenu the prefix is redundant (the parent already said "Break"), so
+        // each row is just its duration — and the emoji says which KIND of break it
+        // is: ☕️ for the coffee-length ones, 🍽️ from 30 min up, where the room
+        // actually goes to eat.
+        let breakItem = NSMenuItem(title: "☕️ Break", action: nil, keyEquivalent: "")
+        breakItem.isEnabled = true
+        let breakSubmenu = NSMenu()
+        breakSubmenu.autoenablesItems = false
+        breakItem.submenu = breakSubmenu
         let breakDurations: [(String, Int)] = [
-            ("☕️ Break: 1 minute", 1),
-            ("☕️ Break: 5 minutes", 5),
-            ("☕️ Break: 10 minutes", 10),
-            ("☕️ Break: 12 minutes", 12),
-            ("☕️ Break: 15 minutes", 15),
-            ("☕️ Break: 30 minutes", 30),
-            ("☕️ Break: 1 hour", 60),
+            ("☕️ 1 minute", 1),
+            ("☕️ 5 minutes", 5),
+            ("☕️ 10 minutes", 10),
+            ("☕️ 12 minutes", 12),
+            ("☕️ 15 minutes", 15),
+            ("🍽️ 30 minutes", 30),
+            ("🍽️ 45 minutes", 45),
+            ("🍽️ 1 hour", 60),
         ]
         for (title, minutes) in breakDurations {
             let item = NSMenuItem(title: title, action: #selector(breakAction(_:)), keyEquivalent: "")
             item.target = self
             item.isEnabled = true
             item.representedObject = minutes
-            menu.addItem(item)
+            breakSubmenu.addItem(item)
         }
+        menu.addItem(breakItem)
+
+        // 🌍 Where I am this week — the same day-scoped country the Break overlay
+        // renders its finish time in (`BreakCountry`), pickable WITHOUT a break
+        // being up: the flag/time row in the overlay only exists while a countdown
+        // is showing, so before the first break of a trip there was nowhere to say
+        // "I'm in Amsterdam today". The parent's title carries the pick's whole
+        // point — the flag and what time it is THERE right now — because that is
+        // the number being read off the projector when the break ends.
+        countryItem = NSMenuItem(title: "🌍 Country", action: nil, keyEquivalent: "")
+        countryItem.isEnabled = true
+        countrySubmenu = NSMenu()
+        countrySubmenu.autoenablesItems = false
+        countryItem.submenu = countrySubmenu
+        menu.addItem(countryItem)
 
         menu.addItem(.separator())
 
@@ -416,6 +449,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         updateFluxInboxItem()
 
         refreshPortItems()
+        refreshCountryItems()
 
         // Show up to 12h (a full workshop day); beyond that the value is stale.
         if let endedAt = breakEndedAt,
@@ -453,6 +487,25 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                 string: title,
                 attributes: [.foregroundColor: color,
                              .font: NSFont.menuFont(ofSize: 0)])
+        }
+    }
+
+    /// Rebuild the 🌍 country rows and re-read the clocks. Called on every menu
+    /// open (`menuNeedsUpdate`), which is what keeps the "(now: HH:mm)" honest —
+    /// a title written once at build time would be showing the hour the app was
+    /// last launched.
+    private func refreshCountryItems() {
+        let selected = BreakCountry.loadSelected()
+        countryItem.title = "🌍 \(selected.flag) \(selected.name) (now: \(selected.nowLabel()))"
+
+        countrySubmenu.removeAllItems()
+        for c in BreakCountry.trainingCountries {
+            let item = NSMenuItem(title: "\(c.flag) \(c.name)", action: #selector(pickCountryAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = true
+            item.representedObject = c.tz
+            item.state = (c.tz == selected.tz) ? .on : .off
+            countrySubmenu.addItem(item)
         }
     }
 
@@ -789,6 +842,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func breakAction(_ sender: NSMenuItem) {
         guard let minutes = sender.representedObject as? Int else { return }
         onBreak?(minutes)
+    }
+
+    @objc private func pickCountryAction(_ sender: NSMenuItem) {
+        guard let tz = sender.representedObject as? String,
+              let c = BreakCountry.all.first(where: { $0.tz == tz }) else { return }
+        onPickCountry?(c)
     }
 
     private func killPort(_ port: Int) {
