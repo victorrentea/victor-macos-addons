@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 4, 11:39"
+    static let BUILD_TIME = "Sep 4, 11:42"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -23,6 +23,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
+    // Mirrored here because AppDelegate reports the raw-capture state BEFORE the
+    // menu is built; the row (and the parent's 🔴) is painted from these.
+    private var isRecordingRaw = false
+    private var recordedRawHours: Double = 0
     private(set) var wsStatusItem: NSMenuItem!
     private var feedbackFormItem: NSMenuItem!
     private var killSubmenu: NSMenu!
@@ -200,11 +204,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeSubmenu = NSMenu()
         transcribeSubmenu.autoenablesItems = false
 
-        // 🔴 Raw audio capture. This earns a permanent row for one reason: while
-        // it is on, the mic is being written to disk, and there is no other way
-        // to find that out. A state you cannot see is a state you forget to turn
-        // off — and this one fills the disk and records a room full of people.
-        recordRawItem = addItem(RawAudioMenu.off, action: #selector(toggleRecordRawAction))
+        // 🔴 Raw audio capture — built here, but NOT added to the main menu: it
+        // lives at the bottom of the Transcribing submenu, under a separator,
+        // next to the mic that feeds it. It is a rarely-flipped setting of the
+        // transcription, not a feature of its own, and the top level is a list
+        // of features. The one thing that must survive the move is its
+        // visibility: a state you cannot see is a state you forget to turn off,
+        // and this one fills the disk and records a room full of people — so
+        // while it is on, the 🔴 also rides on the parent "Transcribing" title,
+        // which is visible without opening anything.
+        recordRawItem = NSMenuItem(title: RawAudioMenu.off, action: #selector(toggleRecordRawAction), keyEquivalent: "")
+        recordRawItem.target = self
+        recordRawItem.isEnabled = true
 
         // Tail (was Monitor)
         tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
@@ -580,8 +591,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     ///   answers "how much have I collected", which is the second question
     ///   anyone asks after "is it on".
     func setRecordingRaw(_ on: Bool, hours: Double = 0) {
+        isRecordingRaw = on
+        recordedRawHours = hours
+        applyRecordRawState()
+        // Repaint the parent row: while capture is on it carries the 🔴 that used
+        // to be the whole point of the top-level row.
+        if transcribeItem != nil { updateTranscribeTitle() }
+    }
+
+    private func applyRecordRawState() {
         guard let item = recordRawItem else { return }
-        item.title = on ? RawAudioMenu.on(hours: hours) : RawAudioMenu.off
+        item.title = isRecordingRaw ? RawAudioMenu.on(hours: recordedRawHours) : RawAudioMenu.off
+        item.state = isRecordingRaw ? .on : .off
     }
 
     @objc private func toggleDarkModeAction() {
@@ -1106,24 +1127,33 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeItem.keyEquivalent = ""
         transcribeItem.keyEquivalentModifierMask = []
 
+        // The 🔴 marker: raw capture now lives inside the submenu, so the parent
+        // is the only place a running capture can still be SEEN without opening
+        // anything. It rides on every state, including the paused ones — the
+        // mic keeps being written to disk regardless of what transcription does.
+        let raw = isRecordingRaw ? "🔴 " : ""
+
+        // The submenu is attached in EVERY state, and the row stays enabled, for
+        // the same reason: with the toggle inside it, a disabled parent would
+        // make a running capture impossible to stop while transcription happens
+        // to be off or battery-paused — the exact moment you most want it gone.
+        transcribeItem.submenu = transcribeSubmenu
+        transcribeItem.isEnabled = true
+        rebuildTranscribeSubmenu()
+
         if isTranscriptionPausedByBattery {
-            transcribeItem.title = "Off - On Battery"
+            transcribeItem.title = raw + "Off - On Battery"
             transcribeItem.image = loadResourceIcon("icon_leaf")
-            transcribeItem.isEnabled = false
             return
         }
 
         if isTranscribing {
-            transcribeItem.title = "Transcribing"
+            transcribeItem.title = raw + "Transcribing"
             transcribeItem.image = transcribeSource.isEmpty ? nil : emojiAsIcon(transcribeSource)
-            transcribeItem.submenu = transcribeSubmenu
-            transcribeItem.isEnabled = true
-            rebuildTranscribeSubmenu()
         } else {
             // On AC but momentarily down (starting up, or a crash before the
             // heartbeat restart). Auto-recovers; nothing for the user to do.
-            transcribeItem.title = "Transcribing (off)"
-            transcribeItem.isEnabled = false
+            transcribeItem.title = raw + "Transcribing (off)"
         }
     }
 
@@ -1152,6 +1182,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             item.state = (src.emoji == transcribeSource) ? .on : .off
             transcribeSubmenu.addItem(item)
         }
+        // …then the separator and the 🔴 raw-capture toggle. Below the line
+        // because it is a different kind of row: the ones above choose WHICH mic
+        // is heard, this one decides whether that mic is also written to disk.
+        transcribeSubmenu.addItem(.separator())
+        applyRecordRawState()
+        transcribeSubmenu.addItem(recordRawItem)
     }
 
     @objc private func pickSource(_ sender: NSMenuItem) {

@@ -53,7 +53,7 @@ What does *not* follow, and was believed briefly on synthetic audio: that long c
 
 ## 🔴 Raw audio capture (`WHISPER_RECORD_RAW`)
 
-**Off by default, armed per session** — it writes ~115 MB an hour and records a room full of people who were not asked. The menu row (`🔴 Recording raw audio — 2.4 h`) exists precisely because that state is otherwise invisible, and a state you cannot see is one you forget to turn off.
+**Off by default, armed per session** — it writes ~115 MB an hour and records a room full of people who were not asked. The menu row (`🔴 Recording raw audio — 2.4 h`, at the bottom of the Transcribing submenu, with the 🔴 echoed on the parent row) exists precisely because that state is otherwise invisible, and a state you cannot see is one you forget to turn off.
 
 **Why it exists.** The speaker-identification work has no far-field corpus. Every recording that survived is a Zoom mix of *remote* participants, where Zoom's VTT is reliable ground truth; the case that actually matters — an audience **in the room**, arriving through Victor's own lavalier — was never captured. A calendar sweep back to 2021 found 40+ on-site sessions and only three hybrid ones — two in early 2024, one in April 2026 — and **none of them was recorded**. So it has to be collected going forward.
 
