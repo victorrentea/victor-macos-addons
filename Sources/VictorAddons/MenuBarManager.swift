@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 4, 11:42"
+    static let BUILD_TIME = "Sep 4, 19:29"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -19,6 +19,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
+    private(set) var cursorGlowItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -95,6 +96,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// repaints a showing Break overlay in that timezone.
     var onPickCountry: ((BreakCountry) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
+    var onCursorGlowEnabledChanged: ((Bool) -> Void)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
@@ -336,6 +338,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         emojiOverlayItem.isEnabled = true
         emojiOverlayItem.state = KeymapOverlaySettings.isEnabled ? .on : .off
         extraSubmenu.addItem(emojiOverlayItem)
+
+        cursorGlowItem = NSMenuItem(title: "🟡 Cursor Glow", action: #selector(toggleCursorGlowAction), keyEquivalent: "")
+        cursorGlowItem.target = self
+        cursorGlowItem.isEnabled = true
+        cursorGlowItem.state = CursorGlowSettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(cursorGlowItem)
 
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
@@ -624,6 +632,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         KeymapOverlaySettings.isEnabled = enabled
         emojiOverlayItem.state = enabled ? .on : .off
         onEmojiOverlayEnabledChanged?(enabled)
+    }
+
+    @objc private func toggleCursorGlowAction() {
+        let enabled = !CursorGlowSettings.isEnabled
+        CursorGlowSettings.isEnabled = enabled
+        cursorGlowItem.state = enabled ? .on : .off
+        onCursorGlowEnabledChanged?(enabled)
     }
 
     @objc private func takeScreenshotAction() {

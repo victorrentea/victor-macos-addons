@@ -3287,49 +3287,35 @@ class EmojiAnimator {
     /// bullets' trajectory — so the sprite gets mirrored on the X axis. Flip this
     /// to `false` to show it as drawn; nothing else needs to change.
     private static let minigunSpriteFacesWest = true
-    /// Where the gun's **body** sits inside the sprite frame (x from the left,
-    /// y from the BOTTOM, both 0…1), measured as the bounding box of the pixels
-    /// that are opaque in every frame — i.e. the receiver and barrel, excluding
-    /// the muzzle flash and the flying casings. The frame is mostly empty sky for
-    /// the casings, so positioning by frame centre would park that emptiness on
-    /// the target and shove the gun off-screen; this is the point that actually
-    /// gets placed. Mirrored along with the sprite when `minigunSpriteFacesWest`.
-    private static let minigunSpriteGunCentre = CGPoint(x: 0.758, y: 0.215)
-    /// The gun is drawn first-person: its mount runs off the bottom of the sprite
-    /// frame, so anything that floats it above the desktop shows a sawn-off base
-    /// hanging in mid-air. Sitting it **flush on the screen's bottom edge** is what
-    /// the art expects — the gun rises out of the edge instead of being cropped by
-    /// it. Only the vertical placement is pinned here; the horizontal one is
-    /// `minigunBodyX`.
-    private static let minigunSpriteSitsOnScreenBottom = true
-
+    /// Horizontal centre line of the receiver inside the source sprite. The
+    /// frame is mostly empty sky for casings, so its geometric centre is not the
+    /// point that should track the mouse.
+    private static let minigunSpriteGunCentreX: CGFloat = 0.758
+    /// Anchor at the cut-off bottom of the mount. Keeping it on y=0 leaves the
+    /// gun welded to the desktop while its x follows the mouse.
+    private static var minigunSpriteMountAnchor: CGPoint {
+        CGPoint(x: minigunSpriteFacesWest ? 1 - minigunSpriteGunCentreX
+                                          : minigunSpriteGunCentreX,
+                y: 0)
+    }
     /// How far the gun swings compared with the cursor: half its travel, so you
     /// swing the crosshair 400px and the weapon hauls itself 200px after it.
     private static let minigunSpriteSwayRatio: CGFloat = 0.5
 
-    /// Where the gun **body** should sit on screen for a given cursor x, both in
-    /// hostLayer coordinates: it **rests on the screen's horizontal centre** and
-    /// sways after the cursor from there, at `minigunSpriteSwayRatio` of its
-    /// travel — the old-FPS weapon that hangs in the middle of the view and lags
-    /// behind you when you turn. The anchor is what matters: an earlier mapping
-    /// (`mouseX / 2`) was anchored on the *west edge*, so the gun could never
-    /// leave the west half. Anchored on W/2, the cursor at the west edge pulls it
-    /// to W/4 and at the east edge to 3W/4, symmetric about the middle. Pure so
-    /// the mapping is testable without a screen.
-    static func minigunBodyX(forMouseX mouseX: CGFloat, inWidth width: CGFloat) -> CGFloat {
-        let centre = width / 2
-        return centre + (mouseX - centre) * minigunSpriteSwayRatio
+    /// Pure horizontal tracking, deliberately confined to the screen's left
+    /// half. A centred cursor parks the body at W/4; edge-to-edge cursor travel
+    /// maps to 0…W/2. The artwork keeps its own fixed firing angle throughout.
+    static func minigunBodyX(forMouseX mouseX: CGFloat, inWidth _: CGFloat) -> CGFloat {
+        mouseX * minigunSpriteSwayRatio
     }
 
-    /// `CALayer.position` places the sprite frame's CENTRE, but what has to land
-    /// on `bodyX` is the gun body — which sits off-centre inside the mostly-empty
-    /// frame (and reflects across the middle when the sprite is mirrored). This
-    /// converts the one into the other.
-    static func minigunLayerX(forBodyX bodyX: CGFloat, spriteWidth: CGFloat) -> CGFloat {
-        let centreX = minigunSpriteFacesWest ? 1 - minigunSpriteGunCentre.x
-                                             : minigunSpriteGunCentre.x
-        return bodyX - (centreX - 0.5) * spriteWidth
+    /// The reticle remains authoritative even when the mouse is motionless, as
+    /// it does in an FPS. An off-screen pointer has no visible aim target, so the
+    /// legacy full-screen spray remains the fallback for that case.
+    static func minigunShotTarget(forMouse mouse: CGPoint, in bounds: CGRect) -> CGPoint? {
+        bounds.contains(mouse) ? mouse : nil
     }
+
     /// Width of the whole sprite frame as a fraction of the screen. The gun body
     /// is only ~46% of that frame (the rest is the casing spray), so 0.44 puts
     /// the gun itself at ~0.20 of the screen — big enough to read as the source
@@ -3342,10 +3328,9 @@ class EmojiAnimator {
     /// speeding the loop up would fling the brass out at a comic speed.
     private static let minigunSpriteLoopDuration: Double = 1.28
 
-    /// Build the firing-minigun sprite, its body on the **bottom edge, resting on
-    /// the middle of the screen on X** and swaying from there after the cursor —
-    /// from where the mirrored barrel points up and to the right, at the bullet
-    /// holes punched around the cursor out on the desktop.
+    /// Build the firing-minigun sprite with its mount on the **bottom edge**.
+    /// It slides only on X, resting at one quarter of the screen; the painted-in
+    /// barrel angle never rotates.
     ///
     /// Returns nil (silently) when the asset is missing: the burst itself must
     /// still run.
@@ -3369,28 +3354,23 @@ class EmojiAnimator {
 
         let gun = CALayer()
         gun.bounds = CGRect(x: 0, y: 0, width: w, height: h)
-        // y = 0 is the BOTTOM edge. The gun is welded to that edge, resting on the
-        // screen's horizontal middle and swaying after the cursor from there;
-        // `target` only survives as the fallback placement used when the sprite is
-        // NOT pinned to the bottom.
-        let target = CGPoint(x: bounds.width * 0.5, y: bounds.height * 0.375)
-        // The gun body's own bottom IS the frame's bottom (it is cut off there),
-        // so "flush with the screen edge" is simply the layer's bottom at y = 0.
-        let y = Self.minigunSpriteSitsOnScreenBottom ? h / 2
-                                                     : target.y - (Self.minigunSpriteGunCentre.y - 0.5) * h
-        gun.position = CGPoint(x: Self.minigunLayerX(forBodyX: Self.minigunBodyX(forMouseX: mousePointInHostLayer().x,
-                                                                                 inWidth: bounds.width),
-                                                     spriteWidth: w),
-                               y: y)
-        gun.contents = first
-        gun.contentsGravity = .resizeAspect
+        gun.anchorPoint = Self.minigunSpriteMountAnchor
+        let mouse = mousePointInHostLayer()
+        gun.position = CGPoint(x: Self.minigunBodyX(forMouseX: mouse.x, inWidth: bounds.width),
+                               y: bounds.minY)
+
+        let sprite = CALayer()
+        sprite.frame = gun.bounds
+        sprite.contents = first
+        sprite.contentsGravity = .resizeAspect
         // Pixel art: bilinear smoothing at this magnification turns the barrels
         // into grey mush, so keep the hard pixel edges.
-        gun.magnificationFilter = .nearest
-        gun.minificationFilter = .nearest
+        sprite.magnificationFilter = .nearest
+        sprite.minificationFilter = .nearest
         if Self.minigunSpriteFacesWest {
-            gun.transform = CATransform3DMakeScale(-1, 1, 1)
+            sprite.transform = CATransform3DMakeScale(-1, 1, 1)
         }
+        gun.addSublayer(sprite)
         gun.opacity = 0
 
         let spin = CAKeyframeAnimation(keyPath: "contents")
@@ -3398,7 +3378,7 @@ class EmojiAnimator {
         spin.duration = Self.minigunSpriteLoopDuration
         spin.repeatCount = .infinity
         spin.calculationMode = .discrete
-        gun.add(spin, forKey: "spin")
+        sprite.add(spin, forKey: "spin")
         return gun
     }
 
@@ -3407,9 +3387,9 @@ class EmojiAnimator {
     /// stands in). Tears itself down `duration`s later — keyed to this exact
     /// reticle so a re-press (fresh reticle) isn't torn down by an old schedule.
     ///
-    /// `gun`, if given, is swayed along the bottom edge by the same tick — one
-    /// timer moves both, so the weapon can never lag a frame behind the crosshair
-    /// it is chasing.
+    /// `gun`, if given, receives its horizontal position on the same tick — one
+    /// timer moves both, so the weapon can never lag a frame behind the
+    /// crosshair it is chasing. Its orientation remains fixed.
     private func startMinigunReticle(following gun: CALayer?, autoStopAfter duration: Double) {
         stopMinigunReticle()   // never leak a previous burst's reticle (and its gun)
         _minigunGunLayer = gun
@@ -3437,11 +3417,8 @@ class EmojiAnimator {
             CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
             self._minigunReticleLayer?.position = mouse
             if let gun = self._minigunGunLayer {
-                // x only: the gun stays welded to the bottom edge, so its y (and
-                // the mirroring transform) are left exactly as built.
-                gun.position.x = Self.minigunLayerX(forBodyX: Self.minigunBodyX(forMouseX: mouse.x,
-                                                                               inWidth: self.hostLayer.bounds.width),
-                                                    spriteWidth: gun.bounds.width)
+                gun.position.x = Self.minigunBodyX(forMouseX: mouse.x,
+                                                   inWidth: self.hostLayer.bounds.width)
             }
             CATransaction.commit()
         }
@@ -6118,13 +6095,6 @@ class EmojiAnimator {
         let holeW: CGFloat = image.size.width * Self.minigunBulletHoleScale
         let holeH: CGFloat = image.size.height * Self.minigunBulletHoleScale
 
-        // Mouse-follow state shared across the spawn closures (main thread only).
-        // Bullets cluster around the cursor only while it is actually MOVING on
-        // this screen; once it sits still for >1s (or is off-screen) they spray
-        // the whole screen randomly, like the original effect.
-        var lastMouse: CGPoint?
-        var lastMoveAt: CFTimeInterval = 0  // distant past → start in full-screen mode
-
         if playSound {
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.minigunAimLeadIn) { [weak container] in
                 guard container?.superlayer != nil else { return }
@@ -6136,25 +6106,20 @@ class EmojiAnimator {
             let delay = Self.minigunAimLeadIn + spawnStart + Double(i) * interval
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak container] in
                 guard let self, let container, container.superlayer != nil else { return }
-                let now = CACurrentMediaTime()
                 let mouse = self.mouseInHostLayer()
-                if let prev = lastMouse, hypot(mouse.x - prev.x, mouse.y - prev.y) > 2 {
-                    lastMoveAt = now
-                }
-                lastMouse = mouse
 
                 let x: CGFloat
                 let y: CGFloat
-                if bounds.contains(mouse), now - lastMoveAt <= 1.0 {
-                    // Cursor on-screen and moving: cluster within 140px of it,
+                if let target = Self.minigunShotTarget(forMouse: mouse, in: bounds) {
+                    // Cursor on-screen: cluster within 140px of the reticle,
                     // with higher density toward the center (r ∝ u, not √u).
                     let radius: CGFloat = 140
                     let angle = CGFloat.random(in: 0..<(2 * .pi))
                     let r = radius * CGFloat.random(in: 0...1)
-                    x = min(max(mouse.x + r * cos(angle) - holeW / 2, 0), bounds.width - holeW)
-                    y = min(max(mouse.y + r * sin(angle) - holeH / 2, 0), bounds.height - holeH)
+                    x = min(max(target.x + r * cos(angle) - holeW / 2, 0), bounds.width - holeW)
+                    y = min(max(target.y + r * sin(angle) - holeH / 2, 0), bounds.height - holeH)
                 } else {
-                    // Idle or off-screen cursor: spray the whole screen.
+                    // Off-screen cursor: there is no visible aim point.
                     x = CGFloat.random(in: 0...(bounds.width - holeW))
                     y = CGFloat.random(in: 0...(bounds.height - holeH))
                 }

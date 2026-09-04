@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var overlayPanel: OverlayPanel!
     private var auxOverlayPanels: [OverlayPanel] = []
     private var animator: EmojiAnimator!
+    private var cursorGlow: CursorGlow!
     private var progressBarOverlay: ProgressBarOverlay?
     // buttonBar removed
     private var menuBarManager: MenuBarManager!
@@ -1243,6 +1244,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if !enabled {
                 self?.keymapHoldCoordinator?.reset()
             }
+        }
+        cursorGlow = CursorGlow()
+        menuBarManager.onCursorGlowEnabledChanged = { [weak self] enabled in
+            if enabled {
+                self?.cursorGlow.start()
+            } else {
+                self?.cursorGlow.stop()
+            }
+        }
+        if CursorGlowSettings.isEnabled {
+            cursorGlow.start()
         }
 
         let portKiller = PortKiller()

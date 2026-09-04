@@ -210,28 +210,20 @@ rule from the start.
 - **🔫 Minigun** (sfx #22 `22_minigun.mp3` → `bullet-holes`, `showBulletHoles`): the burst
   that punches bullet holes around the cursor now has a **visible shooter**. A pixel-art
   minigun sprite (`Resources/minigun.gif`, 64 frames, transparent, top empty rows cropped)
-  sits **flush with the screen's bottom edge** and **slides west–east with the mouse at half
-  its travel** (`minigunSpriteMouseFollowRatio = 0.5`): body x = `mouseX / 2`, so swinging the
-  crosshair 400 px right hauls the gun 200 px after it, as if you were dragging the weapon
-  around to keep it on target. Half-rate is not just "slower" — mapping to `mouseX / 2` keeps
-  the gun in the **west half at all times**, so it stays *behind* the bullets it fires however
-  far east you aim, and at `mouseX = W/4` it lands exactly on the `W/8` the sprite used to be
-  nailed to (the horizontal half of the "north-west sub-sector of the south-west quadrant").
-  Vertically it is pinned to `y = 0` rather than floating at `3H/8`. The x update rides the
-  **same 60 fps tick as the aiming reticle** (`startMinigunReticle(following:)`) — one timer
-  moves both, so the gun can neither lag a frame behind the crosshair nor outlive it; the
-  weak `_minigunGunLayer` is cleared in `stopMinigunReticle`, the layer itself being owned by
-  the burst container. The art is first-person: the mount runs off the bottom of
-  the sprite frame, so floating it shows a sawn-off base hanging in mid-air, while sitting it
-  on the edge reads as the gun *rising out of* it (`minigunSpriteSitsOnScreenBottom = false`
-  restores the floating placement). From there the barrel lines up with the holes appearing
-  out in the middle of the desktop: the gun is **on the bullets' trajectory**, not decoration
-  parked in a corner. The sprite is drawn firing **north-west**, so it is **mirrored on the
-  X axis** to fire east, into the desktop; `minigunSpriteFacesWest = false` shows it as drawn
-  if the other orientation is ever wanted. What gets placed on the tracked x is not the frame
-  centre but the **gun body** (`minigunSpriteGunCentre`, the bbox of the pixels opaque in
-  *every* frame — receiver and barrel, no muzzle flash, no casings): most of the frame is
-  empty sky for the ejected brass, and centring that emptiness would shove the gun off-screen.
+  rises out of the **screen's bottom edge** and shifts only west–east at half the mouse travel:
+  `bodyX = mouseX × 0.5`. A centred cursor therefore parks the mount at **25% of the screen
+  width**, and its complete edge-to-edge travel remains inside the left half. The weapon
+  **never rotates**; it keeps the firing angle painted into the GIF while the mount slides
+  under the reticle. Position rides the **same 60 fps tick as the reticle**
+  (`startMinigunReticle(following:)`), so the gun cannot lag a frame behind the crosshair.
+  The reticle remains the shot target while the mouse
+  is still: bullet spread stays clustered within 140 px of it for the whole burst, instead of
+  reverting to random full-screen hits after one second. Only an off-screen cursor uses the
+  unaimed full-screen fallback. The sprite is drawn firing **north-west**, so its child is
+  **mirrored on X** to give the starting north-east pose; `minigunSpriteFacesWest = false`
+  shows it as drawn if the other orientation is ever wanted. The tracking anchor uses the
+  receiver's measured horizontal centre line (`minigunSpriteGunCentreX`), not the geometric
+  centre of a frame that is mostly empty sky for the ejected brass.
   Width is 44 % of the screen *for the whole frame*, which puts the gun body itself at ~20 %
   and lets the casings arc up and to the right over the lower-left of the desktop;
   aspect-preserved, drawn
