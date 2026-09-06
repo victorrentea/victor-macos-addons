@@ -12,25 +12,30 @@ private let box = CGSize(width: 462, height: 524)
 /// The lens the dog has to stay out of, for this overlay: ~435 pt.
 private let lens = HeartbeatBump.radius(in: bounds)
 
-private func face(onRight: Bool, cursor: CGPoint) -> CGPoint {
+/// The lens on a screen small enough that the dog cannot simply step aside —
+/// it is the old, area-derived radius, kept as a stress case for the fallbacks
+/// that the current half-the-height lens no longer reaches.
+private let crampedLens: CGFloat = 435
+
+private func face(onRight: Bool, cursor: CGPoint, radius: CGFloat = lens) -> CGPoint {
     HeartbeatDogFollow.facePoint(onRight: onRight, cursor: cursor, boxSize: box,
-                                 clearRadius: lens, bounds: bounds)
+                                 clearRadius: radius, bounds: bounds)
 }
 
 /// Where the near edge of the silhouette ends up, i.e. the ear that has to clear
 /// the pulsing disc.
-private func nearEdgeX(onRight: Bool, cursor: CGPoint) -> CGFloat {
-    let f = face(onRight: onRight, cursor: cursor)
+private func nearEdgeX(onRight: Bool, cursor: CGPoint, radius: CGFloat = lens) -> CGFloat {
+    let f = face(onRight: onRight, cursor: cursor, radius: radius)
     let near = HeartbeatDogFollow.faceToNearEdge(boxWidth: box.width)
     return onRight ? f.x - near : f.x + near
 }
 
 /// How much of the box hangs off either side of the frame.
-private func overflow(cursor: CGPoint) -> CGFloat {
+private func overflow(cursor: CGPoint, radius: CGFloat = lens) -> CGFloat {
     let onRight = HeartbeatDogFollow.shouldBeOnRight(cursorX: cursor.x, wasOnRight: true,
                                                      boundsWidth: W)
     let p = HeartbeatDogFollow.position(onRight: onRight, cursor: cursor, boxSize: box,
-                                        clearRadius: lens, bounds: bounds)
+                                        clearRadius: radius, bounds: bounds)
     return max(0, box.width / 2 - p.x) + max(0, p.x + box.width / 2 - W)
 }
 
@@ -86,18 +91,23 @@ final class HeartbeatDogFollowTests: XCTestCase {
     }
 
     func testNoPartOfTheSilhouetteEverEntersTheDisc() {
-        for x in stride(from: CGFloat(0), through: W, by: 24) {
-            for y in stride(from: CGFloat(0), through: H, by: 24) {
-                let cursor = CGPoint(x: x, y: y)
-                let onRight = HeartbeatDogFollow.shouldBeOnRight(cursorX: x, wasOnRight: true,
-                                                                 boundsWidth: W)
-                let f = face(onRight: onRight, cursor: cursor)
-                // The corner of the silhouette nearest the beat: near edge
-                // horizontally, ear-top vertically.
-                let corner = CGPoint(x: nearEdgeX(onRight: onRight, cursor: cursor),
-                                     y: f.y + HeartbeatDogFollow.faceToTop(boxHeight: box.height))
-                let d = ((corner.x - x) * (corner.x - x) + (corner.y - y) * (corner.y - y)).squareRoot()
-                XCTAssertGreaterThanOrEqual(d, lens, "cursor \(cursor) put the dog inside the beat")
+        // Both the lens as it ships and a lens big enough to force every
+        // fallback — the placement has to hold on either.
+        for radius in [lens, crampedLens] {
+            for x in stride(from: CGFloat(0), through: W, by: 24) {
+                for y in stride(from: CGFloat(0), through: H, by: 24) {
+                    let cursor = CGPoint(x: x, y: y)
+                    let onRight = HeartbeatDogFollow.shouldBeOnRight(cursorX: x, wasOnRight: true,
+                                                                     boundsWidth: W)
+                    let f = face(onRight: onRight, cursor: cursor, radius: radius)
+                    // The corner of the silhouette nearest the beat: near edge
+                    // horizontally, ear-top vertically.
+                    let corner = CGPoint(x: nearEdgeX(onRight: onRight, cursor: cursor, radius: radius),
+                                         y: f.y + HeartbeatDogFollow.faceToTop(boxHeight: box.height))
+                    let d = ((corner.x - x) * (corner.x - x) + (corner.y - y) * (corner.y - y)).squareRoot()
+                    XCTAssertGreaterThanOrEqual(d, radius,
+                                                "lens \(radius), cursor \(cursor) put the dog inside the beat")
+                }
             }
         }
     }
@@ -148,28 +158,41 @@ final class HeartbeatDogFollowTests: XCTestCase {
 
     // MARK: - The frame
 
-    /// Away from the seam the sidestep is cheap: the dog barely leans off the
-    /// edge, nowhere near its budget.
-    func testAwayFromTheSeamTheDogStaysWellInsideItsBudget() {
+    /// With the lens as it actually ships — half the screen tall — the dog has
+    /// room to step beside the beat from anywhere on the screen, so it never
+    /// spends any of its overflow budget at all.
+    func testWithTheRealLensTheDogNeverLeavesTheFrame() {
+        for x in stride(from: CGFloat(0), through: W, by: 12) {
+            for y in stride(from: CGFloat(0), through: H, by: 12) {
+                XCTAssertEqual(overflow(cursor: CGPoint(x: x, y: y)), 0,
+                               "cursor (\(x), \(y)) pushed the dog off the edge")
+            }
+        }
+    }
+
+    /// Squeeze it — a lens the old area rule's size — and the budget starts
+    /// being spent, but only at the seam, where neither side has room.
+    func testACrampedLensSpendsTheBudgetOnlyAtTheSeam() {
         for x in stride(from: CGFloat(0), through: W, by: 24) {
             guard abs(x - W / 2) > W * HeartbeatDogFollow.midlineHysteresis else { continue }
             for y in stride(from: CGFloat(0), through: H, by: 24) {
-                XCTAssertLessThanOrEqual(overflow(cursor: CGPoint(x: x, y: y)),
+                XCTAssertLessThanOrEqual(overflow(cursor: CGPoint(x: x, y: y), radius: crampedLens),
                                          box.width * HeartbeatDogFollow.maxBackOverflow,
                                          "cursor (\(x), \(y)) hung too much of the dog off the edge")
             }
         }
     }
 
-    /// A cursor held on the midline *and* low on the screen is the one case that
-    /// spends past the budget: neither half has room and there is no sink left,
-    /// so the dog steps further out and lets more of its rump go. Still a third
-    /// of the box at worst — a cropped dog beats a covered beat.
+    /// A cursor held on the midline *and* low on the screen, with a lens that
+    /// wide, is the one case that spends past the budget: neither half has room
+    /// and there is no sink left, so the dog steps further out and lets more of
+    /// its rump go. Still a third of the box at worst — a cropped dog beats a
+    /// covered beat.
     func testTheSeamIsTheOnlyPlaceThatSpendsPastTheBudget() {
         var worst: CGFloat = 0
         for x in stride(from: CGFloat(0), through: W, by: 8) {
             for y in stride(from: CGFloat(0), through: H, by: 8) {
-                worst = max(worst, overflow(cursor: CGPoint(x: x, y: y)))
+                worst = max(worst, overflow(cursor: CGPoint(x: x, y: y), radius: crampedLens))
             }
         }
         XCTAssertGreaterThan(worst, box.width * HeartbeatDogFollow.maxBackOverflow)

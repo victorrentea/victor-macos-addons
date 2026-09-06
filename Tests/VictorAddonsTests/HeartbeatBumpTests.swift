@@ -8,31 +8,32 @@ private let H: CGFloat = 982
 
 final class HeartbeatBumpTests: XCTestCase {
 
-    // The whole point of the rewrite: the lens covers the share of the screen
-    // Victor asked for, measured as AREA (πr² = fraction · W · H), not as width.
-    func testLensCoversTheAskedShareOfTheScreenByArea() {
+    // The size, as Victor last pinned it: the lens is half the screen TALL.
+    // Stated against the height alone — the width deliberately plays no part,
+    // which is the whole reason the old area formula was dropped.
+    func testLensDiameterIsHalfTheScreenHeight() {
         let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
-        let area = CGFloat.pi * r * r
-        XCTAssertEqual(area / (W * H), HeartbeatBump.areaFraction, accuracy: 0.0001)
+        XCTAssertEqual(2 * r, H * HeartbeatBump.diameterFraction, accuracy: 0.0001)
+        XCTAssertEqual(2 * r, H / 2, accuracy: 0.0001)
     }
 
-    // …a lens a bit over half the screen wide since the beat was asked to be
-    // twice the size. Stated as a plain number so a future tweak to
-    // `areaFraction` has to face what it actually looks like.
+    // …stated as a plain number too, so a future tweak has to face what the lens
+    // actually looks like on the screen it runs on.
     func testLensRadiusOnTheRetina() {
         let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
-        XCTAssertEqual(r, 434.8, accuracy: 0.1)
+        XCTAssertEqual(r, 245.5, accuracy: 0.1)
         // Still a lens, not the whole screen: a still margin survives all round.
         XCTAssertLessThan(2 * r, H)
+        XCTAssertLessThan(2 * r, W)
     }
 
-    // "Twice as big" was asked of the SIZE, and the size of a disc is how wide
-    // it reads — so the radius doubled against the original tenth-of-the-area
-    // lens, which is why the fraction had to go 0.10 → 0.40 and not → 0.20.
-    func testTheLensIsTwiceAsWideAsTheOriginalTenth() {
-        let bounds = CGRect(x: 0, y: 0, width: W, height: H)
-        let tenth = (W * H * 0.10 / CGFloat.pi).squareRoot()
-        XCTAssertEqual(HeartbeatBump.radius(in: bounds), 2 * tenth, accuracy: 0.1)
+    // The point of anchoring on the height: a wide external monitor and the
+    // built-in retina get the SAME lens, where the old area rule stretched it
+    // with the aspect ratio.
+    func testTheLensIgnoresHowWideTheScreenIs() {
+        let tall = CGRect(x: 0, y: 0, width: W, height: H)
+        let wide = CGRect(x: 0, y: 0, width: W * 2, height: H)
+        XCTAssertEqual(HeartbeatBump.radius(in: tall), HeartbeatBump.radius(in: wide))
     }
 
     // …and it grew without getting punchier: `inputScale` is relative to the

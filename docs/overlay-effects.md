@@ -351,11 +351,22 @@ rule from the start.
   looking: a corner 1500 pt from the pivot swept ~450 pt per thump, so the periphery
   lurched while the thing under the cursor barely moved — dizzying rather than alive.
   It is now a **`CIBumpDistortion` in `imgLayer.filters`** (`HeartbeatBump`): a convex
-  lens over the **40% of the screen area** around the pointer (πr² = 0.40·W·H, ~496 pt
-  on the Retina). It started at 10% / ~248 pt; on 2026-08-27 Victor asked for the beat
-  to be **twice as big — the size, not the amplitude** — and the size of a disc is how
-  wide it reads, so the radius doubled and the area it sits on quadrupled. `inputScale`
-  is unchanged at 0 → 0.5 → 0, driven by a keyframe animation on the
+  lens whose **diameter is half the screen height** (`diameterFraction` = 0.5, so
+  r = H/4 ≈ 279 pt on the Retina — a 558 pt disc). The size has been asked for three
+  ways and the *units* moved each time, which is the part worth remembering: it began as
+  "those 10% of the screen under the mouse", an **area** (πr² = fraction·W·H, ~248 pt);
+  on 2026-08-27 Victor asked for it **twice as big — the size, not the amplitude**, and
+  the size of a disc is how wide it reads, so the radius doubled and the area quadrupled
+  to 40% / ~496 pt; on 2026-09-06 he pinned it outright as **half the screen height**.
+  That last anchor is strictly better and is why the area formula is gone: a share of
+  the *area* is a share of W·H, so the same lens grew and shrank with the aspect ratio
+  of whatever display it landed on, where a share of the height reads identically on the
+  retina, the projector and the wide external. It lands back near the original tenth of
+  the area (~12.7%). `HeartbeatDogFollow` reads `radius(in:)` for what the dog must
+  stand clear of, so the two sizes cannot drift apart. `inputScale`
+  is unchanged at 0 → 0.5 → 0 across all three resizings — it is relative to the radius,
+  so a lens of another size bulges by the same factor over that distance, bigger or
+  smaller but never punchier — driven by a keyframe animation on the
   `filters.bump.inputScale` key path — which is why the filter is installed with a
   `name`. Outside its radius the filter is the **identity**, so the periphery is not
   merely moved less, it is not moved at all; what is left of the old zoom is a 2%
@@ -436,8 +447,10 @@ rule from the start.
   whole dog parked politely in frame. The *top* is a hard stop, though — there is no
   more dog above the ears to crop.
 
-  **Clearance is bought in three steps, cheapest first**, and on the retina step 1 alone
-  answers it for any cursor not sitting on the midline: (1) **step sideways**, letting up
+  **Clearance is bought in three steps, cheapest first.** Since the lens shrank to half
+  the screen height on 2026-09-06 the dog fits beside it from *anywhere* on the retina
+  and never spends a step at all — the tests keep the fallbacks honest by re-running the
+  whole sweep against the old 435 pt lens as a stress case. The steps: (1) **step sideways**, letting up
   to `maxBackOverflow` = 25 % of the box hang off the outer edge — free, it costs only
   rump; (2) **sink** below the beat if the frame ate the sidestep, until `faceFloorFraction`
   says the face itself would go out of sight; (3) **step sideways past the budget**, with
