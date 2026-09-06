@@ -386,12 +386,11 @@ rule from the start.
   heartbeat (`cancelIfRunning`) rather than being swallowed: being swallowed would
   answer the tablet with "no sound" and send it back to local playback, and restarting
   is what `playTabletSound` does to the audio anyway. Since 2026-08-26 a **chihuahua rides on top of it** (`heartbeat-dog.png`,
-  `makeHeartbeatDogLayer`), sized to **two thirds** of the aspect-fit of the
-  **left half of the screen** (`heartbeatDogScale` — filling that half outright made the
-  dog the subject and the beating screen its backdrop, which is the wrong way round),
-  centred in the half and bottom-aligned — the photo is cropped at the chest, so letting the body run
-  off the bottom edge is what makes it read as a dog leaning into frame rather than a
-  sticker floating in mid-air. The asset is the source photo with its background
+  `makeHeartbeatDogLayer`), sized to **two thirds** of the aspect-fit of **half the
+  screen** (`heartbeatDogScale` — filling that half outright made the dog the subject and
+  the beating screen its backdrop, which is the wrong way round). That function decides
+  the dog's *size* only; where it stands is settled entirely by the placement below,
+  before the first frame is drawn. The asset is the source photo with its background
   flood-filled from the corners to **real alpha** (not a coloured box), so the pulsing
   capture shows through around the fur. **Which photo matters more than the fuzz value**:
   the first attempt cut the dog out of a white studio shot, and a chihuahua's pale ear
@@ -403,7 +402,7 @@ rule from the start.
   (muzzle pointing right, i.e. into the screen from the left half) — the flop the
   white-background version needed was a property of that framing, not a rule.
   The dog is a **sibling of the capture layer, not a child**: the pulse animation is
-  added to the capture alone, so the screen zooms while the dog stays nailed down.
+  added to the capture alone, so the screen bulges while the dog beside it stays undistorted.
   Both live inside a **container**, and it is the container that goes into
   `activeEffects` — one tracked unit, so `stopAllActiveEffects()` and `trackEffect`'s
   auto-cleanup tear the pair down together instead of leaving a dog behind. The
@@ -412,26 +411,52 @@ rule from the start.
   which still animates the capture layer but validates the container. The dog carries **no sound of its
   own** — the whole effect is scored by the one clip the same call started.
 
-  **🐶💨 It bolts from the cursor** (`watchHeartbeatDog` + the pure, unit-tested
-  `HeartbeatDogFlee`): land the pointer on the dog and it leaps to the *other* half of
-  the screen, turning to face the middle at the apex of the arc so it still looks into
-  the screen from either side. That is the joke the effect was missing — the screen is
-  having a panic attack around your pointer, and the one thing on it that is alive
-  treats the pointer as the thing to run from. Chase it and it keeps bouncing side to
-  side. Mechanics worth knowing before touching it: the overlay panel is **click-through
-  and receives no mouse events at all**, so the cursor is *polled* (`NSEvent.mouseLocation`,
-  20 Hz — well under the reaction time this imitates) for exactly as long as the effect
-  lives, and the timer cancels itself the moment this is no longer the active heartbeat,
-  so a stop-all never leaves it running. The hit box is **inset 14 % horizontally**: the
-  trimmed PNG still carries transparent corners either side of the ears, and bolting
-  from a cursor that is visibly beside the dog reads as a bug, not as a scare. After a
-  leap the cursor is **ignored for the length of the hop** — otherwise the dog is
-  re-startled by the very pointer it is still jumping away from and never lands. The two
-  resting positions are just the screen's quarter and three-quarter marks, since the dog
-  is centred inside its half — none of this needs to know how wide the dog is. The arc's
-  height is proportional to the distance, with a cap that on the retina never binds (a
-  full half-screen leap arcs ≈212 pt against a 216 pt cap); the cap is there for other
-  overlay shapes.
+  **🐶 It keeps the beat company** (`watchHeartbeatDog` + the pure, unit-tested
+  `HeartbeatDogFollow`). **This rule inverted on 2026-09-06 and the file was renamed**
+  — until then it was `HeartbeatDogFlee` and the dog *bolted* to the half of the screen
+  the cursor was not in. That joke stopped working once the projector is generally
+  zoomed in around the beat: the far half is precisely the part of the screen the room
+  cannot see, so the dog was reliably off-frame. Now it is glued to the beat, parked as
+  close to the pulsing lens as it fits without any of it landing inside, facing the
+  pointer, and it **moves along whenever the pointer does** — vertically too, which is
+  the genuinely new half.
+
+  **The face, not the box, is what gets parked.** The placement is written around one
+  point measured off the asset — `faceFracX` 0.60 / `faceFracYFromTop` 0.15 — and the
+  clearance around another, `headSideFracX` 0.86, the ear tip, which is the outermost
+  part of the head and therefore what actually has to sit on the circle (the muzzle
+  stops around 0.72). Both come off the alpha channel at a 60/255 threshold, not
+  eyeballed. The chest lower down is wider still (0.99) but sits ~400 pt below the face,
+  where the lens circle has already curved away by more than the extra width — checked,
+  it clears.
+
+  **The face rides at the cursor's own height**, which routinely leaves the chest and
+  shoulders below y = 0. That is the ask, not a clamp that failed: the photo is cropped
+  at the chest anyway, so a dog leaning in from off the bottom edge reads better than a
+  whole dog parked politely in frame. The *top* is a hard stop, though — there is no
+  more dog above the ears to crop.
+
+  **Clearance is bought in three steps, cheapest first**, and on the retina step 1 alone
+  answers it for any cursor not sitting on the midline: (1) **step sideways**, letting up
+  to `maxBackOverflow` = 25 % of the box hang off the outer edge — free, it costs only
+  rump; (2) **sink** below the beat if the frame ate the sidestep, until `faceFloorFraction`
+  says the face itself would go out of sight; (3) **step sideways past the budget**, with
+  the face staying in frame as the only hard stop — measured worst case is a third of the
+  box off the edge, at a cursor held on the seam *and* low on the screen. Overlapping the
+  beat is the failure worth paying to avoid: the dog is a **sibling** of the capture
+  layer, so it never pulses — it would just cover the one part of the screen the
+  projector is zoomed into.
+
+  Mechanics worth knowing before touching it: the overlay panel is **click-through and
+  receives no mouse events at all**, so the cursor is *polled* (`NSEvent.mouseLocation`,
+  20 Hz) for exactly as long as the effect lives, and the timer cancels itself the moment
+  this is no longer the active heartbeat, so a stop-all never leaves it running. Crossing
+  the midline (with a 4 % dead band, or a cursor on the seam makes the dog oscillate on
+  every poll) is a **leap over the beat** with a mirror at the apex; everything else is a
+  160 ms eased slide of both x and y. Only the leap freezes the cursor reading for its own
+  duration — a *follow* that ignored the mouse for 160 ms would lag a whole hop behind
+  every drag. The arc height is proportional to the distance, with a cap that on the
+  retina never binds; the cap is there for other overlay shapes.
 
 - **☢️ Nuke bombardment — the clip, read frame by frame.** Everything below hangs off one
   measurement of `03_explosion.mp3` (3.28 s), so it is worth stating once. The clip is a

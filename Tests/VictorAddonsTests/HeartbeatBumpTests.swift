@@ -2,7 +2,7 @@ import XCTest
 @testable import VictorAddons
 
 /// A retina-sized overlay: 1512 × 982 points, bottom-origin — the same one
-/// `HeartbeatDogFleeTests` uses, so the two read as one effect.
+/// `HeartbeatDogFollowTests` uses, so the two read as one effect.
 private let W: CGFloat = 1512
 private let H: CGFloat = 982
 

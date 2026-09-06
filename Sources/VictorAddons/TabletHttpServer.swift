@@ -143,6 +143,14 @@ class TabletHttpServer {
         case videoPlay(String, Int?)
         /// Stop / close the video player.
         case videoStop
+        /// 🎵 Play a video snippet's SOUND ONLY (no window, nothing on screen),
+        /// with an optional "?t=" start-second override. The ♪ button on the
+        /// tablet's video tiles.
+        case videoSoundPlay(String, Int?)
+        /// 🎵 Silence the soundtrack-only playback (the ♪ pressed a second time).
+        case videoSoundStop
+        /// 🎵 Read-only snapshot of the soundtrack-only player (test hook).
+        case videoSoundState
         /// ✋ An agent is about to drive the mouse and keyboard: raise the
         /// hands-off frame. Carries who is driving, what it is doing, and how
         /// long to believe it before releasing on its own.
@@ -262,6 +270,14 @@ class TabletHttpServer {
     var onVideoPlay: ((String, Int?) -> String?)?
     /// Stop / close the video player.
     var onVideoStop: (() -> Void)?
+    /// 🎵 Play a snippet's soundtrack alone by id (optional start-second
+    /// override); returns JSON carrying `durationMs` — how long the tablet
+    /// should hold its video page open — or nil if the id is unknown (→ 404).
+    var onVideoSoundPlay: ((String, Int?) -> String?)?
+    /// 🎵 Silence the soundtrack-only playback.
+    var onVideoSoundStop: (() -> Void)?
+    /// 🎵 Read-only JSON snapshot of the soundtrack-only player.
+    var onVideoSoundState: (() -> String)?
     /// ✋ Raise the hands-off frame (agent, what, ttl seconds); returns the state JSON.
     var onHandsOffStart: ((String?, String?, TimeInterval?) -> String)?
     /// ✋ Release it; returns the state JSON.
@@ -502,6 +518,19 @@ class TabletHttpServer {
                 }
             case .videoStop:
                 self.onVideoStop?()
+            case .videoSoundPlay(let id, let t):
+                contentType = "application/json"
+                if let json = self.onVideoSoundPlay?(id, t) {
+                    body = json
+                } else {
+                    statusCode = 404
+                    body = "{\"ok\":false,\"reason\":\"unknown-video\"}"
+                }
+            case .videoSoundStop:
+                self.onVideoSoundStop?()
+            case .videoSoundState:
+                contentType = "application/json"
+                body = self.onVideoSoundState?() ?? "{\"playing\":false}"
             case .handsOffStart(let agent, let what, let ttl):
                 contentType = "application/json"
                 body = self.onHandsOffStart?(agent, what, ttl) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
@@ -576,6 +605,12 @@ class TabletHttpServer {
             return .videoStop
         case "/test/video/stop":
             return .videoStop
+        case "/video/sound/stop":
+            return .videoSoundStop
+        case "/test/video/sound/stop":
+            return .videoSoundStop
+        case "/test/video/sound":
+            return .videoSoundState
         case "/test/transcription/start":
             return .testTranscriptionStart
         case "/test/state":
@@ -748,6 +783,17 @@ class TabletHttpServer {
                 let id = String(pathOnly.dropFirst("/video/play/".count))
                 let t = queryItems.first(where: { $0.name == "t" })?.value.flatMap(Int.init)
                 if !id.isEmpty { return .videoPlay(id, t) }
+            }
+            if pathOnly.hasPrefix("/video/sound/") {
+                let id = String(pathOnly.dropFirst("/video/sound/".count))
+                let t = queryItems.first(where: { $0.name == "t" })?.value.flatMap(Int.init)
+                if !id.isEmpty { return .videoSoundPlay(id, t) }
+            }
+            // Checked BEFORE the plain /test/video/ hook below, which would
+            // otherwise swallow this as a video id of "sound/<id>".
+            if pathOnly.hasPrefix("/test/video/sound/") {
+                let id = String(pathOnly.dropFirst("/test/video/sound/".count))
+                if !id.isEmpty { return .videoSoundPlay(id, nil) }
             }
             // Headless test hook: /test/video/<id> plays it (start second from the
             // manifest). /test/video/stop is handled by the exact-match case above.

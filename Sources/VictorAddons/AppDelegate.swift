@@ -362,6 +362,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 SoundManager.shared.playOverlapping("click.wav", volume: 0.7)
             case "stop-all":
                 SoundManager.shared.stopTabletSound()
+                // "Silence everything the tablet started" includes a 🎵
+                // soundtrack-only play — it has no tile of its own to press again.
+                VideoSoundtrackPlayer.shared.stop()
                 self?.animator.stopAllActiveEffects()
                 self?.progressBarOverlay?.cancel()
             default:
@@ -409,11 +412,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onVideoPlay = { id, tOverride in
             guard let entry = VideoLibrary.entry(id: id) else { return nil }
             let start = tOverride ?? entry.startSeconds
+            // The clip brings its own audio: a soundtrack-only play still
+            // running underneath it would be heard twice, half a second apart.
+            VideoSoundtrackPlayer.shared.stop(fade: false)
             let ok = VideoPlayer.shared.play(fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start)
             guard ok else { return nil }
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start)}"
         }
         tabletServer?.onVideoStop = { VideoPlayer.shared.stop() }
+        // 🎵 …and the same snippet with the picture left out: the ♪ button in the
+        // corner of each video tile. `durationMs` is the contract — the tablet
+        // keeps its video page up for exactly that long instead of timing out
+        // back to the soundboard mid-sound.
+        tabletServer?.onVideoSoundPlay = { id, tOverride in
+            guard let entry = VideoLibrary.entry(id: id) else { return nil }
+            let start = tOverride ?? entry.startSeconds
+            guard let ms = VideoSoundtrackPlayer.shared.play(
+                id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start
+            ) else { return nil }
+            return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
+        }
+        tabletServer?.onVideoSoundStop = { VideoSoundtrackPlayer.shared.stop() }
+        tabletServer?.onVideoSoundState = { VideoSoundtrackPlayer.shared.stateJSON() }
         // ✋ Hands off. Two curl calls bracket whatever GUI dance an agent is
         // about to do; the watchdog inside means a crashed agent releases the
         // machine on its own instead of leaving the frame up all afternoon.

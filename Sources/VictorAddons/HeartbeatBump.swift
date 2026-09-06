@@ -14,7 +14,7 @@ import CoreGraphics
 /// What is left of the old zoom is a `breatheScale` hair of whole-screen
 /// motion, pivoted at the centre so it stays symmetric.
 ///
-/// Same bargain as `HeartbeatDogFlee` and `CropFlashGeometry`: every decision
+/// Same bargain as `HeartbeatDogFollow` and `CropFlashGeometry`: every decision
 /// here is a function of the overlay bounds, so it lives out where it can be
 /// tested without a screen.
 enum HeartbeatBump {
