@@ -84,21 +84,4 @@ enum KeySimulator {
     static func zoomBigger()  { chord(0x18, modifier: VK_COMMAND, flag: .maskCommand) }
     /// Cmd+- — terminal "Smaller" (decrease font size). Key 0x1B = kVK_ANSI_Minus.
     static func zoomSmaller() { chord(0x1B, modifier: VK_COMMAND, flag: .maskCommand) }
-
-    /// Ctrl+Opt+Space — global hotkey that summons ChatGPT. Space = 0x31 (kVK_Space).
-    static func simulateCtrlOptSpace() {
-        let source = CGEventSource(stateID: .hidSystemState)
-        func post(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
-            guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
-            e.flags = flags
-            e.post(tap: .cghidEventTap)
-            usleep(12_000)
-        }
-        post(VK_CONTROL, down: true, flags: .maskControl)
-        post(VK_OPTION, down: true, flags: [.maskControl, .maskAlternate])
-        post(0x31, down: true, flags: [.maskControl, .maskAlternate])
-        post(0x31, down: false, flags: [.maskControl, .maskAlternate])
-        post(VK_OPTION, down: false, flags: .maskControl)
-        post(VK_CONTROL, down: false, flags: [])
-    }
 }

@@ -26,7 +26,6 @@ class EventTapManager {
     var onToggleDarkMode: (() -> Void)?
     /// ⌘⇧X **inside PowerPoint only** — toggle strikethrough on the selection.
     var onPowerPointStrikethrough: (() -> Void)?
-    var onRepaste: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
     /// ⌘⌃Q — Claude Code with `--dangerously-skip-permissions` (Victor's `cx`).
@@ -95,15 +94,9 @@ private let VK_F: CGKeyCode = 0x03
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
-    private let MOUSE_BUTTON_3: Int64 = 2  // wheel click
     private let MOUSE_BUTTON_5: Int64 = 4  // "forward" side button — used by Wispr Flow push-to-talk
     private let MOUSE_BUTTON_6: Int64 = 5  // extra side button (physical "button 6")
     private let MOUSE_BUTTON_7: Int64 = 6  // extra side button (physical "button 7")
-
-    // MARK: Wheel click tracking
-    private var wheelClickCount: Int = 0
-    private var wheelPendingWork: DispatchWorkItem?
-    private let wheelClickWindow: TimeInterval = 0.35
 
     // MARK: Cmd+scroll → terminal font zoom
     /// Terminals where Cmd+scroll is turned into a font-size zoom (Cmd+= / Cmd+-).
@@ -147,7 +140,6 @@ private let VK_F: CGKeyCode = 0x03
             CGEventMask(1 << CGEventType.keyUp.rawValue) |
             CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
-            CGEventMask(1 << CGEventType.otherMouseUp.rawValue) |
             CGEventMask(1 << CGEventType.scrollWheel.rawValue)
 
         let tap = CGEvent.tapCreate(
@@ -218,23 +210,13 @@ private let VK_F: CGKeyCode = 0x03
         // Mouse events
         if type == .otherMouseDown {
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
-            if button == MOUSE_BUTTON_3 {
-                handleWheelDown()
-            } else if button == MOUSE_BUTTON_5 {
+            if button == MOUSE_BUTTON_5 {
                 // Pass the event through — Wispr Flow needs to see it. We only
                 // observe so the audio mute poll can briefly run at 100ms.
                 DispatchQueue.global().async { [weak self] in self?.onMouseButton5Pressed?() }
             } else if whipOverlayShowing && (button == MOUSE_BUTTON_6 || button == MOUSE_BUTTON_7) {
                 // Extra side button while the whip is up → crack it (pass through).
                 DispatchQueue.main.async { [weak self] in self?.onWhipCrack?() }
-            }
-            return Unmanaged.passUnretained(event)
-        }
-
-        if type == .otherMouseUp {
-            let button = event.getIntegerValueField(.mouseEventButtonNumber)
-            if button == MOUSE_BUTTON_3 {
-                handleWheelUp()
             }
             return Unmanaged.passUnretained(event)
         }
@@ -553,31 +535,6 @@ private let VK_F: CGKeyCode = 0x03
         }
 
         return Unmanaged.passUnretained(event)
-    }
-
-    // MARK: - Wheel click (double = Claude Desktop opt-opt)
-
-    private func handleWheelDown() {}
-
-    private func handleWheelUp() {
-        DispatchQueue.main.async { [weak self] in self?.handleShortWheelClick() }
-    }
-
-    private func handleShortWheelClick() {
-        wheelPendingWork?.cancel()
-        wheelPendingWork = nil
-        wheelClickCount += 1
-
-        let count = wheelClickCount
-        let work = DispatchWorkItem { [weak self] in
-            self?.wheelClickCount = 0
-            self?.wheelPendingWork = nil
-            if count == 2 {
-                DispatchQueue.global().async { [weak self] in self?.onRepaste?() }
-            }
-        }
-        wheelPendingWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + wheelClickWindow, execute: work)
     }
 
     // MARK: - Frontmost app tracking (for Cmd+scroll zoom targeting)
