@@ -18,16 +18,18 @@ import CoreGraphics
 ///
 /// 1. **Which side of the cursor.** The one with more room, with hysteresis on
 ///    the midline so a cursor parked on the seam doesn't make the dog oscillate.
-/// 2. **How far along that side.** Far enough that the near edge of the
-///    silhouette is outside the lens, then pulled back into the frame — except
-///    the dog's *back* is allowed to hang off the outer edge, up to
-///    `maxBackOverflow`. A cropped rump is a cheaper failure than a face that has
-///    been dragged away from the beat.
-/// 3. **How high.** The face rides at the cursor's own height, which routinely
-///    puts the chest and shoulders below y = 0. That is intended, and it is what
-///    Victor asked for: the photo is cropped at the chest anyway, so a dog
-///    leaning in from off the bottom edge reads better than a whole dog parked
-///    politely in frame.
+/// 2. **How high.** Decided *before* the horizontal, because it is the pinned
+///    one: the face rides at the cursor's own height, but the photo's bottom edge
+///    is **never lifted off the floor of the screen** — it may go below, never
+///    above (Victor, 2026-09-06). A beat low on the screen therefore leaves most
+///    of the dog under the frame; a beat high on it does not lift the dog at all,
+///    it just leaves the dog standing beneath the beat.
+/// 3. **How far along that side.** Only as far as the ear needs to clear the
+///    lens — and standing *below* the beat already pays part of that, so the
+///    higher the beat, the closer in the dog tucks. If the frame will not give
+///    the rest, the dog's *back* may hang off the outer edge up to
+///    `maxBackOverflow`: a cropped rump is a cheaper failure than a face dragged
+///    away from the beat.
 ///
 /// Coordinates are the overlay's: bottom-origin, y growing upward.
 enum HeartbeatDogFollow {
@@ -73,6 +75,21 @@ enum HeartbeatDogFollow {
     /// sink-below-the-beat fallback has to clear *those*, not the face.
     static func faceToTop(boxHeight: CGFloat) -> CGFloat {
         boxHeight * faceFracYFromTop
+    }
+
+    /// The highest the face may ever ride: the one that puts the **bottom edge of
+    /// the photo exactly on the bottom edge of the screen**.
+    ///
+    /// This is a hard rule, not a preference (Victor, 2026-09-06): the dog's
+    /// bottom edge may be *below* the screen's, never above it. The photo is
+    /// cropped at the chest, so a gap underneath turns it from a dog leaning into
+    /// frame into a sticker floating in mid-air — the one thing the whole
+    /// bottom-aligned framing exists to avoid. A beat up near the top of the
+    /// screen therefore does not lift the dog; it makes the dog stand under the
+    /// beat instead of beside it, which `facePoint` then cashes in for a much
+    /// closer horizontal placement.
+    static func bottomAnchoredFaceY(boxHeight: CGFloat) -> CGFloat {
+        boxHeight * (1 - faceFracYFromTop)
     }
 
     /// Where the face anchor sits relative to the layer's `position` (its centre),
@@ -123,26 +140,30 @@ enum HeartbeatDogFollow {
 
     /// The face anchor's target, in overlay points.
     ///
-    /// One constraint drives all of it: **the near-top corner of the silhouette —
-    /// the ear on the beat's side — must stay outside the lens circle.** There
-    /// are two ways to buy that clearance and they are spent in a fixed order,
-    /// cheapest cost first:
+    /// **Height is decided first**, because it is the constrained one: the face
+    /// rides at the cursor's own height, capped by `bottomAnchoredFaceY` so the
+    /// photo's bottom edge is never lifted off the floor of the screen. Below
+    /// that cap it sinks freely — a beat low on the screen leaves most of the dog
+    /// under the frame, which is the intended look.
     ///
-    /// 1. **Step sideways**, up to the point where `maxBackOverflow` of the box
-    ///    hangs off the outer edge. Free: it costs only rump.
-    /// 2. **Sink**, if the frame ate the sidestep — drop the dog until it is
-    ///    *below* the beat rather than beside it. Costs body below the bottom
-    ///    edge, which Victor explicitly signed off on, but it runs out at
-    ///    `faceFloorFraction`: a face below the floor is no dog at all.
-    /// 3. **Step sideways past the budget**, once sinking is exhausted. The rump
-    ///    hangs off further than anyone would design for, and the only hard stop
-    ///    is the face itself staying inside the frame. Overlapping the beat is
-    ///    worse than a cropped dog: the dog is a *sibling* of the capture layer,
-    ///    so it does not pulse — it just covers the one part of the screen the
-    ///    projector is zoomed into.
+    /// **The horizontal then only has to make up the difference.** The constraint
+    /// is that the near-top corner of the silhouette — the ear on the beat's side
+    /// — stays outside the lens circle, and being *below* the beat already buys
+    /// part of that distance. So a beat high on the screen, which pins the dog to
+    /// the floor far beneath it, lets the dog stand almost directly under the
+    /// circle instead of off to one side. Only the drop *below the cursor* counts:
+    /// while the ears are still above it, the near edge runs straight through the
+    /// cursor's own height and the horizontal gap has to carry the whole radius.
     ///
-    /// On the retina, with the cursor anywhere but hard on the midline, step 1
-    /// alone answers it and the other two never run.
+    /// If the frame will not give that gap, two fallbacks, in order: **sink
+    /// further** (free — the bottom edge is open, and it stops only at
+    /// `faceFloorFraction`, where the face itself would go out of sight), then
+    /// **step sideways past `maxBackOverflow`**, with the face staying inside the
+    /// frame as the only hard stop. Overlapping the beat is the failure worth
+    /// paying to avoid: the dog is a *sibling* of the capture layer, so it never
+    /// pulses — it would just cover the one part of the screen the projector is
+    /// zoomed into. Since the lens shrank to half the screen height, neither
+    /// fallback is reached on the retina.
     static func facePoint(onRight: Bool, cursor: CGPoint, boxSize: CGSize,
                           clearRadius: CGFloat, bounds: CGRect) -> CGPoint {
         let near = faceToNearEdge(boxWidth: boxSize.width)
@@ -151,34 +172,41 @@ enum HeartbeatDogFollow {
         let want = clearRadius + clearMargin
         let dir: CGFloat = onRight ? 1 : -1
 
+        // 1. Height: track the cursor, but never lift the photo off the floor.
+        var faceY = min(cursor.y, bottomAnchoredFaceY(boxHeight: boxSize.height))
+        // How far the ear tip has dropped below the beat. Clamped at zero: while
+        // the ears are above the cursor the near edge spans its height, so none
+        // of that separation is real clearance.
+        var below = max(0, cursor.y - faceY - ears)
+
+        // The horizontal gap that, with `below` already in hand, puts the corner
+        // on the circle.
+        func sidestep(_ below: CGFloat) -> CGFloat {
+            (max(0, want * want - below * below)).squareRoot()
+        }
+
         // A dog wider than the screen has no placement worth the name.
         let slack = boxSize.width * maxBackOverflow
         let lo = back - slack, hi = bounds.width - back + slack
-        guard lo <= hi else { return CGPoint(x: bounds.width / 2, y: cursor.y) }
+        guard lo <= hi else { return CGPoint(x: bounds.width / 2, y: faceY) }
 
-        // 1. The sidestep, on its budget.
-        var faceX = min(max(cursor.x + dir * (want + near), lo), hi)
-        var faceY = cursor.y
+        // 2. Horizontal, on its budget.
+        var faceX = min(max(cursor.x + dir * (sidestep(below) + near), lo), hi)
         let gap = max(0, abs(faceX - cursor.x) - near)   // cursor → near edge
 
-        if gap < want {
-            // 2. Sink, as far as the floor allows.
-            let sinkNeeded = (want * want - gap * gap).squareRoot() + ears
-            let sinkAvailable = cursor.y - min(cursor.y, bounds.height * faceFloorFraction)
-            let sink = min(sinkNeeded, sinkAvailable)
-            faceY = cursor.y - sink
-
-            // 3. Still short? Buy the rest sideways, at any width.
-            if sink < sinkNeeded {
-                let bought = max(0, sink - ears)         // vertical clearance the sink won
-                let needed = (want * want - bought * bought).squareRoot()
-                faceX = min(max(cursor.x + dir * (needed + near), 0), bounds.width)
+        // 3. Short? Sink further, then step out past the budget. Worked as a
+        //    target height rather than a delta: `below` is clamped at zero while
+        //    the ears are above the cursor, so adding a sink to it would lose
+        //    exactly one ear's worth of drop.
+        if gap * gap + below * below < want * want {
+            let credit = (want * want - gap * gap).squareRoot()   // drop still needed
+            faceY = max(cursor.y - ears - credit, min(faceY, bounds.height * faceFloorFraction))
+            below = max(0, cursor.y - faceY - ears)
+            if below < credit {
+                faceX = min(max(cursor.x + dir * (sidestep(below) + near), 0), bounds.width)
             }
         }
 
-        // The ears must not leave the TOP of the frame — unlike the bottom, there
-        // is no more dog up there to crop.
-        faceY = min(faceY, bounds.height - ears)
         return CGPoint(x: faceX, y: faceY)
     }
 

@@ -441,24 +441,39 @@ rule from the start.
   where the lens circle has already curved away by more than the extra width — checked,
   it clears.
 
-  **The face rides at the cursor's own height**, which routinely leaves the chest and
-  shoulders below y = 0. That is the ask, not a clamp that failed: the photo is cropped
-  at the chest anyway, so a dog leaning in from off the bottom edge reads better than a
-  whole dog parked politely in frame. The *top* is a hard stop, though — there is no
-  more dog above the ears to crop.
+  **Height is decided before the horizontal, and it is pinned at the bottom.** The face
+  rides at the cursor's own height, but the **bottom edge of the photo is never lifted
+  off the floor of the screen** — it may go below, never above (Victor, 2026-09-06,
+  `bottomAnchoredFaceY`). The photo is cropped at the chest, so a gap underneath turns a
+  dog leaning into frame into a sticker floating in mid-air, which is the whole thing the
+  bottom-aligned framing exists to avoid. So a beat low on the screen leaves most of the
+  dog below the frame, and a beat high on it does not lift the dog at all.
 
-  **Clearance is bought in three steps, cheapest first.** Since the lens shrank to half
-  the screen height on 2026-09-06 the dog fits beside it from *anywhere* on the retina
-  and never spends a step at all — the tests keep the fallbacks honest by re-running the
-  whole sweep against the old 435 pt lens as a stress case. The steps: (1) **step sideways**, letting up
-  to `maxBackOverflow` = 25 % of the box hang off the outer edge — free, it costs only
-  rump; (2) **sink** below the beat if the frame ate the sidestep, until `faceFloorFraction`
-  says the face itself would go out of sight; (3) **step sideways past the budget**, with
-  the face staying in frame as the only hard stop — measured worst case is a third of the
-  box off the edge, at a cursor held on the seam *and* low on the screen. Overlapping the
-  beat is the failure worth paying to avoid: the dog is a **sibling** of the capture
-  layer, so it never pulses — it would just cover the one part of the screen the
-  projector is zoomed into.
+  That last case is not the dog going passive, though — it is what lets it get *closer*.
+  The clearance constraint is a circle, and standing below the beat already pays part of
+  it, so the horizontal only has to make up the difference: pinned to the floor under a
+  beat near the top of the screen, the dog slides in until it is almost directly
+  underneath, looking up at it, instead of holding station off to one side. Only the drop
+  **below the cursor** counts — while the ears are still above it the near edge runs
+  through the cursor's own height and the horizontal gap has to carry the whole radius.
+  (Getting that wrong is the one bug this had: crediting the sink as a delta on top of a
+  `below` that was clamped at zero silently lost exactly one ear's worth of drop, and the
+  stress sweep caught it.)
+
+  **The ordinary placement is the sidestep**, on a budget: the dog's *back* may hang off
+  the outer edge of the screen by up to `maxBackOverflow` = 25 % of the box, because a
+  cropped rump is a cheaper failure than a face dragged away from the beat. If the frame
+  eats even that, two fallbacks in order — **sink** further below the beat (free, the
+  bottom edge is open; it stops only at `faceFloorFraction`, where the face itself would
+  go out of sight), then **step sideways past the budget**, with the face staying inside
+  the frame as the only hard stop; measured worst case there is a third of the box off
+  the edge, at a cursor held on the seam *and* low on the screen. Overlapping the beat is
+  the failure worth paying to avoid: the dog is a **sibling** of the capture layer, so it
+  never pulses — it would just cover the one part of the screen the projector is zoomed
+  into. Since the lens shrank to half the screen height neither fallback is reached on
+  the retina and the dog stays well inside its budget everywhere; the tests keep them
+  honest by re-running the whole cursor sweep against the old 435 pt lens as a stress
+  case.
 
   Mechanics worth knowing before touching it: the overlay panel is **click-through and
   receives no mouse events at all**, so the cursor is *polled* (`NSEvent.mouseLocation`,

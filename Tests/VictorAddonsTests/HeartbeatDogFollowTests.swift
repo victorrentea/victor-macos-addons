@@ -121,10 +121,44 @@ final class HeartbeatDogFollowTests: XCTestCase {
 
     // MARK: - Height: the face tracks the cursor, the body may leave the frame
 
+    /// Below the bottom anchor the face simply is the cursor's height.
     func testTheFaceRidesAtTheCursorsOwnHeight() {
-        for y in stride(from: CGFloat(120), through: H - 120, by: 40) {
+        let anchor = HeartbeatDogFollow.bottomAnchoredFaceY(boxHeight: box.height)
+        for y in stride(from: CGFloat(120), through: anchor, by: 20) {
             XCTAssertEqual(face(onRight: true, cursor: CGPoint(x: 300, y: y)).y, y, accuracy: 0.001)
         }
+    }
+
+    /// **The hard rule.** The photo's bottom edge may be below the screen's, never
+    /// above it: a gap underneath turns a dog leaning into frame into a sticker
+    /// floating in mid-air.
+    func testTheBottomOfThePhotoIsNeverAboveTheBottomOfTheScreen() {
+        for radius in [lens, crampedLens] {
+            for x in stride(from: CGFloat(0), through: W, by: 12) {
+                for y in stride(from: CGFloat(0), through: H, by: 12) {
+                    let onRight = HeartbeatDogFollow.shouldBeOnRight(cursorX: x, wasOnRight: true,
+                                                                     boundsWidth: W)
+                    let p = HeartbeatDogFollow.position(onRight: onRight, cursor: CGPoint(x: x, y: y),
+                                                        boxSize: box, clearRadius: radius,
+                                                        bounds: bounds)
+                    XCTAssertLessThanOrEqual(p.y - box.height / 2, 0.001,
+                                             "lens \(radius), cursor (\(x), \(y)) floated the dog")
+                }
+            }
+        }
+    }
+
+    /// A beat high on the screen does not lift the dog — it pins it to the floor
+    /// underneath. The dog does not just hold still, though: standing below the
+    /// beat pays for part of the clearance, so it tucks in much closer sideways
+    /// than it would beside a beat at its own height.
+    func testAHighBeatIsAnsweredBySlidingUnderIt() {
+        let low = CGPoint(x: 500, y: 200)
+        let high = CGPoint(x: 500, y: H - 100)
+        XCTAssertEqual(face(onRight: true, cursor: high).y,
+                       HeartbeatDogFollow.bottomAnchoredFaceY(boxHeight: box.height), accuracy: 0.001)
+        XCTAssertLessThan(face(onRight: true, cursor: high).x - high.x,
+                          face(onRight: true, cursor: low).x - low.x)
     }
 
     /// The ask, stated as a test: a beat low on the screen is allowed to leave
@@ -158,16 +192,18 @@ final class HeartbeatDogFollowTests: XCTestCase {
 
     // MARK: - The frame
 
-    /// With the lens as it actually ships — half the screen tall — the dog has
-    /// room to step beside the beat from anywhere on the screen, so it never
-    /// spends any of its overflow budget at all.
-    func testWithTheRealLensTheDogNeverLeavesTheFrame() {
+    /// With the lens as it actually ships — half the screen tall — the dog stays
+    /// well inside its overflow budget everywhere. It is not always flat zero:
+    /// a beat up in a corner pins the dog to the floor beneath it and lets it
+    /// tuck in close, and from there its rump leans a little past the side.
+    func testWithTheRealLensTheDogStaysWellInsideItsBudget() {
+        var worst: CGFloat = 0
         for x in stride(from: CGFloat(0), through: W, by: 12) {
             for y in stride(from: CGFloat(0), through: H, by: 12) {
-                XCTAssertEqual(overflow(cursor: CGPoint(x: x, y: y)), 0,
-                               "cursor (\(x), \(y)) pushed the dog off the edge")
+                worst = max(worst, overflow(cursor: CGPoint(x: x, y: y)))
             }
         }
+        XCTAssertLessThan(worst, box.width * HeartbeatDogFollow.maxBackOverflow / 2)
     }
 
     /// Squeeze it — a lens the old area rule's size — and the budget starts
