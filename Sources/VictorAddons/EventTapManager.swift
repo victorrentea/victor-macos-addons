@@ -110,7 +110,8 @@ private let VK_F: CGKeyCode = 0x03
     // MARK: Cmd+scroll → terminal font zoom
     /// Terminals where Cmd+scroll is turned into a font-size zoom (Cmd+= / Cmd+-).
     /// Matched against the FOCUSED app, because the synthesized zoom keystroke is
-    /// delivered to the key window.
+    /// delivered to the key window — which window of that app it lands in is then
+    /// decided by the pointer (`TerminalZoomTargeting`).
     private let scrollScopeBundleIds: Set<String> = [
         "com.apple.Terminal",
         "com.googlecode.iterm2",
@@ -262,12 +263,18 @@ private let VK_F: CGKeyCode = 0x03
 
         // Cmd+scroll while a terminal is focused → zoom the font (Cmd+= / Cmd+-)
         // instead of scrolling. Suppress the scroll and synthesize the native
-        // Bigger/Smaller shortcut, one step per wheel notch. `TerminalZoomSizeLock`
-        // pins the window's frame across the gesture — left alone, the terminal
-        // keeps its character grid and resizes the *window* around the new font,
-        // which throws away a placement that was deliberate (tiled, or sized to the
-        // projector). It must be told BEFORE the keystroke goes out, so the frame it
-        // captures is still the pre-zoom one.
+        // Bigger/Smaller shortcut, one step per wheel notch.
+        //
+        // The step goes to the terminal window **under the pointer**, which is not
+        // always the one being typed in; `TerminalZoomTargeting` picks it and
+        // `TerminalZoomSizeLock` hands it the keyboard for the length of the
+        // gesture (the only way a terminal can be told which window to resize) and
+        // pins its frame across the gesture — left alone, the terminal keeps its
+        // character grid and resizes the *window* around the new font, which throws
+        // away a placement that was deliberate (tiled, or sized to the projector).
+        // Both must happen BEFORE the keystroke goes out: the keystroke has to find
+        // the target already holding the keyboard, and the frame captured has to
+        // still be the pre-zoom one.
         if type == .scrollWheel {
             // Reverse the wheel first, and let everything below read the
             // reversed value (`ScrollReversal`, replacing Scroll Reverser).
@@ -300,8 +307,10 @@ private let VK_F: CGKeyCode = 0x03
                 // Reset on direction change so a reversal responds immediately.
                 if (dy > 0) != (zoomAccumulator > 0) { zoomAccumulator = 0 }
                 zoomAccumulator += dy
-                if zoomAccumulator >= 1 || zoomAccumulator <= -1 {
-                    TerminalZoomSizeLock.beforeZoomStep(pid: front.pid)
+                if zoomAccumulator >= 1 || zoomAccumulator <= -1,
+                   let target = TerminalZoomTargeting.resolve(mouse: event.location,
+                                                              frontmostTerminalPid: front.pid) {
+                    TerminalZoomSizeLock.beforeZoomStep(pid: target.pid, window: target.window)
                 }
                 while zoomAccumulator >= 1 { zoomAccumulator -= 1; KeySimulator.zoomSmaller() }
                 while zoomAccumulator <= -1 { zoomAccumulator += 1; KeySimulator.zoomBigger() }

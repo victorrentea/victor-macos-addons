@@ -2,19 +2,29 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-/// Pins a terminal window's frame while Cmd+scroll changes its font size.
+/// Aims a Cmd+scroll zoom at one terminal window and pins that window's frame
+/// while its font size changes.
 ///
-/// Terminal.app and iTerm2 both read a font change as "keep the character grid,
-/// resize the window": every Cmd+= grows the window, every Cmd+- shrinks it. That
-/// is the wrong way round for a window that was put where it is on purpose — tiled
-/// by ⌘⌃A, or sized to fill the projector — where only the *text* should change
-/// size. So the frame observed when the zoom gesture starts is pinned and written
-/// back once the keystrokes settle; the terminal then reflows its rows/columns into
-/// that frame instead of dragging the window around the screen.
+/// Two jobs, because on this gesture they are the same job:
 ///
-/// The frame is read/written through the in-process **Accessibility API**, the same
-/// grant `TerminalTiler` and the event tap already rely on — no Automation consent,
-/// no subprocess.
+/// **Aim.** The window the zoom belongs to is the one under the pointer
+/// (`TerminalZoomTargeting`), not necessarily the one being typed in — but a
+/// terminal applies Bigger/Smaller to whichever of *its* windows holds the
+/// keyboard, so aiming means handing that window the keyboard for the length of
+/// the gesture and handing it back afterwards.
+///
+/// **Pin.** Terminal.app and iTerm2 both read a font change as "keep the
+/// character grid, resize the window": every Cmd+= grows the window, every Cmd+-
+/// shrinks it. That is the wrong way round for a window that was put where it is
+/// on purpose — tiled by ⌘⌃A, or sized to fill the projector — where only the
+/// *text* should change size. So the frame observed when the gesture starts is
+/// pinned and written back once the keystrokes settle; the terminal then reflows
+/// its rows/columns into that frame instead of dragging the window around the
+/// screen.
+///
+/// Everything goes through the in-process **Accessibility API** (`AXWindows`),
+/// the same grant `TerminalTiler` and the event tap already rely on — no
+/// Automation consent, no subprocess.
 enum TerminalZoomSizeLock {
 
     /// Zoom steps closer together than this belong to one gesture: the frame is
@@ -25,52 +35,106 @@ enum TerminalZoomSizeLock {
     private static let restoreDelay: TimeInterval = 0.08
     /// A second, later write, for a terminal that relayouts lazily.
     private static let settleDelay: TimeInterval = 0.35
-    /// AX round trips happen on the event-tap thread — cap them so a wedged
-    /// terminal can never stall the tap into a system timeout.
-    private static let axTimeout: Float = 0.1
+    /// When to give the keyboard back. After `settleDelay`, so the pinning is
+    /// finished before the window stops being the one the app is aiming at.
+    private static let focusReturnDelay: TimeInterval = 0.6
 
     /// All state is confined to this serial queue: the tap thread enters it with
     /// `sync` (it must capture the frame *before* the keystroke lands), the delayed
     /// writes with `asyncAfter`.
     private static let queue = DispatchQueue(label: "ro.victorrentea.addons.terminal-zoom-lock")
 
-    private static var appElements: [pid_t: AXUIElement] = [:]
+    private static var pinnedPid: pid_t?
     private static var pinnedWindow: AXUIElement?
     private static var pinnedFrame: CGRect?
     private static var settledFrame: CGRect?
+    private static var focusToReturn: AXUIElement?
     private static var lastStep: Date = .distantPast
     private static var pendingRestore: DispatchWorkItem?
     private static var pendingSettle: DispatchWorkItem?
+    private static var pendingFocusReturn: DispatchWorkItem?
 
     /// Call on the event-tap thread immediately **before** posting the zoom
-    /// keystroke, so the frame captured is still the pre-zoom one.
-    static func beforeZoomStep(pid: pid_t) {
+    /// keystroke: the keystroke has to find the target window already holding the
+    /// keyboard, and the frame captured here has to still be the pre-zoom one.
+    static func beforeZoomStep(pid: pid_t, window: AXUIElement) {
         queue.sync {
             let now = Date()
-            if now.timeIntervalSince(lastStep) > gestureIdle {
-                pin(pid: pid)
+            let sameWindow = pinnedWindow.map { CFEqual($0, window) } ?? false
+            // A new gesture is either a fresh one after a pause, or the pointer
+            // moving onto a different terminal window mid-scroll — the second one
+            // has to re-aim, so it cannot be folded into the first.
+            if now.timeIntervalSince(lastStep) > gestureIdle || !sameWindow {
+                pin(pid: pid, window: window, continuing: sameWindow)
             }
             lastStep = now
             guard pinnedWindow != nil, pinnedFrame != nil else { return }
             scheduleWriteBack()
+            scheduleFocusReturn()
         }
     }
 
     // MARK: - Gesture start
 
-    private static func pin(pid: pid_t) {
-        guard let win = focusedWindow(pid: pid), let observed = frame(of: win) else {
-            pinnedWindow = nil; pinnedFrame = nil; settledFrame = nil
+    private static func pin(pid: pid_t, window: AXUIElement, continuing: Bool) {
+        borrowFocus(pid: pid, to: window)
+        guard let observed = AXWindows.frame(of: window) else {
+            pinnedPid = nil; pinnedWindow = nil; pinnedFrame = nil; settledFrame = nil
             return
         }
-        let same = pinnedWindow.map { CFEqual($0, win) } ?? false
         pinnedFrame = TerminalZoomSizeLockPolicy.frameToPin(
             observed: observed,
-            pinned: same ? pinnedFrame : nil,
-            settled: same ? settledFrame : nil
+            pinned: continuing ? pinnedFrame : nil,
+            settled: continuing ? settledFrame : nil
         )
-        pinnedWindow = win
+        pinnedPid = pid
+        pinnedWindow = window
         settledFrame = nil
+    }
+
+    // MARK: - Borrowing the keyboard
+
+    /// Hand `window` the keyboard inside its own application, remembering which
+    /// window had it so the borrow can be given back.
+    ///
+    /// There is no way around the borrow. Measured on Terminal.app on 2026-09-07,
+    /// with the app **inactive**, all three of the obvious alternatives report
+    /// success and change nothing: keys posted straight into the process
+    /// (`CGEventPostToPid`), an Accessibility press of View ▸ Bigger, and setting
+    /// `AXFocused` on the window itself (`rc = 0`, and the app's focused window
+    /// afterwards is still the old one). An inactive application has no key
+    /// window, so a font command has nothing to apply to. With the app **active**
+    /// the same `AXFocused` set works, and Cmd+= then zooms exactly the window it
+    /// was pointed at — which is why the pointer only ever retargets *within* the
+    /// active terminal (`TerminalZoomTargetPolicy.choose`), and why this is a
+    /// focus change rather than a way of avoiding one.
+    private static func borrowFocus(pid: pid_t, to window: AXUIElement) {
+        guard let current = AXWindows.focusedWindow(pid: pid), !CFEqual(current, window) else { return }
+        // Only the *first* borrow of a chain is remembered: dragging the pointer
+        // across three terminals should give the keyboard back to where it started,
+        // not to the second terminal it passed over.
+        if focusToReturn == nil { focusToReturn = current }
+        AXWindows.focus(window)
+    }
+
+    private static func scheduleFocusReturn() {
+        guard focusToReturn != nil else { return }
+        pendingFocusReturn?.cancel()
+        let item = DispatchWorkItem { returnFocus() }
+        pendingFocusReturn = item
+        queue.asyncAfter(deadline: .now() + focusReturnDelay, execute: item)
+    }
+
+    private static func returnFocus() {
+        guard let owed = focusToReturn else { return }
+        focusToReturn = nil
+        // If something else has taken the keyboard in the meantime — a click in
+        // another window, a different app — the borrow is stale, and giving it
+        // back would be us stealing focus, which is the one thing this gesture
+        // must not do.
+        guard let pid = pinnedPid, let target = pinnedWindow,
+              let current = AXWindows.focusedWindow(pid: pid), CFEqual(current, target) else { return }
+        AXWindows.focus(owed)
     }
 
     // MARK: - Write-back
@@ -88,66 +152,12 @@ enum TerminalZoomSizeLock {
 
     private static func writeBack() {
         guard let win = pinnedWindow, let target = pinnedFrame else { return }
-        setFrame(win, target)
+        AXWindows.setFrame(win, target)
         // Remember what the window actually measured afterwards: the terminal snaps
         // the size down to a whole number of character cells, so this is usually a
         // few points off `target`. Recognising it next time is what keeps that
         // snapping from nibbling the window smaller gesture after gesture.
-        settledFrame = frame(of: win)
-    }
-
-    // MARK: - Accessibility plumbing
-
-    private static func appElement(pid: pid_t) -> AXUIElement {
-        if let el = appElements[pid] { return el }
-        let el = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(el, axTimeout)
-        appElements[pid] = el
-        return el
-    }
-
-    private static func focusedWindow(pid: pid_t) -> AXUIElement? {
-        var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement(pid: pid),
-                                            kAXFocusedWindowAttribute as CFString, &raw) == .success,
-              let value = raw, CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            return nil
-        }
-        return (value as! AXUIElement)
-    }
-
-    private static func frame(of win: AXUIElement) -> CGRect? {
-        guard let pos = axValue(of: win, kAXPositionAttribute, type: .cgPoint, as: CGPoint.self),
-              let size = axValue(of: win, kAXSizeAttribute, type: .cgSize, as: CGSize.self) else {
-            return nil
-        }
-        return CGRect(origin: pos, size: size)
-    }
-
-    private static func setFrame(_ win: AXUIElement, _ rect: CGRect) {
-        var size = rect.size
-        if let value = AXValueCreate(.cgSize, &size) {
-            AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, value)
-        }
-        // Position after size: a window pinned near a screen edge can be nudged by
-        // the resize, and the origin is the half we can restore exactly.
-        var origin = rect.origin
-        if let value = AXValueCreate(.cgPoint, &origin) {
-            AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, value)
-        }
-    }
-
-    private static func axValue<T>(of el: AXUIElement, _ attr: String,
-                                   type: AXValueType, as _: T.Type) -> T? {
-        var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
-              let value = raw, CFGetTypeID(value) == AXValueGetTypeID() else {
-            return nil
-        }
-        let out = UnsafeMutablePointer<T>.allocate(capacity: 1)
-        defer { out.deallocate() }
-        guard AXValueGetValue(value as! AXValue, type, out) else { return nil }
-        return out.pointee
+        settledFrame = AXWindows.frame(of: win)
     }
 }
 
@@ -160,7 +170,7 @@ enum TerminalZoomSizeLockPolicy {
     /// - Parameters:
     ///   - observed: the window's frame right now, at the start of a gesture.
     ///   - pinned: the frame the previous gesture pinned (`nil` if none, or if the
-    ///     focused window has changed since).
+    ///     target window has changed since).
     ///   - settled: what the window measured after that gesture's last write-back.
     /// - Returns: the frame to hold the window at for this gesture.
     ///
