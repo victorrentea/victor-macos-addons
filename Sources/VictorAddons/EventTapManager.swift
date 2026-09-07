@@ -94,9 +94,18 @@ private let VK_F: CGKeyCode = 0x03
     private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
+    private let MOUSE_BUTTON_4: Int64 = 3  // "back" side button — typed as Return (`BackButtonEnter`)
     private let MOUSE_BUTTON_5: Int64 = 4  // "forward" side button — used by Wispr Flow push-to-talk
     private let MOUSE_BUTTON_6: Int64 = 5  // extra side button (physical "button 6")
     private let MOUSE_BUTTON_7: Int64 = 6  // extra side button (physical "button 7")
+
+    /// True between a back-button down we turned into a Return and its matching
+    /// up, so that up can be swallowed too. Leaving the app underneath an
+    /// `otherMouseUp` it never saw a down for is a real bug class — a button
+    /// that stays logically stuck, or a downstream remapper acting on the orphan.
+    /// Like `zoomAccumulator`, this lives only on the tap's run-loop thread
+    /// (events are handled serially there), so it needs no lock.
+    private var backButtonSwallowed = false
 
     // MARK: Cmd+scroll → terminal font zoom
     /// Terminals where Cmd+scroll is turned into a font-size zoom (Cmd+= / Cmd+-).
@@ -140,6 +149,10 @@ private let VK_F: CGKeyCode = 0x03
             CGEventMask(1 << CGEventType.keyUp.rawValue) |
             CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
             CGEventMask(1 << CGEventType.otherMouseDown.rawValue) |
+            // otherMouseUp came back on 2026-09-07 (it had been dropped with the
+            // Wheel×2 gesture): the back button is turned into a Return, and the
+            // up half of a press we acted on has to be swallowed with the down.
+            CGEventMask(1 << CGEventType.otherMouseUp.rawValue) |
             CGEventMask(1 << CGEventType.scrollWheel.rawValue)
 
         let tap = CGEvent.tapCreate(
@@ -210,6 +223,20 @@ private let VK_F: CGKeyCode = 0x03
         // Mouse events
         if type == .otherMouseDown {
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
+            if button == MOUSE_BUTTON_4 {
+                // The back thumb button is Victor's Return key (`BackButtonEnter`,
+                // replacing LinearMouse). Fired on the DOWN, which is what
+                // LinearMouse did — and there is no other choice, since these
+                // side buttons report every press as a ~10 ms down/up pair
+                // whatever the finger does, so a hold does not exist to wait for.
+                // Any modifier but ⌘ falls through untouched.
+                if let flags = BackButtonEnter.returnFlags(for: event.flags) {
+                    BackButtonEnter.post(flags: flags)
+                    backButtonSwallowed = true
+                    return nil
+                }
+                return Unmanaged.passUnretained(event)
+            }
             if button == MOUSE_BUTTON_5 {
                 // Pass the event through — Wispr Flow needs to see it. We only
                 // observe so the audio mute poll can briefly run at 100ms.
@@ -217,6 +244,18 @@ private let VK_F: CGKeyCode = 0x03
             } else if whipOverlayShowing && (button == MOUSE_BUTTON_6 || button == MOUSE_BUTTON_7) {
                 // Extra side button while the whip is up → crack it (pass through).
                 DispatchQueue.main.async { [weak self] in self?.onWhipCrack?() }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // The up half of a back-button press we turned into a Return. Swallowed
+        // only if we actually swallowed its down: a press that fell through (a
+        // modifier we have no rule for, or one Walkie Talkie's tap took ahead of
+        // us) must keep both of its halves.
+        if type == .otherMouseUp {
+            if event.getIntegerValueField(.mouseEventButtonNumber) == MOUSE_BUTTON_4, backButtonSwallowed {
+                backButtonSwallowed = false
+                return nil
             }
             return Unmanaged.passUnretained(event)
         }
@@ -230,6 +269,22 @@ private let VK_F: CGKeyCode = 0x03
         // projector). It must be told BEFORE the keystroke goes out, so the frame it
         // captures is still the pre-zoom one.
         if type == .scrollWheel {
+            // Reverse the wheel first, and let everything below read the
+            // reversed value (`ScrollReversal`, replacing Scroll Reverser).
+            //
+            // The order is not arbitrary and it is not free. Scroll Reverser was
+            // a login item and this app is a LaunchAgent, so it installed its
+            // head-inserted tap *after* ours and therefore saw scrolls *first*:
+            // for the whole life of the Cmd+scroll zoom below, the deltas
+            // arriving here were already reversed. `a6107c5` — "fix(scroll):
+            // invert Cmd+wheel zoom direction", pushed by Victor 20 minutes
+            // after the feature landed, on the live machine — is that fact
+            // written down: the mapping under it was calibrated by hand against
+            // reversed deltas. Reversing before the zoom branch is what keeps
+            // that calibration true; reversing after it would silently flip the
+            // font zoom the day Scroll Reverser was uninstalled.
+            ScrollReversal.apply(to: event)
+
             guard event.flags.contains(.maskCommand),
                   let front = currentFrontmost(),
                   scrollScopeBundleIds.contains(front.bundleId) else {
