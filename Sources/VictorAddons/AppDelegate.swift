@@ -1266,6 +1266,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onDisplayClipboardLink = { [weak self] in
             self?.displayClipboardLinkBanner()
         }
+        // Same path as ⌘⌃P and GET /test/reminder — off the main thread, since
+        // the pasteboard read and any JPEG re-encode happen inline.
+        menuBarManager.onSendReminderMail = { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async { self?.sendClipboardReminder() }
+        }
         menuBarManager.onPublishFeedbackForm = { [weak self] in
             self?.requestFeedbackForm()
         }

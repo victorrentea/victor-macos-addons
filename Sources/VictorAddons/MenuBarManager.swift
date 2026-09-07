@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 7, 21:13"
+    static let BUILD_TIME = "Sep 7, 21:32"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -78,6 +78,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
     var onDisplayClipboardLink: (() -> Void)?
+    /// 📤 Mail the clipboard to Victor, subject "Reminder" — the ⌘⌃P key's row.
+    var onSendReminderMail: (() -> Void)?
     /// 📝 Ask Chrome to clone, rename and publish this session's feedback form.
     var onPublishFeedbackForm: (() -> Void)?
     /// ⌘⌃K, from the event tap — the catalog has no menu row of its own.
@@ -249,6 +251,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // that cannot do anything is noise on a menu read at a glance.
         feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
         addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
+        // Directly under it, because both rows answer "what is on the clipboard":
+        // one shows it in the room, this one mails it to Victor. The key is only
+        // advertised here — the event tap swallows ⌘⌃P before AppKit could match a
+        // menu equivalent, so the row cannot fire the send a second time.
+        let reminderMailItem = addItem("📤 Mail clipboard to myself", action: #selector(sendReminderMailAction))
+        reminderMailItem.keyEquivalent = "p"
+        reminderMailItem.keyEquivalentModifierMask = [.command, .control]
 
         menu.addItem(.separator())
 
@@ -707,6 +716,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func displayClipboardLinkAction() {
         onDisplayClipboardLink?()
+    }
+
+    @objc private func sendReminderMailAction() {
+        onSendReminderMail?()
     }
 
     @objc private func appendClipboardToNotesAction() {
