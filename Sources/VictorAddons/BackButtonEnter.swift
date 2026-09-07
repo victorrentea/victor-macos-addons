@@ -46,6 +46,18 @@ import Foundation
 /// presses that reach here are the ones it did not want, which is exactly the
 /// split both apps are written for. Nothing coordinates the two, and nothing
 /// should: each simply behaves when the event arrives.
+///
+/// **Wispr Flow also had this button, and it won.** With Wispr Flow running the
+/// Return never arrived; quitting it made the button work — the signature of a
+/// tap ahead of ours, and Wispr Flow is launched by hand after login so its tap
+/// is always the newer one. Its bindings are in `~/Library/Application
+/// Support/Wispr Flow/config.json` (`prefs.user.shortcuts`), keyed by **4096 +
+/// CGEvent button number**: `"4099": "ptt"` was the back button held to talk,
+/// `"4100": "popo"` the forward button toggling dictation. `4099` was deleted on
+/// 2026-09-07 (also from the `prefs.cache.splitKeybinds` mirror) and did not come
+/// back across a relaunch; Wispr Flow now has the forward button only. We cannot
+/// win this from here: re-inserting our tap to get ahead of Wispr Flow would also
+/// put us ahead of Walkie Talkie and break the split above.
 enum BackButtonEnter {
 
     /// CGEvent button numbers are 0-indexed, so the physical "button 4" (the
