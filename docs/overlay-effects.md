@@ -234,9 +234,18 @@ rule from the start.
   at a comic speed. It rides **inside the burst's own container**, so `trackEffect` and a
   cancelling re-press take it down with the holes; the tail's "resorb" shrink pass skips it
   **by identity** (`hole !== gun`) so the gun doesn't implode along with the bullet holes.
-  Its opacity is **one keyframe track** (the wasn't-me pattern) with `beginTime` at
-  `minigunAimLeadIn`, so during the 0.5 s aiming window only the reticle is on screen, the
-  gun appears on the first shot, and it has faded out by the time the last hole is resorbed.
+  Its opacity is **one keyframe track** (the wasn't-me pattern) beginning at **t=0**: the gun
+  is the first thing on screen, and it has faded out by the time the last hole is resorbed.
+  The **0.5 s `minigunAimLeadIn` now belongs to the gun, not the reticle** — the weapon rises
+  out of the bottom edge and hauls itself after the mouse for half a second *before* the
+  pointer turns into the crosshair and the sound + bullets start, which is the order the
+  gesture actually reads in: you see the thing that is about to shoot, then it shoots. The
+  reticle layer and its 60 fps tick are still created on the press (the tick is what steers
+  the gun during the lead-in, and an early layer keeps every `_minigunReticleLayer === reticle`
+  identity guard covering the lead-in, so a cancelling re-press inside it cannot leave a reveal
+  scheduled behind it) — only the crosshair's opacity and the **real cursor's hide** are
+  deferred to `revealAfter`. Hiding the cursor early would have left the desktop with no
+  pointer at all for that half second.
 
 - **🪚 Chainsaw cursor** (tile #18 `18_chainsaw.mp3` → `chainsaw` / `chainsaw/stop`,
   `showChainsawCursor`): for the length of the clip **the mouse pointer IS a running

@@ -91,7 +91,9 @@ class EmojiAnimator {
     // 🔫 Minigun aiming reticle: during the bullet-holes (#22) burst a bigger,
     // always-red copy of the sniper crosshair tracks the cursor (where the
     // bullets cluster), real cursor hidden. No arming/fuse — it's red from the
-    // first frame and just follows until the burst ends.
+    // first frame and just follows until the burst ends. It only *appears*
+    // `minigunAimLeadIn` in, though: the gun is raised first, and the pointer
+    // becomes the crosshair as the first round goes off.
     private var _minigunReticleLayer: CALayer?
     private var _minigunReticleTimer: Timer?
     private var _minigunReticleHidCursor = false      // balance hide/unhide of the real cursor
@@ -3390,7 +3392,18 @@ class EmojiAnimator {
     /// `gun`, if given, receives its horizontal position on the same tick — one
     /// timer moves both, so the weapon can never lag a frame behind the
     /// crosshair it is chasing. Its orientation remains fixed.
-    private func startMinigunReticle(following gun: CALayer?, autoStopAfter duration: Double) {
+    ///
+    /// `revealAfter` is the aiming lead-in: the **gun** is what appears first and
+    /// the pointer only becomes the crosshair that many seconds later, on the
+    /// same instant as the first shot. The layer and the 60 fps tick are created
+    /// up front regardless — the tick is what hauls the weapon after the mouse
+    /// during the lead-in, and creating the layer early means every identity
+    /// guard (`_minigunReticleLayer === reticle`) covers the lead-in too, so a
+    /// cancelling re-press inside it cannot leave a reveal scheduled behind it.
+    /// Only the crosshair's *visibility* and the real cursor's hide are deferred.
+    private func startMinigunReticle(following gun: CALayer?,
+                                     revealAfter leadIn: Double = 0,
+                                     autoStopAfter duration: Double) {
         stopMinigunReticle()   // never leak a previous burst's reticle (and its gun)
         _minigunGunLayer = gun
 
@@ -3399,15 +3412,31 @@ class EmojiAnimator {
         CATransaction.setDisableActions(true)
         reticle.position = mousePointInHostLayer()
         reticle.zPosition = 9_000   // ride above the bullet holes
+        reticle.opacity = leadIn > 0 ? 0 : 1
         CATransaction.commit()
         hostLayer.addSublayer(reticle)
         _minigunReticleLayer = reticle
 
-        if !_minigunReticleHidCursor {
-            Self.armBackgroundCursorHiding()
-            NSCursor.hide()
-            CGDisplayHideCursor(CGMainDisplayID())
-            _minigunReticleHidCursor = true
+        // Hiding the real cursor is half of "the pointer turns into a crosshair",
+        // so it happens on the same instant the reticle is shown — not before,
+        // or the lead-in would leave the desktop with no pointer at all.
+        let revealCrosshair = { [weak self, weak reticle] in
+            guard let self, let reticle, self._minigunReticleLayer === reticle else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            reticle.opacity = 1
+            CATransaction.commit()
+            if !self._minigunReticleHidCursor {
+                Self.armBackgroundCursorHiding()
+                NSCursor.hide()
+                CGDisplayHideCursor(CGMainDisplayID())
+                self._minigunReticleHidCursor = true
+            }
+        }
+        if leadIn > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + leadIn, execute: revealCrosshair)
+        } else {
+            revealCrosshair()
         }
 
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
@@ -6164,14 +6193,13 @@ class EmojiAnimator {
         // "resorbed" instead of fading out.
         let resorbDuration = 1.0
         let resorbStart = Self.minigunAimLeadIn + spawnEnd + 0.05  // just after the last bullet lands
-        // The gun swings in as the sound starts, hammers away for the whole
-        // spawn window and is gone by the time the last hole is resorbed. One
-        // keyframe track (not two animations) so the tail can never overtake the
-        // head, and `beginTime` puts the entrance on the same instant as the
-        // first shot — during the aiming lead-in only the reticle is on screen.
+        // The gun is the FIRST thing on screen: it swings up out of the bottom
+        // edge immediately, hauls itself after the mouse for the whole aiming
+        // lead-in, opens fire when the sound does, and is gone by the time the
+        // last hole is resorbed. One keyframe track (not two animations) so the
+        // tail can never overtake the head.
         if let gun {
-            let gunEnd = resorbStart + resorbDuration
-            let visible = gunEnd - Self.minigunAimLeadIn
+            let visible = resorbStart + resorbDuration   // gun's entrance is t=0
             let fade = CAKeyframeAnimation(keyPath: "opacity")
             fade.values = [0.0, 1.0, 1.0, 0.0]
             fade.keyTimes = [0,
@@ -6179,7 +6207,7 @@ class EmojiAnimator {
                              NSNumber(value: (visible - 0.5) / visible),
                              1]
             fade.duration = visible
-            fade.beginTime = CACurrentMediaTime() + Self.minigunAimLeadIn
+            fade.beginTime = CACurrentMediaTime()
             fade.fillMode = .both
             fade.isRemovedOnCompletion = false
             gun.add(fade, forKey: "fade")
@@ -6201,9 +6229,12 @@ class EmojiAnimator {
 
         trackEffect("bullet-holes", layer: container, duration: resorbStart + resorbDuration + 0.1, sound: playSound ? "22_minigun.mp3" : nil)
 
-        // A bigger, always-red sniper crosshair appears immediately, giving the
-        // trainer a short aiming window before sound + bullets start.
-        startMinigunReticle(following: gun, autoStopAfter: resorbStart + resorbDuration + 0.1)
+        // The crosshair takes the pointer over only when the shooting starts —
+        // the lead-in belongs to the gun rising into place. The follow timer
+        // still runs from t=0, which is what steers the gun while it aims.
+        startMinigunReticle(following: gun,
+                            revealAfter: Self.minigunAimLeadIn,
+                            autoStopAfter: resorbStart + resorbDuration + 0.1)
     }
 
     // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)
