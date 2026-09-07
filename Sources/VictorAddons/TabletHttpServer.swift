@@ -19,6 +19,12 @@ class TabletHttpServer {
         case alarmStop
         case effect(String)
         case openUrl(String)
+    /// Test hook for the ⌘⌃ openers: same route a shortcut takes (official
+    /// Chrome, window on the screen under the mouse) without a keypress.
+    case testOpenOnMouseScreen(String)
+    /// Read-only: which Chrome this app considers Victor's, and where its
+    /// windows are.
+    case testChromeWindows
         case ping
         case soundsManifest
         /// Filename + optional volume percent (0–100) from "?vol=".
@@ -189,6 +195,9 @@ class TabletHttpServer {
     var onEffect: ((String) -> Void)?
     /// Open a URL in a fullscreen Chrome window on the primary display.
     var onOpenUrl: ((String) -> Void)?
+    /// Open a URL the way the ⌘⌃ openers do — official Chrome, on the screen
+    /// under the mouse. Test hook only.
+    var onTestOpenOnMouseScreen: ((String) -> Void)?
     /// Tablet connectivity ping (every 5s); returns JSON with the sounds manifest hash.
     var onPing: (() -> String)?
     /// Full sounds manifest JSON — fetched by the tablet on a hash mismatch.
@@ -357,6 +366,11 @@ class TabletHttpServer {
                 self.onEffect?(name)
             case .openUrl(let url):
                 self.onOpenUrl?(url)
+            case .testOpenOnMouseScreen(let url):
+                self.onTestOpenOnMouseScreen?(url)
+            case .testChromeWindows:
+                contentType = "application/json"
+                body = OfficialChrome.debugJSON()
             case .ping:
                 contentType = "application/json"
                 body = self.onPing?() ?? "{\"ok\":true}"
@@ -750,6 +764,13 @@ class TabletHttpServer {
         case "/open":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .openUrl(url)
+            }
+            return .unknown
+        case "/test/chrome/windows":
+            return .testChromeWindows
+        case "/test/open-mouse":
+            if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
+                return .testOpenOnMouseScreen(url)
             }
             return .unknown
         default:
