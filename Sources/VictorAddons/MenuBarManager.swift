@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 6, 21:53"
+    static let BUILD_TIME = "Sep 6, 22:12"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -398,14 +398,26 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // `AppRelaunch` — which is the gesture you reach for anyway when
         // something is wedged.
 
-        // Quit (build timestamp inlined to save a menu line). Uses a full-width
-        // emoji (🔴) instead of the narrow ⏻ power glyph so it lines up with the
-        // other menu items' emojis.
-        let quitItem = addItem("🔴 Quit - built " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
+        // Quit (build timestamp inlined to save a menu line). The row carries the
+        // ⏻ SF Symbol as an *image*, the way Walkie Talkie's Quit does — a text
+        // glyph was too narrow to sit in the same column as the other rows'
+        // emojis, but an image drawn into the menu's icon box lands exactly where
+        // those emojis start, so nothing shifts.
+        let quitItem = addItem("Quit - built " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
+        quitItem.image = MenuBarManager.symbolIcon("power")
         quitItem.keyEquivalent = "q"
         quitItem.keyEquivalentModifierMask = .command
 
         refreshWsItem()
+    }
+
+    /// An SF Symbol sized for a menu row's icon box. Template, so AppKit paints
+    /// it in the menu's own text colour (and inverts it on the highlighted row).
+    private static func symbolIcon(_ name: String) -> NSImage? {
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return nil }
+        let sized = image.withSymbolConfiguration(.init(pointSize: 13, weight: .regular)) ?? image
+        sized.isTemplate = true
+        return sized
     }
 
     @discardableResult
