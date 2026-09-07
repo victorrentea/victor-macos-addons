@@ -283,6 +283,11 @@ private let VK_F: CGKeyCode = 0x03
             // reversed deltas. Reversing before the zoom branch is what keeps
             // that calibration true; reversing after it would silently flip the
             // font zoom the day Scroll Reverser was uninstalled.
+            //
+            // The corollary is worth knowing before it surprises someone:
+            // unticking 🔄 Reverse Mouse Wheel therefore also flips the terminal
+            // font zoom. That is the honest consequence of the reverser being a
+            // pre-transform rather than a feature bolted on beside the zoom.
             ScrollReversal.apply(to: event)
 
             guard event.flags.contains(.maskCommand),

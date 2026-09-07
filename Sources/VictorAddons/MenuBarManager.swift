@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 7, 07:42"
+    static let BUILD_TIME = "Sep 7, 09:08"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -20,6 +20,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var cursorGlowItem: NSMenuItem!
+    private(set) var scrollReversalItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -345,6 +346,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         cursorGlowItem.state = CursorGlowSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(cursorGlowItem)
 
+        // 🔄 Reverse Mouse Wheel — the Scroll Reverser replacement. It breaks
+        // "the menu is not a second cheat-sheet" for the reason the 🔴 raw-audio
+        // row does: there is no key to teach and no other place the state
+        // appears. It is also the one row here whose **default is on**, because
+        // it stands in for a utility that was already on.
+        scrollReversalItem = NSMenuItem(title: "🔄 Reverse Mouse Wheel", action: #selector(toggleScrollReversalAction), keyEquivalent: "")
+        scrollReversalItem.target = self
+        scrollReversalItem.isEnabled = true
+        scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(scrollReversalItem)
+
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
         darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]
@@ -651,6 +663,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         CursorGlowSettings.isEnabled = enabled
         cursorGlowItem.state = enabled ? .on : .off
         onCursorGlowEnabledChanged?(enabled)
+    }
+
+    /// 🔄 Reverse Mouse Wheel. Unlike its neighbours this notifies nobody: the
+    /// event tap reads `ScrollReversalSettings` itself, on the scroll it is
+    /// holding, so there is no second copy of the answer to keep in step and no
+    /// window in which the tick and the wheel disagree.
+    @objc private func toggleScrollReversalAction() {
+        let enabled = !ScrollReversalSettings.isEnabled
+        ScrollReversalSettings.isEnabled = enabled
+        scrollReversalItem.state = enabled ? .on : .off
     }
 
     @objc private func takeScreenshotAction() {

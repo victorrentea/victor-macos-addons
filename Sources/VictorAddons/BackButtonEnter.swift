@@ -24,14 +24,18 @@ import Foundation
 /// Mac there is one mouse, and the built-in trackpad has no such button, so the
 /// difference is unobservable.
 ///
-/// **There is no hold, because the hardware does not have one.** Measured
-/// 2026-09-07 with a passive tap and every remapper on the machine killed: a
-/// deliberate two-second hold of either side button (back = 3, forward = 4)
-/// reaches the tap as a **4–15 ms down/up pair**, while the wheel on the same
-/// mouse reports a 1668 ms hold perfectly in the same window. The duration is
-/// destroyed below the CG layer — the Bolt receiver's own firmware, most likely
-/// — so a press-and-hold gesture on these buttons cannot be built, however the
-/// code is written. A click is all that exists. Do not try again without
+/// **There is no hold to detect, and the reason is a firmware feature rather
+/// than a hardware limit.** Measured 2026-09-07 with a passive tap and every
+/// remapper on the machine killed: a deliberate two-second hold of either side
+/// button (back = 3, forward = 4) reaches the tap as a **4–15 ms down/up pair at
+/// the moment of release**, while the wheel on the same mouse reports a 1668 ms
+/// hold perfectly in the same window. That asymmetry is the M650 doing something
+/// on purpose — holding a side button is its own gesture, turning the wheel into
+/// horizontal scrolling, so the firmware **withholds the button event until the
+/// finger comes up** and there is nothing left for a tap to time
+/// (linearmouse/linearmouse#739). It is disableable in principle, through Logi
+/// Options+ or HID++ diversion, and it is not disabled on this Mac. So a click
+/// is all that exists here: do not build a hold on these buttons without
 /// re-measuring first.
 ///
 /// **Walkie Talkie sees this button before we do, and that is the design.**

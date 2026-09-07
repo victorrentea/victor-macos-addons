@@ -1,6 +1,35 @@
 import CoreGraphics
 import Foundation
 
+/// Whether the wheel is reversed, surviving app restarts — the 🔄 row under
+/// 👩🏻‍💻 Extra. It is the sibling of `CursorGlowSettings` and reads the same way,
+/// with **one deliberate difference: the default is ON.**
+///
+/// That difference is the whole point. This feature is not a nicety being
+/// offered, it is a utility being *replaced* — the machine's behaviour on the
+/// day Scroll Reverser was uninstalled is the behaviour a fresh launch has to
+/// produce, or the app ships with Victor's scrolling silently the wrong way
+/// round. So the missing-key case is written out explicitly:
+/// `UserDefaults.bool(forKey:)` answers **false** for a key never written, which
+/// is exactly the shipped-off bug, and `object(forKey:) as? Bool ?? true` is the
+/// same read with the right answer for "nobody has ever touched this".
+///
+/// **UserDefaults is read on every scroll event, on the tap's thread, and that
+/// is measured rather than assumed**: 630 ns per `object(forKey:)` on this Mac
+/// (200k reads, `-O`). A brisk scroll is a few hundred events a second, so the
+/// cost is a rounding error against a tap whose watchdog measures in seconds —
+/// and paying it buys the property the toggle actually needs, which is that the
+/// tick and the behaviour read the *same* value from the *same* place and cannot
+/// drift apart the way a cached mirror can.
+enum ScrollReversalSettings {
+    static let enabledKey = "ScrollReversal.enabled"
+
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+}
+
 /// Reverses the mouse wheel's scroll direction — both axes — and leaves the
 /// trackpad alone. This replaces **Scroll Reverser**
 /// (`com.pilotmoon.scroll-reverser`), uninstalled on 2026-09-07, and reproduces
@@ -46,9 +75,10 @@ import Foundation
 enum ScrollReversal {
 
     /// A trackpad's continuous, pixel-based scrolling is left exactly as it
-    /// arrived; only a notched wheel is turned around.
+    /// arrived; only a notched wheel is turned around — and only while the
+    /// **🔄 Reverse Mouse Wheel** row under 👩🏻‍💻 Extra is ticked.
     static func shouldReverse(isContinuous: Int64) -> Bool {
-        isContinuous == 0
+        isContinuous == 0 && ScrollReversalSettings.isEnabled
     }
 
     /// Negate the event's deltas in place, if it came from a wheel.

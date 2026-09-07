@@ -12,12 +12,43 @@ final class ScrollReversalTests: XCTestCase {
         CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: y, wheel2: x, wheel3: 0)!
     }
 
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: ScrollReversalSettings.enabledKey)
+        super.tearDown()
+    }
+
     func testDiscreteWheelIsReversed() {
         XCTAssertTrue(ScrollReversal.shouldReverse(isContinuous: 0))
     }
 
     func testContinuousTrackpadIsLeftAlone() {
         XCTAssertFalse(ScrollReversal.shouldReverse(isContinuous: 1))
+    }
+
+    /// The bug this guards against ships silently: `UserDefaults.bool(forKey:)`
+    /// answers false for a key nobody has written, which would install the
+    /// replacement for Scroll Reverser in the off position.
+    func testDefaultsOnWithNothingStored() {
+        UserDefaults.standard.removeObject(forKey: ScrollReversalSettings.enabledKey)
+        XCTAssertTrue(ScrollReversalSettings.isEnabled)
+        XCTAssertTrue(ScrollReversal.shouldReverse(isContinuous: 0))
+    }
+
+    func testSettingSurvivesAsWritten() {
+        ScrollReversalSettings.isEnabled = false
+        XCTAssertFalse(ScrollReversalSettings.isEnabled)
+        XCTAssertFalse(ScrollReversal.shouldReverse(isContinuous: 0))
+
+        ScrollReversalSettings.isEnabled = true
+        XCTAssertTrue(ScrollReversalSettings.isEnabled)
+    }
+
+    func testUntickedLeavesTheEventAlone() {
+        ScrollReversalSettings.isEnabled = false
+        let e = wheelEvent(lines: 3, -2)
+        let before = e.getIntegerValueField(.scrollWheelEventDeltaAxis1)
+        XCTAssertFalse(ScrollReversal.apply(to: e))
+        XCTAssertEqual(e.getIntegerValueField(.scrollWheelEventDeltaAxis1), before)
     }
 
     func testEveryDeltaFieldFlips() {
