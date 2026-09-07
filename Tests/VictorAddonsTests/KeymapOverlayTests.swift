@@ -284,7 +284,9 @@ final class KeymapOverlayTests: XCTestCase {
         // picker, which nothing else on the board says. D joined it with the
         // Walkie Talkie binding — the key that decides which session a dictation
         // is typed into, which nothing on screen would otherwise reveal.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6, 31])
+        // P (35) joined with the ⌘⌃P reminder mail — the sending sibling of
+        // ⌘⌃M's draft, on the letter ⌃P already uses to fill the clipboard.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6, 31, 35])
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
@@ -301,6 +303,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.labels[37], "📅")
         XCTAssertEqual(CommandControlShortcuts.labels[1], "notes")
         XCTAssertEqual(CommandControlShortcuts.labels[46], "todo")
+        XCTAssertEqual(CommandControlShortcuts.labels[35], "remind")
         XCTAssertNil(CommandControlShortcuts.labels[5])
         XCTAssertNil(CommandControlShortcuts.labels[45])
         XCTAssertEqual(CommandControlShortcuts.artworkNames[5], "gmail-logo")
@@ -319,6 +322,10 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[3], "🎧")   // F — the focus mix
         XCTAssertEqual(CommandControlShortcuts.accents[46], "✉️")  // M — it arrives as mail
         XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
+        XCTAssertEqual(CommandControlShortcuts.accents[35], "📤")  // P — it is sent, not drafted
+        // The two mail keys must not wear the same mark: ✉️ on M is a draft you
+        // still have to send, 📤 on P is already gone.
+        XCTAssertNotEqual(CommandControlShortcuts.accents[35], CommandControlShortcuts.accents[46])
         // An accent on an unbound key would decorate a dimmed, meaningless key.
         for code in CommandControlShortcuts.accents.keys {
             XCTAssertTrue(CommandControlShortcuts.boundKeyCodes.contains(code),

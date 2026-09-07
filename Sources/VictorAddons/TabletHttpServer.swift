@@ -120,6 +120,8 @@ class TabletHttpServer {
         /// Force one Flux-inbox poll now, bypassing the battery gate, and return
         /// a JSON snapshot of the poller's state (test hook).
         case testEmailPoll
+        /// ⌘⌃P without the keyboard — mail the current clipboard to Victor.
+        case testReminderMail
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
@@ -256,6 +258,11 @@ class TabletHttpServer {
     var onTestBannerRise: ((String) -> Void)?
     /// Force one Flux-inbox poll now; returns the poller's JSON snapshot.
     var onTestEmailPoll: (() -> String)?
+    /// Fires the ⌘⌃P reminder mail. Returns nothing: the send is asynchronous
+    /// and its verdict lands in the banner and the log, exactly as it does when
+    /// the key is pressed — a hook that waited for it would be testing a
+    /// different code path from the one in production.
+    var onTestReminderMail: (() -> Void)?
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
@@ -486,6 +493,8 @@ class TabletHttpServer {
                 contentType = "application/json"
                 body = self.onTestEmailPoll?() ?? "{\"error\":\"flux poller unavailable\"}"
                 if self.onTestEmailPoll == nil { statusCode = 503 }
+            case .testReminderMail:
+                self.onTestReminderMail?()
             case .testAndroidDeploy:
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
@@ -724,6 +733,8 @@ class TabletHttpServer {
             return .testBannerRise(queryItems.first(where: { $0.name == "hover" })?.value ?? "")
         case "/test/email":
             return .testEmailPoll
+        case "/test/reminder":
+            return .testReminderMail
         case "/test/android-deploy":
             return .testAndroidDeploy
         case "/test/hotspot":

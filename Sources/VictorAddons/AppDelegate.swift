@@ -90,6 +90,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
+    /// ⌘⌃P — mails the clipboard to Victor. Nil when the AgentMail key is
+    /// missing, which is also why the shortcut then does nothing rather than
+    /// failing loudly on every press.
+    private var reminderMailer: ReminderMailer?
     /// True while the training-assistant daemon is connected to our local WS
     /// server (≥1 client). Gates the Group Photo prompt so it only fires when
     /// there's an audience to photograph.
@@ -1060,6 +1064,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.fluxInboxPoller?.forcePollAndSnapshot()
                 ?? "{\"error\":\"flux poller unavailable — AGENTMAIL_API_KEY missing?\"}"
         }
+        // /test/reminder — the ⌘⌃P mail without the keyboard, so the shortcut
+        // can be exercised while something else is holding ⌘ (or over ssh).
+        tabletServer?.onTestReminderMail = { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async { self?.sendClipboardReminder() }
+        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -1555,6 +1564,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
             }
         }
+        // ⌘⌃P — the clipboard leaves the Mac as a "Reminder" mail. Same
+        // AgentMail key as the 📬 poller, used in the sending direction; no
+        // agent and no model are involved, so the shortcut costs nothing and
+        // works with the network as its only dependency.
+        if let reminderKey = secrets["AGENTMAIL_API_KEY"], !reminderKey.isEmpty {
+            let mailer = ReminderMailer(apiKey: reminderKey)
+            self.reminderMailer = mailer
+            eventTap.onSendClipboardReminder = { [weak self] in
+                self?.sendClipboardReminder()
+            }
+        } else {
+            overlayError("⌘⌃P reminder mail disabled: AGENTMAIL_API_KEY missing from secrets")
+        }
+
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
             guard KeymapOverlaySettings.isEnabled else {
                 self?.keymapHoldCoordinator?.reset()
@@ -1642,6 +1665,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         /// where it is. For the ⌘⌃ shortcuts: they follow the eyes, they don't
         /// rearrange the desk.
         case screenUnderMouse
+    }
+
+    /// ⌘⌃P and `GET /test/reminder`. Reads the clipboard and mails it, then
+    /// says what happened — the mail is already gone by the time the banner
+    /// appears, so the banner is the receipt, not a progress indicator. Called
+    /// off the main thread (the pasteboard read and any JPEG re-encode happen
+    /// inline); only the banner hops back.
+    func sendClipboardReminder() {
+        guard let mailer = reminderMailer else {
+            overlayError("⌘⌃P: no AgentMail key — nothing sent")
+            return
+        }
+        mailer.sendClipboard { [weak self] result in
+            let text: String
+            switch result {
+            case .success(let clip):
+                text = ReminderMail.confirmation(for: clip)
+                overlayInfo("Reminder mailed to \(ReminderMail.recipient)")
+            case .failure(let error):
+                // The clipboard is untouched, so the fix is to press the key
+                // again — the banner says so rather than leaving a dead end.
+                text = "⚠️ Reminder netrimis: \(error.localizedDescription)"
+                overlayError("Reminder mail failed: \(error.localizedDescription)")
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.statusBanner?.showNow(text: text, sound: nil, visibleDuration: 6.0)
+            }
+        }
     }
 
     private func openUrlInChrome(_ url: String, target: ChromeTarget = .retina) {

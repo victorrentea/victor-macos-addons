@@ -52,6 +52,13 @@ enum CommandControlShortcuts {
                          // for the T you actually reached for.
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
         // Google Doc, and the Docs mark says that faster than any word could.
+        35: "remind",    // P — mail the clipboard to myself, subject "Reminder".
+                         // The word is the subject line you will later search
+                         // Gmail for, which is the only name this key answers to
+                         // once the mail has arrived. Deliberately not "mail":
+                         // ⌘⌃M ("todo") and ⌘⌃G (the Gmail mark) are already
+                         // mail, and the thing that separates this key from both
+                         // is *why* you send it, not that you do.
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
@@ -86,6 +93,9 @@ enum CommandControlShortcuts {
         40: "📕",  // K — the training catalog
         3:  "🎧",  // F — headphones: the key plays music, it doesn't open a page
         46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
+        35: "📤",  // P — the outbox tray, NOT M's ✉️: the one thing worth knowing
+                  // before pressing this key is that it leaves immediately,
+                  // while ⌘⌃M only opens a draft that still waits for you.
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
         31: "🐘",  // O — the word names the man, the mark names what appears
         2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this

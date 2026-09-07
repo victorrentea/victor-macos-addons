@@ -57,6 +57,9 @@ class EventTapManager {
     var onOpenFocusPlaylist: (() -> Void)?
     /// ⌘⌃M — open a Gmail draft to Victor, subject "TO DO", clipboard as body.
     var onComposeTodoMail: (() -> Void)?
+    /// ⌘⌃P — send the clipboard (picture and/or text) to Victor by mail,
+    /// subject "Reminder". Nothing to confirm: it is already gone.
+    var onSendClipboardReminder: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
@@ -557,6 +560,24 @@ private let VK_F: CGKeyCode = 0x03
         // browser, so the note can still be edited before it goes.
         if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onComposeTodoMail?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+P → mail the clipboard to Victor, subject "Reminder"
+        // (suppress). P is the letter ⌃P already owns: ⌃P puts a screenshot on
+        // the clipboard, ⌘⌃P posts whatever is on the clipboard to your inbox —
+        // one more modifier, the next step of the same gesture. The ⌃P branch
+        // above requires !hasCmd, so the two never collide, and `screenshotKeyDownAt`
+        // is only ever set there, so releasing ⌘⌃P cannot take a screenshot.
+        //
+        // **Autorepeat is excluded because this one SENDS.** Every other key on
+        // this board is idempotent-ish — a second Terminal, a second paste — but
+        // a held ⌘⌃P would mail the same clipboard once per repeat, and those
+        // arrive in a real inbox.
+        if keyCode == VK_P && hasCmd && hasCtrl && !hasOpt {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.global().async { [weak self] in self?.onSendClipboardReminder?() }
+            }
             return nil
         }
 
