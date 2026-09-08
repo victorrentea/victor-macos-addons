@@ -5526,9 +5526,14 @@ class EmojiAnimator {
     private static let starWarsSphereFraction: CGFloat = 0.893
 
     /// Where the sphere comes to rest, as a fraction of the screen (its CENTRE,
-    /// y-up). On the diagonal it travels along, a little short of the middle —
-    /// **not** parked in the corner, which is where it used to stop.
-    private static let starWarsRestPoint = CGPoint(x: 0.42, y: 0.44)
+    /// y-up). **Victor pointed at this spot** — he drew on the screen with
+    /// ScreenBrush at 940×1460 of the retina's 3456×2234 and said "here is where
+    /// the centre of the star goes" — so it is a measurement, not a taste call:
+    /// don't "improve" it without asking. At the current 0.69 H sphere it sits
+    /// low and left, its bottom edge grazing the floor of the screen and a
+    /// comfortable margin off the left — clear of the corner it used to be
+    /// welded into, which was the whole point.
+    private static let starWarsRestPoint = CGPoint(x: 0.272, y: 0.347)
 
     /// How long the slide takes. The ask was "twice as fast"; the path is also
     /// ~2.5× longer now (corner → near the middle), so at double the old speed
