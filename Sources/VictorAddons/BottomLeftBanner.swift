@@ -550,17 +550,14 @@ final class BottomLeftBanner {
         // written to avoid; it just came in from the hover side. A zero-duration
         // animator write to the current frame replaces (and so ends) the running one,
         // leaving the timer as the only thing moving the window.
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0
-            for entry in toRemove { entry.panel.animator().setFrame(entry.panel.frame, display: false) }
-        }
-        let bases = toRemove.map { $0.panel.frame.origin }
+        for entry in toRemove { Self.stopInFlightMotion(entry) }
+        let bases = toRemove.map { Self.currentOffset($0) }
         let start = Date()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { tm in
             let p = min(1.0, Date().timeIntervalSince(start) / duration)
             let eased = CGFloat(p * p)                    // easeIn, matching the old curve
             for (i, entry) in toRemove.enumerated() {
-                entry.panel.setFrameOrigin(NSPoint(x: bases[i].x, y: bases[i].y + rise * eased))
+                Self.place(entry, offset: bases[i] + rise * eased)
                 entry.panel.alphaValue = Self.visibleAlpha * (1 - eased)
             }
             if p >= 1.0 {
@@ -589,17 +586,32 @@ final class BottomLeftBanner {
         // a bit past the pill's height — carries it (and its in-pill band) fully
         // off-screen.
         let sink: CGFloat = Style.boxHeight + 60
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.7
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            for entry in toRemove {
-                var f = entry.panel.frame
-                f.origin.y -= sink
-                entry.panel.animator().setFrame(f, display: true)
+        let duration: TimeInterval = 0.7
+        for entry in toRemove {
+            Self.stopInFlightMotion(entry)
+            // `place` keeps the window parked on this screen while the pill slides
+            // out of it, so the window would otherwise sit here invisibly eating
+            // clicks in the corner where the hand rests for the length of the exit.
+            // The decision is already taken; let the corner go.
+            entry.panel.ignoresMouseEvents = true
+        }
+        let bases = toRemove.map { Self.currentOffset($0) }
+        let start = Date()
+        // Driven imperatively at 60 Hz, like the rising exit: one driver writing
+        // the placement per frame, and no window animator that a next gesture
+        // could end up fighting.
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { tm in
+            let p = min(1.0, Date().timeIntervalSince(start) / duration)
+            let eased = CGFloat(p * p)                    // easeIn, as before
+            for (i, entry) in toRemove.enumerated() {
+                Self.place(entry, offset: bases[i] - sink * eased)
             }
-        }, completionHandler: {
-            for entry in toRemove { entry.panel.orderOut(nil) }
-        })
+            if p >= 1.0 {
+                tm.invalidate()
+                for entry in toRemove { entry.panel.orderOut(nil) }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     fileprivate func startHoverDwell() {
@@ -690,25 +702,99 @@ final class BottomLeftBanner {
         }
     }
 
-    /// Slide the pill (with its in-pill band) `progress × hoverNudgeDistance`
-    /// points up (`.up`) or down (`.down`) from the resting bottom-left position —
-    /// a subtle preview of which exit hovering triggers. No-op for `.none`. The
-    /// resting y is always the screen's bottom edge, so progress 0 restores it
-    /// exactly; the dismiss animations read the current (nudged) frame, so a
-    /// fired hover continues smoothly into the rising/sinking exit.
+    /// Slide the pill `progress × hoverNudgeDistance` points up (`.up`) or down
+    /// (`.down`) from the resting bottom-left position — a subtle preview of which
+    /// exit hovering triggers. No-op for `.none`. The resting position is always
+    /// the screen's bottom edge, so progress 0 restores it exactly; the dismiss
+    /// animations read the current (nudged) offset, so a fired hover continues
+    /// smoothly into the rising/sinking exit.
     private func applyNudgeProgress(_ progress: CGFloat) {
         guard hoverNudge != .none else { return }
         let dir: CGFloat = hoverNudge == .up ? 1 : -1
         let dy = dir * Style.hoverNudgeDistance * progress
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = Self.hoverDwellInterval
-            ctx.timingFunction = CAMediaTimingFunction(name: .linear)
-            for entry in panels {
-                var f = entry.panel.frame
-                f.origin.y = entry.screen.frame.minY + dy
-                entry.panel.animator().setFrame(f, display: true)
-            }
+        for entry in panels {
+            Self.place(entry, offset: dy, duration: Self.hoverDwellInterval)
         }
+    }
+
+    // MARK: - Placement
+    //
+    // Where the pill sits relative to its resting spot on its OWN screen — and
+    // the rule that keeps it off everybody else's.
+    //
+    // The pill rests flush in its screen's bottom-left corner and every gesture
+    // here moves it from there: the hover nudge (±10), the rising exit (+140),
+    // the sinking exit (−150). Moving the *window* is the obvious way to do that,
+    // and it is what the sink used to do — but a window is free to leave its
+    // screen, and the screens are not islands. On this Mac one monitor sits
+    // directly ABOVE the built-in retina in the arrangement, so that monitor's
+    // bottom edge and the retina's top edge are the same line: a pill sunk 150 pt
+    // below THAT screen's bottom was therefore drawn 60 pt below the RETINA's top,
+    // and the last ~80 ms of an un-hovered prompt offer's exit flashed a pill
+    // across the top of the projected screen. Nothing was mis-computed — the frame
+    // was exactly what the code asked for; the code asked for a point that belongs
+    // to another display.
+    //
+    // So DOWNWARD motion never moves the window: it stays parked on its screen's
+    // bottom edge and the pill slides down INSIDE it, which clips the pill at the
+    // screen's bottom edge — the intended "slides off the bottom" look, with no
+    // pixel able to land anywhere else. UPWARD motion still moves the window: it
+    // is bounded by the 140 pt rise on a screen a thousand points tall, so it
+    // cannot reach the screen above.
+
+    /// The pill's current offset from rest (positive = up), whatever mix of
+    /// window move and in-window slide is currently expressing it.
+    private static func currentOffset(_ entry: PanelEntry) -> CGFloat {
+        (entry.panel.frame.origin.y - entry.screen.frame.minY) + entry.pill.frame.origin.y
+    }
+
+    /// Put the pill `dy` points from its resting position (see the note above).
+    /// `duration == 0` writes it imperatively — what the exit timers want, one
+    /// driver per frame; a positive duration animates window, pill and arrow
+    /// together over that long.
+    private static func place(_ entry: PanelEntry, offset dy: CGFloat, duration: TimeInterval = 0) {
+        var windowFrame = entry.panel.frame
+        windowFrame.origin.y = entry.screen.frame.minY + PillPlacement.windowRise(offset: dy)
+        let inside = NSPoint(x: entry.pill.frame.origin.x, y: PillPlacement.pillDrop(offset: dy))
+        if duration > 0 {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = duration
+                ctx.timingFunction = CAMediaTimingFunction(name: .linear)
+                entry.panel.animator().setFrame(windowFrame, display: true)
+                entry.pill.animator().setFrameOrigin(inside)
+            }
+            // The arrow floats in the panel's right gutter, outside the pill view,
+            // so it needs its own animation to travel with it (same explicit
+            // CABasicAnimation + immediate model write as the hover whitening).
+            let slide = CABasicAnimation(keyPath: "position.y")
+            slide.fromValue = entry.arrow.position.y
+            slide.toValue = inside.y
+            slide.duration = duration
+            slide.timingFunction = CAMediaTimingFunction(name: .linear)
+            entry.arrow.add(slide, forKey: "slide")
+        } else {
+            entry.panel.setFrame(windowFrame, display: true)
+            entry.pill.setFrameOrigin(inside)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entry.arrow.position.y = inside.y
+        CATransaction.commit()
+    }
+
+    /// End any in-flight `place(duration:)` on this panel, leaving the pill
+    /// exactly where it is now. The exits drive the motion from their own 60 Hz
+    /// timer, and a still-running animator would keep writing window/pill frames
+    /// from a second driver for the rest of its 0.1 s — the desync that used to
+    /// yank a rising pill back down for a few frames. A zero-duration animator
+    /// write to the current value replaces (and so ends) the running one.
+    private static func stopInFlightMotion(_ entry: PanelEntry) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            entry.panel.animator().setFrame(entry.panel.frame, display: false)
+            entry.pill.animator().setFrameOrigin(entry.pill.frame.origin)
+        }
+        entry.arrow.removeAnimation(forKey: "slide")
     }
 
     private func isMouseInsideAnyPanel() -> Bool {
