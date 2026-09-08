@@ -428,9 +428,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // The clip brings its own audio: a soundtrack-only play still
             // running underneath it would be heard twice, half a second apart.
             VideoSoundtrackPlayer.shared.stop(fade: false)
-            let ok = VideoPlayer.shared.play(fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start)
-            guard ok else { return nil }
-            return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start)}"
+            // `durationMs` is the contract the tablet's video page runs on: it
+            // stays pinned, with the ring draining on the tile, for exactly as
+            // long as the clip is going to be up.
+            guard let ms = VideoPlayer.shared.play(
+                id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start
+            ) else { return nil }
+            return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
         }
         tabletServer?.onVideoStop = { VideoPlayer.shared.stop() }
         // 🎵 …and the same snippet with the picture left out: the ♪ button in the
@@ -447,6 +451,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onVideoSoundStop = { VideoSoundtrackPlayer.shared.stop() }
         tabletServer?.onVideoSoundState = { VideoSoundtrackPlayer.shared.stateJSON() }
+        // 📱 One question, two players: the tablet's video page holds itself open
+        // on this answer and un-pins on whichever end comes first — the clip
+        // running out, IINA being closed by hand, or the soundtrack's 10 s cap.
+        tabletServer?.onVideoState = {
+            if VideoPlayer.shared.isActive { return VideoPlayer.shared.stateJSON() }
+            if VideoSoundtrackPlayer.shared.isPlaying { return VideoSoundtrackPlayer.shared.stateJSON() }
+            return "{\"playing\":false,\"kind\":\"none\",\"id\":null,\"remainingMs\":0}"
+        }
         // ✋ Hands off. Two curl calls bracket whatever GUI dance an agent is
         // about to do; the watchdog inside means a crashed agent releases the
         // machine on its own instead of leaving the frame up all afternoon.

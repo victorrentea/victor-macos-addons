@@ -54,6 +54,9 @@ final class VideoSoundtrackPlayer {
     /// its own copy to light the ♪ button; this one is what makes a second
     /// request for the same id readable as a toggle from anywhere else.
     private(set) var playingId: String?
+    /// When the cap will have silenced it. The tablet drains the ring on the
+    /// tile over this, and `GET /video/state` reports what is left of it.
+    private(set) var deadline: Date?
 
     private init() {}
 
@@ -67,7 +70,9 @@ final class VideoSoundtrackPlayer {
     func stateJSON() -> String {
         let rate = player?.rate ?? 0
         let id = playingId.map { "\"\($0)\"" } ?? "null"
-        return "{\"playing\":\(isPlaying),\"id\":\(id),\"rate\":\(rate),\"maxSeconds\":\(Int(Self.maxSeconds))}"
+        let remaining = isPlaying ? (deadline.map { max(0, Int($0.timeIntervalSinceNow * 1000)) } ?? 0) : 0
+        return "{\"playing\":\(isPlaying),\"kind\":\"sound\",\"id\":\(id),\"remainingMs\":\(remaining)," +
+               "\"rate\":\(rate),\"maxSeconds\":\(Int(Self.maxSeconds))}"
     }
 
     /// Start (or replace) the soundtrack of `fileURL` at `startSeconds`.
@@ -125,9 +130,10 @@ final class VideoSoundtrackPlayer {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
-        guard let p = player else { playingId = nil; return }
+        guard let p = player else { playingId = nil; deadline = nil; return }
         player = nil
         playingId = nil
+        deadline = nil
         guard fade, p.rate > 0 else {
             p.pause()
             return
@@ -146,6 +152,7 @@ final class VideoSoundtrackPlayer {
         let end = DispatchWorkItem { [weak self] in self?.stop(fade: false) }
         fadeWork = fade
         stopWork = end
+        deadline = Date().addingTimeInterval(Self.maxSeconds)
         DispatchQueue.main.asyncAfter(deadline: .now() + fadeAt, execute: fade)
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxSeconds, execute: end)
     }

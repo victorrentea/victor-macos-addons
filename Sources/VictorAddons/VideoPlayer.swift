@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 import Foundation
 
 /// Plays a downloaded video fullscreen in **IINA** and manages its lifetime:
@@ -67,6 +68,18 @@ final class VideoPlayer {
     var autoKillAfter: TimeInterval = 60
 
     private var autoKill: DispatchWorkItem?
+    /// 📱 What the tablet's video page needs to stay pinned: a play counts as
+    /// **active** from the moment IINA is asked to start until the clip runs
+    /// out, the window goes away, or the auto-kill fires. Page 2 stays locked on
+    /// exactly this flag, so it must be true a beat *before* IINA's window
+    /// exists (see the grace in `isActive`) and false the instant Victor closes
+    /// the player by hand.
+    private var activeSince: Date?
+    private var activeId: String?
+    private var activeDeadline: Date?
+    /// The clip reached its end and was rewound+paused: the player is still up
+    /// (SPACE replays it) but nothing is playing, which for the tablet is over.
+    private var atEndPaused = false
     /// EOF watch. Lives on `watchQueue`; `startSeconds` is where a rewind lands.
     private let watchQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.video-eof", qos: .utility)
     private var eofWatch: DispatchSourceTimer?
@@ -74,16 +87,20 @@ final class VideoPlayer {
     private var rewound = false
 
     /// Launch (or replace) the player at `startSeconds`, fullscreen on the Retina.
-    /// Returns false if the file is missing or IINA isn't installed.
+    /// Returns **how many milliseconds it is scheduled to run** — the shorter of
+    /// what is left of the clip and the auto-kill window — or nil if the file is
+    /// missing or IINA isn't installed. Same contract as
+    /// `VideoSoundtrackPlayer.play`: the tablet holds its video page open for
+    /// that long, and drains the ring on the tile over it.
     @discardableResult
-    func play(fileURL: URL, startSeconds: Int) -> Bool {
+    func play(id: String, fileURL: URL, startSeconds: Int) -> Int? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             overlayError("VideoPlayer: file not found: \(fileURL.path)")
-            return false
+            return nil
         }
         guard FileManager.default.isExecutableFile(atPath: iinaCLI) else {
             overlayError("VideoPlayer: IINA CLI not found at \(iinaCLI)")
-            return false
+            return nil
         }
 
         // Replace: quit any player already up so we never stack windows.
@@ -127,13 +144,53 @@ final class VideoPlayer {
             try p.run()
         } catch {
             overlayError("VideoPlayer: failed to launch IINA: \(error)")
-            return false
+            return nil
         }
         overlayInfo("VideoPlayer: playing \(fileURL.lastPathComponent) from \(startSeconds)s")
         scheduleRetinaFullscreen(attemptsLeft: 40)
         startEofWatch(startSeconds: max(0, startSeconds))
         scheduleAutoKill()
-        return true
+        let planned = plannedSeconds(fileURL: fileURL, startSeconds: max(0, startSeconds))
+        activeSince = Date()
+        activeId = id
+        activeDeadline = Date().addingTimeInterval(planned)
+        atEndPaused = false
+        return Int(planned * 1000)
+    }
+
+    /// How long this play will actually last: what is left of the clip after the
+    /// start second, capped by the auto-kill. Falls back to the auto-kill window
+    /// when the file's duration can't be read — the cap is the only promise that
+    /// holds for every clip anyway.
+    private func plannedSeconds(fileURL: URL, startSeconds: Int) -> TimeInterval {
+        let cap = autoKillAfter > 0 ? autoKillAfter : 600
+        let d = AVURLAsset(url: fileURL).duration
+        guard d.isNumeric else { return cap }
+        let remaining = CMTimeGetSeconds(d) - Double(startSeconds)
+        guard remaining > 0 else { return cap }
+        return min(remaining, cap)
+    }
+
+    /// 📱 Is a clip on screen right now? The tablet asks this once a second
+    /// while its video page is pinned, so it un-pins on whichever end comes
+    /// first: the clip finishing, Victor quitting IINA, or the auto-kill.
+    var isActive: Bool {
+        guard let since = activeSince, !atEndPaused else { return false }
+        if let deadline = activeDeadline, Date() >= deadline { return false }
+        // `iina-cli` returns before IINA's window exists, so for the first
+        // couple of seconds "no process yet" means "still starting", not "over".
+        // Without this the tablet un-pins the page it just pinned.
+        if Date().timeIntervalSince(since) < 3 { return true }
+        return !NSRunningApplication.runningApplications(withBundleIdentifier: iinaBundleId).isEmpty
+    }
+
+    /// The half of `GET /video/state` that speaks for the picture. Same shape as
+    /// `VideoSoundtrackPlayer.stateJSON` so the tablet parses one thing.
+    func stateJSON() -> String {
+        let active = isActive
+        let remaining = active ? (activeDeadline.map { max(0, Int($0.timeIntervalSinceNow * 1000)) } ?? 0) : 0
+        let id = activeId.map { "\"\($0)\"" } ?? "null"
+        return "{\"playing\":\(active),\"kind\":\"video\",\"id\":\(id),\"remainingMs\":\(remaining)}"
     }
 
     /// Stop playback now (tablet stop / test hook) and cancel the pending auto-kill.
@@ -142,6 +199,14 @@ final class VideoPlayer {
         autoKill = nil
         stopEofWatch()
         killPlayer()
+        clearActive()
+    }
+
+    private func clearActive() {
+        activeSince = nil
+        activeId = nil
+        activeDeadline = nil
+        atEndPaused = false
     }
 
     // MARK: - One file, one folder
@@ -328,12 +393,21 @@ final class VideoPlayer {
             MpvIPC.send(socketPath: ipcSocket, command: ["seek", watchStartSeconds, "absolute"])
             MpvIPC.send(socketPath: ipcSocket, command: ["set_property", "pause", true])
             rewound = true
+            DispatchQueue.main.async { [weak self] in self?.atEndPaused = true }
             overlayInfo("VideoPlayer: clip ended — rewound to \(watchStartSeconds)s and paused (SPACE replays)")
             return
         }
         if rewound, !paused {
             rewound = false
-            DispatchQueue.main.async { [weak self] in self?.scheduleAutoKill() }
+            // SPACE: the replay is a new play as far as everyone is concerned —
+            // its own auto-kill window, and the tablet's page pinned again.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.atEndPaused = false
+                self.activeSince = Date()
+                self.activeDeadline = Date().addingTimeInterval(self.autoKillAfter)
+                self.scheduleAutoKill()
+            }
         }
     }
 
@@ -347,6 +421,7 @@ final class VideoPlayer {
         let work = DispatchWorkItem { [weak self] in
             self?.stopEofWatch()
             self?.killPlayer()
+            self?.clearActive()
             overlayInfo("VideoPlayer: auto-killed player after \(Int(after))s")
         }
         autoKill = work

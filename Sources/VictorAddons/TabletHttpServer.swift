@@ -167,6 +167,10 @@ class TabletHttpServer {
         case videoSoundStop
         /// 🎵 Read-only snapshot of the soundtrack-only player (test hook).
         case videoSoundState
+        /// 📱 Is anything from the video page playing right now — clip or
+        /// soundtrack — and how long is left of it. Polled by the tablet once a
+        /// second while its video page is pinned to a playing tile.
+        case videoState
         /// ✋ An agent is about to drive the mouse and keyboard: raise the
         /// hands-off frame. Carries who is driving, what it is doing, and how
         /// long to believe it before releasing on its own.
@@ -305,6 +309,9 @@ class TabletHttpServer {
     var onVideoSoundStop: (() -> Void)?
     /// 🎵 Read-only JSON snapshot of the soundtrack-only player.
     var onVideoSoundState: (() -> String)?
+    /// 📱 `{playing,kind,id,remainingMs}` for whichever of the two video-page
+    /// players is running (clip wins; they are mutually exclusive by design).
+    var onVideoState: (() -> String)?
     /// ✋ Raise the hands-off frame (agent, what, ttl seconds); returns the state JSON.
     var onHandsOffStart: ((String?, String?, TimeInterval?) -> String)?
     /// ✋ Release it; returns the state JSON.
@@ -572,6 +579,9 @@ class TabletHttpServer {
             case .videoSoundState:
                 contentType = "application/json"
                 body = self.onVideoSoundState?() ?? "{\"playing\":false}"
+            case .videoState:
+                contentType = "application/json"
+                body = self.onVideoState?() ?? "{\"playing\":false,\"kind\":\"none\"}"
             case .handsOffStart(let agent, let what, let ttl):
                 contentType = "application/json"
                 body = self.onHandsOffStart?(agent, what, ttl) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
@@ -652,6 +662,10 @@ class TabletHttpServer {
             return .videoSoundStop
         case "/test/video/sound":
             return .videoSoundState
+        case "/video/state":
+            return .videoState
+        case "/test/video/state":
+            return .videoState
         case "/test/transcription/start":
             return .testTranscriptionStart
         case "/test/state":
