@@ -1,6 +1,6 @@
 import Foundation
 
-/// The whole decision of 🔋 Keep Awake On Lid Close for Claude, pulled out of
+/// The whole decision of 🔋 Claude prevents sleep, pulled out of
 /// the timer that drives it so it can be tested without a lid, a battery, a
 /// process table or a beep.
 ///

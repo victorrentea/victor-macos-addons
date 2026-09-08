@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 9, 01:01"
+    static let BUILD_TIME = "Sep 9, 01:38"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -383,19 +383,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(scrollReversalItem)
 
-        // 🔋 Keep Awake On Lid Close for Claude — the travel switch. Earns a
-        // row for the same reason 🔄 does: no key teaches it, and there is
-        // nowhere else the state shows. It is also the one row here that
-        // changes something *outside* the app (a kernel flag), so the tick has
-        // to be the truth — the toggle reads the flag back and unticks itself
-        // if the kernel said no.
+        // 🔋 Claude prevents sleep — the travel switch. Earns a row for the
+        // same reason 🔄 does: no key teaches it, and there is nowhere else the
+        // state shows. It is also the one row here that changes something
+        // *outside* the app (a kernel flag), so the tick has to be the truth —
+        // the toggle reads the flag back and unticks itself if the kernel said
+        // no.
         //
-        // The title says "for Claude" because that is the actual contract: the
-        // row being ticked does not mean the Mac is being held awake, it means
-        // it will be held awake *while a Claude session is working*. A shorter
-        // title would have promised something the feature deliberately does not
-        // do.
-        lidAwakeItem = NSMenuItem(title: "🔋 Keep Awake On Lid Close for Claude", action: #selector(toggleLidAwakeAction), keyEquivalent: "")
+        // The label names the *subject*, and that is the contract: it is Claude
+        // that prevents the sleep, not the switch. Ticked means "while a Claude
+        // session is working, the Mac stays up"; when they all finish it sleeps
+        // like any other Mac. A label like "Keep Awake" would promise the thing
+        // this deliberately does not do.
+        lidAwakeItem = NSMenuItem(title: "🔋 Claude prevents sleep", action: #selector(toggleLidAwakeAction), keyEquivalent: "")
         lidAwakeItem.target = self
         lidAwakeItem.isEnabled = true
         lidAwakeItem.state = LidAwakeSettings.isEnabled ? .on : .off

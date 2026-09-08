@@ -1,13 +1,14 @@
-# 🔋 Keep Awake On Lid Close for Claude
+# 🔋 Claude prevents sleep
 
 The travel switch, under 👩🏻‍💻 Extra. Keeps the Mac **running with the lid shut,
 on battery, with nothing plugged in** — the case it exists for is a `claude`
 session mid-loop that has to survive the laptop going into a bag on a flight.
 
-**The title is the contract.** A ticked row does not mean the Mac is being held
-awake; it means the Mac will be held awake *while a Claude session is working*,
-and released the moment they all finish. A shorter title would promise something
-this deliberately does not do.
+**The label names the subject, and that is the contract.** It is Claude that
+prevents the sleep, not the switch: a ticked row does not mean the Mac is being
+held awake, it means the Mac stays up *while a Claude session is working*, and
+is released the moment they all finish. A label like "Keep Awake" would promise
+the thing this deliberately does not do.
 
 Code: `LidAwake.swift` (runtime), `LidAwakePolicy.swift` (the decision),
 `ClaudeActivity.swift` (is a session working?), `LidAwakePolicyTests.swift`.
