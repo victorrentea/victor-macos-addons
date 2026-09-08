@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 8, 15:20"
+    static let BUILD_TIME = "Sep 8, 18:02"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -225,6 +225,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // Tail (was Monitor)
         tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
+
+        // 🔬 Fact-check what was just said. Sits under the Tail because both
+        // rows are "what is the transcript doing" — one shows it, this one
+        // argues with it. The window is in the title because 10 minutes is the
+        // whole contract: it checks the topic being taught, not the sentence
+        // that just ended.
+        addItem("🔬 Fact-check last 10 min", action: #selector(researchProofAction))
 
         // 📬 Check task inbox — the manual override for the poller's power
         // gate. Scheduled polls only run on AC, so while unplugged this item is
@@ -1272,6 +1279,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         guard let item = fluxInboxItem else { return }
         let status = onTaskInboxStatus?() ?? (lastCheck: nil, launches: 0)
         item.title = FluxInboxMenu.title(lastCheck: status.lastCheck, launches: status.launches)
+    }
+
+    @objc private func researchProofAction() {
+        ResearchProofLauncher.launchNow(reason: "menu")
     }
 
     @objc private func checkTaskInboxAction() {

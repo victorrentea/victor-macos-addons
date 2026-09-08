@@ -981,6 +981,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // a real >= 5 min break fires, but bypassing the minutes + cooldown gates.
             BreakSummaryLauncher.launchNow(reason: "/test/break-summary")
         }
+        tabletServer?.onTestResearchProof = {
+            ResearchProofLauncher.launchNow(reason: "/test/research-proof")
+        }
         tabletServer?.onTestFeedbackReminder = { [weak self] in
             DispatchQueue.main.async { self?.feedbackFormReminder?.offer(reason: "/test/feedback-reminder") }
         }
@@ -1391,6 +1394,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async {
                 menuBarManager?.flashScreenshotIcon()
             }
+        }
+        // 🔬 The fact-check report lands on the Retina, in front, unasked: the
+        // run takes minutes, so by the time it is ready Victor is teaching
+        // again and would never go looking for a file. `.retina` is the same
+        // target the tablet's links use — the screen the room is watching.
+        ResearchProofLauncher.onReportReady = { [weak self] url in
+            self?.openUrlInChrome(url, target: .retina)
         }
         // Apply the current power state (start Whisper if on AC) and arm the
         // crash-recovery heartbeat. Single launch entry point.

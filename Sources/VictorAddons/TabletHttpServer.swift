@@ -110,6 +110,10 @@ class TabletHttpServer {
         /// Fire the ☕️ break-summary delta run now, bypassing the >= 5 min +
         /// cooldown gates — same Terminal flow a real break triggers (test hook).
         case testBreakSummary
+        /// Fire the 🔬 Research Proof run now (test hook) — the same Terminal
+        /// flow the menu item fires, so a fact-check can be exercised without
+        /// clicking during a session.
+        case testResearchProof
         /// Show the "Start summarization?" wrap-up offer now, bypassing the
         /// 16:45 / 17:15 schedule (test hook). Hovering it still launches the
         /// interactive claude for real.
@@ -258,6 +262,7 @@ class TabletHttpServer {
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
+    var onTestResearchProof: (() -> Void)?
     var onTestSummaryReminder: (() -> Void)?
     /// Show a 🔔 bell card now; the argument is the optional "?name=" caller.
     var onTestBell: ((String?) -> Void)?
@@ -494,6 +499,8 @@ class TabletHttpServer {
                 self.onTestPresentationWarn?()
             case .testBreakSummary:
                 self.onTestBreakSummary?()
+            case .testResearchProof:
+                self.onTestResearchProof?()
             case .testSummaryReminder:
                 self.onTestSummaryReminder?()
             case .testBell(let name):
@@ -728,6 +735,8 @@ class TabletHttpServer {
             return .testPresentationWarn
         case "/test/break-summary":
             return .testBreakSummary
+        case "/test/research-proof":
+            return .testResearchProof
         case "/test/feedback-reminder":
             return .testFeedbackReminder
         case "/feedback-form/published":

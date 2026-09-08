@@ -1,0 +1,191 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>🔬 Research Proof</title>
+<!--
+  The report the 🔬 Research Proof run opens on the Retina — i.e. on the screen
+  the ROOM is looking at. That single fact decides the whole design:
+
+  * Type is large and the page is one column, because the back row reads it.
+  * Contradictions come first and confirmations last, folded. A run that ends in
+    eight green cards and one red one must not make the red one scroll-work —
+    the red one IS the output; the green ones are the receipt.
+  * Every card shows the raw transcript line next to the claim. Whisper
+    hallucinates fluent sentences nobody said, and without the original line a
+    beautifully sourced fact-check of an invented claim looks exactly like a
+    real one. The line is the escape hatch: "I never said that", in one glance.
+  * The quote check is rendered as what it is — a substring search — with its
+    coverage, so "the source says it" and "a model said the source says it" can
+    never be confused on screen.
+
+  Claude writes ONLY the JSON below (research-proof.sh substitutes it for the
+  __DATA__ token). The markup, the ordering and the wording of the verdicts are
+  fixed here on purpose: a model that re-authors the page every run re-decides
+  the design every run, and the one thing a report shown to a room must be is
+  the same shape every time.
+-->
+<style>
+  :root {
+    --bg: #10131a; --card: #1a1f2b; --edge: #2b3344;
+    --ink: #e8ecf4; --dim: #96a0b4;
+    --bad: #ff5f56; --warn: #f5a623; --none: #8a93a6; --good: #35c07a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 20px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    padding: 32px 40px 96px;
+  }
+  header { max-width: 1180px; margin: 0 auto 28px; }
+  h1 { font-size: 40px; margin: 0 0 6px; letter-spacing: -.02em; }
+  .sub { color: var(--dim); font-size: 19px; }
+  .tally { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .tally span {
+    padding: 6px 14px; border-radius: 999px; font-size: 17px; font-weight: 600;
+    border: 1px solid var(--edge); background: var(--card);
+  }
+  main { max-width: 1180px; margin: 0 auto; }
+  h2 {
+    font-size: 22px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--dim); margin: 38px 0 14px; font-weight: 700;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--edge);
+    border-left: 7px solid var(--none); border-radius: 12px;
+    padding: 22px 26px; margin-bottom: 18px;
+  }
+  .card.contradicted { border-left-color: var(--bad); }
+  .card.partly       { border-left-color: var(--warn); }
+  .card.not_found,
+  .card.unverified   { border-left-color: var(--none); }
+  .card.confirmed    { border-left-color: var(--good); }
+
+  .badge {
+    display: inline-block; padding: 3px 12px; border-radius: 6px;
+    font-size: 15px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+  .badge.contradicted { background: var(--bad);  color: #2a0b09; }
+  .badge.partly       { background: var(--warn); color: #2a1b02; }
+  .badge.not_found,
+  .badge.unverified   { background: var(--none); color: #14181f; }
+  .badge.confirmed    { background: var(--good); color: #04240f; }
+
+  .claim { font-size: 27px; line-height: 1.35; font-weight: 600; margin: 0 0 14px; }
+  .note  { font-size: 20px; color: var(--ink); margin: 0 0 18px; }
+
+  .said {
+    border-left: 3px solid var(--edge); padding: 6px 0 6px 16px;
+    margin: 0 0 18px; color: var(--dim); font-size: 17px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap;
+  }
+  .said b { color: #b9c3d6; font-weight: 600; }
+
+  .ev { border-top: 1px solid var(--edge); padding-top: 15px; margin-top: 15px; }
+  .quote { font-size: 20px; font-style: italic; margin: 0 0 9px; }
+  .quote::before { content: "“"; } .quote::after { content: "”"; }
+  .src { font-size: 17px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .src a { color: #7fb4ff; text-decoration: none; }
+  .src a:hover { text-decoration: underline; }
+  .chk { font-family: ui-monospace, Menlo, monospace; font-size: 15px; padding: 2px 9px; border-radius: 5px; }
+  .chk.found  { background: #143d28; color: #6fe0a6; }
+  .chk.approx { background: #3d3414; color: #e5c766; }
+  .chk.absent { background: #3d1614; color: #ff8d86; }
+  .chk.thin, .chk.unreachable { background: #23293a; color: var(--dim); }
+  .tier { font-size: 15px; padding: 2px 9px; border-radius: 5px; background: #23293a; color: var(--dim); }
+  .tier.t1 { background: #16324a; color: #8ecbff; }
+
+  details.fold summary {
+    cursor: pointer; color: var(--dim); font-size: 19px; padding: 12px 0;
+    list-style: none;
+  }
+  details.fold summary::-webkit-details-marker { display: none; }
+  details.fold summary::before { content: "▸ "; }
+  details.fold[open] summary::before { content: "▾ "; }
+  .empty { color: var(--dim); font-size: 19px; }
+  footer { max-width: 1180px; margin: 44px auto 0; color: var(--dim); font-size: 16px; }
+</style>
+
+<header>
+  <h1>🔬 Research Proof</h1>
+  <div class="sub" id="sub"></div>
+  <div class="tally" id="tally"></div>
+</header>
+<main id="out"></main>
+<footer id="foot"></footer>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const DATA = JSON.parse(document.getElementById("data").textContent);
+
+// The running order IS the editorial judgement: what disagrees with what was
+// said in the room is the only thing worth interrupting a session for.
+const ORDER = [
+  ["contradicted", "Contrazis de surse",  "bad"],
+  ["partly",       "Parțial / nuanțat",   "warn"],
+  ["not_found",    "Nu am găsit nimic",   "none"],
+  ["unverified",   "Nu am putut verifica","none"],
+  ["confirmed",    "Confirmat",           "good"],
+];
+const LABEL = Object.fromEntries(ORDER.map(([k, l]) => [k, l]));
+const CHECK = {
+  found:       "citat găsit pe pagină",
+  approx:      "citat aproximativ",
+  absent:      "CITATUL NU E PE PAGINĂ",
+  thin:        "pagina n-a putut fi citită",
+  unreachable: "pagina n-a răspuns",
+};
+
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function evidence(e) {
+  const chk = e.check || "unreachable";
+  const cov = (chk === "approx" || chk === "absent")
+    ? ` (${Math.round((e.coverage ?? 0) * 100)}% din cuvinte)` : "";
+  return `<div class="ev">
+    <p class="quote">${esc(e.quote)}</p>
+    <div class="src">
+      <a href="${esc(e.url)}" target="_blank">${esc(e.site || e.url)}</a>
+      ${e.date ? `<span>${esc(e.date)}</span>` : ""}
+      <span class="tier t${e.tier || 3}">${e.tier === 1 ? "sursă primară" : e.tier === 2 ? "sursă secundară" : "sursă terță"}</span>
+      <span class="chk ${chk}">${CHECK[chk] || chk}${cov}</span>
+    </div>
+  </div>`;
+}
+
+function card(c) {
+  const v = c.verdict || "unverified";
+  return `<article class="card ${v}">
+    <span class="badge ${v}">${LABEL[v] || v}</span>
+    <p class="claim">${esc(c.claim)}</p>
+    ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}
+    <p class="said"><b>s-a spus:</b> ${esc(c.transcript)}</p>
+    ${(c.evidence || []).map(evidence).join("")}
+  </article>`;
+}
+
+const claims = DATA.claims || [];
+document.getElementById("sub").textContent =
+  `ultimele 10 minute — ${DATA.window || "?"}  ·  ${claims.length} afirmații verificate  ·  ${DATA.generated || ""}`;
+
+document.getElementById("tally").innerHTML = ORDER
+  .map(([k, l]) => [k, l, claims.filter(c => c.verdict === k).length])
+  .filter(([, , n]) => n > 0)
+  .map(([k, l, n]) => `<span class="badge ${k}" style="margin:0">${n} ${l.toLowerCase()}</span>`)
+  .join("");
+
+document.getElementById("out").innerHTML = ORDER.map(([k, label]) => {
+  const group = claims.filter(c => c.verdict === k);
+  if (!group.length) return "";
+  const body = group.map(card).join("");
+  // Confirmations are folded shut: they are the receipt, not the finding, and
+  // open they would push the one contradiction off a projected screen.
+  return k === "confirmed"
+    ? `<details class="fold"><summary>${label} — ${group.length}</summary>${body}</details>`
+    : `<h2>${label} — ${group.length}</h2>${body}`;
+}).join("") || `<p class="empty">Nimic verificabil în ultimele 10 minute — niciun număr, nicio atribuire, nicio afirmație factuală.</p>`;
+
+document.getElementById("foot").innerHTML =
+  (DATA.skipped && DATA.skipped.length
+    ? `<b>Neverificat deliberat</b> (opinii, preferințe, glume): ${DATA.skipped.map(esc).join(" · ")}<br>` : "") +
+  `Fiecare citat a fost căutat literal în pagina sursă cu <code>verify-quote.py</code> — nu pe cuvântul unui model.`;
+</script>
