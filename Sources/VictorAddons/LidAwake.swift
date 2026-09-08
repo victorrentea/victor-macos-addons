@@ -205,11 +205,27 @@ final class LidAwake {
             return false
         }
         guard p.terminationStatus == 0 else { return false }
-        return isSleepDisabled() == on
+        guard isSleepDisabled() == on else {
+            // pmset exited 0 but the flag does not agree. Whatever went wrong,
+            // do not walk away having armed a kernel flag the menu is about to
+            // report as off — an unticked row over a live SleepDisabled is a
+            // Mac that never sleeps again and nothing on screen to say so.
+            if on { _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/sudo"),
+                                         arguments: ["-n", "/usr/bin/pmset", "-a", "disablesleep", "0"]) }
+            return false
+        }
+        return true
     }
 
-    /// Reading the flag needs no privileges — `pmset -g` prints `SleepDisabled`
-    /// only once it has been set, so a missing line is a clear 0.
+    /// Reading the flag needs no privileges. `pmset -g` prints `SleepDisabled`
+    /// only once it has been set at least once since boot, so a missing line is
+    /// a clear 0 — and once present it stays, reading `0` after a clear.
+    ///
+    /// **The columns are tab-separated, not space-separated** (` SleepDisabled
+    /// \t\t 1`). Splitting on `" "` alone yields one token for the whole line,
+    /// whose `last` is never `"1"` — which is the bug that shipped in the first
+    /// version: the flag was set correctly, the read-back said otherwise, the
+    /// toggle reported failure and left the row unticked over a live flag.
     static func isSleepDisabled() -> Bool {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
@@ -225,8 +241,14 @@ final class LidAwake {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         guard let out = String(data: data, encoding: .utf8) else { return false }
+        return parseSleepDisabled(fromPmsetOutput: out)
+    }
+
+    /// The parse, separated from the process so the tab format is pinned by a
+    /// test rather than by a shell one-liner that happened to use `grep`.
+    static func parseSleepDisabled(fromPmsetOutput out: String) -> Bool {
         for line in out.split(separator: "\n") where line.contains("SleepDisabled") {
-            return line.split(separator: " ").last == "1"
+            return line.split(whereSeparator: { $0 == " " || $0 == "\t" }).last == "1"
         }
         return false
     }

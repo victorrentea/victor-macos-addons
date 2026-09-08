@@ -61,6 +61,48 @@ final class LidAwakePolicyTests: XCTestCase {
             .quiet)
     }
 
+    // MARK: - Reading the flag back out of `pmset -g`
+
+    /// Verbatim from `pmset -g` on this Mac. The columns are **tab**-separated,
+    /// which is the whole point of this test: the first version split on `" "`
+    /// alone, so the read-back never saw the `1`, the toggle reported failure,
+    /// and the row sat unticked over a live SleepDisabled flag.
+    private let pmsetOutput = """
+    System-wide power settings:
+     SleepDisabled\t\t1
+    Currently in use:
+     standby              1
+     hibernatemode        3
+     displaysleep         15
+    """
+
+    func testFlagIsReadThroughTabColumns() {
+        XCTAssertTrue(LidAwake.parseSleepDisabled(fromPmsetOutput: pmsetOutput))
+    }
+
+    func testClearedFlagReadsFalse() {
+        // Once set, the line stays in the output and reads 0 — a missing line
+        // is not the only way to be off.
+        XCTAssertFalse(LidAwake.parseSleepDisabled(
+            fromPmsetOutput: pmsetOutput.replacingOccurrences(of: "SleepDisabled\t\t1",
+                                                              with: "SleepDisabled\t\t0")))
+    }
+
+    func testAbsentLineIsOff() {
+        // Never set since boot: pmset does not print the line at all.
+        XCTAssertFalse(LidAwake.parseSleepDisabled(fromPmsetOutput: """
+        System-wide power settings:
+        Currently in use:
+         standby              1
+        """))
+    }
+
+    func testSpaceSeparatedColumnsAlsoParse() {
+        // Not what this Mac emits today, but the neighbouring rows in the very
+        // same output are space-padded — the parser must not care which it got.
+        XCTAssertTrue(LidAwake.parseSleepDisabled(fromPmsetOutput: " SleepDisabled        1"))
+    }
+
     func testUnreadableBatteryDoesNotStandDown() {
         // A failed read is not evidence of a low charge; taking the machine
         // down mid-flight on a missing number is the worse mistake.
