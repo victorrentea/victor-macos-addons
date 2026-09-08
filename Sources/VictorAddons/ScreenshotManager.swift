@@ -87,46 +87,52 @@ enum ScreenshotManager {
         return saved ? filepath : nil
     }
 
-    /// Hold ⌃P (or the menu item) → macOS's own crosshair selection, then the
-    /// same two destinations as a plain ⌃P: clipboard **and** a dated file.
+    /// Hold ⌃P (or the menu item) → the crosshair selection, then the same two
+    /// destinations as a plain ⌃P: clipboard **and** a dated file.
     ///
-    /// `screencapture -i` is the very tool ⌃⇧P used to reach, minus the choice:
-    /// you no longer decide "full or crop" before pressing, you decide it by how
-    /// long you keep the key down. Esc / right-click cancels the selection and
-    /// writes no file — which must leave the clipboard alone, so nothing here
-    /// runs unless a file actually appeared.
+    /// The crosshair is **ours** (`CropSelectionOverlay`), not `screencapture
+    /// -i`'s: the box has to move whole while ⌘ is held and has to stay inside
+    /// its screen, and neither can be asked of the system tool. Esc, a
+    /// right-click, or a drag too small to be one cancels and writes no file —
+    /// which must leave the clipboard alone, so nothing here runs unless a file
+    /// actually appeared.
     @discardableResult
     static func takeCropScreenshot() -> URL? {
         // Our own border must stay off the screen for the whole selection: one
-        // still fading from an earlier shot would be dragged into the crop, and
-        // any raised over the crosshair puts a window above screencapture's own
-        // selection overlay — observed to end with the selection cancelled and
-        // no file written.
+        // still fading from an earlier shot would be dragged into the crop.
         ScreenCaptureFlash.beginSuppression()
         defer { ScreenCaptureFlash.endSuppression() }
+
+        // The overlay lives on the main thread; both callers are on a global
+        // queue, so waiting for it here is what keeps this function the simple
+        // synchronous thing every caller already treats it as.
+        let semaphore = DispatchSemaphore(value: 0)
+        var selection: CropSelectionOverlay.Selection?
+        DispatchQueue.main.async {
+            CropSelectionOverlay.begin { result in
+                selection = result
+                semaphore.signal()
+            }
+        }
+        semaphore.wait()
+
+        guard let selection else {
+            overlayInfo("📸 crop cancelled")
+            return nil   // Esc: clipboard and folder untouched.
+        }
 
         try? FileManager.default.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
         let filepath = uniqueURL(for: Date())
         let filename = filepath.lastPathComponent
 
-        // Watched so the confirmation border can frame the crop; `screencapture`
-        // itself says nothing about the region it took.
-        let drag = CropDragTracker()
-        drag.start()
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-i", "-x", "-t", "jpg", filepath.path]
-        try? process.run()
-        process.waitUntilExit()
-        let draggedRect = drag.stop()
-
-        guard FileManager.default.fileExists(atPath: filepath.path) else {
-            overlayInfo("📸 crop cancelled")
-            return nil   // Esc: clipboard and folder untouched.
+        guard captureRegion(selection, to: filepath) else {
+            overlayInfo("⚠️ Crop failed")
+            return nil
         }
 
-        flashCropBorder(around: draggedRect, capture: filepath)
+        // The rectangle is known now, not guessed from a drag we watched from
+        // outside — so the border can simply be drawn around it.
+        DispatchQueue.main.async { ScreenCaptureFlash.flash(around: selection.rect) }
         copyToClipboard(filepath)
         overlayInfo("✂️ \(filename) → clipboard + \(screenshotsDir.path)")
 
@@ -135,35 +141,38 @@ enum ScreenshotManager {
         return filepath
     }
 
-    /// Frame the crop that was just taken — or show nothing at all.
+    /// Capture `selection` and write it as a jpg.
     ///
-    /// The whole-screen border belongs to the whole-screen shot: after a
-    /// selection it claims the wrong thing, since not taking the whole screen is
-    /// exactly what the crop was for. So the border goes around the region — and
-    /// only when the drag we watched agrees with the saved picture's own pixel
-    /// dimensions. A window pick, or a drag that couldn't be reconstructed,
-    /// draws nothing: silence is right, a border in the wrong place isn't.
-    private static func flashCropBorder(around dragged: CGRect?, capture: URL) {
-        guard let dragged else { return }
-        DispatchQueue.main.async {
-            guard let primaryMaxY = NSScreen.screens.first?.frame.maxY else { return }
-            let cocoa = CropFlashGeometry.cocoaRect(dragged, primaryMaxY: primaryMaxY)
-            let scale = NSScreen.screens.first { NSMouseInRect(CGPoint(x: cocoa.midX, y: cocoa.midY), $0.frame, false) }?
-                .backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-            guard let pixels = imagePixelSize(capture),
-                  CropFlashGeometry.matchesCapture(drag: dragged, imagePixels: pixels, scale: scale) else { return }
-            ScreenCaptureFlash.flash(around: cocoa)
-        }
-    }
+    /// It is taken as a **whole-display** shot that we then crop ourselves —
+    /// `screencapture -R`, the obvious tool, answers "could not create image
+    /// from display with rect" on macOS 15.7 for every rectangle, on every
+    /// display, with and without `-D`. Cropping here costs one extra decode and
+    /// buys back something as well: the region is cut at the display's real
+    /// pixel scale, read off the capture itself rather than trusted from
+    /// `backingScaleFactor`.
+    private static func captureRegion(_ selection: CropSelectionOverlay.Selection, to url: URL) -> Bool {
+        let display = displayNumber(for: selection.screen)
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("victor-crop-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: temp) }
 
-    /// The capture's dimensions in pixels, read from the file's metadata alone
-    /// (no decode — this runs while the user is waiting to paste).
-    private static func imagePixelSize(_ url: URL) -> CGSize? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
-              let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
-              let h = props[kCGImagePropertyPixelHeight] as? CGFloat else { return nil }
-        return CGSize(width: w, height: h)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-t", "png", "-D", String(display), temp.path]
+        try? process.run()
+        process.waitUntilExit()
+
+        guard let source = CGImageSourceCreateWithURL(temp as CFURL, nil),
+              let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
+
+        let crop = CropFlashGeometry.pixelCrop(of: selection.rect,
+                                               onScreen: selection.screen.frame,
+                                               imageWidth: CGFloat(full.width))
+        guard let cropped = full.cropping(to: crop) else { return false }
+
+        let rep = NSBitmapImageRep(cgImage: cropped)
+        guard let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else { return false }
+        return (try? jpg.write(to: url)) != nil
     }
 
     /// Enforce `ScreenshotRetentionPolicy` over the folder. Best-effort by
@@ -248,18 +257,21 @@ enum ScreenshotManager {
     /// position so the captured frame always contains the cursor that `-C` will draw.
     private static func activeDisplay() -> (number: Int, screen: NSScreen?) {
         let mouse = NSEvent.mouseLocation  // Cocoa coords: bottom-left origin
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }),
-              let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else {
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else {
             return (1, NSScreen.main)
         }
+        return (displayNumber(for: screen), screen)
+    }
 
-        var count: UInt32 = 0
-        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return (1, screen) }
-        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return (1, screen) }
-        if let idx = displays.firstIndex(of: displayID) {
-            return (idx + 1, screen)
+    /// The 1-indexed display number `screencapture -D` expects for `screen`.
+    private static func displayNumber(for screen: NSScreen) -> Int {
+        guard let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else {
+            return 1
         }
-        return (1, screen)
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return 1 }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return 1 }
+        return (displays.firstIndex(of: displayID).map { $0 + 1 }) ?? 1
     }
 }
