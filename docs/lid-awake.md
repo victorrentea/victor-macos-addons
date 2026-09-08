@@ -101,6 +101,17 @@ the exact failure this is meant to prevent.
   stays true regardless. It also excludes a `caffeinate` started by hand in a
   terminal, which should not hold the laptop open for a session that isn't
   there.
+- **The parent is matched by executable path, not by name — this cost a
+  deploy.** `p_comm`, the name in the process table, is the *filename* of the
+  binary, and Claude Code installs as
+  `~/.local/share/claude/versions/2.1.265`: the kernel calls every session
+  `2.1.265`. `ps -o comm=` prints `claude` only because that is `argv[0]`;
+  `ps -o ucomm=` shows the truth. Matching `name == "claude"` found nothing
+  while six sessions were working. `proc_pidpath` gives the real path, and a
+  binary counts when the path *ends in* `/claude` or *contains* `/claude/` —
+  the two install shapes. Not a substring search: `claude-gpt`, `claude-local`
+  and `claude-docker` sit in the same folder, wrap other models or other
+  machines, and must not hold this lid open.
 - **The five-minute tail is a feature, not lag.** The last assertion outlives
   the last piece of work by up to 300 s, so a session pausing between turns —
   an API round-trip, a long tool call — does not drop the flag underneath

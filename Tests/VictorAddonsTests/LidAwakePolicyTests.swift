@@ -98,46 +98,87 @@ final class LidAwakePolicyTests: XCTestCase {
 
     // MARK: - "Is a Claude working?"
 
-    /// The shape measured on this Mac: Claude Code spawns `caffeinate -i -t 300`
-    /// while it works and lets it expire; 26 sessions open, 6 live caffeinates.
+    /// The versioned install, which is what this Mac actually runs: the binary
+    /// is `.../share/claude/versions/2.1.265`, so the *version* is the file
+    /// name and the process table calls the session `2.1.265`. Matching on the
+    /// name found nothing while six sessions were working; the path is what
+    /// holds.
+    private let claudePath = "/Users/victorrentea/.local/share/claude/versions/2.1.265"
+
+    private func paths(_ map: [Int32: String]) -> (Int32) -> String? { { map[$0] } }
+
     func testCaffeinateWithAClaudeParentCounts() {
-        XCTAssertTrue(ClaudeActivity.isClaudeWorking(in: [
-            RunningProcess(pid: 3316, ppid: 1, name: "claude"),
-            RunningProcess(pid: 87607, ppid: 3316, name: "caffeinate"),
-        ]))
+        XCTAssertTrue(ClaudeActivity.isClaudeWorking(
+            in: [
+                RunningProcess(pid: 3316, ppid: 1, name: "2.1.265"),
+                RunningProcess(pid: 87607, ppid: 3316, name: "caffeinate"),
+            ],
+            executablePath: paths([3316: claudePath])))
     }
 
     func testIdleSessionsWithNoCaffeinateDoNotCount() {
         // Sessions sitting at a prompt. This is the case that must NOT hold the
         // lid open, or Victor's two dozen open terminals never let the Mac
         // sleep again.
-        XCTAssertFalse(ClaudeActivity.isClaudeWorking(in: [
-            RunningProcess(pid: 3316, ppid: 1, name: "claude"),
-            RunningProcess(pid: 5937, ppid: 1, name: "claude"),
-            RunningProcess(pid: 11512, ppid: 1, name: "claude"),
-        ]))
+        XCTAssertFalse(ClaudeActivity.isClaudeWorking(
+            in: [
+                RunningProcess(pid: 3316, ppid: 1, name: "2.1.265"),
+                RunningProcess(pid: 5937, ppid: 1, name: "2.1.265"),
+                RunningProcess(pid: 11512, ppid: 1, name: "2.1.263"),
+            ],
+            executablePath: paths([3316: claudePath, 5937: claudePath, 11512: claudePath])))
     }
 
     func testAHandStartedCaffeinateDoesNotCount() {
         // `caffeinate` typed into a shell holds the Mac awake on its own terms;
         // it is not a Claude session and must not arm this feature.
-        XCTAssertFalse(ClaudeActivity.isClaudeWorking(in: [
-            RunningProcess(pid: 400, ppid: 1, name: "zsh"),
-            RunningProcess(pid: 401, ppid: 400, name: "caffeinate"),
-        ]))
+        XCTAssertFalse(ClaudeActivity.isClaudeWorking(
+            in: [
+                RunningProcess(pid: 400, ppid: 1, name: "zsh"),
+                RunningProcess(pid: 401, ppid: 400, name: "caffeinate"),
+            ],
+            executablePath: paths([400: "/bin/zsh"])))
     }
 
     func testOneWorkingSessionAmongManyIdleOnesIsEnough() {
-        XCTAssertTrue(ClaudeActivity.isClaudeWorking(in: [
-            RunningProcess(pid: 3316, ppid: 1, name: "claude"),
-            RunningProcess(pid: 5937, ppid: 1, name: "claude"),
-            RunningProcess(pid: 12660, ppid: 1, name: "claude"),
-            RunningProcess(pid: 53787, ppid: 12660, name: "caffeinate"),
-        ]))
+        XCTAssertTrue(ClaudeActivity.isClaudeWorking(
+            in: [
+                RunningProcess(pid: 3316, ppid: 1, name: "2.1.265"),
+                RunningProcess(pid: 5937, ppid: 1, name: "2.1.265"),
+                RunningProcess(pid: 12660, ppid: 1, name: "2.1.263"),
+                RunningProcess(pid: 53787, ppid: 12660, name: "caffeinate"),
+            ],
+            executablePath: paths([3316: claudePath, 5937: claudePath, 12660: claudePath])))
+    }
+
+    func testAVanishedParentIsNotWorking() {
+        // The parent exited between reading the table and resolving its path.
+        XCTAssertFalse(ClaudeActivity.isClaudeWorking(
+            in: [RunningProcess(pid: 401, ppid: 400, name: "caffeinate")],
+            executablePath: paths([:])))
     }
 
     func testEmptyTableIsNotWorking() {
-        XCTAssertFalse(ClaudeActivity.isClaudeWorking(in: []))
+        XCTAssertFalse(ClaudeActivity.isClaudeWorking(in: [], executablePath: paths([:])))
+    }
+
+    // MARK: - Which binaries count as Claude Code
+
+    func testVersionedInstallCounts() {
+        XCTAssertTrue(ClaudeActivity.isClaudeExecutable(path: claudePath))
+    }
+
+    func testPlainInstallCounts() {
+        XCTAssertTrue(ClaudeActivity.isClaudeExecutable(path: "/opt/homebrew/bin/claude"))
+    }
+
+    func testClaudeShapedWrappersDoNotCount() {
+        // These live in ~/.local/bin next to the real one and wrap other models
+        // or other machines. None of them should hold this laptop's lid open,
+        // which is why the test is not a substring search for "claude".
+        XCTAssertFalse(ClaudeActivity.isClaudeExecutable(path: "/Users/victorrentea/workspace/codex-gpt/codex-gpt"))
+        XCTAssertFalse(ClaudeActivity.isClaudeExecutable(path: "/Users/victorrentea/workspace/claude-local/claude-local"))
+        XCTAssertFalse(ClaudeActivity.isClaudeExecutable(path: "/Users/victorrentea/workspace/claude-docker/claude-docker"))
     }
 
     // MARK: - Reading the flag back out of `pmset -g`
