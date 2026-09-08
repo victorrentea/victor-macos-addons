@@ -155,6 +155,38 @@ rule from the start.
   which `stopAllActiveEffects` calls explicitly (they live outside `activeEffects`,
   like the spiral hearts'). `/test/snow`, `/test/snow/stop`, `/effect/snow` and the
   menu item **Snow ❄️** fire it silently.
+- **🌑 Death Star** (sfx #55 `55_star_wars.mp3` → `star-wars` / `star-wars/stop`,
+  `showStarWars`): a Death Star climbs the diagonal out of the bottom-left corner and
+  **stops near the middle of the screen** (`starWarsRestPoint` = 0.42 W, 0.44 H — its
+  centre), 0.69 of the screen height across, in 6.5 s of the 10 s clip; the last 3.5 s
+  it simply hangs there.
+  - **The artwork is a whole sphere, and that is the load-bearing change.** The
+    original `death-star.png` was a *crop*: cut off flat along its left and bottom
+    edges, so the only place on screen where those cuts are invisible is welded into
+    the bottom-left corner, with the slices exactly on the screen edges. Pulled even
+    10% inboard, the sphere visibly showed two straight cut lines. So the missing
+    lower-left limb was **rebuilt**: fit a circle to the silhouette (centre 314,394,
+    R 364 in the source's pixels), then fill everything inside it that the crop never
+    had by walking radially inward to the nearest real pixel and darkening steeply
+    with the distance walked, which lands the fabricated part in the sphere's own
+    shadow where nobody reads detail. The white fringe the source kept from being cut
+    out of a white background is dropped on the way (it was extrapolating into a white
+    crescent down the left limb). The result ships **in the app bundle** — it used to
+    be read from `~/Downloads`, where one tidy-up would have silently killed the
+    effect; that path is still the fallback.
+  - **Sizes are stated as the SPHERE, never as the picture** (`starWarsSphereHeight`
+    0.69, `starWarsSphereFraction` 0.893 = how much of the artwork's height the sphere
+    fills). The old code sized the *image* to 0.40 H, but the image was a crop, so the
+    sphere was really 0.462 H — which is why "half again bigger" is 0.69 and not 0.60.
+    Re-cut the art and `starWarsSphereFraction` is the only number to change.
+  - **It starts tangent to the corner**, i.e. exactly one radius outside it along the
+    line to the rest point, so the first frame already has a sliver on screen. The old
+    start was a hand-tuned bbox offset that still spent ~0.3 s on an empty screen
+    (and, before that tuning, ~3 s — the image's top-right corner is transparent).
+  - **Speed**: the path is now ~2.5× longer than the corner-park it replaced, and it is
+    covered in 6.5 s instead of 8, so the thing moves **three times** as fast as it did.
+    Twice was the ask; at exactly twice, the longer journey would need 9.8 s and no
+    longer fit under the clip.
 - **⏲️ Microwave** (tile #61, repurposed from "dinner"): a **kitchen timer ticks and
   the microwave's door swings open on the BING**. `61_dinner.mp3` is now a few
   seconds of ticking followed by a bell (the ticking was lifted +12 dB against the

@@ -5513,42 +5513,73 @@ class EmojiAnimator {
 
     // MARK: - Star Wars Death Star slide (sound #55)
 
+    /// The sphere's diameter as a fraction of screen height. Half again the
+    /// 0.462 it used to be — the artwork was 40% of the screen tall but was a
+    /// CROP of the sphere, so the sphere itself measured more than the picture.
+    /// Stating the size as the sphere, not as the image, is what makes "half
+    /// again bigger" a number anyone can check.
+    private static let starWarsSphereHeight: CGFloat = 0.69
+
+    /// How much of the artwork's height the sphere fills; the rest is the
+    /// transparent margin that keeps the limb from being clipped. Re-cut the
+    /// art and this is the one number to update — every size below is derived.
+    private static let starWarsSphereFraction: CGFloat = 0.893
+
+    /// Where the sphere comes to rest, as a fraction of the screen (its CENTRE,
+    /// y-up). On the diagonal it travels along, a little short of the middle —
+    /// **not** parked in the corner, which is where it used to stop.
+    private static let starWarsRestPoint = CGPoint(x: 0.42, y: 0.44)
+
+    /// How long the slide takes. The ask was "twice as fast"; the path is also
+    /// ~2.5× longer now (corner → near the middle), so at double the old speed
+    /// it would need 9.8 s and no longer fit under a 10 s clip. 6.5 s makes it
+    /// **three times** the old speed and still leaves the last 3.5 s with the
+    /// sphere simply hanging there — which is the better shape anyway: arriving
+    /// on the final beat left no moment where the thing was just *present*.
+    private static let starWarsSlideSeconds: CFTimeInterval = 6.5
+
     func showStarWars(playSound: Bool = true) {
         if cancelIfRunning("star-wars", sound: playSound ? "55_star_wars.mp3" : nil) { return }
 
+        // Ships with the app now. It used to be loaded from ~/Downloads, where
+        // one tidy-up would have silently killed the effect; the copy there is
+        // still the fallback, so an older build's asset is never in the way.
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: (NSHomeDirectory() as NSString).appendingPathComponent("Downloads"))
-        let pngURL = downloadsURL.appendingPathComponent("death-star.png")
+        let pngURL = Bundle.module.url(forResource: "death-star", withExtension: "png")
+            ?? downloadsURL.appendingPathComponent("death-star.png")
         guard let nsImage = NSImage(contentsOf: pngURL),
               let cg = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            overlayError("death-star.png not found in Downloads")
+            overlayError("death-star.png not found in the bundle or in Downloads")
             return
         }
 
         let bounds = hostLayer.bounds
         let W = bounds.width
         let H = bounds.height
-        // Death Star sized to ~40% of screen height; aspect preserved.
-        let imgH = H * 0.40
+        // Size the SPHERE, then work back to the image it is drawn inside.
+        let sphere = H * Self.starWarsSphereHeight
+        let imgH = sphere / Self.starWarsSphereFraction
         let aspect = CGFloat(cg.width) / CGFloat(cg.height)
         let imgW = imgH * aspect
 
-        // End: image's BL corner at screen's BL (0,0). CALayer anchorPoint is
-        // (0.5,0.5), so position = image centre.
-        let endPos = CGPoint(x: imgW / 2, y: imgH / 2)
+        // The artwork is a whole sphere now, so it can stop anywhere. It could
+        // not before: the old PNG was cut off flat along its left and bottom
+        // edges, and the only place those cuts are invisible is welded into the
+        // screen's bottom-left corner — pull it even 10% inboard and the sphere
+        // showed two straight slices. The missing lower-left limb was rebuilt
+        // (radially extrapolated and darkened into shadow) so this position is
+        // now a free choice rather than the one place the art allowed.
+        let endPos = CGPoint(x: Self.starWarsRestPoint.x * W, y: Self.starWarsRestPoint.y * H)
 
-        // Trajectory: line from screen-BL (0,0) through screen-centre,
-        // extended into the (-,-) quadrant where the image starts.
-        // We position the image so its leading opaque pixel — the
-        // top-right of the Death Star sphere — sits just outside the
-        // screen corner at t=0, instead of the image's rectangular
-        // bbox (whose top-right corner is fully transparent and wastes
-        // ~3s of the slide before any pixel is visible).
-        // Empirically tuned: BL_start = (-0.25·W, -0.25·H) puts the
-        // first opaque pixel at ~0.3s into the 8s slide on 16:9 / 16:10.
-        let startBLx = -0.25 * W
-        let startBLy = -0.25 * H
-        let startPos = CGPoint(x: startBLx + imgW / 2, y: startBLy + imgH / 2)
+        // It comes up the diagonal from outside the bottom-left corner, starting
+        // exactly tangent to it: any further out and the first second of the
+        // slide is spent on an empty screen (the old start wasted ~0.3 s even
+        // after being tuned for it), any closer and it pops into existence.
+        let reach = (endPos.x * endPos.x + endPos.y * endPos.y).squareRoot()
+        let dir = reach > 0 ? CGPoint(x: endPos.x / reach, y: endPos.y / reach) : CGPoint(x: 0.83, y: 0.55)
+        let radius = sphere / 2
+        let startPos = CGPoint(x: -dir.x * radius, y: -dir.y * radius)
 
         let layer = CALayer()
         layer.contents = cg
@@ -5558,9 +5589,9 @@ class EmojiAnimator {
         hostLayer.addSublayer(layer)
         activeEffects["star-wars"] = layer
 
-        // Sound is 10.08s; animation must finish 2s before, so 8s slide.
+        // Sound is 10.08s; the slide finishes well inside it (see above).
         let soundDuration: CFTimeInterval = 10.0
-        let slideDuration: CFTimeInterval = soundDuration - 2.0
+        let slideDuration = Self.starWarsSlideSeconds
 
         let anim = CABasicAnimation(keyPath: "position")
         anim.fromValue = NSValue(point: startPos)
