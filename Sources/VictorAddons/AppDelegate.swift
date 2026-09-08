@@ -1278,7 +1278,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         menuBarManager.onDisplayClipboardLink = { [weak self] in
             self?.displayClipboardLinkBanner()
         }
-        // Same path as ⌘⌃P and GET /test/reminder — off the main thread, since
+        // Same path as ⌘⌃M and GET /test/reminder — off the main thread, since
         // the pasteboard read and any JPEG re-encode happen inline.
         menuBarManager.onSendReminderMail = { [weak self] in
             DispatchQueue.global(qos: .userInitiated).async { self?.sendClipboardReminder() }
@@ -1578,11 +1578,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
             }
         }
-        eventTap.onComposeTodoMail = { [weak self] in
-            // The clipboard is read here, on the tap's background queue, and the
-            // whole draft is a URL by the time Chrome is asked to open it — so
-            // nothing races the browser and nothing is typed into a window that
-            // may not have focus yet.
+        // ⌘⌃P — the selection (or the clipboard) is filed as an agent prompt in
+        // the session notes, which is what puts it on the participants' Prompts
+        // tab. Run off the main thread: the AX read and the ⌘C fallback block.
+        eventTap.onSendSelectionAsPrompt = {
+            SessionNotesAppender.sendSelectionAsPrompt()
+        }
+        // No hotkey any more (⌘⌃M now sends the Reminder mail) — this is the
+        // menu row's handler.
+        menuBarManager.onComposeTodoMail = { [weak self] in
+            // The whole draft is a URL by the time Chrome is asked to open it —
+            // so nothing races the browser and nothing is typed into a window
+            // that may not have focus yet.
             let draft = GmailCompose.draft(clipboard: ClipboardManager.read())
             DispatchQueue.main.async {
                 self?.openUrlInChrome(draft.url, target: .screenUnderMouse)
@@ -1595,7 +1602,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 }
             }
         }
-        // ⌘⌃P — the clipboard leaves the Mac as a "Reminder" mail. Same
+        // ⌘⌃M — the clipboard leaves the Mac as a "Reminder" mail. Same
         // AgentMail key as the 📬 poller, used in the sending direction; no
         // agent and no model are involved, so the shortcut costs nothing and
         // works with the network as its only dependency.
@@ -1606,7 +1613,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 self?.sendClipboardReminder()
             }
         } else {
-            overlayError("⌘⌃P reminder mail disabled: AGENTMAIL_API_KEY missing from secrets")
+            overlayError("⌘⌃M reminder mail disabled: AGENTMAIL_API_KEY missing from secrets")
         }
 
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in

@@ -43,7 +43,15 @@ enum CommandControlShortcuts {
         // G (key 5) is drawn from `artworkNames` below, not from a word.
         40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
         37: "📅",        // L — Google Calendar
-        46: "todo",      // M — Gmail draft to myself, clipboard in the body
+        46: "remind",    // M — mail the clipboard to myself, subject "Reminder".
+                         // The word is the subject line you will later search
+                         // Gmail for, which is the only name this key answers to
+                         // once the mail has arrived. Deliberately not "mail":
+                         // ⌘⌃G (the Gmail mark) is already mail, and the thing
+                         // that separates this key from it is *why* you send it,
+                         // not that you do. It took the letter from the old
+                         // "todo" Gmail draft on 2026-09-08 — the two were the
+                         // same gesture and the one that actually sends won.
         31: "trump",     // O — 🐘 the elephant in the room, in the left half of
                          // the screen. The word is the picture, not the key: the
                          // letter is only "the Orange one" because T (Trump) is
@@ -52,13 +60,13 @@ enum CommandControlShortcuts {
                          // for the T you actually reached for.
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
         // Google Doc, and the Docs mark says that faster than any word could.
-        35: "remind",    // P — mail the clipboard to myself, subject "Reminder".
-                         // The word is the subject line you will later search
-                         // Gmail for, which is the only name this key answers to
-                         // once the mail has arrived. Deliberately not "mail":
-                         // ⌘⌃M ("todo") and ⌘⌃G (the Gmail mark) are already
-                         // mail, and the thing that separates this key from both
-                         // is *why* you send it, not that you do.
+        35: "prompt",    // P — the selection goes to the notes as an agent PROMPT,
+                         // which is what puts it in the room's Prompts tab. The
+                         // word is the thing the room ends up reading, and it is
+                         // also the letter's own initial — the one key on this
+                         // board where the two agree, which is why it took P the
+                         // moment the mail moved to M. Sibling of S ("notes"):
+                         // same capture, different shelf.
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
@@ -92,10 +100,13 @@ enum CommandControlShortcuts {
         15: "📋",  // R — the SRL details are pasted, not opened
         40: "📕",  // K — the training catalog
         3:  "🎧",  // F — headphones: the key plays music, it doesn't open a page
-        46: "✉️",  // M — "todo" is the list; the envelope says it arrives as mail
-        35: "📤",  // P — the outbox tray, NOT M's ✉️: the one thing worth knowing
-                  // before pressing this key is that it leaves immediately,
-                  // while ⌘⌃M only opens a draft that still waits for you.
+        46: "📤",  // M — the outbox tray: the one thing worth knowing before
+                  // pressing this key is that the mail leaves immediately, with
+                  // nothing left on screen to review or send.
+        35: "🤖",  // P — the same stamp the line gets in the notes and in the
+                  // room's Prompts tab, so the sheet, the pill and the list all
+                  // say the same word. S's 🚀 is the sibling: both launch the
+                  // selection, this one lands on the participants' screens.
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
         31: "🐘",  // O — the word names the man, the mark names what appears
         2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this

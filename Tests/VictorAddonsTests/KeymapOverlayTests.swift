@@ -302,8 +302,8 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.labels[40], "catalog")
         XCTAssertEqual(CommandControlShortcuts.labels[37], "📅")
         XCTAssertEqual(CommandControlShortcuts.labels[1], "notes")
-        XCTAssertEqual(CommandControlShortcuts.labels[46], "todo")
-        XCTAssertEqual(CommandControlShortcuts.labels[35], "remind")
+        XCTAssertEqual(CommandControlShortcuts.labels[46], "remind")
+        XCTAssertEqual(CommandControlShortcuts.labels[35], "prompt")
         XCTAssertNil(CommandControlShortcuts.labels[5])
         XCTAssertNil(CommandControlShortcuts.labels[45])
         XCTAssertEqual(CommandControlShortcuts.artworkNames[5], "gmail-logo")
@@ -320,12 +320,12 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[15], "📋")  // R — a paste, not a doc
         XCTAssertEqual(CommandControlShortcuts.accents[40], "📕")  // K — the catalog
         XCTAssertEqual(CommandControlShortcuts.accents[3], "🎧")   // F — the focus mix
-        XCTAssertEqual(CommandControlShortcuts.accents[46], "✉️")  // M — it arrives as mail
+        XCTAssertEqual(CommandControlShortcuts.accents[46], "📤")  // M — it is sent, not drafted
         XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
-        XCTAssertEqual(CommandControlShortcuts.accents[35], "📤")  // P — it is sent, not drafted
-        // The two mail keys must not wear the same mark: ✉️ on M is a draft you
-        // still have to send, 📤 on P is already gone.
-        XCTAssertNotEqual(CommandControlShortcuts.accents[35], CommandControlShortcuts.accents[46])
+        XCTAssertEqual(CommandControlShortcuts.accents[35], "🤖")  // P — the marker the notes get
+        // S and P both launch the selection and must not read as the same key:
+        // 🚀 lands in the notes, 🤖 lands in the room's Prompts tab.
+        XCTAssertNotEqual(CommandControlShortcuts.accents[35], CommandControlShortcuts.accents[1])
         // An accent on an unbound key would decorate a dimmed, meaningless key.
         for code in CommandControlShortcuts.accents.keys {
             XCTAssertTrue(CommandControlShortcuts.boundKeyCodes.contains(code),

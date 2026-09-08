@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 8, 09:25"
+    static let BUILD_TIME = "Sep 8, 15:20"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -80,6 +80,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDisplayClipboardLink: (() -> Void)?
     /// 📤 Mail the clipboard to Victor, subject "Reminder" — the ⌘⌃P key's row.
     var onSendReminderMail: (() -> Void)?
+    var onComposeTodoMail: (() -> Void)?
     /// 📝 Ask Chrome to clone, rename and publish this session's feedback form.
     var onPublishFeedbackForm: (() -> Void)?
     /// ⌘⌃K, from the event tap — the catalog has no menu row of its own.
@@ -253,11 +254,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
         // Directly under it, because both rows answer "what is on the clipboard":
         // one shows it in the room, this one mails it to Victor. The key is only
-        // advertised here — the event tap swallows ⌘⌃P before AppKit could match a
+        // advertised here — the event tap swallows ⌘⌃M before AppKit could match a
         // menu equivalent, so the row cannot fire the send a second time.
         let reminderMailItem = addItem("📤 Mail clipboard to myself", action: #selector(sendReminderMailAction))
-        reminderMailItem.keyEquivalent = "p"
+        reminderMailItem.keyEquivalent = "m"
         reminderMailItem.keyEquivalentModifierMask = [.command, .control]
+        // The Gmail "TO DO" draft lost ⌘⌃M to the row above (2026-09-08) — the
+        // two were the same gesture and the sent one won. It keeps a row rather
+        // than being deleted: drafting is still the right shape when the note
+        // needs editing before it goes, and a click is a fine price for the
+        // rarer of the two.
+        addItem("✉️ Draft TO DO mail with clipboard", action: #selector(composeTodoMailAction))
 
         menu.addItem(.separator())
 
@@ -720,6 +727,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func sendReminderMailAction() {
         onSendReminderMail?()
+    }
+
+    @objc private func composeTodoMailAction() {
+        onComposeTodoMail?()
     }
 
     @objc private func appendClipboardToNotesAction() {

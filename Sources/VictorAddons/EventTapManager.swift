@@ -55,11 +55,13 @@ class EventTapManager {
     var onOpenNotesDoc: (() -> Void)?
     /// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
     var onOpenFocusPlaylist: (() -> Void)?
-    /// ⌘⌃M — open a Gmail draft to Victor, subject "TO DO", clipboard as body.
-    var onComposeTodoMail: (() -> Void)?
-    /// ⌘⌃P — send the clipboard (picture and/or text) to Victor by mail,
+    /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
     /// subject "Reminder". Nothing to confirm: it is already gone.
     var onSendClipboardReminder: (() -> Void)?
+    /// ⌘⌃P — take the selected text (or the clipboard) as an agent prompt and
+    /// append it to the session notes, stamped 🤖, so it shows up in the room's
+    /// Prompts tab.
+    var onSendSelectionAsPrompt: (() -> Void)?
     var onWhip: (() -> Void)?
     var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
@@ -554,29 +556,35 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
-        // Cmd+Ctrl+M → Gmail draft to Victor, subject "TO DO", clipboard as the
-        // body (suppress). M for "mail to myself"; it is the write half of ⌘⌃G,
-        // which only opens the inbox. Nothing is sent — the draft waits in the
-        // browser, so the note can still be edited before it goes.
-        if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onComposeTodoMail?() }
-            return nil
-        }
-
-        // Cmd+Ctrl+P → mail the clipboard to Victor, subject "Reminder"
-        // (suppress). P is the letter ⌃P already owns: ⌃P puts a screenshot on
-        // the clipboard, ⌘⌃P posts whatever is on the clipboard to your inbox —
-        // one more modifier, the next step of the same gesture. The ⌃P branch
-        // above requires !hasCmd, so the two never collide, and `screenshotKeyDownAt`
-        // is only ever set there, so releasing ⌘⌃P cannot take a screenshot.
+        // Cmd+Ctrl+M → mail the clipboard to Victor, subject "Reminder"
+        // (suppress). M is for *mail*: this is the only key left that sends one,
+        // and it took the letter from the old Gmail "TO DO" draft, which asked
+        // for a browser window and a human before anything left the Mac.
         //
         // **Autorepeat is excluded because this one SENDS.** Every other key on
         // this board is idempotent-ish — a second Terminal, a second paste — but
-        // a held ⌘⌃P would mail the same clipboard once per repeat, and those
+        // a held ⌘⌃M would mail the same clipboard once per repeat, and those
         // arrive in a real inbox.
-        if keyCode == VK_P && hasCmd && hasCtrl && !hasOpt {
+        if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 DispatchQueue.global().async { [weak self] in self?.onSendClipboardReminder?() }
+            }
+            return nil
+        }
+
+        // Cmd+Ctrl+P → the selection (or the clipboard) goes to the session
+        // notes as an agent PROMPT, 🤖-stamped, which is what puts it on the
+        // participants' Prompts tab (suppress). P is for prompt, and the letter
+        // is free because the mail moved to ⌘⌃M. The ⌃P screenshot branch above
+        // requires !hasCmd, so the two never collide, and `screenshotKeyDownAt`
+        // is only ever set there, so releasing ⌘⌃P cannot take a screenshot.
+        //
+        // **Autorepeat is excluded**: the append is broadcast to the room the
+        // moment it lands, and a held key would post the same prompt once per
+        // repeat — as many pills on the participants' screens as repeats.
+        if keyCode == VK_P && hasCmd && hasCtrl && !hasOpt {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.global().async { [weak self] in self?.onSendSelectionAsPrompt?() }
             }
             return nil
         }

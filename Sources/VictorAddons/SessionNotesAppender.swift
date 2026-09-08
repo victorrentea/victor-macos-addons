@@ -50,7 +50,24 @@ enum SessionNotesAppender {
             showResult("(empty clipboard)")
             return
         }
-        pasteAndOfferUndo(text: text)
+        pasteAndOfferUndo(text: text, marker: .sentByHand)
+    }
+
+    /// ⌘⌃P — the same selection-or-clipboard capture as ⌘⌃S, filed as an agent
+    /// **prompt** (🤖) instead of a hand-sent note (📋).
+    ///
+    /// It exists because the automatic interception misses prompts: the offer
+    /// pill in `offerPrompt` only appears for what the tooling manages to see,
+    /// and a prompt typed somewhere it doesn't watch never reaches the room's
+    /// Prompts tab. This is the manual door — select the text, press the key,
+    /// and it is in the list next to the intercepted ones.
+    ///
+    /// Unlike `offerPrompt` there is no hover-to-confirm: pressing the key IS
+    /// the confirmation (the intercepted path has to ask because nobody asked
+    /// for it). The banner afterwards is therefore the same hover-to-undo one
+    /// ⌘⌃S shows — already done, still cancellable.
+    static func sendSelectionAsPrompt() {
+        copySelectionAndAppend(marker: .agentPrompt, hotkey: "⌘⌃P")
     }
 
     /// Send whatever the hand meant to the session notes: the current selection
@@ -67,13 +84,14 @@ enum SessionNotesAppender {
     /// Leaves any copied text on the clipboard, matching normal Cmd+C semantics.
     /// Run off the main thread: it blocks briefly polling the pasteboard for the
     /// copy to land.
-    static func copySelectionAndAppend() {
+    static func copySelectionAndAppend(marker: Marker = .sentByHand, hotkey: String = "⌘⌃S") {
         // 1. Ask the frontmost app what is selected, through Accessibility. No
         //    keystroke, no pasteboard, no timing — when the app answers, this is
         //    the truth, and the clipboard the user was carrying stays untouched.
         if let selection = SelectionReader.focusedSelection() {
-            overlayInfo("⌘⌃S: AX selection (\(selection.count) chars)")
-            pasteAndOfferUndo(text: selection.trimmingCharacters(in: .whitespacesAndNewlines))
+            overlayInfo("\(hotkey): AX selection (\(selection.count) chars)")
+            pasteAndOfferUndo(text: selection.trimmingCharacters(in: .whitespacesAndNewlines),
+                              marker: marker)
             return
         }
 
@@ -108,7 +126,7 @@ enum SessionNotesAppender {
         }
 
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
-        overlayInfo("⌘⌃S: no AX selection; "
+        overlayInfo("\(hotkey): no AX selection; "
             + (clean ? "⌘C \(copiedSomething ? "copied" : "no-op") after \(Int(waited * 1000))ms"
                      : "modifiers still held — skipped ⌘C, using clipboard")
             + "; before [\(clipboardBefore.count)]: \(String(clipboardBefore.prefix(40))) "
@@ -117,7 +135,7 @@ enum SessionNotesAppender {
             showResult(copiedSomething ? "(empty selection)" : "(empty clipboard)")
             return
         }
-        pasteAndOfferUndo(text: text)
+        pasteAndOfferUndo(text: text, marker: marker)
     }
 
     /// Offer to append `text` to the current session notes via the bottom-left
@@ -215,13 +233,15 @@ enum SessionNotesAppender {
     /// hoverable "Hover to undo" banner. This is an *already-done* action — the
     /// user can cancel it (hover → pill sinks off-screen) or let it stand (countdown
     /// expires → rising fade).
-    private static func pasteAndOfferUndo(text: String) {
+    private static func pasteAndOfferUndo(text: String, marker: Marker) {
         do {
-            let (notes, offset) = try writeNotes(text, marker: .sentByHand)
-            // 📋 instead of the word "Pasted:" — the same marker the line gets in
-            // the notes, so the pill and the note read as one thing (and the mark
-            // is recognised faster than the word it replaces).
-            showUndoable(Marker.sentByHand.rawValue + " " + singleLine(text),
+            let (notes, offset) = try writeNotes(text, marker: marker)
+            // The marker instead of the word "Pasted:" — the same one the line
+            // gets in the notes, so the pill and the note read as one thing (and
+            // the mark is recognised faster than the word it replaces). 🤖 vs 📋
+            // is also the only thing on the pill that says whether this went to
+            // the Prompts tab or stayed a hand-sent note.
+            showUndoable(marker.rawValue + " " + singleLine(text),
                          undo: { performUndo(file: notes, toOffset: offset) })
         } catch {
             reportWriteFailure(error)
