@@ -30,8 +30,16 @@ enum TerminalTiler {
     /// (⌘⌃T / ⌘⌃C / ⌘⌃Q) tiles the screen it just landed on and leaves the
     /// windows on every other screen exactly where they were — the gesture said
     /// "make room here", not "rearrange all my monitors".
-    static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
+    /// `keepingFocus` hands the keyboard back to the window that had it, by
+    /// raising it once more at the very end. Only the after-opening call
+    /// (⌘⌃C / ⌘⌃Q / ⌘⌃T) asks for it: there the focused window *is* the terminal
+    /// that was just created and is about to be typed into, and burying it under
+    /// the fan would send the next keystrokes somewhere else. Plain ⌘⌃A does not —
+    /// arranging is the whole point of pressing it, so the fan wins.
+    static func tile(onDisplay displayID: CGDirectDisplayID? = nil,
+                     keepingFocus: Bool = false) {
         let displays = getDisplays()
+        let focused = keepingFocus ? focusedWindow() : nil
         let wins = getTerminalWindows()
         guard !displays.isEmpty, !wins.isEmpty else { return }
 
@@ -44,14 +52,27 @@ enum TerminalTiler {
 
         for (di, ws) in groups {
             if let displayID, displays[di].id != displayID { continue }
-            let frames = TerminalTileLayout.frames(windows: ws.map { $0.rect },
-                                                   display: displays[di].rect)
+            let slots = TerminalTileLayout.targets(count: ws.count, display: displays[di].rect)
+            let assignment = TerminalTileLayout.assign(windows: ws.map { $0.rect }, targets: slots)
             for (i, w) in ws.enumerated() {
-                let f = frames[i]
+                let f = slots[assignment[i]]
                 setWindowFrame(w.win, x: f.x, y: f.y, w: f.w, h: f.h)
             }
-            raiseCascade(Array(ws.dropFirst(4).map { $0.win }), front: ws.first?.win)
+            raiseInSlotOrder(ws.map { $0.win }, assignment: assignment)
         }
+
+        if let focused { AXUIElementPerformAction(focused, kAXRaiseAction as CFString) }
+    }
+
+    /// Terminal's key window, or nil.
+    private static func focusedWindow() -> AXUIElement? {
+        guard let app = NSRunningApplication
+            .runningApplications(withBundleIdentifier: terminalBundleID).first else { return nil }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
     }
 
     // MARK: - Displays
@@ -135,24 +156,31 @@ enum TerminalTiler {
 
     // MARK: - Stacking order
 
-    /// Move the cascaded windows in front of the quadrant window they now sit on.
+    /// Raise every window on the display in **slot order**: top-left, top-right,
+    /// bottom-left, bottom-right, then the fan from its shallowest slot to its
+    /// deepest. The last one raised ends on top.
     ///
-    /// Frames say nothing about depth, and depth is half of what makes a fan
-    /// legible. The extras are the *back*-most windows (that is how they came to be
-    /// extras), so without this they would be tiled into a neat pile hidden behind
-    /// the bottom-right tile. They are raised **back-to-front**, which — with
-    /// `TerminalTileLayout` giving the front-most extra the deepest slot — leaves
-    /// the lowest window on top and a full title bar of every window behind it
-    /// showing above. Raise them the other way round and each title bar is covered
-    /// but for a 32 pt sliver: fanned in geometry, a single window to the eye.
-    /// The window that was front before is raised last, so tiling does not take the
-    /// keyboard away from the terminal being typed in — it sits in another quadrant,
-    /// by construction, so putting it back on top hides nothing.
-    private static func raiseCascade(_ cascaded: [AXUIElement], front: AXUIElement?) {
-        guard !cascaded.isEmpty else { return }
-        for win in cascaded.reversed() {
+    /// Frames say nothing about depth, and depth is the other half of a readable
+    /// fan. The extras are by construction the *back*-most windows (that is how
+    /// they came to be extras), so left alone they would be tiled into a neat fan
+    /// hidden behind the bottom-right tile. And a title bar sits at the **top** of
+    /// its window, so the window stepped further down-right has to be the one in
+    /// front — raise the fan the other way round and each title bar behind is
+    /// covered but for a 32 pt sliver: fanned in geometry, a single window to the
+    /// eye. Walking the whole display in slot order gets both right at once, and
+    /// leaves every terminal title on that screen legible.
+    ///
+    /// **Depth and the keyboard are the same thing here.** Measured 2026-09-08:
+    /// `kAXRaiseAction` on a Terminal window makes it the key window, and the other
+    /// direction holds too — setting `AXMain`/`AXFocused` on a window at the back
+    /// brings it straight to `z00`. Terminal will not keep the keyboard in a window
+    /// that is not in front, so "fan on top" and "keep typing where I was" cannot
+    /// both be had: the last window raised here is the one that ends up focused.
+    /// That is what ⌘⌃A is for; the after-opening call passes `keepingFocus` to buy
+    /// the new terminal back.
+    private static func raiseInSlotOrder(_ wins: [AXUIElement], assignment: [Int]) {
+        for (win, _) in zip(wins, assignment).sorted(by: { $0.1 < $1.1 }) {
             AXUIElementPerformAction(win, kAXRaiseAction as CFString)
         }
-        if let front { AXUIElementPerformAction(front, kAXRaiseAction as CFString) }
     }
 }

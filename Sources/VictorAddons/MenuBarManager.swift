@@ -912,7 +912,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// Only that display is touched — see `TerminalTiler.tile(onDisplay:)`.
     private static func tileAfterOpening(displayID: CGDirectDisplayID?) {
         Thread.sleep(forTimeInterval: 0.6)
-        TerminalTiler.tile(onDisplay: displayID)
+        // `keepingFocus`: the window just opened is the one being typed into, and
+        // tiling ends by raising — which in Terminal *is* focusing. Without this the
+        // keystrokes after ⌘⌃C would land in whatever the fan put on top.
+        TerminalTiler.tile(onDisplay: displayID, keepingFocus: true)
     }
 
     private func displayID(of screen: NSScreen) -> CGDirectDisplayID? {

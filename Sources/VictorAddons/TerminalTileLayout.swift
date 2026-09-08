@@ -20,12 +20,24 @@ import Foundation
 /// above. Get that backwards and the pile is technically fanned and practically
 /// invisible — the front window covers every title bar behind it except a
 /// `cascadeStep`-wide sliver at the far right, which is what the first cut of this
-/// did (2026-09-08: *"restul sunt una sub alta"*). Hence the front-most window gets
-/// the **deepest** slot (`frames` reverses the slots) and `TerminalTiler` raises the
-/// pile in the matching order.
+/// did (2026-09-08: *"restul sunt una sub alta"*). So `TerminalTiler` raises the
+/// windows in **slot order** — top-left, top-right, bottom-left, bottom-right, then
+/// the fan from the shallowest slot to the deepest — and every title bar on the
+/// screen ends up visible.
+///
+/// **A window keeps the slot it is already in.** Which window goes where is decided
+/// by *where it currently sits*, never by z-order: pressing ⌘⌃A twice must be a
+/// no-op. It used to hand the four quadrants to the four front-most windows, so the
+/// fan — which the raise had just brought to the front — swapped places with the
+/// tiles on every press (2026-09-08: *"le cam face shuffle"*). Matching is greedy
+/// nearest-pair on window **origin and size**, not centre: a fan slot and the
+/// quadrant it lies in share a centre almost exactly, so centres cannot tell "the
+/// bottom-right tile" from "the window fanned on top of it", while origins differ by
+/// a whole `cascadeStep`. A window already on its target matches at cost 0 and wins
+/// it before anything else can, which is what makes re-tiling idempotent.
 enum TerminalTileLayout {
 
-    struct Rect: Equatable {
+    struct Rect: Hashable {
         let x: Int, y: Int, w: Int, h: Int
         var x2: Int { x + w }
         var y2: Int { y + h }
@@ -56,28 +68,68 @@ enum TerminalTileLayout {
 
     // MARK: - Layout
 
-    /// Target frame for every window, in the order given — which is
-    /// **front-to-back**, the order the Accessibility API hands windows over in.
-    /// The first four take the quadrants (each the nearest free one, so nothing
-    /// travels further than it must); the rest cascade.
+    /// Every slot on the display, in **layout order**: the four quadrants
+    /// (top-left, top-right, bottom-left, bottom-right) and then, once there are
+    /// more windows than quadrants, one fan slot per extra — shallowest first.
+    ///
+    /// That order is also the order the windows are raised in, which is why it is
+    /// the order the array is in: raising them shallowest-to-deepest leaves every
+    /// title bar showing.
+    static func targets(count: Int, display: Rect) -> [Rect] {
+        let quads = quadrants(of: display)
+        guard count > quads.count else { return quads }
+        return quads + cascade(count: count - quads.count, over: quads[cascadeQuadrant])
+    }
+
+    /// Which slot each window goes to, as an index into `targets(count:display:)`
+    /// — in the same order as `windows`.
+    static func assign(windows: [Rect], display: Rect) -> [Int] {
+        assign(windows: windows, targets: targets(count: windows.count, display: display))
+    }
+
+    /// Target frame for every window, in the order given.
     static func frames(windows: [Rect], display: Rect) -> [Rect] {
         guard !windows.isEmpty else { return [] }
-        let quads = quadrants(of: display)
-        let tiled = Array(windows.prefix(quads.count))
-        let extras = windows.count - tiled.count
+        let slots = targets(count: windows.count, display: display)
+        return assign(windows: windows, targets: slots).map { slots[$0] }
+    }
 
-        // The front-most window is the one being typed in — the terminal ⌘⌃C just
-        // opened, most of the time — so it is kept out of the quadrant the pile
-        // lands on. Otherwise opening a terminal while the mouse sits in the
-        // bottom-right quarter would bury that brand-new window under the cascade.
-        let forbidden = extras > 0 ? cascadeQuadrant : nil
-        let assignment = assignOptimally(windowRects: tiled, quads: quads, forbiddenForFirst: forbidden)
+    /// Greedy nearest-pair matching: repeatedly take the closest window/slot pair
+    /// still unclaimed. Not provably the cheapest total, but **stable**, which is
+    /// worth more here — a window already sitting on a slot is at distance 0 and
+    /// takes it before any other pair is even considered, so a layout that is
+    /// already tiled reproduces itself exactly. Ties break on window order, so the
+    /// result never depends on dictionary or timing luck.
+    static func assign(windows: [Rect], targets: [Rect]) -> [Int] {
+        var pairs: [(cost: Int, w: Int, t: Int)] = []
+        pairs.reserveCapacity(windows.count * targets.count)
+        for (i, w) in windows.enumerated() {
+            for (j, t) in targets.enumerated() { pairs.append((cost(w, t), i, j)) }
+        }
+        pairs.sort {
+            if $0.cost != $1.cost { return $0.cost < $1.cost }
+            if $0.w != $1.w { return $0.w < $1.w }
+            return $0.t < $1.t
+        }
 
-        var out = assignment.map { quads[$0] }
-        // Reversed: the front-most extra takes the deepest slot, so the window in
-        // front is the lowest one and every title bar behind it stays visible.
-        out.append(contentsOf: cascade(count: extras, over: quads[cascadeQuadrant]).reversed())
+        var out = [Int](repeating: -1, count: windows.count)
+        var takenSlot = [Bool](repeating: false, count: targets.count)
+        var placed = 0
+        for p in pairs where out[p.w] == -1 && !takenSlot[p.t] {
+            out[p.w] = p.t
+            takenSlot[p.t] = true
+            placed += 1
+            if placed == windows.count { break }
+        }
         return out
+    }
+
+    /// How far a window is from a slot: corner distance, plus half the size
+    /// mismatch. Corners are what distinguish the slots of a fan from each other
+    /// and from the quadrant they lie on; the size term is the tie-breaker for two
+    /// windows sharing a corner.
+    private static func cost(_ a: Rect, _ b: Rect) -> Int {
+        abs(a.x - b.x) + abs(a.y - b.y) + (abs(a.w - b.w) + abs(a.h - b.h)) / 2
     }
 
     /// `count` frames stepping down-right across `base`, in slot order (nearest the
@@ -103,37 +155,4 @@ enum TerminalTileLayout {
         }
     }
 
-    // MARK: - Assignment
-
-    private static func dist2(_ a: (Double, Double), _ b: (Double, Double)) -> Double {
-        let dx = a.0 - b.0, dy = a.1 - b.1
-        return dx * dx + dy * dy
-    }
-
-    private static func permutations(of n: Int, choose k: Int) -> [[Int]] {
-        if k == 0 { return [[]] }
-        var result: [[Int]] = []
-        for i in 0..<n {
-            for rest in permutations(of: n, choose: k - 1) where !rest.contains(i) {
-                result.append([i] + rest)
-            }
-        }
-        return result
-    }
-
-    /// Brute-force the assignment that moves the windows the least in total
-    /// (≤4 windows per display, so 24 permutations at worst).
-    static func assignOptimally(windowRects: [Rect], quads: [Rect],
-                                forbiddenForFirst: Int? = nil) -> [Int] {
-        var bestPerm: [Int] = []
-        var bestCost = Double.infinity
-        for perm in permutations(of: quads.count, choose: windowRects.count) {
-            if let forbidden = forbiddenForFirst, perm.first == forbidden { continue }
-            let cost = (0..<windowRects.count).reduce(0.0) { acc, i in
-                acc + dist2(windowRects[i].center, quads[perm[i]].center)
-            }
-            if cost < bestCost { bestCost = cost; bestPerm = perm }
-        }
-        return bestPerm
-    }
 }
