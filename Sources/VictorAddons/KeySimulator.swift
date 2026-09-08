@@ -34,13 +34,23 @@ enum KeySimulator {
         post(modifier, down: false, flags: [])
     }
 
-    static func simulateKeyPress(keyCode: CGKeyCode, flags: CGEventFlags = []) {
+    /// `userData` stamps `eventSourceUserData` on both halves, for the one
+    /// caller that needs another process's event tap to recognise its keystroke
+    /// as ours: `BackButtonEnter`, whose Return is a mouse button in disguise
+    /// and must not be mistaken for one Victor typed. Zero — the default — is
+    /// what an untouched event carries, so an unstamped press is indistinguishable
+    /// from every other synthetic keystroke this app posts, which is the point.
+    static func simulateKeyPress(keyCode: CGKeyCode, flags: CGEventFlags = [], userData: Int64 = 0) {
         guard let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true),
               let keyUp   = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
             return
         }
         keyDown.flags = flags
         keyUp.flags   = flags
+        if userData != 0 {
+            keyDown.setIntegerValueField(.eventSourceUserData, value: userData)
+            keyUp.setIntegerValueField(.eventSourceUserData, value: userData)
+        }
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
     }

@@ -38,14 +38,26 @@ import Foundation
 /// is all that exists here: do not build a hold on these buttons without
 /// re-measuring first.
 ///
-/// **Walkie Talkie sees this button before we do, and that is the design.**
-/// Both taps are `.cgSessionEventTap` at `.headInsertEventTap`, where the most
-/// recently installed tap is first; this app starts at login and the relay
-/// starts later, so the relay is ahead. It borrows the back button as a camera
-/// shutter *while a dictation is open* and swallows it then — so the only
-/// presses that reach here are the ones it did not want, which is exactly the
-/// split both apps are written for. Nothing coordinates the two, and nothing
-/// should: each simply behaves when the event arrives.
+/// **Walkie Talkie does NOT reliably see this button before we do, so the
+/// Return is stamped.** Both taps are `.cgSessionEventTap` at
+/// `.headInsertEventTap`, where the most recently installed tap is first. The
+/// intended order was "this app at login, the relay later, so the relay is
+/// ahead" — and it holds only until this app is rebuilt and restarted, which is
+/// the one thing that happens after every change to it. On 2026-09-08 the relay
+/// had been up since 22:14 and this app since 22:37, so *we* were ahead: every
+/// back-button press became a Return before the relay's tap ever saw a mouse
+/// button, and the shot silently stopped being taken (the Return leaked to
+/// whatever was in front — in Chrome it scrolled the page).
+///
+/// The relay has always had a second branch for exactly this order: a Return
+/// arriving *while a dictation is open* is treated as the shutter. It told that
+/// Return from a typed one by the source pid's process name, and the name it
+/// knew was `LinearMouse`. A name is no longer enough, because this app posts
+/// Returns for other reasons too (`KeySimulator`) and those must keep meaning
+/// Enter. So the one Return that is a disguised button carries
+/// `backButtonStamp` in its `eventSourceUserData`, and the relay keys on that.
+/// **The constant is duplicated in `HotkeyTap.swift` in the walkie-talkie repo;
+/// the two must not drift.**
 ///
 /// **Wispr Flow also had this button, and it won.** With Wispr Flow running the
 /// Return never arrived; quitting it made the button work — the signature of a
@@ -93,6 +105,17 @@ enum BackButtonEnter {
     /// window server would in fact merge that held ⌘ into a bare Return anyway;
     /// the flag is set explicitly so the result does not depend on it.)
     static func post(flags: CGEventFlags) {
-        KeySimulator.simulateKeyPress(keyCode: VK_RETURN, flags: flags)
+        KeySimulator.simulateKeyPress(keyCode: VK_RETURN, flags: flags, userData: backButtonStamp)
     }
+
+    /// The mark that says "this Return is the back button, not a keystroke".
+    ///
+    /// Rides in `eventSourceUserData`, a 64-bit field on every `CGEvent` that
+    /// nothing on this Mac otherwise sets and that survives the trip to another
+    /// process's tap. Walkie Talkie reads it to decide whether to take a shot,
+    /// so it is the same literal there — see the note above.
+    ///
+    /// The value is ASCII `wtBACK\0\0` and means nothing beyond being unlikely
+    /// to be produced by accident.
+    static let backButtonStamp: Int64 = 0x7774_4241_434B_0000
 }
