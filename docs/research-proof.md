@@ -74,14 +74,26 @@ Everything about the layout follows from "the back row reads this":
 - **Contradictions first, confirmations last and folded.** A run that ends in
   eight green cards and one red one must not make the red one scroll-work — the
   red card *is* the output; the green ones are the receipt.
-- **Every card carries the raw `[HH:MM]` transcript line.** Whisper invents
-  fluent sentences nobody said, and a beautifully sourced fact-check of an
-  invented claim looks exactly like a real one. The line is the one-glance escape
-  hatch: *I never said that*.
-- **The check is rendered as what it is** — `citat găsit pe pagină` /
-  `CITATUL NU E PE PAGINĂ` with the coverage percentage — so "the source says it"
-  and "a model said the source says it" can never be confused on screen.
-- Verdicts are Romanian, like the room.
+- **Every card LEADS with the raw `[HH:MM]` transcript line**, in quotes, with no
+  label in front of it. Whisper invents fluent sentences nobody said, and a
+  beautifully sourced fact-check of an invented claim looks exactly like a real
+  one — the line is the one-glance escape hatch: *I never said that*. The label
+  it used to carry ("s-a spus:") was dropped because the room is often
+  English-speaking, and the quote marks say the same thing in no words at all.
+- **The check is rendered as what it is** — `quote found on the page` /
+  `QUOTE IS NOT ON THE PAGE` with the coverage percentage — so "the source says
+  it" and "a model said the source says it" can never be confused on screen.
+- **Every page the researchers opened is a favicon strip at the foot**, hover for
+  the exact URL. Dead ends are kept and dimmed: "I looked here and it gave me
+  nothing" is part of an honest trail, and at full contrast it would read as
+  evidence. Icons come from the site's own `/favicon.ico` first and only fall
+  back to a proxy, so researching a topic does not tell a third party what.
+  Hover uses the page's own tooltip component (`data-tip`, delegated on
+  `document`, 150 ms, flips and clamps) — a native `title=` takes ~500 ms to
+  appear, longer than anyone hovers a 46 px icon before giving up.
+- **All fixed strings are English** — terminal output and report chrome alike.
+  Only the model's own prose (the claim, the note) stays in the language the
+  claim was made in.
 
 Ordering is `contradicted → partly → not_found → unverified → confirmed`.
 
