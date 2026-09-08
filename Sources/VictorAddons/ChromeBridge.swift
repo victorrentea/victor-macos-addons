@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Network
 
@@ -96,6 +97,63 @@ final class ChromeBridge {
         overlayInfo(listeners > 0
             ? "📝 asked Chrome to publish the feedback form for \(session)"
             : "📝 no Chrome extension connected — feedback form not requested")
+        return listeners > 0
+    }
+
+    /// How to recognise a tab this app would rather return to than duplicate.
+    ///
+    /// `match` is deliberately coarse — a host — because Chrome's match patterns
+    /// cannot see a query string, and every distinction that matters here lives
+    /// in one ("Gmail, but not a compose"; "the YouTube tab of *this* mix").
+    /// `contains` / `notContains` do that half, in the extension, against the
+    /// whole URL.
+    struct TabSpec {
+        let match: [String]
+        var contains: String? = nil
+        var notContains: String? = nil
+        /// Play the tab's media if it is sitting paused — ⌘⌃F only. "Carry on
+        /// from where it stopped" is the opposite of the random-track URL that
+        /// key opens when the mix is not up yet.
+        var resume: Bool = false
+    }
+
+    /// Ask the extension to go to the tab already showing this page.
+    ///
+    /// `url` is what to open when nothing matches, and it need not be the page
+    /// searched for: ⌘⌃F looks for the focus mix but opens it at a random track.
+    /// Passing `nil` makes this a **probe** — go there if it exists, otherwise do
+    /// nothing — which is how ⌘⌃F answers instantly and only then spends a
+    /// second reading YouTube for a URL it may not need.
+    ///
+    /// `screen` is where the window should end up, in the global top-left-origin
+    /// point space (`OfficialChrome.topLeftRect`), which is also the space
+    /// Chrome reports and accepts window bounds in. **The move is done by Chrome,
+    /// not over Accessibility**, because only the extension knows which window
+    /// the tab was in; the app would have to guess from "whatever is focused a
+    /// moment later", and that guess is wrong exactly when the extension found
+    /// nothing.
+    ///
+    /// Fire-and-forget, like `publishFeedbackForm`. The caller learns only
+    /// whether a Chrome was listening, which is the one thing it must branch
+    /// on — `false` means fall back to opening the URL the old way.
+    @discardableResult
+    func focusOrOpen(_ spec: TabSpec, url: String?, on screen: CGRect) -> Bool {
+        var listeners = 0
+        queue.sync {
+            listeners = self.connections.count
+            guard listeners > 0 else { return }
+            self.seq += 1
+            let patterns = spec.match.map(Self.jsonString).joined(separator: ",")
+            var json = "{\"type\":\"focus-or-open\",\"match\":[\(patterns)]," +
+                       "\"url\":\(url.map(Self.jsonString) ?? "null")," +
+                       "\"resume\":\(spec.resume)," +
+                       "\"screen\":{\"left\":\(Int(screen.minX)),\"top\":\(Int(screen.minY))," +
+                       "\"width\":\(Int(screen.width)),\"height\":\(Int(screen.height))}"
+            if let c = spec.contains { json += ",\"contains\":\(Self.jsonString(c))" }
+            if let n = spec.notContains { json += ",\"notContains\":\(Self.jsonString(n))" }
+            json += ",\"seq\":\(self.seq)}"
+            self.broadcast(json)
+        }
         return listeners > 0
     }
 

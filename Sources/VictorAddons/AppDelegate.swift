@@ -1197,10 +1197,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
         }
         menuBarManager.onOpenCalendar = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome("https://calendar.google.com/", target: .screenUnderMouse) }
+            DispatchQueue.main.async {
+                self?.openUrlInChrome("https://calendar.google.com/", target: .screenUnderMouse,
+                                      existing: AppDelegate.calendarTab)
+            }
         }
         menuBarManager.onOpenGmail = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome("https://mail.google.com/", target: .screenUnderMouse) }
+            DispatchQueue.main.async {
+                self?.openUrlInChrome("https://mail.google.com/", target: .screenUnderMouse,
+                                      existing: AppDelegate.gmailTab)
+            }
         }
         menuBarManager.onOpenCatalog = {
             DispatchQueue.global(qos: .userInitiated).async {
@@ -1534,7 +1540,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.companyDetails) }
         }
         eventTap.onOpenNotesDoc = { [weak self] in
-            DispatchQueue.main.async { self?.openUrlInChrome(Self.notesDocUrl, target: .screenUnderMouse) }
+            DispatchQueue.main.async {
+                self?.openUrlInChrome(Self.notesDocUrl, target: .screenUnderMouse,
+                                      existing: AppDelegate.notesTab)
+            }
         }
         eventTap.onOpenFocusPlaylist = { [weak self] in
             // The screen is sampled NOW, on the keypress, and carried through the
@@ -1545,9 +1554,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async {
                 guard let self else { return }
                 let screen = AppDelegate.screenUnderMouse()
+
+                // Two shots at the same idempotent command, because the mix is
+                // usually already up and the read below is not free. The probe
+                // (`url: nil`) goes now: if the tab exists it is focused and its
+                // music picked back up where it stopped, in the time a keypress
+                // takes. Only then do we spend a second on YouTube for a URL that
+                // the second call opens **if the tab is still missing** — where a
+                // random entry is the whole point of the key.
+                self.chromeBridge?.focusOrOpen(AppDelegate.focusPlaylistTab, url: nil,
+                                               on: OfficialChrome.topLeftRect(of: screen.visibleFrame))
                 FocusPlaylist.resolveRandomUrl { url in
                     DispatchQueue.main.async { [weak self] in
-                        self?.openUrlInChromeOnMouseScreen(url, on: screen)
+                        self?.openUrlInChromeOnMouseScreen(url, on: screen,
+                                                           existing: AppDelegate.focusPlaylistTab)
                     }
                 }
             }
@@ -1659,6 +1679,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     static let notesDocUrl =
         "https://docs.google.com/document/d/1_SfS83iRqGxnrBixqOg66a-OYqH1dd6leV42B56_Juk/edit?tab=t.0"
 
+    /// The tabs a ⌘⌃ shortcut should go **back** to when one is already open.
+    ///
+    /// Pressing ⌘⌃L four times used to leave four Calendars. It now leaves one:
+    /// the Mac describes the page, the extension finds the tab (`focus-tab.js` —
+    /// tabs are only visible from inside the browser), activates it and pulls its
+    /// window onto the screen under the mouse, so the shortcut still answers
+    /// "here" the way it always did.
+    static let calendarTab = ChromeBridge.TabSpec(match: ["*://calendar.google.com/*"])
+
+    /// The inbox, never a compose. A torn-off compose is a Chrome *popup* (which
+    /// `focus-tab.js` filters out by window type) but a compose can also sit in a
+    /// full tab, and that one is only told apart by `view=cm` — landing ⌘⌃G on a
+    /// half-written mail instead of the inbox is exactly the wrong answer. ⌘⌃M,
+    /// which *is* the compose key, deliberately does not go through here: every
+    /// press of it is meant to start a new draft.
+    static let gmailTab = ChromeBridge.TabSpec(match: ["*://mail.google.com/*"], notContains: "view=cm")
+
+    /// That one document, not "a Google Doc". The doc id is the whole identity;
+    /// the host alone would match every other doc open in the browser.
+    static let notesTab = ChromeBridge.TabSpec(
+        match: ["*://docs.google.com/*"],
+        contains: "1_SfS83iRqGxnrBixqOg66a-OYqH1dd6leV42B56_Juk")
+
+    /// The focus mix, identified by its list id — `RD<seed>` *is* the playlist's
+    /// identity, and it survives whichever track the tab has wandered to since.
+    static var focusPlaylistTab: ChromeBridge.TabSpec {
+        ChromeBridge.TabSpec(match: ["*://www.youtube.com/*"],
+                             contains: "list=" + FocusPlaylist.listId, resume: true)
+    }
+
     /// Where the window carrying the URL should end up.
     enum ChromeTarget {
         /// Yank the front window onto the built-in Retina display. For links the
@@ -1700,10 +1750,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    private func openUrlInChrome(_ url: String, target: ChromeTarget = .retina) {
+    private func openUrlInChrome(_ url: String, target: ChromeTarget = .retina,
+                                 existing: ChromeBridge.TabSpec? = nil) {
         switch target {
         case .retina: openUrlInFrontChromeThenMoveToRetina(url)
-        case .screenUnderMouse: openUrlInChromeOnMouseScreen(url)
+        case .screenUnderMouse: openUrlInChromeOnMouseScreen(url, existing: existing)
         }
     }
 
@@ -1747,9 +1798,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// the keypress and the open (⌘⌃F fetches the mix first): the answer to
     /// "where do you want this" is where the hand was when the key went down,
     /// not where it wandered a second later.
-    private func openUrlInChromeOnMouseScreen(_ url: String, on pinnedScreen: NSScreen? = nil) {
+    private func openUrlInChromeOnMouseScreen(_ url: String, on pinnedScreen: NSScreen? = nil,
+                                              existing: ChromeBridge.TabSpec? = nil) {
         let screen = pinnedScreen ?? AppDelegate.screenUnderMouse()
         overlayInfo("Opening Chrome on \(screen.localizedName): \(url)")
+
+        // The tab may already exist — but only the extension can see tabs, so
+        // this branch is taken only while it is on the socket. Chrome does the
+        // whole job there: find or create, and place the window on this screen.
+        // Everything below stays the fallback for a Chrome that is closed, or
+        // one whose extension has been disabled — a duplicate tab beats no tab.
+        if let existing, let bridge = chromeBridge,
+           bridge.focusOrOpen(existing, url: url,
+                              on: OfficialChrome.topLeftRect(of: screen.visibleFrame)) {
+            return
+        }
 
         if let window = OfficialChrome.window(on: screen) {
             OfficialChrome.focus(window)

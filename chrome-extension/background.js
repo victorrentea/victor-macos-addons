@@ -3,6 +3,7 @@
 // One socket to the Mac app, two jobs behind it:
 //   • dictation-pause.js   pause the music while Wispr Flow is dictating
 //   • feedback-form.js     clone/rename/publish the session's feedback survey
+//   • focus-tab.js         send ⌘⌃L/G/N/F to the tab that is already open
 //
 // This file owns nothing but the transport. The Mac app (Victor Addons) pushes
 // commands over a WebSocket on 127.0.0.1:8766 and each feature module handles
@@ -15,6 +16,7 @@
 
 import { onDictation } from './dictation-pause.js';
 import { publishFeedbackForm } from './feedback-form.js';
+import { focusOrOpen } from './focus-tab.js';
 
 const PORT = 8766;
 const RECONNECT_MIN_MS = 1000;
@@ -25,8 +27,8 @@ let reconnectDelay = RECONNECT_MIN_MS;
 
 /* The Mac replays the dictation state on connect, so a `dictation` message may
  * be a replay rather than an edge — the module handles that. A
- * `publish-feedback-form` is never replayed: it is a one-shot command, and the
- * Mac only sends it on a menu press. */
+ * `publish-feedback-form` and `focus-or-open` are never replayed: they are
+ * one-shot commands, sent on a menu press and a hotkey respectively. */
 function dispatch(msg) {
   switch (msg.type) {
     case 'ping':
@@ -35,6 +37,8 @@ function dispatch(msg) {
       return onDictation(!!msg.active).catch((e) => console.log('[addons] dictation failed', e));
     case 'publish-feedback-form':
       return publishFeedbackForm(msg.session).catch((e) => console.log('[addons] feedback form failed', e));
+    case 'focus-or-open':
+      return focusOrOpen(msg).catch((e) => console.log('[addons] focus-or-open failed', e));
     default:
       return;
   }
