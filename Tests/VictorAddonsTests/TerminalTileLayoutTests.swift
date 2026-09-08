@@ -32,19 +32,41 @@ final class TerminalTileLayoutTests: XCTestCase {
 
     // MARK: - The fifth window on
 
-    func testTheFifthWindowIsCascadedOverTheBottomRightQuadrant() {
+    func testTheFifthWindowSitsOnTopOfTheBottomRightTileWithoutHidingIt() {
         let windows = (0..<5).map { _ in win(100, 100) }
         let out = TerminalTileLayout.frames(windows: windows, display: display)
         XCTAssertEqual(out.count, 5)
-        // A lone extra needs no offset: it covers the bottom-right tile exactly.
-        XCTAssertEqual(out[4], quads[3])
+        let base = quads[3]
+        // Offset by one step, so the tile underneath keeps its own title bar.
+        XCTAssertEqual(out[4].x, base.x + TerminalTileLayout.cascadeStep)
+        XCTAssertEqual(out[4].y, base.y + TerminalTileLayout.cascadeStep)
+        XCTAssertEqual(out[4].x2, base.x2)
+        XCTAssertEqual(out[4].y2, base.y2)
+    }
+
+    /// The one that broke it the first time: offset and depth have to agree.
+    /// `TerminalTiler` raises the pile back-to-front, so the front-most window —
+    /// the first extra — has to be the one stepped *furthest* down-right; every
+    /// window behind it then shows a whole title bar above it.
+    func testTheFrontMostExtraIsTheLowestOneSoTitleBarsStackUpwards() {
+        let windows = (0..<7).map { _ in win(100, 100) }
+        let out = TerminalTileLayout.frames(windows: windows, display: display)
+        let pile = Array(out.dropFirst(4))
+        XCTAssertEqual(pile.count, 3)
+        XCTAssertGreaterThan(pile[0].y, pile[1].y)
+        XCTAssertGreaterThan(pile[1].y, pile[2].y)
+        XCTAssertGreaterThan(pile[0].x, pile[1].x)
+        // The deepest one is the front-most window and sits in the corner.
+        XCTAssertEqual(pile[0].x2, quads[3].x2)
+        XCTAssertEqual(pile[0].y2, quads[3].y2)
     }
 
     func testCascadedWindowsStepDownRightAndStayInsideTheQuadrant() {
         let windows = (0..<8).map { _ in win(100, 100) }
         let out = TerminalTileLayout.frames(windows: windows, display: display)
         let base = quads[3]
-        let pile = Array(out.dropFirst(4))
+        // Back-to-front: slot order, the way the fan is drawn from the corner down.
+        let pile = Array(out.dropFirst(4).reversed())
         XCTAssertEqual(pile.count, 4)
 
         for (a, b) in zip(pile, pile.dropFirst()) {
@@ -53,8 +75,9 @@ final class TerminalTileLayoutTests: XCTestCase {
             XCTAssertEqual(a.w, b.w, "the pile is one size, so it reads as a stack")
             XCTAssertEqual(a.h, b.h)
         }
-        XCTAssertEqual(pile.first!.x, base.x)
-        XCTAssertEqual(pile.first!.y, base.y)
+        // One step clear of the tile it lies on, so that title bar shows too.
+        XCTAssertEqual(pile.first!.x, base.x + TerminalTileLayout.cascadeStep)
+        XCTAssertEqual(pile.first!.y, base.y + TerminalTileLayout.cascadeStep)
         // Flush with the quadrant's far corner: nothing spills off the screen.
         XCTAssertEqual(pile.last!.x2, base.x2)
         XCTAssertEqual(pile.last!.y2, base.y2)
@@ -90,7 +113,7 @@ final class TerminalTileLayoutTests: XCTestCase {
         let windows = [win(1900, 1100), win(100, 100), win(1900, 100), win(100, 1100), win(1900, 1100)]
         let out = TerminalTileLayout.frames(windows: windows, display: display)
         XCTAssertNotEqual(out[0], quads[3], "the new terminal must not end up under the cascade")
-        XCTAssertEqual(out[4], quads[3])
+        XCTAssertEqual(out[4].x2, quads[3].x2, "the extra still piles onto the bottom-right")
     }
 
     func testWithoutAPileTheFrontWindowMayKeepTheBottomRightQuadrant() {

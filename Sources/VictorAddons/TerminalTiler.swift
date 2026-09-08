@@ -137,13 +137,17 @@ enum TerminalTiler {
 
     /// Move the cascaded windows in front of the quadrant window they now sit on.
     ///
-    /// Frames say nothing about depth: the extras are the *back*-most windows
-    /// (that is how they came to be extras), so without this they would be tiled
-    /// into a neat pile hidden behind the bottom-right tile. They are raised
-    /// back-to-front so their own order survives, and the window that was front
-    /// before is raised last so tiling does not take the keyboard away from the
-    /// terminal being typed in — it sits in another quadrant, by construction, so
-    /// putting it back on top hides nothing.
+    /// Frames say nothing about depth, and depth is half of what makes a fan
+    /// legible. The extras are the *back*-most windows (that is how they came to be
+    /// extras), so without this they would be tiled into a neat pile hidden behind
+    /// the bottom-right tile. They are raised **back-to-front**, which — with
+    /// `TerminalTileLayout` giving the front-most extra the deepest slot — leaves
+    /// the lowest window on top and a full title bar of every window behind it
+    /// showing above. Raise them the other way round and each title bar is covered
+    /// but for a 32 pt sliver: fanned in geometry, a single window to the eye.
+    /// The window that was front before is raised last, so tiling does not take the
+    /// keyboard away from the terminal being typed in — it sits in another quadrant,
+    /// by construction, so putting it back on top hides nothing.
     private static func raiseCascade(_ cascaded: [AXUIElement], front: AXUIElement?) {
         guard !cascaded.isEmpty else { return }
         for win in cascaded.reversed() {

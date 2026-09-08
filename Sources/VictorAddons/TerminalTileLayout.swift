@@ -7,12 +7,22 @@ import Foundation
 /// so the decisions below can be unit-tested — the same split as
 /// `TerminalZoomSizeLockPolicy` and `TerminalZoomTargetPolicy`.
 ///
-/// **Four windows fill the quadrants; the fifth and up cascade.** A screen has
+/// **Four windows fill the quadrants; the fifth and up fan out.** A screen has
 /// four readable quarters and no more, so the extras used to be left wherever they
 /// happened to sit — behind the tiled ones, uncountable. They are now stacked over
 /// the **bottom-right** quadrant with a diagonal offset, which keeps a strip of
 /// every window's title bar exposed: you can see how many there are and drag any
 /// one of them out by the part that shows.
+///
+/// **The fan only reads if it opens downwards** — offset *and* depth have to agree.
+/// A window's title bar sits at its top, so the window stepped further down-right
+/// must be the one in **front**: then each window behind it shows a full title bar
+/// above. Get that backwards and the pile is technically fanned and practically
+/// invisible — the front window covers every title bar behind it except a
+/// `cascadeStep`-wide sliver at the far right, which is what the first cut of this
+/// did (2026-09-08: *"restul sunt una sub alta"*). Hence the front-most window gets
+/// the **deepest** slot (`frames` reverses the slots) and `TerminalTiler` raises the
+/// pile in the matching order.
 enum TerminalTileLayout {
 
     struct Rect: Equatable {
@@ -64,26 +74,31 @@ enum TerminalTileLayout {
         let assignment = assignOptimally(windowRects: tiled, quads: quads, forbiddenForFirst: forbidden)
 
         var out = assignment.map { quads[$0] }
-        out.append(contentsOf: cascade(count: extras, over: quads[cascadeQuadrant]))
+        // Reversed: the front-most extra takes the deepest slot, so the window in
+        // front is the lowest one and every title bar behind it stays visible.
+        out.append(contentsOf: cascade(count: extras, over: quads[cascadeQuadrant]).reversed())
         return out
     }
 
-    /// `count` frames stepping down-right across `base`, the last one landing flush
-    /// with its bottom-right corner — so the whole pile stays inside the quadrant
-    /// (and therefore on screen), and no cascaded window ever covers one of the
-    /// other three tiles. The step shrinks when there are many, rather than letting
-    /// the windows shrink without bound.
+    /// `count` frames stepping down-right across `base`, in slot order (nearest the
+    /// corner first). The **first step is taken immediately**, so slot 0 already
+    /// clears `base` by one `cascadeStep`: the window tiled into that quadrant is
+    /// the back of the fan and keeps its own title bar showing above the pile —
+    /// the extras sit *on top of* the bottom-right window, they do not replace it.
+    /// The last slot lands flush with the quadrant's bottom-right corner, so the
+    /// whole fan stays inside it (and therefore on screen) and never covers one of
+    /// the other three tiles. Many windows tighten the step rather than letting the
+    /// windows shrink without bound.
     static func cascade(count: Int, over base: Rect) -> [Rect] {
         guard count > 0 else { return [] }
-        guard count > 1 else { return [base] }
 
         let maxSpread = max(0, min(base.w, base.h) / 2)
-        let step = max(8, min(cascadeStep, maxSpread / (count - 1)))
-        let spread = step * (count - 1)
+        let step = max(8, min(cascadeStep, maxSpread / count))
+        let spread = step * count
         let w = max(200, base.w - spread)
         let h = max(120, base.h - spread)
 
-        return (0..<count).map { i in
+        return (1...count).map { i in
             Rect(x: base.x + i * step, y: base.y + i * step, w: w, h: h)
         }
     }
