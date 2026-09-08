@@ -120,6 +120,7 @@ class EmojiAnimator {
     private var _chainsawScreenshot: CGImage?         // the sheet being sawn, grabbed before the saw appears
     private var _chainsawLastCut: CGPoint?            // previous sample, so the kerf is a stroke and not dots
     private var _chainsawTicksToSweep = 0             // connectivity runs at a fraction of the follow rate
+    private var _chainsawSparks: CAEmitterLayer?      // the shower thrown off the biting point, always on
 
     // 🕳️ Iris close: a black radial overlay (transparent centre, opaque edges)
     // whose clear hole shrinks from the screen-circumscribing circle down to
@@ -3503,17 +3504,19 @@ class EmojiAnimator {
         return frames
     }()
 
-    /// Where the saw's own centre sits inside a frame — the mean of the opaque
-    /// bounding box over the calm frames (x≈0.470, y≈0.548 from the top). Used
-    /// as the layer's `anchorPoint`, so THAT is the point riding the pointer.
+    /// Where the blade actually bites, as a fraction of a frame: mid-bar, on the
+    /// lower row of teeth (x≈0.600, y≈0.815 from the top). Used as the layer's
+    /// `anchorPoint`, so THAT is the point riding the pointer — the kerf then
+    /// comes out from under the teeth, with the whole machine held above the
+    /// cut, the way a saw is actually used.
     ///
-    /// It used to be the blade tip, which read beautifully as a pointer but
-    /// stopped working the moment the saw started cutting: the kerf comes out
-    /// from under the saw's middle, and with the tip on the mouse that middle
-    /// was ~180 pt away from the thing the hand is aiming. You cannot saw
-    /// accurately around a window with the cut appearing a hand's width to the
-    /// left of the cursor. Centre-anchored, the pointer IS the cut.
-    private static let chainsawCentreAnchor = CGPoint(x: 0.470, y: 1 - 0.548)
+    /// It was the sprite's centre before, and before that the blade tip. The tip
+    /// read beautifully as a pointer but put the cut ~180 pt from what the hand
+    /// was aiming at; the centre fixed the aim but made the screen split open
+    /// through the middle of the engine block, which is why you could never tell
+    /// what was doing the cutting. The teeth are the only point that is both
+    /// accurate and legible.
+    private static let chainsawCutAnchor = CGPoint(x: 0.600, y: 1 - 0.815)
 
     /// Width of the kerf on screen, in points. The brief said "at least 10";
     /// wider than that is not just cosmetic — the mask cells it clears are what
@@ -3584,7 +3587,7 @@ class EmojiAnimator {
 
         let saw = CALayer()
         saw.bounds = CGRect(x: 0, y: 0, width: w, height: h)
-        saw.anchorPoint = Self.chainsawCentreAnchor
+        saw.anchorPoint = Self.chainsawCutAnchor
         saw.contents = first
         saw.contentsGravity = .resizeAspect
         saw.zPosition = 9_500          // above every other effect: it's the pointer
@@ -3625,6 +3628,7 @@ class EmojiAnimator {
         }
 
         beginChainsawDamage()
+        beginChainsawSparks()
 
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self, self._chainsawTimer === t else { t.invalidate(); return }
@@ -3632,6 +3636,7 @@ class EmojiAnimator {
             CATransaction.begin()
             CATransaction.setDisableActions(true)   // follow instantly, no implicit animation
             self._chainsawLayer?.position = point
+            self._chainsawSparks?.emitterPosition = point
             CATransaction.commit()
             self.extendChainsawCut(to: point)
         }
@@ -3670,6 +3675,12 @@ class EmojiAnimator {
         // mid-air fade out together, on the same clock, so the desktop is never
         // left with a black gash and no explanation for it.
         let damage = _chainsawDamage
+        let sparks = _chainsawSparks
+        // Stop making new sparks the instant the saw is called off; the ones
+        // already in the air keep their arc and die of old age, so the shower
+        // trails away instead of being cut off mid-flight.
+        sparks?.birthRate = 0
+        _chainsawSparks = nil
         _chainsawDamage = nil
         _chainsawKerfLayer = nil
         _chainsawKerfPath = nil
@@ -3681,16 +3692,16 @@ class EmojiAnimator {
         _chainsawLayer = nil
 
         let teardown = {
-            for layer in [saw, damage].compactMap({ $0 }) {
+            for layer in [saw, damage, sparks].compactMap({ $0 }) {
                 layer.removeAllAnimations()
                 layer.removeFromSuperlayer()
             }
             restoreCursor()
         }
 
-        guard fade > 0, saw != nil || damage != nil else { teardown(); return }
+        guard fade > 0, saw != nil || damage != nil || sparks != nil else { teardown(); return }
 
-        for layer in [saw, damage].compactMap({ $0 }) {
+        for layer in [saw, damage, sparks].compactMap({ $0 }) {
             let fadeOut = CABasicAnimation(keyPath: "opacity")
             fadeOut.fromValue = layer.presentation()?.opacity ?? 1.0
             fadeOut.toValue = 0.0
@@ -3732,6 +3743,84 @@ class EmojiAnimator {
         _chainsawLastCut = nil
         _chainsawTicksToSweep = Self.chainsawSweepEveryTicks
     }
+
+    /// The shower thrown off the biting point, running for the whole cut.
+    ///
+    /// It is not decoration: the saw is 450 pt of drawing and, once the anchor
+    /// moved to the teeth, nothing on screen said *which* of those points is the
+    /// one that removes material. The sparks are the answer — a bright, moving
+    /// dot exactly where the kerf appears, visible across a projected room.
+    ///
+    /// Deliberately independent of the mouse: it burns whether or not the saw is
+    /// being moved, because an idling blade against material still throws chips.
+    /// A shower that switched off when the hand stopped would go dark at exactly
+    /// the moments Victor is holding the saw still to point at something.
+    private func beginChainsawSparks() {
+        guard let dot = Self.chainsawSparkDot else { return }
+
+        let emitter = CAEmitterLayer()
+        emitter.frame = hostLayer.bounds
+        emitter.emitterPosition = mousePointInHostLayer()
+        emitter.emitterShape = .point
+        emitter.emitterMode = .points
+        emitter.zPosition = 9_600      // over the saw itself: sparks fly toward the room
+        // Additive, so overlapping sparks pile up into a white-hot core instead
+        // of averaging into a flat orange smear.
+        emitter.renderMode = .additive
+        emitter.emitterCells = [Self.chainsawSparkCell(dot: dot, longitude: 0),
+                                Self.chainsawSparkCell(dot: dot, longitude: .pi)]
+        hostLayer.addSublayer(emitter)
+        _chainsawSparks = emitter
+    }
+
+    /// One lateral jet. Two of them (longitude 0 and π) give the two-sided spray
+    /// a blade throws along the line of the cut, rather than a firework.
+    private static func chainsawSparkCell(dot: CGImage, longitude: CGFloat) -> CAEmitterCell {
+        let cell = CAEmitterCell()
+        cell.contents = dot
+        cell.birthRate = 110
+        cell.lifetime = 0.55
+        cell.lifetimeRange = 0.25
+        cell.velocity = 420
+        cell.velocityRange = 260
+        cell.emissionLongitude = longitude
+        // A narrow fan (±20°) around the horizontal: wider than this and the
+        // sparks read as an explosion at the cursor instead of as material
+        // being thrown sideways out of a groove.
+        cell.emissionRange = .pi / 9
+        cell.yAcceleration = -900      // host layer is y-up, so gravity is negative
+        cell.scale = 0.16
+        cell.scaleRange = 0.12
+        cell.scaleSpeed = -0.12        // they burn down to nothing as they fly
+        cell.alphaSpeed = -1.6
+        cell.color = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.35, alpha: 1.0).cgColor
+        // Spread across the orange→white band, so the shower has hot and cool
+        // sparks in it the way a real one does.
+        cell.greenRange = 0.35
+        cell.blueRange = 0.5
+        cell.spin = 0
+        return cell
+    }
+
+    /// A soft round spark, built once: white core fading to transparent, so the
+    /// cell's tint colours it and its edges never show a square.
+    private static let chainsawSparkDot: CGImage? = {
+        let side = 32
+        guard let ctx = CGContext(data: nil, width: side, height: side,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let centre = CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2)
+        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: [NSColor(white: 1, alpha: 1).cgColor,
+                                                 NSColor(white: 1, alpha: 0.85).cgColor,
+                                                 NSColor(white: 1, alpha: 0).cgColor] as CFArray,
+                                        locations: [0, 0.35, 1]) else { return nil }
+        ctx.drawRadialGradient(gradient, startCenter: centre, startRadius: 0,
+                               endCenter: centre, endRadius: CGFloat(side) / 2,
+                               options: [])
+        return ctx.makeImage()
+    }()
 
     /// One mouse sample's worth of sawing: extend the drawn kerf, clear the same
     /// band out of the mask, and every so often ask what has come loose.

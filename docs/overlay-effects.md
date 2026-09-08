@@ -265,13 +265,28 @@ rule from the start.
     because the cursor is already moving, so the ~1.7 MP sheet is never re-decoded per
     press. The sheet is quantised to 255 colours (1.8 MB → 329 KB, visually identical at
     450 pt) — palette PNG keeps per-entry alpha, so the soft edges survive.
-  - **Anchor**: the layer's `anchorPoint` is the **blade tip** (x ≈ 380/418, y ≈ 115/236
-    from the top — the mean of the 16 frames' rightmost saw pixel, excluding the frames
-    whose rightmost pixel is flying sawdust). The tip is what lands on the pointer and the
-    engine hangs down-left of it, the same relationship the arrow cursor has with its own
-    top-left hotspot; centring it instead would put the pointer in the middle of the engine
-    block and the saw would read as decoration rather than as the thing doing the pointing.
-    Sawdust therefore sprays to the **right of** the hotspot — i.e. out of the cut.
+  - **Anchor = the biting point**: the layer's `anchorPoint` is **mid-bar, on the lower
+    row of teeth** (`chainsawCutAnchor`, x ≈ 0.600, y ≈ 0.815 from the top — sampled off
+    the bar's bottom edge across the calm frames, which jitter between 0.77 and 0.90). That
+    point rides the pointer, so the kerf comes out from **under the teeth** with the whole
+    machine held above the cut, the way a saw is actually used. Two earlier anchors were
+    wrong for instructive reasons: the **blade tip** read beautifully as a pointer but put
+    the cut ~180 pt from what the hand was aiming at, and you cannot saw around a window
+    with the groove appearing a hand's width away; the **sprite centre** fixed the aim but
+    split the screen open through the middle of the engine block, so nothing on screen said
+    which part of 450 pt of drawing was doing the cutting.
+  - **Sparks** (`beginChainsawSparks`, `CAEmitterLayer` at `zPosition` 9600 — *over* the saw,
+    because they fly toward the room): the answer to that last problem. Two cells, emission
+    longitude **0 and π** with a narrow **±20° fan**, 110/s each, life ~0.55 s, velocity 420
+    ± 260, `yAcceleration` **−900** (the host layer is y-up, so gravity is negative),
+    `renderMode = .additive` over a soft white radial dot tinted orange with `greenRange` /
+    `blueRange` spread, so the shower has hot and cool sparks in it. The narrow fan is what
+    makes it read as material thrown sideways out of a groove rather than as an explosion at
+    the cursor. It burns **permanently, independent of the mouse** — an idling blade against
+    material still throws chips, and a shower that switched off when the hand stopped would
+    go dark at exactly the moments Victor is holding the saw still to point at something. On
+    teardown `birthRate` drops to 0 first, so sparks already in the air finish their arc
+    instead of being cut off mid-flight, then the emitter fades with the saw and the damage.
   - **Timing**: 16 frames at **15 fps** (1.07 s rev cycle). It started at 24 fps and read as
     *twitching* — the source frames jitter in position as well as in shape, and at that speed
     the eye tracks the jumps instead of the saw; slowing it turns the same jitter back into
@@ -304,7 +319,8 @@ rule from the start.
     fringe the glow black on every desktop. Sliced once into a lazy static (`fireFrames`).
   - **Anchor**: `(0.5, 0.10)` — the flame's **root**, near the bottom edge and centred, so
     the fire grows *upward out of* the pointer rather than swallowing it. Deliberately not
-    the chainsaw's centre anchor: a centred flame puts half the smoke plume below the hand,
+    the chainsaw's teeth anchor: a flame anchored on its own bite point puts half the smoke
+    plume below the hand,
     and the thing being pointed at is what should be on fire.
   - **Timing**: 40 frames at **30 fps** (1.33 s loop) — the source clip's own rate, kept
     rather than halved to the chainsaw's 15, because this one is on screen for a **36 s**
