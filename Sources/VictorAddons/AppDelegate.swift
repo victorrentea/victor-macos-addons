@@ -408,6 +408,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onTestOpenOnMouseScreen = { [weak self] url in
             DispatchQueue.main.async { self?.openUrlInChrome(url, target: .screenUnderMouse) }
         }
+        // `curl localhost:55123/chrome/extension/reload` — how an edit under
+        // `chrome-extension/` reaches the browser. `build-app.sh` calls it, so
+        // the extension follows the app the way the app follows the source.
+        tabletServer?.onChromeExtensionReload = { [weak self] in
+            self?.chromeBridge?.reloadExtension() ?? false
+        }
         // Tablet video page: list downloaded videos, and play one fullscreen in
         // IINA seeking to its manifest start-second (a new play replaces the
         // previous player; VideoPlayer auto-kills it ~60s after start).

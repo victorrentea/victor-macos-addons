@@ -25,6 +25,15 @@ final class ChromeBridge {
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
+    /// What each client says it can do, from the `hello` it sends on connect.
+    /// **A connected Chrome is not a capable one**: an unpacked extension is not
+    /// reloaded by rebuilding the app, so an old service worker stays on this
+    /// socket and drops any message type it has never heard of. Before the
+    /// handshake, `focusOrOpen` read "someone is listening" as "someone will
+    /// handle this", took the extension branch, and ⌘⌃F did nothing at all until
+    /// the extension was reloaded by hand. Now an unannounced feature simply
+    /// falls back to the old path.
+    private var features: [UUID: Set<String>] = [:]
     private var keepAliveTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.chrome-bridge", qos: .userInitiated)
     /// Current window state, mirrored to every client. Queue only.
@@ -140,7 +149,7 @@ final class ChromeBridge {
     func focusOrOpen(_ spec: TabSpec, url: String?, on screen: CGRect) -> Bool {
         var listeners = 0
         queue.sync {
-            listeners = self.connections.count
+            listeners = self.features.values.count { $0.contains("focus-or-open") }
             guard listeners > 0 else { return }
             self.seq += 1
             let patterns = spec.match.map(Self.jsonString).joined(separator: ",")
@@ -154,6 +163,33 @@ final class ChromeBridge {
             json += ",\"seq\":\(self.seq)}"
             self.broadcast(json)
         }
+        return listeners > 0
+    }
+
+    /// Ask the extension to reload itself — `chrome.runtime.reload()`, which
+    /// re-reads an unpacked extension from disk.
+    ///
+    /// This is the way a change to `chrome-extension/` gets applied. Nothing
+    /// outside the browser can do it: `chrome://extensions` is off limits to
+    /// extensions (including the automation one), and codex refuses browser
+    /// control outright, so the click was landing on Victor. The extension is
+    /// the one thing already inside Chrome with the right — it just has to be
+    /// asked. Bootstrapping is the catch: a build that *introduces* this command
+    /// still needs one manual reload before the running worker understands it.
+    ///
+    /// Returns false when no client advertises it — a worker too old to know how.
+    @discardableResult
+    func reloadExtension() -> Bool {
+        var listeners = 0
+        queue.sync {
+            listeners = self.features.values.count { $0.contains("reload") }
+            guard listeners > 0 else { return }
+            self.seq += 1
+            self.broadcast("{\"type\":\"reload\",\"seq\":\(self.seq)}")
+        }
+        overlayInfo(listeners > 0
+            ? "🔄 asked the Chrome extension to reload itself"
+            : "🔄 no Chrome extension able to reload itself — reload it by hand once")
         return listeners > 0
     }
 
@@ -183,9 +219,10 @@ final class ChromeBridge {
                 // Replay the current state: a worker that was torn down mid
                 // dictation learns it still owes a resume.
                 self.send(self.stateJSON(), to: conn)
-                self.drain(conn)
+                self.drain(conn, id: id)
             case .failed, .cancelled:
                 self.connections.removeValue(forKey: id)
+                self.features.removeValue(forKey: id)
             default:
                 break
             }
@@ -193,12 +230,39 @@ final class ChromeBridge {
         conn.start(queue: queue)
     }
 
-    /// We never act on what Chrome says — but the frames must be read, or the
-    /// connection stalls once its receive buffer fills.
-    private func drain(_ conn: NWConnection) {
-        conn.receiveMessage { [weak self] _, _, _, error in
-            guard error == nil else { return }
-            self?.drain(conn)
+    /// The frames must be read, or the connection stalls once its receive buffer
+    /// fills. The only one worth a second glance is the `hello` a worker sends on
+    /// connect, listing the message types it understands.
+    private func drain(_ conn: NWConnection, id: UUID) {
+        conn.receiveMessage { [weak self] data, _, _, error in
+            guard let self, error == nil else { return }
+            if let data, let msg = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                switch msg["type"] as? String {
+                case "hello":
+                    let advertised = Set(msg["features"] as? [String] ?? [])
+                    self.queue.async {
+                        guard self.connections[id] != nil else { return }
+                        self.features[id] = advertised
+                        overlayInfo("🧩 Chrome extension speaks: \(advertised.sorted().joined(separator: ", "))")
+                    }
+                case "log":
+                    // A service worker's console is only readable by opening
+                    // DevTools on it, by hand, in Chrome — which is exactly the
+                    // kind of click this whole day was about removing. Mirrored
+                    // here, `tail /tmp/victor-macos-addons.log` shows both halves
+                    // of the app interleaved, which is also the only way to see
+                    // the order they happened in.
+                    let text = msg["text"] as? String ?? ""
+                    if msg["level"] as? String == "error" {
+                        overlayError("🧩 \(text)")
+                    } else {
+                        overlayInfo("🧩 \(text)")
+                    }
+                default:
+                    break
+                }
+            }
+            self.drain(conn, id: id)
         }
     }
 

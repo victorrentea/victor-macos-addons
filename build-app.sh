@@ -137,3 +137,17 @@ fi
 
 echo "✅ Installed $APP_DIR"
 echo "   Launch via Spotlight (Cmd+Space) → 'Victor Addons'"
+
+# The Chrome half follows the Mac half. An unpacked extension is not reloaded by
+# rebuilding the app — Chrome only re-reads it when someone presses Reload on
+# chrome://extensions, a page no extension and no agent can click. So the running
+# app is asked to tell the extension to reload itself, which is the one route
+# from outside into that browser. Best-effort by design: the app may not be up
+# yet (this script does not start it), and it answers 503 when the extension on
+# the socket is too old to know the command — in both cases the next restart of
+# the app, or one manual Reload, catches up.
+if curl -fsS --max-time 2 "http://127.0.0.1:55123/chrome/extension/reload" >/dev/null 2>&1; then
+    echo "🧩 Chrome extension asked to reload itself"
+else
+    echo "🧩 Chrome extension not reloaded (app down, or extension too old — reload it once by hand)"
+fi

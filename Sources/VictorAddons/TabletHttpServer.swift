@@ -25,6 +25,10 @@ class TabletHttpServer {
     /// Read-only: which Chrome this app considers Victor's, and where its
     /// windows are.
     case testChromeWindows
+    /// Tell the Chrome extension to reload itself, so an edit under
+    /// `chrome-extension/` takes effect without anyone opening
+    /// `chrome://extensions` — a page no extension, and no agent, can click.
+    case chromeExtensionReload
         case ping
         case soundsManifest
         /// Filename + optional volume percent (0–100) from "?vol=".
@@ -200,6 +204,8 @@ class TabletHttpServer {
     /// Open a URL the way the ⌘⌃ openers do — official Chrome, on the screen
     /// under the mouse. Test hook only.
     var onTestOpenOnMouseScreen: ((String) -> Void)?
+    /// Returns false when no extension on the bridge can reload itself yet.
+    var onChromeExtensionReload: (() -> Bool)?
     /// Tablet connectivity ping (every 5s); returns JSON with the sounds manifest hash.
     var onPing: (() -> String)?
     /// Full sounds manifest JSON — fetched by the tablet on a hash mismatch.
@@ -378,6 +384,11 @@ class TabletHttpServer {
             case .testChromeWindows:
                 contentType = "application/json"
                 body = OfficialChrome.debugJSON()
+            case .chromeExtensionReload:
+                contentType = "application/json"
+                let asked = self.onChromeExtensionReload?() ?? false
+                body = "{\"asked\":\(asked)}"
+                if !asked { statusCode = 503 }
             case .ping:
                 contentType = "application/json"
                 body = self.onPing?() ?? "{\"ok\":true}"
@@ -779,6 +790,8 @@ class TabletHttpServer {
             return .unknown
         case "/test/chrome/windows":
             return .testChromeWindows
+        case "/chrome/extension/reload":
+            return .chromeExtensionReload
         case "/test/open-mouse":
             if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
                 return .testOpenOnMouseScreen(url)
