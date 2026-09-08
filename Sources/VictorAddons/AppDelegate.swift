@@ -70,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Fires the 16:30 / 17:00 "Feedback form?" offer (see FeedbackFormReminder).
     private var feedbackFormReminder: FeedbackFormReminder?
     private var powerMonitor: PowerMonitor?
+    private var lidAwake: LidAwake?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
@@ -1320,6 +1321,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         if CursorGlowSettings.isEnabled {
             cursorGlow.start()
         }
+
+        // 🔋 Awake Lid Closed. Re-armed on launch when it was left on, so the
+        // rebuild loop (`pkill` + `open`) cannot silently drop the lid guard in
+        // the middle of a flight.
+        let lid = LidAwake()
+        lid.onAutoDisabled = { [weak self] pct in
+            self?.menuBarManager.setLidAwakeTick(false)
+            self?.statusBanner?.showOnPresence(text: "🔋 \(pct)% — lid may sleep",
+                                               sound: StatusBannerSound.stop)
+        }
+        menuBarManager.onLidAwakeEnabledChanged = { enabled in
+            lid.setEnabled(enabled)
+        }
+        lid.startIfEnabled()
+        self.lidAwake = lid
 
         let portKiller = PortKiller()
         self.portKiller = portKiller

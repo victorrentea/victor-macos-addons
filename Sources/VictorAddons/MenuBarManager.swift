@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 8, 19:57"
+    static let BUILD_TIME = "Sep 8, 20:53"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -21,6 +21,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var cursorGlowItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
+    private(set) var lidAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -101,6 +102,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onPickCountry: ((BreakCountry) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
     var onCursorGlowEnabledChanged: ((Bool) -> Void)?
+    /// Returns whether the kernel flag actually followed — see `toggleLidAwakeAction`.
+    var onLidAwakeEnabledChanged: ((Bool) -> Bool)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
@@ -379,6 +382,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.isEnabled = true
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(scrollReversalItem)
+
+        // 🔋 Awake Lid Closed — the travel switch. Earns a row for the same
+        // reason 🔄 does: no key teaches it, and there is nowhere else the state
+        // shows. It is also the one row here that changes something *outside*
+        // the app (a kernel flag), so the tick has to be the truth — the toggle
+        // reads the flag back and unticks itself if the kernel said no.
+        lidAwakeItem = NSMenuItem(title: "🔋 Awake Lid Closed", action: #selector(toggleLidAwakeAction), keyEquivalent: "")
+        lidAwakeItem.target = self
+        lidAwakeItem.isEnabled = true
+        lidAwakeItem.state = LidAwakeSettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(lidAwakeItem)
 
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
@@ -696,6 +710,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !ScrollReversalSettings.isEnabled
         ScrollReversalSettings.isEnabled = enabled
         scrollReversalItem.state = enabled ? .on : .off
+    }
+
+    /// 🔋 Awake Lid Closed. The one toggle here that can *fail*: the kernel flag
+    /// needs the sudoers rule, and without it `pmset` exits non-zero. So the
+    /// tick is set from what the handler reports back, never optimistically
+    /// from the click — a ticked row that isn't holding the Mac awake is the
+    /// single worst outcome this feature has.
+    @objc private func toggleLidAwakeAction() {
+        let wanted = !LidAwakeSettings.isEnabled
+        let applied = onLidAwakeEnabledChanged?(wanted) ?? false
+        lidAwakeItem.state = (wanted && applied) ? .on : .off
+    }
+
+    /// Called by the battery floor when it stands the feature down on its own,
+    /// so the row stops claiming the Mac is being held awake.
+    func setLidAwakeTick(_ on: Bool) {
+        lidAwakeItem?.state = on ? .on : .off
     }
 
     @objc private func takeScreenshotAction() {

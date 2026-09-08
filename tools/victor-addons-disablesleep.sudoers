@@ -1,0 +1,17 @@
+# Victor Addons — 🔋 Awake Lid Closed (see docs/lid-awake.md).
+#
+# Exactly two commands, each pinned with its full argument list: the app may set
+# and clear the kernel SleepDisabled flag, and nothing else. NOPASSWD so the
+# 20% battery-floor stand-down can fire while the lid is shut and nobody is
+# there to type a password.
+#
+# Install (validate FIRST — a broken sudoers file locks you out of sudo):
+#   sudo visudo -c -f tools/victor-addons-disablesleep.sudoers \
+#     && sudo install -m 0440 -o root -g wheel \
+#          tools/victor-addons-disablesleep.sudoers \
+#          /etc/sudoers.d/victor-addons-disablesleep
+#
+# Remove:
+#   sudo rm /etc/sudoers.d/victor-addons-disablesleep
+
+victorrentea ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1
