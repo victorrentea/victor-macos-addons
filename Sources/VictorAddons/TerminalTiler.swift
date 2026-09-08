@@ -4,7 +4,9 @@ import ApplicationServices
 
 /// Snaps each Terminal window to the nearest free quadrant of its current monitor.
 /// Minimizes total movement (brute-force permutations — fine for ≤4 windows per monitor).
-/// Windows stay on whichever display they currently occupy.
+/// Windows stay on whichever display they currently occupy. From the fifth window
+/// on there is no quadrant left, so the extras are **cascaded** over the
+/// bottom-right one and raised above it — see `TerminalTileLayout`.
 ///
 /// Window geometry is read/written through the in-process **Accessibility API**
 /// (`AXUIElement`), which relies only on this app's own Accessibility grant — the
@@ -18,12 +20,9 @@ enum TerminalTiler {
     private static let MARGIN = 2
     private static let terminalBundleID = "com.apple.Terminal"
 
-    private struct Rect {
-        let x: Int, y: Int, w: Int, h: Int
-        var x2: Int { x + w }
-        var y2: Int { y + h }
-        var center: (Double, Double) { (Double(x) + Double(w) / 2, Double(y) + Double(h) / 2) }
-    }
+    /// Geometry (and every decision made with it) lives in the pure, testable
+    /// `TerminalTileLayout`; this file is only the Accessibility plumbing.
+    private typealias Rect = TerminalTileLayout.Rect
 
     /// Tile every Terminal window, each on the display it already sits on.
     ///
@@ -43,15 +42,15 @@ enum TerminalTiler {
             groups[di, default: []].append(w)
         }
 
-        for (di, var ws) in groups {
+        for (di, ws) in groups {
             if let displayID, displays[di].id != displayID { continue }
-            let quads = quadrants(of: displays[di].rect)
-            ws = Array(ws.prefix(quads.count))
-            let assignment = assignOptimally(windowRects: ws.map { $0.rect }, quads: quads)
+            let frames = TerminalTileLayout.frames(windows: ws.map { $0.rect },
+                                                   display: displays[di].rect)
             for (i, w) in ws.enumerated() {
-                let q = quads[assignment[i]]
-                setWindowFrame(w.win, x: q.x, y: q.y, w: q.w, h: q.h)
+                let f = frames[i]
+                setWindowFrame(w.win, x: f.x, y: f.y, w: f.w, h: f.h)
             }
+            raiseCascade(Array(ws.dropFirst(4).map { $0.win }), front: ws.first?.win)
         }
     }
 
@@ -134,43 +133,22 @@ enum TerminalTiler {
         return out.pointee
     }
 
-    // MARK: - Quadrants & assignment
+    // MARK: - Stacking order
 
-    private static func quadrants(of d: Rect) -> [Rect] {
-        let hw = d.w / 2, hh = d.h / 2
-        return [
-            Rect(x: d.x + MARGIN,  y: d.y + MARGIN, w: hw - MARGIN, h: hh - MARGIN),
-            Rect(x: d.x + hw,      y: d.y + MARGIN, w: hw - MARGIN, h: hh - MARGIN),
-            Rect(x: d.x + MARGIN,  y: d.y + hh,     w: hw - MARGIN, h: hh - MARGIN),
-            Rect(x: d.x + hw,      y: d.y + hh,     w: hw - MARGIN, h: hh - MARGIN),
-        ]
-    }
-
-    private static func dist2(_ a: (Double, Double), _ b: (Double, Double)) -> Double {
-        let dx = a.0 - b.0, dy = a.1 - b.1
-        return dx*dx + dy*dy
-    }
-
-    private static func permutations(of n: Int, choose k: Int) -> [[Int]] {
-        if k == 0 { return [[]] }
-        var result: [[Int]] = []
-        for i in 0..<n {
-            for rest in permutations(of: n, choose: k - 1) where !rest.contains(i) {
-                result.append([i] + rest)
-            }
+    /// Move the cascaded windows in front of the quadrant window they now sit on.
+    ///
+    /// Frames say nothing about depth: the extras are the *back*-most windows
+    /// (that is how they came to be extras), so without this they would be tiled
+    /// into a neat pile hidden behind the bottom-right tile. They are raised
+    /// back-to-front so their own order survives, and the window that was front
+    /// before is raised last so tiling does not take the keyboard away from the
+    /// terminal being typed in — it sits in another quadrant, by construction, so
+    /// putting it back on top hides nothing.
+    private static func raiseCascade(_ cascaded: [AXUIElement], front: AXUIElement?) {
+        guard !cascaded.isEmpty else { return }
+        for win in cascaded.reversed() {
+            AXUIElementPerformAction(win, kAXRaiseAction as CFString)
         }
-        return result
-    }
-
-    private static func assignOptimally(windowRects: [Rect], quads: [Rect]) -> [Int] {
-        var bestPerm: [Int] = []
-        var bestCost = Double.infinity
-        for perm in permutations(of: quads.count, choose: windowRects.count) {
-            let cost = (0..<windowRects.count).reduce(0.0) { acc, i in
-                acc + dist2(windowRects[i].center, quads[perm[i]].center)
-            }
-            if cost < bestCost { bestCost = cost; bestPerm = perm }
-        }
-        return bestPerm
+        if let front { AXUIElementPerformAction(front, kAXRaiseAction as CFString) }
     }
 }
