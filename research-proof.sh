@@ -94,7 +94,12 @@ for f in "$TEMPLATE" "$VERIFY"; do
   [ -f "$f" ] || { echo "⚠️  missing $f"; exit 1; }
 done
 
-TX="$(ls -t "$OUTPUT_DIR"/*-transcription.txt 2>/dev/null | head -1)"
+# RESEARCH_PROOF_TX points the run at a transcript of your choosing. The
+# research fan-out is the half of this feature that a normal run often never
+# reaches — a ten-minute window with nothing checkable in it is a perfectly
+# common (and correct) empty result — so exercising it needs a window that
+# deliberately contains claims. Testing only, never set in production.
+TX="${RESEARCH_PROOF_TX:-$(ls -t "$OUTPUT_DIR"/*-transcription.txt 2>/dev/null | head -1)}"
 if [ -z "$TX" ]; then
   echo "⚠️  No *-transcription.txt in $OUTPUT_DIR — nothing to fact-check."
   bail ok "No transcript today"; finish; sleep 3; exit 0

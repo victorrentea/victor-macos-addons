@@ -105,5 +105,17 @@ that failed silently would leave Victor staring at a menu that did nothing.
   here; see [summaries.md](summaries.md) for the 2026-06-30 bug it caused.
 - **Everything is logged** to `addons-output/research-proof-YYYY-MM-DD.log`, and
   a JSON that failed to parse is kept as `research-proof-broken-HHMMSS.json`.
+- **A real run is ~5 minutes** end to end, measured 2026-09-08 on a window with
+  4 checkable claims: 46 pages opened, 8 quoted, every quote `found` at
+  coverage 1.0. Budget accordingly — it is a coffee-length wait, not a click.
+- `RESEARCH_PROOF_TX=<file>` points a run at a transcript of your choosing.
+  The research fan-out is the half of the feature a normal run often never
+  reaches — a ten-minute window with nothing checkable in it is a common and
+  *correct* empty result — so exercising it needs a window that deliberately
+  contains claims. Testing only.
+- **Never edit `research-proof.sh` while a run is in flight.** bash reads a
+  script incrementally by byte offset; changing the bytes ahead of the
+  interpreter mid-run makes it resume in the middle of a token. Cost one
+  test run on 2026-09-08 to a syntax error inside the prompt heredoc.
 - Reports pile up in `addons-output/research-proof-*.html`; there is no retention
   policy yet.
