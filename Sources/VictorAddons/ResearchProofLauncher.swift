@@ -75,6 +75,9 @@ enum ResearchProofLauncher {
     private static func reportPath(nextTo script: String) -> String {
         let root = URL(fileURLWithPath: script).deletingLastPathComponent()
         let fmt = DateFormatter()
+        // POSIX locale, or "HH" is overridden by the user's 12-hour preference and
+        // the stamp comes out as "61800 PM" — caught on the first live run.
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateFormat = "yyyy-MM-dd-HHmmss"
         return root.appendingPathComponent("addons-output")
             .appendingPathComponent("research-proof-\(fmt.string(from: Date())).html").path

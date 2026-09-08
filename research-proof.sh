@@ -97,11 +97,11 @@ done
 TX="$(ls -t "$OUTPUT_DIR"/*-transcription.txt 2>/dev/null | head -1)"
 if [ -z "$TX" ]; then
   echo "⚠️  No *-transcription.txt in $OUTPUT_DIR — nothing to fact-check."
-  bail ok "Nu există transcripție azi"; finish; sleep 3; exit 0
+  bail ok "No transcript today"; finish; sleep 3; exit 0
 fi
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  🔬  Research Proof — ultimele $WINDOW_MINUTES minute"
+echo "  🔬  Research Proof — the last $WINDOW_MINUTES minutes"
 echo "  Transcript: $(basename "$TX")"
 echo "════════════════════════════════════════════════════════════════"
 
@@ -110,7 +110,7 @@ echo "════════════════════════�
 # AND transcribed), then "the file stopped growing" as the signal that the
 # backlog drained, then a give-up because a slightly stale window beats none.
 MIN_WAIT=8; QUIET=2.5; MAX_WAIT=25
-echo "⏳ aștept ca Whisper să prindă din urmă (max ${MAX_WAIT}s)…"
+echo "⏳ waiting for Whisper to catch up (max ${MAX_WAIT}s)…"
 START=$(date +%s)
 LAST_SIZE=$(wc -c < "$TX")
 LAST_GROWTH=$START
@@ -122,10 +122,10 @@ while :; do
   if [ "$SIZE" -ne "$LAST_SIZE" ]; then LAST_SIZE=$SIZE; LAST_GROWTH=$NOW; fi
   QUIET_FOR=$(( NOW - LAST_GROWTH ))
   if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
-    echo "   …renunț la așteptare după ${ELAPSED}s (backlog lung) — merg pe ce e în fișier"; break
+    echo "   …gave up waiting after ${ELAPSED}s (long backlog) — going with what is in the file"; break
   fi
   if [ "$ELAPSED" -ge "$MIN_WAIT" ] && awk "BEGIN{exit !($QUIET_FOR >= $QUIET)}"; then
-    echo "   …gata după ${ELAPSED}s (fișierul e liniștit de ${QUIET_FOR}s)"; break
+    echo "   …caught up after ${ELAPSED}s (file quiet for ${QUIET_FOR}s)"; break
   fi
 done
 
@@ -148,15 +148,15 @@ awk -v W="$WINDOW_MINUTES" '
 WORDS=$(wc -w < "$WINDOW_FILE" | tr -d ' ')
 LINES=$(wc -l < "$WINDOW_FILE" | tr -d ' ')
 RANGE="$(head -1 "$WINDOW_FILE" | cut -c2-6)–$(tail -1 "$WINDOW_FILE" | cut -c2-6)"
-echo "📄 fereastra: $LINES linii, $WORDS cuvinte, $RANGE"
+echo "📄 window: $LINES lines, $WORDS words, $RANGE"
 
 if [ "$WORDS" -lt "$MIN_WORDS" ]; then
-  echo "⚠️  Prea puțin vorbit în ultimele $WINDOW_MINUTES minute ($WORDS cuvinte) — nu are ce fi verificat."
-  bail ok "Prea puțină vorbire în fereastră ($WORDS cuvinte)"; finish; sleep 3; exit 0
+  echo "⚠️  Too little speech in the last $WINDOW_MINUTES minutes ($WORDS words) — nothing to check."
+  bail ok "Too little speech in the window ($WORDS words)"; finish; sleep 3; exit 0
 fi
 
 # --- 3. claude: extract → research → adversarially verify → JSON ------------
-( while true; do sleep 20; printf '  … încă lucrez (%s)\n' "$(date +%H:%M:%S)"; done ) &
+( while true; do sleep 20; printf '  … still working (%s)\n' "$(date +%H:%M:%S)"; done ) &
 HEARTBEAT=$!
 trap 'kill "$HEARTBEAT" 2>/dev/null; rm -f "$LOCK"; rm -rf "$RUN_DIR"; finish' EXIT
 
@@ -181,6 +181,7 @@ Each researcher: search the web, open the promising pages, and come back with 1�
   tier 3 = anything else
 Never quote from search-result snippets — open the page. Prefer tier 1; a tier-3 source that merely repeats a claim is nearly worthless and must be labelled honestly.
 It is a perfectly good outcome to come back with NOTHING. Say so. Do not settle for a page that is vaguely on-topic.
+Each researcher must ALSO report EVERY page URL it actually opened, including the dead ends — the pages that turned out to be irrelevant, paywalled or wrong. That trail is what makes the report auditable instead of merely assertive, and it is rendered as a strip of site icons at the foot of the page.
 
 STEP 3 — ADVERSARIAL VERIFICATION (this is the point of the whole feature)
 For EVERY piece of evidence, run: python3 $VERIFY <url> <quote>
@@ -197,7 +198,7 @@ STEP 4 — WRITE THE JSON (exactly this shape, nothing else)
   \"claims\": [
     {
       \"claim\": \"the claim, in the language it was said, one sentence\",
-      \"transcript\": \"the [HH:MM] line(s) it came from, copied verbatim from the window file\",
+      \"transcript\": \"the [HH:MM] line(s) it came from, copied VERBATIM from the window file — this leads the card, in quotes, so it must read as what was actually heard, uncorrected\",
       \"verdict\": \"contradicted | partly | not_found | unverified | confirmed\",
       \"note\": \"one or two sentences: what the sources ACTUALLY say. For 'contradicted', lead with the correction — 'ai spus X; sursa spune Y'.\",
       \"evidence\": [
@@ -206,8 +207,12 @@ STEP 4 — WRITE THE JSON (exactly this shape, nothing else)
       ]
     }
   ],
+  \"sources\": [
+    {\"url\": \"https://…the exact page that was opened…\", \"site\": \"docs.oracle.com\", \"used\": true}
+  ],
   \"skipped\": [\"what you deliberately did not check\"]
 }
+'sources' is EVERY page any researcher opened during the whole run, deduplicated by URL, in the order they were visited. 'used' is true when a quote from that page made it into the report and false for a dead end — dead ends are kept and shown dimmed, because 'I looked here and it gave me nothing' is part of an honest trail. Give the exact URL that was navigated, not the site's home page: it is what shows on hover.
 Verdicts mean: contradicted = the sources say otherwise. partly = true with a caveat that matters. not_found = searched, found nothing either way. unverified = found something but could not verify the quote. confirmed = real quote from a good source that squarely supports it, and the adversarial pass failed to break it.
 'note' is written in the language the claim was made in (usually Romanian) and is read off a projector — plain, short, no hedging filler.
 
@@ -227,7 +232,7 @@ echo
 
 if [ "$STATUS" -ne 0 ] || [ ! -s "$JSON_FILE" ]; then
   echo "⚠️  claude exited $STATUS / no JSON written — rendering a failure page so the run is visible."
-  bail fail "Run-ul a eșuat — vezi $LOG"
+  bail fail "The run failed — see $LOG"
   finish
   echo "   (log: $LOG)"
   read -r -t 1800 _ || true
@@ -237,13 +242,13 @@ fi
 if ! render "$JSON_FILE"; then
   echo "⚠️  claude's JSON did not parse. A copy is kept for the post-mortem."
   cp "$JSON_FILE" "$OUTPUT_DIR/research-proof-broken-$(date +%H%M%S).json" 2>/dev/null
-  bail fail "JSON invalid de la claude — vezi $LOG"
+  bail fail "claude returned invalid JSON — see $LOG"
   finish
   read -r -t 1800 _ || true
   exit 0
 fi
 
-echo "✅ gata — raportul se deschide pe retina."
+echo "✅ done — the report is opening on the retina."
 VERDICT="ok"
 finish
 sleep 4

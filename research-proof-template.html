@@ -6,16 +6,23 @@
   the ROOM is looking at. That single fact decides the whole design:
 
   * Type is large and the page is one column, because the back row reads it.
+  * Each card LEADS with the sentence that was actually said, in quotes and with
+    no label in front of it. Two reasons, and the second is the real one: the
+    room is often English-speaking, so a Romanian "s-a spus:" is a word half the
+    audience has to skip; and Whisper invents fluent sentences nobody said, so
+    the original line is the one-glance escape hatch — a beautifully sourced
+    fact-check of a hallucinated claim looks exactly like a real one until you
+    read what it came from. The quote marks say "this is what was heard" without
+    spending a word on it.
   * Contradictions come first and confirmations last, folded. A run that ends in
     eight green cards and one red one must not make the red one scroll-work —
     the red one IS the output; the green ones are the receipt.
-  * Every card shows the raw transcript line next to the claim. Whisper
-    hallucinates fluent sentences nobody said, and without the original line a
-    beautifully sourced fact-check of an invented claim looks exactly like a
-    real one. The line is the escape hatch: "I never said that", in one glance.
   * The quote check is rendered as what it is — a substring search — with its
     coverage, so "the source says it" and "a model said the source says it" can
     never be confused on screen.
+  * Everything the researchers opened is at the foot as a favicon strip, hover
+    for the URL: the trail is what makes a fact-check auditable rather than
+    merely assertive, and pages that were read and NOT used are part of it.
 
   Claude writes ONLY the JSON below (research-proof.sh substitutes it for the
   __DATA__ token). The markup, the ordering and the wording of the verdicts are
@@ -39,10 +46,6 @@
   h1 { font-size: 40px; margin: 0 0 6px; letter-spacing: -.02em; }
   .sub { color: var(--dim); font-size: 19px; }
   .tally { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
-  .tally span {
-    padding: 6px 14px; border-radius: 999px; font-size: 17px; font-weight: 600;
-    border: 1px solid var(--edge); background: var(--card);
-  }
   main { max-width: 1180px; margin: 0 auto; }
   h2 {
     font-size: 22px; text-transform: uppercase; letter-spacing: .09em;
@@ -62,7 +65,7 @@
   .badge {
     display: inline-block; padding: 3px 12px; border-radius: 6px;
     font-size: 15px; font-weight: 700; letter-spacing: .04em;
-    text-transform: uppercase; margin-bottom: 12px;
+    text-transform: uppercase; margin-bottom: 14px;
   }
   .badge.contradicted { background: var(--bad);  color: #2a0b09; }
   .badge.partly       { background: var(--warn); color: #2a1b02; }
@@ -70,17 +73,21 @@
   .badge.unverified   { background: var(--none); color: #14181f; }
   .badge.confirmed    { background: var(--good); color: #04240f; }
 
-  .claim { font-size: 27px; line-height: 1.35; font-weight: 600; margin: 0 0 14px; }
-  .note  { font-size: 20px; color: var(--ink); margin: 0 0 18px; }
-
+  /* The heard sentence leads the card: biggest thing in it after the verdict. */
   .said {
-    border-left: 3px solid var(--edge); padding: 6px 0 6px 16px;
-    margin: 0 0 18px; color: var(--dim); font-size: 17px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap;
+    font-size: 27px; line-height: 1.35; font-weight: 500;
+    margin: 0 0 16px; color: var(--ink);
   }
-  .said b { color: #b9c3d6; font-weight: 600; }
+  .said::before { content: "“"; color: var(--dim); }
+  .said::after  { content: "”"; color: var(--dim); }
+  .said .stamp {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 17px; color: var(--dim); margin-right: 8px;
+  }
+  .claim { font-size: 21px; font-weight: 700; margin: 0 0 8px; color: #cdd6e6; }
+  .note  { font-size: 20px; color: var(--ink); margin: 0 0 4px; }
 
-  .ev { border-top: 1px solid var(--edge); padding-top: 15px; margin-top: 15px; }
+  .ev { border-top: 1px solid var(--edge); padding-top: 15px; margin-top: 18px; }
   .quote { font-size: 20px; font-style: italic; margin: 0 0 9px; }
   .quote::before { content: "“"; } .quote::after { content: "”"; }
   .src { font-size: 17px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -95,14 +102,35 @@
   .tier.t1 { background: #16324a; color: #8ecbff; }
 
   details.fold summary {
-    cursor: pointer; color: var(--dim); font-size: 19px; padding: 12px 0;
-    list-style: none;
+    cursor: pointer; color: var(--dim); font-size: 19px; padding: 12px 0; list-style: none;
   }
   details.fold summary::-webkit-details-marker { display: none; }
   details.fold summary::before { content: "▸ "; }
   details.fold[open] summary::before { content: "▾ "; }
   .empty { color: var(--dim); font-size: 19px; }
-  footer { max-width: 1180px; margin: 44px auto 0; color: var(--dim); font-size: 16px; }
+
+  /* --- the trail ---------------------------------------------------------- */
+  footer { max-width: 1180px; margin: 48px auto 0; color: var(--dim); font-size: 16px; }
+  footer h2 { margin-top: 0; }
+  .trail { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 22px; }
+  .trail a {
+    display: flex; align-items: center; justify-content: center;
+    width: 46px; height: 46px; border-radius: 11px;
+    background: var(--card); border: 1px solid var(--edge);
+    text-decoration: none; transition: transform 120ms ease, border-color 120ms ease;
+  }
+  .trail a:hover { transform: translateY(-2px); border-color: #55627d; }
+  /* Read-but-unused pages are dimmed, not hidden: "I looked here and it gave me
+     nothing" is part of an honest trail, and at full contrast it would read as
+     evidence. */
+  .trail a.unused { opacity: .42; }
+  .trail img { width: 26px; height: 26px; border-radius: 5px; display: block; }
+  .trail .letter {
+    width: 26px; height: 26px; border-radius: 5px; background: #2b3344; color: var(--ink);
+    font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .skipped { margin-bottom: 18px; }
+  code { font-family: ui-monospace, Menlo, monospace; }
 </style>
 
 <header>
@@ -115,38 +143,121 @@
 
 <script id="data" type="application/json">__DATA__</script>
 <script>
+// ---------------------------------------------------------------------------
+// Tooltip: one component, one attribute (data-tip), delegated on document.
+// Not `title=` — the native bubble takes ~500ms to appear, which is longer than
+// anyone hovers a 46px icon before giving up, and it cannot be made legible from
+// across a room. Delegation on document (not on the strip) so any markup this
+// page grows later gets it for free.
+// ---------------------------------------------------------------------------
+(() => {
+  const css = document.createElement("style");
+  css.textContent = `
+    .tooltip {
+      position: fixed; z-index: 9999; pointer-events: none;
+      background: rgba(20,20,22,.96); color: #fff;
+      font-size: 1.25rem; font-weight: 600; line-height: 1.25;
+      padding: .6rem .9rem; border-radius: .6rem; max-width: 22rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      opacity: 0; transform: translateY(4px);
+      transition: opacity 120ms ease, transform 120ms ease;
+      word-break: break-word;
+    }
+    .tooltip.visible { opacity: 1; transform: translateY(0); }`;
+  document.head.appendChild(css);
+
+  const tip = document.createElement("div");
+  tip.className = "tooltip";
+  document.body.appendChild(tip);
+
+  let timer = null, target = null;
+
+  function place(el) {
+    const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect(), gap = 10, pad = 8;
+    let left = r.left + r.width / 2 - t.width / 2;
+    left = Math.max(pad, Math.min(left, innerWidth - t.width - pad));
+    // Flip below when there is no room above — the reason this is JS and not a
+    // CSS ::after, which cannot flip and gets clipped at the viewport edge.
+    const above = r.top - t.height - gap;
+    tip.style.left = left + "px";
+    tip.style.top = (above >= pad ? above : r.bottom + gap) + "px";
+  }
+
+  function show(el) {
+    const text = el.getAttribute("data-tip");
+    if (!text) return;                       // data-tip="" shows nothing
+    target = el;
+    tip.textContent = text;
+    tip.style.left = tip.style.top = "-9999px";
+    tip.classList.add("visible");
+    place(el);
+  }
+  function hide() {
+    clearTimeout(timer); timer = null; target = null;
+    tip.classList.remove("visible");
+  }
+
+  document.addEventListener("mouseover", e => {
+    const el = e.target.closest("[data-tip]");
+    if (!el || el === target) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => show(el), 150);
+  });
+  document.addEventListener("mouseout", e => {
+    if (e.target.closest("[data-tip]")) hide();
+  });
+  // focus/blur don't bubble; focusin/focusout do.
+  document.addEventListener("focusin", e => {
+    const el = e.target.closest("[data-tip]");
+    if (el) show(el);
+  });
+  document.addEventListener("focusout", hide);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
+  // A fixed bubble positioned once floats away from its trigger on scroll.
+  addEventListener("scroll", hide, true);
+  addEventListener("touchstart", hide, { passive: true });
+})();
+
 const DATA = JSON.parse(document.getElementById("data").textContent);
 
 // The running order IS the editorial judgement: what disagrees with what was
 // said in the room is the only thing worth interrupting a session for.
 const ORDER = [
-  ["contradicted", "Contrazis de surse",  "bad"],
-  ["partly",       "Parțial / nuanțat",   "warn"],
-  ["not_found",    "Nu am găsit nimic",   "none"],
-  ["unverified",   "Nu am putut verifica","none"],
-  ["confirmed",    "Confirmat",           "good"],
+  ["contradicted", "Contradicted by sources"],
+  ["partly",       "True with a caveat"],
+  ["not_found",    "Nothing found"],
+  ["unverified",   "Could not verify"],
+  ["confirmed",    "Confirmed"],
 ];
-const LABEL = Object.fromEntries(ORDER.map(([k, l]) => [k, l]));
+const LABEL = Object.fromEntries(ORDER);
 const CHECK = {
-  found:       "citat găsit pe pagină",
-  approx:      "citat aproximativ",
-  absent:      "CITATUL NU E PE PAGINĂ",
-  thin:        "pagina n-a putut fi citită",
-  unreachable: "pagina n-a răspuns",
+  found:       "quote found on the page",
+  approx:      "quote is approximate",
+  absent:      "QUOTE IS NOT ON THE PAGE",
+  thin:        "page could not be read",
+  unreachable: "page did not respond",
 };
 
-const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/// Split a leading "[HH:MM]" off the heard line so the stamp can be dimmed —
+/// it is provenance, not part of the sentence, and at full contrast it is the
+/// first thing the eye lands on.
+function heard(raw) {
+  const m = String(raw ?? "").match(/^\s*(\[\d\d:\d\d\])\s*(.*)$/s);
+  return m ? `<span class="stamp">${esc(m[1])}</span>${esc(m[2])}` : esc(raw);
+}
 
 function evidence(e) {
   const chk = e.check || "unreachable";
   const cov = (chk === "approx" || chk === "absent")
-    ? ` (${Math.round((e.coverage ?? 0) * 100)}% din cuvinte)` : "";
+    ? ` (${Math.round((e.coverage ?? 0) * 100)}% of the words)` : "";
   return `<div class="ev">
     <p class="quote">${esc(e.quote)}</p>
     <div class="src">
       <a href="${esc(e.url)}" target="_blank">${esc(e.site || e.url)}</a>
       ${e.date ? `<span>${esc(e.date)}</span>` : ""}
-      <span class="tier t${e.tier || 3}">${e.tier === 1 ? "sursă primară" : e.tier === 2 ? "sursă secundară" : "sursă terță"}</span>
+      <span class="tier t${e.tier || 3}">${e.tier === 1 ? "primary source" : e.tier === 2 ? "secondary source" : "third-party source"}</span>
       <span class="chk ${chk}">${CHECK[chk] || chk}${cov}</span>
     </div>
   </div>`;
@@ -156,16 +267,16 @@ function card(c) {
   const v = c.verdict || "unverified";
   return `<article class="card ${v}">
     <span class="badge ${v}">${LABEL[v] || v}</span>
-    <p class="claim">${esc(c.claim)}</p>
+    <p class="said">${heard(c.transcript)}</p>
+    ${c.claim ? `<p class="claim">${esc(c.claim)}</p>` : ""}
     ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}
-    <p class="said"><b>s-a spus:</b> ${esc(c.transcript)}</p>
     ${(c.evidence || []).map(evidence).join("")}
   </article>`;
 }
 
 const claims = DATA.claims || [];
 document.getElementById("sub").textContent =
-  `ultimele 10 minute — ${DATA.window || "?"}  ·  ${claims.length} afirmații verificate  ·  ${DATA.generated || ""}`;
+  `last 10 minutes — ${DATA.window || "?"}  ·  ${claims.length} claims checked  ·  ${DATA.generated || ""}`;
 
 document.getElementById("tally").innerHTML = ORDER
   .map(([k, l]) => [k, l, claims.filter(c => c.verdict === k).length])
@@ -182,10 +293,34 @@ document.getElementById("out").innerHTML = ORDER.map(([k, label]) => {
   return k === "confirmed"
     ? `<details class="fold"><summary>${label} — ${group.length}</summary>${body}</details>`
     : `<h2>${label} — ${group.length}</h2>${body}`;
-}).join("") || `<p class="empty">Nimic verificabil în ultimele 10 minute — niciun număr, nicio atribuire, nicio afirmație factuală.</p>`;
+}).join("") || `<p class="empty">Nothing checkable in the last 10 minutes — no numbers, no attributions, no factual claims.</p>`;
 
-document.getElementById("foot").innerHTML =
+// --- the trail: every page the researchers opened --------------------------
+// Favicons are pulled from the site itself first (first-party, no third party
+// learns what was researched) and only fall back to DuckDuckGo's icon proxy,
+// then to a letter tile. Each hop is an onerror, so a site with no favicon
+// degrades silently instead of showing a broken image.
+function icon(url) {
+  let host = "";
+  try { host = new URL(url).hostname; } catch { host = String(url); }
+  const letter = esc((host.replace(/^www\./, "")[0] || "?").toUpperCase());
+  const own = `https://${esc(host)}/favicon.ico`;
+  const ddg = `https://icons.duckduckgo.com/ip3/${esc(host)}.ico`;
+  const fallback = `this.outerHTML='&lt;span class=\\'letter\\'&gt;${letter}&lt;/span&gt;'`;
+  return `<img src="${own}" alt="" loading="lazy"
+               onerror="this.onerror=function(){${fallback}};this.src='${ddg}'">`;
+}
+
+const sources = (DATA.sources || []).filter(s => s && s.url);
+const foot = document.getElementById("foot");
+foot.innerHTML =
+  (sources.length
+    ? `<h2>Pages opened — ${sources.length}</h2>
+       <div class="trail">${sources.map(s => `
+         <a href="${esc(s.url)}" target="_blank" class="${s.used ? "" : "unused"}"
+            data-tip="${esc(s.url)}">${icon(s.url)}</a>`).join("")}</div>` : "") +
   (DATA.skipped && DATA.skipped.length
-    ? `<b>Neverificat deliberat</b> (opinii, preferințe, glume): ${DATA.skipped.map(esc).join(" · ")}<br>` : "") +
-  `Fiecare citat a fost căutat literal în pagina sursă cu <code>verify-quote.py</code> — nu pe cuvântul unui model.`;
+    ? `<p class="skipped"><b>Deliberately not checked</b> (opinions, preferences, jokes): ${DATA.skipped.map(esc).join(" · ")}</p>` : "") +
+  `<p>Every quote was searched for literally in its source page by <code>verify-quote.py</code> — not taken on a model\u2019s word.` +
+  (sources.length ? ` Dimmed icons are pages that were read and yielded nothing.` : "") + `</p>`;
 </script>
