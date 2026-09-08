@@ -30,16 +30,16 @@ enum TerminalTiler {
     /// (⌘⌃T / ⌘⌃C / ⌘⌃Q) tiles the screen it just landed on and leaves the
     /// windows on every other screen exactly where they were — the gesture said
     /// "make room here", not "rearrange all my monitors".
-    /// `keepingFocus` hands the keyboard back to the window that had it, by
-    /// raising it once more at the very end. Only the after-opening call
-    /// (⌘⌃C / ⌘⌃Q / ⌘⌃T) asks for it: there the focused window *is* the terminal
-    /// that was just created and is about to be typed into, and burying it under
-    /// the fan would send the next keystrokes somewhere else. Plain ⌘⌃A does not —
-    /// arranging is the whole point of pressing it, so the fan wins.
-    static func tile(onDisplay displayID: CGDirectDisplayID? = nil,
-                     keepingFocus: Bool = false) {
+    /// **Tiling never moves the keyboard.** The window that was being typed in is
+    /// noted before anything is raised and raised once more at the very end, so it
+    /// is the one left focused — arranging windows is not a reason to make the next
+    /// keystrokes land in a different terminal. It costs nothing in the usual case
+    /// (that window is one of the three quadrants the fan does not touch, so
+    /// raising it covers nothing); the one case where it does cost something is
+    /// spelled out on `raiseInSlotOrder`.
+    static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
         let displays = getDisplays()
-        let focused = keepingFocus ? focusedWindow() : nil
+        let focused = focusedWindow()
         let wins = getTerminalWindows()
         guard !displays.isEmpty, !wins.isEmpty else { return }
 
@@ -61,6 +61,7 @@ enum TerminalTiler {
             raiseInSlotOrder(ws.map { $0.win }, assignment: assignment)
         }
 
+        // Last word: the keyboard goes back where it was.
         if let focused { AXUIElementPerformAction(focused, kAXRaiseAction as CFString) }
     }
 
@@ -174,10 +175,12 @@ enum TerminalTiler {
     /// `kAXRaiseAction` on a Terminal window makes it the key window, and the other
     /// direction holds too — setting `AXMain`/`AXFocused` on a window at the back
     /// brings it straight to `z00`. Terminal will not keep the keyboard in a window
-    /// that is not in front, so "fan on top" and "keep typing where I was" cannot
-    /// both be had: the last window raised here is the one that ends up focused.
-    /// That is what ⌘⌃A is for; the after-opening call passes `keepingFocus` to buy
-    /// the new terminal back.
+    /// that is not in front, so this walk cannot have the last word: `tile` raises
+    /// the previously focused window after it, and **that** is the one left on top.
+    /// Where the two rules collide — the focused window is the bottom-right tile,
+    /// so putting the keyboard back covers the fan lying on it — the keyboard wins,
+    /// by explicit instruction. Everywhere else it is free: the focused window is
+    /// one of the other three tiles and overlaps nothing.
     private static func raiseInSlotOrder(_ wins: [AXUIElement], assignment: [Int]) {
         for (win, _) in zip(wins, assignment).sorted(by: { $0.1 < $1.1 }) {
             AXUIElementPerformAction(win, kAXRaiseAction as CFString)

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 8, 21:00"
+    static let BUILD_TIME = "Sep 8, 21:06"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -912,10 +912,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// Only that display is touched — see `TerminalTiler.tile(onDisplay:)`.
     private static func tileAfterOpening(displayID: CGDirectDisplayID?) {
         Thread.sleep(forTimeInterval: 0.6)
-        // `keepingFocus`: the window just opened is the one being typed into, and
-        // tiling ends by raising — which in Terminal *is* focusing. Without this the
-        // keystrokes after ⌘⌃C would land in whatever the fan put on top.
-        TerminalTiler.tile(onDisplay: displayID, keepingFocus: true)
+        TerminalTiler.tile(onDisplay: displayID)
     }
 
     private func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
