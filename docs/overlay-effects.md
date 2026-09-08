@@ -119,7 +119,11 @@ rule from the start.
   what is wanted here is white snow over whatever is on screen. **One number — depth
   0…1 — drives size, fall speed, brightness and sway width together**, so a flake can
   never read as a contradiction (big but distant, tiny but racing); near flakes are
-  20 px, bright and cross in ~5 s, far ones 5 px, faint and take ~9.5 s. Each falls
+  **40 px**, bright and cross in ~3.5 s, far ones **10 px**, faint and take ~6.5 s —
+  twice the size they started at, because at 5–20 px they read as specks on a
+  projected screen from the back of a room, which is the only place this is ever
+  watched from, and correspondingly faster, because a flake that big drifting at the
+  old speed reads as floating rather than falling. Each falls
   along a keyframed sine sway plus a net sideways drift, tumbling slowly (only
   `transform.rotation.z` is animated — the size is baked into the path, so nothing
   fights over `transform`), then **lands on the bottom edge and melts** over 1.4 s:
@@ -127,11 +131,22 @@ rule from the start.
   point is the hold. **Every flake enters through the top edge** — none is ever
   dropped in mid-screen, which reads as flakes materialising out of nowhere rather
   than as snow falling. So the opening cascade is stacked *above* the screen instead:
-  `snowSeedCount` = 26 flakes released at staggered heights over the top edge, at the
-  same constant fall speed (starting higher means entering *later*, never falling
-  faster), which fills the sky within ~2 s while each flake still makes the whole
-  journey down. Then 16 flakes/s, stopping `snowLastSpawnBeforeEnd` = 1.5 s before the
-  clip does — a flake entering the frame just as everything melts reads as a glitch.
+  `snowSeedCount` = 26 flakes released at staggered heights over the top edge (at most
+  **0.55** screens up, not 0.9 — a slow flake starting a whole screen higher spends
+  four seconds merely arriving), at the same constant fall speed (starting higher
+  means entering *later*, never falling faster), which fills the sky within ~2 s while
+  each flake still makes the whole journey down. Then 16 flakes/s, stopping
+  `snowLastSpawnBeforeEnd` before the clip does — and that constant is **derived, not
+  chosen**: `snowFallSecondsFar × snowMinDescentFraction` = 6.5 × ⅔ ≈ **4.3 s**, exactly
+  how long the slowest flake needs to reach the **lower third** of the screen. That is
+  the guarantee the whole emission schedule now exists to keep: **no flake is ever
+  melted before it has fallen two thirds of the way down**, because a flake dissolving
+  in mid-air halfway is read as a rendering glitch, not as snow. It used to be a flat
+  1.5 s, which only stopped a flake entering *as* everything melted — the ones released
+  in the last seconds still vanished in the top half. The cost is deliberate: emission
+  now runs 6.2 s of the 10.5 s clip instead of 9 s, so the sky thins over the last
+  few seconds while what is already in the air finishes its fall — which is what the
+  end of a snowfall looks like anyway.
   **The snowfall lasts exactly as long as the song**: the melt starts on the clip's
   last moment (an identity-guarded self-stop at `sfxDuration`, which is also the
   lifecycle rule's authoritative teardown) and the desktop is clear a second later.

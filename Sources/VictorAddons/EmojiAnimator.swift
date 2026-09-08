@@ -5759,9 +5759,28 @@ class EmojiAnimator {
     /// How long a landed flake lingers on the floor before it has melted away.
     private static let snowSettleSeconds: Double = 1.4
     private static let snowFadeSeconds: CFTimeInterval = 1.0
-    /// No new flake is released this close to the end of the clip — one entering
-    /// the frame just as everything melts reads as a glitch, not as snow.
-    private static let snowLastSpawnBeforeEnd: Double = 1.5
+    /// Seconds a flake takes to cross the whole screen, far (`0` depth) to near.
+    /// Faster than the 9.5…5.0 s this started with, and deliberately so: the
+    /// flakes are now twice the size, and at the old speed a big flake drifting
+    /// that slowly read as floating rather than falling. It is also what buys
+    /// the descent guarantee below inside a 10.5 s song.
+    private static let snowFallSecondsFar: Double = 6.5
+    private static let snowFallSecondsNear: Double = 3.5
+
+    /// **Every flake must get at least this far down the screen before anything
+    /// is allowed to melt it** — two thirds, i.e. into the lower third of the
+    /// picture. A flake dissolving in mid-air halfway down reads as a rendering
+    /// glitch; snow that makes it to the bottom of the frame reads as snow.
+    private static let snowMinDescentFraction: Double = 2.0 / 3.0
+
+    /// No new flake is released this close to the end of the clip. **Derived,
+    /// not chosen**: it is exactly how long the SLOWEST flake needs to reach the
+    /// lower third, so the guarantee above holds for every flake including the
+    /// last one released. (It was a flat 1.5 s, which only kept a flake from
+    /// entering *as* everything melted — the ones released in the last seconds
+    /// still vanished in the top half of the screen.)
+    private static let snowLastSpawnBeforeEnd: Double =
+        snowFallSecondsFar * snowMinDescentFraction
 
     /// Pending spawn (and self-stop) work items for the current snowfall, kept so
     /// an explicit stop — the song stopped on the tablet — can cancel the ones
@@ -5798,8 +5817,11 @@ class EmojiAnimator {
         // the screen instead: a batch released at staggered heights over the top
         // edge, so the sky fills within the first couple of seconds while each
         // flake still makes the whole journey down.
+        // Stacked at most 0.55 screens up, not 0.9: a slow flake starting a
+        // whole screen above the top spends four seconds merely arriving, and
+        // then cannot reach the lower third before the song ends.
         for _ in 0..<Self.snowSeedCount {
-            spawnSnowflake(into: container, startAbove: CGFloat.random(in: 0...0.9) * bounds.height)
+            spawnSnowflake(into: container, startAbove: CGFloat.random(in: 0...0.55) * bounds.height)
         }
 
         snowSpawns = []
@@ -5865,9 +5887,13 @@ class EmojiAnimator {
         // swings all come off it — so a flake can never read as a contradiction
         // (big but distant, tiny but racing). 0 = far, 1 = near.
         let depth = CGFloat.random(in: 0...1)
-        let radius = 5 + depth * 15
+        // 10…40 pt — twice the 5…20 this started at. At the old size the flakes
+        // read as specks on a projected screen from the back of a room, which is
+        // the only place this is ever watched from.
+        let radius = 10 + depth * 30
         let brightness = Float(0.35 + depth * 0.55)
-        let fallSeconds = 9.5 - Double(depth) * 4.5   // near flakes fall faster
+        let fallSeconds = Self.snowFallSecondsFar
+            - Double(depth) * (Self.snowFallSecondsFar - Self.snowFallSecondsNear)
 
         let flake = CAShapeLayer()
         flake.path = Self.snowflakePath(radius: radius)
