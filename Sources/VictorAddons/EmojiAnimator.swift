@@ -6398,7 +6398,7 @@ class EmojiAnimator {
         }
 
         let bounds = hostLayer.bounds
-        let width = bounds.width * 0.26
+        let width = bounds.width * 0.338         // 0.26 grown by 30% — the rider read too small
         let height = width * 373.0 / 498.0
         let travel = 5.0                          // ≈ 70_cavalry.mp3 duration (5.56s)
         let startX = -width / 2                   // fully offscreen left
