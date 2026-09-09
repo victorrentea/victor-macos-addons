@@ -6733,7 +6733,28 @@ class EmojiAnimator {
         imgLayer.add(fadeOut, forKey: "fadeOut")
     }
 
-    // MARK: - 🚪 Door (the screen itself swings open — sound #79)
+    // MARK: - 🚪 Door (a doorway is cut into the screen — sound #79)
+
+    /// Where the doorway is cut, as fractions of the screen with **y measured
+    /// from the top**. This is a *measurement, not a taste call*: Victor drew the
+    /// rectangle on a screenshot of his own desktop (2026-09-09) and the red
+    /// stroke's bounding box came out at x 0.3150…0.7015, y 0.1199…1.0000 of a
+    /// 2000 × 1293 capture — a tall portrait panel a little left of centre whose
+    /// sill sits **on the bottom edge of the screen**, the way a door stands on a
+    /// floor. Don't "improve" it without asking; do re-derive it if he draws
+    /// another one.
+    private static let doorCutout = CGRect(x: 0.3150, y: 0.1199,
+                                           width: 0.3865, height: 0.8801)
+
+    /// Where the opening sits inside `door-frame.png`, as fractions of that
+    /// image. The asset is the cartoon door frame with **the door itself cut
+    /// away** — the leaf, its outline and its shadow removed, and the bite it
+    /// took out of the frame's top lining repainted — so what is left is a bare
+    /// jamb with a transparent hole. These four numbers are what let the code
+    /// put that hole exactly on `doorCutout`; **regenerate the PNG and they must
+    /// be regenerated with it.**
+    private static let doorFrameOpening = (left: CGFloat(0.1055), right: CGFloat(0.8894),
+                                           top: CGFloat(0.0704), bottom: CGFloat(1.0))
 
     /// When the creak in `79_door.mp3` starts and when it has died away,
     /// measured off the clip (mono 8 kHz RMS envelope, 20 ms windows): silence
@@ -6754,46 +6775,66 @@ class EmojiAnimator {
     private static let doorTravelAtPeak: CGFloat = 0.55
 
     /// How far the leaf swings, in radians — 78°, not a full 90°, so it stays a
-    /// door caught mid-swing rather than a picture that folded itself away to
+    /// door caught mid-swing rather than a panel that folded itself away to
     /// nothing.
     private static let doorOpenAngle: CGFloat = -78 * .pi / 180
 
     /// Viewing distance for the perspective. Shorter = more dramatic foreshort-
-    /// ening; at 1400 pt against a 1728 pt-wide screen the far edge of the leaf
-    /// reads as clearly further away without the room-tilting distortion a
-    /// really short distance gives.
+    /// ening; at 1400 pt against a ~670 pt-wide leaf the far edge reads as
+    /// clearly further away without the room-tilting distortion a really short
+    /// distance gives.
     private static let doorPerspectiveDistance: CGFloat = 1400
 
-    /// How dark the leaf goes as it turns out of the light. This is what makes
-    /// the rotation legible at all: a screenshot swinging away from a desktop
-    /// that looks exactly like it is invisible until one of them dims.
-    private static let doorShadeOpacity: Float = 0.62
+    /// How dark the leaf goes as it turns out of the light — what tells the eye
+    /// this is a panel rotating rather than a rectangle being wiped away.
+    private static let doorShadeOpacity: Float = 0.55
 
-    /// The jamb's thickness as a fraction of the screen height, and the two
-    /// woods it is drawn in — dark frame, lighter bevel catching the light on
-    /// its inner lip.
-    private static let doorJambThickness: CGFloat = 0.028
-    private static let doorJambColor = NSColor(red: 0.20, green: 0.12, blue: 0.06, alpha: 1)
-    private static let doorBevelColor = NSColor(red: 0.42, green: 0.27, blue: 0.14, alpha: 1)
+    /// The frame arrives **before** the door moves (Victor, 2026-09-09: *"cu o
+    /// ramă care face fade-in înainte să se deschidă"*), and the clip hands us
+    /// exactly the right window for it: its 0.24 s of leading silence. The jamb
+    /// fades up through that silence and the hinge speaks the moment it is fully
+    /// there. The leaf needs no fade of its own — it is a photograph of the
+    /// pixels it is covering, so until it moves it is invisible by construction.
+    private static let doorFrameFadeIn: Double = doorCreakStart
 
-    /// 🚪 A photograph of the desktop becomes a door and swings open on its
-    /// creak, revealing the live desktop behind it.
+    /// What is behind the door. Not the live desktop: the leaf is a photograph
+    /// of exactly the region it covers, so opening onto the desktop would be
+    /// opening onto an identical picture — the swing would have nothing to
+    /// reveal. A dark room is what a door opens onto.
+    private static let doorVoidColor = NSColor(red: 0.04, green: 0.04, blue: 0.05, alpha: 1)
+
+    /// The knob, measured off the same artwork the frame came from: ~0.128 of
+    /// the leaf's width in from its free edge, at mid-height, radius ~0.075 of
+    /// the width — and in the door's own colour, so it still belongs to the
+    /// cartoon frame around it even though the leaf it sits on is a screenshot.
+    private static let doorKnobInsetX: CGFloat = 0.128
+    private static let doorKnobRadius: CGFloat = 0.075
+    private static let doorKnobColor = NSColor(red: 0.757, green: 0.498, blue: 0.329, alpha: 1)
+
+    /// 🚪 A doorway is cut into the desktop: the frame fades in over the clip's
+    /// silent lead-in, then **the rectangle of screen inside it swings open on
+    /// the creak** and a dark room is behind it.
     ///
-    /// The gag only works if three things line up, and each of them is a choice:
+    /// Four choices carry it, and each one was a fork:
     ///
-    /// - **The screenshot IS the leaf** (Victor, 2026-09-09), not a picture of a
-    ///   door laid over it. What swings away is the room's own screen.
-    /// - **The hinge is on the right, the knob on the left** — the way Victor
-    ///   drew it — and the leaf turns *away* from the viewer, so the left edge
-    ///   sweeps rightward and inward. Opening it toward the room would put the
-    ///   leaf over the very desktop it is uncovering.
-    /// - **The leaf darkens as it turns.** What is behind the door is the same
-    ///   desktop the door is a photo of, so without the shading the swing is
-    ///   invisible: two identical images sliding over each other.
+    /// - **The leaf is a cut-out of the screen, not the whole screen.** It is
+    ///   the `doorCutout` rectangle of the capture and nothing else, so the rest
+    ///   of the desktop is never touched — the door is a hole in the picture, not
+    ///   the picture itself (Victor, 2026-09-09).
+    /// - **The jamb is the artwork with the door deleted from it.** Extracting
+    ///   the frame from the reference PNG rather than drawing a rectangle is what
+    ///   makes it read as a *door* frame — the cream face, the black outline and
+    ///   the dark inner lining are all doing work that a stroked rect cannot.
+    /// - **Hinged on the right, knob on the left, turning away from the viewer**,
+    ///   the way both the reference art and Victor's own sketch have it. The
+    ///   leaf's `anchorPoint` is its right edge.
+    /// - **A dark room behind, and the leaf darkens as it turns.** See
+    ///   `doorVoidColor`: without something behind it, there is nothing for the
+    ///   door to open onto.
     ///
     /// **The Mac plays the clip itself, from this same call, and the audio waits
-    /// for the capture** — the FBI knock's bargain, and here the creak leaves
-    /// only 0.24 s of head start, less than a `screencapture` round trip.
+    /// for the capture** — the FBI knock's bargain, and here the frame's fade-in
+    /// leaves only 0.24 s of head start, less than a `screencapture` round trip.
     ///
     /// Returns the full length incl. any Bluetooth compensation, which
     /// `onSoundPlay` reports back to the tablet as `durationMs`.
@@ -6814,7 +6855,7 @@ class EmojiAnimator {
         // Tracked before the capture goes out (the FBI knock's reason: a second
         // tap has to be debounced, and a stop-all has to reach this, while the
         // subprocess is still running). The container is what is tracked because
-        // the jamb is a sibling of the leaf — they must live and die as one unit.
+        // jamb, leaf and dark room must live and die as one unit.
         let container = CALayer()
         container.frame = bounds
         // Perspective for the leaf's rotation. Applied to the container so it
@@ -6843,6 +6884,46 @@ class EmojiAnimator {
         return btComp + clipLength
     }
 
+    /// The doorway in overlay coordinates (bottom-origin), and the same rectangle
+    /// in the capture's own pixels (top-left origin, which is what
+    /// `CGImage.cropping` wants). Kept together because they are two readings of
+    /// one rectangle and drifting apart is the whole class of bug here.
+    private static func doorGeometry(bounds: CGRect, imageSize: CGSize)
+        -> (opening: CGRect, crop: CGRect) {
+        let c = doorCutout
+        let opening = CGRect(x: c.minX * bounds.width,
+                             // c.y is from the TOP; the overlay counts from the bottom.
+                             y: (1 - c.maxY) * bounds.height,
+                             width: c.width * bounds.width,
+                             height: c.height * bounds.height)
+        let crop = CGRect(x: c.minX * imageSize.width, y: c.minY * imageSize.height,
+                          width: c.width * imageSize.width,
+                          height: c.height * imageSize.height)
+        return (opening, crop)
+    }
+
+    /// Where `door-frame.png` has to be drawn so its hole lands exactly on the
+    /// opening. The frame is stretched to fit rather than scaled uniformly — the
+    /// asset's hole is a little narrower in proportion than the rectangle Victor
+    /// drew, so a uniform scale would either leave the jamb off the cut or crop
+    /// it; on a flat cartoon frame ~18 % of extra width on the posts is invisible.
+    private static func doorFrameRect(opening: CGRect) -> CGRect {
+        let o = doorFrameOpening
+        let w = opening.width / (o.right - o.left)
+        let h = opening.height / (o.bottom - o.top)
+        return CGRect(x: opening.minX - o.left * w,
+                      // Bottom-origin, so the offset that matters is how far the
+                      // asset reaches BELOW its own hole: (1 - o.bottom) of its
+                      // height. The frame has no threshold — the hole runs to the
+                      // asset's bottom edge — so that term is zero and the two
+                      // bottoms meet on the floor of the screen. Written as the
+                      // general form anyway: an asset WITH a threshold rail is the
+                      // obvious next version of this art, and it would otherwise
+                      // silently hang a jamb's worth of frame off the bottom.
+                      y: opening.minY - (1 - o.bottom) * h,
+                      width: w, height: h)
+    }
+
     private func startDoor(container: CALayer, screenshot: CGImage?, bounds: CGRect,
                            clipLength: Double, btComp: Double,
                            playSound: Bool, volume: Float?) {
@@ -6850,33 +6931,39 @@ class EmojiAnimator {
         let clock0 = CACurrentMediaTime() + btComp
 
         guard let screenshot = screenshot else { return }
+        let imageSize = CGSize(width: screenshot.width, height: screenshot.height)
+        let (opening, crop) = Self.doorGeometry(bounds: bounds, imageSize: imageSize)
 
-        // --- The leaf: the screen itself, hinged on its right edge -----------
+        // --- The dark room behind the door -----------------------------------
+        // Added first, so the leaf is painted over it. It needs no fade of its
+        // own: at rest the leaf covers it exactly.
+        let void = CALayer()
+        void.frame = opening
+        void.backgroundColor = Self.doorVoidColor.cgColor
+        container.addSublayer(void)
+
+        // --- The leaf: the cut-out of the screen, hinged on its right edge ----
         let leaf = CALayer()
-        leaf.contents = screenshot
-        leaf.contentsGravity = .resizeAspectFill
-        leaf.bounds = CGRect(origin: .zero, size: bounds.size)
+        leaf.contents = screenshot.cropping(to: crop) ?? screenshot
+        leaf.contentsGravity = .resize
+        leaf.bounds = CGRect(origin: .zero, size: opening.size)
         // anchorPoint BEFORE position: the position is read against the anchor,
         // and the whole point of this layer is that it turns about its right edge.
         leaf.anchorPoint = CGPoint(x: 1.0, y: 0.5)
-        leaf.position = CGPoint(x: bounds.maxX, y: bounds.midY)
-        leaf.isDoubleSided = false   // past 90° there is no back to show, so don't
+        leaf.position = CGPoint(x: opening.maxX, y: opening.midY)
+        leaf.isDoubleSided = false
         container.addSublayer(leaf)
 
-        // The knob, on the leaf so it swings with it. Victor drew it on the LEFT,
-        // i.e. on the free edge, which is where a knob goes on a right-hinged door.
-        let knobR = bounds.height * 0.024
+        // The knob, a sublayer of the leaf so it swings with it.
+        let knobR = opening.width * Self.doorKnobRadius
         let knob = CAShapeLayer()
-        knob.path = CGPath(ellipseIn: CGRect(x: -knobR, y: -knobR, width: knobR * 2, height: knobR * 2), transform: nil)
-        knob.bounds = CGRect(x: -knobR, y: -knobR, width: knobR * 2, height: knobR * 2)
-        knob.position = CGPoint(x: bounds.width * 0.055, y: bounds.height * 0.5)
-        knob.fillColor = NSColor(red: 0.85, green: 0.72, blue: 0.36, alpha: 1).cgColor   // brass
-        knob.strokeColor = NSColor(white: 0.15, alpha: 0.85).cgColor
-        knob.lineWidth = max(1.5, knobR * 0.14)
-        knob.shadowColor = NSColor.black.cgColor
-        knob.shadowOpacity = 0.5
-        knob.shadowRadius = knobR * 0.5
-        knob.shadowOffset = CGSize(width: -knobR * 0.25, height: -knobR * 0.25)
+        let knobBox = CGRect(x: -knobR, y: -knobR, width: knobR * 2, height: knobR * 2)
+        knob.path = CGPath(ellipseIn: knobBox, transform: nil)
+        knob.bounds = knobBox
+        knob.position = CGPoint(x: opening.width * Self.doorKnobInsetX, y: opening.height * 0.5)
+        knob.fillColor = Self.doorKnobColor.cgColor
+        knob.strokeColor = NSColor.black.cgColor
+        knob.lineWidth = max(1.5, knobR * 0.16)
         leaf.addSublayer(knob)
 
         // The shade that turns the leaf out of the light (see the note above).
@@ -6886,24 +6973,29 @@ class EmojiAnimator {
         shade.opacity = 0
         leaf.addSublayer(shade)
 
-        // --- The jamb: static, above the leaf, so the door turns behind it ---
-        let jamb = CAShapeLayer()
-        let thickness = bounds.height * Self.doorJambThickness
-        let opening = bounds.insetBy(dx: thickness, dy: thickness)
-        let ring = CGMutablePath()
-        ring.addRect(bounds)
-        ring.addRect(opening)
-        jamb.path = ring
-        jamb.fillRule = .evenOdd            // the opening is the hole in the frame
-        jamb.fillColor = Self.doorJambColor.cgColor
+        // --- The jamb: the artwork, above the leaf, so the door turns behind it
+        let jamb = CALayer()
+        if let url = Bundle.module.url(forResource: "door-frame", withExtension: "png"),
+           let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
+            jamb.contents = img
+        } else {
+            overlayError("door-frame.png not found in bundle")
+        }
+        jamb.frame = Self.doorFrameRect(opening: opening)
+        jamb.contentsGravity = .resize          // stretched to fit; see doorFrameRect
+        jamb.opacity = 0                        // fades in over the clip's silence
         container.addSublayer(jamb)
 
-        let bevel = CAShapeLayer()
-        bevel.path = CGPath(rect: opening, transform: nil)
-        bevel.fillColor = nil
-        bevel.strokeColor = Self.doorBevelColor.cgColor
-        bevel.lineWidth = max(2, thickness * 0.22)
-        container.addSublayer(bevel)
+        let frameIn = CABasicAnimation(keyPath: "opacity")
+        frameIn.fromValue = 0.0
+        frameIn.toValue = 1.0
+        frameIn.duration = Self.doorFrameFadeIn
+        frameIn.beginTime = clock0
+        frameIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        frameIn.fillMode = .both                // stays at 0 until it begins
+        frameIn.isRemovedOnCompletion = false
+        jamb.add(frameIn, forKey: "frameFadeIn")
 
         // --- The swing -------------------------------------------------------
         // Two segments, not one ease: the hinge is loudest while the door is
@@ -6941,8 +7033,8 @@ class EmojiAnimator {
         darken.isRemovedOnCompletion = false
         shade.add(darken, forKey: "doorShade")
 
-        // Frame and leaf leave together on the clip's last breath, handing the
-        // screen back to the desktop that was behind the door all along.
+        // Frame, leaf and dark room leave together on the clip's last breath,
+        // handing the screen back to the desktop that was under it all along.
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.beginTime = clock0 + clipLength - 0.4
         fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 9, 21:41"
+    static let BUILD_TIME = "Sep 9, 21:44"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -21,8 +21,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var cursorGlowItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
-    private(set) var liveCaptionsItem: NSMenuItem!
-    var onToggleLiveCaptions: (() -> Void)?
     private(set) var lidAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
@@ -376,21 +374,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         cursorGlowItem.state = CursorGlowSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(cursorGlowItem)
 
-        // 💬📺 Live Subtitles — a ticked state row, so it belongs here with the
-        // other ticked state rows rather than up among the actions, where it
-        // spent its first hour. It earns a row for the same reason 🔴 raw audio
-        // does: it *stays*, and it stays on the screen the room is looking at, so
-        // a tick answers "is the room being subtitled right now?" without
-        // pressing anything to find out — which is exactly what you cannot do
-        // mid-session. The row still carries ⌘⌃U, since a row that hides the key
-        // it duplicates teaches nobody anything.
-        liveCaptionsItem = NSMenuItem(title: "💬📺 Live Subtitles", action: #selector(toggleLiveCaptionsAction), keyEquivalent: "u")
-        liveCaptionsItem.keyEquivalentModifierMask = [.command, .control]
-        liveCaptionsItem.target = self
-        liveCaptionsItem.isEnabled = true
-        liveCaptionsItem.state = .off
-        extraSubmenu.addItem(liveCaptionsItem)
-
         // 🔄 Reverse Mouse Wheel — the Scroll Reverser replacement. It breaks
         // "the menu is not a second cheat-sheet" for the reason the 🔴 raw-audio
         // row does: there is no key to teach and no other place the state
@@ -726,19 +709,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         CursorGlowSettings.isEnabled = enabled
         cursorGlowItem.state = enabled ? .on : .off
         onCursorGlowEnabledChanged?(enabled)
-    }
-
-    /// 💬📺 Live Subtitles. The click only *asks*; the tick is set later by
-    /// `setLiveCaptions`, from whatever `LiveCaptions` actually did — the row must
-    /// never claim the room is being subtitled when it isn't.
-    @objc private func toggleLiveCaptionsAction() {
-        onToggleLiveCaptions?()
-    }
-
-    /// The truth about the band, from the band. Called for every route into it:
-    /// the ⌘⌃U key, this row, and `GET /test/captions`.
-    func setLiveCaptions(on: Bool) {
-        liveCaptionsItem?.state = on ? .on : .off
     }
 
     /// 🔄 Reverse Mouse Wheel. Unlike its neighbours this notifies nobody: the

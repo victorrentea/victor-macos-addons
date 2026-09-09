@@ -665,36 +665,71 @@ rule from the start.
     overlay. The capture then simply sits at scale 1 for the clip's last two seconds,
     which costs nothing: at scale 1 it is pixel-identical to the desktop under it.
 
-- **🚪 Door** (tile #79 `79_door.mp3`, `showDoor`): a photograph of the desktop **becomes
-  a door and swings open on its own creak**, revealing the live desktop behind it. Three
-  choices carry it, and each one was a fork:
+- **🚪 Door** (tile #79 `79_door.mp3`, `showDoor`): a **doorway is cut into the desktop**
+  — the jamb fades in over the clip's silent lead-in, then the rectangle of screen inside
+  it swings open on the creak and a dark room is behind it. Four choices carry it, and
+  each was a fork:
 
-  - **The screenshot IS the leaf** (Victor, 2026-09-09), not a picture of a door laid
-    over the screen. What swings away is the room's own screen.
+  - **The leaf is a cut-out of the screen, not the whole screen** (Victor, 2026-09-09).
+    `doorCutout` is a *measurement*: he drew the rectangle on a screenshot of his own
+    desktop and the red stroke's bounding box came out at **x 0.3150…0.7015, y
+    0.1199…1.0000** of a 2000 × 1293 capture — a tall portrait panel a little left of
+    centre whose sill sits **on the bottom edge of the screen**, the way a door stands on
+    a floor. The capture is `cropping(to:)` that rectangle in the image's own pixels, so
+    the rest of the desktop is never touched: the door is a hole in the picture, not the
+    picture itself. `doorGeometry` returns the overlay reading (bottom-origin points) and
+    the crop reading (top-left pixels) **together**, because they are two readings of one
+    rectangle and drifting apart is the whole class of bug here.
+  - **The jamb is the reference artwork with the door deleted out of it.**
+    `Resources/door-frame.png` (398 × 582, alpha) was cut from the cartoon door Victor
+    sent: the orange leaf, its outline and its cast shadow removed, the paper background
+    keyed out on a `min(r,g,b)` ramp so the black outline keeps its antialiasing, and —
+    the part that is easy to miss — **the bite the leaf's top corner took out of the
+    frame's own dark lining repainted** in the lining's colour, or the finished frame has
+    a notch in it. Extracting the frame rather than stroking a rectangle is what makes it
+    read as a *door* frame: the cream face, the black outline and the dark inner lining
+    are all doing work a `CAShapeLayer` border cannot. `doorFrameOpening` records where
+    the hole sits inside that PNG (0.1055 / 0.8894 / 0.0704 / 1.0) and `doorFrameRect`
+    is what lands the hole on the cut — **regenerate the PNG and those four numbers must
+    be regenerated with it.** The frame is *stretched*, not uniformly scaled: the asset's
+    hole is proportionally narrower than the rectangle Victor drew, so a uniform scale
+    would either leave the jamb off the cut or crop it, and ~18 % of extra width on a
+    flat cartoon post is invisible.
   - **Hinged on the right, knob on the left, turning away from the viewer** — the way
-    Victor drew it (knob circled at the left edge, an arrow sweeping right). The leaf's
-    `anchorPoint` is its right edge and it rotates about Y by `doorOpenAngle` = **−78°**
-    — not a full 90°, so it stays a door caught mid-swing rather than a picture that
-    folded itself away to nothing. Opening it *toward* the room would put the leaf over
-    the very desktop it is uncovering.
-  - **The leaf darkens as it turns** (`doorShadeOpacity` = 0.62, a black sublayer riding
-    on the leaf). This is not decoration: what is behind the door is the same desktop the
-    door is a photo of, so without the shading the swing is two identical images sliding
-    over each other — invisible.
+    both the reference art and Victor's own sketch have it. The leaf's `anchorPoint` is
+    its right edge and it rotates about Y by `doorOpenAngle` = **−78°**, not a full 90°,
+    so it stays a door caught mid-swing rather than a panel that folded itself away to
+    nothing. The knob is measured off the same artwork (0.128 of the leaf's width in from
+    the free edge, mid-height, r = 0.075 of the width) and drawn in the door's own colour,
+    so it still belongs to the cartoon frame even though the leaf under it is a
+    screenshot.
+  - **A dark room behind it, and the leaf darkens as it turns.** Both are load-bearing.
+    The leaf is a photograph of exactly the pixels it covers, so opening onto the live
+    desktop would be opening onto an identical picture — there would be nothing to
+    reveal; `doorVoidColor` is what a door opens onto. And the shading
+    (`doorShadeOpacity` = 0.55, a black sublayer riding on the leaf) is what tells the
+    eye this is a panel *rotating* rather than a rectangle being wiped away.
+
+  **The frame arrives before the door moves** (*"cu o ramă care face fade-in înainte să
+  se deschidă"*), and the clip hands us exactly the right window for it: its **0.24 s of
+  leading silence**. The jamb fades up through that silence and the hinge speaks the
+  moment it is fully there (`doorFrameFadeIn` is literally `doorCreakStart` — one number,
+  so they cannot drift). The leaf needs no fade of its own: until it moves it is
+  invisible by construction.
 
   The perspective (`m34 = −1/1400`) is set on the **container**'s `sublayerTransform`,
   not on the leaf: on the leaf it would only govern the knob and the shade riding on it,
-  and the swing would come out as a flat horizontal squash. The jamb is a `.evenOdd`
-  ring (`doorJambThickness` = 2.8 % of the height) plus a bevel stroke on its inner lip,
-  added **after** the leaf so the door turns behind its own frame; the brass knob is a
-  sublayer of the leaf so it swings with it. The swing occupies exactly the creak —
-  `doorCreakStart` 0.24 s to `doorCreakEnd` 1.30 s, measured off the clip (8 kHz RMS, 20
-  ms windows; silence until 0.24, loudest at 0.46–0.50, room tone after 1.30) — with
-  **55 % of the travel spent under the loud half** (`doorCreakPeak` /
-  `doorTravelAtPeak`), because a hinge is noisiest while the door is actually moving and
-  a door still swinging after its own creak has stopped is what gives this away. Same
-  routed-`/sound/play` ownership and same capture-then-audio order as Beethoven above,
-  for the same reason: 0.24 s is less head start than a `screencapture` needs.
+  and the swing would come out as a flat horizontal squash. The dark room is added
+  first, the leaf over it, the jamb last, so the door turns behind its own frame and in
+  front of its own doorway — painter's order, no depth buffer involved. The swing
+  occupies exactly the creak — `doorCreakStart` 0.24 s to `doorCreakEnd` 1.30 s, measured
+  off the clip (8 kHz RMS, 20 ms windows; silence until 0.24, loudest at 0.46–0.50, room
+  tone after 1.30) — with **55 % of the travel spent under the loud half**
+  (`doorCreakPeak` / `doorTravelAtPeak`), because a hinge is noisiest while the door is
+  actually moving and a door still swinging after its own creak has stopped is what gives
+  this away. Same routed-`/sound/play` ownership and same capture-then-audio order as
+  Beethoven above, for the same reason: 0.24 s is less head start than a `screencapture`
+  needs.
 
 - **☢️ Nuke bombardment — the clip, read frame by frame.** Everything below hangs off one
   measurement of `03_explosion.mp3` (3.28 s), so it is worth stating once. The clip is a
