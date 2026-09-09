@@ -42,7 +42,7 @@ class EmojiAnimator {
     // EVERY coffee under the cursor charges at once, each on its own clock, so
     // parking on a cluster inflates the whole cluster and they pop as they ripen;
     // what counts is how many actually explode. The cursor leaving a coffee's box
-    // cancels that one alone.
+    // releases that one alone, back into its rise.
     private struct CoffeeCharge {
         let layer: CATextLayer
         let start: CFTimeInterval
@@ -51,6 +51,15 @@ class EmojiAnimator {
     static let coffeeChargeSeconds: Double = 3.0
     private static let coffeeChargeGrowScale: CGFloat = 2.6
     private static let coffeeHitSlop: CGFloat = 34
+
+    // Every reaction emoji spawns at the same height and rides the same rise, which
+    // is what lets a released ☕ work out how far up it had already got without
+    // anyone bookkeeping its flight — see releaseCoffeeCharge.
+    private static let emojiSize: CGFloat = 91
+    private static let emojiSpawnY: CGFloat = 80
+    private static let emojiRiseHeight: CGFloat = 540
+    private static let emojiRiseScale: CGFloat = 1.3
+    private static let emojiRiseSeconds: Double = 3.25
 
     // Pulse: layers stored so clicking again can stop it
     private var pulseRunning = false
@@ -169,10 +178,10 @@ class EmojiAnimator {
 
     func spawnEmoji(_ emoji: String = "❤️", glow: String? = nil) {
         let fontSize: CGFloat = 78
-        let size: CGFloat = 91
+        let size = Self.emojiSize
 
         let spawnX: CGFloat = 100 + CGFloat.random(in: -56...56)
-        let spawnY: CGFloat = 80
+        let spawnY = Self.emojiSpawnY
 
         let layer = CATextLayer()
         layer.string = emoji
@@ -200,47 +209,62 @@ class EmojiAnimator {
 
         // Randomize duration: 2.5–4 seconds (matches browser host.js)
         let duration = Double.random(in: 2.5...4.0)
-        let riseHeight: CGFloat = 540
 
-        var animations: [CAAnimation] = []
+        addRiseAndFade(layer,
+                       from: layer.position,
+                       rise: Self.emojiRiseHeight,
+                       driftX: CGFloat.random(in: -50...50),
+                       duration: duration,
+                       scaleValues: [1.0, Self.emojiRiseScale],
+                       scaleKeyTimes: [0, 1],
+                       fadeStartFraction: 0.4,
+                       isCoffee: isCoffee)
+    }
 
-        // Rise with divergent drift (picks one random direction and goes)
-        let driftX = CGFloat.random(in: -50...50)
+    /// The flight every reaction emoji rides: a rise with a divergent sideways drift,
+    /// a slight growth and a fade-out, grouped so one completion block owns the
+    /// layer's removal. Factored out because a ☕ whose hold was abandoned REJOINS
+    /// this same flight from wherever it was frozen (`releaseCoffeeCharge`) instead of
+    /// being thrown away, and from there on it must fly — and die — exactly like the
+    /// ones nobody ever touched. `scaleValues`/`scaleKeyTimes` are the caller's
+    /// because that is the only part a resumed coffee needs different: it has to
+    /// shrink back down first.
+    private func addRiseAndFade(_ layer: CATextLayer,
+                                from start: CGPoint,
+                                rise: CGFloat,
+                                driftX: CGFloat,
+                                duration: Double,
+                                scaleValues: [CGFloat],
+                                scaleKeyTimes: [NSNumber],
+                                fadeStartFraction: Double,
+                                isCoffee: Bool) {
         let steps = 20
-        let startPoint = layer.position
-
         let path = CGMutablePath()
-        path.move(to: startPoint)
+        path.move(to: start)
         for i in 1...steps {
             let t = CGFloat(i) / CGFloat(steps)
-            let y = startPoint.y + riseHeight * t
-            let wobble = t * driftX
-            path.addLine(to: CGPoint(x: startPoint.x + wobble, y: y))
+            path.addLine(to: CGPoint(x: start.x + t * driftX, y: start.y + rise * t))
         }
 
         let pathAnim = CAKeyframeAnimation(keyPath: "position")
         pathAnim.path = path
         pathAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        animations.append(pathAnim)
 
-        // Scale growth (1.0 → 1.3, matches browser)
-        let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
-        scaleAnim.fromValue = 1.0
-        scaleAnim.toValue = 1.3
-        scaleAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        animations.append(scaleAnim)
+        let scaleAnim = CAKeyframeAnimation(keyPath: "transform.scale")
+        scaleAnim.values = scaleValues
+        scaleAnim.keyTimes = scaleKeyTimes
+        scaleAnim.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeOut),
+                                          count: max(scaleValues.count - 1, 1))
 
-        // Fade out (start fading at 40% of duration, matches browser)
         let fadeOut = CABasicAnimation(keyPath: "opacity")
         fadeOut.fromValue = 1.0
         fadeOut.toValue = 0.0
-        fadeOut.beginTime = duration * 0.4
-        fadeOut.duration = duration * 0.6
+        fadeOut.beginTime = duration * fadeStartFraction
+        fadeOut.duration = duration * (1 - fadeStartFraction)
         fadeOut.fillMode = .forwards
-        animations.append(fadeOut)
 
         let group = CAAnimationGroup()
-        group.animations = animations
+        group.animations = [pathAnim, scaleAnim, fadeOut]
         group.duration = duration
         group.fillMode = .forwards
         group.isRemovedOnCompletion = false
@@ -248,9 +272,9 @@ class EmojiAnimator {
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak layer] in
             guard let layer = layer else { return }
-            // If this coffee got caught mid-flight for a hold-charge, the charge
-            // owns its lifecycle now — don't let the original rise/fade removal
-            // pull it off screen underneath the growing hover.
+            // If this coffee got caught (again) mid-flight for a hold-charge, the
+            // charge owns its lifecycle now — don't let the rise/fade removal pull it
+            // off screen underneath the growing hover.
             if isCoffee, self?.coffeeCharges.contains(where: { $0.layer === layer }) == true { return }
             layer.removeFromSuperlayer()
             if isCoffee { self?.activeCoffeeLayers.removeAll { $0 === layer } }
@@ -270,9 +294,9 @@ class EmojiAnimator {
     /// Every coffee under the cursor charges simultaneously: parking on a cluster
     /// inflates all of them, each frozen in place and growing steadily (the growth is
     /// its own 3-second progress bar), and they pop as they ripen. Only the ones that
-    /// actually explode count. A coffee whose box the cursor has left is cancelled
-    /// individually — the others keep charging. A generous hit slop keeps both the
-    /// catch and the hold forgiving.
+    /// actually explode count. A coffee whose box the cursor has left is released
+    /// individually — it shrinks back and resumes its rise, the others keep charging.
+    /// A generous hit slop keeps both the catch and the hold forgiving.
     func tickCoffeeCharge(cursorGlobalPoint globalPoint: CGPoint) -> [CGPoint] {
         guard let frame = Self.builtInScreenFrame() else { return [] }
         // Overlay panel covers the built-in screen; its layer origin (0,0) sits at
@@ -284,12 +308,12 @@ class EmojiAnimator {
             (layer.presentation()?.frame ?? layer.frame).insetBy(dx: -pad, dy: -pad)
         }
 
-        // --- Charging ones: complete, cancel, or keep each on its own clock ---
+        // --- Charging ones: complete, release, or keep each on its own clock ---
         var exploded: [CGPoint] = []
         var stillCharging: [CoffeeCharge] = []
         for charge in coffeeCharges {
             if !box(charge.layer).contains(p) {
-                cancelCoffeeCharge(charge.layer)
+                releaseCoffeeCharge(charge.layer)
             } else if now - charge.start >= Self.coffeeChargeSeconds {
                 let at = explodeCoffee(charge.layer)
                 exploded.append(CGPoint(x: at.x + frame.origin.x, y: at.y + frame.origin.y))
@@ -327,19 +351,42 @@ class EmojiAnimator {
         layer.add(grow, forKey: "charge")
     }
 
-    /// Cursor slipped off this coffee before its hold finished — let it fade away and
-    /// go. Only this one is dropped; any sibling coffees keep charging.
-    private func cancelCoffeeCharge(_ layer: CATextLayer) {
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = layer.presentation()?.opacity ?? 1
-        fade.toValue = 0
-        fade.duration = 0.3
-        fade.fillMode = .forwards
-        fade.isRemovedOnCompletion = false
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak layer] in layer?.removeFromSuperlayer() }
-        layer.add(fade, forKey: "cancel")
-        CATransaction.commit()
+    /// Cursor slipped off this coffee before its hold finished. Hesitating is NOT
+    /// fatal to the cup: it shrinks back to the size it would have had by now and
+    /// carries on rising from where it was frozen, catchable again on the way up, as
+    /// if it had never been touched. (It used to fade out on the spot, which read as
+    /// the coffee being killed for having been hovered.) Only this one is released;
+    /// any sibling coffees keep charging.
+    private func releaseCoffeeCharge(_ layer: CATextLayer) {
+        let pres = layer.presentation()
+        let pos = pres?.position ?? layer.position
+        let heldScale = CGFloat((pres?.value(forKeyPath: "transform.scale") as? Double) ?? 1)
+        layer.removeAllAnimations()
+        layer.position = pos
+        layer.opacity = 1
+        layer.transform = CATransform3DIdentity
+
+        // How far along the standard flight it was when caught — every emoji starts at
+        // the same y and climbs the same height, so the frozen position says it all.
+        let flightStartY = Self.emojiSpawnY + Self.emojiSize / 2
+        let progress = min(max((pos.y - flightStartY) / Self.emojiRiseHeight, 0), 1)
+        let remaining = 1 - progress
+        let duration = max(0.5, Self.emojiRiseSeconds * Double(remaining))
+        // Snap back to the size the untouched flight would be at now (~0.3s), then
+        // resume growing towards the usual 1.3 over what is left of the climb.
+        let settled = 1 + (Self.emojiRiseScale - 1) * progress
+        let snapBack = min(0.3 / duration, 0.5)
+
+        activeCoffeeLayers.append(layer)   // back in the pool: hoverable again
+        addRiseAndFade(layer,
+                       from: pos,
+                       rise: Self.emojiRiseHeight * remaining,
+                       driftX: CGFloat.random(in: -50...50) * remaining,
+                       duration: duration,
+                       scaleValues: [heldScale, settled, Self.emojiRiseScale],
+                       scaleKeyTimes: [0, NSNumber(value: snapBack), 1],
+                       fadeStartFraction: 0.4,
+                       isCoffee: true)
     }
 
     /// The hold completed: the coffee doesn't get a 💥 pasted on top of it — it
