@@ -5,9 +5,10 @@ import ApplicationServices
 /// Snaps each Terminal window to the nearest free quadrant of its current monitor.
 /// Minimizes total movement (greedy nearest-pair — fine for a handful of windows
 /// per monitor). Windows stay on whichever display they currently occupy. From the
-/// fifth window on there is no whole quadrant left, so a quadrant **splits into
-/// rows** — bottom-right first, then bottom-left, top-right, top-left. Nothing
-/// overlaps anything, ever; see `TerminalTileLayout`.
+/// fifth window on there is no whole quadrant left, so the extras **cascade inside
+/// one** — Windows-style, each a step smaller than the one behind it and pinned to
+/// the quadrant's bottom-right corner, filling bottom-right, then bottom-left,
+/// top-right, top-left; see `TerminalTileLayout`.
 ///
 /// Window geometry is read/written through the in-process **Accessibility API**
 /// (`AXUIElement`), which relies only on this app's own Accessibility grant — the
@@ -34,8 +35,10 @@ enum TerminalTiler {
     /// **Tiling never moves the keyboard.** The window that was being typed in is
     /// noted before anything is raised and raised once more at the very end, so it
     /// is the one left focused — arranging windows is not a reason to make the next
-    /// keystrokes land in a different terminal. Since the tiles no longer overlap,
-    /// that final raise costs nothing at all: there is no window it can cover.
+    /// keystrokes land in a different terminal. It is free for the three quadrants
+    /// holding a single window; the one case where the two rules collide is a
+    /// focused window at the *back* of a pile, where putting the keyboard back
+    /// covers the smaller windows lying on it — and the keyboard wins.
     static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
         let displays = getDisplays()
         let focused = focusedWindow()
@@ -175,14 +178,16 @@ enum TerminalTiler {
     // MARK: - Stacking order
 
     /// Raise every window on the display in **slot order**: top-left, top-right,
-    /// bottom-left, bottom-right, each quadrant's rows top to bottom.
+    /// bottom-left, bottom-right, and inside each quadrant its pile from the
+    /// deepest window (the whole quadrant) to the smallest.
     ///
-    /// The tiles no longer overlap, so this is no longer about which title bar
-    /// covers which — it is about the whole set of terminals coming up **above the
-    /// other apps** on that screen. A window that was buried under Chrome is still
-    /// buried after it has been given a frame, and a tile you cannot see has not
-    /// been tiled. The order is kept deterministic anyway so the z-order after
-    /// ⌘⌃A is reproducible and a second press changes nothing visible.
+    /// That order is the pile: raising deepest-first leaves every window in front
+    /// of the bigger one behind it, so every title bar and every Claude bubble in
+    /// the pile stays visible. Reversed, the arrangement is technically cascaded
+    /// and practically a single window (2026-09-08: *"restul sunt una sub alta"*).
+    /// It also brings the whole set of terminals **above the other apps** on that
+    /// screen — a window buried under Chrome is still buried after it has been
+    /// given a frame, and a tile you cannot see has not been tiled.
     ///
     /// **Depth and the keyboard are the same thing here.** Measured 2026-09-08:
     /// `kAXRaiseAction` on a Terminal window makes it the key window, and the other

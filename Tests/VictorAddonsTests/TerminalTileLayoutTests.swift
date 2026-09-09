@@ -1,10 +1,11 @@
 import XCTest
 @testable import VictorAddons
 
-/// Where ⌘⌃A puts each Terminal window — quadrants for four, and from the fifth
-/// on a quadrant split into rows (bottom-right first, then bottom-left, top-right,
-/// top-left) so that nothing is ever piled on anything — and, just as much, what
-/// it does *not* do: move a window that is already in place.
+/// Where ⌘⌃A puts each Terminal window — quadrants for four, and from the fifth on
+/// a Windows-style cascade *inside* one quadrant (bottom-right first, then
+/// bottom-left, top-right, top-left), each window pinned to the quadrant's
+/// bottom-right corner so the pile can never spill out of its quarter — and, just
+/// as much, what it does *not* do: move a window that is already in place.
 final class TerminalTileLayoutTests: XCTestCase {
 
     private typealias Rect = TerminalTileLayout.Rect
@@ -34,19 +35,16 @@ final class TerminalTileLayoutTests: XCTestCase {
 
     // MARK: - Slot order
 
-    /// The array is the display read top to bottom: the four quadrants in order,
-    /// each already sliced into the rows it has to hold. `TerminalTiler` raises
-    /// windows in this order, and it is also the order that makes the layout
-    /// readable as a list.
-    func testSlotsComeInQuadrantOrderEachQuadrantSlicedIntoItsRows() {
-        let slots = TerminalTileLayout.targets(count: 7, display: display)
-        XCTAssertEqual(slots.count, 7)
-        // 7 = one each, then the extras to bottom-right, bottom-left, top-right.
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 7), [1, 2, 2, 2])
-        XCTAssertEqual(slots[0], quads[0])
-        XCTAssertEqual(Array(slots[1...2]), TerminalTileLayout.rows(count: 2, in: quads[1]))
-        XCTAssertEqual(Array(slots[3...4]), TerminalTileLayout.rows(count: 2, in: quads[2]))
-        XCTAssertEqual(Array(slots[5...6]), TerminalTileLayout.rows(count: 2, in: quads[3]))
+    /// The array is the display read quadrant by quadrant, each pile deepest window
+    /// first. `TerminalTiler` raises windows in this order, which is what leaves
+    /// every title bar in a pile showing.
+    func testSlotsComeInQuadrantOrderEachQuadrantPiledDeepestFirst() {
+        let slots = TerminalTileLayout.targets(count: 6, display: display)
+        XCTAssertEqual(slots.count, 6)
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 6, display: display), [1, 1, 1, 3])
+        XCTAssertEqual(Array(slots.prefix(3)), [quads[0], quads[1], quads[2]])
+        XCTAssertEqual(Array(slots[3...5]), TerminalTileLayout.cascade(count: 3, in: quads[3]))
+        XCTAssertEqual(slots[3], quads[3], "the deepest window of a pile is the whole quadrant")
     }
 
     func testFourWindowsOrFewerGetPlainQuadrants() {
@@ -56,67 +54,108 @@ final class TerminalTileLayoutTests: XCTestCase {
 
     // MARK: - Filling order
 
-    /// Bottom-right takes the fifth window, bottom-left the sixth, top-right the
-    /// seventh, top-left the eighth — then round again.
-    func testExtrasGoBottomRightThenBottomLeftThenTopRightThenTopLeft() {
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 5), [1, 1, 1, 2])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 6), [1, 1, 2, 2])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 7), [1, 2, 2, 2])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 8), [2, 2, 2, 2])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 9), [2, 2, 2, 3])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 13), [3, 3, 3, 4])
+    /// A quadrant is filled to its depth before the next one is touched: the
+    /// bottom-right takes the fifth window *and every window after it* until it is
+    /// full, and only then does the bottom-left start piling.
+    func testAQuadrantFillsToItsDepthBeforeTheNextOneIsTouched() {
+        XCTAssertEqual(TerminalTileLayout.depth(in: quads[3]), 6,
+                       "six windows to a pile, and a ~998×598 quadrant has room for them")
+        XCTAssertEqual(TerminalTileLayout.depth(in: Rect(x: 0, y: 0, w: 500, h: 400)), 4,
+                       "a small screen runs out of room before it runs out of pile")
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 5, display: display), [1, 1, 1, 2])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 6, display: display), [1, 1, 1, 3])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 9, display: display), [1, 1, 1, 6])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 10, display: display), [1, 1, 2, 6])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 14, display: display), [1, 1, 6, 6])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 24, display: display), [6, 6, 6, 6])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 25, display: display), [6, 6, 6, 7],
+                       "past four full piles the extras go round again and the steps tighten")
+    }
+
+    func testNoQuadrantEverHoldsMoreThanSixUntilEveryQuadrantIsFull() {
+        for n in 1...24 {
+            let caps = TerminalTileLayout.capacities(count: n, display: display)
+            XCTAssertLessThanOrEqual(caps.max()!, TerminalTileLayout.maxDepth, "\(n) windows: \(caps)")
+        }
     }
 
     func testEveryWindowIsAccountedForByTheCapacities() {
-        for n in 1...20 {
-            let caps = TerminalTileLayout.capacities(count: n)
+        for n in 1...40 {
+            let caps = TerminalTileLayout.capacities(count: n, display: display)
             XCTAssertEqual(caps.reduce(0, +), max(4, n))
         }
     }
 
-    // MARK: - Splitting a quadrant
+    // MARK: - The cascade itself
 
-    func testRowsFillTheQuadrantExactlyAndNeverOverlap() {
-        for k in 1...5 {
-            let rows = TerminalTileLayout.rows(count: k, in: quads[3])
-            XCTAssertEqual(rows.count, k)
-            XCTAssertEqual(rows.first!.y, quads[3].y)
-            XCTAssertEqual(rows.last!.y2, quads[3].y2)
-            for r in rows {
-                XCTAssertEqual(r.x, quads[3].x, "a row keeps the full width — the title is what we are protecting")
-                XCTAssertEqual(r.w, quads[3].w)
-            }
-            for (a, b) in zip(rows, rows.dropFirst()) {
-                XCTAssertEqual(a.y2, b.y, "rows abut: no overlap, no seam")
+    func testThePileIsPinnedToTheQuadrantsBottomRightCorner() {
+        let quad = quads[3]
+        for k in 1...6 {
+            let pile = TerminalTileLayout.cascade(count: k, in: quad)
+            XCTAssertEqual(pile.count, k)
+            XCTAssertEqual(pile.first!, quad, "the deepest window is the whole quadrant")
+            for r in pile {
+                XCTAssertEqual(r.x2, quad.x2, "\(k): the right edge is nailed to the quadrant's")
+                XCTAssertEqual(r.y2, quad.y2, "\(k): so is the bottom edge")
+                XCTAssertTrue(r.x >= quad.x && r.y >= quad.y, "\(k): the pile stays in its quarter")
             }
         }
     }
 
-    /// The whole point of the change: no window is ever laid on top of another.
-    func testNoTwoSlotsEverOverlap() {
-        for n in 1...16 {
+    /// A step exposes a whole title bar of the window behind, and twice as much of
+    /// its right edge — enough to read which session it is and to see the Claude
+    /// bubble spinning in it.
+    func testEachStepExposesATitleBarAndTwiceThatOfTheRightEdge() {
+        let pile = TerminalTileLayout.cascade(count: 4, in: quads[3])
+        for (a, b) in zip(pile, pile.dropFirst()) {
+            XCTAssertEqual(b.y - a.y, TerminalTileLayout.titleStep)
+            XCTAssertEqual(b.x - a.x, TerminalTileLayout.titleStep * TerminalTileLayout.sideRatio)
+        }
+    }
+
+    /// The floor that defines "full": however many windows a quadrant ends up
+    /// holding, the smallest of them still has half the quadrant's width and half
+    /// its height — a quarter of its area.
+    func testNoWindowEverShrinksBelowAQuarterOfItsQuadrant() {
+        for k in 1...40 {
+            for r in TerminalTileLayout.cascade(count: k, in: quads[3]) {
+                XCTAssertGreaterThanOrEqual(r.w * 2, quads[3].w, "\(k) windows: \(r) is too narrow")
+                XCTAssertGreaterThanOrEqual(r.h * 2, quads[3].h, "\(k) windows: \(r) is too short")
+            }
+        }
+    }
+
+    /// Two windows of a pile are never the same frame — one of them would be
+    /// invisible behind the other, and the assignment could not tell them apart.
+    func testEverySlotOnTheDisplayIsADistinctFrame() {
+        for n in 1...32 {
             let slots = TerminalTileLayout.targets(count: n, display: display)
-            for (i, a) in slots.enumerated() {
-                for b in slots[(i + 1)...] {
-                    let overlaps = a.x < b.x2 && b.x < a.x2 && a.y < b.y2 && b.y < a.y2
-                    XCTAssertFalse(overlaps, "\(n) windows: \(a) overlaps \(b)")
-                }
+            XCTAssertEqual(Set(slots).count, slots.count, "\(n) windows: two slots coincide")
+        }
+    }
+
+    func testNoPileEverLeavesItsOwnQuadrant() {
+        for n in 1...32 {
+            let slots = TerminalTileLayout.targets(count: n, display: display)
+            for s in slots {
+                let home = quads.first { $0.x <= s.x && $0.y <= s.y && s.x2 <= $0.x2 && s.y2 <= $0.y2 }
+                XCTAssertNotNil(home, "\(n) windows: \(s) is in no quadrant")
             }
         }
     }
 
-    func testTheFifthWindowHalvesTheBottomRightQuadrantAndTheOthersKeepTheirs() {
+    func testTheFifthWindowCascadesOnTheBottomRightQuadrantAndTheOthersKeepTheirs() {
         let windows = [win(100, 100), win(1500, 100), win(100, 800), win(1500, 800), win(1600, 1100)]
         let out = TerminalTileLayout.frames(windows: windows, display: display)
         XCTAssertEqual(Array(out.prefix(3)), [quads[0], quads[1], quads[2]])
-        XCTAssertEqual(Set([out[3], out[4]]), Set(TerminalTileLayout.rows(count: 2, in: quads[3])))
+        XCTAssertEqual(Set([out[3], out[4]]), Set(TerminalTileLayout.cascade(count: 2, in: quads[3])))
     }
 
     // MARK: - Re-tiling must not shuffle
 
     /// The bug that made ⌘⌃A a game of musical chairs: slots used to go to the
-    /// four *front-most* windows, and raising the fan made the fan front-most, so
-    /// every press swapped the fan with the tiles.
+    /// four *front-most* windows, and raising the pile made the pile front-most, so
+    /// every press swapped the pile with the tiles.
     func testTilingAnAlreadyTiledScreenChangesNothing() {
         let windows = (0..<7).map { _ in win(50, 50) }
         let once = TerminalTileLayout.frames(windows: windows, display: display)
@@ -139,7 +178,8 @@ final class TerminalTileLayoutTests: XCTestCase {
     func testADraggedWindowGoesBackToTheSlotItLeftAndTakesNoOneElsesplace() {
         var laidOut = TerminalTileLayout.frames(windows: (0..<6).map { _ in win(50, 50) },
                                                 display: display)
-        let strayed = Rect(x: laidOut[4].x + 90, y: laidOut[4].y + 40, w: 400, h: 300)
+        let strayed = Rect(x: laidOut[4].x + 20, y: laidOut[4].y + 10,
+                           w: laidOut[4].w, h: laidOut[4].h)
         let wanted = laidOut[4]
         laidOut[4] = strayed
         let out = TerminalTileLayout.frames(windows: laidOut, display: display)
@@ -151,7 +191,7 @@ final class TerminalTileLayoutTests: XCTestCase {
         let windows = (0..<9).map { i in win(i * 40, i * 30) }
         let out = TerminalTileLayout.frames(windows: windows, display: display)
         XCTAssertEqual(out.count, 9)
-        XCTAssertEqual(Set(out.map { "\($0)" }).count, 9)
+        XCTAssertEqual(Set(out).count, 9)
     }
 
     // MARK: - Screens that are not at the origin

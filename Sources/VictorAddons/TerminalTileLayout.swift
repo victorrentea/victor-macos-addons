@@ -7,39 +7,53 @@ import Foundation
 /// so the decisions below can be unit-tested — the same split as
 /// `TerminalZoomSizeLockPolicy` and `TerminalZoomTargetPolicy`.
 ///
-/// **Nothing ever overlaps.** Four windows fill the quadrants; the fifth and up
-/// *split a quadrant in two* rather than being piled on top of one. The first cut
-/// of this (2026-09-08) fanned the extras diagonally over the bottom-right tile,
-/// each stepped 32 pt down-right so a strip of every title bar stayed exposed —
-/// and a strip is not the same thing as a window. 2026-09-09: *"never never
-/// overlap tiles like this one over the other — create separate tiles per
-/// quadrant"*. A title bar you can only see a corner of tells you a window exists;
-/// a title bar you can see whole tells you **which** session it is and blinks its
-/// Claude glyph when that session has something to say, which is the actual reason
-/// for pressing ⌘⌃A.
+/// **Four windows fill the quadrants; the fifth and up cascade inside one.** A
+/// quadrant holds a Windows-style pile: the deepest window *is* the whole
+/// quadrant, and every window in front of it is a little smaller, pinned to the
+/// quadrant's **bottom-right corner**, so it never leaves the quarter it belongs
+/// to. What the shrinking exposes is an L of the window behind: `titleStep` (32 pt)
+/// of height, which is a whole Terminal title bar, and twice that of width, which
+/// is enough of the right edge to see the Claude activity bubble spinning in a
+/// session you are not looking at. Those two numbers are the entire design — the
+/// pile is read along its top-left staircase, and a step has to be tall enough to
+/// name the session and wide enough to show whether it is working.
 ///
-/// **The quadrants take the extras in a fixed order: bottom-right, bottom-left,
-/// top-right, top-left** (`fillOrder`). So the fifth window halves the
-/// bottom-right quadrant, the sixth halves the bottom-left, the seventh the
-/// top-right, the eighth the top-left, and the ninth goes back to the bottom-right
-/// for a third slice. The order starts at the bottom because that is where the
-/// hands and the eyes already are — the top of the screen is the half you glance
-/// at, the bottom the half you work in.
+/// The first cut of this (2026-09-08) stepped the extras down-right *without*
+/// pinning them, so the pile walked out of its quadrant and shrank on both edges
+/// at once. The second (2026-09-09) banned overlap altogether and cut a quadrant
+/// into rows, which is worse still: four terminals sliced into rows are four
+/// terminals you cannot use. 2026-09-09, after seeing both: *"like in Windows,
+/// tiling of windows in a cascade style from larger to smaller, always bound"*.
 ///
-/// **A quadrant splits into rows, never columns.** Halving the width would halve
-/// the *title*, and the title is what all of this is protecting; halving the height
-/// costs lines of scrollback, which is the cheaper thing to lose.
+/// **A pile is six windows deep and no more** (`maxDepth`, 2026-09-09: *"max 6
+/// terminals per stack"*) — six title bars is already more than a glance takes in,
+/// and a seventh step eats screen the terminal underneath needs. A window also
+/// never shrinks past half the quadrant on either axis (a quarter of its area,
+/// `minFraction`), which is the floor on small screens where six nominal steps
+/// would not fit; `depth(in:)` is whichever of the two limits bites first.
+///
+/// **The quadrants fill in a fixed order: bottom-right, bottom-left, top-right,
+/// top-left** (`fillOrder`), each one **to its capacity** before the next is
+/// touched. The order starts at the bottom because that is where the hands and the
+/// eyes already are — the top of the screen is the half you glance at, the bottom
+/// the half you work in. Past four full quadrants the extras are dealt round-robin
+/// and the steps tighten rather than the windows shrinking without bound.
+///
+/// **Depth order is slot order.** Each quadrant's cascade comes back deepest
+/// first, and `TerminalTiler` raises the windows in exactly that order, so every
+/// window ends up in front of the bigger one behind it and every title bar on the
+/// screen stays readable. Get that backwards and the pile is technically cascaded
+/// and practically invisible (2026-09-08: *"restul sunt una sub alta"*).
 ///
 /// **A window keeps the slot it is already in.** Which window goes where is decided
 /// by *where it currently sits*, never by z-order: pressing ⌘⌃A twice must be a
 /// no-op. It used to hand the four quadrants to the four front-most windows, so the
 /// windows that had just been raised swapped places with the tiles on every press
 /// (2026-09-08: *"le cam face shuffle"*). Matching is greedy nearest-pair on window
-/// **origin and size**, not centre: the two halves of a split quadrant have
-/// centres of their own, but a whole quadrant and its top half share an origin, so
-/// the size term is what tells them apart. A window already on its target matches
-/// at cost 0 and wins it before anything else can, which is what makes re-tiling
-/// idempotent.
+/// **origin and size**, not centre: two windows of the same pile share a centre
+/// almost exactly, while their origins differ by a whole step. A window already on
+/// its target matches at cost 0 and wins it before anything else can, which is what
+/// makes re-tiling idempotent.
 enum TerminalTileLayout {
 
     struct Rect: Hashable {
@@ -52,10 +66,30 @@ enum TerminalTileLayout {
     /// Gap left between quadrants (and against the top of the screen).
     static let margin = 2
 
-    /// Which quadrant takes the next window once all four are occupied:
-    /// bottom-right first, then bottom-left, top-right, top-left. Indices into
-    /// `quadrants(of:)`.
+    /// Which quadrant fills first once all four are occupied: bottom-right, then
+    /// bottom-left, top-right, top-left. Indices into `quadrants(of:)`.
     static let fillOrder = [3, 2, 1, 0]
+
+    /// How much of the window behind is left showing at the top: a Terminal title
+    /// bar is ~28 pt tall, so 32 exposes a whole one — the session's name.
+    static let titleStep = 32
+
+    /// …and how much at the right, as a multiple of `titleStep`: twice as wide,
+    /// because the right edge has to show more than an edge — the Claude activity
+    /// bubble has to be visible in a window you are not looking at.
+    static let sideRatio = 2
+
+    /// The smallest a cascaded window may get, as a divisor of the quadrant: half
+    /// the width and half the height, i.e. a quarter of the quadrant's area.
+    static let minFraction = 2
+
+    /// How many windows one quadrant piles up before the next quadrant is started.
+    /// Six is a number of title bars the eye still reads as a list.
+    static let maxDepth = 6
+
+    /// Steps never fall below this, however crowded a quadrant gets — a step of
+    /// zero would hide a window completely behind the one in front of it.
+    static let minStep = 6
 
     // MARK: - Quadrants
 
@@ -71,40 +105,81 @@ enum TerminalTileLayout {
 
     // MARK: - Layout
 
+    /// How many windows `quad` holds: `maxDepth`, unless the quadrant is too small
+    /// to take that many nominal steps without breaking the `minFraction` floor —
+    /// the deepest window plus as many steps as fit in the half of the quadrant
+    /// that may be given away, whichever axis runs out first.
+    static func depth(in quad: Rect) -> Int {
+        let vertical = quad.h / minFraction / titleStep
+        let horizontal = quad.w / minFraction / (titleStep * sideRatio)
+        return min(maxDepth, 1 + max(1, min(vertical, horizontal)))
+    }
+
     /// How many windows each quadrant holds, in quadrant order, for `count`
-    /// windows on the display. Everyone gets one, then the extras are dealt out
-    /// round-robin in `fillOrder` — so the bottom-right quadrant is always the
-    /// most crowded and the top-left the least.
-    static func capacities(count: Int) -> [Int] {
+    /// windows on the display. Everyone gets one; the extras then **fill one
+    /// quadrant at a time** in `fillOrder` — bottom-right to its `depth`, then
+    /// bottom-left, and so on — which is why the bottom of the screen is deep and
+    /// the top stays a single window each for as long as possible. Once all four
+    /// are full the rest are dealt round-robin and the steps tighten.
+    static func capacities(count: Int, display: Rect) -> [Int] {
         var caps = [Int](repeating: 1, count: 4)
         guard count > 4 else { return caps }
-        for i in 0..<(count - 4) { caps[fillOrder[i % 4]] += 1 }
+        let quads = quadrants(of: display)
+        var left = count - 4
+        for q in fillOrder where left > 0 {
+            let take = min(left, depth(in: quads[q]) - 1)
+            caps[q] += take
+            left -= take
+        }
+        var i = 0
+        while left > 0 {
+            caps[fillOrder[i % 4]] += 1
+            left -= 1
+            i += 1
+        }
         return caps
     }
 
-    /// `count` full-width rows stacked down `quad`, abutting exactly the way the
-    /// quadrants themselves abut — no overlap, no gap, no pixel of the quadrant
-    /// left over. Integer division is done on the *edges* rather than on the
-    /// height so the rounding error cannot accumulate into a seam.
-    static func rows(count: Int, in quad: Rect) -> [Rect] {
+    /// `count` windows cascading over `quad`, **deepest first**: slot 0 is the
+    /// whole quadrant, and each one after it is stepped down-and-right from the
+    /// quadrant's top-left corner while its bottom-right corner stays nailed to
+    /// the quadrant's own — so the pile shrinks towards that corner and never
+    /// spills onto a neighbouring quarter.
+    ///
+    /// The step is the nominal one (a title bar tall, twice that wide) unless the
+    /// quadrant is holding more windows than it comfortably fits, in which case it
+    /// tightens so the last window still keeps half the quadrant's width and half
+    /// its height. Dividing the *available spread* rather than shrinking each
+    /// window in turn is what keeps the pile bounded however many terminals are
+    /// open.
+    static func cascade(count: Int, in quad: Rect) -> [Rect] {
         guard count > 1 else { return count == 1 ? [quad] : [] }
+        let steps = count - 1
+        let dy = max(minStep, min(titleStep,
+                                  quad.h / minFraction / steps,
+                                  quad.w / minFraction / steps / sideRatio))
+        let dx = dy * sideRatio
         return (0..<count).map { i in
-            let top = quad.y + quad.h * i / count
-            let bottom = quad.y + quad.h * (i + 1) / count
-            return Rect(x: quad.x, y: top, w: quad.w, h: bottom - top)
+            let offX = min(i * dx, quad.w / minFraction)
+            let offY = min(i * dy, quad.h / minFraction)
+            return Rect(x: quad.x + offX, y: quad.y + offY,
+                        w: quad.w - offX, h: quad.h - offY)
         }
     }
 
     /// Every slot on the display, in **layout order**: the four quadrants
-    /// (top-left, top-right, bottom-left, bottom-right), each one already split
-    /// into as many rows as it has to hold. Exactly `count` slots come back once
-    /// there are more windows than quadrants, and they tile the screen without
-    /// overlapping.
+    /// (top-left, top-right, bottom-left, bottom-right), each one already piled as
+    /// deep as it has to be, deepest window first. Exactly `count` slots come back
+    /// once there are more windows than quadrants.
+    ///
+    /// That order is also the order the windows are raised in, which is why it is
+    /// the order the array is in: within a quadrant, raising deepest-to-shallowest
+    /// leaves every title bar showing.
     static func targets(count: Int, display: Rect) -> [Rect] {
         let quads = quadrants(of: display)
         guard count > quads.count else { return quads }
-        let caps = capacities(count: count)
-        return quads.enumerated().flatMap { rows(count: caps[$0.offset], in: $0.element) }
+        let caps = capacities(count: count, display: display)
+        return quads.enumerated().flatMap { cascade(count: caps[$0.offset], in: $0.element) }
     }
 
     /// Which slot each window goes to, as an index into `targets(count:display:)`
@@ -151,9 +226,9 @@ enum TerminalTileLayout {
     }
 
     /// How far a window is from a slot: corner distance, plus half the size
-    /// mismatch. Corners separate the rows of a split quadrant from each other;
-    /// the size term is what separates a whole quadrant from its own top row,
-    /// which share a corner exactly.
+    /// mismatch. Corners separate the windows of one pile from each other; the
+    /// size term separates a whole quadrant from a window merely sitting in its
+    /// top-left corner, which share a corner exactly.
     private static func cost(_ a: Rect, _ b: Rect) -> Int {
         abs(a.x - b.x) + abs(a.y - b.y) + (abs(a.w - b.w) + abs(a.h - b.h)) / 2
     }
