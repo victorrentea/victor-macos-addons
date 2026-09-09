@@ -14,6 +14,52 @@ final class CropFlashGeometryTests: XCTestCase {
 
     private let screen = CGRect(x: 0, y: 0, width: 1728, height: 1117)
 
+    // MARK: - ⌥, the box drawn from its middle
+
+    func testCenteredBoxGrowsBothWaysAroundTheStartPoint() {
+        let box = CropFlashGeometry.centeredRect(center: CGPoint(x: 800, y: 500),
+                                                 corner: CGPoint(x: 900, y: 560),
+                                                 within: screen)
+        XCTAssertEqual(box, CGRect(x: 700, y: 440, width: 200, height: 120))
+        XCTAssertEqual(box.midX, 800)
+        XCTAssertEqual(box.midY, 500)
+    }
+
+    func testCenteredBoxIsTheSameWhicheverCornerTheMouseIsOn() {
+        let center = CGPoint(x: 800, y: 500)
+        let upRight = CropFlashGeometry.centeredRect(center: center, corner: CGPoint(x: 900, y: 560), within: screen)
+        let downLeft = CropFlashGeometry.centeredRect(center: center, corner: CGPoint(x: 700, y: 440), within: screen)
+        XCTAssertEqual(upRight, downLeft)
+    }
+
+    func testCenteredBoxIsCutOnBothSidesAtAnEdge() {
+        // 60 pt from the left edge: the mouse asking for 300 gets 60 on each
+        // side, because a box centred here cannot be wider than that.
+        let box = CropFlashGeometry.centeredRect(center: CGPoint(x: 60, y: 500),
+                                                 corner: CGPoint(x: 360, y: 560),
+                                                 within: screen)
+        XCTAssertEqual(box, CGRect(x: 0, y: 440, width: 120, height: 120))
+        XCTAssertEqual(box.midX, 60, "the middle is the one thing ⌥ must not move")
+        XCTAssertTrue(screen.contains(box))
+    }
+
+    func testCenteredBoxOnTheEdgeItselfIsEmptyRatherThanInverted() {
+        let box = CropFlashGeometry.centeredRect(center: CGPoint(x: 0, y: 1117),
+                                                 corner: CGPoint(x: 400, y: 700),
+                                                 within: screen)
+        XCTAssertEqual(box, CGRect(x: 0, y: 1117, width: 0, height: 0))
+    }
+
+    func testCenteredBoxMovesWithTheSameClampAsAnyOtherBox() {
+        // ⌥ combined with ⌘: what travels is the box ⌥ drew, and it still stops
+        // at the edge instead of walking off.
+        let box = CropFlashGeometry.centeredRect(center: CGPoint(x: 800, y: 500),
+                                                 corner: CGPoint(x: 900, y: 560),
+                                                 within: screen)
+        let moved = CropFlashGeometry.moved(box, by: CGVector(dx: -5000, dy: 0), within: screen)
+        XCTAssertEqual(moved, CGRect(x: 0, y: 440, width: 200, height: 120))
+    }
+
     func testClampedPointStaysInsideTheScreen() {
         XCTAssertEqual(CropFlashGeometry.clamped(CGPoint(x: -40, y: 500), within: screen),
                        CGPoint(x: 0, y: 500))

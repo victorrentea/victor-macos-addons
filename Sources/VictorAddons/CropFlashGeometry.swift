@@ -1,8 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Pure geometry for the crosshair crop: building the dragged rectangle, moving
-/// it while ⌘ is held, and keeping it inside the screen it was started on.
+/// Pure geometry for the crosshair crop: building the dragged rectangle —
+/// corner-to-corner, or centred on the start point while ⌥ is held — moving it
+/// while ⌘ is held, and keeping it inside the screen it was started on.
 ///
 /// Every decision here is arithmetic, so it is decided here and unit-tested
 /// here — the overlay above it only has to draw what this says. Same bargain as
@@ -15,6 +16,26 @@ enum CropFlashGeometry {
     static func rect(from a: CGPoint, to b: CGPoint) -> CGRect {
         CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
                width: abs(a.x - b.x), height: abs(a.y - b.y))
+    }
+
+    /// The box ⌥ draws: `center` is the point the drag started from and the
+    /// mouse is a **corner**, so the rectangle grows in both directions at once
+    /// around a fixed middle — the way you frame something you are already
+    /// pointing at, instead of hunting for its top-left corner first.
+    ///
+    /// The screen is honoured *symmetrically*: a half-extent that would push one
+    /// edge off `bounds` is cut on **both** sides, because half a box off the
+    /// screen is no longer centred on anything. That is why this cannot be
+    /// `rect(from:to:)` + `clamped(_:within:)` — clamping one corner keeps the
+    /// box on screen but silently moves its middle.
+    static func centeredRect(center: CGPoint, corner: CGPoint, within bounds: CGRect) -> CGRect {
+        func half(_ reach: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+            max(0, min(reach, min(low, high)))
+        }
+        let halfW = half(abs(corner.x - center.x), center.x - bounds.minX, bounds.maxX - center.x)
+        let halfH = half(abs(corner.y - center.y), center.y - bounds.minY, bounds.maxY - center.y)
+        return CGRect(x: center.x - halfW, y: center.y - halfH,
+                      width: halfW * 2, height: halfH * 2)
     }
 
     /// The free corner can be dragged anywhere the mouse goes — but the mouse

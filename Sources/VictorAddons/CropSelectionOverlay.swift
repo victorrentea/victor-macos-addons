@@ -6,7 +6,8 @@ import QuartzCore
 ///
 /// **Why we stopped using the system's crosshair.** The selection had to learn
 /// one thing macOS's own only offers on the **space bar**: a box you are still
-/// dragging can be *moved* whole, instead of resized. `screencapture -i` cannot
+/// dragging can be *moved* whole, instead of resized (and, with ⌥, drawn out
+/// from its middle rather than from a corner). `screencapture -i` cannot
 /// be told to read ⌘ for that, and translating ⌘ into a synthetic space keypress
 /// means posting a key into a subprocess that owns the screen — one that
 /// arrives, if the modifier leaks, as ⌘Space, i.e. Spotlight over the workshop's
@@ -65,8 +66,9 @@ final class CropSelectionOverlay {
     private var startScreen: NSScreen?
     /// Set on the ⌘ press, cleared on the release: where the mouse and the box
     /// were when the move began, so the translation is always measured from
-    /// there rather than accumulated.
-    private var moveOrigin: (mouse: NSPoint, anchor: NSPoint, free: NSPoint)?
+    /// there rather than accumulated. `centered` is remembered too — ⌥ changes
+    /// what the box *is*, so toggling it mid-move restarts the measurement.
+    private var moveOrigin: (mouse: NSPoint, anchor: NSPoint, free: NSPoint, box: NSRect, centered: Bool)?
     private var finished = false
 
     private init(completion: @escaping (Selection?) -> Void) {
@@ -143,10 +145,15 @@ final class CropSelectionOverlay {
         }
 
         guard let bounds = startScreen?.frame else { finish(nil); return }
-        let moving = NSEvent.modifierFlags.contains(.command)
+        let flags = NSEvent.modifierFlags
+        let moving = flags.contains(.command)
+        // ⌥ held: the point the drag started from stops being a corner and
+        // becomes the *middle* of the box, with the mouse still on a corner.
+        let centered = flags.contains(.option)
 
-        if moving, moveOrigin == nil {
-            moveOrigin = (mouse: mouse, anchor: anchor, free: freeCorner(for: mouse))
+        if moving, moveOrigin?.centered != centered {
+            moveOrigin = (mouse: mouse, anchor: anchor, free: grabbedCorner(for: mouse, centered: centered),
+                          box: currentRect(for: mouse, centered: centered), centered: centered)
         } else if !moving {
             moveOrigin = nil
         }
@@ -155,15 +162,14 @@ final class CropSelectionOverlay {
             // ⌘ held: the box travels with the mouse instead of being resized —
             // and stops at the edges of its own screen rather than walking off.
             let raw = CGVector(dx: mouse.x - origin.mouse.x, dy: mouse.y - origin.mouse.y)
-            let box = CropFlashGeometry.rect(from: origin.anchor, to: origin.free)
-            let delta = CropFlashGeometry.clampedTranslation(of: box, by: raw, within: bounds)
+            let delta = CropFlashGeometry.clampedTranslation(of: origin.box, by: raw, within: bounds)
             anchor = NSPoint(x: origin.anchor.x + delta.dx, y: origin.anchor.y + delta.dy)
             freeOffset = CGVector(dx: origin.free.x + delta.dx - mouse.x,
                                   dy: origin.free.y + delta.dy - mouse.y)
         }
 
-        let rect = CropFlashGeometry.rect(from: anchor, to: freeCorner(for: mouse))
-        render(selection: rect, cursor: mouse, moving: moving)
+        let rect = currentRect(for: mouse, centered: centered)
+        render(selection: rect, cursor: mouse, moving: moving, centered: centered)
 
         guard !leftDown else { return }
 
@@ -188,6 +194,28 @@ final class CropSelectionOverlay {
         dragging = true
     }
 
+    /// The box as it stands this tick: corner-to-corner from the anchor, or —
+    /// with ⌥ down — centred on the anchor with the mouse on a corner.
+    private func currentRect(for mouse: NSPoint, centered: Bool) -> NSRect {
+        let free = freeCorner(for: mouse)
+        guard centered, let bounds = startScreen?.frame else {
+            return CropFlashGeometry.rect(from: anchor, to: free)
+        }
+        return CropFlashGeometry.centeredRect(center: anchor, corner: free, within: bounds)
+    }
+
+    /// The corner a ⌘-move takes hold of: the one the *box* actually has, not
+    /// the raw mouse corner. In centred mode an edge may already be holding the
+    /// half-extent back, and carrying that unused reach into the move would let
+    /// the box grow on its way across the screen instead of just travelling.
+    private func grabbedCorner(for mouse: NSPoint, centered: Bool) -> NSPoint {
+        let free = freeCorner(for: mouse)
+        guard centered else { return free }
+        let box = currentRect(for: mouse, centered: true)
+        return NSPoint(x: free.x >= anchor.x ? box.maxX : box.minX,
+                       y: free.y >= anchor.y ? box.maxY : box.minY)
+    }
+
     /// The corner the mouse is dragging, held inside the starting screen.
     private func freeCorner(for mouse: NSPoint) -> NSPoint {
         let raw = NSPoint(x: mouse.x + freeOffset.dx, y: mouse.y + freeOffset.dy)
@@ -197,7 +225,7 @@ final class CropSelectionOverlay {
 
     // MARK: - Drawing
 
-    private func render(selection: NSRect?, cursor: NSPoint, moving: Bool) {
+    private func render(selection: NSRect?, cursor: NSPoint, moving: Bool, centered: Bool = false) {
         for entry in panels {
             let origin = entry.screen.frame.origin
             let local = selection.map { NSRect(x: $0.minX - origin.x, y: $0.minY - origin.y,
@@ -205,7 +233,8 @@ final class CropSelectionOverlay {
             entry.view.render(selection: local,
                               cursor: NSPoint(x: cursor.x - origin.x, y: cursor.y - origin.y),
                               size: selection.map { CGSize(width: $0.width.rounded(), height: $0.height.rounded()) },
-                              moving: moving)
+                              moving: moving,
+                              centered: centered)
         }
     }
 }
@@ -272,7 +301,7 @@ private final class CropOverlayView: NSView {
     override func rightMouseUp(with event: NSEvent) {}
     override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
 
-    func render(selection: NSRect?, cursor: NSPoint, size: CGSize?, moving: Bool) {
+    func render(selection: NSRect?, cursor: NSPoint, size: CGSize?, moving: Bool, centered: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -289,8 +318,11 @@ private final class CropOverlayView: NSView {
             vGuide.isHidden = true
             hGuide.isHidden = true
             hint.layer.isHidden = true
+            var suffix = ""
+            if centered { suffix += "   ⦿ centru" }
+            if moving { suffix += "   ✥ mut" }
             place(sizeLabel,
-                  text: "\(Int(size.width)) × \(Int(size.height))\(moving ? "   ✥ mut" : "")",
+                  text: "\(Int(size.width)) × \(Int(size.height))\(suffix)",
                   near: selection)
         } else {
             border.isHidden = true
@@ -302,9 +334,10 @@ private final class CropOverlayView: NSView {
             vGuide.frame = CGRect(x: cursor.x.rounded(), y: 0, width: 1, height: bounds.height)
             hGuide.frame = CGRect(x: 0, y: cursor.y.rounded(), width: bounds.width, height: 1)
             sizeLabel.layer.isHidden = true
-            // The hold is the one gesture nothing on screen reveals; ⌘ is the
-            // second. Say both once, while there is still nothing else to read.
-            place(hint, text: "trage o zonă  ·  ⌘ mută selecția  ·  Esc anulează",
+            // The hold is the one gesture nothing on screen reveals; ⌘ and ⌥
+            // are the others. Say them once, while there is still nothing else
+            // to read.
+            place(hint, text: "trage o zonă  ·  ⌘ mută  ·  ⌥ din centru  ·  Esc anulează",
                   near: nil, cursor: cursor)
         }
     }
