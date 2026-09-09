@@ -52,6 +52,61 @@ final class TerminalTileLayoutTests: XCTestCase {
         XCTAssertEqual(TerminalTileLayout.targets(count: 1, display: display), quads)
     }
 
+    // MARK: - The focused window
+
+    /// Only the front-most slot of a quadrant has nothing stacked on it, and with a
+    /// pile on the screen the quadrants still holding one window are the biggest of
+    /// those — so those are where the keyboard may go.
+    func testTheBestSlotsAreTheUnobstructedWholeQuadrants() {
+        XCTAssertEqual(TerminalTileLayout.topSlots(count: 6, display: display), [0, 1, 2])
+        XCTAssertEqual(TerminalTileLayout.topSlots(count: 4, display: display), [0, 1, 2, 3],
+                       "four equal quadrants, nothing stacked: every one of them is the best")
+    }
+
+    /// The window being typed in comes out of the pile and onto a whole quadrant —
+    /// the largest surface with nothing lying on top of it — and, among the equally
+    /// good ones, the nearest, so it travels no further than it has to.
+    func testTheFocusedWindowGetsAWholeQuadrantInsteadOfASlotInThePile() {
+        let windows = [win(100, 100), win(1500, 100), win(100, 800)]
+            + (0..<3).map { win(1500 + $0 * 40, 800 + $0 * 40) }
+        let out = TerminalTileLayout.frames(windows: windows, display: display, focused: 5)
+        XCTAssertEqual(out[5], quads[1], "the whole quadrant nearest the pile it came out of")
+        XCTAssertEqual(Set(out).count, windows.count, "and nobody is left sharing a slot")
+        XCTAssertFalse(out.dropLast().contains(quads[1]), "nor sitting where it used to be")
+    }
+
+    /// Whichever window has the keyboard, it lands on a quadrant no other window is
+    /// stacked on — never on a slot in a cascade.
+    func testNoFocusedWindowEverEndsUpInsideAPile() {
+        let windows = (0..<9).map { win(100 + $0 * 30, 100 + $0 * 30) }
+        for focused in windows.indices {
+            let out = TerminalTileLayout.frames(windows: windows, display: display, focused: focused)
+            XCTAssertTrue(quads.contains(out[focused]),
+                          "window \(focused) landed on \(out[focused]), not a whole quadrant")
+        }
+    }
+
+    /// When every candidate is the same size — four windows, four quadrants — the
+    /// nearest one is the one the focused window already sits in, so pinning it
+    /// moves nothing and ⌘⌃A twice is still a no-op.
+    func testPinningTheFocusedWindowMovesNothingWhenEveryQuadrantIsEqual() {
+        let windows = [win(1500, 800), win(100, 100), win(1500, 100), win(100, 800)]
+        let plain = TerminalTileLayout.frames(windows: windows, display: display)
+        for focused in windows.indices {
+            XCTAssertEqual(TerminalTileLayout.frames(windows: windows, display: display,
+                                                     focused: focused), plain)
+        }
+    }
+
+    /// Pressing ⌘⌃A again with the same window focused finds it already on its
+    /// slot and leaves the whole screen alone.
+    func testRetilingWithTheSameWindowFocusedChangesNothing() {
+        let windows = [win(100, 100), win(1500, 100), win(100, 800)]
+            + (0..<4).map { win(1500 + $0 * 40, 800 + $0 * 40) }
+        let once = TerminalTileLayout.frames(windows: windows, display: display, focused: 6)
+        XCTAssertEqual(TerminalTileLayout.frames(windows: once, display: display, focused: 6), once)
+    }
+
     // MARK: - Filling order
 
     /// A quadrant is filled to its depth before the next one is touched: the

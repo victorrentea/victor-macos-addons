@@ -32,13 +32,17 @@ enum TerminalTiler {
     /// (⌘⌃T / ⌘⌃C / ⌘⌃Q) tiles the screen it just landed on and leaves the
     /// windows on every other screen exactly where they were — the gesture said
     /// "make room here", not "rearrange all my monitors".
-    /// **Tiling never moves the keyboard.** The window that was being typed in is
-    /// noted before anything is raised and raised once more at the very end, so it
-    /// is the one left focused — arranging windows is not a reason to make the next
-    /// keystrokes land in a different terminal. It is free for the three quadrants
-    /// holding a single window; the one case where the two rules collide is a
-    /// focused window at the *back* of a pile, where putting the keyboard back
-    /// covers the smaller windows lying on it — and the keyboard wins.
+    /// **Tiling never moves the keyboard, and it gives it the best seat.** The
+    /// window that was being typed in is noted before anything is moved: it is
+    /// pinned to the largest slot nothing else is stacked on top of
+    /// (`TerminalTileLayout.topSlots` — in practice a whole quadrant, usually the
+    /// top-left, since `fillOrder` piles the bottom of the screen first), and it is
+    /// raised once more at the very end, so it is the one left focused. Arranging
+    /// windows is not a reason to make the next keystrokes land in a different
+    /// terminal, and the terminal being typed in is the one that should be big and
+    /// unobstructed. Those two used to collide when the focused window sat at the
+    /// back of a pile — raising it last covered the windows lying on it; now it is
+    /// never at the back of a pile in the first place.
     static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
         let displays = getDisplays()
         let focused = focusedWindow()
@@ -55,7 +59,10 @@ enum TerminalTiler {
         for (di, ws) in groups {
             if let displayID, displays[di].id != displayID { continue }
             let slots = TerminalTileLayout.targets(count: ws.count, display: displays[di].usable)
-            let assignment = TerminalTileLayout.assign(windows: ws.map { $0.rect }, targets: slots)
+            let assignment = TerminalTileLayout.assign(
+                windows: ws.map { $0.rect }, targets: slots,
+                pinning: focused.flatMap { f in ws.firstIndex { CFEqual($0.win, f) } },
+                to: TerminalTileLayout.topSlots(count: ws.count, display: displays[di].usable))
             for (i, w) in ws.enumerated() {
                 let f = slots[assignment[i]]
                 setWindowFrame(w.win, x: f.x, y: f.y, w: f.w, h: f.h)

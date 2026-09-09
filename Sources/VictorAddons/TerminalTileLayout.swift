@@ -57,6 +57,21 @@ import Foundation
 /// almost exactly, while their origins differ by a whole step. A window already on
 /// its target matches at cost 0 and wins it before anything else can, which is what
 /// makes re-tiling idempotent.
+///
+/// **…except the window that has the keyboard, which gets the best slot on the
+/// screen.** `topSlots` is the front-most slot of every quadrant — the ones nothing
+/// is stacked on top of — narrowed to those of the largest area, and the focused
+/// window is pinned to whichever of them it is nearest before anything else is
+/// matched (2026-09-09: *"the terminal … focused at the beginning of the tile … in
+/// the position that has the largest surface and is also on top of the others"*).
+/// With four windows or fewer every quadrant is that size, so the nearest one is
+/// the one the window is already in and nothing moves; once a pile exists, the
+/// quadrants still holding a single window are strictly bigger than any cascaded
+/// slot, so the keyboard is lifted out of the pile onto a whole quadrant — usually
+/// the top-left, the last one `fillOrder` gets round to. This is also what settles
+/// the old collision between "the keyboard stays put" and "the pile stays
+/// readable": the focused window is raised last by `TerminalTiler`, and now it sits
+/// where being on top covers nothing.
 enum TerminalTileLayout {
 
     struct Rect: Hashable {
@@ -186,17 +201,44 @@ enum TerminalTileLayout {
         return quads.enumerated().flatMap { cascade(count: caps[$0.offset], in: $0.element) }
     }
 
+    /// The slots worth giving the keyboard: **unobstructed and as large as they
+    /// come**. Only the front-most slot of a quadrant has nothing lying on it, so
+    /// those four are the candidates; of them, the biggest win. Empty piles make
+    /// this the whole quadrant, which is why a focused window is pulled out of a
+    /// cascade and onto a quarter of the screen, and why with four windows — four
+    /// quadrants, one area — every slot ties and the pin costs no movement.
+    ///
+    /// Indices into `targets(count:display:)`, in quadrant order, so ties are
+    /// broken towards the top-left: the quadrant `fillOrder` reaches last, hence
+    /// the one most likely to still be a single window.
+    static func topSlots(count: Int, display: Rect) -> [Int] {
+        let slots = targets(count: count, display: display)
+        guard !slots.isEmpty else { return [] }
+        let caps = count > 4 ? capacities(count: count, display: display) : [Int](repeating: 1, count: 4)
+        var fronts: [Int] = []
+        var index = 0
+        for cap in caps where index < slots.count {
+            fronts.append(min(index + cap - 1, slots.count - 1))
+            index += cap
+        }
+        let best = fronts.map { slots[$0].w * slots[$0].h }.max() ?? 0
+        return fronts.filter { slots[$0].w * slots[$0].h == best }
+    }
+
     /// Which slot each window goes to, as an index into `targets(count:display:)`
-    /// — in the same order as `windows`.
-    static func assign(windows: [Rect], display: Rect) -> [Int] {
-        assign(windows: windows, targets: targets(count: windows.count, display: display))
+    /// — in the same order as `windows`. `focused` is the window holding the
+    /// keyboard, if it is one of these; it is served first, out of `topSlots`.
+    static func assign(windows: [Rect], display: Rect, focused: Int? = nil) -> [Int] {
+        let slots = targets(count: windows.count, display: display)
+        return assign(windows: windows, targets: slots,
+                      pinning: focused, to: topSlots(count: windows.count, display: display))
     }
 
     /// Target frame for every window, in the order given.
-    static func frames(windows: [Rect], display: Rect) -> [Rect] {
+    static func frames(windows: [Rect], display: Rect, focused: Int? = nil) -> [Rect] {
         guard !windows.isEmpty else { return [] }
         let slots = targets(count: windows.count, display: display)
-        return assign(windows: windows, targets: slots).map { slots[$0] }
+        return assign(windows: windows, display: display, focused: focused).map { slots[$0] }
     }
 
     /// Greedy nearest-pair matching: repeatedly take the closest window/slot pair
@@ -205,7 +247,15 @@ enum TerminalTileLayout {
     /// takes it before any other pair is even considered, so a layout that is
     /// already tiled reproduces itself exactly. Ties break on window order, so the
     /// result never depends on dictionary or timing luck.
-    static func assign(windows: [Rect], targets: [Rect]) -> [Int] {
+    ///
+    /// `pinning` takes its slot before the greedy pass runs at all: the focused
+    /// window is handed the cheapest of `candidates` — the nearest of the biggest
+    /// unobstructed slots — and everyone else is matched around that. Nearest, not
+    /// first, so that when the candidates tie (four windows, four equal quadrants)
+    /// the pin lands on the slot the window already occupies and re-tiling stays
+    /// the no-op it is meant to be.
+    static func assign(windows: [Rect], targets: [Rect],
+                       pinning focused: Int? = nil, to candidates: [Int] = []) -> [Int] {
         var pairs: [(cost: Int, w: Int, t: Int)] = []
         pairs.reserveCapacity(windows.count * targets.count)
         for (i, w) in windows.enumerated() {
@@ -220,6 +270,13 @@ enum TerminalTileLayout {
         var out = [Int](repeating: -1, count: windows.count)
         var takenSlot = [Bool](repeating: false, count: targets.count)
         var placed = 0
+        if let focused, windows.indices.contains(focused),
+           let slot = candidates.filter({ targets.indices.contains($0) })
+               .min(by: { cost(windows[focused], targets[$0]) < cost(windows[focused], targets[$1]) }) {
+            out[focused] = slot
+            takenSlot[slot] = true
+            placed += 1
+        }
         for p in pairs where out[p.w] == -1 && !takenSlot[p.t] {
             out[p.w] = p.t
             takenSlot[p.t] = true
