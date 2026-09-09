@@ -77,6 +77,8 @@ class TabletHttpServer {
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
         case testScreenshotMark
+        /// 💬📺 Toggle the live subtitle band — same as ⌘⌃U.
+        case testCaptions
         /// Fire the 🔥 Whip overlay — same action as ⌃W (test hook).
         case testWhip
         /// Crack the whip programmatically (scripted mouse-flick) — same as the
@@ -255,6 +257,7 @@ class TabletHttpServer {
     var onTestTranscriptPicker: ((String?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
     var onTestScreenshotMark: (() -> Void)?
+    var onTestCaptions: (() -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
@@ -479,6 +482,8 @@ class TabletHttpServer {
                 self.onTestScreenshotCrop?()
             case .testScreenshotMark:
                 self.onTestScreenshotMark?()
+            case .testCaptions:
+                self.onTestCaptions?()
             case .testWhip:
                 self.onTestWhip?()
             case .testWhipCrack:
@@ -696,6 +701,8 @@ class TabletHttpServer {
             return .testScreenshotCrop
         case "/test/screenshot/mark":
             return .testScreenshotMark
+        case "/test/captions":
+            return .testCaptions
         case "/test/whip":
             return .testWhip
         case "/test/whip/crack":

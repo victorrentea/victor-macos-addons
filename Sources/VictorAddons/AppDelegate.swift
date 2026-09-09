@@ -35,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var keymapHoldCoordinator: KeymapHoldCoordinator?
     private var keymapHoldWorkItem: DispatchWorkItem?
     private var transcriptPasteController: TranscriptPasteController?
+    private var liveCaptions: LiveCaptions?
     private var coreAudioManager: CoreAudioManager?
     private var bluetoothKeepAlive: BluetoothKeepAlive?
     /// 🎵 Pushes the dictation window to the Chrome extension that pauses music.
@@ -1046,6 +1047,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
         tabletServer?.onTestScreenshotMark = { DispatchQueue.main.async { ScreenCaptureFlash.markCursor(at: NSEvent.mouseLocation) } }
+        tabletServer?.onTestCaptions = { [weak self] in DispatchQueue.main.async { self?.liveCaptions?.toggle() } }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         // Goes through `self` rather than capturing the controller: this whole
         // block wires the server long before `transcriptPasteController` is
@@ -1444,6 +1446,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         let transcriptPaste = TranscriptPasteController(transcriptionFolder: transcriptionFolder)
         self.transcriptPasteController = transcriptPaste
 
+        // 💬📺 The subtitle band reads the same transcript, forward-only and from
+        // wherever the file happens to be when it is switched on. Off at launch,
+        // deliberately: it draws on the screen the room is watching, so it is the
+        // last thing that should come up by itself.
+        self.liveCaptions = LiveCaptions(transcriptionFolder: transcriptionFolder)
+
         // Flux inbox poller: every 10 min, but only while on battery. It is a
         // notifier, not an actor — a banner and a log line, nothing more. The
         // inbox is a public address, so message text is untrusted input and is
@@ -1590,6 +1598,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                                       existing: AppDelegate.notesTab)
             }
         }
+        eventTap.onToggleLiveCaptions = { [weak self] in self?.liveCaptions?.toggle() }
         eventTap.onOpenFocusPlaylist = { [weak self] in
             // The screen is sampled NOW, on the keypress, and carried through the
             // fetch: `FocusPlaylist` reads the mix page to learn which tracks are

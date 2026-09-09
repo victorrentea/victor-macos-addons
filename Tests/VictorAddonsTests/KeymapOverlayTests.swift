@@ -286,7 +286,11 @@ final class KeymapOverlayTests: XCTestCase {
         // is typed into, which nothing on screen would otherwise reveal.
         // P (35) joined with the ⌘⌃P reminder mail — the sending sibling of
         // ⌘⌃M's draft, on the letter ⌃P already uses to fill the clipboard.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6, 31, 35])
+        // U (32) joined with the 💬📺 subtitle band: the one ⌘⌃ key whose effect
+        // lands on the *room's* screen rather than on Victor's, which is exactly
+        // the kind of thing a sheet has to say out loud.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 12, 15, 1, 17, 9, 13, 6, 31, 35, 32])
+        XCTAssertEqual(CommandControlShortcuts.labels[32], "subtitles")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")

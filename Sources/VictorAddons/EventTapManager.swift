@@ -53,8 +53,11 @@ class EventTapManager {
     var onPasteCompanyDetails: (() -> Void)?
     /// ⌘⌃N — open the "notes" Google Doc in Chrome.
     var onOpenNotesDoc: (() -> Void)?
-    /// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
+    /// ⌘⌃U — 💬📺 toggle the live subtitle band on the projected screen.
+///
+/// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
     var onOpenFocusPlaylist: (() -> Void)?
+    var onToggleLiveCaptions: (() -> Void)?
     /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
     /// subject "Reminder". Nothing to confirm: it is already gone.
     var onSendClipboardReminder: (() -> Void)?
@@ -92,6 +95,7 @@ class EventTapManager {
     private let VK_N: CGKeyCode = 0x2D
     private let VK_M: CGKeyCode = 0x2E
     private let VK_O: CGKeyCode = 0x1F
+    private let VK_U: CGKeyCode = 0x20
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
     private let VK_F8: CGKeyCode = 0x64
@@ -585,6 +589,16 @@ private let VK_F: CGKeyCode = 0x03
         if keyCode == VK_P && hasCmd && hasCtrl && !hasOpt {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 DispatchQueue.global().async { [weak self] in self?.onSendSelectionAsPrompt?() }
+            }
+            return nil
+        }
+
+        // Cmd+Ctrl+U → 💬📺 subtitles on/off (suppress). On the **main** queue,
+        // unlike its neighbours: this one puts a window on the projector, and
+        // every other hop would be a hop back.
+        if keyCode == VK_U && hasCmd && hasCtrl && !hasOpt {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.main.async { [weak self] in self?.onToggleLiveCaptions?() }
             }
             return nil
         }
