@@ -57,7 +57,17 @@ enum TerminalZoomSizeLock {
     /// Call on the event-tap thread immediately **before** posting the zoom
     /// keystroke: the keystroke has to find the target window already holding the
     /// keyboard, and the frame captured here has to still be the pre-zoom one.
-    static func beforeZoomStep(pid: pid_t, window: AXUIElement) {
+    ///
+    /// - Returns: which of the two directions the target window may still be
+    ///   taken in, measured on the window itself (`TerminalFontSize.cell`) rather
+    ///   than counted, so a window that was already zoomed before this app
+    ///   started — or with the plain Cmd+= this gesture does not manage — is
+    ///   judged on what it actually looks like. The read is one AX round trip per
+    ///   notch, on a thread that already makes several; a burst scrolled faster
+    ///   than the terminal redraws can therefore overshoot a bound by a step,
+    ///   and the next notch stops it.
+    @discardableResult
+    static func beforeZoomStep(pid: pid_t, window: AXUIElement) -> TerminalZoomLimitsPolicy.Allowed {
         queue.sync {
             let now = Date()
             let sameWindow = pinnedWindow.map { CFEqual($0, window) } ?? false
@@ -68,9 +78,11 @@ enum TerminalZoomSizeLock {
                 pin(pid: pid, window: window, continuing: sameWindow)
             }
             lastStep = now
-            guard pinnedWindow != nil, pinnedFrame != nil else { return }
+            let limits = TerminalZoomLimitsPolicy.allowed(cellHeight: TerminalFontSize.cell(of: window)?.height)
+            guard pinnedWindow != nil, pinnedFrame != nil else { return limits }
             scheduleWriteBack()
             scheduleFocusReturn()
+            return limits
         }
     }
 

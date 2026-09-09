@@ -314,13 +314,33 @@ private let VK_F: CGKeyCode = 0x03
                 // Reset on direction change so a reversal responds immediately.
                 if (dy > 0) != (zoomAccumulator > 0) { zoomAccumulator = 0 }
                 zoomAccumulator += dy
-                if zoomAccumulator >= 1 || zoomAccumulator <= -1,
-                   let target = TerminalZoomTargeting.resolve(mouse: event.location,
-                                                              frontmostTerminalPid: front.pid) {
-                    TerminalZoomSizeLock.beforeZoomStep(pid: target.pid, window: target.window)
+                // How far this window may still be taken. Read once per notch,
+                // from the window the step is about to land in — the pointer's
+                // one when it resolves, otherwise the keyboard's, which is where
+                // the keystroke goes anyway. A window that cannot be measured
+                // comes back unrestricted, so a terminal we do not understand
+                // zooms exactly as it did before the limits existed.
+                var allowed = TerminalZoomLimitsPolicy.Allowed.unrestricted
+                if zoomAccumulator >= 1 || zoomAccumulator <= -1 {
+                    if let target = TerminalZoomTargeting.resolve(mouse: event.location,
+                                                                  frontmostTerminalPid: front.pid) {
+                        allowed = TerminalZoomSizeLock.beforeZoomStep(pid: target.pid, window: target.window)
+                    } else if let focused = AXWindows.focusedWindow(pid: front.pid) {
+                        allowed = TerminalZoomLimitsPolicy.allowed(
+                            cellHeight: TerminalFontSize.cell(of: focused)?.height)
+                    }
                 }
-                while zoomAccumulator >= 1 { zoomAccumulator -= 1; KeySimulator.zoomSmaller() }
-                while zoomAccumulator <= -1 { zoomAccumulator += 1; KeySimulator.zoomBigger() }
+                // The accumulator is drained either way: a notch refused at a
+                // bound must not bank itself and fire as a burst the moment the
+                // wheel turns back.
+                while zoomAccumulator >= 1 {
+                    zoomAccumulator -= 1
+                    if allowed.smaller { KeySimulator.zoomSmaller() }
+                }
+                while zoomAccumulator <= -1 {
+                    zoomAccumulator += 1
+                    if allowed.bigger { KeySimulator.zoomBigger() }
+                }
             }
             return nil  // eat the scroll so the terminal never scrolls
         }

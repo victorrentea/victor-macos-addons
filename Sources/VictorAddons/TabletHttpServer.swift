@@ -49,6 +49,7 @@ class TabletHttpServer {
         case soundStopped(String)
         case testTranscriptionStart
         case testState
+case testTerminalFont
         case testAudioPlaying
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
@@ -439,6 +440,9 @@ class TabletHttpServer {
                 self.onSoundStopped?(name)
             case .testTranscriptionStart:
                 self.onTestTranscriptionStart?()
+            case .testTerminalFont:
+                contentType = "application/json"
+                body = TerminalFontSizeProbe.json()
             case .testState:
                 contentType = "application/json"
                 body = self.onTestState?() ?? "{\"error\":\"state unavailable\"}"
@@ -674,6 +678,8 @@ class TabletHttpServer {
             return .videoState
         case "/test/transcription/start":
             return .testTranscriptionStart
+        case "/test/terminal-font":
+            return .testTerminalFont
         case "/test/state":
             return .testState
         case "/test/audio/playing":

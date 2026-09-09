@@ -64,6 +64,16 @@ enum AXWindows {
         AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
     }
 
+    /// A window's title, for the `/test/terminal-font` readout only — nothing in
+    /// the gesture itself identifies a window by name.
+    static func title(of window: AXUIElement) -> String? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &raw) == .success else {
+            return nil
+        }
+        return raw as? String
+    }
+
     static func frame(of window: AXUIElement) -> CGRect? {
         guard let pos = value(of: window, kAXPositionAttribute, type: .cgPoint, as: CGPoint.self),
               let size = value(of: window, kAXSizeAttribute, type: .cgSize, as: CGSize.self) else {
@@ -85,7 +95,7 @@ enum AXWindows {
         }
     }
 
-    private static func value<T>(of el: AXUIElement, _ attr: String,
+    static func value<T>(of el: AXUIElement, _ attr: String,
                                  type: AXValueType, as _: T.Type) -> T? {
         var raw: CFTypeRef?
         guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
