@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import VictorMacKit
 
 /// ⌃P — one screenshot, two destinations, always both.
 ///
@@ -87,10 +88,20 @@ enum ScreenshotManager {
         return saved ? filepath : nil
     }
 
+    /// The words on the crosshair. They are a parameter of the shared overlay
+    /// rather than a constant inside it because Walkie Talkie draws the same
+    /// gesture in English — its chip goes on a projector in front of an
+    /// international room, and this one does not.
+    private static let cropStyle = CropSelectionStyle(
+        hint: "trage o zonă  ·  ⌘ mută  ·  ⌥ din centru  ·  Esc anulează",
+        movingSuffix: "✥ mut",
+        centeredSuffix: "⦿ centru")
+
     /// Hold ⌃P (or the menu item) → the crosshair selection, then the same two
     /// destinations as a plain ⌃P: clipboard **and** a dated file.
     ///
-    /// The crosshair is **ours** (`CropSelectionOverlay`), not `screencapture
+    /// The crosshair is **ours** (`CropSelectionOverlay`, now in
+    /// `victor-mac-kit` and shared with Walkie Talkie), not `screencapture
     /// -i`'s: the box has to move whole while ⌘ is held and has to stay inside
     /// its screen, and neither can be asked of the system tool. Esc, a
     /// right-click, or a drag too small to be one cancels and writes no file —
@@ -109,7 +120,7 @@ enum ScreenshotManager {
         let semaphore = DispatchSemaphore(value: 0)
         var selection: CropSelectionOverlay.Selection?
         DispatchQueue.main.async {
-            CropSelectionOverlay.begin { result in
+            CropSelectionOverlay.begin(style: cropStyle) { result in
                 selection = result
                 semaphore.signal()
             }
@@ -125,14 +136,19 @@ enum ScreenshotManager {
         let filepath = uniqueURL(for: Date())
         let filename = filepath.lastPathComponent
 
-        guard captureRegion(selection, to: filepath) else {
+        guard CropCapture.capture(selection, to: filepath) else {
             overlayInfo("⚠️ Crop failed")
             return nil
         }
 
-        // The rectangle is known now, not guessed from a drag we watched from
-        // outside — so the border can simply be drawn around it.
-        DispatchQueue.main.async { ScreenCaptureFlash.flash(around: selection.rect) }
+        // **No border on a crop, since 2026-09-10.** The full-screen shot keeps
+        // its yellow frame, because a whole screen taken with one keypress needs
+        // something to say it happened at all. A crop does not: the selection he
+        // just dragged out *is* the receipt — he watched the box being drawn, at
+        // the pixels he drew it around — and a ring lit round those same pixels a
+        // moment later is the same news, later, on top of the thing he framed.
+        // Victor's call, and it applies in Walkie Talkie's copy of this gesture
+        // for the same reason.
         copyToClipboard(filepath)
         overlayInfo("✂️ \(filename) → clipboard + \(screenshotsDir.path)")
 
@@ -141,39 +157,6 @@ enum ScreenshotManager {
         return filepath
     }
 
-    /// Capture `selection` and write it as a jpg.
-    ///
-    /// It is taken as a **whole-display** shot that we then crop ourselves —
-    /// `screencapture -R`, the obvious tool, answers "could not create image
-    /// from display with rect" on macOS 15.7 for every rectangle, on every
-    /// display, with and without `-D`. Cropping here costs one extra decode and
-    /// buys back something as well: the region is cut at the display's real
-    /// pixel scale, read off the capture itself rather than trusted from
-    /// `backingScaleFactor`.
-    private static func captureRegion(_ selection: CropSelectionOverlay.Selection, to url: URL) -> Bool {
-        let display = displayNumber(for: selection.screen)
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("victor-crop-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: temp) }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-x", "-t", "png", "-D", String(display), temp.path]
-        try? process.run()
-        process.waitUntilExit()
-
-        guard let source = CGImageSourceCreateWithURL(temp as CFURL, nil),
-              let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return false }
-
-        let crop = CropFlashGeometry.pixelCrop(of: selection.rect,
-                                               onScreen: selection.screen.frame,
-                                               imageWidth: CGFloat(full.width))
-        guard let cropped = full.cropping(to: crop) else { return false }
-
-        let rep = NSBitmapImageRep(cgImage: cropped)
-        guard let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else { return false }
-        return (try? jpg.write(to: url)) != nil
-    }
 
     /// Enforce `ScreenshotRetentionPolicy` over the folder. Best-effort by
     /// design: a file that refuses to delete is not worth a word to anyone.

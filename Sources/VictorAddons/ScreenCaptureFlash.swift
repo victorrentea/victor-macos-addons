@@ -113,59 +113,13 @@ enum ScreenCaptureFlash {
         }
     }
 
-    /// The same fading border, but drawn **on a crop** instead of on the screen.
-    /// A full-screen border after a small selection is a lie about what was
-    /// captured — it says "this whole screen", when the point of the crop was
-    /// that it wasn't.
-    ///
-    /// The ring sits **inside** `rect`, fading inward from its edges exactly the
-    /// way the screen-sized flash fades in from the screen's: what lights up is
-    /// then the captured pixels themselves, not the untaken ones around them.
-    /// Drawn outside, it read as a frame *around* something — which is the
-    /// wrong answer to "what did I just take".
-    ///
-    /// `rect` is in global Cocoa coordinates.
-    static func flash(around rect: NSRect, duration: CFTimeInterval = 1.2, color: NSColor = .systemYellow) {
-        let thickness = CropFlashGeometry.borderThickness(for: rect)
-        let frame = rect
-
-        let panel = NSPanel(contentRect: frame,
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered,
-                            defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-
-        let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.clear.cgColor
-        for edge in edgeGradients(size: frame.size, thickness: thickness, color: color) {
-            view.layer?.addSublayer(edge)
-        }
-
-        panel.contentView = view
-        panel.setFrame(frame, display: true)
-        panel.orderFrontRegardless()
-        activePanels.append(panel)
-
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1.0
-        fade.toValue = 0.0
-        fade.duration = duration
-        fade.timingFunction = CAMediaTimingFunction(name: .linear)
-        fade.fillMode = .forwards
-        fade.isRemovedOnCompletion = false
-        view.layer?.add(fade, forKey: "fade")
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-            panel.orderOut(nil)
-            activePanels.removeAll { $0 === panel }
-        }
-    }
+    // **A crop has no border, since 2026-09-09.** `flash(around:)` used to draw
+    // this same fading ring inside the selected rectangle, and Victor took it
+    // out of both apps in one breath: the box he dragged is the receipt, drawn
+    // at the pixels he drew it around, and a ring lit over those pixels
+    // afterwards covers the very thing he framed to look at. The full-screen
+    // flash below stays — one keypress, no gesture, nothing else to say it
+    // happened.
 
     /// Mark the spot the cursor was standing on when the shutter went, with a
     /// single solid yellow disc: it appears already centred on the point at
