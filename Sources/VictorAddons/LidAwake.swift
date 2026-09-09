@@ -52,12 +52,11 @@ enum LidAwakeSettings {
 ///
 /// **A proof nobody can hear is not a proof, so the beats set their own
 /// volume** (2026-09-09). The moment the pulse starts — lid shut, on battery, a
-/// Claude working — the system output goes to 80% and whatever it was before is
-/// remembered; the moment it stops, for any reason, that number goes back. The
-/// laptop is in a bag by then and nobody is going to reach in and turn it up,
-/// and the level it happened to be left at when the lid came down has nothing
-/// to do with how loud a bag needs. The volume is only ever raised, never
-/// lowered: already past 80% stays where it is. See `boostForBeats`.
+/// Claude working — the system output goes **all the way up** and whatever it
+/// was before is remembered; the moment it stops, for any reason, that number
+/// goes back. The laptop is in a bag by then and nobody is going to reach in
+/// and turn it up, and the level it happened to be left at when the lid came
+/// down has nothing to do with how loud a bag needs. See `boostForBeats`.
 ///
 /// **It follows Claude, it does not just switch sleep off.** Every tick asks
 /// whether any Claude Code session is actually working (`ClaudeActivity` — a
@@ -98,24 +97,34 @@ final class LidAwake {
     private static let beatStart: TimeInterval = 0.50
     private static let beatLength: TimeInterval = 0.55
 
-    /// **The five last beats**, played when the work finishes and the flag is
-    /// about to come off. Not five copies of the cut above restarted five
-    /// times: the loop is simply allowed to *run* from `beatStart`, so what the
-    /// bag hears is the recording's own cadence rather than a metronome, and it
-    /// is audibly the same heart that has been beating every ten seconds.
+    /// **The flatline**, played once when the work finishes and the flag is
+    /// about to come off — `15_flatline.mp3`, the sound behind the 🫀 Pulse
+    /// desktop effect (`SoundEffectMap`: `15_flatline.mp3` → `"pulse"`), played
+    /// whole rather than cut: two last QRS beats and then the long tone.
     ///
-    /// The window is read off `heartbeat_beats.json` exactly as `beatLength`
-    /// is. Onsets: 0.59/0.805, 1.335/1.565, 2.07/2.305, 2.84/3.06, 3.585/3.805
-    /// — five lub-dubs — and the sixth opens at 4.34. Starting at 0.50 and
-    /// running 3.70 s ends at 4.20: all five, no clipping, and the sixth never
-    /// starts.
-    private static let farewellBeats = 5
-    private static let farewellLength: TimeInterval = 3.70
+    /// **Because it is the one ending a pulse can have.** Every beat above
+    /// means "still alive" and the *absence* of one is the failure report, so
+    /// the healthy finish needed a sound of its own — and a run of more beats,
+    /// whatever its length, is still the same lub-dub the bag has been hearing
+    /// all along, told apart from a live pulse only by counting. A flatline is
+    /// not a quantity of heartbeats, it is the opposite of one: unmistakable
+    /// through a closed bag on the first hearing, with no counting and nothing
+    /// to explain.
+    private static let farewellFile = "15_flatline.mp3"
 
-    /// The pulse period of that recording (~0.745 s between onsets), used only
-    /// by the `Pop` fallback, which has to space its own beats because there is
-    /// no loop to let run.
-    private static let farewellBeatPeriod: TimeInterval = 0.745
+    /// Its full length, 5.25 s (`afinfo`), rounded up so the tone is never cut
+    /// off by the release that follows it.
+    private static let farewellLength: TimeInterval = 5.30
+
+    /// **Louder than the pulse, deliberately.** The lub-dub is a discreet 0.2
+    /// because it repeats every ten seconds for hours; the flatline plays once,
+    /// it is the last thing the bag ever says, and it has to survive being
+    /// heard through a closed lid in a bag on a plane.
+    private static let farewellVolume: Float = 0.8
+
+    /// The two QRS beats the flatline opens with, at the recording's own
+    /// spacing — used only by the fallback below.
+    private static let farewellBeatPeriod: TimeInterval = 1.40
 
     /// Fallback if the shared sounds folder is not there (it is a symlink into
     /// the Android app's assets, dereferenced into the bundle by
@@ -131,10 +140,14 @@ final class LidAwake {
     private static let beepVolume: Float = 0.2
     private static let secondBeatVolume: Float = 0.14
 
-    /// Where the **system** output volume is parked while the beats are running.
-    /// `beepVolume` above is a fraction *of* this, so the two multiply: the beat
-    /// stays a discreet 20% of a loud machine rather than becoming an alarm.
-    private static let beatSystemVolume: Float = 0.8
+    /// Where the **system** output volume is parked while the beats are running:
+    /// **all the way up**. `beepVolume` above is a fraction *of* this, so the
+    /// two multiply — the beat stays a discreet 20% of a machine turned up as
+    /// far as it goes, which is the only setting that makes sense for a laptop
+    /// that is already in the bag. 80% was the first number here and it was not
+    /// enough: there is no volume knob inside a rucksack, and a proof nobody
+    /// can hear is not a proof.
+    private static let beatSystemVolume: Float = 1.0
 
     /// `SleepDisabled` can be cleared from outside (a `pmset restoredefaults`, a
     /// stray terminal). Re-checked once a minute rather than every tick so the
@@ -147,6 +160,8 @@ final class LidAwake {
 
     private var timer: DispatchSourceTimer?
     private var cachedBeatPlayer: AVAudioPlayer?
+    /// Kept alive only while the flatline is playing — see `lastBeats()`.
+    private var farewellPlayer: AVAudioPlayer?
     /// What we believe the kernel flag is, so `hold` can skip a `sudo` spawn
     /// when nothing has changed. Seeded from the kernel, never assumed.
     private var holding = false
@@ -330,18 +345,17 @@ final class LidAwake {
             : "LidAwake: no Claude working — releasing, the Mac may sleep")
     }
 
-    /// Park the **system** output volume at 80% for as long as the beats run, and
-    /// put back exactly what was there when they stop.
+    /// Park the **system** output volume at maximum for as long as the beats
+    /// run, and put back exactly what was there when they stop.
     ///
     /// Only the false→true edge captures the old value, the same discipline
     /// `CoreAudioManager.pushVolumeDown` follows and for the same reason: a second
     /// capture while already raised would save 80% as "the original" and the
     /// restore would then be a no-op forever.
     ///
-    /// **Raise only.** A machine already at 90% is left at 90% — the point is a
-    /// floor under audibility, not a level, and quietening a laptop that was
-    /// deliberately turned up would be the one change nobody asked for. The old
-    /// value is still remembered in that case, so the restore stays symmetric.
+    /// **Raise only**, which at 100% now only ever means "already there": the
+    /// guard stays because it is what keeps the restore symmetric, and because
+    /// the target is a constant that has moved once already.
     ///
     /// Restoring is one tick behind the lid, up to ten seconds: opening the lid is
     /// not an event this watches, the timer notices it. One loud beat may land in
@@ -399,83 +413,96 @@ final class LidAwake {
         }
     }
 
-    /// The five last beats, then the flag comes off.
+    /// The flatline, then the flag comes off.
     ///
     /// **Why the release is announced at all.** Every other beat means "still
     /// alive"; the *absence* of a beat is what carries the failure report, and
     /// from inside a closed bag a healthy finish and a dead Mac sound exactly
-    /// the same — silence. So the ordinary end of the work gets its own sound:
-    /// a run of five, then nothing. That is a heart stopping on purpose, and it
-    /// is distinguishable from a heart that was interrupted, the same way the
-    /// three `Basso`s make the battery floor distinguishable from both.
+    /// the same — silence. So the ordinary end of the work gets its own sound,
+    /// and the 🫀 Pulse effect's flatline is the one sound that cannot be
+    /// mistaken for the pulse it ends: two last beats and a long tone. That is
+    /// a heart stopping on purpose, distinguishable from one that was
+    /// interrupted, the same way the three `Basso`s make the battery floor
+    /// distinguishable from both.
     ///
-    /// **The beats go out before the flag drops, not after.** `hold(false)` is
+    /// **The tone goes out before the flag drops, not after.** `hold(false)` is
     /// what lets macOS sleep the closed lid, and it can take effect
-    /// immediately — releasing first would cut the announcement off mid-run and
-    /// leave the pulse ending on a truncated beat, which is the one shape that
-    /// reads as a crash. Same discipline as the floor's three beeps, which
+    /// immediately — releasing first would cut the announcement off partway
+    /// through, and a flatline that stops early is exactly the truncated shape
+    /// that reads as a crash. Same discipline as the floor's three beeps, which
     /// delay their disarm rather than race it.
     private func farewell() {
         guard !farewellInFlight else { return }
         farewellInFlight = true
-        overlayInfo("LidAwake: no Claude working — \(Self.farewellBeats) last beats, then the Mac may sleep")
+        overlayInfo("LidAwake: no Claude working — flatline, then the Mac may sleep")
         lastBeats()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength + 0.2) { [weak self] in
             guard let self else { return }
+            self.farewellPlayer = nil
             self.queue.async {
                 self.farewellInFlight = false
-                // A session that woke up during the last five beats keeps the
-                // lid open: the flag must never come off underneath a Claude
-                // that is working again, and four seconds is long enough for
-                // that to happen. Leaving `holding` alone here is the whole
+                // A session that woke up while the flatline was playing keeps
+                // the lid open: the flag must never come off underneath a
+                // Claude that is working again, and five seconds is long enough
+                // for that to happen. Leaving `holding` alone here is the whole
                 // fix — the next tick sees `.beat` and simply carries on.
                 guard !ClaudeActivity.isClaudeWorking() else {
-                    overlayInfo("LidAwake: a Claude started again during the last beats — still holding")
+                    overlayInfo("LidAwake: a Claude started again during the flatline — still holding")
                     return
                 }
                 self.hold(false)
-                // Only now does the system volume go back: these beats are the
-                // last thing the bag ever says and have to go out at the level
+                // Only now does the system volume go back: the flatline is the
+                // last thing the bag ever says and has to go out at the level
                 // the pulse was going out at.
                 self.boostForBeats(false)
             }
         }
     }
 
-    /// Five lub-dubs at the recording's own tempo.
+    /// The 🫀 Pulse effect's flatline, played whole, once.
     ///
-    /// The loop is let *run* rather than cut and restarted five times: five
-    /// copies of a 0.55 s window fired off a timer arrive metronomically and
-    /// stop sounding like a heart, while the file already contains a heart
-    /// beating five times. So this is one `play()` and one clock stop, exactly
-    /// like `heartbeat()` — only with a longer window.
+    /// Nothing is cut here and nothing is stopped by the clock: unlike the
+    /// heartbeat loop, this file *is* the event — two QRS beats and then the
+    /// tone that does not end in another beat — so it plays start to finish and
+    /// the release simply waits for it.
+    ///
+    /// Built fresh rather than cached like `beatPlayer()`: this runs once at the
+    /// end of a session, not 360 times an hour, and holding a decoded 72 KB file
+    /// for hours to use it once is the waste the cache exists to avoid.
     private func lastBeats() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
-            guard let player = self.beatPlayer() else {
-                // No shared sounds folder. The `Pop` fallback has no loop to
-                // let run, so it has to space the pairs itself.
-                for i in 0..<Self.farewellBeats {
+            guard let url = SoundManager.shared.soundURL(for: Self.farewellFile),
+                  let player = try? AVAudioPlayer(contentsOf: url) else {
+                // No shared sounds folder (a dev build — it is a symlink into
+                // the Android app's assets). macOS ships no flat tone, so the
+                // fallback is the two beats the recording opens with, at its
+                // own spacing, and then `Submarine` held under them as the
+                // nearest thing to a long low note.
+                overlayError("LidAwake: \(Self.farewellFile) not found — falling back to system sounds")
+                for i in 0..<2 {
                     let at = Double(i) * Self.farewellBeatPeriod
                     DispatchQueue.main.asyncAfter(deadline: .now() + at) { [weak self] in
-                        self?.beep(named: Self.fallbackBeatSound, volume: Self.beepVolume)
+                        self?.beep(named: Self.fallbackBeatSound, volume: Self.farewellVolume)
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + at + Self.beatGap) { [weak self] in
-                        self?.beep(named: Self.fallbackBeatSound, volume: Self.secondBeatVolume)
+                        self?.beep(named: Self.fallbackBeatSound, volume: Self.farewellVolume)
                     }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellBeatPeriod * 2) { [weak self] in
+                    self?.beep(named: "Submarine", volume: Self.farewellVolume)
                 }
                 return
             }
 
-            player.stop()
-            player.currentTime = Self.beatStart
-            player.volume = Self.beepVolume
+            // Held for the length of the clip: an AVAudioPlayer nobody retains
+            // is deallocated the moment this closure returns and the sound
+            // never arrives.
+            self.farewellPlayer = player
+            player.volume = Self.farewellVolume
             player.play()
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength) { [weak player] in
-                player?.stop()
-            }
         }
     }
 

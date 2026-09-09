@@ -127,7 +127,7 @@ the exact failure this is meant to prevent.
 | | flag | row | why |
 |---|---|---|---|
 | **release** — no Claude working | cleared | **stays ticked** | The ordinary end of a session. Still watching: the next session to start work re-arms it with nobody clicking anything. |
-| **farewell** — no Claude working, *and the pulse was audible* | cleared, after five last beats | **stays ticked** | Same release, announced first. See below. |
+| **farewell** — no Claude working, *and the pulse was audible* | cleared, after the flatline | **stays ticked** | Same release, announced first. See below. |
 | **stand down** — battery below 20% | cleared | **unticks** | A hard stop. Continuing to watch would mean re-arming at 19%. |
 
 The flag is only touched **on a change**. The tick runs every ten seconds and
@@ -139,7 +139,8 @@ judged by.
 
 While a Claude is working **and we are on battery and the lid is shut**, a
 **lub-dub every 10 seconds** at `NSSound.volume` 0.2 — a fraction of the system
-output volume, so 0.2 is 20% of whatever the speakers are set to.
+output volume, which the beats themselves park at 100% (below), so 0.2 is a fifth
+of a machine turned all the way up.
 
 **The sound is the real one**, `13_heartbeat.mp3` — the same SFX the 💓 desktop
 effect uses, out of the sounds folder shared with the tablet. Not the whole 7.1 s
@@ -181,30 +182,40 @@ At an output volume of 13 — where this Mac was found — 20% of it is inaudibl
 even with the lid open, and the silence then means nothing: a proof nobody can
 hear is not a proof. So the moment the pulse actually starts (lid shut, on
 battery, a Claude working) `LidAwake.boostForBeats` parks the **system output at
-80%** and remembers what was there; the moment it stops — the lid opened, the
+100%** and remembers what was there; the moment it stops — the lid opened, the
 Claude finished, the floor stood us down, the row unticked — that number goes
 back. Nobody is going to reach into a bag and turn it up, and the level the Mac
 happened to be left at when the lid came down has nothing to do with how loud a
 bag needs.
 
+**80% was the first number and it was not loud enough** (raised to 100% the same
+day). Through a closed lid, inside a rucksack, at 20% of 80% the lub-dub was
+there in a quiet room and gone in an airport — and a pulse you have to strain
+for cannot carry a failure report, because you can never be sure whether the
+silence is the Mac or the room. There is no in-between setting worth defending
+here: the volume is *already* being taken over and restored, so anything short
+of the top is just an arbitrary handicap on the one signal the feature exists to
+send.
+
 Four things worth knowing about it:
 
-- **Raise only.** Already past 80% stays where it is. The 80 is a floor under
-  audibility, not a level, and quietening a laptop somebody deliberately turned
-  up is the one change nobody asked for. The old value is remembered either way,
-  so the restore stays symmetric.
+- **Raise only**, which at 100% now only ever means "already there". The guard
+  stays because it is what keeps the restore symmetric — the old value is
+  remembered either way — and because the target is a constant that has moved
+  once already.
 - **`NSSound.volume` 0.2 is unchanged and multiplies with it** — the beat stays a
-  discreet fifth of a loud machine rather than becoming an alarm.
+  discreet fifth of a machine turned all the way up rather than becoming an
+  alarm.
 - **Only the false→true edge captures the old value** (the same discipline
   `CoreAudioManager.pushVolumeDown` follows, for the same reason): a second
-  capture while already raised would save 80% as "the original" and the restore
+  capture while already raised would save 100% as "the original" and the restore
   would be a no-op forever.
 - **The restore is one tick behind the lid**, up to ten seconds — opening the lid
   is not an event this watches, the 10 s timer notices it — so one loud beat can
   land in the room before the volume drops. That is the resolution the whole
   feature runs at. The three Basso beeps of a floor stand-down are deliberately
-  let out *before* the restore (the disarm is delayed 1 s behind them): they are
-  the last thing the bag ever says.
+  let out *before* the restore (the disarm is delayed 1 s behind them), and so
+  is the flatline: they are the last thing the bag ever says.
 
 The volume moved is the **default output device's**, read and written by
 `SystemOutputVolume` — not `CoreAudioManager`'s named `🔊OS Output` aggregate,
@@ -215,36 +226,48 @@ Arming still plays one beat, which is now a check that the sound *exists* rather
 than a check of the level. And none of this helps if the JBLs hold the default
 output and are out of range.
 
-## The five last beats (2026-09-09)
+## The flatline (2026-09-09)
 
 When the last Claude finishes and the flag is about to come off, the pulse does
-not just stop — it plays **five beats in a row** first, and only then does
-`hold(false)` let the closed lid sleep the Mac.
+not just stop — the Mac plays **the 🫀 Pulse effect's flatline**,
+`15_flatline.mp3`, whole (5.25 s: two last QRS beats, then the long tone), and
+only then does `hold(false)` let the closed lid sleep the Mac.
 
 **Because silence was overloaded.** The whole design above rests on the pulse's
 *absence* being the failure report: no beat means the Mac slept and the session
 died. But the healthy ending — the work finished, the Mac is allowed to sleep on
 purpose — produced exactly the same silence. From inside a bag, "done" and "dead"
-were the same sound. Five beats and then nothing is a heart stopping *on
-purpose*, and it is distinguishable from one that was interrupted, the same way
-the three `Basso`s make the battery floor distinguishable from both.
+were the same sound.
 
-- **The loop is let run, not cut five times.** `heartbeat()` slices one lub-dub
-  and rewinds; the farewell just plays from `beatStart` for **3.70 s**. Five
-  copies of a window fired off a timer arrive metronomically and stop sounding
-  like a heart — the file already contains a heart beating five times. Window
-  from the same `heartbeat_beats.json`: onsets 0.59/0.805 → 3.585/3.805 are the
-  five, the sixth opens at 4.34, and 0.50 + 3.70 = 4.20 lands between them. (The
-  `Pop` fallback has no loop to run, so it spaces its own pairs at the
-  recording's 0.745 s period.)
-- **The beats go out *before* the flag drops.** `hold(false)` can sleep the Mac
-  immediately, and a release-then-announce would cut the run off mid-beat —
+**And more beats were not the answer.** The first version of this played five
+last lub-dubs, which is still the same sound the bag has been hearing every ten
+seconds all along — told apart from a live pulse only by *counting*, through a
+closed lid, while doing something else. A flatline is not a quantity of
+heartbeats, it is the opposite of one: the one ending a pulse can have that
+nobody has to count or explain. It is also already in the shared sounds folder,
+already mapped to the 🫀 Pulse desktop effect in `SoundEffectMap`, so the sound
+the bag hears and the effect the room sees are the same recording.
+
+- **Played whole, not cut.** Unlike `heartbeat()`, which slices one lub-dub out
+  of the loop and stops it by the clock, this file *is* the event and runs start
+  to finish; the release just waits `farewellLength` (5.30 s — the clip's 5.25 s
+  rounded up so the tone is never truncated).
+- **At 0.8, not the pulse's 0.2.** The lub-dub is discreet because it repeats 360
+  times an hour; the flatline plays once, it is the last thing the bag ever says,
+  and on a machine already parked at 100% output that lands as genuinely loud.
+- **The player is built fresh, not cached.** `beatPlayer()` is cached because it
+  fires every ten seconds for hours; this fires once per session, and holding a
+  decoded 72 KB file all that time to use it once is the waste the cache exists
+  to avoid. It is retained in `farewellPlayer` for the length of the clip — an
+  `AVAudioPlayer` nobody holds is deallocated before it makes a sound.
+- **The tone goes out *before* the flag drops.** `hold(false)` can sleep the Mac
+  immediately, and a release-then-announce would cut the flatline off partway —
   which is the one shape that reads as a crash. Same discipline as the floor's
-  three beeps, which delay their disarm rather than race it. The system volume
-  is restored only after, for the same reason.
+  three beeps, which delay their disarm rather than race it. The system volume is
+  restored only after, for the same reason.
 - **Only when the pulse was actually audible.** `wasBeating` — the previous tick
   was a `.beat` — gates it, and the policy re-checks lid-shut and on-battery.
-  Lid open, on AC, or never beating: plain `.release`, silent. Five beats at the
+  Lid open, on AC, or never beating: plain `.release`, silent. A flatline at the
   desk every time a session finishes would make the feature unusable, which is
   the same reason the ordinary pulse is silent there.
 - **A deliberate disarm never plays it.** `decide` returns `.release` on
@@ -253,11 +276,15 @@ the three `Basso`s make the battery floor distinguishable from both.
 - **The floor still wins.** Below 20% the answer is `.standDown` and the three
   Bassos, because that says something different: this was the battery, not the
   work finishing.
-- **A session that wakes up during the four seconds keeps the lid open.** The
-  release is re-checked against `ClaudeActivity` after the beats; if a Claude is
+- **A session that wakes up during the five seconds keeps the lid open.** The
+  release is re-checked against `ClaudeActivity` after the clip; if a Claude is
   working again the flag is simply left up and the next tick carries on beating.
-  Four seconds is long enough for that to happen, and dropping the flag
+  Five seconds is long enough for that to happen, and dropping the flag
   underneath a live session is the failure this whole feature exists to prevent.
+- **Fallback, dev builds only.** With no shared sounds folder there is no flat
+  tone in the system sounds, so it plays the two `Pop` pairs the recording opens
+  with (1.40 s apart) and then a `Submarine` under them, the nearest thing macOS
+  ships to a long low note.
 
 ## The 20% floor
 

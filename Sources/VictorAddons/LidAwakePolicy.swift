@@ -30,11 +30,12 @@ enum LidAwakePolicy {
         /// watching: this is the ordinary end of a session, not a fault.
         case release
         /// Nothing is working *and the pulse was audible* — lid shut, on
-        /// battery, someone listening through a bag. Sound five last beats,
-        /// then release exactly as above. The Mac is about to sleep and the
-        /// pulse is the only thing that can say so: without this, the last
-        /// thing the bag hears is a beat that is simply never followed by
-        /// another, which is indistinguishable from the Mac having died.
+        /// battery, someone listening through a bag. Sound the 🫀 Pulse
+        /// effect's flatline, then release exactly as above. The Mac is about
+        /// to sleep and the pulse is the only thing that can say so: without
+        /// this, the last thing the bag hears is a beat that is simply never
+        /// followed by another, which is indistinguishable from the Mac having
+        /// died.
         case farewell
         /// The battery floor. Clear the flag *and* untick the row.
         case standDown
@@ -46,9 +47,9 @@ enum LidAwakePolicy {
     ///   mid-flight on a missing number would be the worse of the two mistakes.
     /// - Parameter beating: whether the audible pulse was running as of the
     ///   previous tick. It is the only reason `.farewell` and `.release` differ:
-    ///   the five last beats are owed to an ear that was already being talked
-    ///   to, and defaulting it to `false` keeps every caller that does not care
-    ///   on the plain release.
+    ///   the flatline is owed to an ear that was already being talked to, and
+    ///   defaulting it to `false` keeps every caller that does not care on the
+    ///   plain release.
     static func decide(
         enabled: Bool,
         claudeWorking: Bool,
@@ -70,7 +71,7 @@ enum LidAwakePolicy {
         // tick, the release is announced before it happens; otherwise there is
         // nobody to announce it to and the flag just comes off. Note this is
         // reached only while armed, so a deliberate disarm never sounds — the
-        // beats are for the sleep nobody asked for, not the one that was
+        // flatline is for the sleep nobody asked for, not the one that was
         // clicked.
         guard claudeWorking else { return (beating && lidClosed && !onAC) ? .farewell : .release }
 
