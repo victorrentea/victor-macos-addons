@@ -29,7 +29,7 @@ enum TerminalTiler {
     /// Tile every Terminal window, each on the display it already sits on.
     ///
     /// `onDisplay` narrows that to a single monitor: the shortcut-opened Terminal
-    /// (⌘⌃T / ⌘⌃C / ⌘⌃Q) tiles the screen it just landed on and leaves the
+    /// (⌘⌃T / ⌘⌃C) tiles the screen it just landed on and leaves the
     /// windows on every other screen exactly where they were — the gesture said
     /// "make room here", not "rearrange all my monitors".
     /// **Tiling never moves the keyboard, and it gives it the best seat.** The

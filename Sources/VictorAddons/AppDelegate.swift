@@ -317,6 +317,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "bullet-holes":    self?.animator.showBulletHoles(playSound: false)
             case "phone-ring":      self?.animator.showPhoneRing(playSound: false)
             case "fbi-knock":       self?.animator.showFbiKnock(playSound: false)
+            // Beethoven and the door both own their audio for the same reason the
+            // microwave does — the cue is INSIDE the clip — so unlike every other
+            // silent menu/test effect these two are fired WITH sound.
+            case "beethoven":       self?.animator.showBeethoven(playSound: true)
+            case "door":            self?.animator.showDoor(playSound: true)
             case "brother":         self?.animator.showBrother(playSound: false)
             case "brother/stop":    self?.animator.stopBrother()
             case "gangnam":         self?.animator.showGangnam(playSound: false)
@@ -653,6 +658,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if name == "64_fbi.mp3" {
                 let volume = volumePct.map { Float($0) / 100 }
                 guard let duration = self?.animator.showFbiKnock(playSound: true, volume: volume),
+                      duration > 0 else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
+            }
+            // Tile #51 (🎼 Beethoven): the Mac plays the clip AND stamps the zoom
+            // clock in this one call, like the heartbeat and the FBI. Six hits
+            // 0.11 s apart cannot survive a press-path visual clocked separately
+            // from the audio. Kept OUT of SoundEffectMap so the press can't fire
+            // it a second time.
+            if name == "51_beethoven.mp3" {
+                let volume = volumePct.map { Float($0) / 100 }
+                guard let duration = self?.animator.showBeethoven(playSound: true, volume: volume),
+                      duration > 0 else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
+            }
+            // Tile #79 (🚪 Door): same again — the screen swings open ON the
+            // creak, which starts 0.24 s into the clip, sooner than a
+            // screencapture round trip. Kept OUT of SoundEffectMap.
+            if name == "79_door.mp3" {
+                let volume = volumePct.map { Float($0) / 100 }
+                guard let duration = self?.animator.showDoor(playSound: true, volume: volume),
                       duration > 0 else { return nil }
                 return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
@@ -1238,6 +1263,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 case "bullet-holes":    self.animator.showBulletHoles(playSound: false)
                 case "phone-ring":      self.animator.showPhoneRing(playSound: false)
                 case "fbi-knock":       self.animator.showFbiKnock(playSound: false)
+                // With sound, like the microwave below: the whole gag is the zoom
+                // landing on the motif / the screen opening on the creak, and a
+                // silent run has nothing to land on.
+                case "beethoven":       self.animator.showBeethoven(playSound: true)
+                case "door":            self.animator.showDoor(playSound: true)
                 case "brother":         self.animator.showBrother(playSound: false); stopAfter { self.animator.stopBrother() }
                 case "gangnam":         self.animator.showGangnam(playSound: false); stopAfter { self.animator.stopGangnam() }
                 case "love-hands":      self.animator.showLoveHands(playSound: false); stopAfter { self.animator.stopLoveHands() }
@@ -1621,13 +1651,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
-        eventTap.onClaudeBypassHotkey = { [weak self, weak menuBarManager] in
+        eventTap.onClaudeMascotHotkey = { [weak self] in
+            // The mascot is now the WHOLE key (2026-09-09): ⌘⌃Q used to also open
+            // a permissions-bypassed Claude Terminal, and the wave was meant to
+            // fill the moment before the window appeared. Victor kept the wave and
+            // dropped the window — ⌘⌃C is the Claude launcher, and one key that
+            // both greets you and collects terminals is two keys.
+            //
+            // Same pinning as the elephant: this draws into the overlay panel's
+            // layer tree, which lives on the built-in Retina, so the frame is
+            // refreshed first.
             DispatchQueue.main.async {
-                menuBarManager?.openBypassClaudeWorkspace()
-                // 🤖 waves from the left edge while the Terminal is still coming
-                // up. Same pinning as the elephant: this draws into the overlay
-                // panel's layer tree, which lives on the built-in Retina, so the
-                // frame is refreshed first.
                 self?.overlayPanel?.refreshScreenFrame()
                 self?.animator.showClaudePeek()
             }

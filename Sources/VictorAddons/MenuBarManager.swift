@@ -302,6 +302,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             ("Bullet Holes 🎯",  "bullet-holes"),
             ("Phone Ring 📱",   "phone-ring"),
             ("FBI Knock 🚪",    "fbi-knock"),
+            ("Beethoven 🎼",     "beethoven"),
+            ("Door 🚪",          "door"),
             ("Brother 🤢",       "brother"),
             ("Gangnam 💃",       "gangnam"),
             ("Love Hands 🤲",   "love-hands"),
@@ -833,14 +835,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// F8 / ⌘⌃C global hotkey lands here.
     @objc func openDreamPlainWorkspace() {
         openWorkspaceTerminal(command: "claude")
-    }
-
-    /// ⌘⌃Q — the same window with permissions bypassed. The shell here is again
-    /// interactive (see `openWorkspaceTerminal`), so `cx` — Victor's ~/.zshrc
-    /// alias — would work; the flag stays spelled out anyway, so renaming the
-    /// alias can never break the hotkey.
-    @objc func openBypassClaudeWorkspace() {
-        openWorkspaceTerminal(command: "claude --dangerously-skip-permissions")
     }
 
     /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.

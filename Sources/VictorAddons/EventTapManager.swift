@@ -28,8 +28,10 @@ class EventTapManager {
     var onPowerPointStrikethrough: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
-    /// ⌘⌃Q — Claude Code with `--dangerously-skip-permissions` (Victor's `cx`).
-    var onClaudeBypassHotkey: (() -> Void)?
+    /// ⌘⌃Q — 🤖 the Claude mark waves in from the left edge and leaves again.
+    /// It used to open a permissions-bypassed Claude Terminal as well; the
+    /// terminal was dropped and the wave kept.
+    var onClaudeMascotHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
@@ -470,12 +472,14 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
-        // Cmd+Ctrl+Q → open Claude Code with permissions bypassed (`cx`) in a new
-        // Terminal (suppress). NB this shadows macOS's own ⌃⌘Q "Lock Screen";
-        // the session tap sees the key first and swallows it, so the Mac no
-        // longer locks on that combination.
+        // Cmd+Ctrl+Q → 🤖 the Claude mark waves in from the left edge of the
+        // projected screen (suppress). It opened a permissions-bypassed Claude
+        // Terminal until 2026-09-09; that half is gone — ⌘⌃C is the launcher —
+        // and the key is now the greeting alone. NB it still shadows macOS's own
+        // ⌃⌘Q "Lock Screen": the session tap sees the key first and swallows it,
+        // so the Mac does not lock on that combination.
         if keyCode == VK_Q && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onClaudeBypassHotkey?() }
+            DispatchQueue.global().async { [weak self] in self?.onClaudeMascotHotkey?() }
             return nil
         }
 
