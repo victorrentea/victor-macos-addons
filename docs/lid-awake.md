@@ -175,10 +175,44 @@ feature unusable) and silent on AC (that is the clamshell case macOS supports
 natively) — in both cases the flag is still *held*, just not announced. Arming
 plays one beat, so the click doubles as the volume check.
 
-**System volume is the trap.** At an output volume of 13 — where this Mac was
-found — 20% of it is inaudible even with the lid open, and the silence then
-means nothing. Turn it up before closing the lid, or the heartbeat cannot do its
-job. Likewise if the JBLs hold the default output and are out of range.
+**System volume was the trap, and the beats now fix it themselves (2026-09-09).**
+At an output volume of 13 — where this Mac was found — 20% of it is inaudible
+even with the lid open, and the silence then means nothing: a proof nobody can
+hear is not a proof. So the moment the pulse actually starts (lid shut, on
+battery, a Claude working) `LidAwake.boostForBeats` parks the **system output at
+80%** and remembers what was there; the moment it stops — the lid opened, the
+Claude finished, the floor stood us down, the row unticked — that number goes
+back. Nobody is going to reach into a bag and turn it up, and the level the Mac
+happened to be left at when the lid came down has nothing to do with how loud a
+bag needs.
+
+Four things worth knowing about it:
+
+- **Raise only.** Already past 80% stays where it is. The 80 is a floor under
+  audibility, not a level, and quietening a laptop somebody deliberately turned
+  up is the one change nobody asked for. The old value is remembered either way,
+  so the restore stays symmetric.
+- **`NSSound.volume` 0.2 is unchanged and multiplies with it** — the beat stays a
+  discreet fifth of a loud machine rather than becoming an alarm.
+- **Only the false→true edge captures the old value** (the same discipline
+  `CoreAudioManager.pushVolumeDown` follows, for the same reason): a second
+  capture while already raised would save 80% as "the original" and the restore
+  would be a no-op forever.
+- **The restore is one tick behind the lid**, up to ten seconds — opening the lid
+  is not an event this watches, the 10 s timer notices it — so one loud beat can
+  land in the room before the volume drops. That is the resolution the whole
+  feature runs at. The three Basso beeps of a floor stand-down are deliberately
+  let out *before* the restore (the disarm is delayed 1 s behind them): they are
+  the last thing the bag ever says.
+
+The volume moved is the **default output device's**, read and written by
+`SystemOutputVolume` — not `CoreAudioManager`'s named `🔊OS Output` aggregate,
+which is the music-mute path. A device that exposes no settable `VolumeScalar`
+(some aggregates, some interfaces) is left alone and the beats play at whatever
+the machine is set to; the master element is tried first, then channels 1 and 2.
+Arming still plays one beat, which is now a check that the sound *exists* rather
+than a check of the level. And none of this helps if the JBLs hold the default
+output and are out of range.
 
 ## The 20% floor
 

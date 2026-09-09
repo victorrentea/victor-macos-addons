@@ -50,6 +50,15 @@ enum LidAwakeSettings {
 /// one timer, one heartbeat, no way for the audible half to keep going after
 /// the safety half has stopped running.
 ///
+/// **A proof nobody can hear is not a proof, so the beats set their own
+/// volume** (2026-09-09). The moment the pulse starts — lid shut, on battery, a
+/// Claude working — the system output goes to 80% and whatever it was before is
+/// remembered; the moment it stops, for any reason, that number goes back. The
+/// laptop is in a bag by then and nobody is going to reach in and turn it up,
+/// and the level it happened to be left at when the lid came down has nothing
+/// to do with how loud a bag needs. The volume is only ever raised, never
+/// lowered: already past 80% stays where it is. See `boostForBeats`.
+///
 /// **It follows Claude, it does not just switch sleep off.** Every tick asks
 /// whether any Claude Code session is actually working (`ClaudeActivity` — a
 /// live `caffeinate` with a `claude` parent). While one is, the flag is up and
@@ -103,6 +112,11 @@ final class LidAwake {
     private static let beepVolume: Float = 0.2
     private static let secondBeatVolume: Float = 0.14
 
+    /// Where the **system** output volume is parked while the beats are running.
+    /// `beepVolume` above is a fraction *of* this, so the two multiply: the beat
+    /// stays a discreet 20% of a loud machine rather than becoming an alarm.
+    private static let beatSystemVolume: Float = 0.8
+
     /// `SleepDisabled` can be cleared from outside (a `pmset restoredefaults`, a
     /// stray terminal). Re-checked once a minute rather than every tick so the
     /// steady state is one `pmset -g` a minute, not six.
@@ -117,6 +131,9 @@ final class LidAwake {
     /// What we believe the kernel flag is, so `hold` can skip a `sudo` spawn
     /// when nothing has changed. Seeded from the kernel, never assumed.
     private var holding = false
+    /// The system volume as it was before the beats raised it — `nil` whenever we
+    /// have not raised it, which is also what makes the restore idempotent.
+    private var volumeBeforeBeats: Float?
     private var ticks = 0
     private let queue = DispatchQueue(label: "ro.victorrentea.lidawake")
 
@@ -147,6 +164,7 @@ final class LidAwake {
 
         guard enabled else {
             hold(false)
+            boostForBeats(false)
             stopTimer()
             overlayInfo("LidAwake disarmed")
             return true
@@ -158,6 +176,7 @@ final class LidAwake {
         guard Self.setSleepDisabled(true) else {
             overlayError("LidAwake: pmset refused — is /etc/sudoers.d/victor-addons-disablesleep installed?")
             LidAwakeSettings.isEnabled = false
+            boostForBeats(false)
             stopTimer()
             return false
         }
@@ -208,16 +227,21 @@ final class LidAwake {
         switch action {
         case .beat:
             hold(true)
+            boostForBeats(true)
             heartbeat()
 
         case .hold:
+            // The lid is open (or we are on AC): nobody is listening through a
+            // bag any more, so the volume goes back to whatever it was.
             hold(true)
+            boostForBeats(false)
 
         case .release:
             // The ordinary end of a session: the work is done, so stop holding
             // the lid open. The row stays ticked — the next session to start
             // work re-arms this without Victor touching anything.
             hold(false)
+            boostForBeats(false)
 
         case .standDown:
             let pct = battery ?? -1
@@ -230,7 +254,11 @@ final class LidAwake {
                     self?.beep(named: "Basso")
                 }
             }
-            DispatchQueue.main.async { [weak self] in
+            // The disarm waits for the beeps rather than racing them: it is
+            // `setEnabled(false)` that puts the volume back, and these three
+            // Bassos are the last thing the bag ever says — they have to go out
+            // at the volume the beats were going out at.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.setEnabled(false, announce: false)
                 self?.onAutoDisabled?(pct)
             }
@@ -260,6 +288,42 @@ final class LidAwake {
         overlayInfo(wanted
             ? "LidAwake: a Claude is working — holding the lid open"
             : "LidAwake: no Claude working — releasing, the Mac may sleep")
+    }
+
+    /// Park the **system** output volume at 80% for as long as the beats run, and
+    /// put back exactly what was there when they stop.
+    ///
+    /// Only the false→true edge captures the old value, the same discipline
+    /// `CoreAudioManager.pushVolumeDown` follows and for the same reason: a second
+    /// capture while already raised would save 80% as "the original" and the
+    /// restore would then be a no-op forever.
+    ///
+    /// **Raise only.** A machine already at 90% is left at 90% — the point is a
+    /// floor under audibility, not a level, and quietening a laptop that was
+    /// deliberately turned up would be the one change nobody asked for. The old
+    /// value is still remembered in that case, so the restore stays symmetric.
+    ///
+    /// Restoring is one tick behind the lid, up to ten seconds: opening the lid is
+    /// not an event this watches, the timer notices it. One loud beat may land in
+    /// the room before the volume comes down, which is the same resolution the
+    /// whole feature runs at.
+    ///
+    /// A device with no settable volume (some aggregates, some interfaces) leaves
+    /// `volumeBeforeBeats` nil and the beats simply play at whatever the machine
+    /// is set to — the pulse is worth more than the level.
+    private func boostForBeats(_ wanted: Bool) {
+        if wanted {
+            guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get() else { return }
+            volumeBeforeBeats = current
+            guard current < Self.beatSystemVolume else { return }
+            SystemOutputVolume.set(Self.beatSystemVolume)
+            overlayInfo("LidAwake: output \(Int((current * 100).rounded()))% → \(Int(Self.beatSystemVolume * 100))% so the heartbeat carries")
+        } else {
+            guard let previous = volumeBeforeBeats else { return }
+            volumeBeforeBeats = nil
+            SystemOutputVolume.set(previous)
+            overlayInfo("LidAwake: output back to \(Int((previous * 100).rounded()))%")
+        }
     }
 
     /// One lub-dub, cut live out of the 💓 effect's loop.
