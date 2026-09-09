@@ -106,6 +106,24 @@ async function placeWindow(windowId, screen) {
   await chrome.windows.update(windowId, update);
 }
 
+/// The window a new tab should be born in: an ordinary, non-incognito one,
+/// preferring the one already on the target screen — that is the browser under
+/// the eyes, so the tab appears where the hand is pointing without a single
+/// window moving. A minimized window is the last resort of the last resort: it
+/// counts as "a window exists", but a visible one is always chosen over it.
+///
+/// `undefined` means Chrome genuinely has nowhere to put a tab (only popups,
+/// only incognito, or no windows at all), which is the one case that deserves
+/// a new window.
+async function hostWindow(screen) {
+  const windows = await chrome.windows.getAll({});
+  const normal = windows.filter((w) => w.type === 'normal' && !w.incognito);
+  const visible = normal.filter((w) => w.state !== 'minimized');
+  const pool = visible.length ? visible : normal;
+  if (!pool.length) return undefined;
+  return (screen && pool.find((w) => centreIsOn(w, screen))) || pool[0];
+}
+
 /**
  * Go to the page if it is open anywhere, otherwise open it.
  *
@@ -130,9 +148,20 @@ export async function focusOrOpen(msg) {
 
   if (!tab) {
     if (!msg.url) return;                      // a probe, and the answer is "no"
-    // Its own window, placed on the right display in the same call — Chrome
-    // otherwise sizes a new window from its memory of the last one, which is
-    // usually a different monitor.
+    // A tab in a browser that is already open beats a fourth browser window:
+    // the page opens where Victor's other tabs live, and the window keeps the
+    // size and place he gave it. `placeWindow` then does the same thing it does
+    // for a tab that was already there — raise it, and only carry it over if it
+    // is on another display.
+    const host = await hostWindow(msg.screen);
+    if (host) {
+      await chrome.tabs.create({ url: msg.url, windowId: host.id, active: true });
+      await placeWindow(host.id, msg.screen);
+      return;
+    }
+    // No window at all to put it in: its own, placed on the right display in
+    // the same call — Chrome otherwise sizes a new window from its memory of
+    // the last one, which is usually a different monitor.
     await chrome.windows.create({ url: msg.url, focused: true, ...(msg.screen || {}) });
     return;
   }

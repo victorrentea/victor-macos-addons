@@ -1929,10 +1929,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    /// Open the URL on the display the mouse is on, without moving any window:
-    /// a new tab in the first official Chrome window centred on that screen, or
-    /// — only if the official Chrome has none there — a new window sized to that
-    /// screen.
+    /// Open the URL on the display the mouse is on: a new tab in the first
+    /// official Chrome window centred on that screen, without moving anything.
+    /// A window Victor already has open always wins over a new one — if none is
+    /// on this screen, the front-most one is carried here and gets the tab, and
+    /// a brand-new window is opened only when the official Chrome has none at
+    /// all.
     ///
     /// **The window is chosen inside one process, and the tab is delivered by
     /// Chrome itself.** It used to be one AppleScript that picked a window by
@@ -1978,10 +1980,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return
         }
 
-        // Nothing of his on that screen: ask for a window of its own and place
-        // it there once it exists. Chrome sizes new windows to its own memory of
-        // the last one, which is usually a different monitor.
+        // Nothing of his on that screen, but a window of his somewhere else: that
+        // one gets the tab, carried over to the screen under the mouse. A second
+        // browser window is worse than a moved one — the tab then sits next to
+        // everything else Victor has open instead of in a window of its own.
         let known = OfficialChrome.windows()
+        if let elsewhere = known.first {
+            OfficialChrome.setFrame(elsewhere, to: OfficialChrome.topLeftRect(of: screen.visibleFrame))
+            OfficialChrome.focus(elsewhere)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                OfficialChrome.open(url)
+            }
+            return
+        }
+
+        // No official window anywhere: ask for a window of its own and place it
+        // there once it exists. Chrome sizes new windows to its own memory of
+        // the last one, which is usually a different monitor.
         OfficialChrome.open(url, newWindow: true)
         let place = OfficialChrome.topLeftRect(of: screen.visibleFrame)
         OfficialChrome.awaitNewWindow(besides: known) { window in
