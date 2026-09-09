@@ -4185,7 +4185,11 @@ class EmojiAnimator {
         // to the TOP edge (y = 0 is the bottom here), so the extra height thickens
         // the band/drips up top and pushes the lowest droplets off the bottom edge.
         let layerW = bounds.width
-        let layerH = bounds.height * 1.8
+        // 1.8 was the stretch that pushed the lowest droplets off the bottom;
+        // ×0.7 (2026-09-09) pulls the whole curtain back up so it reads as a band
+        // hanging from the top rather than a full-screen wash. The top-edge anchor
+        // below means the shrink comes off the BOTTOM — the band stays glued up.
+        let layerH = bounds.height * 1.8 * 0.7
         let gifLayer = CALayer()
         // Pivot at the TOP edge so the vertical-scale reveal grows DOWNWARD from
         // the top of the screen (anchorPoint y=1 = top edge in this non-flipped
@@ -4431,9 +4435,10 @@ class EmojiAnimator {
         // `totalLife - fadeOutDur` (== riseDur + holdAtTop, the visual fade's
         // begin time) and lasts `fadeOutDur` — same window, same length. The
         // 63s source is clipped to the animation's life; on early cancel
-        // (re-press) the overlapping player is stopped above. Played at 70%
-        // (the raw cry was too loud at full volume).
-        SoundManager.shared.playClip("phoenix.mp3", seconds: totalLife, fade: fadeOutDur, volume: 0.7)
+        // (re-press) the overlapping player is stopped above. Played at 56%:
+        // the raw cry was too loud at full volume, 0.7 was still too loud in
+        // the room, and 2026-09-09 took another 20% off it (0.7 × 0.8).
+        SoundManager.shared.playClip("phoenix.mp3", seconds: totalLife, fade: fadeOutDur, volume: 0.56)
 
         trackEffect("phoenix", layer: layer, duration: totalLife)
     }
@@ -5150,14 +5155,8 @@ class EmojiAnimator {
     /// under the reaction time this is imitating.
     private static let heartbeatDogPollInterval: TimeInterval = 0.05
 
-    /// A full leap from one side of the cursor to the other. Every shorter side
-    /// change is paced down from it by `HeartbeatDogFollow.hopDuration`, and
-    /// whatever a leap ends up taking is also the window during which the cursor
-    /// is ignored: re-aiming the dog mid-flight is what stops it ever landing.
-    private static let heartbeatDogHopDuration: CFTimeInterval = 0.42
-
-    /// How long the dog takes to catch up when the beat has merely *moved*, as
-    /// opposed to changing sides. Deliberately a touch longer than the poll
+    /// How long the dog takes to catch up when the beat moves. Deliberately a
+    /// touch longer than the poll
     /// interval: the dog then trails the pointer by a frame or two instead of
     /// being welded to it, which is what makes it read as following rather than
     /// as a cursor decoration.
@@ -5172,16 +5171,20 @@ class EmojiAnimator {
     /// as it fits without any of it landing inside, **face** toward the pointer,
     /// and it moves along whenever the pointer does.
     ///
-    /// Two motions, both driven from the same poll:
+    /// **The side is chosen once and then kept** (Victor, 2026-09-09). The first
+    /// poll picks it the way it always did — from the half of the screen the
+    /// cursor is in, so the dog gets the roomier side — and that answer stands
+    /// for the whole heartbeat. It used to be re-decided on every poll, which
+    /// meant dragging the pointer across the midline mid-effect sent the dog
+    /// leaping over the beat to the other side. On the projector that read as a
+    /// glitch rather than as a joke, and the leap (with its mirror at the apex
+    /// and its cursor freeze) is gone with it.
     ///
-    /// 1. **The side.** The dog stands on the side of the cursor with more room,
-    ///    and crossing the midline sends it leaping over the beat to the other
-    ///    side — mirroring at the apex, so it still faces the pointer on landing.
-    /// 2. **The follow.** Everything else is a short eased slide of both x and y
-    ///    onto the placement `HeartbeatDogFollow.position` computes. Vertical
-    ///    tracking is the new half: the face rides at the cursor's own height, so
-    ///    a pointer near the bottom of the screen leaves most of the dog's body
-    ///    below the frame. That is the intended look, not a clamp that failed.
+    /// What is left is the follow: a short eased slide of both x and y onto the
+    /// placement `HeartbeatDogFollow.position` computes, on whichever side was
+    /// locked in. The face rides at the cursor's own height, so a pointer near
+    /// the bottom of the screen leaves most of the dog's body below the frame.
+    /// That is the intended look, not a clamp that failed.
     ///
     /// The timer stops itself the moment this effect is no longer the active
     /// heartbeat, so a stop-all — or the next press — never leaves it polling.
@@ -5189,7 +5192,6 @@ class EmojiAnimator {
                                    until deadline: CFTimeInterval) {
         var onRight = false
         var placed = false
-        var frozenUntil: CFTimeInterval = 0
         let lens = HeartbeatBump.radius(in: bounds)
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -5200,24 +5202,23 @@ class EmojiAnimator {
             guard let self = self, let dog = dog, let effect = effect,
                   self.activeEffects["heartbeat"] === effect,
                   CACurrentMediaTime() < deadline else { return false }
-            let now = CACurrentMediaTime()
-            guard now >= frozenUntil else { return true }
-
             let rel = Self.layerAnchor(forGlobalMouse: NSEvent.mouseLocation,
                                        panelOrigin: self.hostLayer.bounds.origin,
                                        hostLayer: self.hostLayer)
             let cursor = CGPoint(x: rel.x * bounds.width, y: rel.y * bounds.height)
-            let wantsRight = HeartbeatDogFollow.shouldBeOnRight(cursorX: cursor.x,
-                                                               wasOnRight: onRight,
-                                                               boundsWidth: bounds.width)
-            let to = HeartbeatDogFollow.position(onRight: wantsRight,
+            // Only the FIRST poll gets a vote. After that the dog keeps the side
+            // it appeared on, whatever the pointer does — see the note above.
+            if !placed {
+                onRight = HeartbeatDogFollow.shouldBeOnRight(cursorX: cursor.x,
+                                                             wasOnRight: onRight,
+                                                             boundsWidth: bounds.width)
+            }
+            let to = HeartbeatDogFollow.position(onRight: onRight,
                                                  cursor: cursor,
                                                  boxSize: dog.bounds.size,
                                                  clearRadius: lens,
                                                  bounds: bounds)
-            let swappedSides = wantsRight != onRight
             let from = dog.presentation()?.position ?? dog.position
-            onRight = wantsRight
 
             // The first evaluation is a placement, not a move: the layer is built
             // at a placeholder frame, and the dog has to be beside the beat
@@ -5232,61 +5233,22 @@ class EmojiAnimator {
                 return true
             }
             let dx = to.x - from.x, dy = to.y - from.y
-            guard animated,
-                  swappedSides || (dx * dx + dy * dy).squareRoot() >= HeartbeatDogFollow.minStep
+            guard animated, (dx * dx + dy * dy).squareRoot() >= HeartbeatDogFollow.minStep
             else { return true }
 
-            // A side change is a leap over the beat; anything else is the dog
-            // trotting after it. Only the leap freezes the cursor reading — a
-            // follow that ignored the mouse for its own duration would lag a
-            // whole hop behind every drag.
-            let duration = swappedSides
-                ? HeartbeatDogFollow.hopDuration(distance: abs(dx), boundsWidth: bounds.width,
-                                                 full: Self.heartbeatDogHopDuration)
-                : Self.heartbeatDogFollowDuration
-            if swappedSides { frozenUntil = now + duration }
-
-            let move: CAAnimation
-            if swappedSides {
-                // Leap, don't slide: a quadratic whose control point is twice the
-                // apex height puts the top of the arc that far above the line
-                // between the two ends. The apex follows the distance.
-                let apex = HeartbeatDogFollow.apex(fromX: from.x, toX: to.x, boundsHeight: bounds.height)
-                let path = CGMutablePath()
-                path.move(to: from)
-                path.addQuadCurve(to: to, control: CGPoint(x: (from.x + to.x) / 2,
-                                                           y: max(from.y, to.y) + apex * 2))   // bottom-origin: +y is up
-                let hop = CAKeyframeAnimation(keyPath: "position")
-                hop.path = path
-                hop.duration = duration
-                hop.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                move = hop
-            } else {
-                let slide = CABasicAnimation(keyPath: "position")
-                slide.fromValue = NSValue(point: NSPoint(x: from.x, y: from.y))
-                slide.toValue = NSValue(point: NSPoint(x: to.x, y: to.y))
-                slide.duration = duration
-                slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                move = slide
-            }
+            // The dog trots after the beat. It never changes sides any more, so
+            // there is nothing left to leap over and nothing to re-aim mid-flight.
+            let slide = CABasicAnimation(keyPath: "position")
+            slide.fromValue = NSValue(point: NSPoint(x: from.x, y: from.y))
+            slide.toValue = NSValue(point: NSPoint(x: to.x, y: to.y))
+            slide.duration = Self.heartbeatDogFollowDuration
+            slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
 
             CATransaction.begin()
             CATransaction.setDisableActions(true)   // set the model value, no implicit slide
             dog.position = to
             CATransaction.commit()
-            dog.add(move, forKey: "dogHop")
-
-            // Turn at the apex, so changing sides reads as the dog turning
-            // mid-leap rather than snapping.
-            guard swappedSides else { return true }
-            let facing = Self.heartbeatDogFacing(onRight: onRight)
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration / 2) { [weak dog] in
-                guard let dog = dog else { return }
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                dog.transform = facing
-                CATransaction.commit()
-            }
+            dog.add(slide, forKey: "dogHop")
             return true
         }
 
@@ -5878,28 +5840,25 @@ class EmojiAnimator {
     private static let snowFallSecondsFar: Double = 6.5
     private static let snowFallSecondsNear: Double = 3.5
 
-    /// **Every flake must get at least this far down the screen before anything
-    /// is allowed to melt it** — two thirds, i.e. into the lower third of the
-    /// picture. A flake dissolving in mid-air halfway down reads as a rendering
-    /// glitch; snow that makes it to the bottom of the frame reads as snow.
-    private static let snowMinDescentFraction: Double = 2.0 / 3.0
-
-    /// No new flake is released this close to the end of the clip. **Derived,
-    /// not chosen**: it is exactly how long the SLOWEST flake needs to reach the
-    /// lower third, so the guarantee above holds for every flake including the
-    /// last one released. (It was a flat 1.5 s, which only kept a flake from
-    /// entering *as* everything melted — the ones released in the last seconds
-    /// still vanished in the top half of the screen.)
-    private static let snowLastSpawnBeforeEnd: Double =
-        snowFallSecondsFar * snowMinDescentFraction
-
+    /// **New flakes are released for the WHOLE clip** — there is no quiet tail
+    /// (Victor, 2026-09-09: "să tot cadă fulgi noi, să nu se oprească din
+    /// cădere"). Emission used to stop `snowFallSecondsFar × 2/3` (4.3 s) before
+    /// the end so that every flake was guaranteed to reach the lower third of
+    /// the screen before anything melted it. The guarantee was real, but the
+    /// price was the last 4 s of a 10.5 s song: no flake entering at the top,
+    /// the sky visibly emptying downward, one wave of snow rather than snowfall.
+    /// The end is now the container fade (`snowFadeSeconds`), which takes the
+    /// stragglers with it wherever they happen to be — a flake fading with the
+    /// whole picture reads as the effect ending, not as a flake dissolving.
     /// Pending spawn (and self-stop) work items for the current snowfall, kept so
     /// an explicit stop — the song stopped on the tablet — can cancel the ones
     /// that haven't fired yet. Same pattern as the spiral hearts: without this the
     /// sky keeps filling for the full clip length after it has been silenced.
     private var snowSpawns: [DispatchWorkItem] = []
 
-    /// ❄️ Snow falls over the whole desktop for as long as the Bublé clip plays.
+    /// ❄️ Snow falls over the whole desktop for as long as the Bublé clip plays,
+    /// **new flakes entering the top edge the entire time** — the fall never
+    /// thins out into a last wave with an empty sky above it.
     /// Drawn, not emoji: ❄️ renders as the system's blue-tinted glyph, and what is
     /// being asked for here is *white snow* over whatever is on screen.
     func showSnow() {
@@ -5936,8 +5895,9 @@ class EmojiAnimator {
         }
 
         snowSpawns = []
-        // Emission stops before the clip does (see snowLastSpawnBeforeEnd).
-        let emitFor = max(0.5, sfxDuration - Self.snowLastSpawnBeforeEnd)
+        // Flakes keep entering the top edge until the very last moment of the
+        // clip — see the note on the emission window above.
+        let emitFor = max(0.5, sfxDuration)
         let total = max(1, Int((Self.snowSpawnRate * emitFor).rounded()))
         for i in 0..<total {
             let delay = (Double(i) / Double(total)) * emitFor
@@ -7094,8 +7054,11 @@ class EmojiAnimator {
             if d.isNumeric { visibleFor = CMTimeGetSeconds(d) }
         }
         // 🦄 Unicorns hop across the screen while the arc smears in — they live
-        // inside the same container, so stopRainbow() takes them with it.
-        spawnRainbowUnicorns(into: container, bounds: bounds, window: visibleFor)
+        // inside the same container, so stopRainbow() takes them with it. The
+        // hops are on the song's beat, so they hang off the same instant the
+        // sound is started from, one line below.
+        let clock0 = CACurrentMediaTime()
+        spawnRainbowUnicorns(into: container, bounds: bounds, window: visibleFor, clock0: clock0)
 
         if playSound { SoundManager.shared.play("37_rainbow.mp3") }
         DispatchQueue.main.asyncAfter(deadline: .now() + visibleFor) { [weak self, weak container] in
@@ -7104,31 +7067,68 @@ class EmojiAnimator {
         }
     }
 
+    /// The beat of `37_rainbow.mp3`, measured off the clip itself — mono 8 kHz,
+    /// RMS envelope in 10 ms windows, positive flux peaks, then the (period,
+    /// phase) grid that best fits them: **0.484 s + k × 0.7130 s**, i.e. 84.2
+    /// BPM. It matches the audible onsets to within ~20 ms across the whole
+    /// 13.8 s (4.06→4.049, 5.46→5.475, 6.89→6.901, 8.34→8.327, 9.72→9.753 …).
+    ///
+    /// Same standing rule as the FBI knock's onsets: **re-cutting the clip means
+    /// re-measuring these two numbers.** A trim at the head moves the phase; a
+    /// different take moves both.
+    private static let rainbowFirstBeat: Double = 0.484
+    private static let rainbowBeatPeriod: Double = 0.7130
+
+    /// The beat nearest `t`, never earlier than the first one. What snaps a
+    /// unicorn's departure onto the grid.
+    private static func rainbowBeatAligned(_ t: Double) -> Double {
+        let n = max(0, (((t - rainbowFirstBeat) / rainbowBeatPeriod).rounded()))
+        return rainbowFirstBeat + n * rainbowBeatPeriod
+    }
+
     /// Unicorns crossing the screen for as long as the rainbow is up: each one
     /// hops in from one edge, bounces its way to the other, and fades out on the
     /// far side. Directions alternate (left→right unicorns are mirrored so they
     /// face where they're going — the Apple 🦄 glyph looks left by default), and
     /// the departures are spread across the whole rainbow window so there is
     /// always one or two in flight, never a herd all at once.
-    private func spawnRainbowUnicorns(into container: CALayer, bounds: CGRect, window: Double) {
+    ///
+    /// **Every hoof-fall is on the beat** (Victor, 2026-09-09). Three things
+    /// together buy that, and dropping any one of them loses it:
+    ///
+    /// 1. **One hop per beat.** The crossing is `hops × rainbowBeatPeriod` long,
+    ///    not a round number picked for looks — 6 hops ≈ 4.28 s, which is close
+    ///    to the 4.7 s it used to take, so the pacing barely changed.
+    /// 2. **Equal hops, paced along the path.** `calculationMode = .paced` times
+    ///    the keyframe path by arc length, and all six arcs of one unicorn are
+    ///    congruent, so each takes exactly a beat. This is why the per-unicorn
+    ///    travel jitter (±15 %) had to go: it made every unicorn a different,
+    ///    wrong tempo.
+    /// 3. **Departures snapped to the grid.** A unicorn lands on the ground at
+    ///    its start plus every whole beat, so the start itself has to be a beat
+    ///    or all six landings are off by the same constant.
+    private func spawnRainbowUnicorns(into container: CALayer, bounds: CGRect,
+                                      window: Double, clock0: CFTimeInterval) {
         let count = 7
-        // Each crossing is short enough that several fit inside the window, and
-        // the last one still lands before stopRainbow() fades everything.
-        let travel = min(4.8, max(2.5, window * 0.34))
+        let hops = 6
+        let travel = Double(hops) * Self.rainbowBeatPeriod
         let lastStart = max(0, window - travel - 0.6)
 
         for i in 0..<count {
             let progress = count > 1 ? Double(i) / Double(count - 1) : 0
-            let delay = lastStart * progress + Double.random(in: -0.25...0.25)
+            let delay = Self.rainbowBeatAligned(lastStart * progress)
             spawnRainbowUnicorn(into: container, bounds: bounds,
                                 leftToRight: i % 2 == 0,
-                                delay: max(0, delay),
-                                travel: travel * Double.random(in: 0.9...1.15))
+                                delay: delay,
+                                travel: travel,
+                                hops: hops,
+                                clock0: clock0)
         }
     }
 
     private func spawnRainbowUnicorn(into container: CALayer, bounds: CGRect,
-                                     leftToRight: Bool, delay: Double, travel: Double) {
+                                     leftToRight: Bool, delay: Double, travel: Double,
+                                     hops: Int, clock0: CFTimeInterval) {
         // Twice the original 0.10...0.16 of screen height. At the old size they
         // read as decoration under the arc; at this one they are the thing you
         // watch, which is what they are there for on the projector.
@@ -7156,7 +7156,6 @@ class EmojiAnimator {
         let startX = leftToRight ? -box : bounds.width + box
         let endX = leftToRight ? bounds.width + box : -box
 
-        let hops = 6
         let path = CGMutablePath()
         path.move(to: CGPoint(x: startX, y: groundY))
         for h in 1...hops {
@@ -7171,7 +7170,9 @@ class EmojiAnimator {
 
         let bounce = CAKeyframeAnimation(keyPath: "position")
         bounce.path = path
-        bounce.calculationMode = .paced      // even speed along the arcs, not per-hop
+        // Even speed along the arcs: with congruent hops that is exactly one
+        // beat each, which is the whole reason the landings fall on the music.
+        bounce.calculationMode = .paced
         bounce.duration = travel
 
         // Pops in on the edge, holds, then fades out well before it leaves —
@@ -7184,7 +7185,9 @@ class EmojiAnimator {
         let group = CAAnimationGroup()
         group.animations = [bounce, fade]
         group.duration = travel
-        group.beginTime = CACurrentMediaTime() + delay
+        // Off the ONE instant the sound was started from — not off "now", which
+        // would add this unicorn's own construction time to its beat offset.
+        group.beginTime = clock0 + delay
         group.fillMode = .both               // stays at opacity 0 until it starts
         group.isRemovedOnCompletion = false
         unicorn.add(group, forKey: "unicornRun")
@@ -7971,8 +7974,11 @@ class EmojiAnimator {
 
     /// Displayed width in points at scale 1 — the size the tile press starts at,
     /// before the wheel is touched. Read as a torch rather than a bonfire; the
-    /// user scrolls up from here when they want the bonfire.
-    private static let fireBaseWidth: CGFloat = 280
+    /// user scrolls up from here when they want the bonfire. Halved on
+    /// 2026-09-09 (280 → 140): at 280 the flame covered enough of the screen
+    /// that it stopped reading as a *pointer*. The wheel envelope is unchanged,
+    /// so the old size is still two notches up.
+    private static let fireBaseWidth: CGFloat = 140
 
     /// The source clip's own rate (40 frames / 1.33 s). Kept at 30 rather than
     /// halved like the chainsaw's 15: this one is on screen for the length of a

@@ -16,8 +16,10 @@ import CoreGraphics
 ///
 /// Three decisions, in the order they constrain each other:
 ///
-/// 1. **Which side of the cursor.** The one with more room, with hysteresis on
-///    the midline so a cursor parked on the seam doesn't make the dog oscillate.
+/// 1. **Which side of the cursor.** The one with more room — decided **once**,
+///    on the first poll of a run, and then kept for the whole heartbeat
+///    (Victor, 2026-09-09). Re-deciding it every poll is what used to send the
+///    dog leaping across the beat whenever the pointer crossed the midline.
 /// 2. **How high.** Decided *before* the horizontal, because it is the pinned
 ///    one: the face rides at the cursor's own height, but the photo's bottom edge
 ///    is **never lifted off the floor of the screen** — it may go below, never
@@ -114,14 +116,16 @@ enum HeartbeatDogFollow {
     static let maxBackOverflow: CGFloat = 0.25
 
     /// Dead band around the midline, as a fraction of the width, inside which the
-    /// dog keeps whichever side it is already on. Without it a cursor parked on
-    /// the seam makes the dog leap back and forth on every poll: the crossing is
-    /// a one-pixel event, and hysteresis is what turns it into a decision.
+    /// previous answer stands. It used to be the thing that kept a cursor parked
+    /// on the seam from making the dog oscillate; now that the side is asked for
+    /// exactly once per run, it is what decides a cursor sitting *on* the seam —
+    /// `wasOnRight` is false there, so a dead-centre pointer puts the dog on its
+    /// left.
     static let midlineHysteresis: CGFloat = 0.04
 
     /// Which side of the cursor the dog stands on: **the side with more room**,
     /// which for a cursor in the left half is the right. Inside the dead band the
-    /// previous answer stands.
+    /// previous answer stands. Asked once per heartbeat — see the note up top.
     static func shouldBeOnRight(cursorX: CGFloat, wasOnRight: Bool, boundsWidth: CGFloat) -> Bool {
         let mid = boundsWidth / 2
         let band = boundsWidth * midlineHysteresis
@@ -224,24 +228,9 @@ enum HeartbeatDogFollow {
 
     /// Moves shorter than this are not worth animating — the dog would twitch on
     /// every poll while the mouse drifts by a pixel.
+    ///
+    /// This is the only motion left. The leap that carried the dog across the
+    /// beat when it changed sides (`apex` / `hopDuration`) went out with the
+    /// side changes themselves on 2026-09-09.
     static let minStep: CGFloat = 4
-
-    /// Height of the leap's arc when the dog changes sides: proportional to how
-    /// far it has to go, so a short hop is a short hop. The cap is a guard for
-    /// unusual overlay shapes — on the retina the distance term governs even the
-    /// longest leap it can make.
-    static func apex(fromX: CGFloat, toX: CGFloat, boundsHeight: CGFloat) -> CGFloat {
-        min(boundsHeight * 0.22, abs(toX - fromX) * 0.28)
-    }
-
-    /// How long a side change takes. `full` is the cross-the-screen leap; a
-    /// shorter one is paced down from it by the *square root* of the distance, so
-    /// a 40 pt hop is quick without a 700 pt leap looking hurried. The floor keeps
-    /// the smallest ones from being a snap.
-    static func hopDuration(distance: CGFloat, boundsWidth: CGFloat, full: Double) -> Double {
-        guard boundsWidth > 0, distance > 0 else { return full }
-        let reach = boundsWidth / 2          // the two quarter marks, i.e. a full leap
-        let ratio = min(1, distance / reach).squareRoot()
-        return full * Double(max(0.3, ratio))
-    }
 }

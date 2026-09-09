@@ -51,8 +51,9 @@ final class HeartbeatDogFollowTests: XCTestCase {
         XCTAssertFalse(HeartbeatDogFollow.shouldBeOnRight(cursorX: 1300, wasOnRight: true, boundsWidth: W))
     }
 
-    /// Crossing the seam is a one-pixel event; without the dead band a cursor
-    /// resting on it would make the dog leap back and forth on every poll.
+    /// The side is asked for once per heartbeat, so the dead band is what
+    /// decides a cursor sitting on the seam: the caller passes the side it is
+    /// already on (false before the first placement), and that answer stands.
     func testInsideTheDeadBandTheDogKeepsItsSide() {
         let justLeftOfCentre = W / 2 - W * HeartbeatDogFollow.midlineHysteresis / 2
         XCTAssertTrue(HeartbeatDogFollow.shouldBeOnRight(cursorX: justLeftOfCentre,
@@ -275,46 +276,5 @@ final class HeartbeatDogFollowTests: XCTestCase {
         XCTAssertEqual(HeartbeatDogFollow.facePoint(onRight: true, cursor: CGPoint(x: 100, y: 400),
                                                     boxSize: huge, clearRadius: lens,
                                                     bounds: bounds).x, W / 2)
-    }
-
-    // MARK: - The leap between sides
-
-    // On the retina the DISTANCE term governs even for the longest leap the dog
-    // can make (half the screen): 756 * 0.28 = 211.68, just under the 216.04 cap.
-    func testFullLeapIsShapedByTheDistanceNotTheCap() {
-        let apex = HeartbeatDogFollow.apex(fromX: 378, toX: 1134, boundsHeight: H)
-        XCTAssertEqual(apex, 211.68, accuracy: 0.001)
-        XCTAssertLessThan(apex, H * 0.22)
-    }
-
-    func testCapBindsOnAShortOverlay() {
-        XCTAssertEqual(HeartbeatDogFollow.apex(fromX: 0, toX: W, boundsHeight: 300),
-                       300 * 0.22, accuracy: 0.001)
-    }
-
-    func testShortLeapGetsAShortArc() {
-        XCTAssertEqual(HeartbeatDogFollow.apex(fromX: 378, toX: 478, boundsHeight: H),
-                       28, accuracy: 0.001)
-    }
-
-    func testLeapingBackwardsArcsJustAsHigh() {
-        XCTAssertEqual(HeartbeatDogFollow.apex(fromX: 1134, toX: 378, boundsHeight: H),
-                       HeartbeatDogFollow.apex(fromX: 378, toX: 1134, boundsHeight: H))
-    }
-
-    func testACrossScreenLeapTakesTheFullDuration() {
-        XCTAssertEqual(HeartbeatDogFollow.hopDuration(distance: W / 2, boundsWidth: W, full: 0.42),
-                       0.42, accuracy: 0.0001)
-    }
-
-    func testAShortHopIsQuickerButNotASnap() {
-        let step = HeartbeatDogFollow.hopDuration(distance: 40, boundsWidth: W, full: 0.42)
-        XCTAssertLessThan(step, 0.42)
-        XCTAssertGreaterThanOrEqual(step, 0.42 * 0.3 - 0.0001)   // the floor
-    }
-
-    func testTinyDistancesAreStillPacedByTheFloor() {
-        XCTAssertEqual(HeartbeatDogFollow.hopDuration(distance: 0.5, boundsWidth: W, full: 0.42),
-                       0.42 * 0.3, accuracy: 0.0001)
     }
 }
