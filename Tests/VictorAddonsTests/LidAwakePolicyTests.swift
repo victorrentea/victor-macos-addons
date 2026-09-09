@@ -49,6 +49,78 @@ final class LidAwakePolicyTests: XCTestCase {
             .release)
     }
 
+    // MARK: - The five last beats
+
+    func testAudiblePulseEndingGetsTheFiveLastBeats() {
+        // The case Victor asked for: lid shut, on battery, the pulse has been
+        // running, and the last Claude just finished. The Mac is about to
+        // sleep and the bag is told so.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 80, beating: true),
+            .farewell)
+    }
+
+    func testFarewellIsStillARelease_TheRowStaysArmed() {
+        // .farewell is .release with a sound in front of it, not a stand-down:
+        // the next session to start work must re-arm without a click.
+        XCTAssertNotEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 80, beating: true),
+            .standDown)
+    }
+
+    func testNoFarewellIfThePulseWasNotRunning() {
+        // Nothing was beating, so there is no ear mid-conversation to sign off
+        // to — this is the release that happens all day at the desk.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 80, beating: false),
+            .release)
+    }
+
+    func testNoFarewellWithTheLidOpen() {
+        // Lid up between the beat and the finish: Victor is at the desk, and
+        // five beats at the desk are noise, not a proof.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: false, onAC: false,
+                                  battery: 80, beating: true),
+            .release)
+    }
+
+    func testNoFarewellOnAC() {
+        // Plugged in, so the lid close was macOS's own clamshell case and the
+        // pulse was never announcing anything.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: true,
+                                  battery: 80, beating: true),
+            .release)
+    }
+
+    func testDisarmingNeverPlaysTheFarewell() {
+        // A deliberate click is not the sleep this sound is about.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: false, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 80, beating: true),
+            .release)
+    }
+
+    func testTheFloorBeatsTheFarewell() {
+        // Below 20% the three Bassos are the signature, and they say something
+        // different: this was the floor, not the work finishing.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 9, beating: true),
+            .standDown)
+    }
+
+    func testAWorkingClaudeStillBeats_NoFarewell() {
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: true, lidClosed: true, onAC: false,
+                                  battery: 80, beating: true),
+            .beat)
+    }
+
     // MARK: - The floor
 
     func testStandsDownBelowTheFloor() {

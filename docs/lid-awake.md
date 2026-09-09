@@ -127,6 +127,7 @@ the exact failure this is meant to prevent.
 | | flag | row | why |
 |---|---|---|---|
 | **release** — no Claude working | cleared | **stays ticked** | The ordinary end of a session. Still watching: the next session to start work re-arms it with nobody clicking anything. |
+| **farewell** — no Claude working, *and the pulse was audible* | cleared, after five last beats | **stays ticked** | Same release, announced first. See below. |
 | **stand down** — battery below 20% | cleared | **unticks** | A hard stop. Continuing to watch would mean re-arming at 19%. |
 
 The flag is only touched **on a change**. The tick runs every ten seconds and
@@ -213,6 +214,50 @@ the machine is set to; the master element is tried first, then channels 1 and 2.
 Arming still plays one beat, which is now a check that the sound *exists* rather
 than a check of the level. And none of this helps if the JBLs hold the default
 output and are out of range.
+
+## The five last beats (2026-09-09)
+
+When the last Claude finishes and the flag is about to come off, the pulse does
+not just stop — it plays **five beats in a row** first, and only then does
+`hold(false)` let the closed lid sleep the Mac.
+
+**Because silence was overloaded.** The whole design above rests on the pulse's
+*absence* being the failure report: no beat means the Mac slept and the session
+died. But the healthy ending — the work finished, the Mac is allowed to sleep on
+purpose — produced exactly the same silence. From inside a bag, "done" and "dead"
+were the same sound. Five beats and then nothing is a heart stopping *on
+purpose*, and it is distinguishable from one that was interrupted, the same way
+the three `Basso`s make the battery floor distinguishable from both.
+
+- **The loop is let run, not cut five times.** `heartbeat()` slices one lub-dub
+  and rewinds; the farewell just plays from `beatStart` for **3.70 s**. Five
+  copies of a window fired off a timer arrive metronomically and stop sounding
+  like a heart — the file already contains a heart beating five times. Window
+  from the same `heartbeat_beats.json`: onsets 0.59/0.805 → 3.585/3.805 are the
+  five, the sixth opens at 4.34, and 0.50 + 3.70 = 4.20 lands between them. (The
+  `Pop` fallback has no loop to run, so it spaces its own pairs at the
+  recording's 0.745 s period.)
+- **The beats go out *before* the flag drops.** `hold(false)` can sleep the Mac
+  immediately, and a release-then-announce would cut the run off mid-beat —
+  which is the one shape that reads as a crash. Same discipline as the floor's
+  three beeps, which delay their disarm rather than race it. The system volume
+  is restored only after, for the same reason.
+- **Only when the pulse was actually audible.** `wasBeating` — the previous tick
+  was a `.beat` — gates it, and the policy re-checks lid-shut and on-battery.
+  Lid open, on AC, or never beating: plain `.release`, silent. Five beats at the
+  desk every time a session finishes would make the feature unusable, which is
+  the same reason the ordinary pulse is silent there.
+- **A deliberate disarm never plays it.** `decide` returns `.release` on
+  `enabled: false` before it ever looks at `beating`. The sound is for the sleep
+  nobody asked for, not the one that was clicked.
+- **The floor still wins.** Below 20% the answer is `.standDown` and the three
+  Bassos, because that says something different: this was the battery, not the
+  work finishing.
+- **A session that wakes up during the four seconds keeps the lid open.** The
+  release is re-checked against `ClaudeActivity` after the beats; if a Claude is
+  working again the flag is simply left up and the next tick carries on beating.
+  Four seconds is long enough for that to happen, and dropping the flag
+  underneath a live session is the failure this whole feature exists to prevent.
 
 ## The 20% floor
 

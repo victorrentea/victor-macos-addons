@@ -98,6 +98,25 @@ final class LidAwake {
     private static let beatStart: TimeInterval = 0.50
     private static let beatLength: TimeInterval = 0.55
 
+    /// **The five last beats**, played when the work finishes and the flag is
+    /// about to come off. Not five copies of the cut above restarted five
+    /// times: the loop is simply allowed to *run* from `beatStart`, so what the
+    /// bag hears is the recording's own cadence rather than a metronome, and it
+    /// is audibly the same heart that has been beating every ten seconds.
+    ///
+    /// The window is read off `heartbeat_beats.json` exactly as `beatLength`
+    /// is. Onsets: 0.59/0.805, 1.335/1.565, 2.07/2.305, 2.84/3.06, 3.585/3.805
+    /// — five lub-dubs — and the sixth opens at 4.34. Starting at 0.50 and
+    /// running 3.70 s ends at 4.20: all five, no clipping, and the sixth never
+    /// starts.
+    private static let farewellBeats = 5
+    private static let farewellLength: TimeInterval = 3.70
+
+    /// The pulse period of that recording (~0.745 s between onsets), used only
+    /// by the `Pop` fallback, which has to space its own beats because there is
+    /// no loop to let run.
+    private static let farewellBeatPeriod: TimeInterval = 0.745
+
     /// Fallback if the shared sounds folder is not there (it is a symlink into
     /// the Android app's assets, dereferenced into the bundle by
     /// `build-app.sh`, so it can go missing in a dev build). Two `Pop`s 0.28 s
@@ -134,6 +153,13 @@ final class LidAwake {
     /// The system volume as it was before the beats raised it — `nil` whenever we
     /// have not raised it, which is also what makes the restore idempotent.
     private var volumeBeforeBeats: Float?
+    /// Whether the audible pulse was running as of the last tick — the one
+    /// input that tells a release owed five last beats from a release nobody
+    /// could have heard (lid open, on AC, or never beating at all).
+    private var wasBeating = false
+    /// Set while the five last beats are in the air, so a tick landing in the
+    /// middle of them cannot start a second set on top of the first.
+    private var farewellInFlight = false
     private var ticks = 0
     private let queue = DispatchQueue(label: "ro.victorrentea.lidawake")
 
@@ -165,6 +191,7 @@ final class LidAwake {
         guard enabled else {
             hold(false)
             boostForBeats(false)
+            wasBeating = false
             stopTimer()
             overlayInfo("LidAwake disarmed")
             return true
@@ -222,19 +249,23 @@ final class LidAwake {
             claudeWorking: ClaudeActivity.isClaudeWorking(),
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
-            battery: battery)
+            battery: battery,
+            beating: wasBeating)
 
         switch action {
         case .beat:
             hold(true)
             boostForBeats(true)
             heartbeat()
+            wasBeating = true
 
         case .hold:
             // The lid is open (or we are on AC): nobody is listening through a
-            // bag any more, so the volume goes back to whatever it was.
+            // bag any more, so the volume goes back to whatever it was — and
+            // no five last beats are owed, for the same reason.
             hold(true)
             boostForBeats(false)
+            wasBeating = false
 
         case .release:
             // The ordinary end of a session: the work is done, so stop holding
@@ -242,9 +273,18 @@ final class LidAwake {
             // work re-arms this without Victor touching anything.
             hold(false)
             boostForBeats(false)
+            wasBeating = false
+
+        case .farewell:
+            // Same release, announced first: the pulse was audible right up to
+            // this tick, so the bag is told the Mac is going down instead of
+            // just never hearing another beat.
+            wasBeating = false
+            farewell()
 
         case .standDown:
             let pct = battery ?? -1
+            wasBeating = false
             overlayInfo("LidAwake: battery \(pct)% below floor — letting the lid sleep the Mac")
             // Three beeps, then silence: the pattern says "this was the floor",
             // not "the Mac died", which is what a plain stop would have sounded
@@ -354,6 +394,86 @@ final class LidAwake {
             // of the loop and the 10-second silence — the part that carries the
             // signal — would never arrive.
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.beatLength) { [weak player] in
+                player?.stop()
+            }
+        }
+    }
+
+    /// The five last beats, then the flag comes off.
+    ///
+    /// **Why the release is announced at all.** Every other beat means "still
+    /// alive"; the *absence* of a beat is what carries the failure report, and
+    /// from inside a closed bag a healthy finish and a dead Mac sound exactly
+    /// the same — silence. So the ordinary end of the work gets its own sound:
+    /// a run of five, then nothing. That is a heart stopping on purpose, and it
+    /// is distinguishable from a heart that was interrupted, the same way the
+    /// three `Basso`s make the battery floor distinguishable from both.
+    ///
+    /// **The beats go out before the flag drops, not after.** `hold(false)` is
+    /// what lets macOS sleep the closed lid, and it can take effect
+    /// immediately — releasing first would cut the announcement off mid-run and
+    /// leave the pulse ending on a truncated beat, which is the one shape that
+    /// reads as a crash. Same discipline as the floor's three beeps, which
+    /// delay their disarm rather than race it.
+    private func farewell() {
+        guard !farewellInFlight else { return }
+        farewellInFlight = true
+        overlayInfo("LidAwake: no Claude working — \(Self.farewellBeats) last beats, then the Mac may sleep")
+        lastBeats()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength + 0.2) { [weak self] in
+            guard let self else { return }
+            self.queue.async {
+                self.farewellInFlight = false
+                // A session that woke up during the last five beats keeps the
+                // lid open: the flag must never come off underneath a Claude
+                // that is working again, and four seconds is long enough for
+                // that to happen. Leaving `holding` alone here is the whole
+                // fix — the next tick sees `.beat` and simply carries on.
+                guard !ClaudeActivity.isClaudeWorking() else {
+                    overlayInfo("LidAwake: a Claude started again during the last beats — still holding")
+                    return
+                }
+                self.hold(false)
+                // Only now does the system volume go back: these beats are the
+                // last thing the bag ever says and have to go out at the level
+                // the pulse was going out at.
+                self.boostForBeats(false)
+            }
+        }
+    }
+
+    /// Five lub-dubs at the recording's own tempo.
+    ///
+    /// The loop is let *run* rather than cut and restarted five times: five
+    /// copies of a 0.55 s window fired off a timer arrive metronomically and
+    /// stop sounding like a heart, while the file already contains a heart
+    /// beating five times. So this is one `play()` and one clock stop, exactly
+    /// like `heartbeat()` — only with a longer window.
+    private func lastBeats() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            guard let player = self.beatPlayer() else {
+                // No shared sounds folder. The `Pop` fallback has no loop to
+                // let run, so it has to space the pairs itself.
+                for i in 0..<Self.farewellBeats {
+                    let at = Double(i) * Self.farewellBeatPeriod
+                    DispatchQueue.main.asyncAfter(deadline: .now() + at) { [weak self] in
+                        self?.beep(named: Self.fallbackBeatSound, volume: Self.beepVolume)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + at + Self.beatGap) { [weak self] in
+                        self?.beep(named: Self.fallbackBeatSound, volume: Self.secondBeatVolume)
+                    }
+                }
+                return
+            }
+
+            player.stop()
+            player.currentTime = Self.beatStart
+            player.volume = Self.beepVolume
+            player.play()
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength) { [weak player] in
                 player?.stop()
             }
         }
