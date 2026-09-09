@@ -107,6 +107,14 @@ enum TerminalTiler {
     /// top-left-origin point space — the same space as `CGDisplayBounds`, so the
     /// quadrant math below needs no conversion. Returns the live `AXUIElement` for
     /// each window so we can write the new frame straight back to it.
+    ///
+    /// **Minimized windows are not windows on the screen.** A window in the Dock
+    /// still answers AX with a position and a size (the frame it had when it was
+    /// minimized), so left in it would eat a quadrant and — worse — get *unhidden*
+    /// by the raise walk, dragging a terminal that was deliberately put away back
+    /// into the arrangement. Tiling only ever arranges what is visible; whatever is
+    /// in the Dock stays in the Dock, and the visible ones split the screen among
+    /// themselves.
     private static func getTerminalWindows() -> [(win: AXUIElement, rect: Rect)] {
         guard let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: terminalBundleID).first else {
@@ -119,7 +127,8 @@ enum TerminalTiler {
             return []
         }
         return windows.compactMap { win in
-            guard let pos = axValue(of: win, kAXPositionAttribute, type: .cgPoint, as: CGPoint.self),
+            guard !isMinimized(win),
+                  let pos = axValue(of: win, kAXPositionAttribute, type: .cgPoint, as: CGPoint.self),
                   let size = axValue(of: win, kAXSizeAttribute, type: .cgSize, as: CGSize.self) else {
                 return nil
             }
@@ -127,6 +136,15 @@ enum TerminalTiler {
                     rect: Rect(x: Int(pos.x), y: Int(pos.y),
                                w: Int(size.width), h: Int(size.height)))
         }
+    }
+
+    /// `AXMinimized`, defaulting to "not minimized" when the attribute is missing —
+    /// a window that cannot say it is in the Dock is treated as on screen.
+    private static func isMinimized(_ win: AXUIElement) -> Bool {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(win, kAXMinimizedAttribute as CFString, &raw) == .success,
+              let value = raw, CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
+        return CFBooleanGetValue((value as! CFBoolean))
     }
 
     private static func setWindowFrame(_ win: AXUIElement, x: Int, y: Int, w: Int, h: Int) {
