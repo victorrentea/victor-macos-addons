@@ -718,6 +718,10 @@ class TabletHttpServer {
             return .testWhipCrack
         case "/test/sonar":
             return .effect("sonar")
+        case "/test/beethoven":
+            return .effect("beethoven")
+        case "/test/door":
+            return .effect("door")
         case "/test/phoenix":
             return .effect("phoenix")
         case "/test/money":

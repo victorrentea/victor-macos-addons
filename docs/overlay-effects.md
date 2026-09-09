@@ -48,7 +48,13 @@ rule from the start.
   full-canvas frames) shown as a blood band pinned to the **top of the screen**
   at full width (aspect-preserved, transparent backdrop over the live screen),
   drips/droplets falling; the ~1.6s loop plays **~1.5× slower**, repeating for
-  the joker track (~9.0s) with a 0.25s fade-in and 0.6s fade-out tail.
+  the joker track (~9.0s) with a 0.25s fade-in and 0.6s fade-out tail. The layer
+  is stretched to **1.8 × 0.7 = 1.26 screen heights** (2026-09-09): 1.8 was the
+  stretch that pushed the lowest droplets off the bottom edge, and ×0.7 pulls the
+  curtain back up so it reads as a band hanging from the top rather than a
+  full-screen wash. The layer's anchor is its **top edge** (`anchorPoint.y = 1`),
+  so the shrink comes off the bottom and the band stays glued to the top of the
+  screen — the same anchor the 1.5 s vertical-scale reveal grows down from.
 - **🛰️ Sonar** (sfx #23 `23_radar.mp3` → `sonar`, `showSonar`): a full-screen
   black wash fades in (0→45% over 1s; darker **70% disc** inside the radar
   circle), then a phosphor-green radar **drawn entirely as CALayers** (no gif):
@@ -135,18 +141,23 @@ rule from the start.
   **0.55** screens up, not 0.9 — a slow flake starting a whole screen higher spends
   four seconds merely arriving), at the same constant fall speed (starting higher
   means entering *later*, never falling faster), which fills the sky within ~2 s while
-  each flake still makes the whole journey down. Then 16 flakes/s, stopping
-  `snowLastSpawnBeforeEnd` before the clip does — and that constant is **derived, not
-  chosen**: `snowFallSecondsFar × snowMinDescentFraction` = 6.5 × ⅔ ≈ **4.3 s**, exactly
-  how long the slowest flake needs to reach the **lower third** of the screen. That is
-  the guarantee the whole emission schedule now exists to keep: **no flake is ever
-  melted before it has fallen two thirds of the way down**, because a flake dissolving
-  in mid-air halfway is read as a rendering glitch, not as snow. It used to be a flat
-  1.5 s, which only stopped a flake entering *as* everything melted — the ones released
-  in the last seconds still vanished in the top half. The cost is deliberate: emission
-  now runs 6.2 s of the 10.5 s clip instead of 9 s, so the sky thins over the last
-  few seconds while what is already in the air finishes its fall — which is what the
-  end of a snowfall looks like anyway.
+  each flake still makes the whole journey down. Then 16 flakes/s **for the whole
+  clip** — new flakes keep entering the top edge until its last moment (Victor,
+  2026-09-09: *"să tot cadă fulgi noi, să nu se oprească din cădere"*).
+
+  That reverses a trade this code made twice before, and the history is the point.
+  Emission used to stop `snowLastSpawnBeforeEnd` early — a **derived** constant,
+  `snowFallSecondsFar × snowMinDescentFraction` = 6.5 × ⅔ ≈ **4.3 s**, exactly how long
+  the slowest flake needs to reach the lower third of the screen — to keep the
+  guarantee that *no flake is ever melted before it has fallen two thirds of the way
+  down*, on the grounds that a flake dissolving in mid-air reads as a rendering glitch.
+  (Before that it was a flat 1.5 s, which only stopped a flake entering *as* everything
+  melted.) The guarantee was real, but its price was the last 4 s of a 10.5 s song: no
+  flake entering at the top, the sky visibly emptying downward, **one wave of snow
+  instead of snowfall** — and that is the failure the room actually sees. The stragglers
+  now go out with the container fade (`snowFadeSeconds`, 1 s) wherever they happen to
+  be, which reads as the effect ending rather than as a flake dissolving. Both
+  constants are gone.
   **The snowfall lasts exactly as long as the song**: the melt starts on the clip's
   last moment (an identity-guarded self-stop at `sfxDuration`, which is also the
   lifecycle rule's authoritative teardown) and the desktop is clear a second later.
@@ -354,6 +365,9 @@ rule from the start.
 - **🔥 Fire cursor** (tile #11 `11_fire.mp3` → `fire` / `fire/stop`, `showFireCursor`):
   the chainsaw's trick with a flame — the real pointer is hidden and a 40-frame fire
   sprite burns on it, chasing `NSEvent.mouseLocation` at 60 fps on the built-in screen.
+  It starts **140 pt wide** (`fireBaseWidth`) — halved from 280 on 2026-09-09, where the
+  flame covered enough of the screen that it stopped reading as a *pointer*. The wheel
+  envelope is untouched (×1.10 a notch, 0.30…3.50), so the old size is two notches up.
   Fourth member of the hidden-cursor family and bound by the same rule: **outside
   `activeEffects`**, torn down explicitly by `stopAllActiveEffects`, hide armed through
   `armBackgroundCursorHiding()` and balanced by `_fireHidCursor`. It replaced the tile's
@@ -413,6 +427,21 @@ rule from the start.
   moment instead of a herd leaving together. They are **children of the rainbow
   container**, so they need no tracking of their own: the one identity-guarded
   `activeEffects["rainbow"]` entry tears the whole scene down.
+
+  **Every hoof-fall is on the beat** (2026-09-09). The clip's beat was measured the way
+  the FBI knock's onsets were — mono 8 kHz, log-envelope flux in 10 ms windows, then the
+  (period, phase) grid that best fits the onsets: **0.484 s + k × 0.7130 s**, i.e.
+  **84.2 BPM**, matching the audible attacks to within ~20 ms across all 13.8 s
+  (`rainbowFirstBeat` / `rainbowBeatPeriod`; **re-cutting the clip means re-measuring
+  them**). Three things together buy the sync, and dropping any one loses it: **one hop
+  per beat** (the crossing is `6 × 0.713` ≈ 4.28 s, close to the 4.7 s it used to take,
+  so the pacing barely changed); **congruent hops under `.paced`**, which times the path
+  by arc length and therefore gives each identical arc exactly a beat — this is why the
+  per-unicorn ±15 % travel jitter had to go, it made every unicorn a different wrong
+  tempo; and **departures snapped to the grid** (`rainbowBeatAligned`), because a
+  unicorn lands every whole beat *after its own start*, so a start off the grid puts all
+  six landings off by the same constant. All seven hang off one `clock0`, stamped in
+  `showRainbow` next to the line that starts the sound.
 
 - **💓 Heartbeat + 🐶 dog** (tile #13 `13_heartbeat.mp3`, `showHeartbeat`): the built-in
   Retina is captured and redrawn full-screen, then **bulged under the cursor** in a
@@ -551,13 +580,20 @@ rule from the start.
   Mechanics worth knowing before touching it: the overlay panel is **click-through and
   receives no mouse events at all**, so the cursor is *polled* (`NSEvent.mouseLocation`,
   20 Hz) for exactly as long as the effect lives, and the timer cancels itself the moment
-  this is no longer the active heartbeat, so a stop-all never leaves it running. Crossing
-  the midline (with a 4 % dead band, or a cursor on the seam makes the dog oscillate on
-  every poll) is a **leap over the beat** with a mirror at the apex; everything else is a
-  160 ms eased slide of both x and y. Only the leap freezes the cursor reading for its own
-  duration — a *follow* that ignored the mouse for 160 ms would lag a whole hop behind
-  every drag. The arc height is proportional to the distance, with a cap that on the
-  retina never binds; the cap is there for other overlay shapes.
+  this is no longer the active heartbeat, so a stop-all never leaves it running. Every
+  move is a 160 ms eased slide of both x and y onto the computed placement.
+
+  **The side is decided once and then kept** (Victor, 2026-09-09). The first poll asks
+  `shouldBeOnRight` the way it always did — the half of the screen the cursor is in
+  picks the roomier side, and the 4 % dead band decides a cursor sitting on the seam
+  (`wasOnRight` is false there, so dead centre puts the dog on the left) — and that
+  answer stands for the rest of the run. Re-deciding it on every poll is what used to
+  send the dog **leaping over the beat** whenever the pointer crossed the midline, and
+  on the projector that read as a glitch, not as a joke. The leap went with it:
+  `HeartbeatDogFollow.apex` / `hopDuration`, the mirror at the apex and the cursor
+  freeze that stopped a mid-flight re-aim are all gone, and `minStep` is the only
+  motion rule left. What remains is the follow — the dog stays on the same side of the
+  pointer and trots after it wherever it goes.
 
 - **🚪 FBI knock** (tile #64 `64_fbi.mp3`, `showFbiKnock`): the built-in Retina is
   captured and redrawn full-screen, then **shoved 7% larger on each of the three door
@@ -593,6 +629,72 @@ rule from the start.
   The overlay's life also stopped overrunning the audio: it was pinned at 3.3 s against a
   1.95 s clip, so the desktop sat frozen under a silent screenshot for 1.35 s. It now
   reads the clip's real length and fades out on its last 0.3 s.
+
+- **🎼 Beethoven's Fifth** (tile #51 `51_beethoven.mp3`, `showBeethoven`): the Retina is
+  captured and then **lunges at the room three times on the three eighth notes**, each
+  lunge bigger than the last and each giving a little of it back before the next, then
+  unwinds to its own size on the long note they fall onto — and the whole shape repeats
+  on the clip's second phrase. That is the ask literally (Victor, 2026-09-09: *de 3 ori
+  din ce în ce mai mare și dând puțin de înapoi de fiecare dată … și se revine*), and
+  the music is what it is written against:
+
+  - **The phrases are measured, not counted off a score** (`beethovenPhrases`): mono
+    16 kHz, log-envelope flux in 5 ms windows gives **0.305 / 0.410 / 0.520 → 0.650** and
+    **3.240 / 3.375 / 3.495 → 3.610**. The eighths are ~0.11 s apart, *faster than the
+    concert tempo*, because this is a sound effect and not the symphony — which is
+    exactly why counting them off the score would have missed. **Re-cutting the clip
+    means re-measuring them.**
+  - **The peaks escalate, the retreat is proportional.** `beethovenZoomPeaks` = 1.06 /
+    1.13 / 1.22 (1.22 pushes the edges ~190 pt off a 1728 pt-wide frame — a lunge, well
+    past the FBI knock's 1.07 shove, because here the zoom *is* the joke). The pull-back
+    is `beethovenPullBack` = 45 % **of what that note just gained**, not a fixed scale: a
+    fixed one would be a twitch under the first note and a collapse under the third.
+  - **The gap is 0.11 s and everything has to fit in it.** 0.06 s of rise leaves 0.05 s
+    of retreat; the **peak lands ON the onset** (the heartbeat's lesson), so the rise
+    starts `beethovenRise` before it. The third note keeps its peak into the long note
+    and unwinds over `beethovenRelease` = 0.45 s — slow next to the punches, because the
+    three hits are the motif and this is the fermata under them.
+  - **One keyframe animation for all six hits**, on an absolute `beginTime`. Six
+    `asyncAfter` callbacks 0.11 s apart would put main-thread jitter straight on screen.
+    `at()` skips any keyframe that would go backwards in time, so re-tuning the
+    constants can't quietly produce an animation CoreAnimation refuses to run.
+  - **Driven from the routed `/sound/play` path** (`onSoundPlay`), out of
+    `SoundEffectMap`, and **the audio waits for the capture** — the FBI knock's bargain,
+    for the FBI knock's reason: the first hit is 0.305 s in, close enough to a
+    `screencapture` round trip that starting the sound first would spend it on an empty
+    overlay. The capture then simply sits at scale 1 for the clip's last two seconds,
+    which costs nothing: at scale 1 it is pixel-identical to the desktop under it.
+
+- **🚪 Door** (tile #79 `79_door.mp3`, `showDoor`): a photograph of the desktop **becomes
+  a door and swings open on its own creak**, revealing the live desktop behind it. Three
+  choices carry it, and each one was a fork:
+
+  - **The screenshot IS the leaf** (Victor, 2026-09-09), not a picture of a door laid
+    over the screen. What swings away is the room's own screen.
+  - **Hinged on the right, knob on the left, turning away from the viewer** — the way
+    Victor drew it (knob circled at the left edge, an arrow sweeping right). The leaf's
+    `anchorPoint` is its right edge and it rotates about Y by `doorOpenAngle` = **−78°**
+    — not a full 90°, so it stays a door caught mid-swing rather than a picture that
+    folded itself away to nothing. Opening it *toward* the room would put the leaf over
+    the very desktop it is uncovering.
+  - **The leaf darkens as it turns** (`doorShadeOpacity` = 0.62, a black sublayer riding
+    on the leaf). This is not decoration: what is behind the door is the same desktop the
+    door is a photo of, so without the shading the swing is two identical images sliding
+    over each other — invisible.
+
+  The perspective (`m34 = −1/1400`) is set on the **container**'s `sublayerTransform`,
+  not on the leaf: on the leaf it would only govern the knob and the shade riding on it,
+  and the swing would come out as a flat horizontal squash. The jamb is a `.evenOdd`
+  ring (`doorJambThickness` = 2.8 % of the height) plus a bevel stroke on its inner lip,
+  added **after** the leaf so the door turns behind its own frame; the brass knob is a
+  sublayer of the leaf so it swings with it. The swing occupies exactly the creak —
+  `doorCreakStart` 0.24 s to `doorCreakEnd` 1.30 s, measured off the clip (8 kHz RMS, 20
+  ms windows; silence until 0.24, loudest at 0.46–0.50, room tone after 1.30) — with
+  **55 % of the travel spent under the loud half** (`doorCreakPeak` /
+  `doorTravelAtPeak`), because a hinge is noisiest while the door is actually moving and
+  a door still swinging after its own creak has stopped is what gives this away. Same
+  routed-`/sound/play` ownership and same capture-then-audio order as Beethoven above,
+  for the same reason: 0.24 s is less head start than a `screencapture` needs.
 
 - **☢️ Nuke bombardment — the clip, read frame by frame.** Everything below hangs off one
   measurement of `03_explosion.mp3` (3.28 s), so it is worth stating once. The clip is a

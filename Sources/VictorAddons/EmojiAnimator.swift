@@ -6570,6 +6570,387 @@ class EmojiAnimator {
         imgLayer.add(fadeOut, forKey: "fadeOut")
     }
 
+    // MARK: - 🎼 Beethoven's Fifth (the screen zooms on the motif — sound #51)
+
+    /// The two "da-da-da-DUM" phrases of `51_beethoven.mp3`, in seconds from the
+    /// first sample: the three eighth notes, then the long note they fall onto.
+    /// Measured off the clip — mono 16 kHz, log-envelope flux in 5 ms windows —
+    /// not counted off a score: the eighths are ~0.11 s apart, which is faster
+    /// than the concert tempo, because this is a sound effect and not the
+    /// symphony.
+    ///
+    /// Same standing rule as the FBI knock's onsets: **re-cutting the clip means
+    /// re-measuring these.**
+    private static let beethovenPhrases: [(shorts: [Double], resolve: Double)] = [
+        (shorts: [0.305, 0.410, 0.520], resolve: 0.650),
+        (shorts: [3.240, 3.375, 3.495], resolve: 3.610),
+    ]
+
+    /// How big the screen gets on each of the three notes — **bigger every
+    /// time**, which is half the ask ("din ce în ce mai mare"). 1.22 on a
+    /// 1728 pt-wide capture pushes the edges ~190 pt off frame: a lunge, well
+    /// past the FBI knock's 1.07 shove, because this one is the joke rather
+    /// than a punctuation mark.
+    private static let beethovenZoomPeaks: [CGFloat] = [1.06, 1.13, 1.22]
+
+    /// …and how much of what a note just gained is given straight back before
+    /// the next one — the other half of the ask ("dând puțin de înapoi de
+    /// fiecare dată"). A *fraction of the gain*, not a fixed scale, so the
+    /// retreat stays proportional as the peaks grow; a fixed one would be a
+    /// twitch under the first note and a collapse under the third.
+    private static let beethovenPullBack: CGFloat = 0.45
+
+    /// The swell before a note. The three eighths are only ~0.11 s apart, so the
+    /// rise and the pull-back have to share that gap: 0.06 s of rise leaves
+    /// 0.05 s of retreat, which reads as a punch — the shape the motif has.
+    /// As everywhere else here, the **peak lands ON the onset**, so the rise
+    /// starts this much before it.
+    private static let beethovenRise: Double = 0.06
+
+    /// How long the screen takes to settle back to its own size once the triplet
+    /// has landed on its long note. Slow next to the punches on purpose: the
+    /// three hits are the motif, this is the fermata under them.
+    private static let beethovenRelease: Double = 0.45
+
+    /// 🎼 The desktop is photographed and then lunges at the room three times on
+    /// Beethoven's three eighth notes — each lunge bigger than the last, each
+    /// giving a little back before the next — and unwinds to its own size on the
+    /// long note. Then the whole shape repeats on the second phrase.
+    ///
+    /// **The Mac plays the clip itself, from this same call, and the audio waits
+    /// for the capture** — the FBI knock's two lessons, for the FBI knock's two
+    /// reasons: a press-path visual and a separately-routed play have no common
+    /// clock, and the first hit is 0.305 s in, close enough to a `screencapture`
+    /// round trip that starting the sound before the picture existed would spend
+    /// it on an empty overlay.
+    ///
+    /// Returns the full length incl. any Bluetooth compensation, which
+    /// `onSoundPlay` reports back to the tablet as `durationMs`.
+    @discardableResult
+    func showBeethoven(playSound: Bool = false, volume: Float? = nil) -> TimeInterval {
+        _ = cancelIfRunning("beethoven", sound: playSound ? "51_beethoven.mp3" : nil)
+
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return 0 }
+
+        // The capture lives exactly as long as the clip. It spends the last two
+        // seconds at scale 1, i.e. pixel-identical to the desktop under it, so
+        // there is no frozen-screenshot tax for holding it there — only the
+        // cursor is missing, and the real one is still on top of the overlay.
+        var clipLength: Double = 6.52
+        if let soundURL = SoundManager.shared.soundURL(for: "51_beethoven.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric, CMTimeGetSeconds(d) > 0 { clipLength = CMTimeGetSeconds(d) }
+        }
+        let btComp = playSound ? SoundTimingConfig.shared.currentBluetoothCompensation : 0
+
+        // Tracked before the capture goes out, so a second tap is debounced and a
+        // stop-all reaches this even while the subprocess is still running.
+        let imgLayer = CALayer()
+        imgLayer.frame = bounds
+        hostLayer.addSublayer(imgLayer)
+        trackEffect("beethoven", layer: imgLayer,
+                    duration: btComp + clipLength + Self.fbiCaptureAllowance,
+                    sound: playSound ? "51_beethoven.mp3" : nil)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let screenshot = Self.captureBuiltInDisplay()
+            DispatchQueue.main.async {
+                guard let self = self,
+                      self.activeEffects["beethoven"] === imgLayer else { return }
+                self.startBeethoven(imgLayer: imgLayer, screenshot: screenshot,
+                                    clipLength: clipLength, btComp: btComp,
+                                    playSound: playSound, volume: volume)
+            }
+        }
+
+        return btComp + clipLength
+    }
+
+    /// Called the instant the capture is back: start the audio, stamp the one
+    /// clock both halves hang off, and hand CoreAnimation the **whole** zoom
+    /// timeline as a single keyframe animation on an absolute `beginTime`. One
+    /// animation rather than six `asyncAfter` callbacks is what keeps six hits
+    /// 0.11 s apart from picking up main-thread jitter on the way to the screen.
+    private func startBeethoven(imgLayer: CALayer, screenshot: CGImage?,
+                                clipLength: Double, btComp: Double,
+                                playSound: Bool, volume: Float?) {
+        if playSound { _ = SoundManager.shared.playTabletSound("51_beethoven.mp3", volume: volume) }
+        let clock0 = CACurrentMediaTime() + btComp
+
+        guard let screenshot = screenshot else { return }
+        imgLayer.contents = screenshot
+        imgLayer.contentsGravity = .resizeAspectFill
+
+        var times: [Double] = [0.0]
+        var values: [CGFloat] = [1.0]
+        var timings: [CAMediaTimingFunction] = []
+
+        // Append a keyframe, skipping it when it would go backwards in time —
+        // the gaps here are 50 ms wide and the constants above are free to
+        // change, so the guard is what stops a re-tune from producing an
+        // animation CoreAnimation quietly refuses to run.
+        func at(_ t: Double, _ v: CGFloat, _ curve: CAMediaTimingFunctionName) {
+            guard t > (times.last ?? 0) else { return }
+            times.append(t); values.append(v)
+            timings.append(CAMediaTimingFunction(name: curve))
+        }
+
+        for phrase in Self.beethovenPhrases {
+            for (i, onset) in phrase.shorts.enumerated() {
+                let peak = Self.beethovenZoomPeaks[min(i, Self.beethovenZoomPeaks.count - 1)]
+                let rest = values.last ?? 1.0
+                at(onset - Self.beethovenRise, rest, .linear)   // waiting for the note
+                at(onset, peak, .easeOut)                       // the note
+                // Give part of it back — but only up to the moment the NEXT note
+                // starts winding up. The third note has no next one: it holds its
+                // peak into the long note, which is what makes the release read
+                // as one gesture instead of a fourth twitch.
+                guard i + 1 < phrase.shorts.count else { continue }
+                let backTo = peak - (peak - rest) * Self.beethovenPullBack
+                at(min(onset + Self.beethovenRise,
+                       phrase.shorts[i + 1] - Self.beethovenRise), backTo, .easeIn)
+            }
+            at(phrase.resolve, values.last ?? 1.0, .linear)     // hold onto the long note
+            at(phrase.resolve + Self.beethovenRelease, 1.0, .easeInEaseOut)
+        }
+        at(clipLength, 1.0, .linear)                            // sit still for the tail
+
+        guard let span = times.last, span > 0, values.count > 1 else { return }
+        let zoom = CAKeyframeAnimation(keyPath: "transform.scale")
+        zoom.values = values.map { NSNumber(value: Double($0)) }
+        zoom.keyTimes = times.map { NSNumber(value: $0 / span) }
+        zoom.timingFunctions = timings
+        zoom.duration = span
+        zoom.beginTime = clock0          // absolute, in CoreAnimation's own clock
+        imgLayer.add(zoom, forKey: "beethovenZoom")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = clock0 + clipLength - 0.4
+        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
+        fadeOut.duration = 0.4
+        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
+        imgLayer.add(fadeOut, forKey: "fadeOut")
+    }
+
+    // MARK: - 🚪 Door (the screen itself swings open — sound #79)
+
+    /// When the creak in `79_door.mp3` starts and when it has died away,
+    /// measured off the clip (mono 8 kHz RMS envelope, 20 ms windows): silence
+    /// until 0.24, the hinge complains loudest at 0.46–0.50, and by 1.30 there
+    /// is nothing left but room tone. The swing occupies exactly that window —
+    /// a door that is still moving after its own creak has stopped is the one
+    /// thing that gives this away.
+    ///
+    /// **Re-cutting the clip means re-measuring these**, as everywhere else here.
+    private static let doorCreakStart: Double = 0.24
+    private static let doorCreakEnd: Double = 1.30
+
+    /// The loudest point of the creak, and how far through the swing the door is
+    /// by then. The hinge is noisiest while the door is actually moving, so most
+    /// of the travel is spent under the loud half and the rest eases open under
+    /// the tail.
+    private static let doorCreakPeak: Double = 0.50
+    private static let doorTravelAtPeak: CGFloat = 0.55
+
+    /// How far the leaf swings, in radians — 78°, not a full 90°, so it stays a
+    /// door caught mid-swing rather than a picture that folded itself away to
+    /// nothing.
+    private static let doorOpenAngle: CGFloat = -78 * .pi / 180
+
+    /// Viewing distance for the perspective. Shorter = more dramatic foreshort-
+    /// ening; at 1400 pt against a 1728 pt-wide screen the far edge of the leaf
+    /// reads as clearly further away without the room-tilting distortion a
+    /// really short distance gives.
+    private static let doorPerspectiveDistance: CGFloat = 1400
+
+    /// How dark the leaf goes as it turns out of the light. This is what makes
+    /// the rotation legible at all: a screenshot swinging away from a desktop
+    /// that looks exactly like it is invisible until one of them dims.
+    private static let doorShadeOpacity: Float = 0.62
+
+    /// The jamb's thickness as a fraction of the screen height, and the two
+    /// woods it is drawn in — dark frame, lighter bevel catching the light on
+    /// its inner lip.
+    private static let doorJambThickness: CGFloat = 0.028
+    private static let doorJambColor = NSColor(red: 0.20, green: 0.12, blue: 0.06, alpha: 1)
+    private static let doorBevelColor = NSColor(red: 0.42, green: 0.27, blue: 0.14, alpha: 1)
+
+    /// 🚪 A photograph of the desktop becomes a door and swings open on its
+    /// creak, revealing the live desktop behind it.
+    ///
+    /// The gag only works if three things line up, and each of them is a choice:
+    ///
+    /// - **The screenshot IS the leaf** (Victor, 2026-09-09), not a picture of a
+    ///   door laid over it. What swings away is the room's own screen.
+    /// - **The hinge is on the right, the knob on the left** — the way Victor
+    ///   drew it — and the leaf turns *away* from the viewer, so the left edge
+    ///   sweeps rightward and inward. Opening it toward the room would put the
+    ///   leaf over the very desktop it is uncovering.
+    /// - **The leaf darkens as it turns.** What is behind the door is the same
+    ///   desktop the door is a photo of, so without the shading the swing is
+    ///   invisible: two identical images sliding over each other.
+    ///
+    /// **The Mac plays the clip itself, from this same call, and the audio waits
+    /// for the capture** — the FBI knock's bargain, and here the creak leaves
+    /// only 0.24 s of head start, less than a `screencapture` round trip.
+    ///
+    /// Returns the full length incl. any Bluetooth compensation, which
+    /// `onSoundPlay` reports back to the tablet as `durationMs`.
+    @discardableResult
+    func showDoor(playSound: Bool = false, volume: Float? = nil) -> TimeInterval {
+        _ = cancelIfRunning("door", sound: playSound ? "79_door.mp3" : nil)
+
+        let bounds = hostLayer.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return 0 }
+
+        var clipLength: Double = 2.14
+        if let soundURL = SoundManager.shared.soundURL(for: "79_door.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric, CMTimeGetSeconds(d) > 0 { clipLength = CMTimeGetSeconds(d) }
+        }
+        let btComp = playSound ? SoundTimingConfig.shared.currentBluetoothCompensation : 0
+
+        // Tracked before the capture goes out (the FBI knock's reason: a second
+        // tap has to be debounced, and a stop-all has to reach this, while the
+        // subprocess is still running). The container is what is tracked because
+        // the jamb is a sibling of the leaf — they must live and die as one unit.
+        let container = CALayer()
+        container.frame = bounds
+        // Perspective for the leaf's rotation. Applied to the container so it
+        // governs the leaf as its sublayer; putting it on the leaf itself would
+        // only affect the knob and the shade riding on it, and the swing would
+        // come out as a flat horizontal squash.
+        var perspective = CATransform3DIdentity
+        perspective.m34 = -1 / Self.doorPerspectiveDistance
+        container.sublayerTransform = perspective
+        hostLayer.addSublayer(container)
+        trackEffect("door", layer: container,
+                    duration: btComp + clipLength + Self.fbiCaptureAllowance,
+                    sound: playSound ? "79_door.mp3" : nil)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let screenshot = Self.captureBuiltInDisplay()
+            DispatchQueue.main.async {
+                guard let self = self,
+                      self.activeEffects["door"] === container else { return }
+                self.startDoor(container: container, screenshot: screenshot, bounds: bounds,
+                               clipLength: clipLength, btComp: btComp,
+                               playSound: playSound, volume: volume)
+            }
+        }
+
+        return btComp + clipLength
+    }
+
+    private func startDoor(container: CALayer, screenshot: CGImage?, bounds: CGRect,
+                           clipLength: Double, btComp: Double,
+                           playSound: Bool, volume: Float?) {
+        if playSound { _ = SoundManager.shared.playTabletSound("79_door.mp3", volume: volume) }
+        let clock0 = CACurrentMediaTime() + btComp
+
+        guard let screenshot = screenshot else { return }
+
+        // --- The leaf: the screen itself, hinged on its right edge -----------
+        let leaf = CALayer()
+        leaf.contents = screenshot
+        leaf.contentsGravity = .resizeAspectFill
+        leaf.bounds = CGRect(origin: .zero, size: bounds.size)
+        // anchorPoint BEFORE position: the position is read against the anchor,
+        // and the whole point of this layer is that it turns about its right edge.
+        leaf.anchorPoint = CGPoint(x: 1.0, y: 0.5)
+        leaf.position = CGPoint(x: bounds.maxX, y: bounds.midY)
+        leaf.isDoubleSided = false   // past 90° there is no back to show, so don't
+        container.addSublayer(leaf)
+
+        // The knob, on the leaf so it swings with it. Victor drew it on the LEFT,
+        // i.e. on the free edge, which is where a knob goes on a right-hinged door.
+        let knobR = bounds.height * 0.024
+        let knob = CAShapeLayer()
+        knob.path = CGPath(ellipseIn: CGRect(x: -knobR, y: -knobR, width: knobR * 2, height: knobR * 2), transform: nil)
+        knob.bounds = CGRect(x: -knobR, y: -knobR, width: knobR * 2, height: knobR * 2)
+        knob.position = CGPoint(x: bounds.width * 0.055, y: bounds.height * 0.5)
+        knob.fillColor = NSColor(red: 0.85, green: 0.72, blue: 0.36, alpha: 1).cgColor   // brass
+        knob.strokeColor = NSColor(white: 0.15, alpha: 0.85).cgColor
+        knob.lineWidth = max(1.5, knobR * 0.14)
+        knob.shadowColor = NSColor.black.cgColor
+        knob.shadowOpacity = 0.5
+        knob.shadowRadius = knobR * 0.5
+        knob.shadowOffset = CGSize(width: -knobR * 0.25, height: -knobR * 0.25)
+        leaf.addSublayer(knob)
+
+        // The shade that turns the leaf out of the light (see the note above).
+        let shade = CALayer()
+        shade.frame = leaf.bounds
+        shade.backgroundColor = NSColor.black.cgColor
+        shade.opacity = 0
+        leaf.addSublayer(shade)
+
+        // --- The jamb: static, above the leaf, so the door turns behind it ---
+        let jamb = CAShapeLayer()
+        let thickness = bounds.height * Self.doorJambThickness
+        let opening = bounds.insetBy(dx: thickness, dy: thickness)
+        let ring = CGMutablePath()
+        ring.addRect(bounds)
+        ring.addRect(opening)
+        jamb.path = ring
+        jamb.fillRule = .evenOdd            // the opening is the hole in the frame
+        jamb.fillColor = Self.doorJambColor.cgColor
+        container.addSublayer(jamb)
+
+        let bevel = CAShapeLayer()
+        bevel.path = CGPath(rect: opening, transform: nil)
+        bevel.fillColor = nil
+        bevel.strokeColor = Self.doorBevelColor.cgColor
+        bevel.lineWidth = max(2, thickness * 0.22)
+        container.addSublayer(bevel)
+
+        // --- The swing -------------------------------------------------------
+        // Two segments, not one ease: the hinge is loudest while the door is
+        // actually moving, so most of the travel is spent under the loud half of
+        // the creak and the rest drifts open under its tail.
+        let times: [Double] = [0, Self.doorCreakStart, Self.doorCreakPeak, Self.doorCreakEnd, clipLength]
+        let travel: [CGFloat] = [0, 0, Self.doorTravelAtPeak, 1, 1]
+        let curves = [
+            CAMediaTimingFunction(name: .linear),        // still shut
+            CAMediaTimingFunction(name: .easeIn),        // the shove that starts it
+            CAMediaTimingFunction(name: .easeOut),       // swinging open
+            CAMediaTimingFunction(name: .linear),        // standing open
+        ]
+        let span = max(clipLength, Self.doorCreakEnd)
+
+        let swing = CAKeyframeAnimation(keyPath: "transform.rotation.y")
+        swing.values = travel.map { NSNumber(value: Double($0 * Self.doorOpenAngle)) }
+        swing.keyTimes = times.map { NSNumber(value: $0 / span) }
+        swing.timingFunctions = curves
+        swing.duration = span
+        swing.beginTime = clock0            // absolute, in CoreAnimation's own clock
+        swing.fillMode = .forwards
+        swing.isRemovedOnCompletion = false
+        leaf.add(swing, forKey: "doorSwing")
+
+        // The shading follows the same key times, so it can never lag the angle
+        // it is meant to be explaining.
+        let darken = CAKeyframeAnimation(keyPath: "opacity")
+        darken.values = travel.map { NSNumber(value: Float($0) * Self.doorShadeOpacity) }
+        darken.keyTimes = swing.keyTimes
+        darken.timingFunctions = curves
+        darken.duration = span
+        darken.beginTime = clock0
+        darken.fillMode = .forwards
+        darken.isRemovedOnCompletion = false
+        shade.add(darken, forKey: "doorShade")
+
+        // Frame and leaf leave together on the clip's last breath, handing the
+        // screen back to the desktop that was behind the door all along.
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.beginTime = clock0 + clipLength - 0.4
+        fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
+        fadeOut.duration = 0.4
+        fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
+        container.add(fadeOut, forKey: "fadeOut")
+    }
+
     // MARK: - Phone ring (screenshot shake)
 
     func showPhoneRing(playSound: Bool = true) {
