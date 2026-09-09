@@ -107,9 +107,6 @@ enum SoundEffectMap {
         // each of them. Driven from the routed /sound/play path (onSoundPlay),
         // which plays the clip and stamps the zoom clock in one call; mapping the
         // press too would double-trigger it.
-        // 79_door.mp3 is NOT here either: the creak starts 0.24s in and the leaf
-        // must already be a picture of the screen when it does, so the effect
-        // owns the audio and starts it in the capture's completion (onSoundPlay).
         // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
         // effect is driven from the routed /sound/play path (onSoundPlay),
         // which plays the beep-synced audio itself — mapping the press too
