@@ -76,9 +76,13 @@ class TabletHttpServer {
         case testScreenshotCrop
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
-        case testScreenshotMark
+        case testScreenshotMark(String?)
         /// 💬📺 Toggle the live subtitle band — same as ⌘⌃U.
         case testCaptions
+        /// 💬📺 Push one line straight into the band, as if whisper had just
+        /// written it. Never touches the transcript on disk — the day's file
+        /// feeds the summarizer skills and is not a scratchpad.
+        case testCaptionsSay(String)
         /// Fire the 🔥 Whip overlay — same action as ⌃W (test hook).
         case testWhip
         /// Crack the whip programmatically (scripted mouse-flick) — same as the
@@ -256,8 +260,9 @@ class TabletHttpServer {
     var onTestTile: (() -> Void)?
     var onTestTranscriptPicker: ((String?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
-    var onTestScreenshotMark: (() -> Void)?
+    var onTestScreenshotMark: ((String?) -> Void)?
     var onTestCaptions: (() -> Void)?
+    var onTestCaptionsSay: ((String) -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
@@ -480,10 +485,12 @@ class TabletHttpServer {
                 self.onTestTranscriptPicker?(at)
             case .testScreenshotCrop:
                 self.onTestScreenshotCrop?()
-            case .testScreenshotMark:
-                self.onTestScreenshotMark?()
+            case .testScreenshotMark(let at):
+                self.onTestScreenshotMark?(at)
             case .testCaptions:
                 self.onTestCaptions?()
+            case .testCaptionsSay(let text):
+                self.onTestCaptionsSay?(text)
             case .testWhip:
                 self.onTestWhip?()
             case .testWhipCrack:
@@ -700,9 +707,11 @@ class TabletHttpServer {
         case "/test/screenshot/crop":
             return .testScreenshotCrop
         case "/test/screenshot/mark":
-            return .testScreenshotMark
+            return .testScreenshotMark(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/captions":
             return .testCaptions
+        case "/test/captions/say":
+            return .testCaptionsSay(queryItems.first(where: { $0.name == "text" })?.value ?? "")
         case "/test/whip":
             return .testWhip
         case "/test/whip/crack":

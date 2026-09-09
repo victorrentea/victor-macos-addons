@@ -93,6 +93,19 @@ final class LiveCaptions {
         overlayInfo("💬📺 subtitles off")
     }
 
+    /// Feed one line in as if whisper had just written it — the headless twin of
+    /// somebody talking, for `GET /test/captions/say`. It goes through exactly
+    /// the same seam as a real line, so what it proves is the real path; what it
+    /// skips is only the file.
+    func inject(_ text: String) {
+        guard isOn else { return }
+        let line = TranscriptTail.stripSpeaker(text)
+        guard !line.isEmpty else { return }
+        standing = CaptionStream.merge(standing: standing, incoming: line)
+        lastGrewAt = Date()
+        render()
+    }
+
     // MARK: - Reading forward
 
     private func tick() {
@@ -197,7 +210,6 @@ final class LiveCaptions {
         label.lineBreakMode = .byWordWrapping
         label.cell?.wraps = true
         label.frame = NSRect(origin: .zero, size: frame.size)
-        label.autoresizingMask = [.width, .height]
 
         let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
         view.wantsLayer = true
@@ -240,6 +252,20 @@ final class LiveCaptions {
             .shadow: shadow,
             .paragraphStyle: paragraph,
         ])
+        // **Anchored to the bottom, growing upward.** The panel is three lines
+        // tall so a long sentence has somewhere to go, but a label draws its text
+        // at the *top* of its frame — which put the band a quarter of the way up
+        // the screen, where a subtitle has no business being. So the label is
+        // resized to the text and sat on the panel's floor: one line hugs the
+        // bottom, and a second and third push up into the empty space above
+        // rather than dragging the first line down. That is the direction film
+        // subtitles grow, and it is the one that keeps the newest words at a
+        // fixed height for the eye that is already there.
+        let fitted = label.sizeThatFits(NSSize(width: label.superview?.bounds.width ?? label.bounds.width,
+                                               height: .greatestFiniteMagnitude))
+        let width = label.superview?.bounds.width ?? label.bounds.width
+        label.frame = NSRect(x: 0, y: 0, width: width, height: ceil(fitted.height))
+
         // An empty band is nothing at all, not an empty box: the panel stays up
         // (it costs nothing and re-creating it would flicker) but with no text
         // there is nothing to see.

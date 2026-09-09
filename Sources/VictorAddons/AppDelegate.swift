@@ -1057,8 +1057,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.breakTimer.stateJSON() ?? "{\"error\":\"break timer unavailable\"}"
         }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
-        tabletServer?.onTestScreenshotMark = { DispatchQueue.main.async { ScreenCaptureFlash.markCursor(at: NSEvent.mouseLocation) } }
+        // `at=x,y` in global Cocoa points, so a test can aim the mark at a screen
+        // without dragging the pointer out from under whoever is using it.
+        tabletServer?.onTestScreenshotMark = { at in
+            let point: NSPoint = {
+                let parts = (at ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                guard parts.count == 2 else { return NSEvent.mouseLocation }
+                return NSPoint(x: parts[0], y: parts[1])
+            }()
+            DispatchQueue.main.async { ScreenCaptureFlash.markCursor(at: point) }
+        }
         tabletServer?.onTestCaptions = { [weak self] in DispatchQueue.main.async { self?.liveCaptions?.toggle() } }
+        tabletServer?.onTestCaptionsSay = { [weak self] text in DispatchQueue.main.async { self?.liveCaptions?.inject(text) } }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         // Goes through `self` rather than capturing the controller: this whole
         // block wires the server long before `transcriptPasteController` is
