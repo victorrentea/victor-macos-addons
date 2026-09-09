@@ -58,11 +58,15 @@ enum CaptionStream {
     /// 2 s of audio cannot be more than about this many words.
     static let maxOverlapWords = 12
 
-    /// How much text the band keeps behind the newest words. Roughly three
-    /// wrapped lines at the band's type size — enough that a sentence finishing
-    /// across a chunk boundary is readable whole, short enough that the room is
-    /// reading *now* rather than catching up on a paragraph.
-    static let maxCharacters = 260
+    /// A safety bound on how much text is carried, **not** the thing that decides
+    /// what the room sees. The plate trims itself by *measured height* against the
+    /// screen it is drawn on (`LiveCaptions.render`), which is the only way to be
+    /// right about it: how many words fit is a question about font size, screen
+    /// width and where the words wrap, and a character count answers a different
+    /// question every time any of those changes. This just stops the string
+    /// growing without limit between trims — comfortably more than the largest
+    /// plate can show.
+    static let maxCharacters = 900
 
     /// Fold a word to what two whisper passes can be expected to agree on.
     /// Returns `nil` for a token that is pure punctuation, so `—` between two
