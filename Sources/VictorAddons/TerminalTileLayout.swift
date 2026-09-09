@@ -7,34 +7,39 @@ import Foundation
 /// so the decisions below can be unit-tested — the same split as
 /// `TerminalZoomSizeLockPolicy` and `TerminalZoomTargetPolicy`.
 ///
-/// **Four windows fill the quadrants; the fifth and up fan out.** A screen has
-/// four readable quarters and no more, so the extras used to be left wherever they
-/// happened to sit — behind the tiled ones, uncountable. They are now stacked over
-/// the **bottom-right** quadrant with a diagonal offset, which keeps a strip of
-/// every window's title bar exposed: you can see how many there are and drag any
-/// one of them out by the part that shows.
+/// **Nothing ever overlaps.** Four windows fill the quadrants; the fifth and up
+/// *split a quadrant in two* rather than being piled on top of one. The first cut
+/// of this (2026-09-08) fanned the extras diagonally over the bottom-right tile,
+/// each stepped 32 pt down-right so a strip of every title bar stayed exposed —
+/// and a strip is not the same thing as a window. 2026-09-09: *"never never
+/// overlap tiles like this one over the other — create separate tiles per
+/// quadrant"*. A title bar you can only see a corner of tells you a window exists;
+/// a title bar you can see whole tells you **which** session it is and blinks its
+/// Claude glyph when that session has something to say, which is the actual reason
+/// for pressing ⌘⌃A.
 ///
-/// **The fan only reads if it opens downwards** — offset *and* depth have to agree.
-/// A window's title bar sits at its top, so the window stepped further down-right
-/// must be the one in **front**: then each window behind it shows a full title bar
-/// above. Get that backwards and the pile is technically fanned and practically
-/// invisible — the front window covers every title bar behind it except a
-/// `cascadeStep`-wide sliver at the far right, which is what the first cut of this
-/// did (2026-09-08: *"restul sunt una sub alta"*). So `TerminalTiler` raises the
-/// windows in **slot order** — top-left, top-right, bottom-left, bottom-right, then
-/// the fan from the shallowest slot to the deepest — and every title bar on the
-/// screen ends up visible.
+/// **The quadrants take the extras in a fixed order: bottom-right, bottom-left,
+/// top-right, top-left** (`fillOrder`). So the fifth window halves the
+/// bottom-right quadrant, the sixth halves the bottom-left, the seventh the
+/// top-right, the eighth the top-left, and the ninth goes back to the bottom-right
+/// for a third slice. The order starts at the bottom because that is where the
+/// hands and the eyes already are — the top of the screen is the half you glance
+/// at, the bottom the half you work in.
+///
+/// **A quadrant splits into rows, never columns.** Halving the width would halve
+/// the *title*, and the title is what all of this is protecting; halving the height
+/// costs lines of scrollback, which is the cheaper thing to lose.
 ///
 /// **A window keeps the slot it is already in.** Which window goes where is decided
 /// by *where it currently sits*, never by z-order: pressing ⌘⌃A twice must be a
 /// no-op. It used to hand the four quadrants to the four front-most windows, so the
-/// fan — which the raise had just brought to the front — swapped places with the
-/// tiles on every press (2026-09-08: *"le cam face shuffle"*). Matching is greedy
-/// nearest-pair on window **origin and size**, not centre: a fan slot and the
-/// quadrant it lies in share a centre almost exactly, so centres cannot tell "the
-/// bottom-right tile" from "the window fanned on top of it", while origins differ by
-/// a whole `cascadeStep`. A window already on its target matches at cost 0 and wins
-/// it before anything else can, which is what makes re-tiling idempotent.
+/// windows that had just been raised swapped places with the tiles on every press
+/// (2026-09-08: *"le cam face shuffle"*). Matching is greedy nearest-pair on window
+/// **origin and size**, not centre: the two halves of a split quadrant have
+/// centres of their own, but a whole quadrant and its top half share an origin, so
+/// the size term is what tells them apart. A window already on its target matches
+/// at cost 0 and wins it before anything else can, which is what makes re-tiling
+/// idempotent.
 enum TerminalTileLayout {
 
     struct Rect: Hashable {
@@ -47,12 +52,10 @@ enum TerminalTileLayout {
     /// Gap left between quadrants (and against the top of the screen).
     static let margin = 2
 
-    /// The quadrant the cascade piles onto — bottom-right.
-    static let cascadeQuadrant = 3
-
-    /// Diagonal offset between two cascaded windows, when there is room for it.
-    /// A Terminal title bar is ~28 pt tall, so 32 exposes a whole one.
-    static let cascadeStep = 32
+    /// Which quadrant takes the next window once all four are occupied:
+    /// bottom-right first, then bottom-left, top-right, top-left. Indices into
+    /// `quadrants(of:)`.
+    static let fillOrder = [3, 2, 1, 0]
 
     // MARK: - Quadrants
 
@@ -68,17 +71,40 @@ enum TerminalTileLayout {
 
     // MARK: - Layout
 
+    /// How many windows each quadrant holds, in quadrant order, for `count`
+    /// windows on the display. Everyone gets one, then the extras are dealt out
+    /// round-robin in `fillOrder` — so the bottom-right quadrant is always the
+    /// most crowded and the top-left the least.
+    static func capacities(count: Int) -> [Int] {
+        var caps = [Int](repeating: 1, count: 4)
+        guard count > 4 else { return caps }
+        for i in 0..<(count - 4) { caps[fillOrder[i % 4]] += 1 }
+        return caps
+    }
+
+    /// `count` full-width rows stacked down `quad`, abutting exactly the way the
+    /// quadrants themselves abut — no overlap, no gap, no pixel of the quadrant
+    /// left over. Integer division is done on the *edges* rather than on the
+    /// height so the rounding error cannot accumulate into a seam.
+    static func rows(count: Int, in quad: Rect) -> [Rect] {
+        guard count > 1 else { return count == 1 ? [quad] : [] }
+        return (0..<count).map { i in
+            let top = quad.y + quad.h * i / count
+            let bottom = quad.y + quad.h * (i + 1) / count
+            return Rect(x: quad.x, y: top, w: quad.w, h: bottom - top)
+        }
+    }
+
     /// Every slot on the display, in **layout order**: the four quadrants
-    /// (top-left, top-right, bottom-left, bottom-right) and then, once there are
-    /// more windows than quadrants, one fan slot per extra — shallowest first.
-    ///
-    /// That order is also the order the windows are raised in, which is why it is
-    /// the order the array is in: raising them shallowest-to-deepest leaves every
-    /// title bar showing.
+    /// (top-left, top-right, bottom-left, bottom-right), each one already split
+    /// into as many rows as it has to hold. Exactly `count` slots come back once
+    /// there are more windows than quadrants, and they tile the screen without
+    /// overlapping.
     static func targets(count: Int, display: Rect) -> [Rect] {
         let quads = quadrants(of: display)
         guard count > quads.count else { return quads }
-        return quads + cascade(count: count - quads.count, over: quads[cascadeQuadrant])
+        let caps = capacities(count: count)
+        return quads.enumerated().flatMap { rows(count: caps[$0.offset], in: $0.element) }
     }
 
     /// Which slot each window goes to, as an index into `targets(count:display:)`
@@ -125,34 +151,11 @@ enum TerminalTileLayout {
     }
 
     /// How far a window is from a slot: corner distance, plus half the size
-    /// mismatch. Corners are what distinguish the slots of a fan from each other
-    /// and from the quadrant they lie on; the size term is the tie-breaker for two
-    /// windows sharing a corner.
+    /// mismatch. Corners separate the rows of a split quadrant from each other;
+    /// the size term is what separates a whole quadrant from its own top row,
+    /// which share a corner exactly.
     private static func cost(_ a: Rect, _ b: Rect) -> Int {
         abs(a.x - b.x) + abs(a.y - b.y) + (abs(a.w - b.w) + abs(a.h - b.h)) / 2
-    }
-
-    /// `count` frames stepping down-right across `base`, in slot order (nearest the
-    /// corner first). The **first step is taken immediately**, so slot 0 already
-    /// clears `base` by one `cascadeStep`: the window tiled into that quadrant is
-    /// the back of the fan and keeps its own title bar showing above the pile —
-    /// the extras sit *on top of* the bottom-right window, they do not replace it.
-    /// The last slot lands flush with the quadrant's bottom-right corner, so the
-    /// whole fan stays inside it (and therefore on screen) and never covers one of
-    /// the other three tiles. Many windows tighten the step rather than letting the
-    /// windows shrink without bound.
-    static func cascade(count: Int, over base: Rect) -> [Rect] {
-        guard count > 0 else { return [] }
-
-        let maxSpread = max(0, min(base.w, base.h) / 2)
-        let step = max(8, min(cascadeStep, maxSpread / count))
-        let spread = step * count
-        let w = max(200, base.w - spread)
-        let h = max(120, base.h - spread)
-
-        return (1...count).map { i in
-            Rect(x: base.x + i * step, y: base.y + i * step, w: w, h: h)
-        }
     }
 
 }

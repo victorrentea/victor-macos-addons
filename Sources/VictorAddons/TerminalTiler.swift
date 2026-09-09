@@ -3,10 +3,11 @@ import CoreGraphics
 import ApplicationServices
 
 /// Snaps each Terminal window to the nearest free quadrant of its current monitor.
-/// Minimizes total movement (brute-force permutations — fine for ≤4 windows per monitor).
-/// Windows stay on whichever display they currently occupy. From the fifth window
-/// on there is no quadrant left, so the extras are **cascaded** over the
-/// bottom-right one and raised above it — see `TerminalTileLayout`.
+/// Minimizes total movement (greedy nearest-pair — fine for a handful of windows
+/// per monitor). Windows stay on whichever display they currently occupy. From the
+/// fifth window on there is no whole quadrant left, so a quadrant **splits into
+/// rows** — bottom-right first, then bottom-left, top-right, top-left. Nothing
+/// overlaps anything, ever; see `TerminalTileLayout`.
 ///
 /// Window geometry is read/written through the in-process **Accessibility API**
 /// (`AXUIElement`), which relies only on this app's own Accessibility grant — the
@@ -33,10 +34,8 @@ enum TerminalTiler {
     /// **Tiling never moves the keyboard.** The window that was being typed in is
     /// noted before anything is raised and raised once more at the very end, so it
     /// is the one left focused — arranging windows is not a reason to make the next
-    /// keystrokes land in a different terminal. It costs nothing in the usual case
-    /// (that window is one of the three quadrants the fan does not touch, so
-    /// raising it covers nothing); the one case where it does cost something is
-    /// spelled out on `raiseInSlotOrder`.
+    /// keystrokes land in a different terminal. Since the tiles no longer overlap,
+    /// that final raise costs nothing at all: there is no window it can cover.
     static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
         let displays = getDisplays()
         let focused = focusedWindow()
@@ -176,18 +175,14 @@ enum TerminalTiler {
     // MARK: - Stacking order
 
     /// Raise every window on the display in **slot order**: top-left, top-right,
-    /// bottom-left, bottom-right, then the fan from its shallowest slot to its
-    /// deepest. The last one raised ends on top.
+    /// bottom-left, bottom-right, each quadrant's rows top to bottom.
     ///
-    /// Frames say nothing about depth, and depth is the other half of a readable
-    /// fan. The extras are by construction the *back*-most windows (that is how
-    /// they came to be extras), so left alone they would be tiled into a neat fan
-    /// hidden behind the bottom-right tile. And a title bar sits at the **top** of
-    /// its window, so the window stepped further down-right has to be the one in
-    /// front — raise the fan the other way round and each title bar behind is
-    /// covered but for a 32 pt sliver: fanned in geometry, a single window to the
-    /// eye. Walking the whole display in slot order gets both right at once, and
-    /// leaves every terminal title on that screen legible.
+    /// The tiles no longer overlap, so this is no longer about which title bar
+    /// covers which — it is about the whole set of terminals coming up **above the
+    /// other apps** on that screen. A window that was buried under Chrome is still
+    /// buried after it has been given a frame, and a tile you cannot see has not
+    /// been tiled. The order is kept deterministic anyway so the z-order after
+    /// ⌘⌃A is reproducible and a second press changes nothing visible.
     ///
     /// **Depth and the keyboard are the same thing here.** Measured 2026-09-08:
     /// `kAXRaiseAction` on a Terminal window makes it the key window, and the other
@@ -195,10 +190,6 @@ enum TerminalTiler {
     /// brings it straight to `z00`. Terminal will not keep the keyboard in a window
     /// that is not in front, so this walk cannot have the last word: `tile` raises
     /// the previously focused window after it, and **that** is the one left on top.
-    /// Where the two rules collide — the focused window is the bottom-right tile,
-    /// so putting the keyboard back covers the fan lying on it — the keyboard wins,
-    /// by explicit instruction. Everywhere else it is free: the focused window is
-    /// one of the other three tiles and overlaps nothing.
     private static func raiseInSlotOrder(_ wins: [AXUIElement], assignment: [Int]) {
         for (win, _) in zip(wins, assignment).sorted(by: { $0.1 < $1.1 }) {
             AXUIElementPerformAction(win, kAXRaiseAction as CFString)
