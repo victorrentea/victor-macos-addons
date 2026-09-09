@@ -9,6 +9,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var animator: EmojiAnimator!
     private var cursorGlow: CursorGlow!
     private var progressBarOverlay: ProgressBarOverlay?
+    /// 🏁 End-of-training sequence, armed from the tablet's 🏁 button.
+    private let trainingEnd = TrainingEndSequence()
     // buttonBar removed
     private var menuBarManager: MenuBarManager!
     private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
@@ -208,6 +210,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // countdown the trainer may cancel mid-run (someone interrupts), so a
         // confetti "reward" at the end is misleading. The bar just fills, then
         // fades out (ProgressBarOverlay.fadeOut) — onComplete stays unset.
+        //
+        // 🏁 The end-of-training sequence borrows that same bar, with a finish flag
+        // riding its head. It does NOT hang its payoff on `onComplete`: the bar is
+        // shared, and a 3s press landing mid-countdown would otherwise inherit
+        // "over and out". The sequence's own tick owns the ending.
+        trainingEnd.onStartCountdown = { [weak self] seconds in
+            self?.progressBarOverlay?.start(seconds: seconds, rider: "🏁")
+        }
+        trainingEnd.onAbortCountdown = { [weak self] in
+            self?.progressBarOverlay?.cancel()
+        }
+        trainingEnd.onFinish = {
+            SoundManager.shared.play("82_over_and_out.mp3")
+        }
 
         // No outbound WebSocket: the addon only runs LocalWebSocketServer on
         // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro
@@ -366,12 +382,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 // Audible tap — e.g. the tablet's ⟳ reconnect button, paired with
                 // the green-flash as "the link works" feedback.
                 SoundManager.shared.playOverlapping("click.wav", volume: 0.7)
+            case "training-end":
+                // Tablet 🏁 — a toggle, so a change of mind (or an armed sequence
+                // with whisper stopped, which would otherwise see silence forever)
+                // can be called off from the same button.
+                self?.trainingEnd.toggle()
             case "stop-all":
                 SoundManager.shared.stopTabletSound()
                 // "Silence everything the tablet started" includes a 🎵
                 // soundtrack-only play — it has no tile of its own to press again.
                 VideoSoundtrackPlayer.shared.stop()
                 self?.animator.stopAllActiveEffects()
+                // Disarm before cancelling the bar: "silence everything" must not
+                // leave a sequence armed that would put the bar straight back up.
+                self?.trainingEnd.disarm()
                 self?.progressBarOverlay?.cancel()
             default:
                 // Tablet timer: "progress-bar/<seconds>" grows a bar over N
@@ -553,7 +577,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // night. Only the lock says this; a Mac that simply stopped answering
             // does not (the tablet keeps its last-known false).
             let locked = self?.screenLock?.pingField ?? ",\"macScreenLocked\":false"
-            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)}"
+            // 🏁 The tablet's 🏁 chip looks pressed-in while the sequence is armed,
+            // and the Mac is the only one that knows: it disarms ITSELF when the
+            // countdown runs out. Reporting it here is what keeps the chip from
+            // going stale into an inverted toggle after the session actually ended.
+            let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
+            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)}"
         }
         tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
         tabletServer?.onSoundPlay = { [weak self] name, volumePct in
@@ -758,6 +787,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         whisperManager.onAvailableDevicesChanged = { [weak self] devices in
             self?.menuBarManager.setAvailableSources(devices)
+        }
+        // Both channels — Victor's mic and the room coming back from Zoom — pulse
+        // through here whenever whisper hears something above its threshold. That
+        // is the only input the 🏁 sequence has, and the only one it needs.
+        whisperManager.onVoice = { [weak self] _ in
+            self?.trainingEnd.noteVoice()
         }
         let startWhisper: () -> Void = { [weak whisperManager, weak self] in
             var env: [String: String] = [:]

@@ -13,6 +13,12 @@ import Cocoa
 /// remaining whole seconds (N…1) in sync with the fill, then disappears with the
 /// bar on completion / cancel.
 ///
+/// 🏁 The end-of-training countdown (`TrainingEndSequence`) reuses the very same
+/// bar with `rider: "🏁"`: an emoji pinned to the fill's leading edge, travelling
+/// left→right with it. It rides the head rather than sitting at a fixed spot
+/// because that is the only part of the bar the eye is actually tracking — the
+/// finish line is where the fill currently *is*, not where the bar ends.
+///
 /// Rendered as a CALayer on the overlay's host layer — the same layer the emoji
 /// effects use — NOT as an NSView subview. Adding a subview onto that
 /// manually-populated, layer-backed host view does not composite (the bar never
@@ -26,6 +32,11 @@ final class ProgressBarOverlay {
     private var countdownLabel: CATextLayer?
     private var countdownTimer: Timer?
     private var countdownDeadline: Date?
+
+    /// Everything drawn ON the bar (countdown number, 🏁 rider). Kept together so
+    /// cancel/fade treat them as one — a decoration that outlived the bar it was
+    /// drawn on would be a leftover glyph floating over an empty screen.
+    private var decorations: [CALayer] = []
 
     /// Fired when the bar fills all the way to the right edge — i.e. the
     /// interval elapsed naturally. NOT fired on `cancel()` (manual stop or a
@@ -43,12 +54,20 @@ final class ProgressBarOverlay {
     private static let numberLeftInset: CGFloat = 24
     private static let numberFontSize: CGFloat = 80
 
+    // The emoji riding the fill's leading edge. Slightly smaller than the
+    // countdown number so the two read as label + marker rather than as two
+    // competing headlines.
+    private static let riderFontSize: CGFloat = 72
+
     init(hostLayer: CALayer) {
         self.hostLayer = hostLayer
     }
 
     /// Start (or restart) the bar, filling left→right over `seconds`.
-    func start(seconds: TimeInterval) {
+    ///
+    /// `rider`, when given, is an emoji pinned to the leading edge of the fill for
+    /// the whole run.
+    func start(seconds: TimeInterval, rider: String? = nil) {
         guard seconds > 0 else { return }
         cancel()  // restart-from-zero semantics
 
@@ -104,6 +123,11 @@ final class ProgressBarOverlay {
         hostLayer.addSublayer(label)
         CATransaction.commit()
         countdownLabel = label
+        decorations = [label]
+
+        if let rider = rider {
+            decorations.append(addRider(rider, travelling: width, over: seconds))
+        }
 
         // Drive the number off a deadline so restarts / drift can't desync it from
         // the bar. `ceil(remaining)` yields N…1 through the interval, 0 at the end.
@@ -123,7 +147,43 @@ final class ProgressBarOverlay {
         }
         fadeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
-        overlayInfo("Progress bar started: \(Int(seconds))s")
+        overlayInfo("Progress bar started: \(Int(seconds))s\(rider.map { " \($0)" } ?? "")")
+    }
+
+    /// The emoji that travels with the fill's leading edge.
+    ///
+    /// `anchorPoint.x = 1` puts the glyph's RIGHT edge on the head, so it is always
+    /// standing on the yellow rather than out ahead of it on bare desktop — and at
+    /// the end it comes to rest flush against the screen's right edge instead of
+    /// half off it. The trade is the first fraction of a second, where the head is
+    /// still too close to the left edge for the whole glyph to fit; the alternative
+    /// (centring it) costs a partly cut-off flag at BOTH ends of the run.
+    private func addRider(_ emoji: String, travelling width: CGFloat, over seconds: TimeInterval) -> CALayer {
+        let box = Self.riderFontSize * 1.4
+        let layer = CATextLayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.string = emoji
+        layer.fontSize = Self.riderFontSize
+        layer.alignmentMode = .center
+        layer.anchorPoint = CGPoint(x: 1, y: 0.5)
+        layer.bounds = CGRect(x: 0, y: 0, width: box, height: box)
+        layer.position = CGPoint(x: 0, y: Self.height / 2)
+        layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        hostLayer.addSublayer(layer)
+        CATransaction.commit()
+
+        // Same duration, same linear curve and same 0→width span as the fill, so
+        // the two cannot drift apart over the run.
+        let travel = CABasicAnimation(keyPath: "position.x")
+        travel.fromValue = 0
+        travel.toValue = width
+        travel.duration = seconds
+        travel.timingFunction = CAMediaTimingFunction(name: .linear)
+        travel.fillMode = .forwards
+        travel.isRemovedOnCompletion = false
+        layer.add(travel, forKey: "ride")
+        return layer
     }
 
     /// Refresh the countdown number from the deadline; hide it once time's up.
@@ -142,7 +202,7 @@ final class ProgressBarOverlay {
         CATransaction.commit()
     }
 
-    /// Remove the bar (and countdown number) immediately (no fade).
+    /// Remove the bar (and its decorations) immediately (no fade).
     func cancel() {
         fadeWork?.cancel()
         fadeWork = nil
@@ -151,50 +211,43 @@ final class ProgressBarOverlay {
         bar = nil
     }
 
-    /// Stop and remove the countdown number + its timer.
+    /// Stop and remove the decorations + the countdown timer.
     private func tearDownCountdown() {
         countdownTimer?.invalidate()
         countdownTimer = nil
         countdownDeadline = nil
-        countdownLabel?.removeFromSuperlayer()
         countdownLabel = nil
+        for layer in decorations { layer.removeFromSuperlayer() }
+        decorations = []
     }
 
     private func fadeOut() {
         guard let bar = bar else { return }
         self.bar = nil
 
-        // Fade the countdown number out alongside the bar (stop its timer first so
-        // it can't fight the fade), then remove it.
+        // Fade the decorations out alongside the bar (stop the countdown timer
+        // first so it can't fight the fade), then remove them.
         countdownTimer?.invalidate()
         countdownTimer = nil
         countdownDeadline = nil
-        let label = countdownLabel
         countdownLabel = nil
+        let fading = decorations
+        decorations = []
 
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = bar.opacity
-        fade.toValue = 0
-        fade.duration = Self.fadeDuration
-        fade.fillMode = .forwards
-        fade.isRemovedOnCompletion = false
-        bar.add(fade, forKey: "fadeOut")
-        bar.opacity = 0
-
-        if let label = label {
-            let labelFade = CABasicAnimation(keyPath: "opacity")
-            labelFade.fromValue = label.opacity
-            labelFade.toValue = 0
-            labelFade.duration = Self.fadeDuration
-            labelFade.fillMode = .forwards
-            labelFade.isRemovedOnCompletion = false
-            label.add(labelFade, forKey: "fadeOut")
-            label.opacity = 0
+        for layer in [bar] + fading {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = layer.opacity
+            fade.toValue = 0
+            fade.duration = Self.fadeDuration
+            fade.fillMode = .forwards
+            fade.isRemovedOnCompletion = false
+            layer.add(fade, forKey: "fadeOut")
+            layer.opacity = 0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration) { [weak bar, weak label] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration) { [weak bar] in
             bar?.removeFromSuperlayer()
-            label?.removeFromSuperlayer()
+            for layer in fading { layer.removeFromSuperlayer() }
         }
     }
 }

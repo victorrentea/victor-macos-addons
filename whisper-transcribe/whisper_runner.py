@@ -148,6 +148,9 @@ _SILENCE_FLUSH_SEC = float(os.environ.get("WHISPER_SILENCE_FLUSH_SECONDS", "0.6"
 _MIN_FLUSH_SEC = float(os.environ.get("WHISPER_MIN_FLUSH_SECONDS", "1.5"))
 
 _SAMPLE_RATE = 16000
+# How rarely an above-threshold block is announced as VICTOR_VOICE. See
+# `_ChannelCapture._report_voice`.
+_VOICE_PULSE_SEC = 1.0
 
 # Keep a copy of the raw microphone audio on disk. OFF by default — it writes
 # ~115 MB per hour and records a room full of people, so it is opt-in per
@@ -616,6 +619,8 @@ class _ChannelCapture:
         self._stream = None
         # Consecutive below-threshold callback blocks, for the silence flush.
         self._silent_blocks = 0
+        # Last VICTOR_VOICE pulse, so the throttle survives across callbacks.
+        self._last_voice_pulse = 0.0
         # Samples at the FRONT of `_buf` that a previous clock emit already sent
         # to whisper as its trailing overlap. They are audio, but they are not
         # *new* audio, and the silence flush must not count or re-send them.
@@ -798,6 +803,7 @@ class _ChannelCapture:
             self._silent_blocks += 1
         else:
             self._silent_blocks = 0
+            self._report_voice()
 
         silent_sec = self._silent_blocks * (len(block) / _SAMPLE_RATE)
         # Measure the NEW SPEECH in the buffer — not the buffer, and not the
@@ -832,6 +838,28 @@ class _ChannelCapture:
             self._carried_overlap = 0
             self._silent_blocks = 0
             self._emit(pending, threshold, why="silence")
+
+    def _report_voice(self) -> None:
+        """Tell the Mac add-on that somebody on this channel is making noise.
+
+        The 🏁 end-of-training sequence (`TrainingEndSequence.swift`) needs to know
+        when the room has stopped talking, and this callback already answers exactly
+        that question for both channels — Victor's mic and the Zoom room feed —
+        against the same per-device threshold that decides what gets transcribed.
+        Reusing it means the app has ONE definition of silence rather than a second
+        one, on a second audio tap, that would disagree with this one precisely on
+        the marginal blocks.
+
+        Throttled to `_VOICE_PULSE_SEC`, because the audio thread must stay cheap
+        and the listener only cares *when someone last spoke*, not how loudly or how
+        often: blocks arrive every 100 ms, and continuous speech would otherwise put
+        ten writes a second down a pipe that is read for its log lines.
+        """
+        now = time.monotonic()
+        if now - self._last_voice_pulse < _VOICE_PULSE_SEC:
+            return
+        self._last_voice_pulse = now
+        print(f"VICTOR_VOICE:{self.label}", flush=True)
 
     def _emit(self, chunk: np.ndarray, threshold: float, why: str = "full"):
         rms = float(np.sqrt(np.mean(chunk**2)))

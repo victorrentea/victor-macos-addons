@@ -660,6 +660,19 @@ rule from the start.
   hand-the-crosshair-over dance existed to make the click seamless; with nothing under the
   mouse to hand over there is no seam to hide.
 
+- **☢️ Only the newest crosshair is on screen** (`retirePlantedReticles`, called at the top
+  of `plantBombAtCursor`, 2026-09-09). A target used to stand for the whole 1.10 s of its
+  own fuse, so clicking in a rhythm — which is exactly what the effect invites — papered
+  the desktop with red rings. Past three or four of them the eye cannot tell which is the
+  one being aimed *now*, which is the only thing a crosshair is for. Each click therefore
+  takes down every target still burning and plants the one that replaces them.
+  What is emphatically **not** cancelled is the raid: the bombs already in the air keep
+  falling and still explode on the points they were aimed at (`point` was captured at
+  click time and the deferred strike closes over it), so the rhythm of blasts is
+  untouched — it is only the pile of stale reticles that goes. The strike-time pop-and-fade
+  is skipped for a retired target (`reticle.superlayer != nil`), since there is nothing
+  left on screen to pop.
+
 - **☢️ One boom per bomb** (sfx #03 `03_explosion.mp3` → `explosion`,
   `showExplosionGif` / `plantBombAtCursor`): every click plants a target that grows and
   turns for a `explosionStrikeDelay` (1.10 s) fuse while its own bomb whistles down onto
