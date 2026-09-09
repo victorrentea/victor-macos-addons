@@ -556,9 +556,20 @@ final class KeymapHoldCoordinator {
         }
     }
 
-    /// A key was pressed while a sheet's modifiers were held — the hold was a
-    /// real shortcut, not a "what's on this layer?" pause, so drop the overlay.
+    /// A key was pressed while a sheet's modifiers were held.
+    ///
+    /// **Only the ⌘⌃ sheet goes away.** That one is a menu: the key that was
+    /// just pressed *is* the choice, the shortcut has fired, and leaving the
+    /// sheet up would leave a picture of a menu nobody is reading any more.
+    ///
+    /// The ⌥ layers are the opposite — a **palette**. ⌥ is still down because
+    /// the next emoji is coming (⌥ then a whole row of them), so hiding the
+    /// sheet on the first press hides it for exactly the case it exists for:
+    /// picking several characters off a layout nobody has memorised. It stays
+    /// until ⌥ itself is released, which `reset()` handles.
     func keyDownWhileModifierHeld() {
+        if let sheet = visibleModifier ?? pendingModifier, sheet != .commandControl { return }
+
         let hadOverlayState = pendingModifier != nil || visibleModifier != nil
         cancelScheduled()
         pendingModifier = nil

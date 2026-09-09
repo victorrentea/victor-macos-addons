@@ -214,7 +214,32 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(shown, [.option, .optionShift])
     }
 
-    func testHoldCoordinatorCancelsAndHidesWhenKeyPressedWhileOptionHeld() {
+    /// The ⌥ palette survives the keys typed off it — that is what it is for.
+    func testHoldCoordinatorKeepsTheOptionSheetUpWhenAKeyIsPressed() {
+        var hideCount = 0
+        var shown: [KeymapModifier] = []
+        let coordinator = KeymapHoldCoordinator(
+            delayProvider: { 1.0 },
+            schedule: { _, fire in fire() },
+            cancelScheduled: {},
+            show: { shown.append($0) },
+            hide: { hideCount += 1 }
+        )
+
+        coordinator.modifierFlagsChanged(option: true, shift: false)
+        coordinator.keyDownWhileModifierHeld()
+        coordinator.keyDownWhileModifierHeld()
+
+        XCTAssertEqual(shown, [.option])
+        XCTAssertEqual(hideCount, 0)
+
+        // Releasing ⌥ is what takes it down.
+        coordinator.modifierFlagsChanged(option: false, shift: false)
+        XCTAssertEqual(hideCount, 1)
+    }
+
+    /// The ⌘⌃ sheet is a menu: the pressed key was the choice, so it goes.
+    func testHoldCoordinatorCancelsAndHidesWhenKeyPressedWhileCommandControlHeld() {
         var didCancel = false
         var hideCount = 0
         var scheduled: (() -> Void)?
@@ -226,7 +251,7 @@ final class KeymapOverlayTests: XCTestCase {
             hide: { hideCount += 1 }
         )
 
-        coordinator.modifierFlagsChanged(option: true, shift: false)
+        coordinator.modifierFlagsChanged(option: false, shift: false, command: true, control: true)
         coordinator.keyDownWhileModifierHeld()
         scheduled?()
 

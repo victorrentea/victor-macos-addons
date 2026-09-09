@@ -1618,8 +1618,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
-        eventTap.onClaudeBypassHotkey = { [weak menuBarManager] in
-            DispatchQueue.main.async { menuBarManager?.openBypassClaudeWorkspace() }
+        eventTap.onClaudeBypassHotkey = { [weak self, weak menuBarManager] in
+            DispatchQueue.main.async {
+                menuBarManager?.openBypassClaudeWorkspace()
+                // 🤖 waves from the left edge while the Terminal is still coming
+                // up. Same pinning as the elephant: this draws into the overlay
+                // panel's layer tree, which lives on the built-in Retina, so the
+                // frame is refreshed first.
+                self?.overlayPanel?.refreshScreenFrame()
+                self?.animator.showClaudePeek()
+            }
         }
         eventTap.onPlainTerminalHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openPlainTerminalWorkspace() }
@@ -1668,28 +1676,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onToggleLiveCaptions = { [weak self] in self?.liveCaptions?.toggle() }
         eventTap.onOpenFocusPlaylist = { [weak self] in
-            // The screen is sampled NOW, on the keypress, and carried through the
-            // fetch: `FocusPlaylist` reads the mix page to learn which tracks are
-            // in it, which takes a beat, and by the time the tab opens the hand
-            // has usually moved on. Pinning it keeps ⌘⌃F answering "here", like
-            // every other ⌘⌃ opener.
+            // ⌘⌃F asks for **sound, not for a browser**: the mix is started in a
+            // background tab of a window that already exists, nothing is
+            // activated, nothing is raised, and a new window is never opened
+            // (`background: true`, handled in `focus-tab.js`). So no screen is
+            // sampled here either — the geometry every other ⌘⌃ opener carries
+            // exists to put a window under the eyes, and this key deliberately
+            // has no window to put anywhere.
             DispatchQueue.main.async {
                 guard let self else { return }
-                let screen = AppDelegate.screenUnderMouse()
+                let spec = AppDelegate.focusPlaylistTab
 
                 // Two shots at the same idempotent command, because the mix is
                 // usually already up and the read below is not free. The probe
-                // (`url: nil`) goes now: if the tab exists it is focused and its
-                // music picked back up where it stopped, in the time a keypress
-                // takes. Only then do we spend a second on YouTube for a URL that
-                // the second call opens **if the tab is still missing** — where a
-                // random entry is the whole point of the key.
-                self.chromeBridge?.focusOrOpen(AppDelegate.focusPlaylistTab, url: nil,
-                                               on: OfficialChrome.topLeftRect(of: screen.visibleFrame))
+                // (`url: nil`) goes now: if the tab exists its music is picked
+                // back up where it stopped, in the time a keypress takes. Only
+                // then do we spend a second on YouTube for a URL that the second
+                // call opens **if the tab is still missing** — where a random
+                // entry is the whole point of the key.
+                self.chromeBridge?.focusOrOpen(spec, url: nil, on: .zero)
                 FocusPlaylist.resolveRandomUrl { url in
                     DispatchQueue.main.async { [weak self] in
-                        self?.openUrlInChromeOnMouseScreen(url, on: screen,
-                                                           existing: AppDelegate.focusPlaylistTab)
+                        // No AppleScript fallback any more: `OfficialChrome.open`
+                        // brings Chrome forward and can only open a *visible*
+                        // tab, which is the one thing this key must never do.
+                        // Without the extension on the socket there is simply no
+                        // way to start music invisibly, and saying so beats
+                        // throwing a YouTube window onto the projector.
+                        if self?.chromeBridge?.focusOrOpen(spec, url: url, on: .zero) != true {
+                            overlayError("⌘⌃F: Chrome extension not on the socket — no background tab to start the mix in")
+                        }
                     }
                 }
             }
@@ -1835,7 +1851,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// identity, and it survives whichever track the tab has wandered to since.
     static var focusPlaylistTab: ChromeBridge.TabSpec {
         ChromeBridge.TabSpec(match: ["*://www.youtube.com/*"],
-                             contains: "list=" + FocusPlaylist.listId, resume: true)
+                             contains: "list=" + FocusPlaylist.listId,
+                             resume: true, background: true)
     }
 
     /// Where the window carrying the URL should end up.

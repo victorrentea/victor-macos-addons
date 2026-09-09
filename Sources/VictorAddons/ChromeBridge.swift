@@ -124,6 +124,13 @@ final class ChromeBridge {
         /// from where it stopped" is the opposite of the random-track URL that
         /// key opens when the mix is not up yet.
         var resume: Bool = false
+        /// Do the whole thing **without showing anything** — ⌘⌃F only. The tab
+        /// is found or created in an existing window with `active: false`, is
+        /// never activated, and its window is never raised or moved. A key that
+        /// asks for background music must not put a browser on the projector,
+        /// and `screen` below is ignored for the same reason: nothing is placed
+        /// because nothing is meant to be looked at.
+        var background: Bool = false
     }
 
     /// Ask the extension to go to the tab already showing this page.
@@ -155,7 +162,7 @@ final class ChromeBridge {
             let patterns = spec.match.map(Self.jsonString).joined(separator: ",")
             var json = "{\"type\":\"focus-or-open\",\"match\":[\(patterns)]," +
                        "\"url\":\(url.map(Self.jsonString) ?? "null")," +
-                       "\"resume\":\(spec.resume)," +
+                       "\"resume\":\(spec.resume),\"background\":\(spec.background)," +
                        "\"screen\":{\"left\":\(Int(screen.minX)),\"top\":\(Int(screen.minY))," +
                        "\"width\":\(Int(screen.width)),\"height\":\(Int(screen.height))}"
             if let c = spec.contains { json += ",\"contains\":\(Self.jsonString(c))" }

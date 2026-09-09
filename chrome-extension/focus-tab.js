@@ -18,26 +18,39 @@
 // focused and the app would drag some unrelated window under the mouse. Chrome
 // can move its own windows, and it is the one that knows which.
 
-/// Resume media the tab already had loaded, from wherever it stopped.
+/// Start the tab's media — resume what is paused, from wherever it stopped.
 ///
 /// Injected into the page, so it must be self-contained. It deliberately does
 /// **not** touch `ended` elements: replaying a finished mix from track one is
 /// the "opened a fresh tab" behaviour this whole file exists to avoid.
 ///
+/// It is `async` and reports whether anything is actually rolling, because the
+/// background path below has to retry: a tab that was created a moment ago has
+/// no `<video>` in it yet, and `play()` on a page Chrome's autoplay policy has
+/// not yet made up its mind about rejects.
+///
+/// Unmuting is deliberate. A YouTube tab that autoplayed while hidden is often
+/// muted by the player itself, and silent focus music is the one outcome ⌘⌃F
+/// must not produce.
+///
 /// The `data-va-dictation-paused` marker is `dictation-pause.js`'s: pressing
 /// ⌘⌃F during a dictation resumes the music by hand, and clearing the marker
 /// keeps that module's ledger honest — it must not believe it still owes a
 /// resume for a track that is already playing.
-function resumePausedMedia() {
-  let resumed = 0;
-  for (const el of document.querySelectorAll('video, audio')) {
-    if (!el.paused || el.ended) continue;
+async function startMedia() {
+  const media = [...document.querySelectorAll('video, audio')].filter((el) => !el.ended);
+  for (const el of media) {
     delete el.dataset.vaDictationPaused;
-    const p = el.play();
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-    resumed++;
+    if (!el.paused) continue;
+    el.muted = false;
+    try {
+      await el.play();
+    } catch (e) {
+      // Autoplay refused, or the player is still wiring itself up. Either way
+      // the caller's next attempt is the answer, not a louder try here.
+    }
   }
-  return resumed;
+  return media.some((el) => !el.paused);
 }
 
 /// The first tab matching the request, or `undefined`.
@@ -111,6 +124,8 @@ async function placeWindow(windowId, screen) {
  * the music — the three things "take me to my tab" means the opposite of.
  */
 export async function focusOrOpen(msg) {
+  if (msg.background) return playInBackground(msg);
+
   const tab = await findTab(msg);
 
   if (!tab) {
@@ -129,11 +144,66 @@ export async function focusOrOpen(msg) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
-      func: resumePausedMedia,
+      func: startMedia,
     });
   } catch (e) {
     // chrome://, the Web Store, a PDF viewer — the tab is focused either way,
     // which is most of what was asked for.
     console.log('[focus-tab] cannot script tab', tab.id, e.message);
   }
+}
+
+/**
+ * ⌘⌃F — put the music on without putting a window on the screen.
+ *
+ * The key asks for *sound*, not for YouTube: nothing may come forward, no
+ * window may move, and above all **no new window may open** — a browser window
+ * appearing over the slides is the whole thing this mode exists to avoid. So a
+ * missing tab is created with `active: false` in a window that already exists,
+ * and a tab that is already there is neither activated nor raised; only its
+ * media is started.
+ *
+ * The retry loop is not defensive padding. A tab created a moment ago has no
+ * `<video>` element yet, and YouTube does not start playing on its own in a tab
+ * that has never been visible — the injected `play()` is what starts it, and it
+ * has to wait for the player to exist. Chrome allows that call without a user
+ * gesture because youtube.com has a high media-engagement score here; if it
+ * ever stops allowing it, this is the line that will say so in the log.
+ */
+async function playInBackground(msg) {
+  let tab = await findTab(msg);
+
+  if (!tab) {
+    if (!msg.url) return;                      // a probe, and the answer is "no"
+    tab = await openHiddenTab(msg.url);
+    if (!tab) return;
+  }
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: startMedia,
+      });
+      if (results.some((r) => r && r.result)) return;
+    } catch (e) {
+      // Still navigating, or a page we may not script. Try again.
+    }
+    await new Promise((done) => setTimeout(done, 700));
+  }
+  console.log('[focus-tab] music never started in tab', tab.id);
+}
+
+/// A new tab in the background of a window that already exists.
+///
+/// `chrome.windows.create` is what this function exists NOT to call. If there
+/// is genuinely no ordinary window to put a tab in, one is opened **minimized**
+/// — still no window on the screen, and the music plays out of it all the same.
+async function openHiddenTab(url) {
+  const windows = await chrome.windows.getAll({});
+  const host = windows.find((w) => w.type === 'normal' && !w.incognito);
+  if (host) return chrome.tabs.create({ url, windowId: host.id, active: false });
+
+  const win = await chrome.windows.create({ url, focused: false, state: 'minimized' });
+  return win.tabs && win.tabs[0];
 }

@@ -8410,6 +8410,112 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
+    // MARK: - 🤖 Claude leans in from the left (⌘⌃Q)
+
+    /// How long the icon stays before it slides back out on its own.
+    ///
+    /// Short: this is a greeting, not a prop. The elephant is a picture that a
+    /// sentence is built around and stays 25 s; this one only has to be seen.
+    static let claudePeekLifetime: Double = 5
+
+    /// Where it leans in: the LEFT edge, in the upper third of the screen.
+    ///
+    /// Sized off the **height**, unlike the elephant, which claims half the
+    /// width: that one is a picture, this one is an app icon, and an icon
+    /// measured in screen-widths on the projector is a billboard. The upper
+    /// third is not decoration either — ⌘⌃Q is opening a Terminal in the
+    /// quarter the mouse is in, and the mascot must not sit on the window it
+    /// exists to announce; the top-left quarter is the last one `fillOrder`
+    /// gives out.
+    ///
+    /// Pure so the geometry can be asserted without a screen.
+    static func claudePeekFrame(in bounds: CGRect, aspect: CGFloat) -> CGRect {
+        let h = bounds.height * 0.16
+        let w = h * max(aspect, 0.01)
+        let x = bounds.width * 0.015
+        // y = 0 is the bottom edge of the host layer, so the upper third is the
+        // TOP of the range: the icon's centre sits at 78% of the height.
+        let y = bounds.height * 0.78 - h / 2
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    /// 🤖 The Claude Code icon slides in from the left edge, wiggles, and slides
+    /// back out — the app waving while ⌘⌃Q's Terminal is still coming up.
+    ///
+    /// It floats: a cut-out PNG with a real alpha channel over a click-through
+    /// overlay, so what arrives is the mark itself and not a white rectangle
+    /// announcing "a picture opened".
+    ///
+    /// The wiggle is the whole personality — it starts once the slide has
+    /// landed, so the two motions read as "walked in, then said hello" instead
+    /// of one wobbly diagonal — and it decays (14° → 5°) because a rotation
+    /// that repeats at constant amplitude reads as a loading spinner.
+    ///
+    /// Pressing ⌘⌃Q again sends it back out, and it leaves on its own after
+    /// `claudePeekLifetime`: the overlay is click-through, so a mascot left on
+    /// screen could not be dismissed by clicking it.
+    func showClaudePeek() {
+        if activeEffects["claude-peek"] != nil { stopClaudePeek(); return }
+
+        guard let url = Bundle.module.url(forResource: "claude-icon", withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            overlayError("claude-icon.png is not in the bundle")
+            return
+        }
+
+        let bounds = hostLayer.bounds
+        let frame = Self.claudePeekFrame(in: bounds, aspect: CGFloat(image.width) / CGFloat(image.height))
+
+        let layer = CALayer()
+        layer.frame = frame
+        layer.contents = image
+        layer.contentsGravity = .resizeAspect
+        layer.contentsScale = NSScreen.screens.first?.backingScaleFactor ?? 2.0
+        hostLayer.addSublayer(layer)
+        activeEffects["claude-peek"] = layer
+
+        let slideIn = CABasicAnimation(keyPath: "position.x")
+        slideIn.fromValue = layer.position.x - (frame.width + frame.minX)
+        slideIn.toValue = layer.position.x
+        slideIn.duration = 0.45
+        slideIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(slideIn, forKey: "slide-in")
+
+        let wiggle = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+        wiggle.values = [0, -0.24, 0.20, -0.13, 0.08, 0]
+        wiggle.keyTimes = [0, 0.18, 0.40, 0.62, 0.82, 1]
+        wiggle.duration = 0.85
+        wiggle.beginTime = CACurrentMediaTime() + slideIn.duration
+        wiggle.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(wiggle, forKey: "wiggle")
+
+        // Self-termination, identity-guarded so a second press followed by a
+        // third can't have the first press's timer remove the newest icon.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.claudePeekLifetime) { [weak self, weak layer] in
+            guard let self, let layer, self.activeEffects["claude-peek"] === layer else { return }
+            self.stopClaudePeek()
+        }
+    }
+
+    /// Slides it back out the way it came in. Safe when nothing is showing.
+    func stopClaudePeek() {
+        guard let layer = activeEffects["claude-peek"] else { return }
+        activeEffects.removeValue(forKey: "claude-peek")
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { layer.removeFromSuperlayer() }
+        let slideOut = CABasicAnimation(keyPath: "position.x")
+        slideOut.fromValue = layer.position.x
+        slideOut.toValue = layer.position.x - (layer.bounds.width + layer.frame.minX)
+        slideOut.duration = 0.35
+        slideOut.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        slideOut.fillMode = .forwards
+        slideOut.isRemovedOnCompletion = false
+        layer.add(slideOut, forKey: "slide-out")
+        CATransaction.commit()
+    }
+
     // MARK: - Stop all active effects (called when tablet stops any sound)
 
     func stopAllActiveEffects() {
