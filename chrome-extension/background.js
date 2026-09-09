@@ -38,6 +38,13 @@ const FAILURES_BEFORE_SLOW = 4;
 
 let socket = null;
 let reconnectDelay = RECONNECT_MIN_MS;
+/// The one pending fast retry, or null. **One**, because the bug this replaces
+/// was every drop starting a retry ladder of its own: the alarm woke a worker,
+/// `connect()` failed, and that failure armed another `setTimeout` chain next to
+/// the ones already ticking. Each was capped at 30s, so a night off left dozens
+/// of chains retrying in parallel — thousands of `ERR_CONNECTION_REFUSED` lines,
+/// which is exactly what the slow alarm below exists to prevent.
+let retryTimer = null;
 
 /// Chrome collects console output from a service worker, but only DevTools
 /// opened by hand on that worker will show it. Mirroring it to the Mac puts it
@@ -77,6 +84,7 @@ async function noteConnectResult(ok) {
   const now = ok ? 0 : failures + 1;
   if (now !== failures) await chrome.storage.session.set({ failures: now });
   await armAlarm(now);
+  return now;
 }
 
 /// Arm the reconnect alarm at the period the failure count calls for, and
@@ -122,9 +130,14 @@ function dispatch(msg) {
 
 function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
-  socket = new WebSocket(`ws://127.0.0.1:${PORT}`);
+  // We are attempting right now, so whatever the ladder had scheduled is moot.
+  if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+  // Held in a local as well: `socket` is the *current* socket, and a stale one
+  // can still deliver a late `onclose` after a newer attempt has replaced it.
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
+  socket = ws;
 
-  socket.onopen = () => {
+  ws.onopen = () => {
     reconnectDelay = RECONNECT_MIN_MS;
     // **Say what we understand.** Rebuilding the Mac app does not reload an
     // unpacked extension, so an old worker can sit on this socket dropping every
@@ -132,25 +145,38 @@ function connect() {
     // to hand it work that then vanished. The app now waits for a feature to be
     // named before routing anything through it, and falls back to its own path
     // otherwise. Add the name here in the same commit that adds the handler.
-    socket.send(JSON.stringify({ type: 'hello', features: ['dictation', 'publish-feedback-form', 'focus-or-open', 'reload'] }));
+    ws.send(JSON.stringify({ type: 'hello', features: ['dictation', 'publish-feedback-form', 'focus-or-open', 'reload'] }));
     noteConnectResult(true);
     log('[addons] connected to Victor Addons');
   };
 
-  socket.onmessage = (event) => {
+  ws.onmessage = (event) => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
     dispatch(msg);
   };
 
-  const retry = () => {
-    socket = null;
-    noteConnectResult(false);
-    setTimeout(connect, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
-  };
-  socket.onclose = retry;
-  socket.onerror = () => { try { socket.close(); } catch {} };
+  ws.onclose = () => dropped(ws);
+  ws.onerror = () => { try { ws.close(); } catch {} };
+}
+
+/// A socket died. **The fast ladder is for a restart, not for an absence.** It
+/// covers the seconds after a rebuild of the Mac app, when reconnecting in one
+/// second instead of thirty is the difference between the music pausing and
+/// not; once the failures say the app is simply not there, the ladder stops and
+/// the 5-minute alarm is the only thing still retrying — one log line per five
+/// minutes instead of one per thirty seconds, times however many ladders.
+async function dropped(ws) {
+  if (socket !== ws) return;                  // a newer attempt already took over
+  socket = null;
+  const failures = await noteConnectResult(false);
+  if (failures >= FAILURES_BEFORE_SLOW) {
+    reconnectDelay = RECONNECT_MIN_MS;        // ready for the next real drop
+    return;
+  }
+  if (retryTimer !== null) return;            // one ladder, never two
+  retryTimer = setTimeout(() => { retryTimer = null; connect(); }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
 }
 
 // **An alarm, because a sleeping worker cannot reconnect itself.** The socket
