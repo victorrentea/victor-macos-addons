@@ -74,11 +74,6 @@ enum CommandControlShortcuts {
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
-        32: "subtitles", // U — 💬📺 the live subtitle band on the projected
-                         // screen, on and off. The word is what the room ends up
-                         // looking at, and the letter is the one inside it: "U"
-                         // for sUbtitles, since C (captions) is the Claude
-                         // terminal and T is the empty one.
         6:  "zoom",      // Z — paste Victor's personal Zoom room link
         13: "wispr🎙️",   // W — paste the Wispr transcript. NOT ours: the shortcut
                          // lives in Wispr Flow and we must NOT claim it. The tap's

@@ -311,16 +311,12 @@ final class KeymapOverlayTests: XCTestCase {
         // is typed into, which nothing on screen would otherwise reveal.
         // P (35) joined with the ⌘⌃P reminder mail — the sending sibling of
         // ⌘⌃M's draft, on the letter ⌃P already uses to fill the clipboard.
-        // U (32) joined with the 💬📺 subtitle band: the one ⌘⌃ key whose effect
-        // lands on the *room's* screen rather than on Victor's, which is exactly
-        // the kind of thing a sheet has to say out loud.
         // Q (12) LEFT the sheet on 2026-09-09: it was the permissions-bypassed
         // Claude terminal, then the 🤖 mascot alone, and then the mascot moved
         // to ⌃⌥G and ⌘⌃Q went back to macOS's Lock Screen. The sheet answers
         // "what does this combination do on THIS Mac", and the honest answer
         // for ⌘⌃Q is now "nothing of ours".
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 15, 1, 17, 9, 13, 6, 31, 35, 32])
-        XCTAssertEqual(CommandControlShortcuts.labels[32], "subtitles")
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 15, 1, 17, 9, 13, 6, 31, 35])
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
