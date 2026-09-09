@@ -55,6 +55,11 @@ final class LiveCaptions {
     /// band's own answer rather than a second copy of it.
     var onStateChanged: ((Bool) -> Void)?
 
+    /// The bottom-left pill, for saying out loud that the band just went on or
+    /// off. Switching it on used to be answerable only by staring at the bottom
+    /// of the screen for the twelve seconds a whisper chunk takes — see `start`.
+    weak var banner: BottomLeftBanner?
+
     private var panel: NSPanel?
     private var label: NSTextField?
     private var timer: Timer?
@@ -87,6 +92,7 @@ final class LiveCaptions {
 
         overlayInfo("💬📺 subtitles on")
         onStateChanged?(true)
+        announce("💬📺 Subtitles ON")
         showPanel()
         timer = Timer.scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             self?.tick()
@@ -104,6 +110,15 @@ final class LiveCaptions {
         standing = ""
         overlayInfo("💬📺 subtitles off")
         onStateChanged?(false)
+        announce("💬📺 Subtitles OFF")
+    }
+
+    /// Said on the trainer's screen, not the room's: the pill lands bottom-left
+    /// on whichever display the pointer is on, while the band itself is always on
+    /// the Retina. Turning subtitles on is a thing *he* did and needs confirmed;
+    /// the room only ever needs the words.
+    private func announce(_ text: String) {
+        banner?.show(text: text)
     }
 
     /// Feed one line in as if whisper had just written it — the headless twin of
@@ -267,15 +282,20 @@ final class LiveCaptions {
         // every time one of those changes. So words come off the *front* until
         // what is left fits the tallest plate allowed — the newest words are the
         // ones the room needs, and they are the ones that survive.
-        var shown = CaptionStream.words(standing)
-        var attributed = attributedCaption(shown.joined(separator: " "), size: size)
+        // While nothing has been heard yet the plate carries an ellipsis rather
+        // than a void: an empty black bar is indistinguishable from a rendering
+        // bug, and this is on the screen the room is watching. Dimmed, because it
+        // is the band saying "listening", not something anybody said.
+        let waiting = standing.isEmpty
+        var shown = CaptionStream.words(waiting ? "…" : standing)
+        var attributed = attributedCaption(shown.joined(separator: " "), size: size, dim: waiting)
         while shown.count > 1,
               height(of: attributed, width: textWidth) > maxTextHeight {
             shown.removeFirst()
-            attributed = attributedCaption(shown.joined(separator: " "), size: size)
+            attributed = attributedCaption(shown.joined(separator: " "), size: size, dim: waiting)
         }
 
-        let textHeight = standing.isEmpty ? 0 : height(of: attributed, width: textWidth)
+        let textHeight = height(of: attributed, width: textWidth)
         let plateHeight = min(screen.frame.height * Self.maxPlateFraction,
                               max(screen.frame.height * Self.minPlateFraction, textHeight + 2 * padY))
 
@@ -288,11 +308,15 @@ final class LiveCaptions {
         // down past the bottom edge.
         label.frame = NSRect(x: padX, y: padY, width: textWidth, height: ceil(textHeight))
 
-        // Nothing to say, nothing on screen — the plate is not a permanent
-        // fixture on the room's slide, it appears with the words and goes with
-        // them. The panel itself stays up: re-creating it would flicker.
-        panel.alphaValue = standing.isEmpty ? 0 : 1
-        label.isHidden = standing.isEmpty
+        // **The plate is up from the moment it is switched on, empty or not.**
+        // It used to appear only with the first words, and the first words are
+        // twelve seconds away — a whisper chunk, plus inference. So switching it
+        // on did nothing observable, and the honest conclusion from the outside
+        // was that the feature was broken. Observed exactly that on 2026-09-09:
+        // on at 19:26:51, off at 19:27:08, seventeen seconds in which no line
+        // could possibly have landed. A switch has to answer immediately, and
+        // what answers here is the plate itself.
+        panel.alphaValue = 1
     }
 
     /// White, semibold, and still outlined even though it now sits on a plate:
@@ -300,7 +324,7 @@ final class LiveCaptions {
     /// and the outline is what stops a light patch from eating a word. Lighter
     /// than it was when the text was drawn on nothing — a heavy stroke over a
     /// dark plate reads as a smudge.
-    private func attributedCaption(_ text: String, size: CGFloat) -> NSAttributedString {
+    private func attributedCaption(_ text: String, size: CGFloat, dim: Bool = false) -> NSAttributedString {
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.85)
         shadow.shadowBlurRadius = size * 0.14
@@ -318,7 +342,7 @@ final class LiveCaptions {
 
         return NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: size, weight: .semibold),
-            .foregroundColor: NSColor.white,
+            .foregroundColor: dim ? NSColor.white.withAlphaComponent(0.45) : NSColor.white,
             // Negative width means stroke *and* fill; a positive one draws the
             // outline only and leaves hollow letters.
             .strokeColor: NSColor.black,

@@ -1515,6 +1515,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         self.liveCaptions = captions
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions?.toggle() }
+        // The same bottom-left pill the notes and the prompt offer use, so the
+        // toggle says so on the trainer's screen while the band itself stays on
+        // the room's.
+        captions.banner = SessionNotesAppender.promptBanner
 
         // Flux inbox poller: every 10 min, but only while on battery. It is a
         // notifier, not an actor — a banner and a log line, nothing more. The

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 9, 19:10"
+    static let BUILD_TIME = "Sep 9, 20:47"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -254,18 +254,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         screenshotItem.keyEquivalent = "p"
         screenshotItem.keyEquivalentModifierMask = .control
 
-        // 💬📺 Live subtitles. A ticked row rather than a plain action, because
-        // unlike its neighbours this one *stays* — and it stays on the screen the
-        // room is looking at, which is exactly the state you want to be able to
-        // check without pressing anything to find out. The tick is driven from
-        // `LiveCaptions` itself (`setLiveCaptions`), never from the click, so the
-        // key, this row and the test hook can never disagree about what the room
-        // can see.
-        liveCaptionsItem = addItem("💬📺 Live Subtitles", action: #selector(toggleLiveCaptionsAction))
-        liveCaptionsItem.keyEquivalent = "u"
-        liveCaptionsItem.keyEquivalentModifierMask = [.command, .control]
-        liveCaptionsItem.state = .off
-
         menu.addItem(.separator())
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
@@ -385,6 +373,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         cursorGlowItem.isEnabled = true
         cursorGlowItem.state = CursorGlowSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(cursorGlowItem)
+
+        // 💬📺 Live Subtitles — a ticked state row, so it belongs here with the
+        // other ticked state rows rather than up among the actions, where it
+        // spent its first hour. It earns a row for the same reason 🔴 raw audio
+        // does: it *stays*, and it stays on the screen the room is looking at, so
+        // a tick answers "is the room being subtitled right now?" without
+        // pressing anything to find out — which is exactly what you cannot do
+        // mid-session. The row still carries ⌘⌃U, since a row that hides the key
+        // it duplicates teaches nobody anything.
+        liveCaptionsItem = NSMenuItem(title: "💬📺 Live Subtitles", action: #selector(toggleLiveCaptionsAction), keyEquivalent: "u")
+        liveCaptionsItem.keyEquivalentModifierMask = [.command, .control]
+        liveCaptionsItem.target = self
+        liveCaptionsItem.isEnabled = true
+        liveCaptionsItem.state = .off
+        extraSubmenu.addItem(liveCaptionsItem)
 
         // 🔄 Reverse Mouse Wheel — the Scroll Reverser replacement. It breaks
         // "the menu is not a second cheat-sheet" for the reason the 🔴 raw-audio
