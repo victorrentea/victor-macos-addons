@@ -610,6 +610,12 @@ rule from the start.
   A press left alone therefore always ends in the full-screen nuke, which also means every
   run owns at least one bomb and ends the same way, through `finishBomb`, rather than
   through an idle timer.
+  Since 2026-09-09 the deadline is **enforced, not just announced**: `dropFullScreenBomb`
+  raises `_bombBigDropped` and `plantBombAtCursor` bails on it, so once the big bomb is in
+  the air no more little ones can be planted under it. Clicks are still *consumed* by the
+  tap — the app underneath must never get them — they simply stop making targets. Before
+  this, clicking during the fall added aimed strikes that landed after the nuke, tacked
+  onto the end of a raid that had visibly already peaked.
 
 - **☢️ The pointer stays the pointer.** The run no longer hides the cursor or rides a grey
   crosshair on it (`startBombTargeting` / `revealBombReticle` / `restoreBombCursor` are

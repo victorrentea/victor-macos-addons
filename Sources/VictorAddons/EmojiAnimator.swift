@@ -93,6 +93,7 @@ class EmojiAnimator {
     private var _bombPending = 0                      // bombs neither landed nor finished burning
     private var _bombSessionActive = false
     private var _bombPlantedAny = false               // false → the big bomb may still be the one that lands
+    private var _bombBigDropped = false               // true → the big one is falling; aiming is over
     private var _bombRunStartedAt: Date = .distantPast // press time — the head boom's t=0, which is what a per-bomb boom is measured against
     private var _bombInputTap: CFMachPort?
     private var _bombInputTapSource: CFRunLoopSource?
@@ -2746,6 +2747,7 @@ class EmojiAnimator {
         _bombRunStartedAt = Date()
         _bombPending = 0
         _bombPlantedAny = false
+        _bombBigDropped = false
         startBombInputCapture()
 
         // Nobody aimed → the old full-screen nuke, in time with the boom. Once the
@@ -2770,6 +2772,7 @@ class EmojiAnimator {
         _bombSessionActive = false
         _bombPending = 0
         _bombPlantedAny = false
+        _bombBigDropped = false
         stopBombInputCapture()
 
         let layers: [CALayer] = _bombPlanted + _bombFalling + _bombStrikeLayers + _bombBlasts
@@ -2908,11 +2911,14 @@ class EmojiAnimator {
     ///
     /// This fires at `bombAutoDropDelay`, i.e. the instant the bomb clears the top
     /// edge. From here the fall is `explosionBlastOnset - explosionWhistleForeground`
-    /// long, so the fireball's first frame lands on the blast in the clip. Clicking
-    /// is still live during the fall — it just no longer cancels this one.
+    /// long, so the fireball's first frame lands on the blast in the clip. It also
+    /// closes aiming for good (`_bombBigDropped`): the deadline the screen
+    /// announces is a real deadline, and a small bomb planted under a big one
+    /// already falling would land after it, out of the raid it belongs to.
     private func dropFullScreenBomb() {
         guard _bombSessionActive else { return }
         _bombPlantedAny = true
+        _bombBigDropped = true
         _bombPending += 1
 
         let bounds = hostLayer.bounds
@@ -2940,7 +2946,10 @@ class EmojiAnimator {
     /// whole reason the point is captured here rather than read again at strike
     /// time.
     fileprivate func plantBombAtCursor() {
-        guard _bombSessionActive else { return }
+        // Once the big one is on its way down, the raid is the big one. Clicks are
+        // still swallowed — the app underneath must not get them — they just stop
+        // making targets. See `bombAutoDropDelay`.
+        guard _bombSessionActive, !_bombBigDropped else { return }
         let point = mousePointInHostLayer()
 
         let reticle = Self.makeBombReticleLayer(armed: true)
