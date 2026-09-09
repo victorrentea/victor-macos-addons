@@ -423,18 +423,19 @@ rule from the start.
   looking: a corner 1500 pt from the pivot swept ~450 pt per thump, so the periphery
   lurched while the thing under the cursor barely moved — dizzying rather than alive.
   It is now a **`CIBumpDistortion` in `imgLayer.filters`** (`HeartbeatBump`): a convex
-  lens whose **diameter is half the screen height** (`diameterFraction` = 0.5, so
-  r = H/4 ≈ 279 pt on the Retina — a 558 pt disc). The size has been asked for three
+  lens whose **diameter is three fifths of the screen height** (`diameterFraction` = 0.6,
+  so r ≈ 335 pt on the Retina — a 670 pt disc). The size has been asked for four
   ways and the *units* moved each time, which is the part worth remembering: it began as
   "those 10% of the screen under the mouse", an **area** (πr² = fraction·W·H, ~248 pt);
   on 2026-08-27 Victor asked for it **twice as big — the size, not the amplitude**, and
   the size of a disc is how wide it reads, so the radius doubled and the area quadrupled
-  to 40% / ~496 pt; on 2026-09-06 he pinned it outright as **half the screen height**.
-  That last anchor is strictly better and is why the area formula is gone: a share of
+  to 40% / ~496 pt; on 2026-09-06 he pinned it outright as **half the screen height**;
+  on 2026-09-09 he asked for **20% larger — again the size, not the amplitude**, so the
+  diameter went 0.5 → 0.6 of the height (the area, which nobody was asked about, grows
+  44%). The height anchor is strictly better and is why the area formula is gone: a share of
   the *area* is a share of W·H, so the same lens grew and shrank with the aspect ratio
   of whatever display it landed on, where a share of the height reads identically on the
-  retina, the projector and the wide external. It lands back near the original tenth of
-  the area (~12.7%). `HeartbeatDogFollow` reads `radius(in:)` for what the dog must
+  retina, the projector and the wide external. `HeartbeatDogFollow` reads `radius(in:)` for what the dog must
   stand clear of, so the two sizes cannot drift apart. `inputScale`
   is unchanged at 0 → 0.5 → 0 across all three resizings — it is relative to the radius,
   so a lens of another size bulges by the same factor over that distance, bigger or
@@ -557,6 +558,41 @@ rule from the start.
   duration — a *follow* that ignored the mouse for 160 ms would lag a whole hop behind
   every drag. The arc height is proportional to the distance, with a cap that on the
   retina never binds; the cap is there for other overlay shapes.
+
+- **🚪 FBI knock** (tile #64 `64_fbi.mp3`, `showFbiKnock`): the built-in Retina is
+  captured and redrawn full-screen, then **shoved 7% larger on each of the three door
+  bangs** before the FBI starts shouting; the capture holds for the rest of the clip and
+  fades out with it. The whole effect is that sync, and until 2026-09-09 it had none:
+
+  - **The onsets were stale.** The knock times were hardcoded at 0.406 / 0.615 / 0.813 s.
+    Re-measured off the clip (22 kHz, low-band envelope in 10 ms windows) the bangs attack
+    at **0.022 / 0.227 / 0.430** — the *same three bangs at the same 0.205 s spacing, plus
+    a constant 0.383 s*. That constant is the leading silence the clip was re-cut without;
+    the numbers never followed it, so every lurch landed a third of a second late.
+    `fbiKnockOnsets` now says so in one place: **re-cutting the clip means re-measuring it.**
+  - **Sound and visual had no common clock.** It was a press→`SoundEffectMap` visual while
+    a *separate* HTTP request started the audio, and the knock clock started from whenever
+    the async `screencapture` returned. Same disease the heartbeat, the microwave and the
+    radar were each cured of, and the same cure: **driven from the routed `/sound/play`
+    path** (`onSoundPlay`) and therefore **out of `SoundEffectMap`**, so one call owns both
+    halves and they hang off one `clock0` (plus `btComp`, the Bluetooth warm-up silence
+    that really does delay the audio).
+  - **The audio waits for the capture** — the one thing this effect does that the heartbeat
+    does not. The first bang is **22 ms** into the clip, sooner than any capture can return,
+    so starting the sound at press time would spend that bang on an empty overlay no matter
+    how good the clock was. `showFbiKnock` therefore tracks a contents-less (invisible)
+    layer immediately — so a second tap is debounced and a stop-all still reaches it — and
+    plays the clip in the capture's completion. It answers the tablet with the clip length
+    up front; the tracked life adds `fbiCaptureAllowance` (0.9 s) to cover the slide.
+  - **The peak lands on the bang**, not the start of the rise (the heartbeat's lesson), and
+    all three bangs are **one keyframe animation with an absolute `beginTime`** rather than
+    three `asyncAfter` + `CATransaction` pairs — which put main-thread jitter straight on
+    screen. Rise is eased-out and clamped per knock so it can never start before the clip
+    does (the first one snaps in 22 ms); fall is eased-in over 130 ms.
+
+  The overlay's life also stopped overrunning the audio: it was pinned at 3.3 s against a
+  1.95 s clip, so the desktop sat frozen under a silent screenshot for 1.35 s. It now
+  reads the clip's real length and fades out on its last 0.3 s.
 
 - **☢️ Nuke bombardment — the clip, read frame by frame.** Everything below hangs off one
   measurement of `03_explosion.mp3` (3.28 s), so it is worth stating once. The clip is a

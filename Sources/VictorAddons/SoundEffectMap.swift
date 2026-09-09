@@ -30,7 +30,6 @@ enum SoundEffectMap {
         "19_fail.mp3":           "fail",
         "20_fail2.mp3":          "fail",
         "78_projector.mp3":      "sepia",
-        "64_fbi.mp3":            "fbi-knock",
         "67_sfx_109.mp3":        "brother",
         "70_cavalry.mp3":        "cavalry",
         "73_counter_strike.mp3": "counter-strike",
@@ -97,6 +96,11 @@ enum SoundEffectMap {
         // — so the beat landed a few hundred variable ms late, every time. Driven
         // from the routed /sound/play path (onSoundPlay), which plays the clip and
         // stamps the pulse clock in the same call; mapping the press too would
+        // double-trigger it.
+        // 64_fbi.mp3 is NOT here either, for the heartbeat's reason: the first
+        // door bang is 22ms into the clip, so the visual must both own the audio
+        // and already hold the screen capture when it starts. Driven from the
+        // routed /sound/play path (onSoundPlay); mapping the press too would
         // double-trigger it.
         // 23_radar.mp3 is NOT here: the Mac owns the radar SFX, so the sonar
         // effect is driven from the routed /sound/play path (onSoundPlay),

@@ -8,20 +8,28 @@ private let H: CGFloat = 982
 
 final class HeartbeatBumpTests: XCTestCase {
 
-    // The size, as Victor last pinned it: the lens is half the screen TALL.
-    // Stated against the height alone — the width deliberately plays no part,
-    // which is the whole reason the old area formula was dropped.
-    func testLensDiameterIsHalfTheScreenHeight() {
+    // The size, as Victor last pinned it: half the screen tall, then asked 20 %
+    // larger — three fifths of the screen TALL. Stated against the height alone
+    // — the width deliberately plays no part, which is the whole reason the old
+    // area formula was dropped.
+    func testLensDiameterIsThreeFifthsOfTheScreenHeight() {
         let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
         XCTAssertEqual(2 * r, H * HeartbeatBump.diameterFraction, accuracy: 0.0001)
-        XCTAssertEqual(2 * r, H / 2, accuracy: 0.0001)
+        XCTAssertEqual(2 * r, H * 0.6, accuracy: 0.0001)
+    }
+
+    // The 20 % was asked for as a size, so it is 20 % on the diameter — not on
+    // the area, which grows 44 %, and not on the amplitude, which is untouched.
+    func testTheLensGrewByAFifthOverTheHalfHeightItReplaced() {
+        let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
+        XCTAssertEqual(2 * r, (H / 2) * 1.2, accuracy: 0.0001)
     }
 
     // …stated as a plain number too, so a future tweak has to face what the lens
     // actually looks like on the screen it runs on.
     func testLensRadiusOnTheRetina() {
         let r = HeartbeatBump.radius(in: CGRect(x: 0, y: 0, width: W, height: H))
-        XCTAssertEqual(r, 245.5, accuracy: 0.1)
+        XCTAssertEqual(r, 294.6, accuracy: 0.1)
         // Still a lens, not the whole screen: a still margin survives all round.
         XCTAssertLessThan(2 * r, H)
         XCTAssertLessThan(2 * r, W)

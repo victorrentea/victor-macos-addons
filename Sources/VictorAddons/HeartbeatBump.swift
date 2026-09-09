@@ -29,6 +29,8 @@ enum HeartbeatBump {
     /// **twice as big — the size, not the amplitude**; the size of a disc is how
     /// wide it reads, so the radius doubled and the area quadrupled, 10 % → 40 %.
     /// On 2026-09-06 he pinned it outright: **diameter = half the screen height**.
+    /// On 2026-09-09 he asked for **20 % larger** — again the size, not the
+    /// amplitude — so 0.5 → 0.6 of the screen height.
     ///
     /// That is the better anchor and it is why the area formula is gone. A share
     /// of the *area* is a share of `W · H`, so the same lens grew and shrank with
@@ -36,7 +38,7 @@ enum HeartbeatBump {
     /// reads the same on the retina, on the projector and on the wide external.
     /// On the built-in (1728 × 1117 pt) it is a 558 pt disc — r ≈ 279, which
     /// lands back near the original tenth of the area, ~12.7 %.
-    static let diameterFraction: CGFloat = 0.5
+    static let diameterFraction: CGFloat = 0.6
 
     /// Peak `inputScale` of the bump, i.e. how convex the lens gets at the top
     /// of a lub or a dub. 0.5 roughly doubles the middle of the disc — the same
@@ -57,8 +59,8 @@ enum HeartbeatBump {
     static let breatheScale: CGFloat = 1.02
 
     /// Radius of the lens, in the overlay's points: half of `diameterFraction`
-    /// of the screen height. On the retina (1728 × 1117 pt) that is ~279 pt, a
-    /// 558 pt disc — half the screen tall, just under a third of it wide.
+    /// of the screen height. On the retina (1728 × 1117 pt) that is ~335 pt, a
+    /// 670 pt disc — three fifths of the screen tall, just under 40 % of it wide.
     ///
     /// Width is still checked, but only as a guard: a zero-sized overlay (no
     /// screen attached yet) must give 0 rather than a lens over nothing.

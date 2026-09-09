@@ -6444,63 +6444,151 @@ class EmojiAnimator {
                             autoStopAfter: resorbStart + resorbDuration + 0.1)
     }
 
-    // MARK: - FBI Knock (screenshot zooms +10% x3, synced with door knocks)
+    // MARK: - FBI Knock (the screen lurches on each door bang)
 
-    func showFbiKnock(playSound: Bool = true) {
-        if cancelIfRunning("fbi-knock", sound: playSound ? "64_fbi.mp3" : nil) { return }
+    /// The three door bangs in `64_fbi.mp3`, in seconds from the first sample —
+    /// the *attack* of each, measured off the clip (22 kHz, low-band envelope in
+    /// 10 ms windows): bursts starting at 0.022 / 0.227 / 0.430, ~0.205 s apart,
+    /// after which the clip is only the shouting.
+    ///
+    /// These used to read 0.406 / 0.615 / 0.813 — the same three bangs with the
+    /// same 0.205 s spacing, plus a constant 0.383 s. That is the leading silence
+    /// the clip was re-cut without; the constants never followed it, so every
+    /// lurch landed a third of a second after its bang. **Re-cutting the clip
+    /// means re-measuring these.**
+    private static let fbiKnockOnsets: [Double] = [0.022, 0.227, 0.430]
+
+    /// How far the screen lurches at the top of a bang. 1.07 on a 1728 pt-wide
+    /// capture sweeps the edges ~60 pt — a shove, not a zoom.
+    private static let fbiKnockScale: CGFloat = 1.07
+
+    /// The swell rises fast and settles slower, the shape of something hit. The
+    /// rise is clamped per knock so it can never start before the clip does —
+    /// the first bang is only 22 ms in, so that one snaps.
+    private static let fbiKnockRise: Double = 0.05
+    private static let fbiKnockFall: Double = 0.13
+
+    /// What the tracked life adds on top of the clip to cover the `screencapture`
+    /// subprocess: the audio does not start until the capture is back, so the
+    /// whole timeline slides by however long that took (a couple hundred ms).
+    private static let fbiCaptureAllowance: Double = 0.9
+
+    /// 🚪 A screenshot of the desktop takes a shove on each of the three door
+    /// bangs, then holds while the FBI shouts.
+    ///
+    /// **The Mac plays the clip itself, from this same call** — same bargain as
+    /// the heartbeat and the microwave. It used to arrive as a press→
+    /// `SoundEffectMap` visual while a *second* HTTP request started the audio,
+    /// and the knock clock then started from whenever the async `screencapture`
+    /// happened to finish, so the lurches trailed the bangs by a few hundred
+    /// variable ms on top of the 0.383 s the stale constants already cost.
+    ///
+    /// The audio therefore waits for the capture: the first bang is 22 ms into
+    /// the clip, far sooner than a capture can return, so starting the sound at
+    /// press time would spend that bang on an empty overlay no matter how
+    /// accurate the clock was. Both halves now hang off one `clock0`.
+    ///
+    /// Returns the full length incl. any Bluetooth compensation, which
+    /// `onSoundPlay` reports back to the tablet as `durationMs`.
+    @discardableResult
+    func showFbiKnock(playSound: Bool = false, volume: Float? = nil) -> TimeInterval {
+        _ = cancelIfRunning("fbi-knock", sound: playSound ? "64_fbi.mp3" : nil)
 
         let bounds = hostLayer.bounds
-        let totalDuration = 3.3
+        guard bounds.width > 0, bounds.height > 0 else { return 0 }
 
-        // Retina capture off-main (see showBrokenGlass); play + build on main so the
-        // knock zoom stays synced with the sound.
+        // The screenshot lives exactly as long as the clip: the bangs are over by
+        // 0.56s, the rest is the shouting, and the desktop should come back with
+        // the last of it rather than sitting frozen in silence.
+        var clipLength: Double = 1.95
+        if let soundURL = SoundManager.shared.soundURL(for: "64_fbi.mp3") {
+            let d = AVURLAsset(url: soundURL).duration
+            if d.isNumeric, CMTimeGetSeconds(d) > 0 { clipLength = CMTimeGetSeconds(d) }
+        }
+        let btComp = playSound ? SoundTimingConfig.shared.currentBluetoothCompensation : 0
+
+        // Tracked before the capture goes out, so a second tap is debounced and a
+        // stop-all reaches this even while the subprocess is still running. It is
+        // contents-less until the capture returns, i.e. invisible.
+        let imgLayer = CALayer()
+        imgLayer.frame = bounds
+        hostLayer.addSublayer(imgLayer)
+        trackEffect("fbi-knock", layer: imgLayer,
+                    duration: btComp + clipLength + Self.fbiCaptureAllowance,
+                    sound: playSound ? "64_fbi.mp3" : nil)
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let screenshot = Self.captureBuiltInDisplay()
             DispatchQueue.main.async {
-                guard let self, let screenshot else { return }
-                self.renderFbiKnock(screenshot: screenshot, bounds: bounds, totalDuration: totalDuration, playSound: playSound)
+                guard let self = self,
+                      self.activeEffects["fbi-knock"] === imgLayer else { return }
+                self.startFbiKnock(imgLayer: imgLayer, screenshot: screenshot,
+                                   bounds: bounds, clipLength: clipLength,
+                                   btComp: btComp, playSound: playSound, volume: volume)
             }
         }
+
+        return btComp + clipLength
     }
 
-    private func renderFbiKnock(screenshot: CGImage, bounds: CGRect, totalDuration: Double, playSound: Bool) {
-        if playSound { SoundManager.shared.play("64_fbi.mp3") }
+    /// Called the instant the capture is back: start the audio, stamp the one
+    /// clock both halves hang off, and hand CoreAnimation the whole knock
+    /// sequence with an absolute `beginTime`. The render server then places every
+    /// lurch on the exact frame — `asyncAfter` per knock (what this did before)
+    /// puts main-thread jitter straight on screen.
+    private func startFbiKnock(imgLayer: CALayer, screenshot: CGImage?, bounds: CGRect,
+                               clipLength: Double, btComp: Double,
+                               playSound: Bool, volume: Float?) {
+        // Sound first, then the clock — nothing slow may run between them. On
+        // Bluetooth output `playTabletSound` prepends `btComp` of warm-up silence,
+        // so the audio really starts that much later and the whole visual
+        // timeline shifts with it. Zero on wired/built-in output.
+        if playSound { _ = SoundManager.shared.playTabletSound("64_fbi.mp3", volume: volume) }
+        let clock0 = CACurrentMediaTime() + btComp
 
-        let imgLayer = CALayer()
-        imgLayer.frame = bounds
+        // A failed capture still leaves the sound playing; there is just nothing
+        // to shove. The tracked layer expires on its own.
+        guard let screenshot = screenshot else { return }
         imgLayer.contents = screenshot
         imgLayer.contentsGravity = .resizeAspectFill
-        hostLayer.addSublayer(imgLayer)
 
-        // Knock times detected from fbi.mp3: 0.406s, 0.615s, 0.813s — equal interval ~0.21s
-        let knockTimes = [0.406, 0.615, 0.813]
-        for knockTime in knockTimes {
-            DispatchQueue.main.asyncAfter(deadline: .now() + knockTime) { [weak imgLayer] in
-                guard let imgLayer = imgLayer else { return }
-                CATransaction.begin()
-                CATransaction.setAnimationDuration(0.08)
-                CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-                imgLayer.transform = CATransform3DMakeScale(1.07, 1.07, 1.0)
-                CATransaction.commit()
+        // One keyframe animation for all three bangs, so they cannot drift apart.
+        // The PEAK lands on the onset, not the start of the rise: the top of the
+        // swell is what the eye takes as the hit, so starting the rise on the bang
+        // reads as half a beat late (the same lesson as the heartbeat's).
+        var times: [Double] = []
+        var values: [CGFloat] = []
+        var timings: [CAMediaTimingFunction] = []
+        for onset in Self.fbiKnockOnsets {
+            let rise = min(Self.fbiKnockRise, onset)
+            let start = onset - rise
+            if let last = times.last, start > last {
+                times.append(start); values.append(1.0)            // rest between bangs
+                timings.append(CAMediaTimingFunction(name: .linear))
+            } else if times.isEmpty {
+                times.append(start); values.append(1.0)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + knockTime + 0.12) { [weak imgLayer] in
-                guard let imgLayer = imgLayer else { return }
-                CATransaction.begin()
-                CATransaction.setAnimationDuration(0.12)
-                CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeIn))
-                imgLayer.transform = CATransform3DIdentity
-                CATransaction.commit()
-            }
+            times.append(onset);              values.append(Self.fbiKnockScale)
+            timings.append(CAMediaTimingFunction(name: .easeOut))  // the shove
+            times.append(onset + Self.fbiKnockFall); values.append(1.0)
+            timings.append(CAMediaTimingFunction(name: .easeIn))   // settling back
         }
+        guard let span = times.last, span > 0 else { return }
+
+        let knocks = CAKeyframeAnimation(keyPath: "transform.scale")
+        knocks.values = values.map { NSNumber(value: Double($0)) }
+        knocks.keyTimes = times.map { NSNumber(value: $0 / span) }
+        knocks.timingFunctions = timings
+        knocks.duration = span
+        knocks.beginTime = clock0          // absolute, in CoreAnimation's own clock
+        imgLayer.add(knocks, forKey: "fbiKnocks")
 
         let fadeOut = CABasicAnimation(keyPath: "opacity")
-        fadeOut.beginTime = CACurrentMediaTime() + totalDuration - 0.3
+        fadeOut.beginTime = clock0 + clipLength - 0.3
         fadeOut.fromValue = 1.0; fadeOut.toValue = 0.0
         fadeOut.duration = 0.3
         fadeOut.fillMode = .forwards; fadeOut.isRemovedOnCompletion = false
         imgLayer.add(fadeOut, forKey: "fadeOut")
-
-        trackEffect("fbi-knock", layer: imgLayer, duration: totalDuration, sound: playSound ? "64_fbi.mp3" : nil)
     }
 
     // MARK: - Phone ring (screenshot shake)

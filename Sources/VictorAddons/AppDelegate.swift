@@ -613,6 +613,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                       duration > 0 else { return nil }
                 return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
             }
+            // Tile #64 (🚪 FBI): same deal as the heartbeat — the Mac plays the
+            // clip AND stamps the knock clock in this one call. The screen has to
+            // lurch ON each door bang, and the first is 22ms into the clip, which
+            // no press-path visual waiting on its own screencapture can hit.
+            // Kept OUT of SoundEffectMap so the press can't fire it a second time.
+            if name == "64_fbi.mp3" {
+                let volume = volumePct.map { Float($0) / 100 }
+                guard let duration = self?.animator.showFbiKnock(playSound: true, volume: volume),
+                      duration > 0 else { return nil }
+                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
+            }
             // Tile #34 (🔥 Phoenix): the Mac owns the phoenix cry (`phoenix.mp3`,
             // played inside showPhoenix, faded in unison with the visual). The
             // tablet's `34_phoenix.mp3` is a silent placeholder, so skip routed
