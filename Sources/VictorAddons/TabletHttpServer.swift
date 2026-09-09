@@ -736,6 +736,16 @@ class TabletHttpServer {
             return .effect("elephant")
         case "/test/elephant/stop":
             return .effect("elephant/stop")
+        // 🎧 ⌘⌃F headless. Nothing appears on screen when this works, which is
+        // the point — the check is that music starts, in a tab nobody sees.
+        case "/test/focus-playlist":
+            return .effect("focus-playlist")
+        // The 🤖 ⌘⌃Q mascot on its own: the key itself also opens a Terminal,
+        // and looking at the animation is not a reason to collect windows.
+        case "/test/claude-peek":
+            return .effect("claude-peek")
+        case "/test/claude-peek/stop":
+            return .effect("claude-peek/stop")
         case "/test/minion":
             return .effect("minion")
         case "/test/counter-strike":

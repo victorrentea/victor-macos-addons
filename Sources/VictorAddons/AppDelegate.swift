@@ -351,6 +351,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             case "minion":          self?.animator.showMinion()
             case "elephant":        self?.animator.showElephant()
             case "elephant/stop":   self?.animator.stopElephant()
+            case "focus-playlist":  self?.startFocusPlaylist()
+            case "claude-peek":     self?.animator.showClaudePeek()
+            case "claude-peek/stop": self?.animator.stopClaudePeek()
             case "coffee":
                 // Test hook (/test/coffee): spawn a few rising ☕ so the hold-charge
                 // gesture can be exercised headlessly — hover one, hold 3s, watch it
@@ -1676,39 +1679,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         eventTap.onToggleLiveCaptions = { [weak self] in self?.liveCaptions?.toggle() }
         eventTap.onOpenFocusPlaylist = { [weak self] in
-            // ⌘⌃F asks for **sound, not for a browser**: the mix is started in a
-            // background tab of a window that already exists, nothing is
-            // activated, nothing is raised, and a new window is never opened
-            // (`background: true`, handled in `focus-tab.js`). So no screen is
-            // sampled here either — the geometry every other ⌘⌃ opener carries
-            // exists to put a window under the eyes, and this key deliberately
-            // has no window to put anywhere.
-            DispatchQueue.main.async {
-                guard let self else { return }
-                let spec = AppDelegate.focusPlaylistTab
-
-                // Two shots at the same idempotent command, because the mix is
-                // usually already up and the read below is not free. The probe
-                // (`url: nil`) goes now: if the tab exists its music is picked
-                // back up where it stopped, in the time a keypress takes. Only
-                // then do we spend a second on YouTube for a URL that the second
-                // call opens **if the tab is still missing** — where a random
-                // entry is the whole point of the key.
-                self.chromeBridge?.focusOrOpen(spec, url: nil, on: .zero)
-                FocusPlaylist.resolveRandomUrl { url in
-                    DispatchQueue.main.async { [weak self] in
-                        // No AppleScript fallback any more: `OfficialChrome.open`
-                        // brings Chrome forward and can only open a *visible*
-                        // tab, which is the one thing this key must never do.
-                        // Without the extension on the socket there is simply no
-                        // way to start music invisibly, and saying so beats
-                        // throwing a YouTube window onto the projector.
-                        if self?.chromeBridge?.focusOrOpen(spec, url: url, on: .zero) != true {
-                            overlayError("⌘⌃F: Chrome extension not on the socket — no background tab to start the mix in")
-                        }
-                    }
-                }
-            }
+            DispatchQueue.main.async { self?.startFocusPlaylist() }
         }
         // ⌘⌃P — the selection (or the clipboard) is filed as an agent prompt in
         // the session notes, which is what puts it on the participants' Prompts
@@ -1866,6 +1837,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         /// where it is. For the ⌘⌃ shortcuts: they follow the eyes, they don't
         /// rearrange the desk.
         case screenUnderMouse
+    }
+
+    /// ⌘⌃F and `GET /test/focus-playlist` — the 🎧 focus mix, started **without
+    /// putting a browser on the screen**.
+    ///
+    /// The key asks for sound: the tab is found or created in the background of
+    /// a window that already exists, nothing is activated, nothing is raised,
+    /// and a new window is never opened (`background: true`, handled in
+    /// `focus-tab.js`). So no screen is sampled either — the geometry every
+    /// other ⌘⌃ opener carries exists to put a window under the eyes, and this
+    /// key deliberately has no window to put anywhere.
+    ///
+    /// Main thread, like the openers it replaced.
+    func startFocusPlaylist() {
+        let spec = AppDelegate.focusPlaylistTab
+
+        // Two shots at the same idempotent command, because the mix is usually
+        // already up and the read below is not free. The probe (`url: nil`) goes
+        // now: if the tab exists its music is picked back up where it stopped, in
+        // the time a keypress takes. Only then do we spend a second on YouTube
+        // for a URL that the second call opens **if the tab is still missing** —
+        // where a random entry is the whole point of the key.
+        chromeBridge?.focusOrOpen(spec, url: nil, on: .zero)
+        FocusPlaylist.resolveRandomUrl { url in
+            DispatchQueue.main.async { [weak self] in
+                // No AppleScript fallback any more: `OfficialChrome.open` brings
+                // Chrome forward and can only open a *visible* tab, which is the
+                // one thing this key must never do. Without the extension on the
+                // socket there is simply no way to start music invisibly, and
+                // saying so beats throwing a YouTube window onto the projector.
+                if self?.chromeBridge?.focusOrOpen(spec, url: url, on: .zero) != true {
+                    overlayError("⌘⌃F: Chrome extension not on the socket — no background tab to start the mix in")
+                }
+            }
+        }
     }
 
     /// ⌘⌃P and `GET /test/reminder`. Reads the clipboard and mails it, then
