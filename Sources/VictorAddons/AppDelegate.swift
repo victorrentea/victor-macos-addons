@@ -1471,7 +1471,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         // wherever the file happens to be when it is switched on. Off at launch,
         // deliberately: it draws on the screen the room is watching, so it is the
         // last thing that should come up by itself.
-        self.liveCaptions = LiveCaptions(transcriptionFolder: transcriptionFolder)
+        let captions = LiveCaptions(transcriptionFolder: transcriptionFolder)
+        // The menu row's tick follows the band, never the click that asked for it,
+        // so ⌘⌃U, the row and the test hook can never disagree about whether the
+        // room is being subtitled.
+        captions.onStateChanged = { [weak self] on in
+            DispatchQueue.main.async { self?.menuBarManager?.setLiveCaptions(on: on) }
+        }
+        self.liveCaptions = captions
+        menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions?.toggle() }
 
         // Flux inbox poller: every 10 min, but only while on battery. It is a
         // notifier, not an actor — a banner and a log line, nothing more. The

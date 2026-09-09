@@ -2,9 +2,16 @@ import AppKit
 
 /// 💬📺 A subtitle band across the bottom of the projected screen, carrying the
 /// live transcription the way a film carries subtitles — on demand, off by
-/// default: **⌘⌃U** (taught on the ⌘⌃ cheat-sheet as "subtitles"), or
-/// `GET /test/captions`. No menu row, deliberately — the menu is not a second
-/// cheat-sheet, and a band you can see is its own feedback that it is on.
+/// default: **⌘⌃U** (taught on the ⌘⌃ cheat-sheet as "subtitles"), the
+/// **💬📺 Live Subtitles** row in the menu, or `GET /test/captions`.
+///
+/// It shipped without the menu row on the argument that the menu is not a second
+/// cheat-sheet and a band you can see is its own feedback — and the first thing
+/// Victor asked was how to switch it on from the menu. The argument was wrong in
+/// a way worth keeping written down: it holds for rows that only *repeat* a key,
+/// and this one carries **state**, on the screen the room is looking at. A ticked
+/// row answers "is the room being subtitled right now?" without pressing anything
+/// to find out, which is the same reason 🔴 raw-audio recording has a row.
 ///
 /// **It is on the built-in Retina on purpose**, which is the one overlay in this
 /// app that wants to be there: the Retina is what a venue projector mirrors, and
@@ -44,6 +51,10 @@ final class LiveCaptions {
 
     private(set) var isOn = false
 
+    /// Fires on every change, whichever route caused it, so the menu tick is the
+    /// band's own answer rather than a second copy of it.
+    var onStateChanged: ((Bool) -> Void)?
+
     private var panel: NSPanel?
     private var label: NSTextField?
     private var timer: Timer?
@@ -75,6 +86,7 @@ final class LiveCaptions {
         consumedOffset = TranscriptTail.size(of: file)
 
         overlayInfo("💬📺 subtitles on")
+        onStateChanged?(true)
         showPanel()
         timer = Timer.scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             self?.tick()
@@ -91,6 +103,7 @@ final class LiveCaptions {
         label = nil
         standing = ""
         overlayInfo("💬📺 subtitles off")
+        onStateChanged?(false)
     }
 
     /// Feed one line in as if whisper had just written it — the headless twin of

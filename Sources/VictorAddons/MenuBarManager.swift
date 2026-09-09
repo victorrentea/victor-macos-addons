@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 9, 18:23"
+    static let BUILD_TIME = "Sep 9, 19:10"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -21,6 +21,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var cursorGlowItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
+    private(set) var liveCaptionsItem: NSMenuItem!
+    var onToggleLiveCaptions: (() -> Void)?
     private(set) var lidAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
@@ -251,6 +253,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let screenshotItem = addItem("📸 Screenshot (hold to crop)", action: #selector(takeScreenshotAction))
         screenshotItem.keyEquivalent = "p"
         screenshotItem.keyEquivalentModifierMask = .control
+
+        // 💬📺 Live subtitles. A ticked row rather than a plain action, because
+        // unlike its neighbours this one *stays* — and it stays on the screen the
+        // room is looking at, which is exactly the state you want to be able to
+        // check without pressing anything to find out. The tick is driven from
+        // `LiveCaptions` itself (`setLiveCaptions`), never from the click, so the
+        // key, this row and the test hook can never disagree about what the room
+        // can see.
+        liveCaptionsItem = addItem("💬📺 Live Subtitles", action: #selector(toggleLiveCaptionsAction))
+        liveCaptionsItem.keyEquivalent = "u"
+        liveCaptionsItem.keyEquivalentModifierMask = [.command, .control]
+        liveCaptionsItem.state = .off
 
         menu.addItem(.separator())
 
@@ -707,6 +721,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         CursorGlowSettings.isEnabled = enabled
         cursorGlowItem.state = enabled ? .on : .off
         onCursorGlowEnabledChanged?(enabled)
+    }
+
+    /// 💬📺 Live Subtitles. The click only *asks*; the tick is set later by
+    /// `setLiveCaptions`, from whatever `LiveCaptions` actually did — the row must
+    /// never claim the room is being subtitled when it isn't.
+    @objc private func toggleLiveCaptionsAction() {
+        onToggleLiveCaptions?()
+    }
+
+    /// The truth about the band, from the band. Called for every route into it:
+    /// the ⌘⌃U key, this row, and `GET /test/captions`.
+    func setLiveCaptions(on: Bool) {
+        liveCaptionsItem?.state = on ? .on : .off
     }
 
     /// 🔄 Reverse Mouse Wheel. Unlike its neighbours this notifies nobody: the
