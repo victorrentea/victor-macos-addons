@@ -58,22 +58,22 @@ final class TerminalTileLayoutTests: XCTestCase {
     /// bottom-right takes the fifth window *and every window after it* until it is
     /// full, and only then does the bottom-left start piling.
     func testAQuadrantFillsToItsDepthBeforeTheNextOneIsTouched() {
-        XCTAssertEqual(TerminalTileLayout.depth(in: quads[3]), 6,
-                       "six windows to a pile, and a ~998×598 quadrant has room for them")
-        XCTAssertEqual(TerminalTileLayout.depth(in: Rect(x: 0, y: 0, w: 500, h: 400)), 4,
+        XCTAssertEqual(TerminalTileLayout.depth(in: quads[3]), 7,
+                       "seven windows to a pile, and a ~998×598 quadrant has room for them")
+        XCTAssertEqual(TerminalTileLayout.depth(in: Rect(x: 0, y: 0, w: 300, h: 200)), 4,
                        "a small screen runs out of room before it runs out of pile")
         XCTAssertEqual(TerminalTileLayout.capacities(count: 5, display: display), [1, 1, 1, 2])
         XCTAssertEqual(TerminalTileLayout.capacities(count: 6, display: display), [1, 1, 1, 3])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 9, display: display), [1, 1, 1, 6])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 10, display: display), [1, 1, 2, 6])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 14, display: display), [1, 1, 6, 6])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 24, display: display), [6, 6, 6, 6])
-        XCTAssertEqual(TerminalTileLayout.capacities(count: 25, display: display), [6, 6, 6, 7],
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 10, display: display), [1, 1, 1, 7])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 11, display: display), [1, 1, 2, 7])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 14, display: display), [1, 1, 5, 7])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 28, display: display), [7, 7, 7, 7])
+        XCTAssertEqual(TerminalTileLayout.capacities(count: 29, display: display), [7, 7, 7, 8],
                        "past four full piles the extras go round again and the steps tighten")
     }
 
-    func testNoQuadrantEverHoldsMoreThanSixUntilEveryQuadrantIsFull() {
-        for n in 1...24 {
+    func testNoQuadrantEverHoldsMoreThanSevenUntilEveryQuadrantIsFull() {
+        for n in 1...28 {
             let caps = TerminalTileLayout.capacities(count: n, display: display)
             XCTAssertLessThanOrEqual(caps.max()!, TerminalTileLayout.maxDepth, "\(n) windows: \(caps)")
         }
@@ -90,7 +90,7 @@ final class TerminalTileLayoutTests: XCTestCase {
 
     func testThePileIsPinnedToTheQuadrantsBottomRightCorner() {
         let quad = quads[3]
-        for k in 1...6 {
+        for k in 1...7 {
             let pile = TerminalTileLayout.cascade(count: k, in: quad)
             XCTAssertEqual(pile.count, k)
             XCTAssertEqual(pile.first!, quad, "the deepest window is the whole quadrant")
@@ -102,14 +102,14 @@ final class TerminalTileLayoutTests: XCTestCase {
         }
     }
 
-    /// A step exposes a whole title bar of the window behind, and twice as much of
-    /// its right edge — enough to read which session it is and to see the Claude
+    /// A step exposes a whole title bar of the window behind, and a narrow column
+    /// of its left edge — enough to read which session it is and to see the Claude
     /// bubble spinning in it.
-    func testEachStepExposesATitleBarAndTwiceThatOfTheRightEdge() {
+    func testEachStepExposesATitleBarAndAColumnOfTheLeftEdge() {
         let pile = TerminalTileLayout.cascade(count: 4, in: quads[3])
         for (a, b) in zip(pile, pile.dropFirst()) {
             XCTAssertEqual(b.y - a.y, TerminalTileLayout.titleStep)
-            XCTAssertEqual(b.x - a.x, TerminalTileLayout.titleStep * TerminalTileLayout.sideRatio)
+            XCTAssertEqual(b.x - a.x, TerminalTileLayout.sideStep)
         }
     }
 

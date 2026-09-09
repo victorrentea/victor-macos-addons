@@ -12,11 +12,14 @@ import Foundation
 /// quadrant, and every window in front of it is a little smaller, pinned to the
 /// quadrant's **bottom-right corner**, so it never leaves the quarter it belongs
 /// to. What the shrinking exposes is an L of the window behind: `titleStep` (32 pt)
-/// of height, which is a whole Terminal title bar, and twice that of width, which
-/// is enough of the right edge to see the Claude activity bubble spinning in a
+/// of height, which is a whole Terminal title bar, and `sideStep` (21 pt) of width
+/// down the left, which is enough to see the Claude activity bubble spinning in a
 /// session you are not looking at. Those two numbers are the entire design — the
 /// pile is read along its top-left staircase, and a step has to be tall enough to
-/// name the session and wide enough to show whether it is working.
+/// name the session and wide enough to show whether it is working. The horizontal
+/// one started at twice the vertical and was cut to a third of that (2026-09-09):
+/// a spinner needs a couple of characters, not a column, and every point spent on
+/// the staircase is a point the terminals in the pile do not get.
 ///
 /// The first cut of this (2026-09-08) stepped the extras down-right *without*
 /// pinning them, so the pile walked out of its quadrant and shrank on both edges
@@ -25,9 +28,9 @@ import Foundation
 /// terminals you cannot use. 2026-09-09, after seeing both: *"like in Windows,
 /// tiling of windows in a cascade style from larger to smaller, always bound"*.
 ///
-/// **A pile is six windows deep and no more** (`maxDepth`, 2026-09-09: *"max 6
-/// terminals per stack"*) — six title bars is already more than a glance takes in,
-/// and a seventh step eats screen the terminal underneath needs. A window also
+/// **A pile is seven windows deep and no more** (`maxDepth`, 2026-09-09: *"max 7
+/// terminals / quadrant"*) — past that the staircase is longer than a glance takes
+/// in, and each step eats screen the terminal underneath needs. A window also
 /// never shrinks past half the quadrant on either axis (a quarter of its area,
 /// `minFraction`), which is the floor on small screens where six nominal steps
 /// would not fit; `depth(in:)` is whichever of the two limits bites first.
@@ -74,18 +77,19 @@ enum TerminalTileLayout {
     /// bar is ~28 pt tall, so 32 exposes a whole one — the session's name.
     static let titleStep = 32
 
-    /// …and how much at the right, as a multiple of `titleStep`: twice as wide,
-    /// because the right edge has to show more than an edge — the Claude activity
-    /// bubble has to be visible in a window you are not looking at.
-    static let sideRatio = 2
+    /// …and how much at the left: enough for the Claude activity bubble of the
+    /// window behind to show, and no more. It is a third of what it was, which is
+    /// still two thirds of `titleStep` — the staircase reads diagonally, but its
+    /// width comes straight out of the width of every terminal in the pile.
+    static let sideStep = 21
 
     /// The smallest a cascaded window may get, as a divisor of the quadrant: half
     /// the width and half the height, i.e. a quarter of the quadrant's area.
     static let minFraction = 2
 
     /// How many windows one quadrant piles up before the next quadrant is started.
-    /// Six is a number of title bars the eye still reads as a list.
-    static let maxDepth = 6
+    /// Seven is a number of title bars the eye still reads as a list.
+    static let maxDepth = 7
 
     /// Steps never fall below this, however crowded a quadrant gets — a step of
     /// zero would hide a window completely behind the one in front of it.
@@ -111,7 +115,7 @@ enum TerminalTileLayout {
     /// that may be given away, whichever axis runs out first.
     static func depth(in quad: Rect) -> Int {
         let vertical = quad.h / minFraction / titleStep
-        let horizontal = quad.w / minFraction / (titleStep * sideRatio)
+        let horizontal = quad.w / minFraction / sideStep
         return min(maxDepth, 1 + max(1, min(vertical, horizontal)))
     }
 
@@ -146,7 +150,7 @@ enum TerminalTileLayout {
     /// the quadrant's own — so the pile shrinks towards that corner and never
     /// spills onto a neighbouring quarter.
     ///
-    /// The step is the nominal one (a title bar tall, twice that wide) unless the
+    /// The step is the nominal one (`titleStep` tall, `sideStep` wide) unless the
     /// quadrant is holding more windows than it comfortably fits, in which case it
     /// tightens so the last window still keeps half the quadrant's width and half
     /// its height. Dividing the *available spread* rather than shrinking each
@@ -157,8 +161,8 @@ enum TerminalTileLayout {
         let steps = count - 1
         let dy = max(minStep, min(titleStep,
                                   quad.h / minFraction / steps,
-                                  quad.w / minFraction / steps / sideRatio))
-        let dx = dy * sideRatio
+                                  quad.w * titleStep / sideStep / minFraction / steps))
+        let dx = max(1, dy * sideStep / titleStep)
         return (0..<count).map { i in
             let offX = min(i * dx, quad.w / minFraction)
             let offY = min(i * dy, quad.h / minFraction)

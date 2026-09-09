@@ -54,7 +54,7 @@ enum TerminalTiler {
 
         for (di, ws) in groups {
             if let displayID, displays[di].id != displayID { continue }
-            let slots = TerminalTileLayout.targets(count: ws.count, display: displays[di].rect)
+            let slots = TerminalTileLayout.targets(count: ws.count, display: displays[di].usable)
             let assignment = TerminalTileLayout.assign(windows: ws.map { $0.rect }, targets: slots)
             for (i, w) in ws.enumerated() {
                 let f = slots[assignment[i]]
@@ -80,23 +80,61 @@ enum TerminalTiler {
 
     // MARK: - Displays
 
-    private static func getDisplays() -> [(id: CGDirectDisplayID, rect: Rect)] {
+    /// Every display twice over: its `bounds`, which is what a window's centre is
+    /// tested against, and the `usable` rect the tiles are actually laid out in.
+    ///
+    /// **They are not the same rect, and tiling into the wrong one collides two
+    /// windows into one.** `CGDisplayBounds` includes the menu bar, which no window
+    /// may occupy: the deepest window of a top quadrant was placed at y = 2, macOS
+    /// clamped it down to just under the menu bar, and the window one step behind
+    /// it — placed 32 pt lower, i.e. at almost exactly the same y — ended up with
+    /// its title bar sitting on the first one's (2026-09-09: *"the two window
+    /// titles of top terminals are overlapped"*). The whole staircase is built out
+    /// of 32 pt steps, so a 30-odd point clamp eats a step entirely. `visibleFrame`
+    /// is the honest rectangle — menu bar off the top, Dock off whichever edge it
+    /// is on — so the steps land where they were computed.
+    private static func getDisplays() -> [(id: CGDirectDisplayID, bounds: Rect, usable: Rect)] {
         var count: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &count)
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetActiveDisplayList(count, &ids, &count)
+        let usableByID = usableRects()
         return ids.map {
             let b = CGDisplayBounds($0)
-            return (id: $0,
-                    rect: Rect(x: Int(b.origin.x), y: Int(b.origin.y),
-                               w: Int(b.size.width), h: Int(b.size.height)))
+            let bounds = Rect(x: Int(b.origin.x), y: Int(b.origin.y),
+                              w: Int(b.size.width), h: Int(b.size.height))
+            return (id: $0, bounds: bounds, usable: usableByID[$0] ?? bounds)
         }
     }
 
+    /// `NSScreen.visibleFrame` per display, flipped from AppKit's bottom-left
+    /// origin into the top-left global space that `CGDisplayBounds` and the
+    /// Accessibility API both speak. Read on the main thread — ⌘⌃A reaches here
+    /// from a background queue as well as from the menu.
+    private static func usableRects() -> [CGDirectDisplayID: Rect] {
+        onMain {
+            guard let primary = NSScreen.screens.first else { return [:] }
+            let top = primary.frame.maxY
+            var out: [CGDirectDisplayID: Rect] = [:]
+            for screen in NSScreen.screens {
+                guard let number = screen.deviceDescription[
+                    NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
+                let v = screen.visibleFrame
+                out[number.uint32Value] = Rect(x: Int(v.origin.x), y: Int(top - v.maxY),
+                                               w: Int(v.width), h: Int(v.height))
+            }
+            return out
+        }
+    }
+
+    private static func onMain<T>(_ work: () -> T) -> T {
+        Thread.isMainThread ? work() : DispatchQueue.main.sync(execute: work)
+    }
+
     private static func displayFor(cx: Double, cy: Double,
-                                   displays: [(id: CGDirectDisplayID, rect: Rect)]) -> Int {
+                                   displays: [(id: CGDirectDisplayID, bounds: Rect, usable: Rect)]) -> Int {
         for (i, e) in displays.enumerated() {
-            let d = e.rect
+            let d = e.bounds
             if Double(d.x) <= cx, cx < Double(d.x2),
                Double(d.y) <= cy, cy < Double(d.y2) { return i }
         }
