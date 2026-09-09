@@ -8797,7 +8797,7 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
-    // MARK: - 🤖 Claude leans in from the left (⌘⌃Q)
+    // MARK: - 🤖 Claude leans in from the left (⌃⌥G)
 
     /// How long the icon stays before it slides back out on its own.
     ///
@@ -8805,40 +8805,51 @@ class EmojiAnimator {
     /// sentence is built around and stays 25 s; this one only has to be seen.
     static let claudePeekLifetime: Double = 5
 
-    /// Where it leans in: the LEFT edge, in the upper third of the screen.
+    /// Where it leans in: the LEFT side, in the upper third of the screen.
     ///
     /// Sized off the **height**, unlike the elephant, which claims half the
-    /// width: that one is a picture, this one is an app icon, and an icon
-    /// measured in screen-widths on the projector is a billboard. The upper
-    /// third is not decoration either — ⌘⌃Q is opening a Terminal in the
-    /// quarter the mouse is in, and the mascot must not sit on the window it
-    /// exists to announce; the top-left quarter is the last one `fillOrder`
-    /// gives out.
+    /// width: that one is a picture a sentence is built around, this one is an
+    /// app icon, and an icon measured in screen-widths on the projector is a
+    /// billboard. 21% of the height is the size it grew to on the projector —
+    /// the first pass was a fifth smaller and read as a favicon from the back
+    /// of the room.
+    ///
+    /// The top-left quarter is the **last** one `TerminalTileLayout.fillOrder`
+    /// hands out, so of the whole screen it is the least likely to have a
+    /// terminal under it: the mascot lands where nothing is being read.
     ///
     /// Pure so the geometry can be asserted without a screen.
     static func claudePeekFrame(in bounds: CGRect, aspect: CGFloat) -> CGRect {
-        let h = bounds.height * 0.16
+        let h = bounds.height * 0.21
         let w = h * max(aspect, 0.01)
-        let x = bounds.width * 0.015
+        // Not flush against the bezel: it comes a little way IN, so it reads as
+        // somebody leaning into the room rather than as a sticker stuck to the
+        // edge of the screen.
+        let x = bounds.width * 0.045
         // y = 0 is the bottom edge of the host layer, so the upper third is the
         // TOP of the range: the icon's centre sits at 78% of the height.
         let y = bounds.height * 0.78 - h / 2
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
-    /// 🤖 The Claude Code icon slides in from the left edge, wiggles, and slides
-    /// back out — the app waving while ⌘⌃Q's Terminal is still coming up.
+    /// 🤖 The Claude Code icon slides in from the left, wiggles, and slides back
+    /// out. ⌃⌥G, and nothing else — it started life as the garnish on ⌘⌃Q's
+    /// Claude terminal and outlived it.
     ///
     /// It floats: a cut-out PNG with a real alpha channel over a click-through
     /// overlay, so what arrives is the mark itself and not a white rectangle
-    /// announcing "a picture opened".
+    /// announcing "a picture opened" — and the cut has to reach the *halo* too,
+    /// not just the card it was sitting on, because a pale rim one pixel wide is
+    /// visible from the back of a room as a white outline.
     ///
     /// The wiggle is the whole personality — it starts once the slide has
     /// landed, so the two motions read as "walked in, then said hello" instead
-    /// of one wobbly diagonal — and it decays (14° → 5°) because a rotation
-    /// that repeats at constant amplitude reads as a loading spinner.
+    /// of one wobbly diagonal — and it decays (7° → 2°) because a rotation that
+    /// repeats at constant amplitude reads as a loading spinner. It was twice
+    /// this wide on the first pass, which on a 16% icon looked less like a wave
+    /// than like something falling over.
     ///
-    /// Pressing ⌘⌃Q again sends it back out, and it leaves on its own after
+    /// Pressing ⌃⌥G again sends it back out, and it leaves on its own after
     /// `claudePeekLifetime`: the overlay is click-through, so a mascot left on
     /// screen could not be dismissed by clicking it.
     func showClaudePeek() {
@@ -8870,7 +8881,7 @@ class EmojiAnimator {
         layer.add(slideIn, forKey: "slide-in")
 
         let wiggle = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-        wiggle.values = [0, -0.24, 0.20, -0.13, 0.08, 0]
+        wiggle.values = [0, -0.12, 0.10, -0.065, 0.04, 0]
         wiggle.keyTimes = [0, 0.18, 0.40, 0.62, 0.82, 1]
         wiggle.duration = 0.85
         wiggle.beginTime = CACurrentMediaTime() + slideIn.duration

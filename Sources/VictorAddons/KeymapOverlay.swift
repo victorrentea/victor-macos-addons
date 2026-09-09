@@ -20,6 +20,10 @@ enum KeymapModifier: String, Equatable {
 /// still an answer to that question. Leaving it blank would say "nothing here",
 /// which is worse than saying who does own it.
 enum CommandControlShortcuts {
+    // NB Q is deliberately absent: ⌘⌃Q was the permissions-bypassed Claude
+    // terminal, then the 🤖 mascot alone, and on 2026-09-09 the mascot moved to
+    // ⌃⌥G and the combination went back to macOS's Lock Screen. A word here for
+    // a key this app no longer answers would be worse than the gap.
     static let labels: [Int: String] = [
         0:  "tile",      // A — tile Terminal windows
         8:  "claude",    // C — Claude Code in a new Terminal
@@ -75,13 +79,6 @@ enum CommandControlShortcuts {
                          // looking at, and the letter is the one inside it: "U"
                          // for sUbtitles, since C (captions) is the Claude
                          // terminal and T is the empty one.
-        12: "salut",     // Q — 🤖 the Claude mark waves in from the left edge and
-                         // goes away again. It said `claude` while the key also
-                         // opened a permissions-bypassed Terminal; now that C is
-                         // the only launcher, a second `claude` on the board would
-                         // send you to the wrong key at speed. The word is what
-                         // happens — somebody says hello — and it is the one entry
-                         // here that promises nothing lands anywhere afterwards.
         6:  "zoom",      // Z — paste Victor's personal Zoom room link
         13: "wispr🎙️",   // W — paste the Wispr transcript. NOT ours: the shortcut
                          // lives in Wispr Flow and we must NOT claim it. The tap's
@@ -120,9 +117,6 @@ enum CommandControlShortcuts {
                   // selection, this one lands on the participants' screens.
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
         31: "🐘",  // O — the word names the man, the mark names what appears
-        12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
-                  // is going to the room as a prompt", and the same mark on a key
-                  // that only animates would blur the two apart at a glance.
         2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this
                   // key is the one you speak *into* a session with, and two
                   // identical marks on one board would blur that apart.

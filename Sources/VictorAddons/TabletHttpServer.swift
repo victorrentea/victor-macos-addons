@@ -744,8 +744,10 @@ class TabletHttpServer {
         // the point — the check is that music starts, in a tab nobody sees.
         case "/test/focus-playlist":
             return .effect("focus-playlist")
-        // The 🤖 ⌘⌃Q mascot on its own: the key itself also opens a Terminal,
-        // and looking at the animation is not a reason to collect windows.
+        // The 🤖 ⌃⌥G mascot, headless. The key opened a Claude Terminal too when
+        // this hook was written, which is why it exists; the animation is now the
+        // whole key, but a hook that fires it without touching the keyboard is
+        // still the only way to watch it twice in a row.
         case "/test/claude-peek":
             return .effect("claude-peek")
         case "/test/claude-peek/stop":

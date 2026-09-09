@@ -28,9 +28,9 @@ class EventTapManager {
     var onPowerPointStrikethrough: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
-    /// ⌘⌃Q — 🤖 the Claude mark waves in from the left edge and leaves again.
-    /// It used to open a permissions-bypassed Claude Terminal as well; the
-    /// terminal was dropped and the wave kept.
+    /// ⌃⌥G — 🤖 the Claude mark waves in from the left of the projected screen
+    /// and leaves again. It lived on ⌘⌃Q, next to a permissions-bypassed Claude
+    /// Terminal; the terminal went first, then the key.
     var onClaudeMascotHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
@@ -472,21 +472,24 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
-        // Cmd+Ctrl+Q → 🤖 the Claude mark waves in from the left edge of the
-        // projected screen (suppress). It opened a permissions-bypassed Claude
-        // Terminal until 2026-09-09; that half is gone — ⌘⌃C is the launcher —
-        // and the key is now the greeting alone. NB it still shadows macOS's own
-        // ⌃⌘Q "Lock Screen": the session tap sees the key first and swallows it,
-        // so the Mac does not lock on that combination.
-        if keyCode == VK_Q && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onClaudeMascotHotkey?() }
-            return nil
-        }
-
         // Cmd+Ctrl+K → open the training Catalog.docx in Word (suppress). K, not
         // the T of "training": ⌘⌃T is the Terminal and is used far more often.
         if keyCode == VK_K && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenCatalog?() }
+            return nil
+        }
+
+        // Ctrl+Opt+G → 🤖 the Claude mark waves in from the left of the projected
+        // screen (suppress). **This is the first key on the ⌃⌥ board**, opened
+        // deliberately on 2026-09-09: ⌘⌃ is full, macOS itself binds almost
+        // nothing to ⌃⌥, and third-party apps rarely do — where ⌥⌘ is the
+        // busiest combination on the Mac. It came off ⌘⌃Q, which was borrowed
+        // from macOS's own Lock Screen; giving that back was worth more than the
+        // letter. `hasCmd` is excluded so it cannot be confused with ⌘⌃G below,
+        // which is Gmail — the two are one modifier apart and go to entirely
+        // different places.
+        if keyCode == VK_G && hasCtrl && hasOpt && !hasCmd {
+            DispatchQueue.global().async { [weak self] in self?.onClaudeMascotHotkey?() }
             return nil
         }
 

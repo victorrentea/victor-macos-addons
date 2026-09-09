@@ -1652,11 +1652,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
         eventTap.onClaudeMascotHotkey = { [weak self] in
-            // The mascot is now the WHOLE key (2026-09-09): ⌘⌃Q used to also open
-            // a permissions-bypassed Claude Terminal, and the wave was meant to
-            // fill the moment before the window appeared. Victor kept the wave and
-            // dropped the window — ⌘⌃C is the Claude launcher, and one key that
-            // both greets you and collects terminals is two keys.
+            // ⌃⌥G, and the mascot is the whole key (2026-09-09). It began as the
+            // garnish on ⌘⌃Q's permissions-bypassed Claude Terminal — the wave
+            // filled the moment before the window appeared — and lost first the
+            // terminal (⌘⌃C is the launcher; a key that greets you is not also a
+            // key that leaves a window behind) and then the combination itself,
+            // which macOS wanted back for Lock Screen.
             //
             // Same pinning as the elephant: this draws into the overlay panel's
             // layer tree, which lives on the built-in Retina, so the frame is
