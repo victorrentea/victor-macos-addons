@@ -74,6 +74,9 @@ class TabletHttpServer {
         /// human to drag (or Esc). Not read-only: it really writes a file and
         /// really replaces the clipboard.
         case testScreenshotCrop
+        /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
+        /// the one part of ⌃P that cannot be checked from a saved file.
+        case testScreenshotMark
         /// Fire the 🔥 Whip overlay — same action as ⌃W (test hook).
         case testWhip
         /// Crack the whip programmatically (scripted mouse-flick) — same as the
@@ -251,6 +254,7 @@ class TabletHttpServer {
     var onTestTile: (() -> Void)?
     var onTestTranscriptPicker: ((String?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
+    var onTestScreenshotMark: (() -> Void)?
     var onTestWhip: (() -> Void)?
     var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
@@ -473,6 +477,8 @@ class TabletHttpServer {
                 self.onTestTranscriptPicker?(at)
             case .testScreenshotCrop:
                 self.onTestScreenshotCrop?()
+            case .testScreenshotMark:
+                self.onTestScreenshotMark?()
             case .testWhip:
                 self.onTestWhip?()
             case .testWhipCrack:
@@ -688,6 +694,8 @@ class TabletHttpServer {
             return .testTranscriptPicker(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/screenshot/crop":
             return .testScreenshotCrop
+        case "/test/screenshot/mark":
+            return .testScreenshotMark
         case "/test/whip":
             return .testWhip
         case "/test/whip/crack":

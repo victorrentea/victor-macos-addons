@@ -167,26 +167,51 @@ enum ScreenCaptureFlash {
         }
     }
 
-    /// Drop the minigun's red reticle on the spot the cursor was standing when
-    /// the shutter went — it pops in, holds, and fades out inside ~2 s.
+    /// Mark the spot the cursor was standing on when the shutter went, with a
+    /// single solid yellow disc: it appears already centred on the point at
+    /// 100 pt, blooms out to 250 pt while fading, and is gone in ~0.6 s. It is
+    /// the "tap indicator" the Android emulator draws over a touch point.
     ///
     /// The border says *what* was captured; this says *where you were pointing*
-    /// while you said whatever the transcript recorded at that minute. Reusing
-    /// the aiming reticle (`EmojiAnimator.makeSniperReticle`) is deliberate: it
-    /// is already the mark this desktop uses for "here", so it needs no learning.
+    /// while you said whatever the transcript recorded at that minute.
+    ///
+    /// **It was the minigun's red aiming reticle until 2026-09-09**
+    /// (`EmojiAnimator.makeSniperReticle` at half its aiming scale, alive for 2 s),
+    /// and reusing that mark was deliberate — it is the shape this desktop already
+    /// means "here" with. Two things were wrong with it anyway. A reticle **is** a
+    /// crosshair, and a crosshair is what the other half of this very feature uses
+    /// for *choosing* a region (`CropSelectionOverlay`): one shape was saying "pick
+    /// a point" on the hold path and "here is the point" on the tap path. And it
+    /// *sat* there at rest for most of its two seconds, on top of the very line or
+    /// button being described — a shape that holds still over the thing it points
+    /// at is something to wait out, while a bloom uncovers those pixels with the
+    /// same motion that makes it noticeable, and is over in half a second. That is
+    /// all it needs to be: "did that catch where I was pointing?" is answered by
+    /// the first frame, not by how long the mark lingers.
+    ///
+    /// Walkie Talkie reached the same place first and it is why this looks like it
+    /// does: it round-robined this disc, concentric spikes and the classic reticle
+    /// through every real capture for two days and settled on the disc on
+    /// 2026-09-06 (`CaptureFlash.markerRotation` / `CaptureEffect.tapRipple` there).
+    /// The two apps are two halves of one gesture — Victor shoots with both, minutes
+    /// apart, in the same workshop — so a shot marks its spot the same way in both.
+    /// The values below are that effect's, unchanged, deliberately: matching it
+    /// approximately would be worse than not matching it at all.
+    ///
+    /// **The panel is the whole screen under the point**, not a box around it. A
+    /// box sized to the disc's *start* clips the bloom a third of the way out, and
+    /// one sized to its *end* hangs 125 pt past a nearby display edge — and the
+    /// displays here touch edge-to-edge, so that spills onto the neighbour instead
+    /// of falling off the world. A screen-sized panel clips the bloom at the screen,
+    /// which is the honest answer.
     ///
     /// `point` is in global Cocoa coordinates.
-    static func markCursor(at point: NSPoint, duration: CFTimeInterval = 2.0) {
+    static func markCursor(at point: NSPoint, duration: CFTimeInterval = 0.6) {
         guard !isSuppressed else { return }
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
+                ?? NSScreen.main else { return }
 
-        // Half the minigun's aiming scale: that one has to be found while you
-        // are moving the mouse, this one only has to mark a spot you are
-        // already looking at.
-        let reticle = EmojiAnimator.makeSniperReticle(scale: 1.25, armed: true)
-        let side = max(reticle.bounds.width, reticle.bounds.height) + 40   // room for the pop + shadow
-        let frame = NSRect(x: point.x - side / 2, y: point.y - side / 2, width: side, height: side)
-
-        let panel = NSPanel(contentRect: frame,
+        let panel = NSPanel(contentRect: screen.frame,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered,
                             defer: false)
@@ -197,41 +222,51 @@ enum ScreenCaptureFlash {
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
-        let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        let view = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.clear.cgColor
-        reticle.position = CGPoint(x: side / 2, y: side / 2)
-        view.layer?.addSublayer(reticle)
-
         panel.contentView = view
-        panel.setFrame(frame, display: true)
+        panel.setFrame(screen.frame, display: true)
         panel.orderFrontRegardless()
         activePanels.append(panel)
 
-        // It arrives too big and closes on the spot — a scope being brought down
-        // onto a target, not a badge appearing next to one. It lands *smaller*
-        // than it came in (0.9), so the motion is unmistakably a zoom-out and
-        // what stays behind is the smaller, quieter mark.
-        reticle.transform = CATransform3DMakeScale(0.9, 0.9, 1)   // the resting size
-        let zoom = CABasicAnimation(keyPath: "transform.scale")
-        zoom.fromValue = 1.3
-        zoom.toValue = 0.9
-        zoom.duration = 0.35
-        zoom.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        reticle.add(zoom, forKey: "zoom")
+        // Screen-local, bottom-left origin: CALayers on an unflipped view share
+        // `NSScreen.frame`'s convention once the screen's own origin is out.
+        let target = CGPoint(x: point.x - screen.frame.minX, y: point.y - screen.frame.minY)
 
-        // There from the first frame at 80% — a mark that fades *in* asks to be
-        // watched arriving; this one is already there when you look. The only
-        // fade is the last quarter, where it leaves.
-        let life = CAKeyframeAnimation(keyPath: "opacity")
-        life.values = [0.8, 0.8, 0.0]
-        life.keyTimes = [0.0, 0.75, 1.0]
-        life.duration = duration
-        life.fillMode = .forwards
-        life.isRemovedOnCompletion = false
-        view.layer?.add(life, forKey: "life")
+        let startDiameter: CGFloat = 100
+        let endDiameter: CGFloat = 250
+        let base = CGRect(x: -startDiameter / 2, y: -startDiameter / 2,
+                          width: startDiameter, height: startDiameter)
+        let dot = CAShapeLayer()
+        dot.path = CGPath(ellipseIn: base, transform: nil)
+        dot.bounds = base
+        dot.position = target
+        dot.fillColor = NSColor.systemYellow.cgColor
+        dot.strokeColor = nil
+        dot.opacity = 0
+        view.layer?.addSublayer(dot)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+        let group = CAAnimationGroup()
+        group.duration = duration
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = false
+
+        let grow = CABasicAnimation(keyPath: "transform.scale")
+        grow.fromValue = 1.0
+        grow.toValue = endDiameter / startDiameter
+
+        // In fast, held at full strength while it is still visibly growing, then
+        // out over the second half of the growth — so what the eye catches is the
+        // spreading, not the arriving.
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.0, 0.6, 0.6, 0.0]
+        fade.keyTimes = [0.0, 0.15, 0.4, 1.0]
+
+        group.animations = [grow, fade]
+        dot.add(group, forKey: "tap")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.2) {
             panel.orderOut(nil)
             activePanels.removeAll { $0 === panel }
         }

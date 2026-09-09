@@ -1045,6 +1045,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             self?.breakTimer.stateJSON() ?? "{\"error\":\"break timer unavailable\"}"
         }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
+        tabletServer?.onTestScreenshotMark = { DispatchQueue.main.async { ScreenCaptureFlash.markCursor(at: NSEvent.mouseLocation) } }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
         // Goes through `self` rather than capturing the controller: this whole
         // block wires the server long before `transcriptPasteController` is
