@@ -10,9 +10,11 @@ import CoreGraphics
 /// not in. That joke stopped working once Victor started *zooming the room's
 /// projector in on the beat* — the dog was then reliably in the half nobody was
 /// looking at, i.e. off the projected frame entirely. So the rule inverted: the
-/// dog is now **adjacent to the beat**, parked as close to the pulsing disc as it
-/// can get without any of it sitting inside, with its **face** — not its centre —
-/// as the thing held near the lens.
+/// dog is now **adjacent to the beat**, parked right up against the pulsing disc
+/// with its **face** — not its centre — as the thing held near the lens. Since
+/// 2026-09-10 it stands **30 % closer than the strict clearance** (`closeness`), so
+/// the ear leans *into* the disc instead of resting on its edge — "beside the beat"
+/// became "up in the beat's face".
 ///
 /// Three decisions, in the order they constrain each other:
 ///
@@ -27,8 +29,8 @@ import CoreGraphics
 ///    of the dog under the frame; a beat high on it does not lift the dog at all,
 ///    it just leaves the dog standing beneath the beat.
 /// 3. **How far along that side.** Only as far as the ear needs to clear the
-///    lens — and standing *below* the beat already pays part of that, so the
-///    higher the beat, the closer in the dog tucks. If the frame will not give
+///    lens, times `closeness` — and standing *below* the beat already pays part of
+///    that, so the higher the beat, the closer in the dog tucks. If the frame will not give
 ///    the rest, the dog's *back* may hang off the outer edge up to
 ///    `maxBackOverflow`: a cropped rump is a cheaper failure than a face dragged
 ///    away from the beat.
@@ -106,8 +108,24 @@ enum HeartbeatDogFollow {
 
     /// Breathing room between the silhouette and the edge of the lens. Small on
     /// purpose: "as close as possible without overlapping" was the ask, so this
-    /// is the width of "not touching", not a comfortable gap.
+    /// is the width of "not touching", not a comfortable gap. It is scaled by
+    /// `closeness` along with the radius, so it no longer buys any clearance at
+    /// all — it survives as the thing that keeps the two numbers in one ratio.
     static let clearMargin: CGFloat = 18
+
+    /// How much of the geometric clearance is actually kept. 1.0 is the strict
+    /// answer — the ear exactly on the circle, which is what this file computed
+    /// until 2026-09-10; 0.70 pulls the dog **30 % closer to the centre of the
+    /// beat** (Victor, 2026-09-10) and therefore lets the ear overlap the lens.
+    ///
+    /// The overlap is the point, not a regression. The lens is a *distortion*,
+    /// not a drawn disc: its outer ring barely moves a pixel, so an ear a few
+    /// tens of points inside the radius covers nothing anyone was looking at,
+    /// while the strict placement read as a dog standing politely aside from the
+    /// beat rather than leaning into it. Applied to `want`, so both the sideways
+    /// gap and the sink-below-the-beat fallback shrink by the same factor and the
+    /// placement stays one consistent circle.
+    static let closeness: CGFloat = 0.70
 
     /// How much of the box may hang off the outer edge of the screen, as a
     /// fraction of its width — the rump, always, since the dog faces inward.
@@ -152,8 +170,8 @@ enum HeartbeatDogFollow {
     ///
     /// **The horizontal then only has to make up the difference.** The constraint
     /// is that the near-top corner of the silhouette — the ear on the beat's side
-    /// — stays outside the lens circle, and being *below* the beat already buys
-    /// part of that distance. So a beat high on the screen, which pins the dog to
+    /// — stays outside the `closeness`-shrunk lens circle, and being *below* the
+    /// beat already buys part of that distance. So a beat high on the screen, which pins the dog to
     /// the floor far beneath it, lets the dog stand almost directly under the
     /// circle instead of off to one side. Only the drop *below the cursor* counts:
     /// while the ears are still above it, the near edge runs straight through the
@@ -173,7 +191,7 @@ enum HeartbeatDogFollow {
         let near = faceToNearEdge(boxWidth: boxSize.width)
         let back = faceToBackEdge(boxWidth: boxSize.width)
         let ears = faceToTop(boxHeight: boxSize.height)
-        let want = clearRadius + clearMargin
+        let want = (clearRadius + clearMargin) * closeness
         let dir: CGFloat = onRight ? 1 : -1
 
         // 1. Height: track the cursor, but never lift the photo off the floor.
@@ -202,7 +220,11 @@ enum HeartbeatDogFollow {
         //    target height rather than a delta: `below` is clamped at zero while
         //    the ears are above the cursor, so adding a sink to it would lose
         //    exactly one ear's worth of drop.
-        if gap * gap + below * below < want * want {
+        // The comparison carries a hair of slack: the placement above aims at
+        // exactly `want`, so an exact hit lands on this boundary and rounding
+        // alone decides which way it falls. Without the slack a perfectly good
+        // placement trips the fallback and sinks the dog a whole ear for nothing.
+        if gap * gap + below * below < want * want * (1 - 1e-9) {
             let credit = (want * want - gap * gap).squareRoot()   // drop still needed
             faceY = max(cursor.y - ears - credit, min(faceY, bounds.height * faceFloorFraction))
             below = max(0, cursor.y - faceY - ears)

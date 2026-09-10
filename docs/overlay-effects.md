@@ -529,10 +529,24 @@ rule from the start.
   — until then it was `HeartbeatDogFlee` and the dog *bolted* to the half of the screen
   the cursor was not in. That joke stopped working once the projector is generally
   zoomed in around the beat: the far half is precisely the part of the screen the room
-  cannot see, so the dog was reliably off-frame. Now it is glued to the beat, parked as
-  close to the pulsing lens as it fits without any of it landing inside, facing the
-  pointer, and it **moves along whenever the pointer does** — vertically too, which is
-  the genuinely new half.
+  cannot see, so the dog was reliably off-frame. Now it is glued to the beat, parked
+  right up against the pulsing lens, facing the pointer, and it **moves along whenever
+  the pointer does** — vertically too, which is the genuinely new half.
+
+  **It stands 30 % inside the clearance** (`HeartbeatDogFollow.closeness` = 0.70, Victor,
+  2026-09-10). Everything below still computes the strict "ear exactly on the circle"
+  placement; `closeness` then multiplies that one distance (`want` = radius + margin), so
+  the sideways gap and the sink-below-the-beat credit shrink together and the placement
+  stays one consistent, if smaller, circle. The ear now **overlaps** the lens, which was
+  the previous rule's one inviolable no: it is affordable because the lens is a
+  *distortion*, not a drawn disc — its outer ring barely moves a pixel, so an ear a few
+  tens of points inside the radius covers nothing the room was watching, while the strict
+  placement read as a dog standing politely aside from the beat instead of leaning into
+  it. Two knock-on effects: the emergency sidestep below is now unreachable even against
+  the 435 pt stress lens (the seam case that used to spend past the budget no longer
+  does), and the shortfall test in `facePoint` gained a hair of slack — the placement aims
+  at exactly `want`, so an exact hit lands on that boundary and rounding alone used to
+  decide whether the dog sank a whole ear for nothing.
 
   **The face, not the box, is what gets parked.** The placement is written around one
   point measured off the asset — `faceFracX` 0.60 / `faceFracYFromTop` 0.15 — and the
@@ -568,14 +582,13 @@ rule from the start.
   eats even that, two fallbacks in order — **sink** further below the beat (free, the
   bottom edge is open; it stops only at `faceFloorFraction`, where the face itself would
   go out of sight), then **step sideways past the budget**, with the face staying inside
-  the frame as the only hard stop; measured worst case there is a third of the box off
-  the edge, at a cursor held on the seam *and* low on the screen. Overlapping the beat is
-  the failure worth paying to avoid: the dog is a **sibling** of the capture layer, so it
-  never pulses — it would just cover the one part of the screen the projector is zoomed
-  into. Since the lens shrank to half the screen height neither fallback is reached on
-  the retina and the dog stays well inside its budget everywhere; the tests keep them
-  honest by re-running the whole cursor sweep against the old 435 pt lens as a stress
-  case.
+  the frame as the only hard stop. Covering the beat *wholesale* is still the failure
+  worth paying to avoid — the dog is a **sibling** of the capture layer, so it never
+  pulses, and a dog parked over the middle would just hide the one part of the screen the
+  projector is zoomed into. Since the lens shrank to half the screen height, and more so
+  since `closeness`, neither fallback is reached on the retina and the dog stays well
+  inside its budget everywhere; the tests keep them honest by re-running the whole cursor
+  sweep against the old 435 pt lens as a stress case.
 
   Mechanics worth knowing before touching it: the overlay panel is **click-through and
   receives no mouse events at all**, so the cursor is *polled* (`NSEvent.mouseLocation`,

@@ -5167,9 +5167,10 @@ class EmojiAnimator {
     /// The rule inverted on 2026-09-06. It used to flee the cursor to the far
     /// half of the screen; but the projector is generally zoomed in around the
     /// beat, so the far half is precisely the part of the screen the room cannot
-    /// see. Now the dog is glued to the beat: parked as close to the pulsing lens
-    /// as it fits without any of it landing inside, **face** toward the pointer,
-    /// and it moves along whenever the pointer does.
+    /// see. Now the dog is glued to the beat: parked right up against the pulsing
+    /// lens — 30 % inside the strict clearance since 2026-09-10, so the ear leans
+    /// into it — **face** toward the pointer, and it moves along whenever the
+    /// pointer does.
     ///
     /// **The side is chosen once and then kept** (Victor, 2026-09-09). The first
     /// poll picks it the way it always did — from the half of the screen the

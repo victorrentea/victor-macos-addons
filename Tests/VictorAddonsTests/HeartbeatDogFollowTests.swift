@@ -75,26 +75,33 @@ final class HeartbeatDogFollowTests: XCTestCase {
 
     /// The whole inversion in one assertion: the dog is now *beside* the beat,
     /// not on the far half of the screen.
-    func testTheFaceSitsJustOutsideTheBeatNotAcrossTheScreen() {
+    func testTheFaceSitsAgainstTheBeatNotAcrossTheScreen() {
         let cursor = CGPoint(x: 400, y: H / 2)
         let f = face(onRight: true, cursor: cursor)
         let reach = f.x - cursor.x
-        XCTAssertGreaterThan(reach, lens)                 // outside the disc…
-        XCTAssertLessThan(reach, lens + box.width / 2)    // …but hugging it
+        XCTAssertGreaterThan(reach, 0)                    // on its own side of the beat…
+        XCTAssertLessThan(reach, lens + box.width / 2)    // …and hugging it
     }
 
-    /// "As close as possible without overlapping": it is the ear, not the face,
-    /// that sits on the circle, so the face is exactly one ear further out.
-    func testTheEarLandsOnTheEdgeOfTheDisc() {
+    /// It is the ear, not the face, that the clearance is written around, so the
+    /// face is exactly one ear further out than the circle the ear is put on —
+    /// and since 2026-09-10 that circle is `closeness` of the strict one.
+    func testTheEarLeansInsideTheEdgeOfTheDisc() {
         let cursor = CGPoint(x: 400, y: H / 2)
         let edge = nearEdgeX(onRight: true, cursor: cursor)
-        XCTAssertEqual(edge - cursor.x, lens + HeartbeatDogFollow.clearMargin, accuracy: 0.001)
+        XCTAssertEqual(edge - cursor.x,
+                       (lens + HeartbeatDogFollow.clearMargin) * HeartbeatDogFollow.closeness,
+                       accuracy: 0.001)
+        XCTAssertLessThan(edge - cursor.x, lens)   // 30 % closer means overlapping
     }
 
-    func testNoPartOfTheSilhouetteEverEntersTheDisc() {
+    /// The strict "never enters the disc" rule is gone, but the placement is
+    /// still a circle: nothing may come closer than `closeness` of it, anywhere.
+    func testTheSilhouetteNeverGoesDeeperThanTheClosenessCircle() {
         // Both the lens as it ships and a lens big enough to force every
         // fallback — the placement has to hold on either.
         for radius in [lens, crampedLens] {
+            let want = (radius + HeartbeatDogFollow.clearMargin) * HeartbeatDogFollow.closeness
             for x in stride(from: CGFloat(0), through: W, by: 24) {
                 for y in stride(from: CGFloat(0), through: H, by: 24) {
                     let cursor = CGPoint(x: x, y: y)
@@ -106,8 +113,8 @@ final class HeartbeatDogFollowTests: XCTestCase {
                     let corner = CGPoint(x: nearEdgeX(onRight: onRight, cursor: cursor, radius: radius),
                                          y: f.y + HeartbeatDogFollow.faceToTop(boxHeight: box.height))
                     let d = ((corner.x - x) * (corner.x - x) + (corner.y - y) * (corner.y - y)).squareRoot()
-                    XCTAssertGreaterThanOrEqual(d, radius,
-                                                "lens \(radius), cursor \(cursor) put the dog inside the beat")
+                    XCTAssertGreaterThanOrEqual(d, want - 0.001,
+                                                "lens \(radius), cursor \(cursor) put the dog too deep into the beat")
                 }
             }
         }
@@ -221,19 +228,20 @@ final class HeartbeatDogFollowTests: XCTestCase {
     }
 
     /// A cursor held on the midline *and* low on the screen, with a lens that
-    /// wide, is the one case that spends past the budget: neither half has room
-    /// and there is no sink left, so the dog steps further out and lets more of
-    /// its rump go. Still a third of the box at worst — a cropped dog beats a
-    /// covered beat.
-    func testTheSeamIsTheOnlyPlaceThatSpendsPastTheBudget() {
+    /// wide, used to be the one case that spent **past** the budget: neither half
+    /// had room and there was no sink left, so the dog stepped further out and let
+    /// more of its rump go. Pulling the whole placement 30 % closer on 2026-09-10
+    /// bought that case back — the emergency sidestep is now unreachable even
+    /// there, and the seam merely spends *some* of the budget.
+    func testEvenTheSeamNowStaysInsideTheBudget() {
         var worst: CGFloat = 0
         for x in stride(from: CGFloat(0), through: W, by: 8) {
             for y in stride(from: CGFloat(0), through: H, by: 8) {
                 worst = max(worst, overflow(cursor: CGPoint(x: x, y: y), radius: crampedLens))
             }
         }
-        XCTAssertGreaterThan(worst, box.width * HeartbeatDogFollow.maxBackOverflow)
-        XCTAssertLessThanOrEqual(worst, box.width * 0.35)
+        XCTAssertGreaterThan(worst, 0)
+        XCTAssertLessThanOrEqual(worst, box.width * HeartbeatDogFollow.maxBackOverflow)
     }
 
     /// The one hard stop of the emergency sidestep: whatever else gets cropped,
