@@ -317,8 +317,17 @@ enum EmojiKeyLayer {
     /// point of the new board is that a letter can mean the thing it starts,
     /// where the ⌥ layer ran out of letters years ago and has been handing out
     /// digits ever since.
+    ///
+    /// B for bug and P for parachute (2026-09-10) follow that rule, and 🪂
+    /// **moved** here off ⌥⇧8 rather than being duplicated: the goose stayed on
+    /// its digit because ⌥8 is muscle memory years old, while ⌥⇧8 was a digit
+    /// nobody had learned — there was nothing to keep working. A letter that
+    /// means the word beats a digit you have to look up, and two keys for one
+    /// emoji is one of them typed by accident.
     static let controlOptionSeed: [Int: String] = [
           5: "🪿",   // G — goose
+         11: "🐛",   // B — bug
+         35: "🪂",   // P — parachute, off ⌥⇧8
     ]
 
     static let optionSeed: [Int: String] = [
@@ -388,7 +397,6 @@ enum EmojiKeyLayer {
          25: "🔽",
          26: "🗑️",
          27: "⊖",
-         28: "🪂",
          29: "🔼",
          30: "Î",
          31: "👀",
