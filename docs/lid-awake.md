@@ -130,6 +130,27 @@ the exact failure this is meant to prevent.
 | **farewell** — no Claude working, *and the pulse was audible* | cleared, after the flatline | **stays ticked** | Same release, announced first. See below. |
 | **stand down** — battery below 20% | cleared | **unticks** | A hard stop. Continuing to watch would mean re-arming at 19%. |
 
+**Clearing the flag is permission to sleep, not a sleep (2026-09-10).** The
+kernel decides about a lid at the moment it closes; a veto withdrawn any time
+after that is not a second close, so a Mac whose flag comes off while the lid is
+already shut can sit awake in a bag until some idle timer eventually gets to it.
+So every release that happens **with the lid shut and on battery** asks for the
+sleep explicitly, with `pmset sleepnow` — the one `pmset` verb here that needs no
+privileges, hence no sudoers rule. All three stops go through `hold(false)`, so
+all three get it: the ordinary release, the farewell (after the tone, never
+before), and the floor's stand-down.
+
+Never on AC, and never with the lid open. Clamshell-on-power is the case Apple
+supports natively, and a projector plugged into a closed laptop mid-workshop must
+not be put to sleep by a heartbeat feature. With the lid shut on battery this
+only gets where macOS was going anyway, sooner.
+
+And **closing the lid with nothing working makes no sound at all**: nothing was
+beating, so there is no ear mid-conversation to sign off to and the answer is a
+plain `.release` (`testNoFarewellIfThePulseWasNotRunning`) — flag off, `pmset
+sleepnow`, silence. The flatline is for the pulse that was audible right up to
+the release, and only for that.
+
 The flag is only touched **on a change**. The tick runs every ten seconds and
 `sudo pmset` is a process spawn; re-stating a value that has not moved six times
 a minute is the kind of waste that shows up in the only number this feature is

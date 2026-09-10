@@ -357,6 +357,30 @@ final class LidAwake {
         overlayInfo(wanted
             ? "LidAwake: a Claude is working — holding the lid open"
             : "LidAwake: no Claude working — releasing, the Mac may sleep")
+        // Clearing the flag is *permission* to sleep, not a sleep. The kernel
+        // decides about a lid at the moment it closes; a veto withdrawn any
+        // time after that is not a second close, so the Mac can sit awake in a
+        // bag with the lid shut until some idle timer eventually gets to it.
+        // With the lid already down and nothing left holding it open, the sleep
+        // it was promised is asked for explicitly.
+        if !wanted, Self.isLidClosed(), !PowerMonitor.isOnAC() { Self.sleepNow() }
+    }
+
+    /// `pmset sleepnow` — the one `pmset` verb here that needs no privileges,
+    /// so no sudoers rule and no `-n` games.
+    ///
+    /// Only ever called with **the lid shut and on battery**, which is the state
+    /// macOS itself sleeps a Mac in: this only gets there first. On AC it is
+    /// never called, because clamshell-on-power is the case Apple supports
+    /// natively and a projector plugged into a closed laptop mid-workshop must
+    /// not be put to sleep by a heartbeat feature.
+    private static func sleepNow() {
+        overlayInfo("LidAwake: lid is shut and nothing is holding it — pmset sleepnow")
+        do {
+            try Process.run(URL(fileURLWithPath: "/usr/bin/pmset"), arguments: ["sleepnow"])
+        } catch {
+            overlayError("LidAwake: pmset sleepnow failed — \(error)")
+        }
     }
 
     /// Park the **system** output volume at maximum for as long as the beats
