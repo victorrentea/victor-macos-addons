@@ -1,7 +1,8 @@
-# ✋ Hands off — the frame an agent raises while it drives the GUI
-`HandsOffOverlay` + the pure `HandsOffSession`. Amber border on **every** screen
-plus a badge riding the cursor (`✋ codex — click pe Restart to Update`); on release
-the border turns green for 0.5s, fades over 0.25s and a `Tink` plays. Raised over the
+# ✋🔒 Hands off — the frame an agent raises while it drives the GUI
+`HandsOffOverlay` + the pure `HandsOffSession`. Amber border on **every** screen,
+four semi-transparent 🔒 pulsing in the corners of every screen, plus a badge riding
+the cursor (`✋ codex — click pe Restart to Update`); on release the border turns green
+for 0.5s, fades over 0.25s and a `Tink` plays. Raised over the
 existing HTTP door, so any agent — codex, claude, a shell script — uses the same two calls:
 
 ```sh
@@ -9,6 +10,36 @@ curl "localhost:55123/hands-off/start?agent=claude&what=click%20pe%20Restart&ttl
 # … the GUI dance …
 curl localhost:55123/hands-off/end
 ```
+
+or, the same thing without remembering the URL — `./hands-off.sh`, symlinked as
+`~/bin/hands-off`:
+
+```sh
+hands-off run "click pe Restart to Update" -- ./drive-the-gui.sh   # releases on exit/Ctrl-C/crash
+hands-off start "click pe Restart" 120 ; … ; hands-off end
+hands-off demo 10                                                  # just look at it
+```
+It starts the app if the door doesn't answer, and if it still doesn't it says so on
+stderr instead of failing quietly — an agent that drives the mouse with no warning on
+screen is exactly the situation this exists to prevent.
+
+## 🔒 The four corner locks (asked for 10 Sep 2026)
+The border alone says *something is happening*; the locks say **what Victor must not
+do** — hands off the mouse and the keyboard until they are gone. They pulse
+0.95 → 0.35 → 0.95 over 2.4 s, `easeInEaseOut`, in sync on all four corners and all
+screens.
+
+- **Never fully transparent at the bottom of the pulse**: a glance that lands in the
+  dark half of the cycle still has to answer the question.
+- **Slow, not blinking**: fast blinking reads as an error the eye wants to dismiss;
+  a slow breath reads as "still running".
+- **In sync, not offset**: four things blinking on their own read as decoration,
+  four breathing together read as one state the whole screen is in.
+- **Corner + drop shadow, no plate**: the corner is where no app puts the content he
+  was reading, and the shadow keeps the glyph legible over both a white document and a
+  dark IDE without covering anything.
+- They are subviews of the frame panel, so they are built, faded and torn down with it
+  — no second lifecycle to leak.
 `GET /hands-off/state` is the read-only snapshot (`{"active":true,"agent":…,"label":…,"remainingSec":…}`),
 which is how the behaviour is asserted from a script rather than from a screenshot.
 

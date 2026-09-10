@@ -33,6 +33,21 @@ final class HandsOffOverlay {
     private let borderWidth: CGFloat = 6
     private let amber = NSColor.systemOrange
     private let free = NSColor.systemGreen
+    /// 🔒 in all four corners, breathing slowly. The border says "something is
+    /// happening"; the locks say *what you must not do* — hands off the mouse
+    /// and the keyboard until they are gone. Four of them because Victor's eye
+    /// is somewhere unpredictable on a 2-screen desk, and a corner is the one
+    /// place no app puts content he was reading.
+    private let lockGlyph = "🔒"
+    private let lockSize: CGFloat = 64
+    private let lockInset: CGFloat = 24
+    /// Never fully opaque and never fully gone: at the bottom of the pulse the
+    /// lock is still legible, so a glance that lands in the dark half of the
+    /// cycle still answers the question.
+    private let lockAlphaRange: (min: Float, max: Float) = (0.35, 0.95)
+    /// One slow breath ≈ 2.4 s round trip. Fast blinking reads as an error the
+    /// eye wants to dismiss; this reads as "still running".
+    private let lockPulseDuration: CFTimeInterval = 1.2
     /// Below-right of the hotspot — the quadrant macOS cursor artwork leaves
     /// free, same choice as `BusyCursorSpinner`, so the badge never covers the
     /// thing being pointed at.
@@ -106,9 +121,61 @@ final class HandsOffOverlay {
             view.layer?.borderWidth = borderWidth
             view.layer?.cornerRadius = 12
             view.layer?.borderColor = amber.cgColor
+            addCornerLocks(to: view)
             panel.contentView = view
             panel.orderFrontRegardless()
             framePanels.append(panel)
+        }
+    }
+
+    /// Four semi-transparent padlocks, one per corner, each pulsing on its own
+    /// layer. They ride inside the frame panel, so they appear, fade and go
+    /// away with it — there is no second lifecycle to leak.
+    private func addCornerLocks(to view: NSView) {
+        let size = view.frame.size
+        let box = lockSize * 1.4
+        let corners = [
+            CGPoint(x: lockInset, y: lockInset),                                  // bottom-left
+            CGPoint(x: size.width - box - lockInset, y: lockInset),               // bottom-right
+            CGPoint(x: lockInset, y: size.height - box - lockInset),              // top-left
+            CGPoint(x: size.width - box - lockInset, y: size.height - box - lockInset)
+        ]
+        for origin in corners {
+            let label = NSTextField(labelWithString: lockGlyph)
+            label.font = .systemFont(ofSize: lockSize)
+            label.alignment = .center
+            label.backgroundColor = .clear
+            label.isBezeled = false
+            label.isEditable = false
+            label.isSelectable = false
+            label.frame = NSRect(origin: origin, size: NSSize(width: box, height: box))
+            label.wantsLayer = true
+            label.layer?.opacity = lockAlphaRange.max
+            // A drop shadow rather than a plate behind the glyph: the emoji has
+            // to stay readable over a white document and over a dark IDE, and a
+            // badge in the corner would hide whatever it lands on.
+            label.shadow = {
+                let s = NSShadow()
+                s.shadowColor = NSColor.black.withAlphaComponent(0.55)
+                s.shadowBlurRadius = 6
+                s.shadowOffset = .zero
+                return s
+            }()
+
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = lockAlphaRange.max
+            pulse.toValue = lockAlphaRange.min
+            pulse.duration = lockPulseDuration
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            // All four breathe together — offsetting them would read as four
+            // separate things blinking, which is decoration; in sync it reads
+            // as one state the whole screen is in.
+            pulse.beginTime = CACurrentMediaTime()
+            label.layer?.add(pulse, forKey: "handsOffPulse")
+
+            view.addSubview(label)
         }
     }
 
