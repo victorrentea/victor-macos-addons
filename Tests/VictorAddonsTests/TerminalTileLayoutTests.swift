@@ -16,6 +16,12 @@ final class TerminalTileLayoutTests: XCTestCase {
 
     private func win(_ x: Int, _ y: Int) -> Rect { Rect(x: x, y: y, w: 300, h: 200) }
 
+    /// Which quadrant a frame sits in — the part of the layout that geometry, and
+    /// only geometry, decides.
+    private func home(_ r: Rect) -> Int? {
+        quads.firstIndex { $0.x <= r.x && $0.y <= r.y && r.x2 <= $0.x2 && r.y2 <= $0.y2 }
+    }
+
     // MARK: - Up to four
 
     func testEachWindowGoesToTheQuadrantItIsAlreadyIn() {
@@ -220,14 +226,54 @@ final class TerminalTileLayoutTests: XCTestCase {
         XCTAssertEqual(thrice, once)
     }
 
-    /// Same layout, windows handed over in a different z-order: the result must not
-    /// move a single window, because position is the only thing that decides.
-    func testTheOrderWindowsComeInDoesNotMoveThem() {
+    /// Same layout, windows handed over in a different order: nobody changes
+    /// *quadrant*, because position is the only thing that decides which quarter of
+    /// the screen a window belongs to.
+    func testTheOrderWindowsComeInNeverMovesThemToAnotherQuadrant() {
         let windows = (0..<7).map { _ in win(50, 50) }
         let laidOut = TerminalTileLayout.frames(windows: windows, display: display)
         let shuffled = Array(laidOut.reversed())
         let out = TerminalTileLayout.frames(windows: shuffled, display: display)
-        XCTAssertEqual(out, shuffled)
+        XCTAssertEqual(out.map(home), shuffled.map(home))
+    }
+
+    /// …but inside the pile the order *is* what decides, because a cascade's depth
+    /// and the windows' z-order are the same thing, and ⌘` walks that z-order. The
+    /// deepest slot — the whole quadrant — goes to the window that is already
+    /// back-most, so `TerminalTiler` can leave the stacking alone and ⌘⇧` still
+    /// lands in the terminal it landed in before the tile.
+    func testThePileIsDealtByTheOrderTheWindowsCameIn() {
+        let windows = (0..<7).map { _ in win(50, 50) }   // front-to-back, all in one place
+        let out = TerminalTileLayout.frames(windows: windows, display: display)
+        let pile = TerminalTileLayout.cascade(count: 4, in: quads[3])
+        XCTAssertEqual(Array(out.suffix(4)), Array(pile.reversed()),
+                       "the back-most window is the whole quadrant, the front-most the smallest")
+    }
+
+    /// The one window that keeps the slot geometry gave it is the one holding the
+    /// keyboard: the pin puts it on an unobstructed slot and the rest of its pile is
+    /// dealt around it.
+    func testDealingThePileLeavesTheFocusedWindowOnItsPinnedSlot() {
+        let windows = (0..<9).map { i in win(100 + i * 30, 100 + i * 30) }
+        for focused in windows.indices {
+            let out = TerminalTileLayout.frames(windows: windows, display: display, focused: focused)
+            XCTAssertTrue(quads.contains(out[focused]), "window \(focused) landed in a pile")
+            XCTAssertEqual(Set(out).count, windows.count, "window \(focused): a slot is shared")
+        }
+    }
+
+    /// Re-tiling after ⌘` has raised a buried window is still a no-op *as a set of
+    /// frames*: the pile is re-dealt to the new stacking, so the same slots are
+    /// filled by the same windows in a different order — nothing is lost and no two
+    /// windows share a frame.
+    func testReDealingAfterACycleKeepsTheSameSetOfSlots() {
+        let windows = (0..<7).map { _ in win(50, 50) }
+        let laidOut = TerminalTileLayout.frames(windows: windows, display: display)
+        // ⌘`: the front window goes to the back.
+        let cycled = Array(laidOut.dropFirst()) + [laidOut[0]]
+        let out = TerminalTileLayout.frames(windows: cycled, display: display)
+        XCTAssertEqual(Set(out), Set(laidOut))
+        XCTAssertEqual(out.map(home), cycled.map(home), "and nobody left their quadrant")
     }
 
     func testADraggedWindowGoesBackToTheSlotItLeftAndTakesNoOneElsesplace() {

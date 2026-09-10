@@ -43,6 +43,15 @@ enum TerminalTiler {
     /// unobstructed. Those two used to collide when the focused window sat at the
     /// back of a pile — raising it last covered the windows lying on it; now it is
     /// never at the back of a pile in the first place.
+    ///
+    /// **Tiling does not renumber ⌘`.** The windows come out of it stacked exactly
+    /// as they went in (`raisePreservingOrder`), because macOS walks an app's
+    /// windows with ⌘` / ⌘⇧` in z-order: re-stacking them means that "the terminal
+    /// I was in a moment ago" is a different terminal after a tile than it was
+    /// before it. The pile still has to read from big to small, and depth in a pile
+    /// *is* z-order — so the pile is made to fit the stack rather than the stack
+    /// the pile: `TerminalTileLayout.dealPilesByDepth` gives the deepest slot of a
+    /// quadrant to whichever of its windows is already the back-most.
     static func tile(onDisplay displayID: CGDirectDisplayID? = nil) {
         let displays = getDisplays()
         let focused = focusedWindow()
@@ -56,19 +65,21 @@ enum TerminalTiler {
             groups[di, default: []].append(w)
         }
 
+        var tiled: [AXUIElement] = []
         for (di, ws) in groups {
             if let displayID, displays[di].id != displayID { continue }
             let slots = TerminalTileLayout.targets(count: ws.count, display: displays[di].usable)
             let assignment = TerminalTileLayout.assign(
-                windows: ws.map { $0.rect }, targets: slots,
-                pinning: focused.flatMap { f in ws.firstIndex { CFEqual($0.win, f) } },
-                to: TerminalTileLayout.topSlots(count: ws.count, display: displays[di].usable))
+                windows: ws.map { $0.rect }, display: displays[di].usable,
+                focused: focused.flatMap { f in ws.firstIndex { CFEqual($0.win, f) } })
             for (i, w) in ws.enumerated() {
                 let f = slots[assignment[i]]
                 setWindowFrame(w.win, x: f.x, y: f.y, w: f.w, h: f.h)
             }
-            raiseInSlotOrder(ws.map { $0.win }, assignment: assignment)
+            tiled.append(contentsOf: ws.map { $0.win })
         }
+
+        raisePreservingOrder(wins.map { $0.win }, touched: tiled)
 
         // Last word: the keyboard goes back where it was.
         if let focused { AXUIElementPerformAction(focused, kAXRaiseAction as CFString) }
@@ -222,17 +233,35 @@ enum TerminalTiler {
 
     // MARK: - Stacking order
 
-    /// Raise every window on the display in **slot order**: top-left, top-right,
-    /// bottom-left, bottom-right, and inside each quadrant its pile from the
-    /// deepest window (the whole quadrant) to the smallest.
+    /// Put the windows back in **exactly the front-to-back order they were in**,
+    /// by raising them back-most first: each raise brings one window to the front,
+    /// so the last one raised — the one that was in front to begin with — is in
+    /// front again, and everything behind it is in the order it already had.
     ///
-    /// That order is the pile: raising deepest-first leaves every window in front
-    /// of the bigger one behind it, so every title bar and every Claude bubble in
-    /// the pile stays visible. Reversed, the arrangement is technically cascaded
-    /// and practically a single window (2026-09-08: *"restul sunt una sub alta"*).
-    /// It also brings the whole set of terminals **above the other apps** on that
-    /// screen — a window buried under Chrome is still buried after it has been
-    /// given a frame, and a tile you cannot see has not been tiled.
+    /// **That order is the ⌘` order**, which is the whole reason this walk exists
+    /// in this shape (2026-09-10: *"după reordonare, SECVENŢA terminalelor să se
+    /// păstreze … să pot merge înapoi pe terminalul precedent"*). macOS cycles an
+    /// app's windows through its z-order, so a tile that re-stacks the terminals
+    /// re-numbers the whole keyboard walk: ⌘⇧` after a tile used to land in a
+    /// different session than ⌘⇧` a second earlier. Arranging windows is no more a
+    /// reason to renumber the ⌘` cycle than it is to move the keyboard — the same
+    /// rule as the focused window, one level up.
+    ///
+    /// It used to raise in **slot order** instead, deepest window of each pile
+    /// first, because depth and z-order are the same thing in a cascade and the
+    /// pile has to read bigger-to-smaller. That job has moved to where it costs
+    /// nothing: `TerminalTileLayout.dealPilesByDepth` hands the deepest slot to the
+    /// window that is *already* back-most, so the pile comes out right with the
+    /// stack left alone. Get neither right and the pile is technically cascaded and
+    /// practically a single window (2026-09-08: *"restul sunt una sub alta"*).
+    ///
+    /// Only `touched` windows are raised — with `onDisplay`, the terminals on the
+    /// other monitors are not lifted above whatever is covering them there — but
+    /// the walk still runs over all of `wins`, i.e. across displays in one pass, so
+    /// two tiled screens cannot end up stacked one entirely in front of the other.
+    /// Raising the set does put it above the other apps on those screens, which is
+    /// the other half of what this is for: a tile you cannot see has not been
+    /// tiled.
     ///
     /// **Depth and the keyboard are the same thing here.** Measured 2026-09-08:
     /// `kAXRaiseAction` on a Terminal window makes it the key window, and the other
@@ -240,8 +269,11 @@ enum TerminalTiler {
     /// brings it straight to `z00`. Terminal will not keep the keyboard in a window
     /// that is not in front, so this walk cannot have the last word: `tile` raises
     /// the previously focused window after it, and **that** is the one left on top.
-    private static func raiseInSlotOrder(_ wins: [AXUIElement], assignment: [Int]) {
-        for (win, _) in zip(wins, assignment).sorted(by: { $0.1 < $1.1 }) {
+    /// In the ordinary case that costs nothing, the focused window being the one
+    /// that was in front anyway — so the raise it ends on is the raise this walk
+    /// would have ended on.
+    private static func raisePreservingOrder(_ wins: [AXUIElement], touched: [AXUIElement]) {
+        for win in wins.reversed() where touched.contains(where: { CFEqual($0, win) }) {
             AXUIElementPerformAction(win, kAXRaiseAction as CFString)
         }
     }

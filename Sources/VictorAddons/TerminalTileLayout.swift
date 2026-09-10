@@ -48,8 +48,8 @@ import Foundation
 /// screen stays readable. Get that backwards and the pile is technically cascaded
 /// and practically invisible (2026-09-08: *"restul sunt una sub alta"*).
 ///
-/// **A window keeps the slot it is already in.** Which window goes where is decided
-/// by *where it currently sits*, never by z-order: pressing ⌘⌃A twice must be a
+/// **A window keeps the quadrant it is already in.** Which window goes where is
+/// decided by *where it currently sits*: pressing ⌘⌃A twice must be a
 /// no-op. It used to hand the four quadrants to the four front-most windows, so the
 /// windows that had just been raised swapped places with the tiles on every press
 /// (2026-09-08: *"le cam face shuffle"*). Matching is greedy nearest-pair on window
@@ -72,6 +72,22 @@ import Foundation
 /// the old collision between "the keyboard stays put" and "the pile stays
 /// readable": the focused window is raised last by `TerminalTiler`, and now it sits
 /// where being on top covers nothing.
+/// **Inside a pile, depth is z-order — because ⌘` is z-order.** Which quadrant a
+/// window lands in is geometry, but *how deep in the pile* it sits is dealt from
+/// the front-to-back order the windows already had (`dealPilesByDepth`): the
+/// back-most window of a quadrant becomes the whole quadrant, the front-most the
+/// smallest step. That is the only way to have both halves of what a pile is: the
+/// smaller window has to be in front of the bigger one to be seen at all, and
+/// `TerminalTiler` no longer buys that by re-stacking the windows — it puts the
+/// z-order back exactly as it found it, so ⌘` and ⌘⇧` still walk the terminals in
+/// the same sequence after a tile as before it (2026-09-10: *"la cmd ` sau cmd
+/// shift ` să am aceeaşi ordine … să pot merge înapoi pe terminalul precedent"*).
+/// Depth and z-order being the same thing, one of the two has to give: dealing the
+/// slots by z is what lets the stacking stay untouched. Re-tiling is still a no-op
+/// — after a tile the pile's depth already *is* its z-order, so the same deal comes
+/// out again — and the window holding the keyboard keeps the slot the pin gave it,
+/// the rest of its pile being dealt around it.
+///
 enum TerminalTileLayout {
 
     struct Rect: Hashable {
@@ -225,13 +241,60 @@ enum TerminalTileLayout {
         return fronts.filter { slots[$0].w * slots[$0].h == best }
     }
 
+    /// The slots of each quadrant, in quadrant order: the range of
+    /// `targets(count:display:)` that one quadrant's pile occupies, deepest slot
+    /// first. A quadrant holding a single window gets a one-slot range, which is
+    /// what makes the four-window case immune to everything below.
+    static func pileSlots(count: Int, display: Rect) -> [Range<Int>] {
+        let total = targets(count: count, display: display).count
+        let caps = count > 4 ? capacities(count: count, display: display)
+                             : [Int](repeating: 1, count: 4)
+        var out: [Range<Int>] = []
+        var index = 0
+        for cap in caps {
+            let lo = min(index, total), hi = min(index + cap, total)
+            out.append(lo..<hi)
+            index += cap
+        }
+        return out
+    }
+
+    /// Re-deal the slots **within each pile** so that depth follows the order the
+    /// windows are given in — which is their front-to-back order on screen. The
+    /// back-most window of the quadrant gets the deepest slot (the whole quadrant)
+    /// and the front-most the smallest step, so the pile reads correctly *without*
+    /// anyone having to be raised, and the ⌘` sequence survives the tile.
+    ///
+    /// Only the depth inside a quadrant is touched; which quadrant a window is in
+    /// was decided by geometry and stays decided by geometry. `pinned` — the window
+    /// holding the keyboard — keeps the slot the pin gave it and the rest of its
+    /// pile is dealt around it, so a focused window is still never buried.
+    static func dealPilesByDepth(_ assignment: [Int], count: Int, display: Rect,
+                                 pinned: Int? = nil) -> [Int] {
+        var out = assignment
+        for range in pileSlots(count: count, display: display) where range.count > 1 {
+            let members = assignment.indices.filter { range.contains(assignment[$0]) }
+            guard members.count > 1 else { continue }
+            let fixed = members.contains(where: { $0 == pinned }) ? pinned : nil
+            let free = range.filter { slot in fixed.map { assignment[$0] != slot } ?? true }
+            // Back-most window first, deepest slot first.
+            for (w, slot) in zip(members.filter { $0 != fixed }.sorted(by: >), free) {
+                out[w] = slot
+            }
+        }
+        return out
+    }
+
     /// Which slot each window goes to, as an index into `targets(count:display:)`
-    /// — in the same order as `windows`. `focused` is the window holding the
+    /// — in the same order as `windows`, which is their **front-to-back order on
+    /// screen**: geometry picks the quadrant, and the pile inside it is then dealt
+    /// by that order (`dealPilesByDepth`). `focused` is the window holding the
     /// keyboard, if it is one of these; it is served first, out of `topSlots`.
     static func assign(windows: [Rect], display: Rect, focused: Int? = nil) -> [Int] {
         let slots = targets(count: windows.count, display: display)
-        return assign(windows: windows, targets: slots,
-                      pinning: focused, to: topSlots(count: windows.count, display: display))
+        let placed = assign(windows: windows, targets: slots,
+                            pinning: focused, to: topSlots(count: windows.count, display: display))
+        return dealPilesByDepth(placed, count: windows.count, display: display, pinned: focused)
     }
 
     /// Target frame for every window, in the order given.
