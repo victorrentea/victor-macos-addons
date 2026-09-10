@@ -4,6 +4,7 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 
 - `GET /test/state` — JSON snapshot of transcription state (`running`, `on_ac`, `paused_battery`, UI/menu/icon state)
 - `GET /test/transcription/start` — force-(re)start Whisper for E2E checks (no-op if already running). There is no stop/toggle hook — transcription is driven solely by AC/battery
+- `GET /test/claude-activity` — `{working, skipped_helpers}`: the pids `LidAwake` currently counts as working Claude sessions, and the `caffeinate` parents it skipped as Claude Code's own daemon helpers (`bg-spare`, `bg-pty-host`). The first answer to "everything has finished, why is the Mac still awake?"
 - `GET /test/audio/playing` — taps `🔊OS Output` loopback for ~150ms, returns `{playing, rms, peak, ...}`, plus `other_app_playing`: the bundle id of any *other* app holding an output stream (`""` when none), which is the loopback-free answer `LidAwake`'s volume boost consults. The two can legitimately disagree — an app with an open but silent stream reads as playing there and silent here
 - `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`
 - `GET /test/break/<minutes>` — start/reset the ☕️ Break countdown overlay for N minutes, through the same `startBreak` the menu uses (so a qualifying duration also raises the 📸 Group Photo prompt and arms its end-of-break repeat)

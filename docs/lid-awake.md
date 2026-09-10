@@ -117,6 +117,36 @@ the exact failure this is meant to prevent.
   the last piece of work by up to 300 s, so a session pausing between turns —
   an API round-trip, a long tool call — does not drop the flag underneath
   itself. The Mac sleeps five minutes after the work genuinely stops.
+- **The daemon's own spares do not count** (2026-09-10, and this is why a Mac
+  with nothing running would not sleep). Claude Code keeps pre-warmed processes
+  around — `claude bg-spare --bg-spare /tmp/cc-daemon-501/…/claim.sock` and the
+  `bg-pty-host` behind it — waiting to be handed to the next session. They run
+  the *same binary from the same path* as a session and they spawn a
+  `caffeinate -i -t 300` of their own: pid 51845 held one, let it expire and
+  spawned another 30 seconds later, with nobody working. Counted as sessions,
+  they hold the lid open forever and the pulse never stops.
+  They are told apart by **`argv[1]`**, read with `sysctl(KERN_PROCARGS2)`, not
+  by a substring of the command line: a session started as
+  `claude -p "fix the bg-spare bug"` carries its prompt in `argv`, and a loose
+  match would stop holding the lid open for the session most likely to be
+  mid-flight. **The dashes are real, and cost the first cut of this**: `ps`
+  shows `claude bg-spare --bg-spare …`, which reads as a subcommand, but
+  `bg-spare` is part of `argv[0]` (the process title) and the actual `argv[1]`
+  is `--bg-spare` — measured, against `--session-id` for a real session. The
+  bare word matched nothing at all, so the exclusion would have shipped as a
+  silent no-op. Leading dashes come off before the comparison.
+  A claimed spare is never excluded: it drops the title when it becomes a
+  session (verified — a live session's `argv` is the versioned binary path and
+  its flags, with no `bg-` anywhere).
+- **The holders are named in the log.** "Everything has finished and the Mac is
+  still awake" cannot be answered by a boolean, so the moment the set of working
+  pids changes the log says who: `held open by 1 working Claude session(s):
+  52799`, and `the last working Claude (52799) finished` when it lets go. Naming
+  them cost a debugging session on 2026-09-10 whose answer turned out to be *the
+  Claude being asked to investigate* — every message to a session spawns a
+  `caffeinate` that outlives the turn by five minutes. `GET
+  /test/claude-activity` gives the same two lists on demand (`working`,
+  `skipped_helpers`).
 - **Read via `sysctl(KERN_PROC_ALL)`**, the same source `pgrep` uses, not by
   shelling out to `ps`: no process spawn on a path that runs every ten seconds
   for hours on a battery, and no dependence on `ps` seeing the whole table

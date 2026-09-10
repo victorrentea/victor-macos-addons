@@ -51,6 +51,7 @@ class TabletHttpServer {
         case testState
 case testTerminalFont
         case testAudioPlaying
+        case testClaudeActivity
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
         case testBreakStart(Int)
@@ -455,6 +456,18 @@ case testTerminalFont
                 if self.onTestAudioPlaying == nil {
                     statusCode = 503
                 }
+            case .testClaudeActivity:
+                contentType = "application/json"
+                let working = ClaudeActivity.workingSessions()
+                let helpers = ClaudeActivity.processTable()
+                    .filter { $0.name == "caffeinate" }
+                    .map(\.ppid)
+                    .compactMap { pid -> String? in
+                        guard let kind = ClaudeActivity.helperKind(of: pid) else { return nil }
+                        return "\(pid):\(kind)"
+                    }
+                body = "{\"working\":[\(working.map(String.init).joined(separator: ","))],"
+                    + "\"skipped_helpers\":[\(helpers.map { "\"\($0)\"" }.joined(separator: ","))]}"
             case .testWisprRecording:
                 contentType = "application/json"
                 body = self.onTestWisprRecording?() ?? "{\"error\":\"wispr probe unavailable\"}"
@@ -684,6 +697,8 @@ case testTerminalFont
             return .testState
         case "/test/audio/playing":
             return .testAudioPlaying
+        case "/test/claude-activity":
+            return .testClaudeActivity
         case "/test/wispr/recording":
             return .testWisprRecording
         case "/test/break/close":

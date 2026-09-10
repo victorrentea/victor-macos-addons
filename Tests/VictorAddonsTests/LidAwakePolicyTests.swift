@@ -295,3 +295,88 @@ final class LidAwakePolicyTests: XCTestCase {
         XCTAssertTrue(LidAwake.parseSleepDisabled(fromPmsetOutput: " SleepDisabled        1"))
     }
 }
+
+
+/// The `KERN_PROCARGS2` parse and the daemon-helper exclusion — the reason the
+/// Mac would not sleep on 2026-09-10.
+final class ClaudeHelperTests: XCTestCase {
+
+    /// `[argc][exec path\0][padding][argv0\0][argv1\0]…`, built by hand so the
+    /// layout is pinned here rather than by whatever this Mac happens to run.
+    private func procargs2(argc: Int32, execPath: String, padding: Int, argv: [String]) -> [UInt8] {
+        var buf = withUnsafeBytes(of: argc) { Array($0) }
+        buf += Array(execPath.utf8) + [0]
+        buf += [UInt8](repeating: 0, count: padding)
+        for a in argv { buf += Array(a.utf8) + [0] }
+        return buf
+    }
+
+    /// The spelling that actually runs on this Mac: `bg-spare` sits in
+    /// `argv[0]` (the process title) and `argv[1]` is the flag with dashes.
+    func testTheHelperIsRecognisedWithItsDashes() {
+        XCTAssertEqual(ClaudeActivity.helperKind(firstArgument: "--bg-spare"), "bg-spare")
+        XCTAssertEqual(ClaudeActivity.helperKind(firstArgument: "--bg-pty-host"), "bg-pty-host")
+        XCTAssertEqual(ClaudeActivity.helperKind(firstArgument: "bg-spare"), "bg-spare")
+        XCTAssertNil(ClaudeActivity.helperKind(firstArgument: "--session-id"))
+        XCTAssertNil(ClaudeActivity.helperKind(firstArgument: "-p"))
+    }
+
+    func testReadsTheFirstArgumentPastTheExecPathPadding() {
+        let buf = procargs2(argc: 3, execPath: "/Users/v/.local/share/claude/versions/2.1.267",
+                            padding: 6, argv: ["claude", "bg-spare", "--bg-spare"])
+        XCTAssertEqual(ClaudeActivity.parseFirstArgument(procargs2: buf), "bg-spare")
+    }
+
+    func testASessionWithNoArgumentsHasNoFirstArgument() {
+        let buf = procargs2(argc: 1, execPath: "/opt/homebrew/bin/claude", padding: 3, argv: ["claude"])
+        XCTAssertNil(ClaudeActivity.parseFirstArgument(procargs2: buf))
+    }
+
+    /// The trap this parse exists to avoid: a session whose *prompt* mentions
+    /// the helper must stay a session, because it is the one most likely to be
+    /// mid-flight when the lid comes down.
+    func testAPromptMentioningTheHelperIsStillASession() {
+        let buf = procargs2(argc: 3, execPath: "/opt/homebrew/bin/claude", padding: 4,
+                            argv: ["claude", "-p", "fix the bg-spare bug"])
+        let argv1 = ClaudeActivity.parseFirstArgument(procargs2: buf)
+        XCTAssertEqual(argv1, "-p")
+        XCTAssertFalse(ClaudeActivity.helperSubcommands.contains(argv1 ?? ""))
+    }
+
+    func testTheDaemonsSpareDoesNotHoldTheLidOpen() {
+        let procs = [
+            RunningProcess(pid: 100, ppid: 1, name: "2.1.267"),      // the spare
+            RunningProcess(pid: 101, ppid: 100, name: "caffeinate"), // its caffeinate
+        ]
+        XCTAssertFalse(ClaudeActivity.isClaudeWorking(
+            in: procs,
+            executablePath: { _ in "/Users/v/.local/share/claude/versions/2.1.267" },
+            helperKind: { $0 == 100 ? ClaudeActivity.helperKind(firstArgument: "--bg-spare") : nil }))
+    }
+
+    func testARealSessionStillHoldsItOpen() {
+        let procs = [
+            RunningProcess(pid: 200, ppid: 1, name: "2.1.267"),
+            RunningProcess(pid: 201, ppid: 200, name: "caffeinate"),
+        ]
+        XCTAssertEqual(ClaudeActivity.workingSessions(
+            in: procs,
+            executablePath: { _ in "/Users/v/.local/share/claude/versions/2.1.267" },
+            helperKind: { _ in nil }),
+            [200])
+    }
+
+    func testTheHoldersAreReportedSortedSoTheLogIsStable() {
+        let procs = [
+            RunningProcess(pid: 300, ppid: 1, name: "2.1.267"),
+            RunningProcess(pid: 301, ppid: 300, name: "caffeinate"),
+            RunningProcess(pid: 200, ppid: 1, name: "2.1.267"),
+            RunningProcess(pid: 201, ppid: 200, name: "caffeinate"),
+        ]
+        XCTAssertEqual(ClaudeActivity.workingSessions(
+            in: procs,
+            executablePath: { _ in "/opt/homebrew/bin/claude" },
+            helperKind: { _ in nil }),
+            [200, 300])
+    }
+}

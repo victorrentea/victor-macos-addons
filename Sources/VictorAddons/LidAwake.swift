@@ -189,6 +189,10 @@ final class LidAwake {
     /// Set while the five last beats are in the air, so a tick landing in the
     /// middle of them cannot start a second set on top of the first.
     private var farewellInFlight = false
+    /// The pids that were holding the lid open as of the last tick. Kept so the
+    /// log can say *who* — and say it only when the set changes, not six times
+    /// a minute.
+    private var holders: [Int32] = []
     private var ticks = 0
     private let queue = DispatchQueue(label: "ro.victorrentea.lidawake")
 
@@ -273,9 +277,21 @@ final class LidAwake {
         ticks += 1
 
         let battery = Self.batteryPercent()
+        let working = ClaudeActivity.workingSessions()
+        // "Everything has finished and it is still awake" is a question the log
+        // has to be able to answer, so the holders are named the moment the set
+        // changes. Once it is a list of pids, `ps -p <pid>` finishes the story.
+        if working != holders {
+            if working.isEmpty {
+                overlayInfo("LidAwake: the last working Claude (\(holders.map(String.init).joined(separator: ", "))) finished")
+            } else {
+                overlayInfo("LidAwake: held open by \(working.count) working Claude session(s): \(working.map(String.init).joined(separator: ", "))")
+            }
+            holders = working
+        }
         let action = LidAwakePolicy.decide(
             enabled: LidAwakeSettings.isEnabled,
-            claudeWorking: ClaudeActivity.isClaudeWorking(),
+            claudeWorking: !working.isEmpty,
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
