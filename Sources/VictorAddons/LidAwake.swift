@@ -118,11 +118,12 @@ final class LidAwake {
     /// off by the release that follows it.
     private static let farewellLength: TimeInterval = 5.30
 
-    /// **Louder than the pulse, deliberately.** The lub-dub is a discreet 0.2
-    /// because it repeats every ten seconds for hours; the flatline plays once,
-    /// it is the last thing the bag ever says, and it has to survive being
-    /// heard through a closed lid in a bag on a plane.
-    private static let farewellVolume: Float = 0.8
+    /// **Never quieter than the pulse.** It was 0.8 against a pulse of 0.2 —
+    /// louder, deliberately, because it plays once and is the last thing the
+    /// bag ever says. Now that the pulse itself is at full scale (below), 0.8
+    /// would make the ending *quieter* than the beats it ends, which is the one
+    /// thing this sound cannot be.
+    private static let farewellVolume: Float = 1.0
 
     /// The two QRS beats the flatline opens with, at the recording's own
     /// spacing — used only by the fallback below.
@@ -136,19 +137,27 @@ final class LidAwake {
     private static let fallbackBeatSound = "Pop"
     private static let beatGap: TimeInterval = 0.28
 
-    /// `NSSound.volume` is a fraction of the system output volume, so 0.2 here
-    /// is 20% of whatever the speakers are set to. The second beat is quieter
-    /// than the first, the way a real one is.
-    private static let beepVolume: Float = 0.2
-    private static let secondBeatVolume: Float = 0.14
+    /// **Full scale** (2026-09-10). `NSSound.volume` is a fraction of the system
+    /// output volume, and the pulse used to take a discreet fifth of it: the
+    /// beats were parking the output at 100% themselves, so a fifth of a machine
+    /// turned all the way up was still plenty. That premise is gone — the boost
+    /// is now refused whenever something else is playing, and 20% of an output
+    /// left at 13 is nothing at all. The file is a recording of a heart, not a
+    /// tone, so at 1.0 it is a heartbeat rather than an alarm, and this is the
+    /// only volume that behaves the same whether or not the boost happened.
+    private static let beepVolume: Float = 1.0
+    /// The second beat is quieter than the first, the way a real one is — the
+    /// same 0.7 of the first it has always been. Fallback only: the real
+    /// recording has both beats in it.
+    private static let secondBeatVolume: Float = 0.7
 
     /// Where the **system** output volume is parked while the beats are running:
     /// **all the way up**. `beepVolume` above is a fraction *of* this, so the
-    /// two multiply — the beat stays a discreet 20% of a machine turned up as
-    /// far as it goes, which is the only setting that makes sense for a laptop
-    /// that is already in the bag. 80% was the first number here and it was not
-    /// enough: there is no volume knob inside a rucksack, and a proof nobody
-    /// can hear is not a proof.
+    /// two multiply — and with the beat now at 1.0, a boosted pulse is the
+    /// machine at full scale, which is the only setting that makes sense for a
+    /// laptop that is already in the bag. 80% was the first number here and it
+    /// was not enough: there is no volume knob inside a rucksack, and a proof
+    /// nobody can hear is not a proof.
     private static let beatSystemVolume: Float = 1.0
 
     /// `SleepDisabled` can be cleared from outside (a `pmset restoredefaults`, a

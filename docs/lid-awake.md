@@ -138,9 +138,18 @@ judged by.
 ## The heartbeat is the proof, not decoration
 
 While a Claude is working **and we are on battery and the lid is shut**, a
-**lub-dub every 10 seconds** at `NSSound.volume` 0.2 — a fraction of the system
-output volume, which the beats themselves park at 100% (below), so 0.2 is a fifth
-of a machine turned all the way up.
+**lub-dub every 10 seconds** at `NSSound.volume` **1.0** — full scale, on top of
+whatever the system output is set to (which the beats park at 100% themselves
+when they are allowed to, below).
+
+**It was 0.2 until 2026-09-10, and the silence guard is what changed it.** A
+fifth was plenty while the beats could count on parking the output at 100%: a
+fifth of a machine turned all the way up still carries through a bag. But the
+boost is now refused whenever something else is playing, and 20% of an output
+left at 13 is nothing at all — the pulse would go quiet in exactly the situation
+it was still supposed to be reporting from. At 1.0 the beat sounds the same
+whether or not the boost happened, and because the file is a *recording of a
+heart* rather than a tone, full scale reads as a heartbeat and not as an alarm.
 
 **The sound is the real one**, `13_heartbeat.mp3` — the same SFX the 💓 desktop
 effect uses, out of the sounds folder shared with the tablet. Not the whole 7.1 s
@@ -235,9 +244,9 @@ Four things worth knowing about it:
   stays because it is what keeps the restore symmetric — the old value is
   remembered either way — and because the target is a constant that has moved
   once already.
-- **`NSSound.volume` 0.2 is unchanged and multiplies with it** — the beat stays a
-  discreet fifth of a machine turned all the way up rather than becoming an
-  alarm.
+- **`NSSound.volume` multiplies with it** — at the pulse's 1.0 a boosted beat is
+  the machine at full scale, and an unboosted one is full scale of whatever
+  Victor had it on.
 - **Only the false→true edge captures the old value** (the same discipline
   `CoreAudioManager.pushVolumeDown` follows, for the same reason): a second
   capture while already raised would save 100% as "the original" and the restore
@@ -284,9 +293,10 @@ the bag hears and the effect the room sees are the same recording.
   of the loop and stops it by the clock, this file *is* the event and runs start
   to finish; the release just waits `farewellLength` (5.30 s — the clip's 5.25 s
   rounded up so the tone is never truncated).
-- **At 0.8, not the pulse's 0.2.** The lub-dub is discreet because it repeats 360
-  times an hour; the flatline plays once, it is the last thing the bag ever says,
-  and on a machine already parked at 100% output that lands as genuinely loud.
+- **At 1.0, never under the pulse.** It was 0.8 against a pulse of 0.2 — louder,
+  deliberately, because it plays once and is the last thing the bag ever says.
+  With the pulse now at full scale, 0.8 would make the ending *quieter* than the
+  beats it ends, which is the one thing this sound cannot be.
 - **The player is built fresh, not cached.** `beatPlayer()` is cached because it
   fires every ten seconds for hours; this fires once per session, and holding a
   decoded 72 KB file all that time to use it once is the waste the cache exists
