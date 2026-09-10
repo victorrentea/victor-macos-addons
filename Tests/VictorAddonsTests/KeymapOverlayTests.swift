@@ -267,16 +267,71 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(KeymapHoldCoordinator.sheet(option: false, shift: true, command: true, control: true), .commandControl)
     }
 
+    func testSheetResolvesTheControlOptionBoard() {
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: true), .controlOption)
+        // ⇧ doesn't split it either: ⌃⌥⇧ types the same characters, so showing a
+        // second identical sheet would only make the reader look for a difference.
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: true, command: false, control: true), .controlOption)
+        // The three emoji boards are three distinct sheets.
+        XCTAssertNotEqual(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: true),
+                          KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: false))
+    }
+
     func testSheetShowsNothingForMixedOrIncompleteModifiers() {
         // ⌘⌃⌥ is Dark Mode, not a cheat-sheet.
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: true, control: true))
-        // ⌥ with ⌘ (or ⌃) alone is a shortcut prefix, not the character layer.
+        // ⌥ with ⌘ is a shortcut prefix, not a character layer.
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: true, control: false))
-        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: true))
         // Half of ⌘⌃ isn't ⌘⌃.
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: true, control: false))
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: false, control: true))
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: false, control: false))
+    }
+
+    /// The ⌃⌥ board is a palette like ⌥, not a menu like ⌘⌃: pressing a key on
+    /// it means an emoji was typed and the next one is coming.
+    func testHoldCoordinatorKeepsTheControlOptionSheetUpWhenAKeyIsPressed() {
+        var shown: [KeymapModifier] = []
+        var hideCount = 0
+        let coordinator = KeymapHoldCoordinator(
+            delayProvider: { 0.3 },
+            schedule: { _, fire in fire() },
+            cancelScheduled: {},
+            show: { shown.append($0) },
+            hide: { hideCount += 1 }
+        )
+
+        coordinator.modifierFlagsChanged(option: true, shift: false, command: false, control: true)
+        XCTAssertEqual(shown, [.controlOption])
+
+        coordinator.keyDownWhileModifierHeld()
+        XCTAssertEqual(hideCount, 0)
+
+        // It goes away when the modifiers do.
+        coordinator.modifierFlagsChanged(option: false, shift: false, command: false, control: false)
+        XCTAssertEqual(hideCount, 1)
+    }
+
+    func testControlOptionLayerTypesTheGooseOnG() {
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[5], "🪿")
+        // ⌥8 keeps its own goose — the new board adds a letter that means the
+        // word, it does not move the digit that already worked.
+        XCTAssertEqual(EmojiKeyLayer.optionSeed[28], "🪿")
+        // ⌃⌥ is one board: ⇧ does not reach a fourth one.
+        XCTAssertEqual(EmojiKeyLayer.Layer(option: true, shift: true, control: true), .controlOption)
+        XCTAssertEqual(EmojiKeyLayer.Layer(option: true, shift: true, control: false), .optionShift)
+        XCTAssertEqual(EmojiKeyLayer.Layer(option: true, shift: false, control: false), .option)
+        // Without ⌥ nothing is a typing layer — a bare ⌃ still derives control
+        // characters, which this must never rewrite.
+        XCTAssertNil(EmojiKeyLayer.Layer(option: false, shift: false, control: true))
+        // Every layer has a seed, so a map file that predates one has something
+        // to be topped up with.
+        for layer in EmojiKeyLayer.Layer.allCases {
+            XCTAssertNotNil(EmojiKeyLayer.seeds[layer], "\(layer.rawValue) has no seed")
+        }
+        // V stays a shortcut (⌃⌥V appends the clipboard to the notes): the tap
+        // only rewrites keys the map actually claims.
+        XCTAssertNil(EmojiKeyLayer.controlOptionSeed[9])
     }
 
     func testHoldCoordinatorShowsCommandControlSheetAfterSameDelay() {
@@ -311,12 +366,11 @@ final class KeymapOverlayTests: XCTestCase {
         // is typed into, which nothing on screen would otherwise reveal.
         // P (35) joined with the ⌘⌃P reminder mail — the sending sibling of
         // ⌘⌃M's draft, on the letter ⌃P already uses to fill the clipboard.
-        // Q (12) LEFT the sheet on 2026-09-09: it was the permissions-bypassed
-        // Claude terminal, then the 🤖 mascot alone, and then the mascot moved
-        // to ⌃⌥G and ⌘⌃Q went back to macOS's Lock Screen. The sheet answers
-        // "what does this combination do on THIS Mac", and the honest answer
-        // for ⌘⌃Q is now "nothing of ours".
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 14, 3, 5, 40, 37, 46, 45, 15, 1, 17, 9, 13, 6, 31, 35])
+        // Q (12) left the sheet on 2026-09-09 with the 🤖 mascot, which had moved
+        // to ⌃⌥G, and came back on 2026-09-10 with it: ⌃⌥ became the emoji board
+        // and G was needed for the goose, so ⌘⌃Q shadows Lock Screen again.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 17, 9, 13, 6, 31, 35])
+        XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
@@ -353,6 +407,10 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[46], "📤")  // M — it is sent, not drafted
         XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
         XCTAssertEqual(CommandControlShortcuts.accents[35], "🤖")  // P — the marker the notes get
+        XCTAssertEqual(CommandControlShortcuts.accents[12], "👋")  // Q — the wave, not P's 🤖
+        // The mascot key and the prompt stamp must not read as the same thing:
+        // one only animates, the other sends text to the room.
+        XCTAssertNotEqual(CommandControlShortcuts.accents[12], CommandControlShortcuts.accents[35])
         // S and P both launch the selection and must not read as the same key:
         // 🚀 lands in the notes, 🤖 lands in the room's Prompts tab.
         XCTAssertNotEqual(CommandControlShortcuts.accents[35], CommandControlShortcuts.accents[1])

@@ -8579,7 +8579,7 @@ class EmojiAnimator {
         CATransaction.commit()
     }
 
-    // MARK: - 🤖 Claude leans in from the left (⌃⌥G)
+    // MARK: - 🤖 Claude leans in from the left (⌘⌃Q)
 
     /// How long the icon stays before it slides back out on its own.
     ///
@@ -8615,8 +8615,9 @@ class EmojiAnimator {
     }
 
     /// 🤖 The Claude Code icon slides in from the left, wiggles, and slides back
-    /// out. ⌃⌥G, and nothing else — it started life as the garnish on ⌘⌃Q's
-    /// Claude terminal and outlived it.
+    /// out. ⌘⌃Q, and nothing else — it started life as the garnish on that key's
+    /// Claude terminal and outlived it. It spent 2026-09-09 on ⌃⌥G and came back
+    /// when that pair became the third emoji board and G went to the goose.
     ///
     /// It floats: a cut-out PNG with a real alpha channel over a click-through
     /// overlay, so what arrives is the mark itself and not a white rectangle
@@ -8631,7 +8632,7 @@ class EmojiAnimator {
     /// this wide on the first pass, which on a 16% icon looked less like a wave
     /// than like something falling over.
     ///
-    /// Pressing ⌃⌥G again sends it back out, and it leaves on its own after
+    /// Pressing ⌘⌃Q again sends it back out, and it leaves on its own after
     /// `claudePeekLifetime`: the overlay is click-through, so a mascot left on
     /// screen could not be dismissed by clicking it.
     func showClaudePeek() {

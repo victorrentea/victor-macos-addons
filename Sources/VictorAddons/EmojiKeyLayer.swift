@@ -1,6 +1,6 @@
 import Foundation
 
-/// The ⌥ / ⌥⇧ emoji layer, owned by this app instead of by a `.keylayout`.
+/// The ⌥ / ⌥⇧ / ⌃⌥ emoji layers, owned by this app instead of by a `.keylayout`.
 ///
 /// **Why this exists.** macOS caches keyboard layouts by *identity* — the
 /// numeric layout ID plus the name — not by file content, so editing a
@@ -20,6 +20,14 @@ import Foundation
 /// The map lives in `~/.victor-emoji-layer.json`, re-read whenever its mtime
 /// moves. Editing that file is live on the **next keystroke** — no rebuild, no
 /// re-login, no new layout name.
+///
+/// **⌃⌥ is a third layer, not a second shift of the first** (2026-09-10). A
+/// `.keylayout` could never have carried it — macOS derives control characters
+/// itself rather than asking the layout — so this board only exists because the
+/// tap owns the rewrite. It has no ⇧ variant on purpose: ⌥ needed one because
+/// ⌥⇧ was already a full layout's worth of characters inherited from
+/// `Victor-v27`, while ⌃⌥ starts at one key, and a second empty sheet would be
+/// a cheat-sheet that answers "nothing here" to every question.
 ///
 /// The seed is the **complete** ⌥/⌥⇧ custom set of `Victor-v27` — emoji *and*
 /// the Romanian diacritics `ă â î ș ț` — so the system layout can go back to
@@ -41,6 +49,25 @@ import Foundation
 /// rewrites what it matches — so porting those would genuinely break ⌃C in
 /// every terminal. They are dropped as the dead experiment they are.
 enum EmojiKeyLayer {
+    /// Which board a keystroke is on. Not `KeymapModifier`: that type also has
+    /// `.commandControl`, which is a sheet of *shortcuts* and types nothing, and
+    /// a layer that can be asked for an impossible case is a layer with a
+    /// `fatalError` in it waiting to happen.
+    enum Layer: String, CaseIterable {
+        case option
+        case optionShift
+        case controlOption
+
+        /// Which board a set of held modifiers types from, or nil for "none of
+        /// them". ⌘ is never a typing modifier here — ⌘⌃ is the shortcut sheet
+        /// and ⌘⌥ is the busiest chord on the Mac — so the caller excludes it.
+        /// ⇧ splits ⌥ and is ignored on ⌃⌥, which has no shift variant.
+        init?(option: Bool, shift: Bool, control: Bool) {
+            guard option else { return nil }
+            if control { self = .controlOption } else { self = shift ? .optionShift : .option }
+        }
+    }
+
     static let enabledKey = "EmojiKeyLayer.enabled"
 
     /// Default ON: with the map now the only source of these characters,
@@ -58,39 +85,39 @@ enum EmojiKeyLayer {
 
     // MARK: - Lookup
 
-    /// The string ⌥(⇧)+`keyCode` should type, or nil to leave the event alone.
+    /// The string this layer's `keyCode` should type, or nil to leave the event
+    /// alone.
     ///
     /// Called on the event-tap thread for every ⌥ keystroke, so it must stay
     /// cheap: the file is stat-ed at most once a second and only re-parsed when
     /// the mtime actually moved.
-    static func output(keyCode: Int, shift: Bool) -> String? {
+    static func output(keyCode: Int, layer: Layer) -> String? {
         guard isEnabled else { return nil }
         refreshIfNeeded()
         lock.lock()
         defer { lock.unlock() }
-        return (shift ? optionShift : option)[keyCode]
+        return maps[layer]?[keyCode]
     }
 
-    /// The whole layer, for the ⌥ cheat-sheet to draw.
+    /// The whole layer, for its cheat-sheet to draw.
     ///
     /// `generation` bumps on every successful reload, so the overlay can tell
     /// whether its cached keyboard images are stale without re-reading the file
     /// or diffing dictionaries. Without it, editing the map would change what
     /// the keys *type* while the sheet kept advertising the old bindings — a
     /// cheat-sheet that lies is worse than none.
-    static func snapshot(shift: Bool) -> (bindings: [Int: String], generation: Int) {
+    static func snapshot(_ layer: Layer) -> (bindings: [Int: String], generation: Int) {
         refreshIfNeeded()
         lock.lock()
         defer { lock.unlock() }
-        return (shift ? optionShift : option, generation)
+        return (maps[layer] ?? [:], generation)
     }
 
     // MARK: - File backing
 
     private static let lock = NSLock()
     private static var generation = 0
-    private static var option: [Int: String] = optionSeed
-    private static var optionShift: [Int: String] = optionShiftSeed
+    private static var maps: [Layer: [Int: String]] = seeds
     private static var loadedModified: Date?
     private static var lastStatAt: TimeInterval = 0
     private static var lastLoadError: String?
@@ -124,16 +151,28 @@ enum EmojiKeyLayer {
         do {
             let data = try Data(contentsOf: url)
             let raw = try JSONDecoder().decode([String: [String: String]].self, from: data)
-            let opt = numericKeys(raw["option"] ?? [:])
-            let optShift = numericKeys(raw["optionShift"] ?? [:])
+            // A section the file simply predates falls back to the seed, and the
+            // file is topped up on disk so the new board is there to be edited.
+            // An *empty* section is left alone: that is someone who deleted every
+            // binding on purpose, and handing the seed back would undo it.
+            var loaded: [Layer: [Int: String]] = [:]
+            var missing: [Layer] = []
+            for layer in Layer.allCases {
+                if let section = raw[layer.rawValue] {
+                    loaded[layer] = numericKeys(section)
+                } else {
+                    loaded[layer] = seeds[layer] ?? [:]
+                    missing.append(layer)
+                }
+            }
             lock.lock()
-            option = opt
-            optionShift = optShift
+            maps = loaded
             loadedModified = modified
             lastLoadError = nil
             seeded = true
             generation += 1
             lock.unlock()
+            if !missing.isEmpty { backfill(missing, into: raw, at: url) }
         } catch {
             // Keep serving the last good map: a half-saved file mid-edit must not
             // silently turn the whole layer off.
@@ -154,18 +193,34 @@ enum EmojiKeyLayer {
     }
 
     private static func writeSeed(to url: URL) {
-        let payload: [String: [String: String]] = [
-            "option": stringKeys(optionSeed),
-            "optionShift": stringKeys(optionShiftSeed),
-        ]
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: payload,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        ) else { return }
-        try? data.write(to: url)
+        var payload: [String: [String: String]] = [:]
+        for (layer, map) in seeds { payload[layer.rawValue] = stringKeys(map) }
+        guard write(payload, to: url) else { return }
         lock.lock()
         seeded = true
         lock.unlock()
+    }
+
+    /// Add the sections a map file written before those layers existed has never
+    /// heard of, keeping every section it does have byte-for-byte.
+    ///
+    /// Rewriting the whole file from the seeds instead would be a silent revert
+    /// of every emoji Victor has changed since — the seed is a starting point,
+    /// not the truth. The write moves the mtime, so the next stat re-reads and
+    /// finds the section present; that pass is a no-op and the loop ends there.
+    private static func backfill(_ layers: [Layer], into raw: [String: [String: String]], at url: URL) {
+        var payload = raw
+        for layer in layers { payload[layer.rawValue] = stringKeys(seeds[layer] ?? [:]) }
+        _ = write(payload, to: url)
+    }
+
+    @discardableResult
+    private static func write(_ payload: [String: [String: String]], to url: URL) -> Bool {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ) else { return false }
+        return (try? data.write(to: url)) != nil
     }
 
     private static func stringKeys(_ dict: [Int: String]) -> [String: String] {
@@ -183,7 +238,7 @@ enum EmojiKeyLayer {
     /// inserted ahead of ours), while one that shows up as `matched` and still
     /// types the old character means the rewrite is being ignored downstream.
     /// Guessing between those two is a waste of a restart.
-    private static var lastSeen: (keyCode: Int, shift: Bool, matched: Bool, at: Date)?
+    private static var lastSeen: (keyCode: Int, layer: Layer, matched: Bool, at: Date)?
     private static var lastRewrite: (keyCode: Int, text: String, at: Date)?
     private static var rewrites = 0
 
@@ -191,9 +246,9 @@ enum EmojiKeyLayer {
     /// seen: ⌥ chords fly past constantly (⌥⇧← to select a word, and so on), so
     /// "last seen" is almost always some unrelated navigation key by the time
     /// the status is read, and it cannot answer "did MY probe land?".
-    static func noteObserved(keyCode: Int, shift: Bool, matched: Bool, text: String?) {
+    static func noteObserved(keyCode: Int, layer: Layer, matched: Bool, text: String?) {
         lock.lock()
-        lastSeen = (keyCode, shift, matched, Date())
+        lastSeen = (keyCode, layer, matched, Date())
         if let text {
             lastRewrite = (keyCode, text, Date())
             rewrites += 1
@@ -204,7 +259,7 @@ enum EmojiKeyLayer {
     static func statusJSON() -> String {
         refreshIfNeeded()
         lock.lock()
-        let counts = (option.count, optionShift.count)
+        let counts = maps
         let modified = loadedModified
         let error = lastLoadError
         let seen = lastSeen
@@ -214,13 +269,14 @@ enum EmojiKeyLayer {
         var fields: [String] = [
             "\"enabled\":\(isEnabled)",
             "\"path\":\"\(mapURL.path)\"",
-            "\"option_bindings\":\(counts.0)",
-            "\"option_shift_bindings\":\(counts.1)",
+            "\"option_bindings\":\(counts[.option]?.count ?? 0)",
+            "\"option_shift_bindings\":\(counts[.optionShift]?.count ?? 0)",
+            "\"control_option_bindings\":\(counts[.controlOption]?.count ?? 0)",
             "\"file_loaded\":\(modified != nil)",
             "\"rewrites\":\(rewriteCount)",
         ]
         if let seen {
-            fields.append("\"last_opt_keydown\":{\"key_code\":\(seen.keyCode),\"shift\":\(seen.shift),\"matched\":\(seen.matched),\"seconds_ago\":\(Int(Date().timeIntervalSince(seen.at)))}")
+            fields.append("\"last_opt_keydown\":{\"key_code\":\(seen.keyCode),\"layer\":\"\(seen.layer.rawValue)\",\"matched\":\(seen.matched),\"seconds_ago\":\(Int(Date().timeIntervalSince(seen.at)))}")
         } else {
             fields.append("\"last_opt_keydown\":null")
         }
@@ -248,6 +304,22 @@ enum EmojiKeyLayer {
     // Dead keys (`action=` rather than `output=`) are deliberately dropped: they
     // are all stock ABC accents, and a dead key is a state machine this layer
     // has no way to express.
+
+    static let seeds: [Layer: [Int: String]] = [
+        .option: optionSeed,
+        .optionShift: optionShiftSeed,
+        .controlOption: controlOptionSeed,
+    ]
+
+    /// The ⌃⌥ board, opened on 2026-09-10 with one key.
+    ///
+    /// G for goose — and deliberately not ⌥8's 🪿, which stays where it is: the
+    /// point of the new board is that a letter can mean the thing it starts,
+    /// where the ⌥ layer ran out of letters years ago and has been handing out
+    /// digits ever since.
+    static let controlOptionSeed: [Int: String] = [
+          5: "🪿",   // G — goose
+    ]
 
     static let optionSeed: [Int: String] = [
           0: "😡",

@@ -6,6 +6,10 @@ import Foundation
 enum KeymapModifier: String, Equatable {
     case option
     case optionShift
+    /// The ⌃⌥ cheat-sheet — the third emoji board, and like the two above it is
+    /// drawn from `EmojiKeyLayer`. It has no ⇧ twin: ⌃⌥⇧ types the same
+    /// characters, so a second sheet would be the same picture twice.
+    case controlOption
     /// The ⌘⌃ cheat-sheet. Unlike the two above it is NOT read from the active
     /// .keylayout — ⌘⌃ combinations are app shortcuts (this app's event tap),
     /// not characters — so its contents come from `CommandControlShortcuts`.
@@ -20,10 +24,6 @@ enum KeymapModifier: String, Equatable {
 /// still an answer to that question. Leaving it blank would say "nothing here",
 /// which is worse than saying who does own it.
 enum CommandControlShortcuts {
-    // NB Q is deliberately absent: ⌘⌃Q was the permissions-bypassed Claude
-    // terminal, then the 🤖 mascot alone, and on 2026-09-09 the mascot moved to
-    // ⌃⌥G and the combination went back to macOS's Lock Screen. A word here for
-    // a key this app no longer answers would be worse than the gap.
     static let labels: [Int: String] = [
         0:  "tile",      // A — tile Terminal windows
         8:  "claude",    // C — Claude Code in a new Terminal
@@ -74,6 +74,15 @@ enum CommandControlShortcuts {
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
+        12: "salut",     // Q — 🤖 the Claude mark waves in from the left edge and
+                         // goes away again. It said `claude` while the key also
+                         // opened a permissions-bypassed Terminal; now that C is
+                         // the only launcher, a second `claude` on the board would
+                         // send you to the wrong key at speed. The word is what
+                         // happens — somebody says hello — and it is the one entry
+                         // here that promises nothing lands anywhere afterwards.
+                         // It spent 2026-09-09 on ⌃⌥G and came back the next day,
+                         // when ⌃⌥ became the emoji board and G went to the goose.
         6:  "zoom",      // Z — paste Victor's personal Zoom room link
         13: "wispr🎙️",   // W — paste the Wispr transcript. NOT ours: the shortcut
                          // lives in Wispr Flow and we must NOT claim it. The tap's
@@ -112,6 +121,9 @@ enum CommandControlShortcuts {
                   // selection, this one lands on the participants' screens.
         9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
         31: "🐘",  // O — the word names the man, the mark names what appears
+        12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
+                  // is going to the room as a prompt", and the same mark on a key
+                  // that only animates would blur the two apart at a glance.
         2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this
                   // key is the one you speak *into* a session with, and two
                   // identical marks on one board would blur that apart.
@@ -184,8 +196,11 @@ enum KeymapLayoutParser {
                 if block.contains(#"<modifier keys="anyOption"/>"#) { return index }
             case .optionShift:
                 if block.contains(#"<modifier keys="anyShift caps? anyOption command?"/>"#) { return index }
-            case .commandControl:
-                // Not a layout modifier — the ⌘⌃ sheet never goes through the parser.
+            case .commandControl, .controlOption:
+                // Neither is a layout modifier: the ⌘⌃ sheet is this app's own
+                // shortcuts, and ⌃⌥ is a board no `.keylayout` could carry —
+                // macOS derives control characters itself. Both are built from
+                // maps in this module and never reach the parser.
                 throw ParseError.missingModifier(modifier)
             }
         }
@@ -438,8 +453,9 @@ enum KeymapOverlayOutputFilter {
         switch modifier {
         case .option: defaults = optionDefaults
         case .optionShift: defaults = optionShiftDefaults
-        // Nothing baseline to strip: every ⌘⌃ entry is an explicit binding.
-        case .commandControl: defaults = [:]
+        // Nothing baseline to strip: every ⌘⌃ entry is an explicit binding, and
+        // stock ABC has no ⌃⌥ characters at all for the board to sit on top of.
+        case .commandControl, .controlOption: defaults = [:]
         }
         return outputs.filter { code, output in
             output != defaults[code]
@@ -500,11 +516,19 @@ final class KeymapHoldCoordinator {
 
     /// Which cheat-sheet a held modifier combination asks for, or nil for
     /// "none of them". Deliberately exact: ⌥ alone (± ⇧) is the character
-    /// layout, ⌘⌃ alone is the shortcut sheet. Anything mixed — ⌘⌃⌥ (Dark
-    /// Mode), ⌃⌥ (notes) — shows nothing rather than guessing.
+    /// layout, ⌃⌥ is the third emoji board (2026-09-10), ⌘⌃ alone is the
+    /// shortcut sheet. Anything with ⌘ on top of ⌥ — ⌘⌃⌥ (Dark Mode), ⌘⌥ —
+    /// shows nothing rather than guessing.
+    ///
+    /// ⌃⌥ used to be in that "shows nothing" list, on the grounds that it was
+    /// a shortcut prefix (⌃⌥V, the notes). It still is one, but it is now also
+    /// a board of characters, and a board nobody has memorised is exactly what
+    /// a cheat-sheet is for — the two shortcuts left on it are the keys the
+    /// sheet simply has nothing to say about.
     static func sheet(option: Bool, shift: Bool, command: Bool, control: Bool) -> KeymapModifier? {
-        if command && control && !option { return .commandControl }
-        if option && !command && !control { return shift ? .optionShift : .option }
+        if command { return control && !option ? .commandControl : nil }
+        if option && control { return .controlOption }
+        if option { return shift ? .optionShift : .option }
         return nil
     }
 
@@ -954,14 +978,17 @@ final class KeymapOverlayController {
     @discardableResult
     func regenerateImages() -> Bool {
         let started = CFAbsoluteTimeGetCurrent()
-        let option = EmojiKeyLayer.snapshot(shift: false)
-        let optionShift = EmojiKeyLayer.snapshot(shift: true)
+        let option = EmojiKeyLayer.snapshot(.option)
+        let optionShift = EmojiKeyLayer.snapshot(.optionShift)
+        let controlOption = EmojiKeyLayer.snapshot(.controlOption)
         images[.option] = renderer.render(outputs: option.bindings)
         images[.optionShift] = renderer.render(outputs: optionShift.bindings)
+        images[.controlOption] = renderer.render(outputs: controlOption.bindings)
         renderedGeneration = option.generation
         let elapsed = CFAbsoluteTimeGetCurrent() - started
-        overlayInfo(String(format: "KeymapOverlay: drew %d ⌥ + %d ⌥⇧ bindings in %.3fs",
-                           option.bindings.count, optionShift.bindings.count, elapsed))
+        overlayInfo(String(format: "KeymapOverlay: drew %d ⌥ + %d ⌥⇧ + %d ⌃⌥ bindings in %.3fs",
+                           option.bindings.count, optionShift.bindings.count,
+                           controlOption.bindings.count, elapsed))
         return true
     }
 
@@ -971,7 +998,7 @@ final class KeymapOverlayController {
         // sheet has to keep pace with what the keys actually type. (The ⌘⌃ sheet
         // is built in `init` from `CommandControlShortcuts` and is unaffected.)
         if modifier != .commandControl,
-           EmojiKeyLayer.snapshot(shift: false).generation != renderedGeneration {
+           EmojiKeyLayer.snapshot(.option).generation != renderedGeneration {
             regenerateImages()
         }
         // Last-chance rebuild: if we still have no images (startup read failed),

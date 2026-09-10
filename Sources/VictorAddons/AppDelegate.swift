@@ -1626,12 +1626,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
         eventTap.onClaudeMascotHotkey = { [weak self] in
-            // ⌃⌥G, and the mascot is the whole key (2026-09-09). It began as the
-            // garnish on ⌘⌃Q's permissions-bypassed Claude Terminal — the wave
-            // filled the moment before the window appeared — and lost first the
+            // ⌘⌃Q, and the mascot is the whole key (2026-09-09). It began as the
+            // garnish on that key's permissions-bypassed Claude Terminal — the
+            // wave filled the moment before the window appeared — and lost the
             // terminal (⌘⌃C is the launcher; a key that greets you is not also a
-            // key that leaves a window behind) and then the combination itself,
-            // which macOS wanted back for Lock Screen.
+            // key that leaves a window behind). It also lost the combination for
+            // a day, to ⌃⌥G, until ⌃⌥ became the emoji board on 2026-09-10 and
+            // the goose wanted G back.
             //
             // Same pinning as the elephant: this draws into the overlay panel's
             // layer tree, which lives on the built-in Retina, so the frame is

@@ -28,9 +28,10 @@ class EventTapManager {
     var onPowerPointStrikethrough: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onClaudeWorkspaceHotkey: (() -> Void)?
-    /// ⌃⌥G — 🤖 the Claude mark waves in from the left of the projected screen
-    /// and leaves again. It lived on ⌘⌃Q, next to a permissions-bypassed Claude
-    /// Terminal; the terminal went first, then the key.
+    /// ⌘⌃Q — 🤖 the Claude mark waves in from the left of the projected screen
+    /// and leaves again. It sat next to a permissions-bypassed Claude Terminal
+    /// here until the terminal was dropped, spent a day on ⌃⌥G, and came back on
+    /// 2026-09-10 when ⌃⌥ became the emoji board and G was needed for the goose.
     var onClaudeMascotHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
@@ -395,12 +396,23 @@ private let VK_F: CGKeyCode = 0x03
         // ⌥ must be cleared off the event too. Left on, the character arrives
         // flagged as a ⌥ chord and apps route it to a menu equivalent instead of
         // inserting it.
-        if hasOpt, !hasCmd, !hasCtrl {
-            let text = EmojiKeyLayer.output(keyCode: Int(keyCode), shift: hasShift)
-            EmojiKeyLayer.noteObserved(keyCode: Int(keyCode), shift: hasShift, matched: text != nil, text: text)
+        //
+        // ⌃⌥ is the third board (2026-09-10) and rides the same rewrite. It sits
+        // ABOVE every ⌃⌥ shortcut branch below on purpose: a letter in the map
+        // is an emoji key and nothing else, and one that isn't falls straight
+        // through to the shortcuts (⌃⌥V still appends to the notes). ⇧ is not a
+        // separate layer here — see `EmojiKeyLayer.Layer` — so ⌃⌥⇧G types the
+        // goose too rather than reaching a board that doesn't exist.
+        if hasOpt, !hasCmd, let layer = EmojiKeyLayer.Layer(option: true, shift: hasShift, control: hasCtrl) {
+            let text = EmojiKeyLayer.output(keyCode: Int(keyCode), layer: layer)
+            EmojiKeyLayer.noteObserved(keyCode: Int(keyCode), layer: layer, matched: text != nil, text: text)
             if let text {
                 let utf16 = Array(text.utf16)
-                event.flags = flags.subtracting([.maskAlternate, .maskShift])
+                // Every modifier that got us here comes off the event. Left on,
+                // the character arrives as a chord and apps route it to a menu
+                // equivalent (or, with ⌃, derive a control character) instead of
+                // inserting it.
+                event.flags = flags.subtracting([.maskAlternate, .maskShift, .maskControl])
                 event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
                 return Unmanaged.passUnretained(event)
             }
@@ -495,16 +507,13 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
-        // Ctrl+Opt+G → 🤖 the Claude mark waves in from the left of the projected
-        // screen (suppress). **This is the first key on the ⌃⌥ board**, opened
-        // deliberately on 2026-09-09: ⌘⌃ is full, macOS itself binds almost
-        // nothing to ⌃⌥, and third-party apps rarely do — where ⌥⌘ is the
-        // busiest combination on the Mac. It came off ⌘⌃Q, which was borrowed
-        // from macOS's own Lock Screen; giving that back was worth more than the
-        // letter. `hasCmd` is excluded so it cannot be confused with ⌘⌃G below,
-        // which is Gmail — the two are one modifier apart and go to entirely
-        // different places.
-        if keyCode == VK_G && hasCtrl && hasOpt && !hasCmd {
+        // Cmd+Ctrl+Q → 🤖 the Claude mark waves in from the left of the projected
+        // screen (suppress). It spent 2026-09-09 on ⌃⌥G, the day that board was
+        // opened; ⌃⌥ became the emoji board on 2026-09-10 and G went to the goose, so
+        // the wave came back to the key it was written for. NB it shadows macOS's
+        // own ⌃⌘Q "Lock Screen" again: the session tap sees the key first and
+        // swallows it, so the Mac does not lock on that combination.
+        if keyCode == VK_Q && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onClaudeMascotHotkey?() }
             return nil
         }
