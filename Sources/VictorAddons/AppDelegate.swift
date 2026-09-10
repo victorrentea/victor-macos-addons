@@ -53,6 +53,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// feature, because any agent — codex, claude, a shell script — raises it
     /// over the same HTTP door.
     @MainActor private let handsOff = HandsOffOverlay()
+    /// 🔒 Raises the same frame **without being asked**, the moment any process
+    /// starts posting mouse/keyboard events. The announced path was called twice
+    /// in its first day and forgotten every other time, which is how Victor spent
+    /// 10–11 Sep 2026 having his pointer taken with no lock on screen.
+    @MainActor private var syntheticWatch: SyntheticInputWatch?
     /// Outbound WS to the Railway bridge — the tablet's last-resort internet
     /// transport when LAN Wi-Fi and USB both fail (public-Wi-Fi client isolation).
     private var railwayBridge: RailwayBridgeClient?
@@ -513,6 +518,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         tabletServer?.onHandsOffState = { [weak self] in
             MainActor.assumeIsolated { self?.handsOff.stateJSON() ?? "{\"active\":false}" }
         }
+        // 🔒 …and the floor under all of it: a listen-only tap that raises the
+        // same locks for any synthetic input, announced or not.
+        let watch = SyntheticInputWatch(overlay: handsOff)
+        watch.start()
+        syntheticWatch = watch
         // The feedback-form robot (skills-private/feedback-form) asks the app
         // what today's session is called, so the survey it clones is named the
         // same as the folder the notes and screenshots go to. The app is the

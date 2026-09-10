@@ -52,7 +52,35 @@ warning that never clears stops being read — so it releases itself (default 12
 A number on screen would read as "this is how long it will take", and it only means "from here
 on I stop believing you".
 
-**Announce, not auto-detect** — deliberately. An event tap *could* spot synthetic input (the
+## 🔒🔒 The floor: `SyntheticInputWatch` (11 Sep 2026)
+The section below used to argue "announce, not auto-detect". Reality settled it: over
+10–11 Sep both codex and Claude drove Victor's mouse while he was working and **he saw
+no lock at all** — in the frame's whole life the HTTP door had been called twice, both
+by the session that wrote it. So there is now a listen-only `CGEventTap` that raises the
+same locks for any synthetic input, announced or not.
+
+- **Synthetic = `.eventSourceUnixProcessID` non-zero.** Hardware events arrive with 0.
+- **Allowlist** (`SyntheticInputWatch.allowlist`): Wispr Flow, Walkie Talkie, this app,
+  Karabiner, Raycast, Alfred, Logi, Hammerspoon, Keyboard Maestro — software that types
+  *for* Victor at the moment he asks it to. Raising locks for his own dictation would
+  train him to ignore locks. **That list is the whole false-positive risk; extend it
+  rather than widening the pid test.**
+- Raised within ~1 s of the first event, released 5 s after the last one, **silently**
+  (no Tink: an auto-raised frame goes up and down in bursts as a script works). An
+  announced session always wins and keeps its own label.
+- `.listenOnly` on purpose: this must never be able to swallow or delay one of Victor's
+  own keystrokes.
+- Measured working the same night: a Python `CGEventPost` loop → `{"active":true,
+  "agent":"Python","label":"✋ Python — îți mișcă mouse-ul/tastatura"}`.
+
+Two layers above it do the same job earlier, because only the caller knows *what* it is
+doing: `~/.claude/hooks/hands-off-guard.sh` (a PreToolUse/PostToolUse/Stop hook on Bash
+that arms on `osascript … System Events`, `cliclick`, `CGEventPost`, `screencapture -i`,
+`codex exec`, headed browser drivers), and the rules written into `~/.claude/CLAUDE.md`
+and `~/.codex/AGENTS.md`.
+
+**Announce, not auto-detect** — the original reasoning, kept because it still explains
+why the announced path exists at all. An event tap *could* spot synthetic input (the
 posting PID rides on the event), but it would then fire for **codex too**, which does not
 interrupt anything (see below), and a frame that cries wolf is ignored when it matters.
 

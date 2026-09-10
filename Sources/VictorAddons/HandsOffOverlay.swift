@@ -55,6 +55,11 @@ final class HandsOffOverlay {
     private let releaseChime = NSSound(named: NSSound.Name("Tink"))
 
     var isActive: Bool { session != nil }
+    /// True when the frame went up by itself, because `SyntheticInputWatch` saw
+    /// software posting mouse/keyboard events. Kept apart from an announced
+    /// session so the announced label ("✋ claude — click pe Restart") is never
+    /// overwritten by the anonymous one the tap can produce.
+    private(set) var isAutoRaised = false
 
     // MARK: - Public API
 
@@ -64,6 +69,7 @@ final class HandsOffOverlay {
     func begin(agent: String?, what: String?, ttl: TimeInterval?) {
         let fresh = HandsOffSession(agent: agent, what: what, ttl: ttl, startedAt: Date())
         session = fresh
+        isAutoRaised = false
 
         if framePanels.isEmpty {
             buildFrames()
@@ -74,16 +80,46 @@ final class HandsOffOverlay {
         overlayInfo("Hands off: \(fresh.label) (ttl \(Int(fresh.ttl))s)")
     }
 
+    /// Raise the locks with nobody having asked — `SyntheticInputWatch` caught
+    /// a process posting input. It says the process's name rather than a task,
+    /// because that is all a tap can honestly know.
+    ///
+    /// An **announced** session always wins: an agent that took the trouble to
+    /// say what it is doing must not have its label replaced by "Terminal".
+    func beginAuto(agent: String, ttl: TimeInterval) {
+        guard session == nil || isAutoRaised else { return }
+        begin(agent: agent, what: "îți mișcă mouse-ul/tastatura", ttl: ttl)
+        isAutoRaised = true
+    }
+
+    /// Keep an auto-raised frame alive while the synthetic input keeps coming.
+    /// Deliberately not a second `begin`: that would rebuild the badge and write
+    /// a log line every single second of a long automation run.
+    func refreshAuto(agent: String, ttl: TimeInterval) {
+        guard isAutoRaised, let current = session else { return }
+        let refreshed = HandsOffSession(agent: agent, what: current.what, ttl: ttl, startedAt: Date())
+        session = refreshed
+        if badgeField?.stringValue != refreshed.label { showBadge(text: refreshed.label) }
+    }
+
     /// Give it back. Safe to call when nothing is active — an agent that ends
     /// twice (retry, cleanup handler) must not be an error path.
-    func end(expired: Bool = false) {
+    ///
+    /// `silent` is for the auto-raised path: that one goes up and down in bursts
+    /// as a script works, and a chime per burst would become the annoyance the
+    /// whole feature exists to avoid. An announced release stays audible —
+    /// Victor is usually not looking at the screen while he waits for it.
+    func end(expired: Bool = false, silent: Bool = false) {
         guard session != nil else { return }
+        let wasAuto = isAutoRaised
         session = nil
+        isAutoRaised = false
         watchdog?.invalidate(); watchdog = nil
         hideBadge()
         flashFreeAndDismiss()
-        releaseChime?.play()
-        overlayInfo(expired ? "Hands off: released by watchdog" : "Hands off: released")
+        if !silent { releaseChime?.play() }
+        overlayInfo(expired ? "Hands off: released by watchdog"
+                            : (wasAuto ? "Hands off: synthetic input stopped" : "Hands off: released"))
     }
 
     /// Read-only snapshot for `/hands-off/state`, so the behaviour can be
