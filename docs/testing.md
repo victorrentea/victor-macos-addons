@@ -4,6 +4,8 @@ Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:5
 
 - `GET /test/state` — JSON snapshot of transcription state (`running`, `on_ac`, `paused_battery`, UI/menu/icon state)
 - `GET /test/transcription/start` — force-(re)start Whisper for E2E checks (no-op if already running). There is no stop/toggle hook — transcription is driven solely by AC/battery
+- `GET /test/lid-awake/state` — everything the 🔋 decision is made from, plus what it would do right now: `{enabled, holding, sleep_disabled, lid_closed, on_ac, battery, working, beating, boosted, next_action}`. Ask this before wondering why it is not beating (on AC and lid open, `next_action` is `hold` — silent by design)
+- `GET /test/lid-awake/flatline` — play the 🫀 farewell (5.25 s, at its real volume) **without touching the flag**: the ending only ever happens in a closed bag after the last session finished, so this is the only way to hear it at the desk
 - `GET /test/claude-activity` — `{working, skipped_helpers}`: the pids `LidAwake` currently counts as working Claude sessions, and the `caffeinate` parents it skipped as Claude Code's own daemon helpers (`bg-spare`, `bg-pty-host`). The first answer to "everything has finished, why is the Mac still awake?"
 - `GET /test/audio/playing` — taps `🔊OS Output` loopback for ~150ms, returns `{playing, rms, peak, ...}`, plus `other_app_playing`: the bundle id of any *other* app holding an output stream (`""` when none), which is the loopback-free answer `LidAwake`'s volume boost consults. The two can legitimately disagree — an app with an open but silent stream reads as playing there and silent here
 - `GET /test/wispr/recording` — checks `kAudioProcessPropertyIsRunningInput` on `com.electron.wispr-flow.*`, returns `{recording}`

@@ -1420,6 +1420,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         lid.startIfEnabled()
         self.lidAwake = lid
+        tabletServer?.onTestLidAwakeState = { [weak lid] in lid?.stateJSON() ?? "{}" }
+        tabletServer?.onTestLidAwakeFlatline = { [weak lid] in lid?.playFlatlineForTest() }
 
         let portKiller = PortKiller()
         self.portKiller = portKiller

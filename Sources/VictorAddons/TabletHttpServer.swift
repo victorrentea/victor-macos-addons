@@ -51,6 +51,8 @@ class TabletHttpServer {
         case testState
 case testTerminalFont
         case testAudioPlaying
+        case testLidAwakeState
+        case testLidAwakeFlatline
         case testClaudeActivity
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
@@ -246,6 +248,8 @@ case testTerminalFont
     var onTestTranscriptionStart: (() -> Void)?
     var onTestState: (() -> String)?
     var onTestAudioPlaying: (() -> String)?
+    var onTestLidAwakeState: (() -> String)?
+    var onTestLidAwakeFlatline: (() -> Void)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
     var onTestBreakUntil: (() -> Void)?
@@ -456,6 +460,11 @@ case testTerminalFont
                 if self.onTestAudioPlaying == nil {
                     statusCode = 503
                 }
+            case .testLidAwakeState:
+                contentType = "application/json"
+                body = self.onTestLidAwakeState?() ?? "{\"error\":\"lid awake unavailable\"}"
+            case .testLidAwakeFlatline:
+                self.onTestLidAwakeFlatline?()
             case .testClaudeActivity:
                 contentType = "application/json"
                 let working = ClaudeActivity.workingSessions()
@@ -697,6 +706,10 @@ case testTerminalFont
             return .testState
         case "/test/audio/playing":
             return .testAudioPlaying
+        case "/test/lid-awake/state":
+            return .testLidAwakeState
+        case "/test/lid-awake/flatline":
+            return .testLidAwakeFlatline
         case "/test/claude-activity":
             return .testClaudeActivity
         case "/test/wispr/recording":

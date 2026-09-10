@@ -251,6 +251,45 @@ final class LidAwake {
         return true
     }
 
+    // MARK: - Headless hooks (see docs/testing.md)
+
+    /// Everything the decision is made from, as JSON — so "why is it still
+    /// awake" and "why is it not beating" are answerable with one `curl`
+    /// instead of a lid, a battery and an ear.
+    func stateJSON() -> String {
+        let working = ClaudeActivity.workingSessions()
+        let battery = Self.batteryPercent()
+        let action = LidAwakePolicy.decide(
+            enabled: LidAwakeSettings.isEnabled,
+            claudeWorking: !working.isEmpty,
+            lidClosed: Self.isLidClosed(),
+            onAC: PowerMonitor.isOnAC(),
+            battery: battery,
+            beating: wasBeating)
+        return "{\"enabled\":\(LidAwakeSettings.isEnabled),"
+            + "\"holding\":\(holding),"
+            + "\"sleep_disabled\":\(Self.isSleepDisabled()),"
+            + "\"lid_closed\":\(Self.isLidClosed()),"
+            + "\"on_ac\":\(PowerMonitor.isOnAC()),"
+            + "\"battery\":\(battery.map(String.init) ?? "null"),"
+            + "\"working\":[\(working.map(String.init).joined(separator: ","))],"
+            + "\"beating\":\(wasBeating),"
+            + "\"boosted\":\(volumeBeforeBeats != nil),"
+            + "\"next_action\":\"\(action)\"}"
+    }
+
+    /// Play the flatline and nothing else: no flag, no release, no sleep.
+    /// The ending is the one part of this feature that only ever happens when
+    /// nobody is looking — in a bag, after the last session finished — so it
+    /// needs a way to be heard at the desk.
+    func playFlatlineForTest() {
+        overlayInfo("LidAwake: flatline requested by /test — sound only, flag untouched")
+        lastBeats()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength + 0.2) { [weak self] in
+            self?.farewellPlayer = nil
+        }
+    }
+
     private func startTimer() {
         stopTimer()
         ticks = 0
