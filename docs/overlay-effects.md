@@ -365,9 +365,12 @@ rule from the start.
 - **🔥 Fire cursor** (tile #11 `11_fire.mp3` → `fire` / `fire/stop`, `showFireCursor`):
   the chainsaw's trick with a flame — the real pointer is hidden and a 40-frame fire
   sprite burns on it, chasing `NSEvent.mouseLocation` at 60 fps on the built-in screen.
-  It starts **140 pt wide** (`fireBaseWidth`) — halved from 280 on 2026-09-09, where the
-  flame covered enough of the screen that it stopped reading as a *pointer*. The wheel
-  envelope is untouched (×1.10 a notch, 0.30…3.50), so the old size is two notches up.
+  A first press starts **280 pt wide** (`fireBaseWidth`) — halved to 140 on 2026-09-09
+  because the flame stopped reading as a *pointer*, then put back to 280 on 2026-09-10 at
+  Victor's request. What makes 280 workable now is the rest of that change: the wheel size
+  **survives the run** (`fireRememberedScale`), so shrinking to a torch is a one-time
+  gesture instead of a per-press tax, and the wheel ceiling is **the screen width**, so the
+  default is no longer near the top of the envelope.
   Fourth member of the hidden-cursor family and bound by the same rule: **outside
   `activeEffects`**, torn down explicitly by `stopAllActiveEffects`, hide armed through
   `armBackgroundCursorHiding()` and balanced by `_fireHidCursor`. It replaced the tile's
@@ -385,7 +388,8 @@ rule from the start.
     and the thing being pointed at is what should be on fire.
   - **Timing**: 40 frames at **30 fps** (1.33 s loop) — the source clip's own rate, kept
     rather than halved to the chainsaw's 15, because this one is on screen for a **36 s**
-    sound and fire at 15 fps reads as a strobing loop within seconds. Base width **280 pt**,
+    sound and fire at 15 fps reads as a strobing loop within seconds. Base width **280 pt**
+    (2026-09-10; 140 between 09-09 and 09-10),
     `zPosition` 9500, 0.12 s fade-in / 0.25 s fade-out with the real cursor restored only
     after the fade.
   - **Escape puts it out.** This is the first effect with a *user* exit, and it needs one:
@@ -395,8 +399,21 @@ rule from the start.
     something. The keypress is **consumed**, and it stops the routed clip too
     (`stopTabletSound` + `stopAllPlayers`); a press the tablet chose to play on its **own**
     speaker is not ours to stop.
-  - **The wheel sizes it while it burns.** Same tap: one notch is a **multiply** by 1.10
-    (clamped to 0.30…3.50 ×), so a step feels the same at a candle and at a bonfire.
+  - **The wheel sizes it while it burns.** Same tap: one notch is a **multiply** by 1.10,
+    so a step feels the same at a candle and at a bonfire. The clamp is 0.30 × at the
+    bottom and **the screen** at the top (2026-09-10; it was a flat 3.50 ×): `fireMaxScale`
+    is `hostLayer.bounds.width / fireBaseWidth`, i.e. the flame can grow until it is
+    exactly as wide as the display it burns on. A fixed multiple made "as big as it goes"
+    a different fraction of a 13" retina than of a projector, and on stage that ceiling is
+    the size Victor actually reaches for. `NSScreen.main` is the fallback while the overlay
+    has no bounds yet.
+  - **The size is remembered for the life of the process.** Every wheel notch writes
+    `fireRememberedScale` (a **static**, RAM only), and the next `showFireCursor` reopens
+    there, clamped to the current `fireMaxScale` in case the last run was on a wider screen
+    that has since been unplugged. Sizing the flame is a deliberate few seconds of
+    scrolling in front of a room; snapping back to default on the next press made that
+    gesture disposable. Not persisted to disk on purpose — a restart starts neutral rather
+    than from whatever one demo needed.
     Trackpad pixels are accumulated into 12-pt notches so a two-finger flick doesn't jump
     from candle to inferno. The resize edits **`bounds`, not `transform`**, which keeps the
     anchor pinned so the flame's root stays exactly on the pointer as it grows. Scroll is

@@ -8136,13 +8136,15 @@ class EmojiAnimator {
     /// the hand, and the thing being pointed at is what should be on fire.
     private static let fireRootAnchor = CGPoint(x: 0.5, y: 0.10)
 
-    /// Displayed width in points at scale 1 — the size the tile press starts at,
-    /// before the wheel is touched. Read as a torch rather than a bonfire; the
-    /// user scrolls up from here when they want the bonfire. Halved on
-    /// 2026-09-09 (280 → 140): at 280 the flame covered enough of the screen
-    /// that it stopped reading as a *pointer*. The wheel envelope is unchanged,
-    /// so the old size is still two notches up.
-    private static let fireBaseWidth: CGFloat = 140
+    /// Displayed width in points at scale 1 — the size a FIRST press starts at,
+    /// before the wheel is touched (later presses reopen at the remembered size,
+    /// see `fireRememberedScale`). Halved on 2026-09-09 (280 → 140) because at
+    /// 280 the flame stopped reading as a *pointer*; put back to 280 on
+    /// 2026-09-10 at Victor's request. What makes 280 workable now is the pair
+    /// of changes below it: the size survives the run, so shrinking to a torch
+    /// is a one-time gesture rather than a per-press tax, and the wheel reaches
+    /// the full screen width, so the default is no longer near the ceiling.
+    private static let fireBaseWidth: CGFloat = 280
 
     /// The source clip's own rate (40 frames / 1.33 s). Kept at 30 rather than
     /// halved like the chainsaw's 15: this one is on screen for the length of a
@@ -8156,7 +8158,27 @@ class EmojiAnimator {
     /// feels the same size at a candle and at a bonfire.
     private static let fireScaleStep: CGFloat = 1.10
     private static let fireMinScale: CGFloat = 0.30
-    private static let fireMaxScale: CGFloat = 3.50
+
+    /// The ceiling is the SCREEN, not a number: the wheel can grow the flame
+    /// until it is exactly as wide as the display it burns on. A fixed multiple
+    /// (3.5 was the old one) means the biggest fire is a different fraction of a
+    /// 13" retina than of a projector, and "as big as it goes" is the size Victor
+    /// actually reaches for on stage. Falls back to the main screen while the
+    /// overlay has no bounds yet (first frame of a fresh run).
+    private var fireMaxScale: CGFloat {
+        let width = hostLayer.bounds.width > 0
+            ? hostLayer.bounds.width
+            : (NSScreen.main?.frame.width ?? 1_440)
+        return max(Self.fireMinScale, width / Self.fireBaseWidth)
+    }
+
+    /// The wheel size the LAST run ended at, kept for the life of the process.
+    /// Sizing the flame is a deliberate gesture — a couple of seconds of
+    /// scrolling with everyone watching — and having it snap back to default on
+    /// the next press made that gesture disposable. RAM only, on purpose: a new
+    /// day (a restart) starts from the neutral size rather than from whatever
+    /// one demo needed.
+    private static var fireRememberedScale: CGFloat = 1
 
     private var _fireLayer: CALayer?
     private var _fireTimer: Timer?
@@ -8200,11 +8222,14 @@ class EmojiAnimator {
             if d.isNumeric { duration = CMTimeGetSeconds(d) }
         }
 
-        _fireScale = 1
+        // Reopen at the size the last run was left at, clamped in case that run
+        // happened on a wider screen (a projector unplugged since).
+        _fireScale = min(fireMaxScale, max(Self.fireMinScale, Self.fireRememberedScale))
+        Self.fireRememberedScale = _fireScale
         _fireScrollAccum = 0
 
         let flame = CALayer()
-        flame.bounds = Self.fireBounds(for: first, scale: 1)
+        flame.bounds = Self.fireBounds(for: first, scale: _fireScale)
         flame.anchorPoint = Self.fireRootAnchor
         flame.contents = first
         flame.contentsGravity = .resizeAspect
@@ -8289,7 +8314,8 @@ class EmojiAnimator {
 
         let flame = _fireLayer
         _fireLayer = nil
-        _fireScale = 1
+        // `_fireScale` is NOT reset — `fireRememberedScale` already holds it and
+        // the next press reads it back.
 
         // Every fire the user planted goes out with the one on the pointer. They
         // are deliberately NOT in `activeEffects`: the whole set is this run's
@@ -8468,9 +8494,10 @@ class EmojiAnimator {
         DispatchQueue.main.async { [weak self] in
             guard let self, let flame = self._fireLayer,
                   let frame = Self.fireFrames.first else { return }
-            let scale = min(Self.fireMaxScale, max(Self.fireMinScale, self._fireScale * factor))
+            let scale = min(self.fireMaxScale, max(Self.fireMinScale, self._fireScale * factor))
             guard scale != self._fireScale else { return }
             self._fireScale = scale
+            Self.fireRememberedScale = scale   // the next press opens here
             // Resizing `bounds` (not `transform`) keeps the anchor pinned, so the
             // flame's root stays exactly on the pointer as it grows. No implicit
             // animation: the wheel should feel like a physical dial, not a servo.
