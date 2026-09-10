@@ -8609,20 +8609,25 @@ class EmojiAnimator {
 
     // MARK: - 🤖 Claude leans in from the left (⌘⌃Q)
 
-    /// The two mascots that take turns on ⌘⌃Q, in the order they arrive.
+    /// One key, two agents: the wave is not an ad for a vendor, it is "the
+    /// assistants", which is what the course is about. Both are cut-out robots
+    /// of almost the same aspect (461×363 and 455×362), so `claudePeekFrame`
+    /// sizes them off the height and the two land the same size in the same
+    /// spot — they read as one character changing costume, not as two effects,
+    /// which is exactly why a click can swap the costume in place.
     ///
-    /// One key, two agents: the room sees whichever one is not on screen at the
-    /// moment, so the wave stops being a Claude ad and becomes "the assistants",
-    /// which is what the course is actually about. Both are cut-out robots of
-    /// almost the same aspect (461×363 and 455×362), so `claudePeekFrame` sizes
-    /// them off the height and the two land the same size in the same spot —
-    /// they read as one character changing costume, not as two effects.
-    static let peekMascots = ["claude-icon", "copilot-icon"]
+    /// **Which one shows is a choice, not a rotation** — see `PeekMascotChoice`
+    /// for why the press-by-press alternation was dropped.
 
-    /// Whose turn it is. Advanced only when a mascot actually walks in, so a
-    /// press that dismisses one early does not burn its partner's turn — the
-    /// alternation is between *appearances*, not between keystrokes.
-    private var nextPeekMascot = 0
+    /// The invisible click target laid over the icon while it is on screen.
+    /// Nil whenever nothing is showing; see `PeekHitPanel` for why the overlay
+    /// itself cannot take the click.
+    private var peekHitPanel: PeekHitPanel?
+
+    /// Bumped by every appearance *and* by every costume change, so a timer
+    /// armed before a swap cannot take the swapped-in mascot down early. Layer
+    /// identity alone is not enough here: a click keeps the same layer.
+    private var peekGeneration = 0
 
     /// How long the icon stays before it slides back out on its own.
     ///
@@ -8662,8 +8667,9 @@ class EmojiAnimator {
     /// terminal and outlived it. It spent 2026-09-09 on ⌃⌥G and came back when
     /// that pair became the third emoji board and G went to the goose.
     ///
-    /// **Claude and Copilot take turns** (`peekMascots`): press after press, one
-    /// then the other then the first again.
+    /// **Claude by default, Copilot if you ask for it** (`PeekMascotChoice`):
+    /// every day opens on Claude, and clicking the mascot while it is on screen
+    /// swaps the costume in place and keeps that choice for the rest of the day.
     ///
     /// It floats: a cut-out PNG with a real alpha channel over a click-through
     /// overlay, so what arrives is the mark itself and not a white rectangle
@@ -8679,19 +8685,19 @@ class EmojiAnimator {
     /// than like something falling over.
     ///
     /// Pressing ⌘⌃Q again sends it back out, and it leaves on its own after
-    /// `claudePeekLifetime`: the overlay is click-through, so a mascot left on
-    /// screen could not be dismissed by clicking it.
+    /// `claudePeekLifetime`. **Clicking it does not dismiss it** — it changes
+    /// which robot it is. That is the one exception to the rule that everything
+    /// here must be dismissible without the mouse, and it is safe because the
+    /// key itself and the five-second timer both still end it: the click is a
+    /// setting, not a way out.
     func showClaudePeek() {
         if activeEffects["claude-peek"] != nil { stopClaudePeek(); return }
 
-        let mascot = Self.peekMascots[nextPeekMascot % Self.peekMascots.count]
-        guard let url = Bundle.module.url(forResource: mascot, withExtension: "png"),
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            overlayError("\(mascot).png is not in the bundle")
+        let mascot = PeekMascotStore.current()
+        guard let image = Self.peekImage(mascot) else {
+            overlayError("\(mascot.rawValue).png is not in the bundle")
             return
         }
-        nextPeekMascot = (nextPeekMascot + 1) % Self.peekMascots.count
 
         let bounds = hostLayer.bounds
         let frame = Self.claudePeekFrame(in: bounds, aspect: CGFloat(image.width) / CGFloat(image.height))
@@ -8719,16 +8725,78 @@ class EmojiAnimator {
         wiggle.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         layer.add(wiggle, forKey: "wiggle")
 
-        // Self-termination, identity-guarded so a second press followed by a
-        // third can't have the first press's timer remove the newest icon.
+        // The click target goes up at the LANDED frame, not the sliding one: a
+        // rectangle chasing the icon through the slide-in would be a target
+        // that moves out from under the pointer, and the icon is only worth
+        // clicking once it has arrived anyway.
+        let screenOrigin = ScreenCaptureFlash.builtInScreen?.frame.origin ?? .zero
+        let hitFrame = frame.offsetBy(dx: screenOrigin.x, dy: screenOrigin.y)
+        peekHitPanel = PeekHitPanel(frame: hitFrame) { [weak self] in self?.flipPeekMascot() }
+
+        schedulePeekExit(layer: layer)
+    }
+
+    /// Load a mascot's cut-out PNG out of the bundle.
+    private static func peekImage(_ mascot: PeekMascot) -> CGImage? {
+        guard let url = Bundle.module.url(forResource: mascot.rawValue, withExtension: "png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// Arm the self-termination, guarded by BOTH layer identity and generation:
+    /// identity so a second press followed by a third can't have the first
+    /// press's timer remove the newest icon, generation so a costume change —
+    /// which reuses the layer — can't be cut short by the timer armed for the
+    /// costume before it.
+    private func schedulePeekExit(layer: CALayer) {
+        peekGeneration += 1
+        let generation = peekGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.claudePeekLifetime) { [weak self, weak layer] in
-            guard let self, let layer, self.activeEffects["claude-peek"] === layer else { return }
+            guard let self, let layer,
+                  self.peekGeneration == generation,
+                  self.activeEffects["claude-peek"] === layer else { return }
             self.stopClaudePeek()
         }
     }
 
+    /// A click on the mascot: the *other* robot walks on in the same spot, and
+    /// stays the one this key means for the rest of the day.
+    ///
+    /// The swap is a cross-fade of the layer's contents rather than a slide-out
+    /// and a slide-in, because it is one character changing costume, not one
+    /// leaving and another arriving — and because a mascot that walked out on
+    /// a click would read as "I dismissed it", which is the opposite of what
+    /// the click did. The wiggle runs again so the new one gets to say hello
+    /// too, and the five seconds start over so a click at 4.9 s does not show
+    /// the answer for a tenth of a second.
+    private func flipPeekMascot() {
+        guard let layer = activeEffects["claude-peek"] else { return }
+        let mascot = PeekMascotStore.flip()
+        guard let image = Self.peekImage(mascot) else {
+            overlayError("\(mascot.rawValue).png is not in the bundle")
+            return
+        }
+
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = 0.22
+        layer.add(fade, forKey: "costume-change")
+        layer.contents = image
+
+        let wiggle = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+        wiggle.values = [0, -0.12, 0.10, -0.065, 0.04, 0]
+        wiggle.keyTimes = [0, 0.18, 0.40, 0.62, 0.82, 1]
+        wiggle.duration = 0.85
+        wiggle.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(wiggle, forKey: "wiggle")
+
+        schedulePeekExit(layer: layer)
+    }
+
     /// Slides it back out the way it came in. Safe when nothing is showing.
     func stopClaudePeek() {
+        peekHitPanel?.dismiss()
+        peekHitPanel = nil
         guard let layer = activeEffects["claude-peek"] else { return }
         activeEffects.removeValue(forKey: "claude-peek")
 
@@ -8773,6 +8841,11 @@ class EmojiAnimator {
         // its targets and blasts are the run's own layers, it hides the real
         // pointer, and it holds a tap that is swallowing Escape and every click.
         stopBombSession(fade: 0)
+        // 🤖 The mascot's click target is a real window, not one of the layers
+        // below: the loop would drop the icon and leave an invisible rectangle
+        // eating clicks in the top-left corner of the screen forever.
+        peekHitPanel?.dismiss()
+        peekHitPanel = nil
         for (_, layer) in activeEffects {
             layer.removeAllAnimations()
             layer.removeFromSuperlayer()
