@@ -8581,6 +8581,21 @@ class EmojiAnimator {
 
     // MARK: - 🤖 Claude leans in from the left (⌘⌃Q)
 
+    /// The two mascots that take turns on ⌘⌃Q, in the order they arrive.
+    ///
+    /// One key, two agents: the room sees whichever one is not on screen at the
+    /// moment, so the wave stops being a Claude ad and becomes "the assistants",
+    /// which is what the course is actually about. Both are cut-out robots of
+    /// almost the same aspect (461×363 and 455×362), so `claudePeekFrame` sizes
+    /// them off the height and the two land the same size in the same spot —
+    /// they read as one character changing costume, not as two effects.
+    static let peekMascots = ["claude-icon", "copilot-icon"]
+
+    /// Whose turn it is. Advanced only when a mascot actually walks in, so a
+    /// press that dismisses one early does not burn its partner's turn — the
+    /// alternation is between *appearances*, not between keystrokes.
+    private var nextPeekMascot = 0
+
     /// How long the icon stays before it slides back out on its own.
     ///
     /// Short: this is a greeting, not a prop. The elephant is a picture that a
@@ -8614,10 +8629,13 @@ class EmojiAnimator {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
-    /// 🤖 The Claude Code icon slides in from the left, wiggles, and slides back
-    /// out. ⌘⌃Q, and nothing else — it started life as the garnish on that key's
-    /// Claude terminal and outlived it. It spent 2026-09-09 on ⌃⌥G and came back
-    /// when that pair became the third emoji board and G went to the goose.
+    /// 🤖 A mascot slides in from the left, wiggles, and slides back out. ⌘⌃Q,
+    /// and nothing else — it started life as the garnish on that key's Claude
+    /// terminal and outlived it. It spent 2026-09-09 on ⌃⌥G and came back when
+    /// that pair became the third emoji board and G went to the goose.
+    ///
+    /// **Claude and Copilot take turns** (`peekMascots`): press after press, one
+    /// then the other then the first again.
     ///
     /// It floats: a cut-out PNG with a real alpha channel over a click-through
     /// overlay, so what arrives is the mark itself and not a white rectangle
@@ -8638,12 +8656,14 @@ class EmojiAnimator {
     func showClaudePeek() {
         if activeEffects["claude-peek"] != nil { stopClaudePeek(); return }
 
-        guard let url = Bundle.module.url(forResource: "claude-icon", withExtension: "png"),
+        let mascot = Self.peekMascots[nextPeekMascot % Self.peekMascots.count]
+        guard let url = Bundle.module.url(forResource: mascot, withExtension: "png"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            overlayError("claude-icon.png is not in the bundle")
+            overlayError("\(mascot).png is not in the bundle")
             return
         }
+        nextPeekMascot = (nextPeekMascot + 1) % Self.peekMascots.count
 
         let bounds = hostLayer.bounds
         let frame = Self.claudePeekFrame(in: bounds, aspect: CGFloat(image.width) / CGFloat(image.height))
