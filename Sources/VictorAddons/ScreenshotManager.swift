@@ -94,8 +94,11 @@ enum ScreenshotManager {
     /// international room, and this one does not.
     private static let cropStyle = CropSelectionStyle(
         hint: "trage o zonă  ·  ⌘ mută  ·  ⌥ din centru  ·  Esc anulează",
-        movingSuffix: "✥ mut",
-        centeredSuffix: "⦿ centru")
+        // Both are on the readout for the whole drag now and light up only
+        // while the key is down, so they name the **key** rather than the effect
+        // — see `CropSelectionStyle.movingSuffix`.
+        movingSuffix: "⌘ mută",
+        centeredSuffix: "⌥ centru")
 
     /// Hold ⌃P (or the menu item) → the crosshair selection, then the same two
     /// destinations as a plain ⌃P: clipboard **and** a dated file.

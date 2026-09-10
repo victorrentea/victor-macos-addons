@@ -197,6 +197,38 @@ here: the volume is *already* being taken over and restored, so anything short
 of the top is just an arbitrary handicap on the one signal the feature exists to
 send.
 
+**And only onto silence (2026-09-10).** If any other app is running an output
+stream, the volume is left exactly where it is and the lub-dub plays at whatever
+the machine was set to. Taking a Mac that is *playing music* to 100% is not a
+louder proof, it is Victor's playlist at full blast — into a bag, or into the
+room the retina is projecting to. The old value is not captured either, so the
+boost is simply retried on the next tick: the moment the music stops, it happens
+by itself, with nobody deciding anything.
+
+The guard lives in `SystemAudioActivity.otherAppPlayingOutput()`, and **the
+always-open plumbing is the whole difficulty of the question**. Read naively,
+`kAudioProcessPropertyIsRunningOutput` says something is playing on this Mac
+*permanently*: measured on a silent machine, `com.rogueamoeba.audiohijack` and
+`ai.krisp.krispMac` both report 1 forever — Audio Hijack holds the `🔊OS Output`
+loopback open as a listener (the same latching the RMS detector in
+`CoreAudioManager` was written to get around) and Krisp keeps its virtual device
+open the same way. Left in, they would mean the heartbeat never once raises its
+volume. Neither is ever *the music*, so both are skipped by bundle prefix, and
+so is this app's own process — the arming lub-dub plays one line before the
+first tick asks the question, and it must not veto its own volume. A real player
+is caught: with one `afplay` running, its process and only it showed up beside
+those two.
+
+Why not the RMS tap that already exists: it measures the `🔊OS Output`
+aggregate, which is the music-mute path's device and not what a laptop in a
+rucksack is playing through. The process list needs no device to be present.
+The prefix list is a liability if some future app latches the flag the same way,
+so **the refusal is logged with the name of whoever caused it** ("`X` is playing
+— leaving the output volume where it is", once per streak, not six times a
+minute): one line says which app to add, instead of a boost that is quietly
+never applied again. `GET /test/audio/playing` reports it as `other_app_playing`
+next to the RMS numbers.
+
 Four things worth knowing about it:
 
 - **Raise only**, which at 100% now only ever means "already there". The guard

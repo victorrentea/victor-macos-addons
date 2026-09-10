@@ -1179,6 +1179,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             if let rms = probe.rms { payload["rms"] = rms }
             if let peak = probe.peak { payload["peak"] = peak }
             if let playing = probe.playing { payload["playing"] = playing }
+            // The other answer to "is anything playing": the one LidAwake's
+            // volume boost consults, which needs no loopback device and so
+            // works in a bag. Reported next to the RMS rather than instead of
+            // it, because they can legitimately disagree — an app that has an
+            // output stream open but is pushing silence reads as playing here
+            // and as silent there.
+            payload["other_app_playing"] = SystemAudioActivity.otherAppPlayingOutput() ?? ""
             if !probe.deviceFound {
                 payload["error"] = "device not found"
             } else if probe.rms == nil {

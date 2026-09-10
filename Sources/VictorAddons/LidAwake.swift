@@ -56,7 +56,9 @@ enum LidAwakeSettings {
 /// was before is remembered; the moment it stops, for any reason, that number
 /// goes back. The laptop is in a bag by then and nobody is going to reach in
 /// and turn it up, and the level it happened to be left at when the lid came
-/// down has nothing to do with how loud a bag needs. See `boostForBeats`.
+/// down has nothing to do with how loud a bag needs. **Only onto silence,
+/// though**: if another app is playing, the volume is left alone rather than
+/// turning the lid close into a full-blast concert. See `boostForBeats`.
 ///
 /// **It follows Claude, it does not just switch sleep off.** Every tick asks
 /// whether any Claude Code session is actually working (`ClaudeActivity` — a
@@ -168,6 +170,9 @@ final class LidAwake {
     /// The system volume as it was before the beats raised it — `nil` whenever we
     /// have not raised it, which is also what makes the restore idempotent.
     private var volumeBeforeBeats: Float?
+    /// Set while the boost is being refused because something else is playing,
+    /// so the reason is logged once per streak rather than six times a minute.
+    private var boostRefused = false
     /// Whether the audible pulse was running as of the last tick — the one
     /// input that tells a release owed five last beats from a release nobody
     /// could have heard (lid open, on AC, or never beating at all).
@@ -357,6 +362,13 @@ final class LidAwake {
     /// guard stays because it is what keeps the restore symmetric, and because
     /// the target is a constant that has moved once already.
     ///
+    /// **And only onto silence** (2026-09-10). If any other app is running an
+    /// output stream, the volume is left exactly where it is and the beats play
+    /// at that level: taking a machine that is *playing music* to 100% is not a
+    /// louder proof, it is Victor's playlist at full blast in a bag or in the
+    /// room. Nothing is captured either, so this is retried on every tick — the
+    /// moment the music stops, the boost happens by itself.
+    ///
     /// Restoring is one tick behind the lid, up to ten seconds: opening the lid is
     /// not an event this watches, the timer notices it. One loud beat may land in
     /// the room before the volume comes down, which is the same resolution the
@@ -367,12 +379,23 @@ final class LidAwake {
     /// is set to — the pulse is worth more than the level.
     private func boostForBeats(_ wanted: Bool) {
         if wanted {
-            guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get() else { return }
+            guard volumeBeforeBeats == nil else { return }
+            // Never raise the volume onto something that is already playing.
+            if let playing = SystemAudioActivity.otherAppPlayingOutput() {
+                if !boostRefused {
+                    boostRefused = true
+                    overlayInfo("LidAwake: \(playing) is playing — leaving the output volume where it is")
+                }
+                return
+            }
+            boostRefused = false
+            guard let current = SystemOutputVolume.get() else { return }
             volumeBeforeBeats = current
             guard current < Self.beatSystemVolume else { return }
             SystemOutputVolume.set(Self.beatSystemVolume)
             overlayInfo("LidAwake: output \(Int((current * 100).rounded()))% → \(Int(Self.beatSystemVolume * 100))% so the heartbeat carries")
         } else {
+            boostRefused = false
             guard let previous = volumeBeforeBeats else { return }
             volumeBeforeBeats = nil
             SystemOutputVolume.set(previous)
