@@ -3,31 +3,19 @@ import AVFoundation
 import Foundation
 import UserNotifications
 
-class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate, UNUserNotificationCenterDelegate {
-    private var overlayPanel: OverlayPanel!
-    private var auxOverlayPanels: [OverlayPanel] = []
-    private var animator: EmojiAnimator!
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var cursorGlow: CursorGlow!
-    private var progressBarOverlay: ProgressBarOverlay?
     /// 🏁 End-of-training sequence, armed from the tablet's 🏁 button.
     private let trainingEnd = TrainingEndSequence()
-    // buttonBar removed
     private var menuBarManager: MenuBarManager!
-    private var whipController: WhipController?  // 🔥 Whip Claude overlay (OFF by default)
     private let breakTimer = BreakTimerController()  // ☕️ Break countdown watch overlay
-    private var coffeeHoverTimer: Timer?             // polls the cursor vs floating ☕ layers
-    /// Menu-triggered desktop effects run for this fixed, sound-independent
-    /// duration (looping effects are stopped after it; one-shots keep their own
-    /// natural length). The tablet path keeps its sound-driven durations — see
-    /// `onEffect`. Arbitrary; tune freely.
-    private let menuEffectDuration: TimeInterval = 5.0
     private let serverURL: String
-    private var wsTask: URLSessionWebSocketTask?
-    private var session: URLSession!
-    private var reconnecting = false
-    private var wsConnected = false
-    private var pendingDisconnectError: DispatchWorkItem?
-    private let disconnectErrorDelay: TimeInterval = 3.0
+    /// Vestige of the outbound WebSocket this app used to open to the Railway
+    /// daemon. That code is gone (the daemon connects to *us* over
+    /// `LocalWebSocketServer`), so this is permanently false and the one thing
+    /// it still gates — the "slides not shared" notification — stays off, exactly
+    /// as it has been since the outbound socket stopped being started.
+    private let wsConnected = false
     private let pidFilePath: String
     private let myPID: Int32
     private var pidCheckTimer: Timer?
@@ -38,7 +26,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     private var keymapHoldWorkItem: DispatchWorkItem?
     private var transcriptPasteController: TranscriptPasteController?
     private var coreAudioManager: CoreAudioManager?
-    private var bluetoothKeepAlive: BluetoothKeepAlive?
     /// 🎵 Pushes the dictation window to the Chrome extension that pauses music.
     private var chromeBridge: ChromeBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
@@ -61,9 +48,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// Outbound WS to the Railway bridge — the tablet's last-resort internet
     /// transport when LAN Wi-Fi and USB both fail (public-Wi-Fi client isolation).
     private var railwayBridge: RailwayBridgeClient?
-    /// Last time the tablet hit /ping — feeds the tablet-sound watchdog.
-    private var lastTabletPingAt: Date?
-    private var tabletSoundWatchdog: Timer?
+    // The ping-loss watchdog (stop a tablet-routed sound when the tablet stops
+    // pinging) went to Victor Effects with the player it guards — that app sees
+    // every /ping through the proxy, so it keeps its own clock.
     private var pptMonitor: PowerPointMonitor?
     private var driveShareCache: GoogleDriveShareCache?
     private var portKiller: PortKiller?
@@ -140,6 +127,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         super.init()
     }
 
+    /// Percent-encode one value for a query string we hand to `EffectsProxy`.
+    /// `.urlQueryAllowed` leaves `&` and `=` alone, which is exactly wrong for a
+    /// VALUE, so those two are escaped by hand — an emoji needs it less than the
+    /// `glow` colour does, but both go through the same door.
+    static func queryEscaped(_ value: String) -> String {
+        (value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value)
+            .replacingOccurrences(of: "&", with: "%26")
+            .replacingOccurrences(of: "=", with: "%3D")
+            .replacingOccurrences(of: "+", with: "%2B")
+    }
+
     /// Used to tell a launch-time reopen event apart from a real user click.
     private let launchedAt = Date()
 
@@ -168,11 +166,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
-        let builtInScreen = AppDelegate.findRetinaScreen()
 
-        overlayPanel = OverlayPanel(screen: builtInScreen)
-        overlayPanel.orderFrontRegardless()
-        rebuildAuxOverlayPanels()
         let keymapOverlay = KeymapOverlayController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
         keymapOverlayController = keymapOverlay
         keymapHoldCoordinator = KeymapHoldCoordinator(
@@ -194,47 +188,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 keymapOverlay?.hide()
             }
         )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleScreensChanged),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-
-        guard let hostLayer = overlayPanel.contentView?.layer else {
-            fatalError("Content view has no layer")
-        }
-        animator = EmojiAnimator(hostLayer: hostLayer)
-        installCoffeeBreakHoverMonitor()
-        // Render the progress bar as a CALayer on the same host layer as the emoji
-        // effects (built-in Retina overlay) — a plain subview on this
-        // manually-populated layer-backed view does not composite.
-        progressBarOverlay = ProgressBarOverlay(hostLayer: hostLayer)
-        // No completion celebration: this bar is a neutral break/warm-up
-        // countdown the trainer may cancel mid-run (someone interrupts), so a
-        // confetti "reward" at the end is misleading. The bar just fills, then
-        // fades out (ProgressBarOverlay.fadeOut) — onComplete stays unset.
+        // 🏁 The end-of-training sequence draws on the shared yellow progress bar
+        // — which lives in Victor Effects now, so the countdown is three HTTP
+        // calls rather than three method calls. The sequence itself stays here
+        // because it listens to whisper's `VICTOR_VOICE` pulse for the 10 s of
+        // room silence that arms it.
         //
-        // 🏁 The end-of-training sequence borrows that same bar, with a finish flag
-        // riding its head. It does NOT hang its payoff on `onComplete`: the bar is
-        // shared, and a 3s press landing mid-countdown would otherwise inherit
-        // "over and out". The sequence's own tick owns the ending.
-        trainingEnd.onStartCountdown = { [weak self] seconds in
-            self?.progressBarOverlay?.start(seconds: seconds, rider: "🏁")
+        // The flag rides the bar's head as `?rider=`; it is percent-encoded
+        // rather than sent raw because the whole path is forwarded verbatim by
+        // the proxy and a bare 🏁 in a request line is asking for trouble.
+        trainingEnd.onStartCountdown = { seconds in
+            EffectsProxy.fire("/effect/progress-bar/\(Int(seconds))?rider=%F0%9F%8F%81")
         }
-        trainingEnd.onAbortCountdown = { [weak self] in
-            self?.progressBarOverlay?.cancel()
+        trainingEnd.onAbortCountdown = {
+            EffectsProxy.fire("/effect/progress-bar/stop")
         }
+        // Played here, not over HTTP: "over and out" is the last thing the room
+        // hears and it must not depend on a second process being up.
         trainingEnd.onFinish = {
-            SoundManager.shared.play("82_over_and_out.mp3")
+            AddonSounds.shared.play("82_over_and_out.mp3")
         }
 
-        // No outbound WebSocket: the addon only runs LocalWebSocketServer on
-        // 127.0.0.1 — the daemon (training-assistant) connects to interact.victorrentea.ro
-        // and pushes overlay events to us via that local socket. URLSession is still
-        // initialized (delegate hooks remain wired) but we never start a wsTask.
-        session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
-        // buttonBar removed — effects are now in the menu bar under Desktop Effects
         setupSignalHandler()
         transcriptionFolder = {
             if let env = ProcessInfo.processInfo.environment["TRANSCRIPTION_FOLDER"] {
@@ -244,11 +218,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }()
 
         let wsServer = LocalWebSocketServer()
-        wsServer.onEmoji = { [weak self] emoji, count, glow in
-            self?.overlayPanel?.refreshScreenFrame()
-            for _ in 0..<max(1, count) {
-                self?.animator.spawnEmoji(emoji, glow: glow)
-            }
+        // A participant tapped a reaction in Interact → it rains on the built-in
+        // screen, which Victor Effects owns since the split. One call carries the
+        // whole burst (`count`) so a 20-emoji cheer is one hop, not twenty.
+        wsServer.onEmoji = { emoji, count, glow in
+            var query = "e=\(Self.queryEscaped(emoji))&count=\(max(1, count))"
+            if let glow, !glow.isEmpty { query += "&glow=\(Self.queryEscaped(glow))" }
+            EffectsProxy.fire("/effect/emoji?\(query)")
         }
         wsServer.onClientCountChanged = { [weak self] count in
             self?.daemonConnected = (count > 0)
@@ -278,166 +254,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
 
         overlayInfo("Starting TabletHttpServer...")
         tabletServer = TabletHttpServer()
-        tabletServer?.onAlarmStart = { [weak self] in
-            self?.overlayPanel?.refreshScreenFrame()
-            self?.animator.startAlarmOverlay()
-        }
-        tabletServer?.onAlarmStop  = { [weak self] in self?.animator.stopAlarmOverlay() }
+        // /effect/* is Victor Effects' since the 2026-09 split — the proxy
+        // forwards it before this callback is ever reached. Only the three names
+        // whose payoff lives HERE arrive: see `TabletHttpServer.localEffectNames`.
         tabletServer?.onEffect = { [weak self] name in
-            // If a tablet-routed sound was just started on THIS Mac with
-            // Bluetooth compensation, delay the paired visual by the same amount
-            // so it stays in sync with the silence-prepended audio. 0 for
-            // stop/utility signals and on non-Bluetooth output → fires now.
-            // The green-flash is the VISUAL half of an audible "the link works"
-            // tap — the ⟳ button's click, the volume wedge's click — and the Mac
-            // plays those with the Bluetooth wake-up silence prepended. So it
-            // carries the same compensation as the beep it belongs to, instead
-            // of firing now: otherwise the border lit up to 1.2s before the
-            // sound reached the speaker, which reads as two separate events.
-            let comp = name == "green-flash"
-                ? SoundTimingConfig.shared.currentBluetoothCompensation
-                : SoundManager.consumePendingVisualCompensation(for: name)
-            let fire = {
-            self?.overlayPanel?.refreshScreenFrame()
             switch name {
-            case "earthquake":    self?.animator.showBrokenGlass(playSound: false)
-            case "explosion":     self?.animator.showExplosionGif(playSound: false)
-            case "game-over":     self?.animator.showGameOver()
-            case "broken-glass":  self?.animator.showBrokenGlass(playSound: false)
-            case "pulse":         self?.animator.startPulseOverlay(playSound: false)
-            case "pulse/stop":    self?.animator.stopPulseOverlay()
-            case "applause":      self?.animator.showApplause(playSound: false)
-            case "applause/stop": self?.animator.stopApplause()
-            case "heartbeat":     self?.animator.showHeartbeat()
-            case "spiral-hearts": self?.animator.showSpiralHearts()
-            case "spiral-hearts/stop": self?.animator.stopSpiralHearts()
-            case "fireworks":     self?.animator.showFireworks(playSound: false)
-            case "fear":          self?.animator.showFear(playSound: false)
-            case "fail":          self?.animator.showFail(playSound: false)
-            case "blood-drip":    self?.animator.showBloodDrip(playSound: false)
-            case "sonar":         self?.animator.showSonar(playSound: true)
-            case "sepia":         self?.animator.showSepia(playSound: false)
-            case "fire-alarm":      self?.animator.showFireAlarm(playSound: false)
-            case "bullet-holes":    self?.animator.showBulletHoles(playSound: false)
-            case "phone-ring":      self?.animator.showPhoneRing(playSound: false)
-            case "fbi-knock":       self?.animator.showFbiKnock(playSound: false)
-            // Beethoven owns its audio for the same reason the microwave does —
-            // the cue is INSIDE the clip — so unlike every other silent menu/test
-            // effect this one is fired WITH sound.
-            case "beethoven":       self?.animator.showBeethoven(playSound: true)
-            case "brother":         self?.animator.showBrother(playSound: false)
-            case "brother/stop":    self?.animator.stopBrother()
-            case "gangnam":         self?.animator.showGangnam(playSound: false)
-            case "gangnam/stop":    self?.animator.stopGangnam()
-            case "love-hands":      self?.animator.showLoveHands(playSound: false)
-            case "love-hands/stop": self?.animator.stopLoveHands()
-            case "star-wars":       self?.animator.showStarWars(playSound: false)
-            case "star-wars/stop":  self?.animator.stopStarWars()
-            case "gong":            self?.animator.showGong(playSound: false)
-            case "rainbow":         self?.animator.showRainbow(playSound: false)
-            case "rainbow/stop":    self?.animator.stopRainbow()
-            case "snow":            self?.animator.showSnow()
-            case "snow/stop":       self?.animator.stopSnow()
-            case "cavalry":         self?.animator.showCavalry(playSound: false)
-            case "counter-strike":  self?.animator.showCounterStrike(playSound: false)
-            case "wasnt-me":        self?.animator.showWasntMe(playSound: false)
-            case "chainsaw":        self?.animator.showChainsawCursor(playSound: false)
-            case "chainsaw/stop":   self?.animator.stopChainsawCursor()
-            case "fire":            self?.animator.showFireCursor(playSound: false)
-            case "fire/stop":       self?.animator.stopFireCursor()
-            // Like the sonar: the door's cue lives INSIDE the clip, so the effect
-            // owns its own audio rather than trusting a separate routed play to
-            // land on the same millisecond. (`/effect/microwave`, `/test/microwave`
-            // and the menu all reach it here.)
-            case "microwave":       self?.animator.showMicrowave(playSound: true)
-            case "wrong-x":         self?.animator.showWrongX(playSound: false)
-            case "drum-roll":       self?.animator.showDrumRoll(playSound: false)
-            case "drum-roll/stop":  self?.animator.stopDrumRoll()
-            case "phoenix":         self?.animator.showPhoenix()
-            case "money":           self?.animator.showMoneyRise()
-            case "iris":            self?.animator.showIrisClose()
-            case "minion":          self?.animator.showMinion()
-            case "elephant":        self?.animator.showElephant()
-            case "elephant/stop":   self?.animator.stopElephant()
-            case "focus-playlist":  self?.startFocusPlaylist()
-            case "claude-peek":     self?.animator.showClaudePeek()
-            case "claude-peek/stop": self?.animator.stopClaudePeek()
-            case "coffee":
-                // Test hook (/test/coffee): spawn a few rising ☕ so the hold-charge
-                // gesture can be exercised headlessly — hover one, hold 3s, watch it
-                // freeze, grow, and explode (starts the break, or shaves 1s off it).
-                for _ in 0..<3 { self?.animator.spawnEmoji("☕") }
-            case "coffee/pop":
-                // Test hook (/test/coffee/pop): skip the hold entirely — pop a fully
-                // charged ☕ mid-screen and run the whole payoff (pixel dissolve, then
-                // either the timer flying in from the blast or a −1 floating to it).
-                guard let self else { return }
-                if let at = self.animator.popCoffeeForTest() {
-                    if self.breakTimer.isShowing {
-                        self.flyMinuteToBreakTimer(from: at)
-                    } else {
-                        self.breakTimer.start(minutes: 10,
-                                              title: BreakTimerModel.untilBreakTitle,
-                                              sizeScale: 0.5,
-                                              zoomFrom: at)
-                    }
-                }
-            case "corner-confetti": self?.animator.spawnCornerConfetti()
-            case "game-over/stop":  self?.animator.stopGameOver()
-            case "green-flash":
-                // Tablet → Mac connectivity confirmation: green screenshot-style border
-                if let screen = ScreenCaptureFlash.builtInScreen {
-                    ScreenCaptureFlash.flash(on: screen, duration: 4.5, color: .systemGreen)
-                }
-            case "click":
-                // Audible tap — e.g. the tablet's ⟳ reconnect button, paired with
-                // the green-flash as "the link works" feedback.
-                SoundManager.shared.playOverlapping("click.wav", volume: 0.7)
             case "training-end":
                 // Tablet 🏁 — a toggle, so a change of mind (or an armed sequence
                 // with whisper stopped, which would otherwise see silence forever)
                 // can be called off from the same button.
                 self?.trainingEnd.toggle()
+            case "focus-playlist":
+                self?.startFocusPlaylist()
             case "stop-all":
-                SoundManager.shared.stopTabletSound()
                 // "Silence everything the tablet started" includes a 🎵
                 // soundtrack-only play — it has no tile of its own to press again.
                 VideoSoundtrackPlayer.shared.stop()
-                self?.animator.stopAllActiveEffects()
-                // Disarm before cancelling the bar: "silence everything" must not
-                // leave a sequence armed that would put the bar straight back up.
+                // Disarm before the bar is cancelled over the wire: "silence
+                // everything" must not leave a sequence armed that would put the
+                // bar straight back up. The effects half of stop-all is forwarded
+                // by `TabletHttpServer.respond` right after this returns, so the
+                // tablet's stop-all → play → pressed chain keeps its order.
                 self?.trainingEnd.disarm()
-                self?.progressBarOverlay?.cancel()
             default:
-                // Tablet timer: "progress-bar/<seconds>" grows a bar over N
-                // seconds; "progress-bar/stop" clears it.
-                if name.hasPrefix("progress-bar/") {
-                    let arg = String(name.dropFirst("progress-bar/".count))
-                    if arg == "stop" {
-                        self?.progressBarOverlay?.cancel()
-                    } else if let secs = Int(arg), secs > 0 {
-                        self?.progressBarOverlay?.start(seconds: TimeInterval(secs))
-                    }
+                break
+            }
+        }
+        // ☕ The coffee hold-charge gesture now runs in the effects app (it owns
+        // the floating ☕ and the cursor tick), and every explosion comes back
+        // here as one webhook, because the payoff — the break watch — never left.
+        tabletServer?.onEffectsEvent = { [weak self] type, params in
+            guard let self else { return }
+            switch type {
+            case "coffee-popped":
+                let at = CGPoint(x: Double(params["x"] ?? "") ?? NSEvent.mouseLocation.x,
+                                 y: Double(params["y"] ?? "") ?? NSEvent.mouseLocation.y)
+                if self.breakTimer.isShowing {
+                    // Each explosion sends a big red −1 floating to the clock, and
+                    // the minute comes off WHEN IT LANDS (keep popping coffees to
+                    // keep pulling the break closer). Deferring the deduction to the
+                    // arrival is what makes a cluster read as several minutes
+                    // converging on the watch instead of digits dropping by 3 while
+                    // confetti happened elsewhere.
+                    overlayInfo("☕ popped → −1m flying to the break")
+                    self.flyMinuteToBreakTimer(from: at)
+                } else {
+                    // The first explosion STARTS the 10-min "UNTIL BREAK" timer,
+                    // which grows into its corner out of that very blast over 2 s;
+                    // coffees that pop while it is still flying in find it showing
+                    // and send their minute after it.
+                    overlayInfo("☕ popped → starting 10-min UNTIL BREAK timer")
+                    self.breakTimer.start(minutes: 10,
+                                          title: BreakTimerModel.untilBreakTitle,
+                                          sizeScale: 0.5,
+                                          zoomFrom: at)
                 }
+            default:
+                overlayInfo("Unknown /effects/event type: \(type)")
             }
-            }
-            if comp > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + comp, execute: fire)
-            } else {
-                fire()
-            }
-        }
-        // Tablet reports EVERY sound press/stop by bare filename; the Mac owns
-        // the sound→effect mapping (SoundEffectMap) and dispatches through the
-        // same onEffect path so all sync/compensation logic is reused. Changing
-        // a mapping needs only a Mac rebuild — no tablet redeploy.
-        tabletServer?.onSoundPressed = { [weak self] file in
-            guard let effect = SoundEffectMap.pressEffect(for: file) else { return }
-            self?.tabletServer?.onEffect?(effect)
-        }
-        tabletServer?.onSoundStopped = { [weak self] file in
-            guard let effect = SoundEffectMap.stopEffect(for: file) else { return }
-            self?.tabletServer?.onEffect?(effect)
         }
         tabletServer?.onOpenUrl = { [weak self] url in
             self?.openUrlInChrome(url)
@@ -564,12 +438,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
                 return "{\"ok\":true}"
             }
         }
-        // Tablet → Mac sound routing: the tablet pings every 5s to detect the
-        // Mac and compares soundsHash to detect a stale Mac bundle; when its
-        // "MAC" toggle is pressed it routes soundboard playback here instead
-        // of playing locally (one sound at a time, new play preempts).
-        tabletServer?.onPing = { [weak self] in
-            self?.lastTabletPingAt = Date()
+        // The addons half of the merged /ping. The effects app answers /ping on
+        // 55124 with what it knows (soundsHash, tilesHash, its version) and the
+        // proxy splices this fragment onto it, so the tablet still reads ONE
+        // object and `MacLink` needed no change for the split. It is a raw
+        // fragment — leading comma, no braces — on purpose: the alternative,
+        // nesting it under a key, would have been a tablet release.
+        tabletServer?.onPingExtras = { [weak self] in
             // Carry the Mac's wall time so the tablet can render its clock in sync
             // with the system (its own device clock/timezone is often wrong while
             // travelling). We send both the absolute epoch (corrects a wrong clock)
@@ -598,156 +473,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // countdown runs out. Reporting it here is what keeps the chip from
             // going stale into an inverted toggle after the session actually ended.
             let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
-            return "{\"ok\":true,\"soundsHash\":\"\(SoundsManifest.combinedHash)\",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)}"
+            return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)"
         }
-        tabletServer?.onSoundsManifest = { SoundsManifest.manifestJSON }
-        tabletServer?.onSoundPlay = { [weak self] name, volumePct in
-            // The radar sound drives the full 🛰️ Sonar effect (animation + its own
-            // beep-synced audio) instead of plain routed playback — the Mac owns
-            // this one, so we don't ALSO play it via playTabletSound.
-            if name == "23_radar.mp3" {
-                self?.animator.showSonar(playSound: true)
-                return "{\"ok\":true,\"durationMs\":5459}"
-            }
-            // Tile #53 ("53_rain.mp3") was repurposed into 💸 Money: every press
-            // fires one round of dollars rising up the screen and plays the
-            // checkmark "ching" (#57) instead of the original rain. Driven from
-            // the routed play path (like the radar) and kept OUT of
-            // SoundEffectMap so a single press = a single ching + a single round
-            // (no double-trigger); repeated presses stack overlapping rounds.
-            if name == "53_rain.mp3" {
-                self?.animator.showMoneyRise()
-                let volume = volumePct.map { Float($0) / 100 }
-                // Layer the ching (overlapping pool) instead of preempting, so
-                // hammering the tile STACKS overlapping chings to match the
-                // stacking rounds of rising dollars — rather than each press
-                // cutting the previous sound off.
-                guard let duration = SoundManager.shared.playOverlappingTabletSound("57_checkmark.mp3", volume: volume) else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            // Tile #31 (🕳️ iris close): formerly silent by design — now plays the
-            // dramatic gong (`50_gong.mp3`, ~8.6s ≈ the iris length) so EVERY
-            // tablet thumbnail is audible on the Mac. The blackout visual is still
-            // driven by the press path (SoundEffectMap: 31_tarzan.mp3 → "iris").
-            if name == "31_tarzan.mp3" {
-                let volume = volumePct.map { Float($0) / 100 }
-                guard let duration = SoundManager.shared.playTabletSound("50_gong.mp3", volume: volume) else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            // Tile #61 (🍽️ dinner → ⏲️ kitchen timer): the timer ticks at a closed
-            // microwave and the door swings open ON the BING. The door's cue is a
-            // fixed offset INSIDE the clip (2.695s), so the visual and the audio
-            // must start from the same call — like the radar — or a routed-press
-            // round trip would slide the swing off its bell. Kept OUT of
-            // SoundEffectMap so the press path can't fire it a second time.
-            if name == "61_dinner.mp3" {
-                let volume = volumePct.map { Float($0) / 100 }
-                let duration = self?.animator.showMicrowave(playSound: true, volume: volume) ?? 0
-                guard duration > 0 else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            // Tile #13 (💓 Heartbeat): the Mac plays the clip AND stamps the pulse
-            // clock in this one call, like the radar and the microwave. The zoom
-            // peaks on each measured onset, which only works if sound and visual
-            // share an origin — a press-path visual paired with a separate audio
-            // request cannot. Kept OUT of SoundEffectMap so the press can't fire
-            // it a second time.
-            if name == "13_heartbeat.mp3" {
-                let volume = volumePct.map { Float($0) / 100 }
-                guard let duration = self?.animator.showHeartbeat(playSound: true, volume: volume),
-                      duration > 0 else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            // Tile #64 (🚪 FBI): same deal as the heartbeat — the Mac plays the
-            // clip AND stamps the knock clock in this one call. The screen has to
-            // lurch ON each door bang, and the first is 22ms into the clip, which
-            // no press-path visual waiting on its own screencapture can hit.
-            // Kept OUT of SoundEffectMap so the press can't fire it a second time.
-            if name == "64_fbi.mp3" {
-                let volume = volumePct.map { Float($0) / 100 }
-                guard let duration = self?.animator.showFbiKnock(playSound: true, volume: volume),
-                      duration > 0 else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            // Tile #51 (🎼 Beethoven): the Mac plays the clip AND stamps the zoom
-            // clock in this one call, like the heartbeat and the FBI. Six hits
-            // 0.11 s apart cannot survive a press-path visual clocked separately
-            // from the audio. Kept OUT of SoundEffectMap so the press can't fire
-            // it a second time.
-            if name == "51_beethoven.mp3" {
-                let volume = volumePct.map { Float($0) / 100 }
-                guard let duration = self?.animator.showBeethoven(playSound: true, volume: volume),
-                      duration > 0 else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            // Tile #34 (🔥 Phoenix): the Mac owns the phoenix cry (`phoenix.mp3`,
-            // played inside showPhoenix, faded in unison with the visual). The
-            // tablet's `34_phoenix.mp3` is a silent placeholder, so skip routed
-            // playback here — the press path (SoundEffectMap: 34_phoenix.mp3 →
-            // "phoenix") drives both the visual and the real sound.
-            // Report the phoenix's ON-SCREEN life (not the silent placeholder's ~0),
-            // exactly like the minion below: tile #34 carries no ↻ restartable badge,
-            // so the tablet's stop-on-re-tap only works while it still considers the
-            // tile "playing" — a 1ms answer ended that window instantly and every
-            // re-tap restarted the bird.
-            if name == "34_phoenix.mp3" {
-                return "{\"ok\":true,\"durationMs\":\(Int(EmojiAnimator.phoenixDuration * 1000))}"
-            }
-            // Tile #80 (🍌 badumtss → animated minion crowd): SILENT by design —
-            // play NOTHING here. The looping minion crowd is driven by the press
-            // path (SoundEffectMap: 80_badumtss.mp3 → "minion"). Return the minion's
-            // on-screen duration so the NON-restartable tile stays "playing" for that
-            // window: a re-tap within it fires /effect/stop-all (which tears the
-            // tracked minion layer down) instead of restarting — that's the
-            // "stop when pressed again". Unlike radar/money, this branch does NOT
-            // trigger the effect (the press path already does).
-            if name == "80_badumtss.mp3" {
-                return "{\"ok\":true,\"durationMs\":\(Int(EmojiAnimator.minionDuration * 1000))}"
-            }
-            // Tile #27 (👏 Applause): play the clapping clip 30% SHORTER — the Mac
-            // clips `27_clapping.mp3` to 70% of its length (fading the tail out)
-            // so the audible clapping matches the trimmed GIF visual. Return the
-            // clipped duration so the tablet's effect-stop chain lines up. The
-            // visual is still driven by the press path (SoundEffectMap → "applause").
-            if name == "27_clapping.mp3" {
-                let volume = volumePct.map { Float($0) / 100 }
-                guard let duration = SoundManager.shared.playTabletSoundClipped("27_clapping.mp3", fraction: 0.7, volume: volume) else { return nil }
-                return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-            }
-            let volume = volumePct.map { Float($0) / 100 }
-            guard let duration = SoundManager.shared.playTabletSound(name, volume: volume) else { return nil }
-            return "{\"ok\":true,\"durationMs\":\(Int(duration * 1000))}"
-        }
-        tabletServer?.onSoundVolume = { pct in
-            SoundManager.shared.setTabletVolume(Float(pct) / 100)
-        }
-        tabletServer?.onSoundStop = { SoundManager.shared.stopTabletSound() }
-        // Bluetooth wake-up compensation slider (tablet header). The tablet owns
-        // the persisted value and re-pushes it on every (re)connect, so the Mac
-        // just applies whatever it's told; the file default seeds the tablet's
-        // slider the first time via the GET below.
-        tabletServer?.onBtCompensationGet = {
-            let ms = Int((SoundTimingConfig.shared.effectiveBluetoothCompensationSeconds * 1000).rounded())
-            let maxMs = Int((SoundTimingConfig.maxCompensationSeconds * 1000).rounded())
-            return "{\"ms\":\(ms),\"maxMs\":\(maxMs)}"
-        }
-        tabletServer?.onBtCompensationSet = { ms in
-            SoundTimingConfig.shared.setBluetoothCompensation(seconds: Double(ms) / 1000.0)
-            let applied = Int((SoundTimingConfig.shared.effectiveBluetoothCompensationSeconds * 1000).rounded())
-            return "{\"ok\":true,\"ms\":\(applied)}"
-        }
-        // Watchdog: if the tablet stops pinging (crash, network drop) while a
-        // tablet-routed sound is playing, stop it — otherwise a long sound
-        // would blare on with no way to stop it from the tablet.
-        tabletSoundWatchdog = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self, SoundManager.shared.isTabletSoundPlaying,
-                  let last = self.lastTabletPingAt, Date().timeIntervalSince(last) > 12 else { return }
-            overlayInfo("Tablet ping lost >12s — stopping tablet-routed sound")
-            SoundManager.shared.stopTabletSound()
-        }
-        // Warm up the sounds manifest (~15MB of SHA-256) off the main thread
-        // so the first /ping doesn't pay for it.
-        DispatchQueue.global(qos: .utility).async { _ = SoundsManifest.combinedHash }
         tabletServer?.onPromptCapture = { [weak self] prompt in
             guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
             guard self.isSessionActive else {
@@ -1137,10 +864,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             let stamp = at.flatMap(TranscriptTail.parseMoment)
             DispatchQueue.main.async { self?.transcriptPasteController?.trigger(pretendItIs: stamp) }
         }
-        tabletServer?.onTestWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
-        tabletServer?.onTestWhipCrack = { [weak self] in
-            DispatchQueue.main.async { self?.whipController?.forceCrack() }
-        }
         // /test/projector — force-apply the display arrangement now and return a
         // JSON snapshot of what was detected + applied. The HTTP route switch
         // already runs inside `DispatchQueue.main.sync`, so this callback is
@@ -1229,89 +952,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             }
             return json
         }
-        menuBarManager.onDesktopEffect = { [weak self] name in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                // When the Mac's own output is Bluetooth, warm the A2DP link and
-                // shift the WHOLE effect later by the compensation, so the
-                // leading edge isn't clipped. Zero on non-Bluetooth output →
-                // fires immediately, exactly as before.
-                let comp = SoundTimingConfig.shared.currentBluetoothCompensation
-                if comp > 0 { BluetoothOutput.playWakeTone(seconds: comp) }
-                let fire = {
-                self.overlayPanel?.refreshScreenFrame()
-                // Menu-triggered effects are SILENT (`playSound: false`) and run
-                // for a fixed, sound-independent duration: looping effects are
-                // stopped after `menuEffectDuration`; one-shots keep their own
-                // natural length. (The tablet path — onEffect — still derives
-                // duration from the routed sound.)
-                let stopAfter: (@escaping () -> Void) -> Void = { stop in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + self.menuEffectDuration, execute: stop)
-                }
-                switch name {
-                case "heart":        self.animator.spawnEmoji("❤️")
-                case "confetti":     self.animator.spawnConfetti()
-                case "zorro":        self.animator.showZorro()
-                case "fear":         self.animator.showFear(playSound: false)
-                case "fail":         self.animator.showFail(playSound: false)
-                case "sepia":        self.animator.showSepia(playSound: false)
-                case "fireworks":    self.animator.showFireworks(playSound: false)
-                case "applause":     self.animator.showApplause(playSound: false); stopAfter { self.animator.stopApplause() }
-                case "heartbeat":    self.animator.showHeartbeat()
-                case "spiral-hearts": self.animator.showSpiralHearts(); stopAfter { self.animator.stopSpiralHearts() }
-                case "explosion":    self.animator.showExplosionGif(playSound: false)
-                case "broken-glass": self.animator.showBrokenGlass(playSound: false)
-                case "game-over":    self.animator.showGameOver(); stopAfter { self.animator.stopGameOver() }
-                case "pulse":        self.animator.startPulseOverlay(playSound: false); stopAfter { self.animator.stopPulseOverlay() }
-                case "fire-alarm":       self.animator.showFireAlarm(playSound: false)
-                case "bullet-holes":    self.animator.showBulletHoles(playSound: false)
-                case "phone-ring":      self.animator.showPhoneRing(playSound: false)
-                case "fbi-knock":       self.animator.showFbiKnock(playSound: false)
-                // With sound, like the microwave below: the whole gag is the zoom
-                // landing on the motif, and a silent run has nothing to land on.
-                case "beethoven":       self.animator.showBeethoven(playSound: true)
-                case "brother":         self.animator.showBrother(playSound: false); stopAfter { self.animator.stopBrother() }
-                case "gangnam":         self.animator.showGangnam(playSound: false); stopAfter { self.animator.stopGangnam() }
-                case "love-hands":      self.animator.showLoveHands(playSound: false); stopAfter { self.animator.stopLoveHands() }
-                case "star-wars":       self.animator.showStarWars(playSound: false); stopAfter { self.animator.stopStarWars() }
-                case "gong":            self.animator.showGong(playSound: false)
-                case "rainbow":         self.animator.showRainbow(playSound: false); stopAfter { self.animator.stopRainbow() }
-                case "snow":            self.animator.showSnow(); stopAfter { self.animator.stopSnow() }
-                case "cavalry":         self.animator.showCavalry(playSound: false)
-                case "counter-strike":  self.animator.showCounterStrike(playSound: false)
-                case "wasnt-me":        self.animator.showWasntMe(playSound: false)
-                // No stopAfter: it self-stops at 18_chainsaw.mp3's length, so a
-                // silent menu run lasts exactly as long as the tablet one.
-                case "chainsaw":        self.animator.showChainsawCursor(playSound: false)
-                // Same deal, and the menu run is where Escape earns its keep: no
-                // tablet is involved, so Escape is the only early way out of the
-                // 36 s the clip would otherwise run for.
-                case "fire":            self.animator.showFireCursor(playSound: false)
-                // The one menu effect that is NOT silent: the whole gag is the
-                // door opening on the BING, so a soundless microwave would just
-                // sit there for 2.7s and then open for no reason.
-                case "microwave":       self.animator.showMicrowave(playSound: true)
-                case "wrong-x":         self.animator.showWrongX(playSound: false)
-                case "drum-roll":       self.animator.showDrumRoll(playSound: false); stopAfter { self.animator.stopDrumRoll() }
-                case "phoenix":         self.animator.showPhoenix()
-                case "money":           self.animator.showMoneyRise()
-                case "iris":            self.animator.showIrisClose()
-                case "laugh":           self.animator.showLaugh()
-                case "corner-confetti": self.animator.spawnCornerConfetti()
-                case "green-flash":
-                    if let screen = ScreenCaptureFlash.builtInScreen {
-                        ScreenCaptureFlash.flash(on: screen, duration: 4.5, color: .systemGreen)
-                    }
-                default: break
-                }
-                }
-                if comp > 0 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + comp, execute: fire)
-                } else {
-                    fire()
-                }
-            }
-        }
         menuBarManager.onOpenCalendar = { [weak self] in
             DispatchQueue.main.async {
                 self?.openUrlInChrome("https://calendar.google.com/", target: .screenUnderMouse,
@@ -1368,7 +1008,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
 
         // Initialize join link banner
-        joinLinkBanner = JoinLinkBanner(screen: builtInScreen)
+        joinLinkBanner = JoinLinkBanner(screen: AppDelegate.findRetinaScreen())
         statusBanner = StatusBanner(screensProvider: { NSScreen.screens })
         silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.screens })
         bellCard = BellCard(screensProvider: { NSScreen.screens })
@@ -1439,14 +1079,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { portKiller.kill(port: port) }
         }
         menuBarManager.onKillPortPrompt = { portKiller.showPortPrompt() }
-
-        // 🔥 Whip Claude — toggle the playful "interrupt Claude" overlay. ⌃W shows
-        // it; a second ⌃W (or Esc) dismisses it.
-        menuBarManager.onWhip = { [weak self] in
-            DispatchQueue.main.async {
-                self?.toggleWhip()
-            }
-        }
 
         // ☕️ Break — start/reset the countdown watch overlay for the chosen duration.
         // (The break no longer auto-launches the training-summary delta; that run is
@@ -1582,10 +1214,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
         audioManager.start()
 
-        let btKeepAlive = BluetoothKeepAlive()
-        self.bluetoothKeepAlive = btKeepAlive
-        btKeepAlive.start()
-
         let btAutoOutput = BluetoothAutoOutput()
         self.bluetoothAutoOutput = btAutoOutput
         btAutoOutput.start()
@@ -1632,12 +1260,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             DispatchQueue.global(qos: .userInitiated).async { PowerPointStrikethrough.toggle() }
         }
         eventTap.onTileTerminals = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }
-        eventTap.onWhip = { [weak menuBarManager] in menuBarManager?.onWhip?() }
-        eventTap.onWhipCrack = { [weak self] in self?.whipController?.forceCrack() }
         eventTap.onClaudeWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openDreamPlainWorkspace() }
         }
-        eventTap.onClaudeMascotHotkey = { [weak self] in
+        eventTap.onClaudeMascotHotkey = {
             // ⌘⌃Q, and the mascot is the whole key (2026-09-09). It began as the
             // garnish on that key's permissions-bypassed Claude Terminal — the
             // wave filled the moment before the window appeared — and lost the
@@ -1646,13 +1272,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             // a day, to ⌃⌥G, until ⌃⌥ became the emoji board on 2026-09-10 and
             // the goose wanted G back.
             //
-            // Same pinning as the elephant: this draws into the overlay panel's
-            // layer tree, which lives on the built-in Retina, so the frame is
-            // refreshed first.
-            DispatchQueue.main.async {
-                self?.overlayPanel?.refreshScreenFrame()
-                self?.animator.showClaudePeek()
-            }
+            // Same as the elephant: the drawing lives in Victor Effects now, so
+            // the key is one fire-and-forget GET. Nothing is reported when that
+            // app is down — a mascot that doesn't wave is not worth a banner
+            // mid-workshop.
+            EffectsProxy.fire("/effect/claude-peek")
         }
         eventTap.onPlainTerminalHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openPlainTerminalWorkspace() }
@@ -1681,14 +1305,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         eventTap.onPasteEmail = {
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.email) }
         }
-        eventTap.onShowElephant = { [weak self] in
-            // Straight to main: this draws into the overlay panel's layer tree,
-            // and the panel is pinned to the built-in screen, so its frame is
-            // refreshed first exactly as the tablet's effect path does.
-            DispatchQueue.main.async {
-                self?.overlayPanel?.refreshScreenFrame()
-                self?.animator.showElephant()
-            }
+        eventTap.onShowElephant = {
+            // The elephant draws on the built-in Retina, which Victor Effects
+            // owns since the split — the key stays here, its pixels do not.
+            EffectsProxy.fire("/effect/elephant")
         }
         eventTap.onPasteCompanyDetails = {
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.companyDetails) }
@@ -2074,56 +1694,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         }
     }
 
-    // MARK: - Coffee-hover → "until break" timer
+    // MARK: - ☕ Coffee pop → "until break" timer
 
     /// Resting the cursor on a floating ☕ (that participants fire) FREEZES it and
-    /// starts a hold-charge: it stops rising and grows for 3s, then explodes. We POLL
-    /// the mouse-vs-coffee overlap (0.1s) rather than watch `.mouseMoved`, so a
-    /// deliberate hold registers even with a perfectly still cursor. The 3-second
-    /// hold — not a mere graze — is what triggers the payoff, so it can now run even
-    /// while a break is up without accidental firing. EVERY coffee under the cursor
-    /// inflates at once, and the tick reports WHERE each one actually EXPLODED:
-    ///   • no break showing → the first explosion STARTS the 10-min "UNTIL BREAK"
-    ///     timer, which grows into its corner out of that very blast over 2s (any
-    ///     further ones in the same tick then fly their minute at it);
-    ///   • break already running → each explosion sends a big red **−1** floating to
-    ///     the clock, and the minute comes off WHEN IT LANDS (keep popping coffees to
-    ///     keep pulling the break closer).
+    /// starts a hold-charge: it stops rising and grows for 3s, then explodes.
     ///
-    /// The deduction is deliberately deferred to the token's arrival rather than
-    /// applied here: the number arriving is then the deduction itself, so a cluster
-    /// of coffees popping at once reads as several minutes converging on the watch
-    /// instead of digits that dropped by 3 while confetti happened elsewhere.
-    private func installCoffeeBreakHoverMonitor() {
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let exploded = self.animator?.tickCoffeeCharge(cursorGlobalPoint: NSEvent.mouseLocation) ?? []
-            guard !exploded.isEmpty else { return }
-            var pending = exploded
-            if !self.breakTimer.isShowing {
-                let origin = pending.removeFirst()
-                overlayInfo("☕ x\(exploded.count) exploded → starting 10-min UNTIL BREAK timer")
-                self.breakTimer.start(minutes: 10,
-                                      title: BreakTimerModel.untilBreakTitle,
-                                      sizeScale: 0.5,
-                                      zoomFrom: origin)
-            } else {
-                overlayInfo("☕ x\(exploded.count) exploded → −\(exploded.count)m flying to the break")
-            }
-            // Coffees that ripened on the same tick still count: the first one opened
-            // the timer, the rest send their minute after it (they land while it is
-            // still flying in, and the token tracks it there).
-            for point in pending { self.flyMinuteToBreakTimer(from: point) }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        coffeeHoverTimer = t
-    }
+    /// **The gesture moved, the payoff did not.** The coffees, the 10 Hz
+    /// cursor-vs-layer tick and the explosion all live in Victor Effects now,
+    /// because that is where the pixels are; each explosion arrives back here as
+    /// one `GET /effects/event?type=coffee-popped&x=&y=` (see `onEffectsEvent`),
+    /// because the break watch never left. A webhook per pop, rather than a
+    /// batch per tick, is why the "first one starts the timer, the rest fly
+    /// their minute at it" rule now reads off `breakTimer.isShowing` — which the
+    /// first event has already flipped by the time the second arrives.
 
     /// Send one exploded coffee's minute to the break timer: a "−1" floats from the
     /// blast to wherever the watch is at that moment, shrinking as it closes in, and
     /// the countdown loses the minute (with a flash + a nudge) only once it arrives.
     private func flyMinuteToBreakTimer(from point: CGPoint) {
-        animator?.flyMinuteToken(
+        MinuteToken.shared.fly(
             fromGlobal: point,
             targetGlobal: { [weak self] in self?.breakTimer.tokenTargetGlobal },
             onArrival: { [weak self] in
@@ -2181,7 +1770,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
     /// parent-died paths. Kills any subprocesses we own so the new instance
     /// does not have to fight orphans. Safe to call multiple times.
     func tearDownForReplacement() {
-        wsTask?.cancel(with: .goingAway, reason: nil)
         whisperManager?.killImmediate()
     }
 
@@ -2309,105 +1897,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         return false
     }
 
-    // MARK: - WebSocket
-
-    private func connectWebSocket() {
-        reconnecting = false
-        wsTask?.cancel(with: .goingAway, reason: nil)
-        let wsURL = serverURL.replacingOccurrences(of: "http://", with: "ws://")
-                             .replacingOccurrences(of: "https://", with: "wss://")
-        guard let url = URL(string: "\(wsURL)/ws/__overlay__") else {
-            overlayError("Invalid server URL: \(serverURL)")
-            return
-        }
-        overlayInfo("Connecting to \(url.absoluteString)...")
-        wsTask = session.webSocketTask(with: url)
-        wsTask?.resume()
-    }
-
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
-                    didOpenWithProtocol protocol: String?) {
-        wsConnected = true
-        cancelPendingDisconnectError()
-        overlayInfo("WebSocket connected to daemon")
-        let msg = "{\"type\":\"set_name\",\"name\":\"Overlay\"}"
-        wsTask?.send(.string(msg)) { error in
-            if let error = error {
-                overlayError("Handshake failed: \(error.localizedDescription)")
-            } else {
-                overlayInfo("Handshake sent (set_name: Overlay)")
-            }
-        }
-        receiveMessage()
-    }
-
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
-                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        wsConnected = false
-        scheduleDisconnectError()
-        scheduleReconnect()
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            wsConnected = false
-            overlayError("WebSocket connection failed: \(error.localizedDescription)")
-            scheduleDisconnectError()
-            scheduleReconnect()
-        }
-    }
-
-    private func receiveMessage() {
-        wsTask?.receive { [weak self] result in
-            switch result {
-            case .success(let message):
-                switch message {
-                case .string(let text):
-                    self?.handleMessage(text)
-                default:
-                    break
-                }
-                self?.receiveMessage()
-            case .failure:
-                self?.wsConnected = false
-                self?.scheduleDisconnectError()
-                self?.scheduleReconnect()
-            }
-        }
-    }
-
-    private func handleMessage(_ text: String) {
-        guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String else {
-            return
-        }
-
-        if type == "emoji_reaction", let emoji = json["emoji"] as? String {
-            DispatchQueue.main.async { [weak self] in
-                self?.overlayPanel?.refreshScreenFrame()
-                self?.animator.spawnEmoji(emoji)
-            }
-        } else if type == "confetti" {
-            DispatchQueue.main.async { [weak self] in
-                self?.overlayPanel?.refreshScreenFrame()
-                self?.animator.spawnConfetti()
-            }
-        } else if type == "session_started" {
-            // WebSocket message format: {"type": "session_started", "participant_url": "...", "session_folder": "..."}
-            if let url = json["participant_url"] as? String {
-                let folder = json["session_folder"] as? String
-                DispatchQueue.main.async { [weak self] in
-                    self?.handleSessionStarted(participantUrl: url, sessionFolder: folder)
-                }
-            }
-        } else if type == "session_ended" {
-            // WebSocket message format: {"type": "session_ended"}
-            DispatchQueue.main.async { [weak self] in
-                self?.handleSessionEnded()
-            }
-        }
-    }
+    // MARK: - Session lifecycle
+    //
+    // There is no outbound WebSocket here and hasn't been for a long time: the
+    // training-assistant daemon connects to interact.victorrentea.ro itself and
+    // pushes into `LocalWebSocketServer` on 127.0.0.1, which is where the two
+    // handlers below are called from (`onSessionMessage` / `onClientCountChanged`).
+    // The dial-out half — `connectWebSocket`, the reconnect ladder, the
+    // `URLSessionWebSocketDelegate` conformance and the `emoji_reaction` /
+    // `confetti` message handling — was dead code kept alive by its own
+    // scheduler and was removed with the effects extraction in 2026-09.
 
     private func handleSessionStarted(participantUrl: String, sessionFolder: String?) {
         isSessionActive = true
@@ -2438,71 +1937,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
             return String(url.dropFirst(7))
         }
         return url
-    }
-
-    // MARK: - Multi-screen status overlays
-    //
-    // Status banners (9 a.m. "started", 6 p.m. countdown, battery
-    // pause/resume, final "stopped") render on **every** connected screen
-    // so a glance at any display surfaces them. Emoji animations stay on
-    // the built-in panel only.
-
-    /// All panels eligible to host status banners — built-in + every
-    /// connected external display.
-    fileprivate func allStatusOverlayPanels() -> [OverlayPanel] {
-        var result: [OverlayPanel] = []
-        if let main = overlayPanel { result.append(main) }
-        result.append(contentsOf: auxOverlayPanels)
-        return result
-    }
-
-    /// Recreate one transparent overlay panel per non-built-in screen.
-    /// Safe to call repeatedly — also tears down stale panels.
-    private func rebuildAuxOverlayPanels() {
-        for p in auxOverlayPanels {
-            p.orderOut(nil)
-        }
-        auxOverlayPanels.removeAll()
-
-        let builtIn = AppDelegate.findRetinaScreen()
-        let builtInID = builtIn.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-        for screen in NSScreen.screens {
-            let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-            if id == builtInID { continue }
-            let panel = OverlayPanel(screen: screen)
-            panel.orderFrontRegardless()
-            auxOverlayPanels.append(panel)
-        }
-        overlayInfo("Aux overlay panels rebuilt: \(auxOverlayPanels.count) external screen(s)")
-    }
-
-    @objc private func handleScreensChanged() {
-        rebuildAuxOverlayPanels()
-    }
-
-    /// Toggle the 🔥 Whip Claude overlay on the screen under the cursor. ⌃W is a
-    /// toggle: a first press shows it, a second press dismisses it via the exact
-    /// same path as Esc — handy when you can't reach Esc mid-whip. The show edge
-    /// never types; the whip's Ctrl+C + scold macro only fires on a mouse click
-    /// while the overlay is up (WhipController.handleClick), and it lands in
-    /// whatever app currently has keyboard focus (keep Claude focused). So
-    /// dismissing never types — only the show→click flow does.
-    private func toggleWhip() {
-        if let controller = whipController, controller.isShowing {
-            controller.hide()   // same dismiss path as Esc — no typing on this edge
-            return
-        }
-        let controller = whipController ?? WhipController()
-        whipController = controller
-        controller.onEscape = { [weak self] in
-            self?.whipController?.hide()
-        }
-        // Tell the event tap when the overlay is up so Enter / the extra mouse
-        // button can crack it (see EventTapManager.whipOverlayShowing).
-        controller.onVisibilityChanged = { [weak self] showing in
-            self?.eventTapManager?.whipOverlayShowing = showing
-        }
-        controller.show()
     }
 
     /// The screen the cursor is on, with the same fallbacks the Chrome openers
@@ -2867,31 +2301,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, URLSessionWebSocketDelegate,
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
         }
-    }
-
-    private func scheduleReconnect() {
-        guard !reconnecting else { return }
-        reconnecting = true
-        wsTask?.cancel(with: .goingAway, reason: nil)
-        wsTask = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            self?.connectWebSocket()
-        }
-    }
-
-    private func scheduleDisconnectError() {
-        guard pendingDisconnectError == nil else { return }
-        let work = DispatchWorkItem { [weak self] in
-            self?.pendingDisconnectError = nil
-            overlayError("WebSocket not connected")
-        }
-        pendingDisconnectError = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + disconnectErrorDelay, execute: work)
-    }
-
-    private func cancelPendingDisconnectError() {
-        pendingDisconnectError?.cancel()
-        pendingDisconnectError = nil
     }
 
     // MARK: - Permissions
