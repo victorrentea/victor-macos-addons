@@ -64,6 +64,79 @@ What does *not* follow, and was believed briefly on synthetic audio: that long c
 - **Arming it for a morning nobody will be at the laptop**: `arm-raw-recording.sh` + a one-shot LaunchAgent. It writes the flag and then kills whisper, because whisper reads `WHISPER_RECORD_RAW` at launch and the flag alone changes nothing — the 60 s heartbeat in `TranscriptionController` brings the process back with recording on, so no other component has to know the job exists. On battery there is no whisper to kill and the flag simply waits for AC. It unloads itself and deletes its own plist after firing: a job that quietly returns a year later to record a room is what this feature is careful not to be.
 - `WHISPER_RECORD_RAW=all` also records the loopback channel, which in a hybrid room is clean ground truth for the remote speakers (the mic is not).
 
+## 🎓 Voice corpus (`WHISPER_VOICE_CORPUS`) — utterance WAVs, all workday
+
+**A second recorder, and the difference from 🔴 above is the unit.** That one keeps
+a whole day in one undifferentiated PCM so the *gate* can be studied afterwards;
+this one keeps **one WAV per sentence**, only while somebody is talking, only
+inside a work window, and it is meant to stand for months. `corpus_recorder.py`,
+tapped into `_ChannelCapture._cb` beside the raw recorder, **Victor's channel
+only** — the audience channel is the Zoom loopback, i.e. other people's voices,
+which is the wrong training data for a model fine-tuned on one speaker.
+
+**Why it exists, and why it is collection rather than harvesting.** The teacher
+is Wispr Flow, whose database keeps every transcript for ever and prunes the
+matching **recording** after about a week — 12,186 transcripts against 185
+recordings on 2026-09-01, i.e. 98 % of the material it has ever produced is text
+with no audio and useless for training. `walkie-talkie/helpers/corpus_harvest.py`
+can therefore never reach past the last seven days. Recording the microphone here
+inverts the dependency: the audio is ours and keeps, and the label is asked for
+afterwards — see `walkie-talkie/docs/teacher-loopback.md`, which is the other
+half of this and the go/no-go it rests on.
+
+- **The state is a file, like the raw flag**: `addons-output/.collect-voice-corpus`
+  (`VoiceCorpusRecording`), read by whisper **at launch**, so the menu toggle
+  bounces the process through `TranscriptionController` exactly as 🔴 does. A
+  **separate** switch from the raw one on purpose: arming a workshop's raw
+  capture must not silently start a months-long corpus, or the reverse
+  (`VoiceCorpusRecordingTests`).
+- **The menu row is `🎓 Collecting voice corpus — 41 / 12 min`**, under 🔴 at the
+  bottom of the Transcribing submenu. It counts **samples and minutes of speech**,
+  read off the manifest rather than off the files: the corpus is short of *hours
+  of speech*, and megabytes would flatter a day of long quiet samples.
+- **Four gates, and only the first is a schedule.** `VOICE_CORPUS_WINDOW`
+  (`Mon-Fri 09:00-17:00`, or `always`) — not a privacy fig leaf, it is where the
+  speech is; the **same per-device RMS gate** the transcription already uses, so
+  there is one definition of "somebody is talking" in the process; a
+  **voiced-ratio** floor and a **300–3400 Hz speech-band** check, which is the
+  one that rejects a fan through a sensitive lavalier — hum clears any threshold
+  tuned for speech and the RMS gate cannot tell them apart; and the **enrolled
+  voiceprint**, where an utterance positively attributed to the audience is
+  dropped and Victor plus the deliberate "not saying" band are kept, with the
+  verdict written into the manifest so a later pass can be stricter without
+  re-recording anything. A window that does not parse **raises** rather than
+  falling back to `always`: a typo meaning "collect nothing" is loud, a typo
+  meaning "collect everything" silently records evenings and weekends.
+- **Segmentation is its own, not whisper's chunks.** The hangover is 0.9 s where
+  the transcriber's silence flush is 0.6 s, because those optimise different
+  things — the flush wants latency, this wants a cut that does not saw a sentence
+  in half at a breath. A 0.35 s pre-roll keeps the quiet first syllable, the
+  trailing silence is trimmed to 0.25 s, and 30 s is a hard ceiling because the
+  teacher has to dictate every sample back **in real time** and a five-minute
+  monologue is a five-minute Wispr session that fails as one unit.
+- **Same realtime discipline as `_RawRecorder`**: `write()` does a non-blocking
+  put and swallows `BaseException`; segmentation, filtering, scoring and disk I/O
+  all run on the writer thread. The queue preserves order, so the writer sees
+  exactly what the callback saw.
+- **A real WAV, written to `.part` and renamed.** A WAV writes its frame count
+  only on `close()` and this process is routinely killed outright — a half-written
+  file under a `.part` name is obvious rubbish, a half-written file under the real
+  name is a corpus sample that lies about its length. Names are stepped rather
+  than clobbered on a collision, which is not hypothetical: a forced cut at the
+  ceiling hands the next utterance a start stamp in the same millisecond.
+- **Where it lands is one setting.** `VOICE_CORPUS_DIR`, default
+  `~/.walkie-talkie/voice-corpus/mic` — inside the corpus Walkie Talkie already
+  owns, so the harvester, the baseline and the report all see **one** corpus.
+  Pointing it at an external disk is that one variable in the LaunchAgent and no
+  rebuild. It **writes files and never touches `corpus.db`**: a realtime audio
+  process must not be a second writer on a SQLite file three other things open,
+  so `walkie-talkie/helpers/mic_corpus_ingest.py` does the INSERTs from the
+  manifest, the way `corpus_harvest.py` does for Wispr's database.
+- **It stops rather than fill the disk** — 20 GB collected or 30 GB free,
+  whichever bites first, checked every five minutes. The floor is set against
+  what this Mac has (54 GB free of 926 on 2026-09-11), and at ~2 MB per minute of
+  speech the cap is on the order of eighty working days.
+
 ## 🗣️ Speaker identification (`WHISPER_SPEAKER_ID`) — dark-launched
 
 **On by default, and in the transcript, since 2026-08-28. The scores still go only to `<day>-speakers.jsonl`.** It was opt-in behind `WHISPER_SPEAKER_ID` for its first two days and nothing ever set the variable, so it never ran once — the room day of 2026-08-27 produced no verdict file at all and its calibration had to be reconstructed offline from the raw PCM. A dark launch that is dark to itself collects nothing.
@@ -112,4 +185,4 @@ Shipped thresholds are now **`victor_at` 0.45 / `audience_below` 0.20**, measure
 - **The voiceprint never enters the repo.** `victor-macos-addons` is **public**, and a speaker-verification template is precisely the artefact that defeats speaker verification. It lives at `addons-output/voiceprint.npz` (gitignored), stored as plain arrays with `allow_pickle=False`, carrying its own provenance — what it was enrolled from, when, how many minutes, and the self-similarity spread, because a voiceprint averaged over a contaminated set looks exactly like a good one until it is used.
 
 **Tech**: Python 3.12, mlx-whisper, sounddevice, numpy, onnxruntime
-**Config env vars**: `WHISPER_ME_DEVICE`, `WHISPER_AUDIENCE_DEVICE`, `WHISPER_MODEL`, `WHISPER_MODEL_FAST`, `WHISPER_CHUNK_SECONDS`, `WHISPER_SILENCE_THRESHOLD`, `WHISPER_BATCH_MAX_WAIT_SECONDS`, `WHISPER_BATCH_MAX_ITEMS`, `WHISPER_BATCH_MAX_AUDIO_SECONDS`, `WHISPER_ADAPTIVE_QUALITY`, `WHISPER_ADAPTIVE_BACKLOG_HIGH`, `WHISPER_ADAPTIVE_BACKLOG_LOW`, `TRANSCRIPTION_FOLDER`, `WHISPER_SILENCE_FLUSH_SECONDS`, `WHISPER_MIN_FLUSH_SECONDS`, `WHISPER_RECORD_RAW`, `WHISPER_RECORD_QUEUE_BLOCKS`, `WHISPER_SPEAKER_ID`, `WHISPER_SPEAKER_MIN_SECONDS`, `WHISPER_SPEAKER_SEGMENT_SECONDS`, `WHISPER_SPEAKER_EMBED_FLOOR`, `WHISPER_SPEAKER_MAX_SEGMENTS`, `WHISPER_SPEAKER_THREADS`
+**Config env vars**: `WHISPER_ME_DEVICE`, `WHISPER_AUDIENCE_DEVICE`, `WHISPER_MODEL`, `WHISPER_MODEL_FAST`, `WHISPER_CHUNK_SECONDS`, `WHISPER_SILENCE_THRESHOLD`, `WHISPER_BATCH_MAX_WAIT_SECONDS`, `WHISPER_BATCH_MAX_ITEMS`, `WHISPER_BATCH_MAX_AUDIO_SECONDS`, `WHISPER_ADAPTIVE_QUALITY`, `WHISPER_ADAPTIVE_BACKLOG_HIGH`, `WHISPER_ADAPTIVE_BACKLOG_LOW`, `TRANSCRIPTION_FOLDER`, `WHISPER_SILENCE_FLUSH_SECONDS`, `WHISPER_MIN_FLUSH_SECONDS`, `WHISPER_RECORD_RAW`, `WHISPER_RECORD_QUEUE_BLOCKS`, `WHISPER_VOICE_CORPUS`, `VOICE_CORPUS_DIR`, `VOICE_CORPUS_WINDOW`, `VOICE_CORPUS_MIN_SECONDS`, `VOICE_CORPUS_MAX_SECONDS`, `VOICE_CORPUS_MIN_VOICED`, `VOICE_CORPUS_MIN_SPEECH_BAND`, `VOICE_CORPUS_MAX_GB`, `VOICE_CORPUS_MIN_FREE_GB`, `WHISPER_SPEAKER_ID`, `WHISPER_SPEAKER_MIN_SECONDS`, `WHISPER_SPEAKER_SEGMENT_SECONDS`, `WHISPER_SPEAKER_EMBED_FLOOR`, `WHISPER_SPEAKER_MAX_SEGMENTS`, `WHISPER_SPEAKER_THREADS`

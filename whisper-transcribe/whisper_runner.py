@@ -177,6 +177,31 @@ _RECORD_RAW_ON = _RECORD_RAW in {"1", "true", "yes", "on", "all"}
 # Bounded on purpose — see `_RawRecorder`. 600 blocks ≈ 60 s of slack.
 _RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
 
+# Collect utterance-sized WAVs of Victor's voice all workday long, for the
+# fine-tune. A *different* feature from `WHISPER_RECORD_RAW` above and the
+# difference is the unit: that one keeps a day in one undifferentiated file to
+# study the gate, this one keeps one file per sentence to train on. See
+# `corpus_recorder.py` for the whole argument.
+#
+# Off by default and armed the same way — a flag file the app writes and this
+# process reads at launch — because it is a microphone writing to disk and a
+# state you cannot see is a state you forget. Same ALLOW-list as above, for the
+# same reason: a typo must mean off, never on.
+_VOICE_CORPUS = os.environ.get("WHISPER_VOICE_CORPUS", "0").strip().lower()
+_VOICE_CORPUS_ON = _VOICE_CORPUS in {"1", "true", "yes", "on"}
+# Where the WAVs land. A separate variable from `TRANSCRIPTION_FOLDER` on
+# purpose: this is the one setting that has to be able to point at an external
+# disk without moving the transcripts, the raw captures or anything else the app
+# writes. The default sits inside the corpus Walkie Talkie already owns, so the
+# harvester, the baseline and the report all see one corpus rather than two.
+_VOICE_CORPUS_DIR = Path(
+    os.environ.get(
+        "VOICE_CORPUS_DIR", str(Path.home() / ".walkie-talkie" / "voice-corpus")
+    )
+) / "mic"
+# Weekdays, office hours. `always` disables the schedule entirely.
+_VOICE_CORPUS_WINDOW = os.environ.get("VOICE_CORPUS_WINDOW", "Mon-Fri 09:00-17:00")
+
 # Speaker identification, **dark-launched**: it writes its verdicts to a file of
 # their own and never to the transcript.
 #
@@ -605,12 +630,17 @@ class _ChannelCapture:
         device_name: str = "",
         resolve_fn=None,
         recorder: "_RawRecorder | None" = None,
+        corpus=None,
     ):
         self.device = device
         self.label = label
         self.device_name = device_name
         self._resolve_fn = resolve_fn  # callable() -> (idx, name) | None
         self._recorder = recorder
+        # `UtteranceRecorder | None` — the training corpus. Typed loosely so the
+        # import stays optional: a missing `corpus_recorder` module must not be
+        # able to stop transcription.
+        self._corpus = corpus
         self._queue = tx_queue
         self._buf = np.zeros(0, dtype=np.float32)
         self._chunk = int(_SAMPLE_RATE * _CHUNK_SEC)
@@ -656,6 +686,8 @@ class _ChannelCapture:
         self._running = False
         if self._recorder is not None:
             self._recorder.stop()
+        if self._corpus is not None:
+            self._corpus.stop()
         if self._stream:
             try:
                 self._stream.stop()
@@ -788,6 +820,12 @@ class _ChannelCapture:
             self._recorder.write(block)
         self._buf = np.concatenate([self._buf, block])
         threshold = self._current_threshold()
+        # The training corpus gets the same block and the same threshold the
+        # transcription is about to use, so there is one definition of "somebody
+        # is talking" in this process rather than a second one that disagrees on
+        # exactly the marginal blocks. Like the raw recorder, it only queues.
+        if self._corpus is not None:
+            self._corpus.write(block, threshold, self.device_name)
 
         while len(self._buf) >= self._chunk:
             chunk = self._buf[: self._chunk].copy()
@@ -1204,6 +1242,43 @@ class WhisperTranscriptionRunner:
             log.error("transcript", f"🎙️ raw recorder disabled: {exc}")
             return None
 
+    def _make_corpus(self, label: str):
+        """The utterance corpus for one channel, or `None` and a reason.
+
+        Built here rather than in `_ChannelCapture` because it needs the
+        speaker scorer, and the scorer needs the output folder that holds the
+        enrolled voiceprint. Every failure path returns `None`: this is a
+        collector bolted onto a pipeline whose job is transcription, and it must
+        never be able to cost a word.
+        """
+        if not _VOICE_CORPUS_ON:
+            return None
+        try:
+            from corpus_recorder import UtteranceRecorder, Window
+
+            window = Window.parse(_VOICE_CORPUS_WINDOW)
+            # Its own scorer instance. Sharing the transcriber's would mean two
+            # threads inside one ONNX session, and the model is small enough
+            # that a second copy is cheaper than the lock would be.
+            recorder = UtteranceRecorder(
+                _VOICE_CORPUS_DIR,
+                label,
+                window,
+                scorer=_make_speaker_scorer(self.output_dir),
+                log=log,
+                me_speaker=_ME_SPEAKER,
+                audience_speaker=_AUD_SPEAKER,
+            )
+            log.info(
+                "transcript",
+                f"🎓 voice corpus on → {_VOICE_CORPUS_DIR} "
+                f"({'always' if window.always else _VOICE_CORPUS_WINDOW})",
+            )
+            return recorder
+        except Exception as exc:  # noqa: BLE001
+            log.error("transcript", f"🎓 voice corpus disabled: {exc!r}")
+            return None
+
     def start(self):
         tx_queue: queue.Queue = queue.Queue()
 
@@ -1220,6 +1295,10 @@ class WhisperTranscriptionRunner:
                 me_name,
                 resolve_fn=lambda: _resolve_device_coreaudio(_ME_PATTERNS),
                 recorder=self._make_recorder(_ME_SPEAKER),
+                # Victor's channel only. The audience channel is the Zoom
+                # loopback — other people's voices, and the wrong training data
+                # for a model being fine-tuned on one speaker.
+                corpus=self._make_corpus(_ME_SPEAKER),
             )
             self._channels.append(self._me_channel)
         else:

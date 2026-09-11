@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 11, 16:40"
+    static let BUILD_TIME = "Sep 11, 19:27"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -26,10 +26,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
+    private(set) var voiceCorpusItem: NSMenuItem!
     // Mirrored here because AppDelegate reports the raw-capture state BEFORE the
     // menu is built; the row (and the parent's 🔴) is painted from these.
     private var isRecordingRaw = false
     private var recordedRawHours: Double = 0
+    private var isCollectingVoiceCorpus = false
+    private var voiceCorpusSamples = 0
+    private var voiceCorpusMinutes: Double = 0
     private(set) var wsStatusItem: NSMenuItem!
     private var feedbackFormItem: NSMenuItem!
     private var killSubmenu: NSMenu!
@@ -74,6 +78,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onToggleRecordRaw: (() -> Void)?
+    var onToggleVoiceCorpus: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
@@ -221,6 +226,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         recordRawItem = NSMenuItem(title: RawAudioMenu.off, action: #selector(toggleRecordRawAction), keyEquivalent: "")
         recordRawItem.target = self
         recordRawItem.isEnabled = true
+
+        // 🎓 The training corpus, directly under the 🔴 raw capture because they
+        // are the same kind of thing — a microphone writing to disk — and the
+        // pair is easier to reason about adjacent than scattered. The title
+        // carries the count rather than the size for the same reason the raw row
+        // carries hours: the question after "is it on" is "how much have I got",
+        // and the answer that matters is minutes of speech, not megabytes.
+        voiceCorpusItem = NSMenuItem(title: VoiceCorpusMenu.off, action: #selector(toggleVoiceCorpusAction), keyEquivalent: "")
+        voiceCorpusItem.target = self
+        voiceCorpusItem.isEnabled = true
 
         // Tail (was Monitor)
         tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
@@ -597,6 +612,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onToggleRecordRaw?()
     }
 
+    @objc private func toggleVoiceCorpusAction() {
+        onToggleVoiceCorpus?()
+    }
+
     /// Titles for the 🔴 raw-capture row, kept together so the *on* state stays
     /// unmistakable at a glance — this is the row that says a microphone is
     /// being written to disk.
@@ -625,6 +644,38 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         guard let item = recordRawItem else { return }
         item.title = isRecordingRaw ? RawAudioMenu.on(hours: recordedRawHours) : RawAudioMenu.off
         item.state = isRecordingRaw ? .on : .off
+    }
+
+    /// Titles for the 🎓 corpus row. Separate from `RawAudioMenu` on purpose:
+    /// the two rows sit next to each other and would be read as one setting if
+    /// they shared a vocabulary.
+    enum VoiceCorpusMenu {
+        static let off = "Collect voice corpus"
+        static func on(samples: Int, minutes: Double) -> String {
+            samples == 0
+                ? "🎓 Collecting voice corpus"
+                : String(format: "🎓 Collecting voice corpus — %d / %.0f min", samples, minutes)
+        }
+    }
+
+    /// - Parameters:
+    ///   - samples: utterances collected today.
+    ///   - minutes: speech in them. Not disk: the corpus is short of *hours of
+    ///     speech*, and megabytes would flatter a day of long quiet samples.
+    func setCollectingVoiceCorpus(_ on: Bool, samples: Int = 0, minutes: Double = 0) {
+        isCollectingVoiceCorpus = on
+        voiceCorpusSamples = samples
+        voiceCorpusMinutes = minutes
+        applyVoiceCorpusState()
+    }
+
+    private func applyVoiceCorpusState() {
+        guard let item = voiceCorpusItem else { return }
+        item.title =
+            isCollectingVoiceCorpus
+            ? VoiceCorpusMenu.on(samples: voiceCorpusSamples, minutes: voiceCorpusMinutes)
+            : VoiceCorpusMenu.off
+        item.state = isCollectingVoiceCorpus ? .on : .off
     }
 
     @objc private func toggleDarkModeAction() {
@@ -1235,6 +1286,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeSubmenu.addItem(.separator())
         applyRecordRawState()
         transcribeSubmenu.addItem(recordRawItem)
+        transcribeSubmenu.addItem(voiceCorpusItem)
     }
 
     @objc private func pickSource(_ sender: NSMenuItem) {
