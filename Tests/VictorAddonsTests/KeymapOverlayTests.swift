@@ -368,8 +368,9 @@ final class KeymapOverlayTests: XCTestCase {
     func testCommandControlLabelsCoverTheBoundKeysWithOneWordEach() {
         // a c d e g k l m n o r s t v z — the ⌘⌃ branches in EventTapManager /
         // the menu — plus w, which is Wispr Flow's own ⌘⌃W and is on the sheet
-        // for reference only (the tap's ⌃W whip branch excludes Cmd, so we never
-        // intercept it). V joined the sheet when ⌘⌃V stopped being the emotional
+        // for reference only (⌃W is Victor Effects', and its rule there excludes
+        // Cmd, so neither app intercepts ⌘⌃W). V joined the sheet when ⌘⌃V
+        // stopped being the emotional
         // paste (a second key reading "paste") and became the 🎙️ transcript
         // picker, which nothing else on the board says. D joined it with the
         // Walkie Talkie binding — the key that decides which session a dictation

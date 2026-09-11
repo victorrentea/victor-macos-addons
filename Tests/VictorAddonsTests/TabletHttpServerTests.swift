@@ -16,34 +16,6 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/state"), .testState)
     }
 
-    func testRouteMapsEffectEndpointWithNestedName() {
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/pulse/stop"), .effect("pulse/stop"))
-    }
-
-    func testRoutePhoenixTestAndEffectEndpoints() {
-        // Both the headless test hook and the generic /effect/ path dispatch the
-        // phoenix overlay through onEffect("phoenix").
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/phoenix"), .effect("phoenix"))
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/phoenix"), .effect("phoenix"))
-    }
-
-    func testRouteIrisTestAndEffectEndpoints() {
-        // The 🕳️ iris-close blackout: both the headless test hook and the generic
-        // /effect/ path dispatch through onEffect("iris"). The tablet itself
-        // drives it via /sound/pressed/31_tarzan.mp3 (mapped to "iris" in
-        // SoundEffectMap).
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/iris"), .effect("iris"))
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/iris"), .effect("iris"))
-    }
-
-    func testRouteElephantTestAndEffectEndpoints() {
-        // 🐘 ⌘⌃O has a headless twin so the overlay can be exercised without
-        // the keyboard — and a /stop, because the elephant is a toggle.
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/elephant"), .effect("elephant"))
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/elephant/stop"), .effect("elephant/stop"))
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/effect/elephant"), .effect("elephant"))
-    }
-
     func testRouteMapsBreakSummaryTestHook() {
         // Fires the ☕️ break-summary delta run now, bypassing the >= 5 min +
         // cooldown gates (same Terminal flow a real break triggers).
@@ -61,23 +33,13 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/unknown"), .unknown)
     }
 
-    func testRouteMapsSoundPressedAndStopped() {
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/sound/pressed/40_joker.mp3"), .soundPressed("40_joker.mp3"))
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/sound/stopped/37_rainbow.mp3"), .soundStopped("37_rainbow.mp3"))
-    }
-
-    func testSoundStopExactStillDistinctFromStopped() {
-        // "/sound/stop" preempts tablet-routed playback; it must NOT be parsed
-        // as a "/sound/stopped/<file>" report.
-        XCTAssertEqual(TabletHttpServer.route(forPath: "/sound/stop"), .soundStop)
-    }
-
-    func testSoundEffectMapDrivesBloodAndKeepsSirenSpecial() {
-        XCTAssertEqual(SoundEffectMap.pressEffect(for: "40_joker.mp3"), "blood-drip")
-        XCTAssertEqual(SoundEffectMap.pressEffect(for: "03_explosion.mp3"), "explosion")
-        XCTAssertEqual(SoundEffectMap.stopEffect(for: "37_rainbow.mp3"), "rainbow/stop")
-        // Siren stays special-cased on the tablet (alarm overlay) — not mapped here.
-        XCTAssertNil(SoundEffectMap.pressEffect(for: "02_siren.mp3"))
-        XCTAssertNil(SoundEffectMap.pressEffect(for: "99_nonexistent.mp3"))
+    func testVideoRoutesStayLocalDespiteTheSoundInTheirPath() {
+        // The 🎵 soundtrack-only hooks live under /video/sound/… and /test/video/…;
+        // the proxy's "/sound/" prefix is a LEADING match precisely so these are
+        // not mistaken for soundboard traffic and shipped off to 55124.
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/videos"), .videos)
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/video/sound/stop"), .videoSoundStop)
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/video/sound/intro"), .videoSoundPlay("intro", nil))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/video/stop"), .videoStop)
     }
 }
