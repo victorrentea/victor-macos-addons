@@ -515,6 +515,37 @@ final class KeymapHoldCoordinator {
         monitorCount > 1 ? multiMonitorDelay : singleMonitorDelay
     }
 
+    /// The two device-dependent ⌥ bits macOS sets alongside `.maskAlternate`.
+    /// `CGEventFlags` has no named constants for them; these are IOKit's
+    /// `NX_DEVICELALTKEYMASK` / `NX_DEVICERALTKEYMASK`, and they are the only
+    /// thing in the event that says *which* ⌥ key is down.
+    static let leftOptionDeviceMask: UInt64 = 0x20
+    static let rightOptionDeviceMask: UInt64 = 0x40
+
+    /// Is the **right** ⌥ the only ⌥ being held?
+    ///
+    /// Since 2026-09-11 a right-⌥ hold belongs to `victor-effects`, which opens
+    /// its soundboard panel on it (`EffectsHotkeyTap.decideModifier`). Sharing
+    /// the gesture meant both overlays came up at once, so the plain ⌥ sheet
+    /// here steps aside for exactly that key.
+    ///
+    /// Read from the **device flags, not the keycode**, even though the effects
+    /// app matches keycode 61. It has to: it only ever sees the ⌥ key's own
+    /// event. This coordinator re-decides on *every* modifier transition, so
+    /// after ⇧ is pressed and released on top of a held right ⌥ the keycode in
+    /// hand is ⇧'s (56), not ⌥'s — the keycode has stopped answering the
+    /// question while the flags still do. The flags describe what is held
+    /// *now*; the keycode only describes what last moved.
+    ///
+    /// It asks for right-⌥-*alone* rather than "right ⌥ is down" so the rule
+    /// mirrors the effects app's own `optionIsAlone` precondition: the two apps
+    /// then partition one gesture instead of both abandoning it. It also fails
+    /// open — an event with no device bits at all (a synthetic ⌥ from some
+    /// automation) is `false`, i.e. the sheet behaves exactly as it did before.
+    static func rightOptionAlone(rawFlags: UInt64) -> Bool {
+        rawFlags & rightOptionDeviceMask != 0 && rawFlags & leftOptionDeviceMask == 0
+    }
+
     /// Which cheat-sheet a held modifier combination asks for, or nil for
     /// "none of them". Deliberately exact: ⌥ alone (± ⇧) is the character
     /// layout, ⌃⌥ is the third emoji board (2026-09-10), ⌘⌃ alone is the
@@ -526,10 +557,19 @@ final class KeymapHoldCoordinator {
     /// a board of characters, and a board nobody has memorised is exactly what
     /// a cheat-sheet is for — the two shortcuts left on it are the keys the
     /// sheet simply has nothing to say about.
-    static func sheet(option: Bool, shift: Bool, command: Bool, control: Bool) -> KeymapModifier? {
+    ///
+    /// `rightOptionAlone` only gates the **plain ⌥** board (2026-09-11), and
+    /// deliberately nothing else: ⌥⇧ and ⌃⌥ are not right ⌥ *alone*, so the
+    /// effects panel never opens under them and there is nothing to yield.
+    /// Typing is untouched either way — this decides overlays, not characters.
+    static func sheet(option: Bool, shift: Bool, command: Bool, control: Bool,
+                      rightOptionAlone: Bool = false) -> KeymapModifier? {
         if command { return control && !option ? .commandControl : nil }
         if option && control { return .controlOption }
-        if option { return shift ? .optionShift : .option }
+        if option {
+            if shift { return .optionShift }
+            return rightOptionAlone ? nil : .option
+        }
         return nil
     }
 
@@ -555,8 +595,10 @@ final class KeymapHoldCoordinator {
         self.hide = hide
     }
 
-    func modifierFlagsChanged(option: Bool, shift: Bool, command: Bool = false, control: Bool = false) {
-        guard let modifier = Self.sheet(option: option, shift: shift, command: command, control: control) else {
+    func modifierFlagsChanged(option: Bool, shift: Bool, command: Bool = false, control: Bool = false,
+                              rightOptionAlone: Bool = false) {
+        guard let modifier = Self.sheet(option: option, shift: shift, command: command, control: control,
+                                        rightOptionAlone: rightOptionAlone) else {
             reset()
             return
         }

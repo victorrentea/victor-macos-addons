@@ -65,7 +65,8 @@ class EventTapManager {
     /// append it to the session notes, stamped 🤖, so it shows up in the room's
     /// Prompts tab.
     var onSendSelectionAsPrompt: (() -> Void)?
-    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
+    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool,
+                                  _ rightOptionAlone: Bool) -> Void)?
     var onKeyDownWhileModifierHeld: (() -> Void)?
 
     // Three rules left this tap in 2026-09 for `EffectsHotkeyTap` in Victor
@@ -216,8 +217,14 @@ private let VK_F: CGKeyCode = 0x03
             let hasShift = flags.contains(.maskShift)
             let hasCmdFlag = flags.contains(.maskCommand)
             let hasCtrlFlag = flags.contains(.maskControl)
+            // Which ⌥ key is down, not just that one is: a right-⌥ hold alone
+            // is `victor-effects`' soundboard panel since 2026-09-11, so the
+            // plain ⌥ cheat-sheet must not arm on it. Device bits rather than
+            // the keycode, because this fires on every modifier transition —
+            // see `KeymapHoldCoordinator.rightOptionAlone`.
+            let rightOptAlone = KeymapHoldCoordinator.rightOptionAlone(rawFlags: flags.rawValue)
             DispatchQueue.main.async { [weak self] in
-                self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag)
+                self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag, rightOptAlone)
             }
             return Unmanaged.passUnretained(event)
         }

@@ -277,6 +277,67 @@ final class KeymapOverlayTests: XCTestCase {
                           KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: false))
     }
 
+    /// Right ⌥ held alone is `victor-effects`' soundboard panel since
+    /// 2026-09-11. The plain ⌥ board yields it; nothing else changes.
+    func testPlainOptionSheetStepsAsideForARightOptionHold() {
+        // Left ⌥ (or any ⌥ that is not the right one alone) still asks for it.
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: false,
+                                                   rightOptionAlone: false), .option)
+        // Right ⌥ alone: the effects panel owns the gesture, so no sheet.
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: false,
+                                                 rightOptionAlone: true))
+        // ⌥⇧ and ⌃⌥ are untouched — they are not right ⌥ *alone*, so the panel
+        // never opens under them and there is nothing to yield.
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: true, command: false, control: false,
+                                                   rightOptionAlone: true), .optionShift)
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: true,
+                                                   rightOptionAlone: true), .controlOption)
+    }
+
+    /// Which ⌥ is down is read off the device-dependent flag bits, because the
+    /// keycode stops answering the moment another modifier is the thing moving.
+    func testRightOptionAloneReadsTheDeviceDependentFlagBits() {
+        let optionMask = CGEventFlags.maskAlternate.rawValue
+        let left = KeymapHoldCoordinator.leftOptionDeviceMask
+        let right = KeymapHoldCoordinator.rightOptionDeviceMask
+
+        XCTAssertTrue(KeymapHoldCoordinator.rightOptionAlone(rawFlags: optionMask | right))
+        XCTAssertFalse(KeymapHoldCoordinator.rightOptionAlone(rawFlags: optionMask | left))
+        // Both ⌥ keys down: a left ⌥ *is* being held, so the sheet is still his.
+        XCTAssertFalse(KeymapHoldCoordinator.rightOptionAlone(rawFlags: optionMask | left | right))
+        // Fails open: an event carrying no device bits at all (a synthetic ⌥)
+        // behaves exactly as it did before this rule existed.
+        XCTAssertFalse(KeymapHoldCoordinator.rightOptionAlone(rawFlags: optionMask))
+        XCTAssertFalse(KeymapHoldCoordinator.rightOptionAlone(rawFlags: 0))
+    }
+
+    /// End to end through the coordinator: a right-⌥ hold schedules nothing,
+    /// and the ⇧ that lands on top of it still brings up the ⌥⇧ board.
+    func testHoldCoordinatorNeverArmsThePlainSheetForRightOption() {
+        var shown: [KeymapModifier] = []
+        var scheduleCount = 0
+        let coordinator = KeymapHoldCoordinator(
+            delayProvider: { 0.3 },
+            schedule: { _, fire in scheduleCount += 1; fire() },
+            cancelScheduled: {},
+            show: { shown.append($0) },
+            hide: {}
+        )
+
+        coordinator.modifierFlagsChanged(option: true, shift: false, rightOptionAlone: true)
+        XCTAssertEqual(shown, [])
+        XCTAssertEqual(scheduleCount, 0, "a right-⌥ hold must not even start the hold timer")
+
+        // ⇧ pressed on top of it: ⌥⇧ is not right ⌥ alone, board as usual.
+        coordinator.modifierFlagsChanged(option: true, shift: true, rightOptionAlone: false)
+        XCTAssertEqual(shown, [.optionShift])
+
+        // ⇧ released again, right ⌥ still down: back to no sheet. This is the
+        // case the keycode could not answer — ⇧'s event carries keycode 56.
+        coordinator.modifierFlagsChanged(option: true, shift: false, rightOptionAlone: true)
+        XCTAssertEqual(shown, [.optionShift])
+    }
+
     func testSheetShowsNothingForMixedOrIncompleteModifiers() {
         // ⌘⌃⌥ is Dark Mode, not a cheat-sheet.
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: true, control: true))
