@@ -15,9 +15,17 @@ class TabletHttpServer {
     }
 
     enum Route: Equatable {
-        case alarmStart
-        case alarmStop
+        /// Only the three effect names addons still owns: `training-end`,
+        /// `stop-all` and `focus-playlist`. Everything else under `/effect/`
+        /// is `.proxied` to Victor Effects.
         case effect(String)
+        /// Forwarded verbatim (path AND query) to the effects app on 55124 —
+        /// see `EffectsProxy` and the prefix table in `isProxied`.
+        case proxied(String)
+        /// The effects app calling back: `GET /effects/event?type=…`. Today the
+        /// only type is `coffee-popped` (B.4 of the split plan), which carries
+        /// `x`/`y` in global screen coordinates.
+        case effectsEvent(type: String, params: [String: String])
         case openUrl(String)
     /// Test hook for the ⌘⌃ openers: same route a shortcut takes (official
     /// Chrome, window on the screen under the mouse) without a keypress.
@@ -29,24 +37,6 @@ class TabletHttpServer {
     /// `chrome-extension/` takes effect without anyone opening
     /// `chrome://extensions` — a page no extension, and no agent, can click.
     case chromeExtensionReload
-        case ping
-        case soundsManifest
-        /// Filename + optional volume percent (0–100) from "?vol=".
-        case soundPlay(String, Int?)
-        case soundVolume(Int)
-        case soundStop
-        /// Read the current Bluetooth wake-up compensation (ms) — the tablet
-        /// seeds its header slider from this when it has no persisted value.
-        case btCompensationGet
-        /// Set the Bluetooth wake-up compensation to N ms (clamped 0…1200) from
-        /// the tablet's header slider.
-        case btCompensationSet(Int)
-        /// Tablet reports a sound button was pressed; the Mac decides (via
-        /// SoundEffectMap) whether to trigger a paired overlay effect.
-        case soundPressed(String)
-        /// Tablet reports a sound finished/stopped; the Mac decides whether to
-        /// stop a paired (looping) overlay effect.
-        case soundStopped(String)
         case testTranscriptionStart
         case testState
 case testTerminalFont
@@ -81,11 +71,6 @@ case testTerminalFont
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
         case testScreenshotMark(String?)
-        /// Fire the 🔥 Whip overlay — same action as ⌃W (test hook).
-        case testWhip
-        /// Crack the whip programmatically (scripted mouse-flick) — same as the
-        /// Enter-button while the overlay is up. No-op if the overlay isn't shown.
-        case testWhipCrack
         /// Post the 13:00 "Group Photo" notification now, bypassing the time +
         /// connection gates (test hook).
         case testGroupPhoto
@@ -210,10 +195,16 @@ case testTerminalFont
         case unknown
     }
 
-    var onAlarmStart: (() -> Void)?
-    var onAlarmStop: (() -> Void)?
-    /// Generic effect handler: receives the effect name (e.g. "fireworks", "applause", "applause/stop")
+    /// The three effect names addons still handles itself — `training-end`,
+    /// `stop-all`, `focus-playlist`. Everything visual moved to Victor Effects.
     var onEffect: ((String) -> Void)?
+    /// The effects app reporting something back (`/effects/event?type=…`).
+    var onEffectsEvent: ((String, [String: String]) -> Void)?
+    /// The addons half of the merged `/ping`: a JSON **fragment** that already
+    /// starts with a comma (`,"macTimeMs":…,"macLanIps":[…]…`), spliced onto the
+    /// effects app's own ping object by `EffectsProxy.mergedPing`. Collected
+    /// inside a `main.sync` because every field it reads is main-thread state.
+    var onPingExtras: (() -> String)?
     /// Open a URL in a fullscreen Chrome window on the primary display.
     var onOpenUrl: ((String) -> Void)?
     /// Open a URL the way the ⌘⌃ openers do — official Chrome, on the screen
@@ -221,30 +212,6 @@ case testTerminalFont
     var onTestOpenOnMouseScreen: ((String) -> Void)?
     /// Returns false when no extension on the bridge can reload itself yet.
     var onChromeExtensionReload: (() -> Bool)?
-    /// Tablet connectivity ping (every 5s); returns JSON with the sounds manifest hash.
-    var onPing: (() -> String)?
-    /// Full sounds manifest JSON — fetched by the tablet on a hash mismatch.
-    var onSoundsManifest: (() -> String)?
-    /// Play a tablet-routed sound by filename at an optional volume percent;
-    /// returns JSON with durationMs, or nil if the sound is unknown (→ 404,
-    /// tablet falls back to local playback).
-    var onSoundPlay: ((String, Int?) -> String?)?
-    /// Tablet volume change (0–100): adjust tablet-routed playback volume and
-    /// play a feedback click at the new level.
-    var onSoundVolume: ((Int) -> Void)?
-    var onSoundStop: (() -> Void)?
-    /// Returns JSON with the current BT wake-up compensation, e.g.
-    /// `{"ms":800,"maxMs":1200}`.
-    var onBtCompensationGet: (() -> String)?
-    /// Sets the BT wake-up compensation to N ms; returns JSON with the value
-    /// actually applied (after clamping), e.g. `{"ok":true,"ms":800}`.
-    var onBtCompensationSet: ((Int) -> String)?
-    /// Tablet reports a sound press by bare filename; the Mac maps it to a
-    /// paired overlay effect (or ignores it). Mapping lives on the Mac.
-    var onSoundPressed: ((String) -> Void)?
-    /// Tablet reports a sound stop by bare filename; the Mac maps it to a
-    /// paired effect-stop (or ignores it).
-    var onSoundStopped: ((String) -> Void)?
     var onTestTranscriptionStart: (() -> Void)?
     var onTestState: (() -> String)?
     var onTestAudioPlaying: (() -> String)?
@@ -261,8 +228,6 @@ case testTerminalFont
     var onTestTranscriptPicker: ((String?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
     var onTestScreenshotMark: ((String?) -> Void)?
-    var onTestWhip: (() -> Void)?
-    var onTestWhipCrack: (() -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestGroupPhotoBreakEnd: (() -> Void)?
     /// Force the dictation window; returns the bridge's JSON snapshot.
@@ -387,16 +352,25 @@ case testTerminalFont
     func respond(path: String, requestBody: String) -> (status: Int, contentType: String, body: String) {
         let route = Self.route(forPath: path)
 
+        // Proxied routes never touch the main thread: the effects app may be
+        // stopped, slow to start or mid-rebuild, and a `main.sync` behind a
+        // 3 s socket timeout would freeze the menu bar for every one of them.
+        // This runs on the server queue, which also keeps the tablet's
+        // stop-all -> play -> pressed chain in order (one connection at a time).
+        if case .proxied(let forwarded) = route {
+            return EffectsProxy.forward(forwarded, body: requestBody, pingExtras: onPingExtras)
+        }
+
         var statusCode = 200
         var body = "ok"
         var contentType = "text/plain; charset=utf-8"
 
         DispatchQueue.main.sync {
             switch route {
-            case .alarmStart:
-                self.onAlarmStart?()
-            case .alarmStop:
-                self.onAlarmStop?()
+            case .proxied:
+                break   // handled above, before the main-thread hop
+            case .effectsEvent(let type, let params):
+                self.onEffectsEvent?(type, params)
             case .effect(let name):
                 self.onEffect?(name)
             case .openUrl(let url):
@@ -411,38 +385,6 @@ case testTerminalFont
                 let asked = self.onChromeExtensionReload?() ?? false
                 body = "{\"asked\":\(asked)}"
                 if !asked { statusCode = 503 }
-            case .ping:
-                contentType = "application/json"
-                body = self.onPing?() ?? "{\"ok\":true}"
-            case .soundsManifest:
-                contentType = "application/json"
-                body = self.onSoundsManifest?() ?? "{\"error\":\"manifest unavailable\"}"
-                if self.onSoundsManifest == nil {
-                    statusCode = 503
-                }
-            case .soundPlay(let name, let volumePct):
-                contentType = "application/json"
-                if let json = self.onSoundPlay?(name, volumePct) {
-                    body = json
-                } else {
-                    statusCode = 404
-                    body = "{\"ok\":false,\"reason\":\"unknown-sound\"}"
-                }
-            case .soundVolume(let pct):
-                self.onSoundVolume?(pct)
-            case .soundStop:
-                self.onSoundStop?()
-            case .btCompensationGet:
-                contentType = "application/json"
-                body = self.onBtCompensationGet?() ?? "{\"error\":\"unavailable\"}"
-                if self.onBtCompensationGet == nil { statusCode = 503 }
-            case .btCompensationSet(let ms):
-                contentType = "application/json"
-                body = self.onBtCompensationSet?(ms) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
-            case .soundPressed(let name):
-                self.onSoundPressed?(name)
-            case .soundStopped(let name):
-                self.onSoundStopped?(name)
             case .testTranscriptionStart:
                 self.onTestTranscriptionStart?()
             case .testTerminalFont:
@@ -505,10 +447,6 @@ case testTerminalFont
                 self.onTestScreenshotCrop?()
             case .testScreenshotMark(let at):
                 self.onTestScreenshotMark?(at)
-            case .testWhip:
-                self.onTestWhip?()
-            case .testWhipCrack:
-                self.onTestWhipCrack?()
             case .testGroupPhoto:
                 self.onTestGroupPhoto?()
             case .testGroupPhotoBreakEnd:
@@ -647,6 +585,16 @@ case testTerminalFont
             }
         }
 
+        // `/effect/stop-all` is the one route that is BOTH local and forwarded:
+        // the 🎵 soundtrack and the 🏁 arming live here, the animator and the
+        // soundboard live there. Forwarded synchronously, on this queue, AFTER
+        // the local half — the tablet fires stop-all → play → pressed as three
+        // requests in a row, and the effects app must see them in that order or
+        // a stop-all arriving late silences the sound it was meant to precede.
+        if case .effect("stop-all") = route {
+            _ = EffectsProxy.forward("/effect/stop-all")
+        }
+
         return (statusCode, contentType, body)
     }
 
@@ -667,21 +615,76 @@ case testTerminalFont
         return parts.count > 1 ? String(parts[1]) : "/"
     }
 
+    /// The three effect names that did NOT move to Victor Effects, because
+    /// what they drive lives here: the 🏁 end-of-training sequence (it needs
+    /// the whisper `VICTOR_VOICE` pulse), `stop-all` (it must also silence the
+    /// 🎵 video soundtrack and disarm 🏁 before forwarding) and the 🎧 focus
+    /// playlist (a Chrome tab, not a pixel).
+    static let localEffectNames: Set<String> = ["training-end", "stop-all", "focus-playlist"]
+
+    /// Path prefixes forwarded verbatim to the effects app on 55124. `/ping` is
+    /// merged rather than passed through (see `EffectsProxy.mergedPing`);
+    /// everything else is a straight hop.
+    ///
+    /// Note what is NOT here: `/video/*` and `/videos` (IINA and the training
+    /// clips stay in addons), `/test/state`, `/hands-off/*`, `/session/*`,
+    /// `/link/*`. `/sound/` does not catch `/video/sound/...` because the
+    /// match is on a leading prefix, not a substring.
+    static let proxiedPrefixes = ["/ping", "/sounds/", "/sound/", "/effect/",
+                                  "/alarm/", "/bt-compensation", "/tiles", "/state"]
+
+    /// The historic `/test/<effect>` aliases. They keep answering on 55123 —
+    /// every script, doc and muscle memory points at them — and are simply
+    /// forwarded under the same spelling, which the effects app also serves.
+    /// `/test/focus-playlist` is deliberately absent: it is local.
+    static let proxiedTestAliases: Set<String> = [
+        "/test/sonar", "/test/beethoven", "/test/phoenix", "/test/money",
+        "/test/coffee", "/test/coffee/pop", "/test/iris",
+        "/test/snow", "/test/snow/stop",
+        "/test/elephant", "/test/elephant/stop",
+        "/test/claude-peek", "/test/claude-peek/stop",
+        "/test/minion", "/test/counter-strike",
+        "/test/chainsaw", "/test/chainsaw/stop",
+        "/test/fire", "/test/fire/stop", "/test/microwave",
+        "/test/whip", "/test/whip/crack",
+    ]
+
+    /// Does this path belong to the effects app? Call only AFTER the local
+    /// `/effect/<name>` exceptions have been taken out — `/effect/` is in the
+    /// prefix table and would otherwise swallow them.
+    static func isProxied(_ pathOnly: String) -> Bool {
+        if proxiedTestAliases.contains(pathOnly) { return true }
+        return proxiedPrefixes.contains { pathOnly.hasPrefix($0) }
+    }
+
     static func route(forPath path: String) -> Route {
         let (pathOnly, queryItems) = parsePathAndQuery(path)
+
+        // Local effects first: they share the `/effect/` prefix with everything
+        // that gets forwarded, so the exception has to be checked before the
+        // prefix table below. `/test/focus-playlist` is the one alias among them.
+        if pathOnly.hasPrefix("/effect/") {
+            let name = String(pathOnly.dropFirst("/effect/".count))
+            if localEffectNames.contains(name) { return .effect(name) }
+        }
+        if pathOnly == "/test/focus-playlist" { return .effect("focus-playlist") }
+
+        // The effects app calling back — today only the ☕ payoff (B.4).
+        if pathOnly == "/effects/event" {
+            guard let type = queryItems.first(where: { $0.name == "type" })?.value, !type.isEmpty else {
+                return .unknown
+            }
+            var params: [String: String] = [:]
+            for item in queryItems where item.name != "type" {
+                params[item.name] = item.value ?? ""
+            }
+            return .effectsEvent(type: type, params: params)
+        }
+
+        // Everything the effects app owns, forwarded with its query intact.
+        if isProxied(pathOnly) { return .proxied(path) }
+
         switch pathOnly {
-        case "/alarm/start":
-            return .alarmStart
-        case "/alarm/stop":
-            return .alarmStop
-        case "/ping":
-            return .ping
-        case "/sounds/manifest":
-            return .soundsManifest
-        case "/sound/stop":
-            return .soundStop
-        case "/bt-compensation":
-            return .btCompensationGet
         case "/videos":
             return .videos
         case "/video/stop":
@@ -730,58 +733,6 @@ case testTerminalFont
             return .testScreenshotCrop
         case "/test/screenshot/mark":
             return .testScreenshotMark(queryItems.first(where: { $0.name == "at" })?.value)
-        case "/test/whip":
-            return .testWhip
-        case "/test/whip/crack":
-            return .testWhipCrack
-        case "/test/sonar":
-            return .effect("sonar")
-        case "/test/beethoven":
-            return .effect("beethoven")
-        case "/test/phoenix":
-            return .effect("phoenix")
-        case "/test/money":
-            return .effect("money")
-        case "/test/coffee":
-            return .effect("coffee")
-        case "/test/coffee/pop":
-            return .effect("coffee/pop")
-        case "/test/iris":
-            return .effect("iris")
-        case "/test/snow":
-            return .effect("snow")
-        case "/test/snow/stop":
-            return .effect("snow/stop")
-        case "/test/elephant":
-            return .effect("elephant")
-        case "/test/elephant/stop":
-            return .effect("elephant/stop")
-        // 🎧 ⌘⌃F headless. Nothing appears on screen when this works, which is
-        // the point — the check is that music starts, in a tab nobody sees.
-        case "/test/focus-playlist":
-            return .effect("focus-playlist")
-        // The 🤖 ⌘⌃Q mascot, headless. The key opened a Claude Terminal too when
-        // this hook was written, which is why it exists; the animation is now the
-        // whole key, but a hook that fires it without touching the keyboard is
-        // still the only way to watch it twice in a row.
-        case "/test/claude-peek":
-            return .effect("claude-peek")
-        case "/test/claude-peek/stop":
-            return .effect("claude-peek/stop")
-        case "/test/minion":
-            return .effect("minion")
-        case "/test/counter-strike":
-            return .effect("counter-strike")
-        case "/test/chainsaw":
-            return .effect("chainsaw")
-        case "/test/chainsaw/stop":
-            return .effect("chainsaw/stop")
-        case "/test/fire":
-            return .effect("fire")
-        case "/test/fire/stop":
-            return .effect("fire/stop")
-        case "/test/microwave":
-            return .effect("microwave")
         case "/test/group-photo":
             return .testGroupPhoto
         case "/test/group-photo/break-end":
@@ -877,32 +828,6 @@ case testTerminalFont
             }
             return .unknown
         default:
-            if pathOnly.hasPrefix("/effect/") {
-                return .effect(String(pathOnly.dropFirst("/effect/".count)))
-            }
-            if pathOnly.hasPrefix("/sound/play/") {
-                let name = String(pathOnly.dropFirst("/sound/play/".count))
-                let vol = queryItems.first(where: { $0.name == "vol" })?.value.flatMap(Int.init)
-                if !name.isEmpty { return .soundPlay(name, vol) }
-            }
-            if pathOnly.hasPrefix("/sound/pressed/") {
-                let name = String(pathOnly.dropFirst("/sound/pressed/".count))
-                if !name.isEmpty { return .soundPressed(name) }
-            }
-            if pathOnly.hasPrefix("/sound/stopped/") {
-                let name = String(pathOnly.dropFirst("/sound/stopped/".count))
-                if !name.isEmpty { return .soundStopped(name) }
-            }
-            if pathOnly.hasPrefix("/sound/volume/") {
-                if let pct = Int(pathOnly.dropFirst("/sound/volume/".count)) {
-                    return .soundVolume(pct)
-                }
-            }
-            if pathOnly.hasPrefix("/bt-compensation/") {
-                if let ms = Int(pathOnly.dropFirst("/bt-compensation/".count)) {
-                    return .btCompensationSet(ms)
-                }
-            }
             if pathOnly.hasPrefix("/video/play/") {
                 let id = String(pathOnly.dropFirst("/video/play/".count))
                 let t = queryItems.first(where: { $0.name == "t" })?.value.flatMap(Int.init)
