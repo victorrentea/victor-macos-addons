@@ -29,12 +29,22 @@ import IOKit
 /// **Cheap poll.** Presence is checked *in-process* via IOKit — we match an
 /// `IOUSBHostInterface` carrying the ADB class triplet (class 255 / subclass 66
 /// / protocol 1), a Mach call that costs microseconds and spawns nothing. The
-/// (relatively) expensive `adb reverse` process is spawned **only on the plug-in
-/// edge** (absent→present), and retried on later ticks until it sticks (USB
-/// enumerates before adbd finishes its handshake). While the tablet sits
-/// plugged in and armed, each tick is just a free IOKit read — zero `adb`
-/// spawns. `start.sh` still arms it once at launch; this keeps it armed when the
-/// cable is plugged in mid-session.
+/// (relatively) expensive `adb reverse` process is spawned **only** when the
+/// rule is actually missing, and retried on later ticks until it sticks (USB
+/// enumerates before adbd finishes its handshake). `start.sh` still arms it once
+/// at launch; this keeps it armed when the cable is plugged in mid-session.
+///
+/// **The poll verifies, it does not assume.** While armed, each tick spends one
+/// cheap `adb reverse --list` confirming the rule is still in adb's table. That
+/// costs a process spawn every 30 s on AC, and it is the whole point of the
+/// poll: the rule can disappear with the cable never touched — `adb
+/// kill-server`, `adb reverse --remove-all`, a deploy script, Android Studio, or
+/// the tablet's own adbd restarting all drop it without an unplug edge, so no
+/// notification fires and `armed` stays stale. This class used to short-circuit
+/// on that flag and the tunnel then stayed dead for the rest of the session:
+/// `MacLink` fell through to the internet relay, which is slow and flaps, so on
+/// the tablet every tap did nothing while the header still showed a live link.
+/// Believing our own bookkeeping over adb's is what made that invisible.
 ///
 /// **Power-aware cadence:** a lazy **30s heartbeat on AC** (a stable venue with
 /// working WiFi rarely needs the wired path) tightening to **5s on battery**
@@ -42,9 +52,9 @@ import IOKit
 /// up fast). The interval is re-read from the power source every tick, so it
 /// adapts the instant the charger is plugged/unplugged.
 ///
-/// Caveat: if the adb *server* restarts mid-session without a USB replug, the
-/// reverse rule can drop while we still believe we're armed — the poll re-arms
-/// it (within one interval), or re-plugging the cable / restarting the app does.
+/// So a rule that drops mid-session without a USB replug is healed by the next
+/// poll — within 30 s on AC, 5 s on battery — rather than surviving as a stale
+/// belief until someone re-plugs the cable or restarts the app.
 final class UsbTunnelKeeper {
     private static let port = 55123
     private static let acInterval = 30       // seconds, on AC power
@@ -128,8 +138,19 @@ final class UsbTunnelKeeper {
             setArmed(false)
             return
         }
-        // Tablet is on USB. Nothing to do if the rule is already in place.
-        if armed { return }
+        // The cable is in — but `armed` is only ever a *belief*, and the reverse
+        // rule can vanish underneath it with the cable never touched: an
+        // `adb kill-server`, a `adb reverse --remove-all`, a deploy script,
+        // Android Studio, or the tablet's own adbd restarting all drop the rule
+        // without producing an unplug edge. Trusting the flag here is what let
+        // the tunnel stay dead for a whole session: `MacLink` then slid onto the
+        // internet relay, which is slow and flaps, so tap after tap did nothing
+        // while the tablet still showed a connected link. Verify instead.
+        if armed, Self.reverseRuleStillArmed() { return }
+        if armed {
+            NSLog("[UsbTunnelKeeper] reverse rule vanished with the cable still in — re-arming")
+            armed = false
+        }
         // Plug-in edge (or a retry after adbd wasn't ready yet): (re)establish
         // the reverse rule. A failure here just leaves us disarmed to retry on
         // the next tick.
@@ -288,6 +309,57 @@ final class UsbTunnelKeeper {
         }
         IOObjectRelease(iter)
         return present
+    }
+
+    /// Is the reverse rule *actually* in adb's table right now, as opposed to
+    /// merely believed to be? Asks `adb reverse --list`, which is the only
+    /// authority — the Mac cannot observe a tablet→Mac tunnel any other way.
+    ///
+    /// Answers `true` when the question cannot be put (no adb binary, no tablet
+    /// among the attached devices, the query itself failed): an adb that cannot
+    /// answer is also an adb that cannot re-arm, so claiming the rule is gone
+    /// would only spawn a doomed `adb reverse` on every tick. The next tick asks
+    /// again. Note that an adb *server* that was killed answers this fine — the
+    /// client restarts it and reports an empty table, which is exactly the
+    /// "vanished" verdict we want.
+    static func reverseRuleStillArmed() -> Bool {
+        guard let adb = adbPath,
+              case .tablet(let tablet) = AndroidAppDeployer.tabletSerial(),
+              let out = capture(adb, ["-s", tablet.serial, "reverse", "--list"])
+        else { return true }
+        return ruleListMentionsPort(out, port: port)
+    }
+
+    /// Does an `adb reverse --list` body carry the rule for `port`? Split out so
+    /// it can be asserted without an adb, a cable or a tablet.
+    ///
+    /// Matches on the **local** side of the rule (`tcp:<port> tcp:<port>`) rather
+    /// than a bare `tcp:<port>` substring, so a rule for some other port that
+    /// merely forwards *to* ours cannot be mistaken for ours. Lines look like
+    /// `UsbFfs tcp:55123 tcp:55123`.
+    static func ruleListMentionsPort(_ listing: String, port: Int) -> Bool {
+        listing
+            .split(separator: "\n")
+            .contains { $0.contains("tcp:\(port) tcp:\(port)") }
+    }
+
+    /// Like `run`, but hands back stdout. `nil` when the process could not be
+    /// launched or exited non-zero — the caller must not read a failed query as
+    /// a meaningful empty answer.
+    private static func capture(_ path: String, _ args: [String]) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = Pipe()
+        do { try p.run() } catch { return nil }
+        // Read before waiting: a pipe filled past its buffer would otherwise
+        // deadlock a process we are blocking on.
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     @discardableResult
