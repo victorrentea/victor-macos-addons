@@ -113,6 +113,100 @@ final class TerminalTileLayoutTests: XCTestCase {
         XCTAssertEqual(TerminalTileLayout.frames(windows: once, display: display, focused: 6), once)
     }
 
+    // MARK: - The sessions that are running
+
+    /// The quadrants nobody is stacked on — which is `topSlots` minus the front
+    /// slots of the piles, because those are only unobstructed for whoever is
+    /// front-most in z, and the tile is not allowed to decide that.
+    func testTheWholeQuadrantsAreTheOnesNothingIsStackedOn() {
+        XCTAssertEqual(TerminalTileLayout.wholeQuadrantSlots(count: 6, display: display), [0, 1, 2])
+        XCTAssertEqual(TerminalTileLayout.wholeQuadrantSlots(count: 4, display: display), [0, 1, 2, 3])
+        XCTAssertEqual(TerminalTileLayout.wholeQuadrantSlots(count: 11, display: display), [0, 1],
+                       "the bottom-left has started piling, so it is no longer one of them")
+        XCTAssertEqual(TerminalTileLayout.wholeQuadrantSlots(count: 28, display: display), [],
+                       "every quadrant piled: the preference has nothing left to give")
+    }
+
+    /// The terminals with a session running in them come out of the pile and onto
+    /// the free quadrants; the bare shells take their place in the cascade.
+    func testTheClaudeSessionsTakeTheFreeQuadrantsAndTheShellsGoIntoThePile() {
+        let shells = [win(100, 100), win(1500, 100), win(100, 800)]
+        let sessions = (0..<3).map { win(1500 + $0 * 40, 800 + $0 * 40) }
+        let out = TerminalTileLayout.frames(windows: shells + sessions, display: display,
+                                            claude: [3, 4, 5])
+        for i in 3...5 {
+            XCTAssertTrue(quads.contains(out[i]), "session \(i) landed on \(out[i]), not a quadrant")
+        }
+        let pile = Set(TerminalTileLayout.cascade(count: 3, in: quads[3]))
+        XCTAssertEqual(Set(out.prefix(3)), pile, "the three shells are the pile now")
+        XCTAssertEqual(Set(out).count, 6)
+    }
+
+    /// …and pressing ⌘⌃A again with the same sessions running finds every one of
+    /// them where it left it. Cost-0 pairs are taken first in the preference round
+    /// too, which is what keeps this from being a merry-go-round.
+    func testRetilingWithTheSameSessionsRunningChangesNothing() {
+        let windows = [win(100, 100), win(1500, 100), win(100, 800)]
+            + (0..<3).map { win(1500 + $0 * 40, 800 + $0 * 40) }
+        let once = TerminalTileLayout.frames(windows: windows, display: display, claude: [3, 4, 5])
+        XCTAssertEqual(TerminalTileLayout.frames(windows: once, display: display, claude: [3, 4, 5]),
+                       once)
+    }
+
+    /// ⌘` has moved the front window to the back of the stack — the tile must not
+    /// answer that by moving the sessions off their quadrants. The shells left in
+    /// the pile are re-dealt among themselves, because depth in a pile *is* z-order
+    /// and the stacking is the thing that just changed; the sessions are each alone
+    /// in a quadrant, so nothing about them depends on it.
+    func testACycleThroughTheWindowsDoesNotMoveTheSessions() {
+        let windows = [win(100, 100), win(1500, 100), win(100, 800)]
+            + (0..<3).map { win(1500 + $0 * 40, 800 + $0 * 40) }
+        let laidOut = TerminalTileLayout.frames(windows: windows, display: display, claude: [3, 4, 5])
+        let cycled = Array(laidOut.dropFirst()) + [laidOut[0]]
+        let out = TerminalTileLayout.frames(windows: cycled, display: display, claude: [2, 3, 4])
+        XCTAssertEqual(Array(out[2...4]), Array(cycled[2...4]), "a session changed quadrant")
+        XCTAssertEqual(Set(out), Set(laidOut), "and the screen is filled by the same slots")
+    }
+
+    /// The keyboard outranks the preference: the focused window is served first,
+    /// and a session that is left over is dealt into a pile like any other window.
+    func testTheFocusedWindowIsServedBeforeTheSessions() {
+        let windows = (0..<9).map { i in win(100 + i * 30, 100 + i * 30) }
+        let out = TerminalTileLayout.frames(windows: windows, display: display,
+                                            focused: 8, claude: Set(0..<8))
+        XCTAssertTrue(quads.contains(out[8]), "the keyboard did not get a whole quadrant")
+        XCTAssertEqual(Set(out).count, windows.count)
+    }
+
+    /// Every terminal running a session is the ordinary state of this Mac: the
+    /// preference has nothing to choose between, so the layout is the one pure
+    /// geometry gives.
+    func testWhenEveryTerminalRunsASessionTheLayoutIsUnchanged() {
+        let windows = TerminalTileLayout.frames(windows: (0..<6).map { _ in win(50, 50) },
+                                                display: display)
+        XCTAssertEqual(TerminalTileLayout.frames(windows: windows, display: display,
+                                                 claude: Set(windows.indices)),
+                       TerminalTileLayout.frames(windows: windows, display: display))
+    }
+
+    /// Nothing is promised past the free quadrants: with eleven windows only two
+    /// quadrants are still whole, so nine of the eleven sessions are piled — but
+    /// the two that fit are sessions, not shells.
+    func testTheSessionsTakeTheFreeQuadrantsEvenWhenMostOfThemCannotFit() {
+        let shells = (0..<2).map { win(100 + $0 * 20, 100 + $0 * 20) }
+        let sessions = (0..<9).map { win(1500 + $0 * 20, 800 + $0 * 20) }
+        let out = TerminalTileLayout.frames(windows: shells + sessions, display: display,
+                                            claude: Set(2..<11))
+        let whole = TerminalTileLayout.wholeQuadrantSlots(count: 11, display: display)
+            .map { TerminalTileLayout.targets(count: 11, display: display)[$0] }
+        XCTAssertEqual(whole.count, 2)
+        for w in whole {
+            let owner = out.firstIndex(of: w)
+            XCTAssertNotNil(owner)
+            XCTAssertGreaterThanOrEqual(owner!, 2, "a bare shell took a free quadrant")
+        }
+    }
+
     // MARK: - Filling order
 
     /// A quadrant is filled to its depth before the next one is touched: the

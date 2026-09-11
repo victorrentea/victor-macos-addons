@@ -44,6 +44,17 @@ enum TerminalTiler {
     /// back of a pile — raising it last covered the windows lying on it; now it is
     /// never at the back of a pile in the first place.
     ///
+    /// **A terminal with a Claude session in it stays in sight.** Before the pins
+    /// are handed out, every window's title is read: Claude Code names the window
+    /// it runs in (`✳ folder — what the session is about`, see
+    /// `ClaudeSessionTitle`), so the sessions are the windows wearing a star and
+    /// the bare shells are the ones that are not. The sessions get first refusal on
+    /// the quadrants nobody else is in, and the shells are the ones pushed to the
+    /// bottom of a pile (2026-09-11: *"să pui vizibile … terminalele în care
+    /// găsești [Claude] instances în rulare"*). Where there are more sessions than
+    /// free quadrants — a dozen of them is an ordinary afternoon here — the extras
+    /// are tiled like anything else; the rule is a preference, not a promise.
+    ///
     /// **Tiling does not renumber ⌘`.** The windows come out of it stacked exactly
     /// as they went in (`raisePreservingOrder`), because macOS walks an app's
     /// windows with ⌘` / ⌘⇧` in z-order: re-stacking them means that "the terminal
@@ -58,7 +69,7 @@ enum TerminalTiler {
         let wins = getTerminalWindows()
         guard !displays.isEmpty, !wins.isEmpty else { return }
 
-        var groups: [Int: [(win: AXUIElement, rect: Rect)]] = [:]
+        var groups: [Int: [(win: AXUIElement, rect: Rect, title: String?)]] = [:]
         for w in wins {
             let (cx, cy) = w.rect.center
             let di = displayFor(cx: cx, cy: cy, displays: displays)
@@ -71,7 +82,10 @@ enum TerminalTiler {
             let slots = TerminalTileLayout.targets(count: ws.count, display: displays[di].usable)
             let assignment = TerminalTileLayout.assign(
                 windows: ws.map { $0.rect }, display: displays[di].usable,
-                focused: focused.flatMap { f in ws.firstIndex { CFEqual($0.win, f) } })
+                focused: focused.flatMap { f in ws.firstIndex { CFEqual($0.win, f) } },
+                claude: Set(ws.indices.filter {
+                    ClaudeSessionTitle.isClaudeSession(title: ws[$0].title)
+                }))
             for (i, w) in ws.enumerated() {
                 let f = slots[assignment[i]]
                 setWindowFrame(w.win, x: f.x, y: f.y, w: f.w, h: f.h)
@@ -164,7 +178,8 @@ enum TerminalTiler {
     /// Read every Terminal window's frame via AX. Position/size are in the global
     /// top-left-origin point space — the same space as `CGDisplayBounds`, so the
     /// quadrant math below needs no conversion. Returns the live `AXUIElement` for
-    /// each window so we can write the new frame straight back to it.
+    /// each window so we can write the new frame straight back to it, along with
+    /// its title — the only clue AX gives as to what is running inside.
     ///
     /// **Minimized windows are not windows on the screen.** A window in the Dock
     /// still answers AX with a position and a size (the frame it had when it was
@@ -173,7 +188,7 @@ enum TerminalTiler {
     /// into the arrangement. Tiling only ever arranges what is visible; whatever is
     /// in the Dock stays in the Dock, and the visible ones split the screen among
     /// themselves.
-    private static func getTerminalWindows() -> [(win: AXUIElement, rect: Rect)] {
+    private static func getTerminalWindows() -> [(win: AXUIElement, rect: Rect, title: String?)] {
         guard let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: terminalBundleID).first else {
             return []
@@ -192,7 +207,8 @@ enum TerminalTiler {
             }
             return (win: win,
                     rect: Rect(x: Int(pos.x), y: Int(pos.y),
-                               w: Int(size.width), h: Int(size.height)))
+                               w: Int(size.width), h: Int(size.height)),
+                    title: AXWindows.title(of: win))
         }
     }
 

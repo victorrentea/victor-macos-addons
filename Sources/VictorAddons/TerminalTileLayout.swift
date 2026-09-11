@@ -88,6 +88,25 @@ import Foundation
 /// out again — and the window holding the keyboard keeps the slot the pin gave it,
 /// the rest of its pile being dealt around it.
 ///
+/// **The terminals running a Claude session get first refusal on the quadrants
+/// nobody is stacked on** (2026-09-11: *"să pui vizibile … terminalele în care
+/// găsești [Claude] instances în rulare"*). After the keyboard has taken its slot,
+/// the windows `ClaudeSessionTitle` recognises are matched — nearest-pair again,
+/// so an already-tiled screen re-tiles to itself — against `wholeQuadrantSlots`,
+/// and only then is everyone else dealt into what is left. With a dozen sessions
+/// and two spare shells open, which is the ordinary state of this Mac, it is the
+/// two shells that go to the bottom of a pile.
+///
+/// It is deliberately *only* the whole quadrants that are handed out this way, not
+/// every unobstructed slot. The front slot of a pile is unobstructed on the
+/// **screen**, but only for the window that is also in front in **z** — and z is
+/// what the tile is forbidden to touch — so giving it to a back-most window would
+/// bury it completely, which is the opposite of the request. A quadrant holding a
+/// single window has nobody to be buried by, whatever the stacking order says, and
+/// that is what makes this rule and the ⌘` rule able to hold at the same time. A
+/// session that does not fit in one is dealt into a pile like any other window:
+/// *"atât cât poți"*.
+///
 enum TerminalTileLayout {
 
     struct Rect: Hashable {
@@ -241,6 +260,33 @@ enum TerminalTileLayout {
         return fronts.filter { slots[$0].w * slots[$0].h == best }
     }
 
+    /// The slots **nothing can ever cover**: the quadrants holding a single
+    /// window, one index each, in quadrant order.
+    ///
+    /// This is `topSlots` without the tie-break on area — and, more importantly,
+    /// without the piles' front slots. A front slot is unobstructed only while its
+    /// window is also the front-most of the pile in z-order; these are unobstructed
+    /// full stop, because there is nothing else in the quadrant. That is the whole
+    /// reason the Claude sessions are given *these* and not the bigger candidate
+    /// list: a window promoted here is visible no matter where the ⌘` cycle has
+    /// left it standing.
+    ///
+    /// Empty once every quadrant is piled — roughly eleven windows on a large
+    /// screen — at which point the rule quietly stops applying and the layout is
+    /// the one geometry gives.
+    static func wholeQuadrantSlots(count: Int, display: Rect) -> [Int] {
+        let total = targets(count: count, display: display).count
+        let caps = count > 4 ? capacities(count: count, display: display)
+                             : [Int](repeating: 1, count: 4)
+        var out: [Int] = []
+        var index = 0
+        for cap in caps {
+            if cap == 1, index < total { out.append(index) }
+            index += cap
+        }
+        return out
+    }
+
     /// The slots of each quadrant, in quadrant order: the range of
     /// `targets(count:display:)` that one quadrant's pile occupies, deepest slot
     /// first. A quadrant holding a single window gets a one-slot range, which is
@@ -290,18 +336,31 @@ enum TerminalTileLayout {
     /// screen**: geometry picks the quadrant, and the pile inside it is then dealt
     /// by that order (`dealPilesByDepth`). `focused` is the window holding the
     /// keyboard, if it is one of these; it is served first, out of `topSlots`.
-    static func assign(windows: [Rect], display: Rect, focused: Int? = nil) -> [Int] {
+    /// `claude` are the windows with a session running in them, served next, out of
+    /// the quadrants no other window is in.
+    ///
+    /// Only `focused` is exempt from the re-deal by depth: a window promoted for
+    /// running Claude is by construction alone in its quadrant, i.e. a pile of one,
+    /// which the re-deal skips anyway — and one that did *not* fit is an ordinary
+    /// member of an ordinary pile and has to be dealt like one, or the stack and
+    /// the cascade stop agreeing.
+    static func assign(windows: [Rect], display: Rect, focused: Int? = nil,
+                       claude: Set<Int> = []) -> [Int] {
         let slots = targets(count: windows.count, display: display)
         let placed = assign(windows: windows, targets: slots,
-                            pinning: focused, to: topSlots(count: windows.count, display: display))
+                            pinning: focused, to: topSlots(count: windows.count, display: display),
+                            preferring: claude,
+                            to: wholeQuadrantSlots(count: windows.count, display: display))
         return dealPilesByDepth(placed, count: windows.count, display: display, pinned: focused)
     }
 
     /// Target frame for every window, in the order given.
-    static func frames(windows: [Rect], display: Rect, focused: Int? = nil) -> [Rect] {
+    static func frames(windows: [Rect], display: Rect, focused: Int? = nil,
+                       claude: Set<Int> = []) -> [Rect] {
         guard !windows.isEmpty else { return [] }
         let slots = targets(count: windows.count, display: display)
-        return assign(windows: windows, display: display, focused: focused).map { slots[$0] }
+        return assign(windows: windows, display: display, focused: focused,
+                      claude: claude).map { slots[$0] }
     }
 
     /// Greedy nearest-pair matching: repeatedly take the closest window/slot pair
@@ -311,42 +370,62 @@ enum TerminalTileLayout {
     /// already tiled reproduces itself exactly. Ties break on window order, so the
     /// result never depends on dictionary or timing luck.
     ///
-    /// `pinning` takes its slot before the greedy pass runs at all: the focused
-    /// window is handed the cheapest of `candidates` — the nearest of the biggest
-    /// unobstructed slots — and everyone else is matched around that. Nearest, not
-    /// first, so that when the candidates tie (four windows, four equal quadrants)
-    /// the pin lands on the slot the window already occupies and re-tiling stays
-    /// the no-op it is meant to be.
+    /// It runs in three rounds, each one over a smaller claim on the screen:
+    ///
+    /// 1. `pinning` — the focused window takes the cheapest of `candidates`, the
+    ///    nearest of the biggest unobstructed slots, before anything else is
+    ///    matched. Nearest, not first, so that when the candidates tie (four
+    ///    windows, four equal quadrants) the pin lands on the slot the window
+    ///    already occupies and re-tiling stays the no-op it is meant to be.
+    /// 2. `preferring` — the terminals running a Claude session are matched
+    ///    against `visible`, the quadrants nothing is stacked on. Greedy, not in
+    ///    window order: taking the cost-0 pairs first is what keeps a screen that
+    ///    is already laid out from re-shuffling itself when ⌘` changes which
+    ///    session is front-most.
+    /// 3. everyone left, over everything left.
     static func assign(windows: [Rect], targets: [Rect],
-                       pinning focused: Int? = nil, to candidates: [Int] = []) -> [Int] {
+                       pinning focused: Int? = nil, to candidates: [Int] = [],
+                       preferring claude: Set<Int> = [], to visible: [Int] = []) -> [Int] {
+        var out = [Int](repeating: -1, count: windows.count)
+        var takenSlot = [Bool](repeating: false, count: targets.count)
+
+        if let focused, windows.indices.contains(focused),
+           let slot = candidates.filter({ targets.indices.contains($0) })
+               .min(by: { cost(windows[focused], targets[$0]) < cost(windows[focused], targets[$1]) }) {
+            out[focused] = slot
+            takenSlot[slot] = true
+        }
+
+        claim(claude.filter { $0 != focused }.sorted(), to: visible,
+              windows: windows, targets: targets, out: &out, takenSlot: &takenSlot)
+        claim(Array(windows.indices), to: Array(targets.indices),
+              windows: windows, targets: targets, out: &out, takenSlot: &takenSlot)
+        return out
+    }
+
+    /// One greedy round: hand `slots` to `wanted`, cheapest pair first, skipping
+    /// whatever an earlier round has already settled. Anything left unmatched —
+    /// more windows than slots, which is the normal case for round 2 — simply falls
+    /// through to the round after it.
+    private static func claim(_ wanted: [Int], to slots: [Int],
+                              windows: [Rect], targets: [Rect],
+                              out: inout [Int], takenSlot: inout [Bool]) {
         var pairs: [(cost: Int, w: Int, t: Int)] = []
-        pairs.reserveCapacity(windows.count * targets.count)
-        for (i, w) in windows.enumerated() {
-            for (j, t) in targets.enumerated() { pairs.append((cost(w, t), i, j)) }
+        pairs.reserveCapacity(wanted.count * slots.count)
+        for w in wanted where windows.indices.contains(w) && out[w] == -1 {
+            for t in slots where targets.indices.contains(t) && !takenSlot[t] {
+                pairs.append((cost(windows[w], targets[t]), w, t))
+            }
         }
         pairs.sort {
             if $0.cost != $1.cost { return $0.cost < $1.cost }
             if $0.w != $1.w { return $0.w < $1.w }
             return $0.t < $1.t
         }
-
-        var out = [Int](repeating: -1, count: windows.count)
-        var takenSlot = [Bool](repeating: false, count: targets.count)
-        var placed = 0
-        if let focused, windows.indices.contains(focused),
-           let slot = candidates.filter({ targets.indices.contains($0) })
-               .min(by: { cost(windows[focused], targets[$0]) < cost(windows[focused], targets[$1]) }) {
-            out[focused] = slot
-            takenSlot[slot] = true
-            placed += 1
-        }
         for p in pairs where out[p.w] == -1 && !takenSlot[p.t] {
             out[p.w] = p.t
             takenSlot[p.t] = true
-            placed += 1
-            if placed == windows.count { break }
         }
-        return out
     }
 
     /// How far a window is from a slot: corner distance, plus half the size
