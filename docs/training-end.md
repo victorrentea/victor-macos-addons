@@ -8,9 +8,10 @@ when the room has actually gone quiet the Mac runs a finish-line countdown and p
 |---|---|
 | the button | `victor-vibe-board`: `main_menu.xml` (`action_training_end`), wired in `MainActivity.onCreateOptionsMenu` |
 | the state machine | `TrainingEndSequence.swift` (+ its pure `Policy`, tested in `TrainingEndPolicyTests`) |
-| the countdown bar | `ProgressBarOverlay.start(seconds:rider:)` — the ordinary yellow bar, with 🏁 riding its head |
+| the countdown bar | `victor-effects`: `GET /effect/progress-bar/<s>?rider=🏁` — the ordinary yellow bar, with 🏁 riding its head |
+| "over and out" | `AddonSounds.play("82_over_and_out.mp3")` — **played here**, not over HTTP |
 | "is anyone speaking?" | `whisper_runner.py` → `VICTOR_VOICE:<label>` → `WhisperProcessManager.onVoice` |
-| the route | tablet `GET /effect/training-end` → `AppDelegate`'s effect switch → `trainingEnd.toggle()` |
+| the route | tablet `GET /effect/training-end` → `AppDelegate`'s effect switch → `trainingEnd.toggle()`. One of the three effect names that stayed **local** on 55123 (`docs/overlay-effects.md`) |
 
 ## Why it exists
 
@@ -80,7 +81,19 @@ and the next ping corrects it if the Mac disagreed. A dropped link clears the ch
 
 ## The bar, and the flag on it
 
-The countdown reuses `ProgressBarOverlay` unchanged — same full-width yellow fill, same
+**The bar is in the other app now.** `onStartCountdown` fires
+`EffectsProxy.fire("/effect/progress-bar/\(seconds)?rider=%F0%9F%8F%81")` and
+`onAbortCountdown` fires `/effect/progress-bar/stop`; the sequence itself, the
+voice listener and the finish sound stayed here. Nothing about the countdown's
+*timing* crosses the wire — see the last paragraph of this section, which is why
+that split is safe. Fire-and-forget means the worst case is a countdown with no
+bar, never a workshop that does not end.
+
+**The sound did not move.** `onFinish` calls `AddonSounds.play`, for the same
+reason the break gong stayed: the ending must be audible even with the effects
+app stopped.
+
+The countdown reuses the effects app's `ProgressBarOverlay` unchanged — same full-width yellow fill, same
 white seconds-remaining number — with one addition: `rider: "🏁"`, an emoji pinned to the
 **leading edge of the fill**, travelling left→right with it. The head is the only part of the
 bar the eye tracks, so that is where the finish line belongs; a flag parked at the right end
@@ -93,10 +106,11 @@ against the screen edge instead of half off it. The cost is the first fraction o
 where the head is still too close to the left edge for the whole glyph to fit; centring it
 instead would have cut the flag off at **both** ends of the run.
 
-The sequence does **not** hang its payoff on `ProgressBarOverlay.onComplete`. That bar is
+The sequence does **not** hang its payoff on the bar's completion. That bar is
 shared with the tablet's 3s/5s/7s/10s timers, and a 3s press landing mid-countdown would
 otherwise inherit "over and out". The sequence's own 0.1 s tick is the single authority on
-when the countdown is over, so there is no second clock to race — the worst the sound can
+when the countdown is over, so there is no second clock to race — which is also
+what made the bar safe to move across a process boundary — the worst the sound can
 lag the fill reaching the right edge is one tick, which is well under the bar's own fade.
 The sequence retires itself **before** playing, too: "over and out" comes out of the speakers
 loudly enough for the mic to hear it, and a still-armed sequence would take its own sound

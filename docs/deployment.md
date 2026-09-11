@@ -2,6 +2,21 @@
 
 - **App bundle**: `./build-app.sh` creates `/Applications/Victor Addons.app` (Spotlight-searchable)
 - **LaunchAgent**: `./install-startup.sh` symlinks plist, loads LaunchAgent for login auto-start
+
+> **Two apps, two LaunchAgents, since 2026-09.** `ro.victorrentea.macos-addons.plist`
+> (this app, 💬, port 55123) and `ro.victorrentea.victor-effects.plist`
+> (`victor-effects`, 🎆, port 55124) are installed, signed, granted and
+> restarted **independently**. There is no ordering between them and neither
+> waits for the other: this app answers `effectsUp:false` while the other is
+> down, and the other's webhook is fire-and-forget.
+>
+> `pkill -f "Victor Addons"` does **not** touch the effects app — which is the
+> point of the split, and also the first thing to check when a restart "fixed
+> nothing" about an effect. The effects deploy line is
+> `pkill -f "Victor Effects"; open "/Applications/Victor Effects.app"`, run from
+> that checkout. Its own `docs/deployment.md` has the details, including the
+> fact that it **reuses this app's `Victor Addons Local Code Signing` identity**
+> when present, so both keep their TCC grants across rebuilds.
 - Re-run `build-app.sh` after changes to `start.sh`, icons, or app identity
 - `start.sh` exports `VICTOR_ADDONS_ROOT` so the app can resolve `whisper-transcribe/whisper_runner.py` reliably when launched from `/Applications` bundle.
 

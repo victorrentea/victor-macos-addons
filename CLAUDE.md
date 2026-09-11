@@ -1,7 +1,13 @@
 # Victor macOS Addons
 
 macOS utilities for live training workshops, running on the trainer's Mac.
-Single menu bar app (💬 icon) provides all functionality.
+Menu bar app, **💬 icon**.
+
+**Since 2026-09 this is one of two apps.** Every desktop effect, the soundboard
+and the 🔥 whip were extracted into [`victor-effects`](https://github.com/victorrentea/victor-effects)
+(**🎆**, a separate public repo beside this one). This app keeps the training
+session — transcription, hotkeys, the break timer, the tablet transport, the
+join link — and *proxies* the effect and sound routes to it.
 
 **This file is a router, not documentation.** The full docs — every decision, what
 was tried and failed, the numbers that were measured — live in `docs/*.md`, split by
@@ -10,8 +16,27 @@ load-bearing, not commentary.
 
 ## Architecture
 
+- **Two apps, one HTTP contract.** This app listens on **55123** as it always
+  has; `victor-effects` listens on **55124**. `EffectsProxy` forwards every
+  `/effect/*`, `/sound/*`, `/sounds/*`, `/alarm/*`, `/bt-compensation*`,
+  `/tiles*`, `/state` and the historic `/test/<effect>` aliases verbatim, merges
+  the two halves of `/ping`, and answers `effectsUp:false` when the other app is
+  down. **The port did not move** because seven local clients point at 55123 —
+  the IntelliJ plugin's baked default, the VS Code extension, `hands-off.sh`, the
+  Chrome extension, the prompt-capture hook, the test scripts — plus
+  `adb reverse tcp:55123` and the relay. Three effect names stay **local**:
+  `training-end`, `stop-all` (local *then* forwarded) and `focus-playlist`.
+  The authoritative table is `EffectsProxyRoutingTests`.
+- **One gesture goes the other way**: the effects app fires
+  `GET /effects/event?type=coffee-popped&x=&y=` back here (`onEffectsEvent`),
+  because the ☕ pixels left but the break watch did not.
+- **`AddonSounds`** keeps the three sounds that must ring even with the effects
+  app stopped: the break gong, `LidAwake`'s heartbeat/flatline, and 🏁
+  "over and out". Everything else is played over there.
+- **Neither app waits for the other.** No launch ordering, no shared process;
+  each degrades on its own.
 - **Single Swift process**: `VictorAddons` is the main application combining menu bar UI and overlay functionality
-- **LaunchAgent**: `ro.victorrentea.macos-addons.plist` — starts on login, no KeepAlive
+- **LaunchAgent**: `ro.victorrentea.macos-addons.plist` — starts on login, no KeepAlive. The effects app has its own, `ro.victorrentea.victor-effects.plist`, with no ordering between them
 - **Components**: All features run in same process with direct method calls (no IPC needed)
 - **Sources**: `Sources/VictorAddons/*.swift` (~94 files); Python sidecars in `whisper-transcribe/`, plus `powerpoint-monitor` / `intellij-monitor`
 - **One shared package**: `.package(path: "../victor-mac-kit")` — the ⌃P-hold **crop** (`CropSelectionOverlay`, `CropGeometry`, `CropCapture`) lives there since 2026-09-10 because Walkie Talkie drags out the same region with the mouse wheel, and one gesture deserves one implementation. It is a **path** dependency: a fresh clone needs `victor-mac-kit` checked out beside this folder, which is the trade for editing the shared code and rebuilding in one step. Both apps are only ever built on this Mac
@@ -28,7 +53,7 @@ load-bearing, not commentary.
 | [docs/keyboard-overlays.md](docs/keyboard-overlays.md) | ⌨️ hold-to-see cheat-sheets (`KeymapOverlay`): ⌥ / ⌥⇧ / ⌃⌥ emoji sheets (`EmojiKeyLayer`) + ⌘⌃ shortcut sheet, pictograms, accents, sync tests |
 | [docs/hotkeys-launchers.md](docs/hotkeys-launchers.md) | 🤖 terminals ⌘⌃C/Q/T + quarter placement + tiling, 📝 ⌘⌃N notes doc, 📕⌘⌃K / 📧⌘⌃G / 📅⌘⌃L openers, 📤 ⌘⌃M Reminder mail (`ReminderMail`) + ✉️ TO DO draft menu row (`GmailCompose`), 🤖 ⌘⌃P selection → agent prompt, 📋 ⌘⌃Z/E/R snippet paste, 🎧 ⌘⌃F focus playlist (`FocusPlaylist`), 🎯 ⌘⌃D Walkie Talkie bind, ⌘⌃⌥D dark mode, Wheel×2 given up to Walkie Talkie, 🔎 Cmd+scroll terminal font zoom (`TerminalZoomSizeLock`), 🔄 mouse-wheel scroll reversal (`ScrollReversal`, replaces Scroll Reverser, checkbox under Extra, default ON), ⬇️ back thumb button → Return (`BackButtonEnter`, replaces LinearMouse) |
 | [docs/session-notes.md](docs/session-notes.md) | 📝 ⌘⌃S selection-or-clipboard → notes (`SessionNotesAppender`), ⌃⌥V, bottom-left notes pills: markers, rising/sinking exits, `HoverMotionGate` |
-| [docs/audio-sounds.md](docs/audio-sounds.md) | Mute 🎶 during Wispr dictation (`CoreAudioManager`), pauza muzicii din Chrome pe durata dictării (`ChromeBridge` :8766 + `chrome-extension/`, fronturi din listener-ul pe lista de procese audio), tablet→Mac sound routing + `SoundsManifest` anti-drift, **Bluetooth speakers**: BT wake-up compensation (`BluetoothOutput`) and `BluetoothKeepAlive` (keeps the laptop's JBL boxes out of standby so sound starts aren't clipped — audio, not networking), `BluetoothAutoOutput` (the JBL boxes take over the default output the moment they connect, via a no-polling CoreAudio device-list listener) |
+| [docs/audio-sounds.md](docs/audio-sounds.md) | Mute 🎶 during Wispr dictation (`CoreAudioManager`), pauza muzicii din Chrome pe durata dictării (`ChromeBridge` :8766 + `chrome-extension/`, fronturi din listener-ul pe lista de procese audio), tablet→Mac sound routing + `SoundsManifest` anti-drift, **Bluetooth speakers**: BT wake-up compensation (**moved to `victor-effects`**, together with `SoundsManifest` and `BluetoothKeepAlive`), `AddonSounds` (the three sounds this app still plays itself), `BluetoothAutoOutput` (the JBL boxes take over the default output the moment they connect, via a no-polling CoreAudio device-list listener) |
 | [docs/screenshots.md](docs/screenshots.md) | 📸 ⌃P screenshot: tap = full screen, hold = crosshair crop (shared with Walkie Talkie via `victor-mac-kit`; **a crop draws no border since 2026-09-10**); flash geometry, retention policy, cursor marker in filename |
 | [docs/training-end.md](docs/training-end.md) | 🏁 End-of-training sequence (`TrainingEndSequence`): the tablet's 🏁 chip, 10 s of room silence → a 10 s finish-line countdown on the shared yellow bar with a flag riding its head → "over and out"; the `VICTOR_VOICE` pulse whisper emits so "quiet" means one thing app-wide |
 | [docs/break-timer.md](docs/break-timer.md) | ☕️ Break countdown overlay (seven-segment watch, country picker, fullscreen break screen, `ScreenBlackout`), ☕ coffee hold-charge → start/shorten break, 📸 Group Photo prompt |
@@ -39,23 +64,25 @@ load-bearing, not commentary.
 | [docs/hotspot-fallback.md](docs/hotspot-fallback.md) | 📶 asks the phone for its hotspot when the Mac is offline: RFCOMM signal, the Samsung routine, why not Bluetooth-connected, the home geofence |
 | [docs/tablet.md](docs/tablet.md) | Tablet ↔ Mac transport (USB/LAN/mDNS/Railway relay), 🎬 video playback (IINA orchestration), 🔌📶→🤖 LaunchBreak auto-deploy on USB *or WiFi* (`AndroidAppDeployer`, `WirelessTabletLink`), 📱 phone low-battery mirror (`PhoneBatteryMonitor`) |
 | [docs/displays-projector.md](docs/displays-projector.md) | 🖥️ auto display arrangement (`DisplayArrangementManager`, `KnownDisplays`), 🔴 presentation detection + aggressive 😶😶😶 silent-transcription warning |
-| [docs/overlay-effects.md](docs/overlay-effects.md) | `EmojiAnimator` / `ButtonBar` / `SoundManager` / `OverlayPanel` / `JoinLinkBanner` + WebSocket, 🟢 Interact Link, sound→effect map (`SoundEffectMap`), the self-termination lifecycle rule, and every desktop effect (🩸 blood, 🛰️ sonar, 💸 money, 🔫 counter-strike, ❄️ snow, ⏲️ microwave, 🕳️ iris) |
+| [docs/overlay-effects.md](docs/overlay-effects.md) | **the effects themselves moved to `victor-effects`** — what is left here is `JoinLinkBanner` + the WebSocket overlay, 🟢 Interact Link, and the addons↔effects contract (what is proxied, what stayed, what crosses the webhook) |
 | [docs/feedback-form.md](docs/feedback-form.md) | 📝 formularul de feedback pe FreeOnlineSurveys: intrarea de meniu sub 🟢 Interact Link, comanda pe `ChromeBridge`, automatizarea din extensia Chrome, `/feedback-form/publish` + `/link/publish` + `/link/hide` + `/session/name` |
 | [docs/hands-off.md](docs/hands-off.md) | ✋🔒 the warning an agent raises while it drives the GUI: amber frame + cursor badge + four slowly pulsing 🔒 in the screen corners (`/hands-off/*` HTTP API, `./hands-off.sh` → `~/bin/hands-off`) + `SyntheticInputWatch`, tap-ul care le ridică singur pentru orice input sintetic |
 | [docs/activity-monitors.md](docs/activity-monitors.md) | powerpoint-monitor, intellij-monitor (Python sidecars feeding the daemon) |
-| [docs/menu-bar.md](docs/menu-bar.md) | menu philosophy (the menu is not a second cheat-sheet — removed rows), ☠️ Kill port, 🔥 Whip Agent item + banner chip layout, ⏱️ Resumed row colouring , 🔄 Reverse Mouse Wheel (the one default-on checkbox) |
-| [docs/testing.md](docs/testing.md) | all headless `GET /test/*` hooks on `127.0.0.1:55123` (`TabletHttpServer`) + `./test-transcription-control.sh` — check here before testing anything by clicking |
-| [docs/deployment.md](docs/deployment.md) | `build-app.sh`, LaunchAgent install, stable code-signing identity, Accessibility grants, single-instance lock, reopen-replaces-it (`AppRelaunch`), `TerminalTiler` AX note |
+| [docs/menu-bar.md](docs/menu-bar.md) | menu philosophy (the menu is not a second cheat-sheet — removed rows), ☠️ Kill port, the banner chip layout, ⏱️ Resumed row colouring, 🔄 Reverse Mouse Wheel (the one default-on checkbox). The ⭐️ Effects submenu and the 🔥 Whip Agent row live in `victor-effects` now |
+| [docs/testing.md](docs/testing.md) | all headless `GET /test/*` hooks on `127.0.0.1:55123` (`TabletHttpServer`) + `./test-transcription-control.sh` — check here before testing anything by clicking. The effect hooks still answer on 55123, **through the proxy**; their documentation is in `victor-effects/docs/testing.md` |
+| [docs/deployment.md](docs/deployment.md) | `build-app.sh`, LaunchAgent install (**two** of them since the split), stable code-signing identity, Accessibility grants, single-instance lock, reopen-replaces-it (`AppRelaunch`), `TerminalTiler` AX note |
 
 ## Rules that apply everywhere
 
 - After any code change in this project, always: push to master (`git push`), run `./build-app.sh`, then restart the app (`pkill -f "Victor Addons"; open "/Applications/Victor Addons.app"`).
+- **A change to an effect, a sound or the whip belongs in `victor-effects`**, and its deploy line is the other app's: `pkill -f "Victor Effects"; open "/Applications/Victor Effects.app"`. `pkill -f "Victor Addons"` no longer touches the effects — which is the point of the split, and also the first thing to check when a restart "fixed nothing".
 - After any significant design, architecture, or deployment change, proactively offer to save the decision to memory for future conversations.
 - **Testing during a live workshop is fine — don't hold back.** Victor doesn't mind app restarts or transcription gaps mid-session. The only constraint: the **built-in retina display is what's projected to the room**, so do any *visual* testing (overlays, screenshots) on the **right-hand external screen** instead — never put test UI on the projected retina display. (Note: the ☕️ Break overlay's `defaultFrame()` always opens on the retina by design; drag it to the right monitor, or screenshot the right screen, when verifying during a session.)
 - When documenting a change, edit the matching `docs/*.md` zone file — this index only routes.
 
 ## Related
 
+- **`victor-effects`** (public, beside this checkout): the 🎆 app — every desktop effect, the soundboard, the 🔥 whip, the right-⌘ thumbnail panel, on port 55124. Its `docs/` is where an effect's reasoning lives now.
 - Backend repo: `training-assistant` (FastAPI, provides WebSocket server)
 - The `start.sh` in training-assistant also builds and launches the desktop-overlay during workshop sessions
 - Transcription output is consumed by training-assistant daemon for summaries and quizzes
