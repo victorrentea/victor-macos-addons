@@ -85,9 +85,10 @@ enum CommandControlShortcuts {
                          // when ⌃⌥ became the emoji board and G went to the goose.
         6:  "zoom",      // Z — paste Victor's personal Zoom room link
         13: "wispr🎙️",   // W — paste the Wispr transcript. NOT ours: the shortcut
-                         // lives in Wispr Flow and we must NOT claim it. The tap's
-                         // ⌃W → 🔥 Whip branch requires !hasCmd, so ⌘⌃W passes
-                         // straight through to Wispr; this entry is display-only.
+                         // lives in Wispr Flow and we must NOT claim it. ⌃W belongs
+                         // to Victor Effects; ⌘⌃W is Wispr Flow's — neither is bound
+                         // here, and that app's ⌃W rule requires !hasCmd, so ⌘⌃W
+                         // passes straight through. This entry is display-only.
                          // The studio 🎙️ says whose paste it is: the listening is
                          // Wispr's job, never this app's.
         9:  "spus",       // V — the last minute of transcript, cleaned, to pick from.

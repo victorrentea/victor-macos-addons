@@ -91,14 +91,16 @@ app.setActivationPolicy(.accessory) // no dock icon
 // Remember our parent PID (start.sh) — if it dies, we should too
 let originalParentPID = getppid()
 
-// Server URL from command line or default
-let serverURL: String
-if CommandLine.arguments.count > 1 {
-    serverURL = CommandLine.arguments[1]
-} else {
-    serverURL = "wss://interact.victorrentea.ro"
-}
-overlayInfo("Starting VictorAddons, connecting to \(serverURL) (parent pid: \(originalParentPID), my pid: \(myPid))")
+// The Railway bridge's base URL — the tablet's last-resort internet transport
+// (see `RailwayBridgeClient`), overridable with ADDON_BRIDGE_URL.
+//
+// It used to be read from `CommandLine.arguments[1]`, back when this app also
+// dialled OUT to that host over a WebSocket. That socket is gone (the daemon
+// connects to *us* on 127.0.0.1), so the argument no longer selects anything —
+// and `start.sh` may well still be passing it. Extra argv is therefore ignored
+// rather than rejected: a deploy must never fail on a leftover parameter.
+let serverURL = "wss://interact.victorrentea.ro"
+overlayInfo("Starting VictorAddons (parent pid: \(originalParentPID), my pid: \(myPid))")
 
 let delegate = AppDelegate(serverURL: serverURL, pidFilePath: pidFilePath, myPID: myPid)
 app.delegate = delegate

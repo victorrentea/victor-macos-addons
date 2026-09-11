@@ -65,16 +65,14 @@ class EventTapManager {
     /// append it to the session notes, stamped 🤖, so it shows up in the room's
     /// Prompts tab.
     var onSendSelectionAsPrompt: (() -> Void)?
-    var onWhip: (() -> Void)?
-    var onWhipCrack: (() -> Void)?   // Enter / extra mouse button, while the whip overlay is up
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
     var onKeyDownWhileModifierHeld: (() -> Void)?
 
-    /// Set on the main thread whenever the 🔥 whip overlay shows/hides. While
-    /// true, an Enter (Return / keypad-Enter) or an extra mouse button (6/7)
-    /// cracks the whip via `onWhipCrack` — the event still passes through, so
-    /// the Enter reaches Claude. Outside the overlay these inputs are untouched.
-    var whipOverlayShowing = false
+    // Three rules left this tap in 2026-09 for `EffectsHotkeyTap` in Victor
+    // Effects, which owns the overlay they drove: ⌃W (swallowed), and
+    // Return / keypad-Enter plus the extra mouse buttons 6/7 while that overlay
+    // is up (both passed through). Both apps' taps see the same real HID events,
+    // so the Return `BackButtonEnter` synthesises here still reaches it.
 
     // MARK: Key codes
     private let VK_V: CGKeyCode = 0x09
@@ -82,7 +80,6 @@ class EventTapManager {
     private let VK_D: CGKeyCode = 0x02
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
-    private let VK_W: CGKeyCode = 0x0D
     private let VK_T: CGKeyCode = 0x11
     private let VK_K: CGKeyCode = 0x28
     private let VK_L: CGKeyCode = 0x25
@@ -98,14 +95,10 @@ class EventTapManager {
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
     private let VK_F8: CGKeyCode = 0x64
-    private let VK_RETURN: CGKeyCode = 0x24       // Return
-    private let VK_KEYPAD_ENTER: CGKeyCode = 0x4C // Enter (keypad / Fn-Return)
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
     private let MOUSE_BUTTON_4: Int64 = 3  // "back" side button — typed as Return (`BackButtonEnter`)
     private let MOUSE_BUTTON_5: Int64 = 4  // "forward" side button — used by Wispr Flow push-to-talk
-    private let MOUSE_BUTTON_6: Int64 = 5  // extra side button (physical "button 6")
-    private let MOUSE_BUTTON_7: Int64 = 6  // extra side button (physical "button 7")
 
     /// True between a back-button down we turned into a Return and its matching
     /// up, so that up can be swallowed too. Leaving the app underneath an
@@ -250,9 +243,6 @@ private let VK_F: CGKeyCode = 0x03
                 // Pass the event through — Wispr Flow needs to see it. We only
                 // observe so the audio mute poll can briefly run at 100ms.
                 DispatchQueue.global().async { [weak self] in self?.onMouseButton5Pressed?() }
-            } else if whipOverlayShowing && (button == MOUSE_BUTTON_6 || button == MOUSE_BUTTON_7) {
-                // Extra side button while the whip is up → crack it (pass through).
-                DispatchQueue.main.async { [weak self] in self?.onWhipCrack?() }
             }
             return Unmanaged.passUnretained(event)
         }
@@ -416,14 +406,6 @@ private let VK_F: CGKeyCode = 0x03
                 event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
                 return Unmanaged.passUnretained(event)
             }
-        }
-
-        // While the 🔥 whip overlay is up, Enter cracks it (the button Victor uses
-        // to submit to Claude often *is* an Enter). Always pass the key through so
-        // the Enter still reaches Claude — this only adds the crack, never eats it.
-        if whipOverlayShowing && (keyCode == VK_RETURN || keyCode == VK_KEYPAD_ENTER) {
-            DispatchQueue.main.async { [weak self] in self?.onWhipCrack?() }
-            return Unmanaged.passUnretained(event)
         }
 
         // ⌃P → screenshot (suppressed): clipboard AND /tmp/victor-screenshots,
@@ -631,12 +613,9 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
-        // Ctrl+W → 🔥 Whip (interrupt Claude) (suppress). NB: this globally
-        // shadows Ctrl+W's usual "delete word backwards" in terminals/editors.
-        if keyCode == VK_W && hasCtrl && !hasCmd && !hasOpt && !hasShift {
-            DispatchQueue.global().async { [weak self] in self?.onWhip?() }
-            return nil
-        }
+        // ⌃W is NOT bound here any more — it belongs to Victor Effects' own tap,
+        // which still swallows it and still shadows the terminals' "delete word
+        // backwards". This app must not claim it a second time.
 
         // V variants below
         guard keyCode == VK_V else {

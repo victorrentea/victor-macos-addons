@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 10, 18:18"
+    static let BUILD_TIME = "Sep 11, 08:53"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -88,14 +88,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onOpenCatalog: (() -> Void)?
     var onOpenCalendar: (() -> Void)?
     var onOpenGmail: (() -> Void)?
-    var onDesktopEffect: ((String) -> Void)?
     var onTileTerminals: (() -> Void)?
     var onFixDisplayLayout: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
-    var onWhip: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     /// A country picked from the 🌍 submenu — persists the day-scoped selection and
     /// repaints a showing Break overlay in that timezone.
@@ -110,8 +108,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
     var onTaskInboxStatus: (() -> (lastCheck: Date?, launches: Int))?
-
-    // 🔥 Whip Claude — playful "interrupt Claude" overlay. Fires on click; Esc dismisses.
 
     // 🌍 Break country picker (parent row + its submenu of training countries).
     private var countryItem: NSMenuItem!
@@ -278,60 +274,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Desktop Effects submenu
-        let effectsItem = NSMenuItem(title: "⭐️ Effects", action: nil, keyEquivalent: "")
-        effectsItem.isEnabled = true
-        let effectsSubmenu = NSMenu()
-        effectsItem.submenu = effectsSubmenu
-        let effectPairs: [(String, String)] = [
-            ("Heart ❤️",        "heart"),
-            ("Confetti 🎊",     "confetti"),
-            ("Zorro",           "zorro"),
-            ("Fear 😱",         "fear"),
-            ("Old Film 📽️",    "sepia"),
-            ("Fail Stamp",      "fail"),
-            ("Fireworks 🎆",    "fireworks"),
-            ("Applause 👏",     "applause"),
-            ("Nuke ☢️",          "explosion"),
-            ("Broken Glass 💥", "broken-glass"),
-            ("Game Over",       "game-over"),
-            ("Pulse",           "pulse"),
-            ("Fire Alarm 🚨",    "fire-alarm"),
-            ("Bullet Holes 🎯",  "bullet-holes"),
-            ("Phone Ring 📱",   "phone-ring"),
-            ("FBI Knock 🚪",    "fbi-knock"),
-            ("Beethoven 🎼",     "beethoven"),
-            ("Brother 🤢",       "brother"),
-            ("Gangnam 💃",       "gangnam"),
-            ("Love Hands 🤲",   "love-hands"),
-            ("Death Star ☠️",    "star-wars"),
-            ("Gong 🔔",          "gong"),
-            ("Rainbow 🌈",       "rainbow"),
-            ("Snow ❄️",          "snow"),
-            ("Cavalry 🐎",       "cavalry"),
-            ("Counter-Strike 🔫", "counter-strike"),
-            ("Wasn't Me 🙅", "wasnt-me"),
-            ("Chainsaw Cursor 🪚", "chainsaw"),
-            ("Fire Cursor 🔥",    "fire"),
-            ("Microwave ⏲️",      "microwave"),
-            ("Wrong X ❌",        "wrong-x"),
-            ("Drum Roll 🥁",     "drum-roll"),
-            ("Phoenix 🔥",        "phoenix"),
-            ("Money 💸",          "money"),
-            ("Laugh 🤣",          "laugh"),
-            ("Corner Confetti 🎉", "corner-confetti"),
-            ("Heartbeat 💓",      "heartbeat"),
-            ("Spiral Hearts 💘",  "spiral-hearts"),
-            ("Green Flash 🟢",    "green-flash"),
-        ]
-        for (title, name) in effectPairs {
-            let item = NSMenuItem(title: title, action: #selector(desktopEffectAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.isEnabled = true
-            item.representedObject = name
-            effectsSubmenu.addItem(item)
-        }
-        menu.addItem(effectsItem)
+        // ⭐️ Effects moved out (2026-09): the whole submenu — `effectPairs`, the
+        // silent fixed-duration rule, the BT wake-tone shift — now lives in the
+        // Victor Effects menu bar (🎆), next to the animator it drives. A second
+        // copy of it here would be a menu that fires effects this process can no
+        // longer see the end of.
 
         // Extra submenu
         let extraItem = NSMenuItem(title: "👩🏻‍💻 Extra", action: nil, keyEquivalent: "")
@@ -444,11 +391,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // cheat-sheet already teaches that key, so the menu line was a third
         // copy of something two other places say better.
 
-        // 🔥 Whip — crack a whip to interrupt Claude (⌃W). Plain action (no checkbox); Esc dismisses.
-        menu.addItem(.separator())
-        let wipItem = addItem("🔥 Whip Agent", action: #selector(whipAction))
-        wipItem.keyEquivalent = "w"
-        wipItem.keyEquivalentModifierMask = .control
+        // The 🔥 agent-scolding row moved to the Victor Effects menu in 2026-09,
+        // together with its overlay, its ⌃W tap and its sounds. See that app's
+        // docs; nothing about it is left in this process.
 
         // 🔁 Restart has no row either: opening the app again (Spotlight, Finder,
         // Dock) relaunches it — `AppDelegate.applicationShouldHandleReopen` →
@@ -745,11 +690,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onDisplayJoinLink?()
     }
 
-    @objc private func desktopEffectAction(_ sender: NSMenuItem) {
-        guard let name = sender.representedObject as? String else { return }
-        onDesktopEffect?(name)
-    }
-
     @objc private func fixDisplayLayoutAction() {
         onFixDisplayLayout?()
     }
@@ -965,10 +905,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         overlayInfo("Quit")
         onQuit?()
         exit(0)
-    }
-
-    @objc private func whipAction() {
-        onWhip?()
     }
 
     @objc private func breakAction(_ sender: NSMenuItem) {
