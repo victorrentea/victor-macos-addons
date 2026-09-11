@@ -101,7 +101,7 @@ final class LidAwake {
 
     /// **The flatline**, played once when the work finishes and the flag is
     /// about to come off — `15_flatline.mp3`, the sound behind the 🫀 Pulse
-    /// desktop effect (`SoundEffectMap`: `15_flatline.mp3` → `"pulse"`), played
+    /// desktop effect (Victor Effects' `SoundEffectMap`: `15_flatline.mp3` → `"pulse"`), played
     /// whole rather than cut: two last QRS beats and then the long tone.
     ///
     /// **Because it is the one ending a pulse can have.** Every beat above
@@ -585,7 +585,7 @@ final class LidAwake {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
-            guard let url = SoundManager.shared.soundURL(for: Self.farewellFile),
+            guard let url = AddonSounds.shared.soundURL(for: Self.farewellFile),
                   let player = try? AVAudioPlayer(contentsOf: url) else {
                 // No shared sounds folder (a dev build — it is a symlink into
                 // the Android app's assets). macOS ships no flat tone, so the
@@ -620,7 +620,7 @@ final class LidAwake {
     /// Lazily built, then kept. `nil` means the file could not be resolved.
     private func beatPlayer() -> AVAudioPlayer? {
         if let cached = cachedBeatPlayer { return cached }
-        guard let url = SoundManager.shared.soundURL(for: Self.beatFile),
+        guard let url = AddonSounds.shared.soundURL(for: Self.beatFile),
               let player = try? AVAudioPlayer(contentsOf: url) else {
             overlayError("LidAwake: \(Self.beatFile) not found — falling back to system clicks")
             return nil

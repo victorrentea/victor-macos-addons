@@ -8,7 +8,7 @@ import IOKit.pwr_mgt
 /// small controls (+1 / +3 / +5 / pause / close). Hovering shows resize cursors
 /// at the corners and a pointer over the buttons; the body keeps the plain arrow.
 /// On expiry it returns to the retina (if dragged elsewhere), gongs twice, blinks
-/// twice, and fades out. Unlike OverlayPanel, this panel accepts mouse events.
+/// twice, and fades out. Unlike `AddonsOverlayPanel`, this panel accepts mouse events.
 
 // MARK: - Controller
 
@@ -302,7 +302,7 @@ final class BreakTimerController {
         // countdown is excluded: it measures the time TO the pause, so its close
         // must leave "Resumed Xm ago" anchored on the last actual break.
         if wasShowing && BreakTimerModel.endsABreak(title: titleText) { onEnded?() }
-        SoundManager.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
+        AddonSounds.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
         shakeTimer?.invalidate(); shakeTimer = nil
@@ -693,9 +693,9 @@ final class BreakTimerController {
         let myEpoch = epoch
         // Play the FULL gong (exact same mp3 as tablet effect #50 — not a clip),
         // then the second strike after the first finishes.
-        let gong = SoundManager.shared.soundDuration("50_gong.mp3") ?? 8.6
+        let gong = AddonSounds.shared.soundDuration("50_gong.mp3") ?? 8.6
 
-        SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 1 (full)
+        AddonSounds.shared.playOverlapping("50_gong.mp3")   // strike 1 (full)
         // One continuous chaotic shake spanning both strikes. Each strike's audible
         // "BONG" lands `gongStrikePeak` (~1.02s) into its clip, so peak the shake
         // there — not at t=0 / t=gong (the silent lead-in), which desynced the
@@ -704,7 +704,7 @@ final class BreakTimerController {
         startExpiryShake(totalDuration: 2 * gong, strikeAt: [peak, gong + peak])
         DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
-            SoundManager.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
+            AddonSounds.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
             // Auto-close only after this FINAL strike has fully rung out, then
             // close()'s stopOverlapping is a clean no-op instead of hard-cutting
             // the decaying tail ("truncated at the end"). `playOverlapping` shifts
@@ -712,7 +712,7 @@ final class BreakTimerController {
             // (0 on wired/built-in; ~0.8s on a BT speaker — the workshop case), so
             // wait gong + comp + a small margin measured from strike 2, not a fixed
             // 2*gong from expiry-start.
-            let comp = SoundTimingConfig.shared.currentBluetoothCompensation
+            let comp = AddonSounds.shared.currentBluetoothCompensation
             DispatchQueue.main.asyncAfter(deadline: .now() + gong + comp + 0.6) { [weak self] in
                 guard let self, self.epoch == myEpoch else { return }
                 self.close()

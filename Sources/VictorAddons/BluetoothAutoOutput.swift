@@ -11,8 +11,7 @@ import Foundation
 /// register a listener block on it; `coreaudiod` calls that block only when a
 /// device actually appears or disappears — which, for a Bluetooth speaker, is
 /// exactly the connect/disconnect moment. Between events the app is asleep and
-/// schedules no timer wakeups at all, so this is strictly cheaper than the 30 s
-/// `BluetoothKeepAlive` heartbeat next to it. The only timers are the two short
+/// schedules no timer wakeups at all. The only timers are the two short
 /// bounded retries after a connect (see below).
 ///
 /// **Why a retry.** A speaker shows up in the device list a moment before

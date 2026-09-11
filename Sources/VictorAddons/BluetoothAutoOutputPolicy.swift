@@ -15,7 +15,9 @@ import Foundation
 /// edge we deliberately ignore, so relaunching the app never hijacks a chosen
 /// output.
 enum BluetoothAutoOutputPolicy {
-    /// Shared with `BluetoothKeepAlive` — see `BluetoothOutput.speakerNameMatch`.
+    /// See `BluetoothOutput.speakerNameMatch`. Victor Effects keeps its own,
+    /// configurable copy of this name for the standby keep-alive that moved
+    /// there with the soundboard; the two are independent by design.
     static let nameMatch = BluetoothOutput.speakerNameMatch
 
     static func matches(_ name: String) -> Bool {
