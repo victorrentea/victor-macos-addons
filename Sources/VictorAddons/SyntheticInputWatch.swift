@@ -48,6 +48,23 @@ final class SyntheticInputWatch {
         "keyboard maestro"
     ]
 
+    /// macOS' own accessibility machinery *re-posts* Victor's hardware events
+    /// with its own pid, so the pid test calls it software. It is not: ⌥+scroll
+    /// screen Zoom (`closeViewScrollWheelToggle`) and the shake-to-find pointer
+    /// both run inside `AXVisualSupportAgent`, and both fired ~18 times on the
+    /// morning of 11 Sep 2026 with no agent anywhere near the mouse. Locks that
+    /// go up every time he zooms are locks he stops reading.
+    ///
+    /// Matched on the **executable path**, not the display name: this daemon
+    /// calls itself "Accessibility Services", a name any app could claim, while
+    /// the path lives under SIP-protected `/System` where nothing an agent runs
+    /// can put itself. Extend this list only with Apple daemons that post events
+    /// *on Victor's behalf*; anything that can be asked to click for an agent
+    /// (System Events above all) must stay out of it.
+    static let systemExemptPathPrefixes = [
+        "/System/Library/PrivateFrameworks/UniversalAccess.framework/"  // Zoom, lupa de cursor
+    ]
+
     /// How long the locks stay up after the last synthetic event. Long enough to
     /// bridge the gaps inside one GUI dance (a menu opens, a sheet animates, the
     /// agent thinks for a second) so the frame does not strobe on and off; short
@@ -159,6 +176,7 @@ final class SyntheticInputWatch {
         let quiet = Date().timeIntervalSince(at)
 
         if quiet < quietWindow {
+            guard !Self.isSystemExempt(pid) else { return }
             let name = Self.processName(for: pid)
             guard !Self.isAllowlisted(name) else { return }
             if overlay.isAutoRaised {
@@ -176,6 +194,12 @@ final class SyntheticInputWatch {
         }
     }
 
+    /// True for the Apple daemons that only ever echo Victor's own input.
+    static func isSystemExempt(_ pid: pid_t) -> Bool {
+        guard let path = executablePath(for: pid) else { return false }
+        return systemExemptPathPrefixes.contains { path.hasPrefix($0) }
+    }
+
     static func isAllowlisted(_ name: String) -> Bool {
         let lower = name.lowercased()
         return allowlist.contains { lower.contains($0) }
@@ -184,6 +208,13 @@ final class SyntheticInputWatch {
     /// Name of the process behind a pid. `NSRunningApplication` first (that is
     /// the name Victor would recognise from the Dock), falling back to the
     /// executable name for the faceless helpers agents actually run as.
+    private static func executablePath(for pid: pid_t) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        let path = String(cString: buffer)
+        return path.isEmpty ? nil : path
+    }
+
     private static func processName(for pid: pid_t) -> String {
         if let app = NSRunningApplication(processIdentifier: pid), let name = app.localizedName, !name.isEmpty {
             return name

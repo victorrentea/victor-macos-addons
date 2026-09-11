@@ -65,6 +65,14 @@ same locks for any synthetic input, announced or not.
   *for* Victor at the moment he asks it to. Raising locks for his own dictation would
   train him to ignore locks. **That list is the whole false-positive risk; extend it
   rather than widening the pid test.**
+- **System exemption** (`systemExemptPathPrefixes`): macOS' own accessibility daemon
+  `AXVisualSupportAgent` ("Accessibility Services", under `UniversalAccess.framework`)
+  re-posts Victor's hardware events with its own pid — ⌥+scroll screen Zoom and
+  shake-to-find-the-pointer both live there. It raised the locks 18× on the morning of
+  11 Sep 2026 with nobody driving anything. Matched on the **executable path**, not the
+  display name, which any app could claim; `/System` is SIP-protected, so nothing an
+  agent starts can land there. Apple daemons that merely echo his input only — never
+  System Events, which is exactly how an agent clicks.
 - Raised within ~1 s of the first event, released 5 s after the last one, **silently**
   (no Tink: an auto-raised frame goes up and down in bursts as a script works). An
   announced session always wins and keeps its own label.
