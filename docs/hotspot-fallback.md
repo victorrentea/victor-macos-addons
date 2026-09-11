@@ -194,14 +194,42 @@ macOS auto-join is not relied on. Observed live: the hotspot was up and visible
 in the Wi-Fi menu while the Mac sat unassociated until it was clicked by hand.
 Auto-join depends on a stored per-network flag and on where the network sits in
 a 113-entry preferred list, either of which can quietly stop being what you
-think. So the fallback asks — `networksetup -setairportnetwork` — from the 6th
-second, every 3 s (the hotspot needs ~8 s to start beaconing).
+think. So the fallback asks — `networksetup -setairportnetwork` — from the 4th
+second, every 10 s.
 
-That also makes the preferred-list order irrelevant, which is what an earlier
-attempt to reorder `victor` to the end was for. It was abandoned: macOS promotes
-the currently-joined network back to the top, so the order will not hold.
-`networksetup` also **exits 0 when the join fails**, reporting the failure only
-as text on stdout — so success is empty output, never the exit status.
+### The asking is what was taking the Wi-Fi down (11 Sep 2026)
+
+This section used to claim that asking explicitly *also makes the preferred-list
+order irrelevant*. **It does not**, and that sentence cost a debugging session.
+Measured in a controlled experiment:
+
+- **`-setairportnetwork` aimed at the network the interface is already on
+  disconnects it.** Command at 18:56:25 → `disassoc=18:56:30.043 (8)` in
+  airportd's log. The retry was not a harmless duplicate; it was the outage.
+- **`networksetup` lies on the way out.** The same command returned
+  `Failed to join network victor. Error: -3900 tmpErr` while the system log
+  recorded `AUTO-JOIN: Join SUCCEEDED (duration=553ms)` 553 ms later. The app
+  read the failure, retried, and landed on top of an association that had just
+  come up. That loop is the engine.
+- **`networksetup -getairportnetwork en0` is unusable as the guard.** It answered
+  "You are not associated with an AirPort network" while `ipconfig getifaddr en0`
+  returned `10.23.165.13`.
+
+So three things changed. The probe requires **two consecutive failures** (4 s
+each) before it says "offline", because a false offline now costs a join and a
+join costs the Wi-Fi. The retry cadence went from 3 s to **10 s**, longer than one
+associate + DHCP, so a join that is working is left to finish. And the state of
+the interface is read through **CoreWLAN** (`CWWiFiClient.shared().interface()?.ssid()`,
+which this app can use because it already holds Location Services for the
+geofence): if we are already on `victor`, `networksetup` is **not run at all**,
+and after a join the verdict comes from the SSID, not from the command's exit
+status or its message. The "command reported an error but the association
+succeeded" case is logged as such, because it is common.
+
+The old note still stands on its own: reordering the preferred list was tried and
+abandoned — macOS promotes the currently-joined network back to the top, so the
+order will not hold. And `networksetup` **exits 0 when the join fails**, which is
+why the exit status was never the signal and is now ignored entirely.
 
 ## The link has to be up before the SDP query
 
@@ -286,8 +314,10 @@ clock now, and the first join moved to 4 s.
 was 12 s, sized against a measured ~8 s hotspot spin-up. With the phone's Wi-Fi
 switched off beforehand the soft AP has to tear the STA down first, and the same
 chain took **30 s** — so the app gave up and logged `channel is open but no
-internet followed` on a run that succeeded seconds later. Now 45 s; the loop
-exits the moment the probe answers, so overshooting is free.
+internet followed` on a run that succeeded seconds later. Now **60 s** (45 s until
+11 Sep 2026, raised when a confirmed-offline verdict started costing two 4 s
+probes and a turn of the loop went from ~3 s to ~9 s); the loop exits the moment
+the probe answers, so overshooting is free.
 
 Related: the SDP watchdog was 6 s and produced a false negative on a cold ACL
 link (a query answers in ~1 s once the link is up, but the phone has to be paged

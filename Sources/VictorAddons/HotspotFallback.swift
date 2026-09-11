@@ -1,4 +1,5 @@
 import AppKit
+import CoreWLAN
 import Foundation
 import IOBluetooth
 import Network
@@ -102,7 +103,15 @@ final class HotspotFallback {
     /// then succeeded seconds later, which is a lie in the log at the worst
     /// possible moment. Overshooting costs nothing: the loop exits the second
     /// the probe answers.
-    private static let waitAfterPlainConnect = 45
+    ///
+    /// Raised to 60 s on 11 Sep 2026, when the probe stopped believing a single
+    /// failed handshake: a confirmed-offline verdict now costs up to ~9 s (two
+    /// 4 s probes plus the gap), so a turn of the loop is ~9 s instead of ~3 s
+    /// and 45 s bought only five of them. 60 s keeps roughly the same number of
+    /// *join attempts* inside the measured 30 s worst case as before, and is the
+    /// ceiling: past a minute this stops being a fallback and starts being a
+    /// hang.
+    private static let waitAfterPlainConnect = 60
     /// Poll budget after the power cycle (seconds).
     private static let waitAfterPowerCycle = 15
 
@@ -145,8 +154,28 @@ final class HotspotFallback {
     /// AP up and `-setairportnetwork` against an AP that isn't beaconing yet
     /// simply fails, so there is no point asking instantly; measured, the
     /// routine flips the hotspot 1.5 s after the signal.
+    ///
+    /// Re-checked against the slower probe on 11 Sep 2026 and deliberately left
+    /// at 4 s: since a confirmed-offline verdict costs ~9 s of its own, the
+    /// first join actually lands at ~9 s, which is *closer* to the ~8 s the soft
+    /// AP needs than 4 s ever was. The constant is now only the floor for the
+    /// case where both probes fail fast (connection refused rather than timed
+    /// out), and it is still the right floor for that.
     private static let firstJoinAfter: TimeInterval = 4
-    private static let joinRetryEvery: TimeInterval = 3
+    /// **Longer than one association takes, or every join kills the previous
+    /// one.** It was 3 s, which is shorter than associate + DHCP, so each retry
+    /// landed on top of a handshake that had not finished and knocked it over —
+    /// and since `-setairportnetwork` against the network we are already on
+    /// *disconnects* it (measured 11 Sep 2026: command at 18:56:25,
+    /// `disassoc=18:56:30.043 (8)` in airportd's log), that retry was not a
+    /// harmless duplicate but the thing taking the Wi-Fi down. 10 s outlasts a
+    /// full associate + DHCP, so a join that is working is left alone to finish.
+    private static let joinRetryEvery: TimeInterval = 10
+    /// How long the interface is given to associate before we read the SSID back
+    /// to find out whether the join actually worked — see `joinHotspot()`. The
+    /// same log line above shows the association landing 553 ms after the
+    /// command; 3 s is that with room for a cold radio.
+    private static let joinSettle: TimeInterval = 3
 
     /// Breathing room for the phone to stand a new listening socket up after we
     /// close a channel ourselves.
@@ -170,7 +199,18 @@ final class HotspotFallback {
 
     private static let probeHost = "1.1.1.1"
     private static let probePort: NWEndpoint.Port = 443
-    private static let probeTimeout: TimeInterval = 2
+    /// **One refused handshake is not a verdict**, and this one is expensive to
+    /// get wrong: every false "offline" costs a `networksetup` join, and a join
+    /// is now known to disconnect the interface it is aimed at. An AP mid-DHCP,
+    /// a hotspot that has just associated and a momentarily congested link all
+    /// refuse a 2 s handshake while being perfectly alive a second later. So the
+    /// probe is both slower and asked twice.
+    private static let probeTimeout: TimeInterval = 4
+    /// Consecutive failed probes required before "no internet" is believed.
+    private static let probeConfirmations = 2
+    /// Breath between the two probes, so the second is not simply the first one
+    /// re-run against the same half-second of bad luck.
+    private static let probeGap: TimeInterval = 0.5
 
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.hotspot-fallback", qos: .utility)
     /// The probe gets its own queue, and that is not a detail. `queue` is serial
@@ -373,14 +413,24 @@ final class HotspotFallback {
     /// it sits in a 113-entry preferred list, both of which can silently stop
     /// being what you think they are (observed live: the hotspot was up and
     /// visible in the Wi-Fi menu, and the Mac sat there unassociated until it
-    /// was clicked by hand). Asking is deterministic, and it also makes the
-    /// preferred-list order irrelevant: we only ever join the hotspot at a
-    /// moment when we have already established there is no internet, so it
-    /// cannot steal the Mac away from a venue network.
+    /// was clicked by hand). Asking is deterministic.
     ///
-    /// The first attempt waits ~6 s because the hotspot needs ~8 s to become
-    /// joinable and `-setairportnetwork` against an AP that isn't beaconing yet
-    /// just fails; retrying every 3 s covers the spread.
+    /// **It does not, however, make the preferred-list order irrelevant — that
+    /// claim stood here until 11 Sep 2026 and it sent a whole debugging session
+    /// the wrong way.** The order still decides what macOS re-associates with
+    /// the moment anything shakes the interface loose, and this loop's own joins
+    /// are exactly such a shake: `-setairportnetwork` aimed at the network we
+    /// are already on *disconnects* it. So a hotspot we keep asking for and a
+    /// venue AP macOS prefers can pull the interface back and forth for as long
+    /// as the loop runs — which is the Wi-Fi collapse this was measured causing,
+    /// not a theoretical one. What prevents it now is not the ordering but the
+    /// guard in `joinHotspot()`: the command is never run while we are already
+    /// associated with the hotspot.
+    ///
+    /// The first attempt waits ~4 s for the soft AP to start beaconing — in
+    /// practice ~9 s, since a confirmed-offline verdict now costs two 4 s probes
+    /// of its own — and retries every 10 s, which outlasts one associate + DHCP
+    /// so a join in progress is never cut off by the next one.
     ///
     /// This is also the only thing that tells the two failure modes apart. "The
     /// network could not be found" means the phone never turned the hotspot on
@@ -412,24 +462,82 @@ final class HotspotFallback {
             }
             guard elapsed() >= nextJoinAt else { continue }
             nextJoinAt = elapsed() + Self.joinRetryEvery
-            let err = Self.joinHotspot()
-            if err == nil {
+            switch Self.joinHotspot() {
+            case .alreadyOn:
+                // Nothing was run, and nothing is logged: this is the quiet,
+                // correct case — associated with the hotspot while DHCP or the
+                // phone's own uplink is still catching up. Running the command
+                // here is what used to knock the association back down.
+                break
+            case .joined:
+                lastJoinError = nil
                 overlayInfo("📶 Joined '\(Self.hotspotSSID)' at \(Int(elapsed()))s (\(stage))")
-            } else if err != lastJoinError {
-                lastJoinError = err
-                overlayInfo("📵 Join '\(Self.hotspotSSID)' refused at \(Int(elapsed()))s: \(err!)")
+            case .refused(let why):
+                if why != lastJoinError {
+                    lastJoinError = why
+                    overlayInfo("📵 Join '\(Self.hotspotSSID)' refused at \(Int(elapsed()))s: \(why)")
+                }
             }
         }
         return false
     }
 
-    /// Asks macOS to associate with the hotspot. Returns `nil` on success, or
-    /// the reason it refused.
+    /// What one round of "please get on the hotspot" did. Three outcomes and not
+    /// two, because "we were already there and ran nothing" is the case the loop
+    /// most needs to tell apart — it is both the success we are waiting for and
+    /// the moment when doing anything at all would break it.
+    private enum JoinOutcome {
+        case alreadyOn
+        case joined
+        case refused(String)
+    }
+
+    /// The SSID the Wi-Fi interface is **actually** on, or `nil` when macOS will
+    /// not say — Wi-Fi off, no such interface, or Location Services withheld.
     ///
-    /// `networksetup -setairportnetwork` **exits 0 even when it fails** and
-    /// reports the failure only as text on stdout, so the exit status cannot be
-    /// trusted here — success is empty output.
-    private static func joinHotspot() -> String? {
+    /// CoreWLAN, not `networksetup -getairportnetwork`, which is unusable as a
+    /// source of truth here: measured 11 Sep 2026, it answered "You are not
+    /// associated with an AirPort network" while `ipconfig getifaddr en0`
+    /// returned 10.23.165.13 on the very same interface. `CWInterface.ssid()`
+    /// needs Location Services, which this app already holds for `HomeGeofence`,
+    /// and when it cannot answer it returns nil rather than a confident wrong
+    /// answer — which is why every caller here treats nil as "don't know" and
+    /// never as "not on the hotspot".
+    private static func currentSSID() -> String? {
+        let client = CWWiFiClient.shared()
+        let iface = client.interface(withName: wifiInterface) ?? client.interface()
+        guard let ssid = iface?.ssid(), !ssid.isEmpty else { return nil }
+        return ssid
+    }
+
+    /// Asks macOS to associate with the hotspot — but only when we are not on it
+    /// already, and without believing a word the command says about how it went.
+    ///
+    /// Two things about `networksetup -setairportnetwork` were measured on
+    /// 11 Sep 2026, and between them they *were* the Wi-Fi outage this whole
+    /// class was suspected of merely failing to fix:
+    ///
+    /// 1. **Aimed at the network the interface is already on, it disconnects
+    ///    it.** One invocation, at 18:56:25, produced `disassoc=18:56:30.043 (8)`
+    ///    in airportd's log. So the safest join is the one that is skipped, and
+    ///    that guard alone removes most of the damage.
+    /// 2. **It lies on the way out.** The same command returned `Failed to join
+    ///    network victor. Error: -3900 tmpErr` while the system log recorded
+    ///    `AUTO-JOIN: Join SUCCEEDED (duration=553ms)` 553 ms later. Reading that
+    ///    text as failure is what made the loop retry over an association that
+    ///    had just come up — killing it, and then retrying over the next one.
+    ///    That is the engine of the loop, and it is why the exit status *and*
+    ///    the message are both ignored here.
+    ///
+    /// The verdict is read off the interface instead, after `joinSettle`. It is
+    /// worth logging loudly when the command claimed failure and the interface
+    /// says otherwise, because that combination is common and it is exactly the
+    /// trap the previous version fell into.
+    private static func joinHotspot() -> JoinOutcome {
+        // The guard. nil means CoreWLAN would not say, and "don't know" must not
+        // be read as "not on it" — but it is also no reason to refuse to try.
+        if let ssid = currentSSID(), ssid == hotspotSSID { return .alreadyOn }
+
         var args = ["-setairportnetwork", wifiInterface, hotspotSSID]
         // Normally unnecessary: the keychain holds this network's password
         // already. Only used if that entry has gone missing.
@@ -441,19 +549,50 @@ final class HotspotFallback {
         let out = Pipe()
         p.standardOutput = out
         p.standardError = Pipe()
-        do { try p.run() } catch { return "networksetup failed to launch" }
+        do { try p.run() } catch { return .refused("networksetup failed to launch") }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         let text = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return text.isEmpty ? nil : text
+
+        // Whatever it just said, ask the interface.
+        Thread.sleep(forTimeInterval: joinSettle)
+        guard let ssid = currentSSID() else {
+            // CoreWLAN cannot answer, so the command's text is all there is —
+            // the old, untrustworthy verdict, used only as a last resort.
+            return text.isEmpty ? .joined : .refused("\(text) (and CoreWLAN cannot say what we are on)")
+        }
+        guard ssid == hotspotSSID else {
+            return .refused(text.isEmpty ? "still on '\(ssid)'" : "\(text) — still on '\(ssid)'")
+        }
+        if !text.isEmpty {
+            overlayInfo("📶 networksetup reported '\(text)' but the interface is on '\(hotspotSSID)' — believing the interface, not the command")
+        }
+        return .joined
     }
 
     /// A real TCP handshake, not `NWPath.status`. A captive portal, an
     /// associated-but-dead AP and a hotspot that has auto-slept all report a
     /// satisfied path while carrying nothing — and each of those is precisely a
     /// case where we *do* want to fall back.
+    ///
+    /// **But one refused handshake is not a verdict.** Declaring "offline" costs
+    /// a `networksetup` join, and a join is now known to disconnect the very
+    /// interface it is aimed at — so a single unlucky probe against a healthy
+    /// network does not merely log something wrong, it takes the Wi-Fi down. An
+    /// AP mid-DHCP, a hotspot that has just associated and a congested link all
+    /// refuse one handshake and answer the next. So `probeConfirmations`
+    /// failures in a row are required, `probeGap` apart.
     private func hasInternet() -> Bool {
+        for attempt in 1...Self.probeConfirmations {
+            if probeOnce() { return true }
+            if attempt < Self.probeConfirmations { Thread.sleep(forTimeInterval: Self.probeGap) }
+        }
+        return false
+    }
+
+    /// One handshake. See `hasInternet()` for why a single one is never trusted.
+    private func probeOnce() -> Bool {
         let conn = NWConnection(
             host: NWEndpoint.Host(Self.probeHost),
             port: Self.probePort,
