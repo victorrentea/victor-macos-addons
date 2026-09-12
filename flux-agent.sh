@@ -18,6 +18,15 @@
 # not pile up. A failure lingers ~25s first, and everything is tee'd to a
 # per-day log, so closing never loses a post-mortem.
 #
+# ── INTERACTIVE MODE ────────────────────────────────────────────────────────
+# If the new mail contains the word "interactiv" (interactivă / interactive …),
+# the window is NOT closed: once the work is done and the reply is mailed, this
+# very session is handed over to a live `claude --resume` in the same Terminal
+# window, so Victor can walk up to the Mac and keep arguing with an agent that
+# already has all the context. The sentinel then reads "interactive" and the
+# launcher leaves the window alone (and brings it forward). See
+# the "interactiv" detection and the handoff at the bottom.
+#
 # ── SECURITY ────────────────────────────────────────────────────────────────
 # This script deliberately feeds attacker-reachable text (an email body) into an
 # agent with tools. That is a prompt-injection sink, and it is accepted here for
@@ -37,15 +46,18 @@
 
 set -uo pipefail
 
-# $FLUX_AGENT_CLAUDE / $FLUX_AGENT_DRY_RUN exist so the plumbing above can be
-# rehearsed — a stub in place of claude, and a run that prints the reply
-# instead of mailing it. Neither is set in production.
+# $FLUX_AGENT_CLAUDE / $FLUX_AGENT_DRY_RUN / $FLUX_AGENT_OUTPUT_DIR exist so the
+# plumbing above can be rehearsed — a stub in place of claude, a run that prints
+# the reply instead of mailing it, and a scratch output dir. None is set in
+# production; test-flux-interactive.sh uses all three.
 CLAUDE="${FLUX_AGENT_CLAUDE:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
 SECRETS="$HOME/.training-assistants-secrets.env"
 INBOX="victor.flux@agentmail.to"
 TRUSTED_SENDER="victorrentea@gmail.com"   # reply destination — NEVER from the email
 API="https://api.agentmail.to/v0"
-OUTPUT_DIR="/Users/victorrentea/workspace/victor-macos-addons/addons-output"
+# Overridable only so test-flux-interactive.sh can run the real script without
+# appending to the real day log or dropping test sessions in flux-sessions/.
+OUTPUT_DIR="${FLUX_AGENT_OUTPUT_DIR:-/Users/victorrentea/workspace/victor-macos-addons/addons-output}"
 # Where claude runs. Victor's mails are feature requests across his repos, so the
 # workspace root is the useful default; override with FLUX_AGENT_CWD.
 WORKDIR="${FLUX_AGENT_CWD:-$HOME/workspace}"
@@ -62,6 +74,11 @@ VERDICT="fail"            # pessimistic: any unexpected exit leaves the window o
 
 mkdir -p "$OUTPUT_DIR"
 LOG="$OUTPUT_DIR/flux-agent-$(date +%F).log"
+# fd 3/4 keep the *real* Terminal tty. Everything below goes through `tee` into
+# the log, which is right for an unattended run but fatal for an interactive
+# one: an interactive claude whose stdout is a pipe renders no TUI. The
+# interactive handoff restores 1/2 from these before starting it.
+exec 3>&1 4>&2
 exec > >(tee -a "$LOG") 2>&1
 echo
 echo "########## $(date '+%F %T')  flux-agent (pid $$, msg=${MESSAGE_ID:-none}) ##########"
@@ -80,6 +97,7 @@ stop_heartbeat() { [ -n "${HEARTBEAT:-}" ] && kill "$HEARTBEAT" 2>/dev/null; ret
 SESSION_ID="$(uuidgen | tr 'A-Z' 'a-z')"   # overwritten below when resuming
 TRANSCRIPT=""
 RESUME=0
+INTERACTIVE=0   # set from the mail body below: "interactiv" ⇒ hand the window over
 # When resuming, the transcript already holds the previous mails' token usage.
 # The heartbeat must price THIS run, not the whole correspondence, so everything
 # spent before we start is subtracted.
@@ -232,6 +250,28 @@ cap_prompt() {
   mv "$PROMPT_FILE.capped" "$PROMPT_FILE"
   echo "  ⚠️  thread truncated to 200KB"
 }
+# Told to claude only in interactive mode: the report it writes is still mailed,
+# but it is no longer the end of the road — the same session reopens on Victor's
+# screen straight after. Appended AFTER cap_prompt so a 200KB thread can never
+# truncate it away.
+append_interactive_note() {
+  [ "$INTERACTIVE" = "1" ] || return 0
+  cat >> "$PROMPT_FILE" <<'NOTE'
+
+--- THIS ONE IS INTERACTIVE ---
+Victor asked for an INTERACTIVE session. Right now nothing changes: he is still
+not at the keyboard, so do not ask him anything, do the work and finish with the
+short report — it is mailed to him exactly as before.
+
+What changes is what happens next: the moment that reply goes out, THIS session
+is reopened as a live terminal on his Mac and he will sit down and continue the
+conversation here, with everything you now know still loaded. So write the
+report as a status for a phone, not as a farewell: keep the open questions, the
+alternatives you rejected and the things worth arguing about for the debate that
+follows, and say in one line what you would like to discuss when he arrives.
+NOTE
+}
+
 write_thread_prompt() {
   {
 cat <<'HEADER'
@@ -271,6 +311,7 @@ HEADER
     ' "$THREAD_JSON"
   } > "$PROMPT_FILE"
   cap_prompt
+  append_interactive_note
 }
 
 write_followup_prompt() {
@@ -291,6 +332,7 @@ HEADER
     printf '\n--- END OF NEW EMAIL ---\n'
   } > "$PROMPT_FILE"
   cap_prompt
+  append_interactive_note
 }
 
 # --- resume this thread's conversation, if it has one ------------------------
@@ -310,6 +352,20 @@ NEW_ONLY="$WORK/new-message.txt"
 # dropping the signature block.
 jq -r '(.extracted_text // "") | rtrimstr("\n")' "$MAIL_JSON" > "$NEW_ONLY"
 NEW_MEAT="$(sed '/^Victor Rentea$/,$d' "$NEW_ONLY" | tr -d '[:space:]' | wc -c | tr -d ' ')"
+
+# --- "interactiv" ⇒ keep the window, hand the session over -------------------
+# Read from the NEW message only ($NEW_ONLY is the body with the quoted history
+# stripped), never from the whole thread: a reply quotes everything above it, so
+# matching on the full text would make every follow-up on this thread — and on
+# any thread where the word was once used — interactive forever. When the
+# stripping left nothing usable, fall back to the raw body of the mail that
+# triggered this run. The match is a plain substring so every Romanian ending
+# comes along: interactiv, interactivă, interactiva, interactive.
+KEYWORD_SRC="$NEW_ONLY"
+[ "${NEW_MEAT:-0}" -ge 10 ] || KEYWORD_SRC="$BODY_FILE"
+if grep -qi 'interactiv' "$KEYWORD_SRC" 2>/dev/null; then
+  INTERACTIVE=1
+fi
 
 if [ -s "$SESSION_FILE" ] && [ "${NEW_MEAT:-0}" -ge 10 ]; then
   PREV_SESSION="$(sed -n '1p' "$SESSION_FILE")"
@@ -335,6 +391,10 @@ else
 fi
 
 echo "  Prompt  : $(wc -c < "$PROMPT_FILE" | tr -d ' ') bytes"
+if [ "$INTERACTIVE" = "1" ]; then
+  echo "  Mode    : 💬 interactive — this window stays open and becomes a live"
+  echo "            claude session once the reply is mailed."
+fi
 echo
 
 # --- run claude -------------------------------------------------------------
@@ -476,6 +536,63 @@ rm -rf "$WORK"
 # point the work is actually finished makes the close independent of that.
 # `finish` is idempotent, and the EXIT trap still calls it as a fallback so an
 # abnormal exit can never leave the launcher's waiter hanging.
+if [ "$INTERACTIVE" = "1" ]; then
+  # --- interactive handoff ----------------------------------------------------
+  # The work is done and the reply is out; now the same session reopens as a live
+  # terminal in THIS window so Victor can argue with an agent that still has all
+  # the context. Everything the EXIT trap would have done is done here by hand,
+  # because we are about to stop being an unattended script:
+  #   • the sentinel says "interactive", which is the launcher's signal to leave
+  #     this window alone (any other verdict closes it);
+  #   • the lock is released, so a later mail on this thread is not blocked by a
+  #     window someone left open for two hours;
+  #   • stdout/stderr go back to the real tty (fd 3/4) — an interactive claude
+  #     whose stdout is the `tee` pipe draws no TUI at all.
+  # claude is NOT exec'd: keeping bash as the parent means that when Victor
+  # quits the session the window still says what it was, instead of vanishing
+  # into a bare shell prompt.
+  #
+  # A failed run still hands over. He asked to be able to talk to this session,
+  # and a run that broke is exactly when that is worth most — the failure is
+  # printed here instead of being mailed, since he is about to read it himself.
+  if [ "$STATUS" -eq 0 ]; then
+    echo "✅ done — answered \"$SUBJECT\". Handing this window over to claude…"
+  else
+    echo "⚠️  finished with status $STATUS — handing the window over anyway."
+  fi
+  echo "   (full log: $LOG)"
+  VERDICT="interactive"
+  finish
+  stop_heartbeat
+  trap - EXIT
+  rm -rf "$LOCKDIR"
+  exec 1>&3 2>&4
+  printf '\033]0;💬 Flux — %s\007' "$SUBJECT"
+  afplay /System/Library/Sounds/Hero.aiff >/dev/null 2>&1 &
+  echo
+  echo "════════════════════════════════════════════════════════════════"
+  echo "  💬  INTERACTIVE — the reply is mailed, the session is yours"
+  echo "      Thread  : $SUBJECT"
+  echo "      Session : $SESSION_ID   (cwd: $WORKDIR)"
+  echo "      Ctrl-D or /exit to leave; this window closes when you close it."
+  echo "════════════════════════════════════════════════════════════════"
+  echo
+  # No transcript ⇒ nothing to resume (claude died before writing one). Open a
+  # fresh session rather than exiting: an empty prompt in the right directory is
+  # still infinitely better than a window that closes in his face.
+  if find_transcript; then
+    env -u ANTHROPIC_API_KEY "$CLAUDE" --resume "$SESSION_ID" \
+      --model opus --dangerously-skip-permissions
+  else
+    echo "  (no transcript for $SESSION_ID — starting a fresh session instead)"
+    env -u ANTHROPIC_API_KEY "$CLAUDE" \
+      --model opus --dangerously-skip-permissions
+  fi
+  echo
+  echo "👋 interactive session ended — full log: $LOG"
+  exit 0
+fi
+
 if [ "$STATUS" -eq 0 ]; then
   echo "✅ done — answered \"$SUBJECT\"."
   echo "   (full log: $LOG — closing…)"

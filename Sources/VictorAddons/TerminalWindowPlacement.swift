@@ -112,10 +112,14 @@ enum TerminalWindowPlacement {
     ///
     /// `tabVar` is the AppleScript variable holding the tab returned by
     /// `do script`, and the snippet must sit inside a `tell application "Terminal"`
-    /// block.
+    /// block. `areaFraction` is passed through to `bounds`: the default 0.10 is
+    /// the glanceable unattended window, while a window a human is about to sit
+    /// down and type in is asked for with a much larger fraction.
     static func appleScriptSnippet(tabVar: String = "t",
-                                   screens: [ScreenBox]? = nil) -> String {
-        guard let b = bounds(screens: screens ?? currentScreensSafely()) else {
+                                   screens: [ScreenBox]? = nil,
+                                   areaFraction: CGFloat = 0.10) -> String {
+        guard let b = bounds(screens: screens ?? currentScreensSafely(),
+                             areaFraction: areaFraction) else {
             return "    -- built-in display only: leave macOS's default placement"
         }
         return """
