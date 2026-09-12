@@ -149,6 +149,26 @@ enum FluxMailPolicy {
             .filter { isTrusted($0) }
             .sorted { $0.timestamp < $1.timestamp }
     }
+
+    /// Mail that is NOT from Victor: same freshness rules, opposite trust verdict.
+    ///
+    /// `victor.flux@agentmail.to` is a public address, so this is where everything
+    /// a stranger sends ends up. It used to be dropped silently, which made a
+    /// genuine message from a human indistinguishable from nothing arriving at all.
+    /// It is now forwarded to Victor — and ONLY forwarded. No agent is started for
+    /// it and no reply is ever composed, because the sender gate in `isTrusted` is
+    /// the security boundary of this whole system and forwarding must not become a
+    /// second, weaker way in.
+    static func strangerMail(in messages: [FluxMessage],
+                             since watermark: Date,
+                             seen: Set<String>) -> [FluxMessage] {
+        messages
+            .filter { $0.timestamp > watermark }
+            .filter { !seen.contains($0.messageId) }
+            .filter { $0.isUnprocessed }
+            .filter { !isTrusted($0) }
+            .sorted { $0.timestamp < $1.timestamp }
+    }
 }
 
 // MARK: - Menu presentation (pure, unit-tested)
@@ -406,6 +426,30 @@ final class FluxInboxPoller {
                                 DispatchQueue.main.async { self.onTrustedMail?(message) }
                             }
                         }
+
+                        // Restul — orice nu e de la Victor — se redirectioneaza catre
+                        // el si atat. Se revendica INAINTE, din acelasi motiv ca la
+                        // mailul de incredere: revendicarea e singurul lucru care
+                        // garanteaza ca nu ajunge de doua ori.
+                        let strangers = FluxMailPolicy.strangerMail(
+                            in: messages, since: self.watermark, seen: Set(self.seen))
+                        if !strangers.isEmpty {
+                            overlayInfo("📬 \(strangers.count) de la altcineva — redirectionez")
+                        }
+                        for message in strangers {
+                            self.remember(message)
+                            self.claim(message) { claimed in
+                                guard claimed else {
+                                    overlayError("FluxInboxPoller: could not claim \(message.messageId) — not forwarding")
+                                    return
+                                }
+                                self.forward(message) { sent in
+                                    if !sent {
+                                        overlayError("FluxInboxPoller: forward refuzat pentru \(message.messageId)")
+                                    }
+                                }
+                            }
+                        }
                     }
                     completion?()
                 }
@@ -485,6 +529,41 @@ final class FluxInboxPoller {
         session.dataTask(with: request) { _, response, error in
             if let error {
                 overlayError("FluxInboxPoller: claim failed — \(error.localizedDescription)")
+                completion(false)
+                return
+            }
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            completion((200..<300).contains(code))
+        }.resume()
+    }
+
+    /// Forward a stranger's message to Victor, unchanged.
+    ///
+    /// The recipient is `FluxMailPolicy.trustedSender`, hardcoded — never an address
+    /// read out of the email. That is the same rule `flux-agent.sh` follows for
+    /// replies, and for the same reason: a message we forward is attacker-controlled
+    /// text, so nothing in it may influence where it goes.
+    private func forward(_ message: FluxMessage, completion: @escaping (Bool) -> Void) {
+        let encoded = message.messageId.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics) ?? message.messageId
+        guard let url = URL(string:
+            "https://api.agentmail.to/v0/inboxes/\(Self.inboxId)/messages/\(encoded)/forward")
+        else { completion(false); return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "to": [FluxMailPolicy.trustedSender],
+            "text": "Mail primit pe victor.flux@agentmail.to de la cineva care nu ești tu."
+                  + " Nu i-am răspuns și n-am pornit niciun agent pentru el.",
+        ])
+        request.timeoutInterval = 20
+
+        session.dataTask(with: request) { _, response, error in
+            if let error {
+                overlayError("FluxInboxPoller: forward failed — \(error.localizedDescription)")
                 completion(false)
                 return
             }

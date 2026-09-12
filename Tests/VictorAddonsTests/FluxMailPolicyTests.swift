@@ -274,4 +274,59 @@ final class FluxMailPolicyTests: XCTestCase {
     func testMalformedResponseIsRejected() {
         XCTAssertNil(FluxInboxPoller.parse("not json".data(using: .utf8)!))
     }
+
+    // MARK: Stranger mail — forwarded, never answered
+
+    /// `at:` implicit e chiar `epoch`, iar filtrul cere timestamp STRICT mai mare,
+    /// deci orice test care asteapta un rezultat are nevoie de unul mai proaspat.
+    private var fresh: Date { Date(timeIntervalSince1970: 2_000) }
+
+    /// Mail from anyone who is not Victor must be picked up by `strangerMail`,
+    /// which is what gets it forwarded to him instead of dropped in silence.
+    func testStrangerMailPicksUpUntrustedSender() {
+        let stranger = message(from: "cineva@exemplu.ro", at: fresh)
+        XCTAssertEqual(
+            FluxMailPolicy.strangerMail(in: [stranger], since: epoch, seen: []).count, 1)
+    }
+
+    /// A spoofed display name is still a stranger: the verdict comes from the
+    /// address and the DKIM/DMARC stamp, not from what the header claims to be.
+    func testStrangerMailCatchesSpoofedDisplayName() {
+        let spoof = message(from: "Victor Rentea <victorrentea@gmail.com> <attacker@evil.com>", at: fresh)
+        XCTAssertEqual(
+            FluxMailPolicy.strangerMail(in: [spoof], since: epoch, seen: []).count, 1)
+    }
+
+    /// Mail that fails authentication is a stranger even from the right address —
+    /// otherwise forwarding would become a weaker second way in.
+    func testStrangerMailCatchesUnauthenticatedVictor() {
+        let unsigned = message(from: "victorrentea@gmail.com", auth: "dkim=fail; dmarc=fail;", at: fresh)
+        XCTAssertEqual(
+            FluxMailPolicy.strangerMail(in: [unsigned], since: epoch, seen: []).count, 1)
+    }
+
+    /// The two sets must never overlap: a message is either answered or forwarded.
+    func testTrustedMailIsNeverAlsoStrangerMail() {
+        let mine = message(from: "victorrentea@gmail.com", at: fresh)
+        XCTAssertEqual(FluxMailPolicy.newMail(in: [mine], since: epoch, seen: []).count, 1)
+        XCTAssertTrue(FluxMailPolicy.strangerMail(in: [mine], since: epoch, seen: []).isEmpty)
+    }
+
+    /// Freshness rules apply identically, or a restart would re-forward history.
+    func testStrangerMailRespectsWatermarkAndSeen() {
+        let old = message(from: "cineva@exemplu.ro", at: Date(timeIntervalSince1970: 500))
+        XCTAssertTrue(FluxMailPolicy.strangerMail(in: [old], since: epoch, seen: []).isEmpty)
+        let fresh = message(from: "cineva@exemplu.ro", id: "s-1",
+                            at: Date(timeIntervalSince1970: 2_000))
+        XCTAssertTrue(
+            FluxMailPolicy.strangerMail(in: [fresh], since: epoch, seen: ["s-1"]).isEmpty)
+    }
+
+    /// Already claimed (no `unread`) means some earlier run handled it.
+    func testStrangerMailSkipsClaimed() {
+        let claimed = message(from: "cineva@exemplu.ro",
+                              at: Date(timeIntervalSince1970: 2_000),
+                              labels: ["received"])
+        XCTAssertTrue(FluxMailPolicy.strangerMail(in: [claimed], since: epoch, seen: []).isEmpty)
+    }
 }
