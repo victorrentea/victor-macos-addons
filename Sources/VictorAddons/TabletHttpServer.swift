@@ -631,7 +631,11 @@ case testTerminalFont
     /// `/link/*`. `/sound/` does not catch `/video/sound/...` because the
     /// match is on a leading prefix, not a substring.
     static let proxiedPrefixes = ["/ping", "/sounds/", "/sound/", "/effect/",
-                                  "/alarm/", "/bt-compensation", "/tiles", "/state"]
+                                  "/alarm/", "/bt-compensation", "/tiles", "/state",
+                                  // The tile press counts behind the tablet's
+                                  // green dots now live in the effects app, with
+                                  // the panel presses they were always missing.
+                                  "/usage"]
 
     /// The historic `/test/<effect>` aliases. They keep answering on 55123 —
     /// every script, doc and muscle memory points at them — and are simply
