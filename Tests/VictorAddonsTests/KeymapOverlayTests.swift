@@ -317,9 +317,11 @@ final class KeymapOverlayTests: XCTestCase {
         // ⌥8 keeps its own goose — the new board adds a letter that means the
         // word, it does not move the digit that already worked.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[28], "🪿")
-        // B for bug, P for parachute — letters that mean the word.
+        // B for bug, P for parachute, C for crying laughter — letters that
+        // mean the word.
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[11], "🐛")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[35], "🪂")
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[8], "😂")
         // 🪂 *moved* off ⌥⇧8 rather than being duplicated: unlike ⌥8's goose,
         // that digit was not muscle memory anybody had built.
         XCTAssertNil(EmojiKeyLayer.optionShiftSeed[28])

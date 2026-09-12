@@ -324,8 +324,14 @@ enum EmojiKeyLayer {
     /// nobody had learned — there was nothing to keep working. A letter that
     /// means the word beats a digit you have to look up, and two keys for one
     /// emoji is one of them typed by accident.
+    ///
+    /// C for crying laughter (2026-09-12). The letter was free because ⌃⌥C had
+    /// just been vacated — the selection-or-clipboard note grab moved to ⌘⌃S to
+    /// be discoverable on the shortcut sheet — so the board could take it
+    /// without shadowing anything.
     static let controlOptionSeed: [Int: String] = [
           5: "🪿",   // G — goose
+          8: "😂",   // C — crying laughter
          11: "🐛",   // B — bug
          35: "🪂",   // P — parachute, off ⌥⇧8
     ]
