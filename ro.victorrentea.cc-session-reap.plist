@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ro.victorrentea.cc-session-reap</string>
+
+    <!-- Archives the dead Claude Code sessions that keep piling up in the Code
+         list on claude.ai and in the mobile app. The bridge mints an empty
+         localhost-* session roughly every 6-20 minutes, so a quarter-hourly
+         sweep keeps the list at exactly the sessions that are really connected.
+         One HTTPS GET plus a POST per dead session — cheap. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/victorrentea/workspace/victor-macos-addons/cc-session-reap.sh</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- The script keeps its own rotated log at ~/.cc-session-reap/reap.log, so
+         stdout would only duplicate it. stderr is kept, and only ever has
+         content if the script died before it could log anything itself. -->
+    <key>StandardOutPath</key>
+    <string>/dev/null</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/victorrentea/.cc-session-reap/launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/victorrentea</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>
