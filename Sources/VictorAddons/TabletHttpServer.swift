@@ -43,6 +43,7 @@ case testTerminalFont
         case testAudioPlaying
         case testLidAwakeState
         case testLidAwakeFlatline
+        case testHomeAwake
         case testClaudeActivity
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
@@ -217,6 +218,7 @@ case testTerminalFont
     var onTestAudioPlaying: (() -> String)?
     var onTestLidAwakeState: (() -> String)?
     var onTestLidAwakeFlatline: (() -> Void)?
+    var onTestHomeAwake: (() -> String)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
     var onTestBreakUntil: (() -> Void)?
@@ -407,6 +409,10 @@ case testTerminalFont
                 body = self.onTestLidAwakeState?() ?? "{\"error\":\"lid awake unavailable\"}"
             case .testLidAwakeFlatline:
                 self.onTestLidAwakeFlatline?()
+            case .testHomeAwake:
+                contentType = "application/json"
+                body = self.onTestHomeAwake?() ?? "{\"error\":\"home awake unavailable\"}"
+                if self.onTestHomeAwake == nil { statusCode = 503 }
             case .testClaudeActivity:
                 contentType = "application/json"
                 let working = ClaudeActivity.workingSessions()
@@ -717,6 +723,8 @@ case testTerminalFont
             return .testLidAwakeState
         case "/test/lid-awake/flatline":
             return .testLidAwakeFlatline
+        case "/test/home-awake":
+            return .testHomeAwake
         case "/test/claude-activity":
             return .testClaudeActivity
         case "/test/wispr/recording":

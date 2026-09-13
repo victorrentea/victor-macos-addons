@@ -65,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var feedbackFormReminder: FeedbackFormReminder?
     private var powerMonitor: PowerMonitor?
     private var lidAwake: LidAwake?
+    private var homeAwake: HomeAwake?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
@@ -1111,6 +1112,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.lidAwake = lid
         tabletServer?.onTestLidAwakeState = { [weak lid] in lid?.stateJSON() ?? "{}" }
         tabletServer?.onTestLidAwakeFlatline = { [weak lid] in lid?.playFlatlineForTest() }
+
+        // 🏠 Home Wi-Fi keeps the screen on. Its neighbour above holds a kernel
+        // flag through sudo; this one holds an ordinary display-sleep assertion
+        // in-process, so there is nothing to re-arm defensively and nothing that
+        // can survive the app. Default on — see HomeAwakeSettings.
+        let homeAwake = HomeAwake()
+        menuBarManager.onHomeAwakeEnabledChanged = { enabled in
+            homeAwake.setEnabled(enabled)
+        }
+        homeAwake.startIfEnabled()
+        self.homeAwake = homeAwake
+        tabletServer?.onTestHomeAwake = { [weak homeAwake] in homeAwake?.stateJSON() ?? "{}" }
 
         let portKiller = PortKiller()
         self.portKiller = portKiller

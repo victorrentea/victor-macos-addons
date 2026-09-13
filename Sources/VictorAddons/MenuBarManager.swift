@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 12, 20:58"
+    static let BUILD_TIME = "Sep 12, 22:18"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -22,6 +22,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var cursorGlowItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
     private(set) var lidAwakeItem: NSMenuItem!
+    private(set) var homeAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -107,6 +108,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onCursorGlowEnabledChanged: ((Bool) -> Void)?
     /// Returns whether the kernel flag actually followed — see `toggleLidAwakeAction`.
     var onLidAwakeEnabledChanged: ((Bool) -> Bool)?
+    /// 🏠 Home Wi-Fi. Unlike 🔋 this cannot fail — there is no privileged flag
+    /// to be refused, just an assertion this process owns — so it returns
+    /// nothing and the tick follows the click.
+    var onHomeAwakeEnabledChanged: ((Bool) -> Void)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
@@ -363,6 +368,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         lidAwakeItem.isEnabled = true
         lidAwakeItem.state = LidAwakeSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(lidAwakeItem)
+
+        // 🏠 Home Wi-Fi keeps the screen on. Next to 🔋 because they are the two
+        // rows about the Mac staying up, and deliberately worded to name a
+        // *different* subject: 🔋 is Claude holding the lid open, this is the
+        // home network holding the screen lit. The label says "screen", not
+        // "Mac", because that is the whole of what it does — the screen saver
+        // never starts, so the lock that follows it never starts either, while
+        // ⌃⌘Q keeps working.
+        //
+        // The SSID is not in the label. It lives in `HomeAwake.ssids`, and a
+        // label naming one network would go stale the day a second one is added.
+        homeAwakeItem = NSMenuItem(title: "🏠 Home Wi-Fi keeps the screen on", action: #selector(toggleHomeAwakeAction), keyEquivalent: "")
+        homeAwakeItem.target = self
+        homeAwakeItem.isEnabled = true
+        homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
+        homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
+        extraSubmenu.addItem(homeAwakeItem)
 
         // Dark Mode (⌘⌃⌥D)
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
@@ -731,6 +753,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// so the row stops claiming the Mac is being held awake.
     func setLidAwakeTick(_ on: Bool) {
         lidAwakeItem?.state = on ? .on : .off
+    }
+
+    /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",
+    /// not "holding right now" — same contract as 🔋 next door, where a ticked
+    /// row with nothing working is the honest state. Which of the two it is at
+    /// this instant is in `GET /test/home-awake` (`at_home`, `holding`).
+    @objc private func toggleHomeAwakeAction() {
+        let enabled = !HomeAwakeSettings.isEnabled
+        homeAwakeItem.state = enabled ? .on : .off
+        onHomeAwakeEnabledChanged?(enabled)
     }
 
     @objc private func takeScreenshotAction() {

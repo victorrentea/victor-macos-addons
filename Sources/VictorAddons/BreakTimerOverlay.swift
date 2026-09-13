@@ -69,8 +69,13 @@ final class BreakTimerController {
     private var isEnlarged = false
     private var savedFrame: NSRect?           // the user's frame, restored on fullscreen → normal
     private var blackoutPanels: [NSPanel] = []  // opaque-black covers over the non-retina displays
-    private var sleepAssertionID: IOPMAssertionID = 0
-    private var hasSleepAssertion = false     // an IOPM "keep display awake" assertion is held
+    /// An IOPM "keep display awake" assertion, held while the fullscreen break
+    /// screen is showing. Shared implementation with 🏠 Home Wi-Fi since 13 Sep
+    /// 2026 — see `DisplaySleepAssertion` for what the assertion does and does
+    /// not stop. Silent (no `logPrefix`): this comes and goes with idleness
+    /// during a break and a line each way would be noise.
+    private let sleepAssertion = DisplaySleepAssertion(
+        name: "Victor Addons break timer fullscreen")
 
     /// Seconds since the live transcript last grew. Wired by AppDelegate to the
     /// daily transcription file's mtime; the fullscreen break screen only appears
@@ -558,22 +563,12 @@ final class BreakTimerController {
     /// Hold an IOPM assertion that keeps the display (and thus the system) awake so
     /// the Mac never sleeps while the fullscreen break screen is showing. Idempotent.
     private func preventSleep() {
-        guard !hasSleepAssertion else { return }
-        var id: IOPMAssertionID = 0
-        let ok = IOPMAssertionCreateWithName(
-            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
-            IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "Victor Addons break timer fullscreen" as CFString,
-            &id)
-        if ok == kIOReturnSuccess { sleepAssertionID = id; hasSleepAssertion = true }
+        sleepAssertion.hold(true)
     }
 
     /// Release the wake-lock assertion so normal power management resumes. Idempotent.
     private func allowSleep() {
-        guard hasSleepAssertion else { return }
-        IOPMAssertionRelease(sleepAssertionID)
-        sleepAssertionID = 0
-        hasSleepAssertion = false
+        sleepAssertion.hold(false)
     }
 
     private func setBackgroundOpaque(_ opaque: Bool) {
