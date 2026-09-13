@@ -181,7 +181,7 @@ curl -s localhost:55123/test/home-awake
 - `watching` — whether the timer and CoreWLAN events are armed.
 
 To prove it end to end without waiting for an idle timer: `pmset -g assertions`
-should list a `PreventUserIdleDisplaySleep` named "Victor Addons — home Wi-Fi,
+should list a `PreventUserIdleDisplaySleep` named "Victor Addons - home Wi-Fi,
 screen must not idle-lock" while at home, and the system-wide
 `PreventUserIdleDisplaySleep` counter should read 1. Untick the row and both go
 away within the click.

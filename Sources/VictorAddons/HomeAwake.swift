@@ -94,12 +94,19 @@ final class HomeAwake: NSObject, CWEventDelegate {
 
     private let queue = DispatchQueue(label: "ro.victorrentea.homeawake")
     private let assertion = DisplaySleepAssertion(
-        name: "Victor Addons — home Wi-Fi, screen must not idle-lock",
+        // ASCII only, and deliberately: `pmset -g assertions` is the tool the
+        // docs send you to and it mangles non-ASCII into "?" in this column, so
+        // an em-dash here would make the one line that proves the feature look
+        // corrupted. Measured 13 Sep 2026.
+        name: "Victor Addons - home Wi-Fi, screen must not idle-lock",
         logPrefix: "🏠")
     private var timer: DispatchSourceTimer?
     /// Only for logging: a transition is worth a line, sixty restatements an
-    /// hour of the same answer are not.
-    private var lastSSID: String??
+    /// hour of the same answer are not. Keyed on the **verdict as well as the
+    /// SSID**, not the SSID alone — otherwise editing `HomeAwake.ssids` under a
+    /// running app flips the answer without a word about it, which is exactly
+    /// the case someone is watching the log for.
+    private var lastLogged: (ssid: String?, atHome: Bool)?
 
     // MARK: - Lifecycle
 
@@ -210,9 +217,9 @@ final class HomeAwake: NSObject, CWEventDelegate {
         // directions on purpose: "why is my screen still locking" and "why has
         // my screen not locked since Tuesday" are both answered by one line
         // saying which network we thought we were on.
-        let changed = lastSSID.map { $0 != ssid } ?? true
+        let changed = lastLogged.map { $0.ssid != ssid || $0.atHome != wanted } ?? true
         if changed {
-            lastSSID = .some(ssid)
+            lastLogged = (ssid, wanted)
             if wanted {
                 overlayInfo("🏠 On '\(ssid ?? "?")' — a home network (\(reason))")
             } else {
