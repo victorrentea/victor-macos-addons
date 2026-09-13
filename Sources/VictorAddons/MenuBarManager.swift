@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 13, 14:36"
+    static let BUILD_TIME = "Sep 13, 22:04"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -437,12 +437,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // `AppRelaunch` — which is the gesture you reach for anyway when
         // something is wedged.
 
-        // Quit (build timestamp inlined to save a menu line). The row carries the
-        // ⏻ SF Symbol as an *image*, the way Walkie Talkie's Quit does — a text
-        // glyph was too narrow to sit in the same column as the other rows'
-        // emojis, but an image drawn into the menu's icon box lands exactly where
-        // those emojis start, so nothing shifts.
-        let quitItem = addItem("Quit - built " + MenuBarManager.BUILD_TIME, action: #selector(quitApp))
+        // Version on its own disabled row, then Quit ⌘Q (2026-09-13). The build
+        // timestamp used to be inlined into the Quit title to save a menu line;
+        // Victor asked for the two to be separated, for cleanliness, the same
+        // way in Victor Effects and Walkie Talkie.
+        let versionItem = addItem("Version: " + MenuBarManager.BUILD_TIME, action: nil)
+        versionItem.isEnabled = false
+
+        // Quit carries the ⏻ SF Symbol as an *image*, the way Walkie Talkie's
+        // Quit does — a text glyph was too narrow to sit in the same column as
+        // the other rows' emojis, but an image drawn into the menu's icon box
+        // lands exactly where those emojis start, so nothing shifts.
+        let quitItem = addItem("Quit", action: #selector(quitApp))
         quitItem.image = MenuBarManager.symbolIcon("power")
         quitItem.keyEquivalent = "q"
         quitItem.keyEquivalentModifierMask = .command
