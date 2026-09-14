@@ -29,6 +29,16 @@
 /// no `<video>` in it yet, and `play()` on a page Chrome's autoplay policy has
 /// not yet made up its mind about rejects.
 ///
+/// **"Rolling" is `readyState`, not `paused`, and the difference is a whole
+/// silent evening.** In a tab that has never been rendered, YouTube attaches its
+/// MediaSource and `play()` resolves — `paused` goes false, `networkState` says
+/// LOADING — but `readyState` stays at HAVE_NOTHING and `currentTime` never
+/// leaves 0, because the player appends its segments from a
+/// `requestAnimationFrame` callback and Chrome paints no frames for a tab it has
+/// never shown (measured: 0 rAF callbacks against 22 `setTimeout` ticks in the
+/// same five seconds). Reporting `!paused` as success made the retry loop below
+/// declare victory on the first try over a video that would never make a sound.
+///
 /// Unmuting is deliberate. A YouTube tab that autoplayed while hidden is often
 /// muted by the player itself, and silent focus music is the one outcome ⌘⌃F
 /// must not produce.
@@ -50,7 +60,9 @@ async function startMedia() {
       // the caller's next attempt is the answer, not a louder try here.
     }
   }
-  return media.some((el) => !el.paused);
+  // HAVE_FUTURE_DATA or better: there is decoded audio queued up, which is the
+  // only evidence from in here that the room will hear something.
+  return media.some((el) => !el.paused && !el.ended && el.readyState >= 3);
 }
 
 /// The first tab matching the request, or `undefined`.
@@ -197,10 +209,19 @@ export async function focusOrOpen(msg) {
  * that has never been visible — the injected `play()` is what starts it, and it
  * has to wait for the player to exist. Chrome allows that call without a user
  * gesture because youtube.com has a high media-engagement score here; if it
- * ever stops allowing it, this is the line that will say so in the log.
+ * ever stops allowing it, `startMedia` is where it will show.
+ *
+ * **A freshly created tab additionally has to be painted once** — see
+ * `renderOnce`. That is the one part of "no window on the screen" that had to
+ * give: a tab Chrome has never rendered gets no `requestAnimationFrame`, and
+ * without rAF YouTube's player never feeds its MediaSource, so the video sits
+ * unpaused and empty forever. Selecting the tab for a moment costs no window:
+ * it is done inside a window that is already open and not focused, and the tab
+ * that was selected there is put back as soon as sound comes out.
  */
 async function playInBackground(msg) {
-  let tab = await findTab(msg);
+  const found = await findTab(msg);
+  let tab = found;
 
   if (!tab) {
     if (!msg.url) return;                      // a probe, and the answer is "no"
@@ -208,29 +229,112 @@ async function playInBackground(msg) {
     if (!tab) return;
   }
 
+  // A tab we just made has certainly never been painted, so go straight for the
+  // paint instead of spending a first attempt proving it. A tab that was already
+  // there has usually been looked at, and `play()` alone is enough for it.
+  if (!found && await renderOnce(tab)) return;
+
   for (let attempt = 0; attempt < 8; attempt++) {
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: true },
-        func: startMedia,
-      });
-      if (results.some((r) => r && r.result)) return;
-    } catch (e) {
-      // Still navigating, or a page we may not script. Try again.
-    }
-    await new Promise((done) => setTimeout(done, 700));
+    if (await tryStart(tab.id)) return;
+    // Two rounds of `play()` got us nowhere: this tab has never been rendered
+    // either (a leftover from an earlier miss, or one Chrome discarded), so it
+    // needs the same paint a new one does.
+    if (attempt === 1 && await renderOnce(tab)) return;
+    await sleep(700);
   }
-  console.log('[focus-tab] music never started in tab', tab.id);
+  // Thrown, not logged: `background.js` mirrors a rejected command into the
+  // Mac's own log, and silence that leaves no trace anywhere is exactly how
+  // this shortcut managed to be broken without anyone being able to see why.
+  throw new Error(`music never started in tab ${tab.id}`);
+}
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+/// One `startMedia` round trip. False for "not yet", never a throw: a tab that
+/// is still navigating, or a page we may not script, is a reason to try again.
+async function tryStart(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: startMedia,
+    });
+    return results.some((r) => r && r.result);
+  } catch (e) {
+    return false;
+  }
+}
+
+/// Select the tab just long enough for Chrome to paint it, then put the window's
+/// previous tab back. Returns whether the music is rolling by the end.
+///
+/// **Nothing is focused and no window moves** — `chrome.tabs.update` selects a
+/// tab inside its window; only `chrome.windows.update({focused:true})` would
+/// raise it, and it is deliberately not called. When the host window is behind
+/// something else (the usual case: ⌘⌃F is pressed from a terminal or the IDE),
+/// this is invisible from outside the browser.
+///
+/// The wait is a poll, not a fixed sleep, so the swap lasts as briefly as the
+/// player allows — measured at well under a second once the frames start. Once
+/// audio is actually playing Chrome keeps the renderer at full speed even after
+/// the tab goes back to hidden, which is why this has to happen exactly once.
+///
+/// Re-entrancy matters here because ⌘⌃F deliberately fires twice — a probe and
+/// then the real call a second later — and both can reach this point for the
+/// same tab. Two overlapping swaps would race over which tab to put back, so
+/// the second one waits for nothing and simply reports "not rolling yet".
+const rendering = new Set();
+
+async function renderOnce(tab) {
+  if (rendering.has(tab.id)) return false;
+  rendering.add(tab.id);
+  try {
+    return await renderOnceNow(tab);
+  } finally {
+    rendering.delete(tab.id);
+  }
+}
+
+async function renderOnceNow(tab) {
+  let previous;
+  try {
+    previous = (await chrome.tabs.query({ windowId: tab.windowId, active: true }))[0];
+    await chrome.tabs.update(tab.id, { active: true });
+  } catch (e) {
+    return false;                              // the tab or window is already gone
+  }
+  let rolling = false;
+  for (let attempt = 0; attempt < 16 && !rolling; attempt++) {
+    await sleep(250);
+    rolling = await tryStart(tab.id);
+  }
+  if (previous && previous.id !== tab.id) {
+    try {
+      await chrome.tabs.update(previous.id, { active: true });
+    } catch (e) {
+      // Victor closed or moved it while we borrowed the window. His tab, his call.
+    }
+  }
+  return rolling;
 }
 
 /// A new tab in the background of a window that already exists.
 ///
 /// `chrome.windows.create` is what this function exists NOT to call. If there
 /// is genuinely no ordinary window to put a tab in, one is opened **minimized**
-/// — still no window on the screen, and the music plays out of it all the same.
+/// — still no window on the screen. That last resort is the one place the music
+/// can legitimately fail to start: a minimized window is never painted either,
+/// so `renderOnce` has nothing to work with. It stays minimized anyway; a
+/// browser window unfolding over the slides is the worse of the two outcomes.
+///
+/// **The host is chosen so that `renderOnce`'s tab swap is invisible**: an
+/// unminimized window that is not the focused one, i.e. a window Victor is not
+/// looking at. Only if every candidate is focused or minimized does the swap
+/// become something he could notice, and even then it lasts under a second.
 async function openHiddenTab(url) {
   const windows = await chrome.windows.getAll({});
-  const host = windows.find((w) => w.type === 'normal' && !w.incognito);
+  const normal = windows.filter((w) => w.type === 'normal' && !w.incognito);
+  const open = normal.filter((w) => w.state !== 'minimized');
+  const host = open.find((w) => !w.focused) || open[0] || normal[0];
   if (host) return chrome.tabs.create({ url, windowId: host.id, active: false });
 
   const win = await chrome.windows.create({ url, focused: false, state: 'minimized' });
