@@ -19,7 +19,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
-    private(set) var cursorGlowItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
     private(set) var lidAwakeItem: NSMenuItem!
     private(set) var homeAwakeItem: NSMenuItem!
@@ -87,7 +86,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDisplayClipboardLink: (() -> Void)?
     /// 📤 Mail the clipboard to Victor, subject "Reminder" — the ⌘⌃P key's row.
     var onSendReminderMail: (() -> Void)?
-    var onComposeTodoMail: (() -> Void)?
     /// 📝 Ask Chrome to clone, rename and publish this session's feedback form.
     var onPublishFeedbackForm: (() -> Void)?
     /// ⌘⌃K, from the event tap — the catalog has no menu row of its own.
@@ -100,12 +98,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
+    /// 🤖 The same clipboard, filed as an agent prompt instead of a note.
+    var onAppendClipboardAsPrompt: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     /// A country picked from the 🌍 submenu — persists the day-scoped selection and
     /// repaints a showing Break overlay in that timezone.
     var onPickCountry: ((BreakCountry) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
-    var onCursorGlowEnabledChanged: ((Bool) -> Void)?
     /// Returns whether the kernel flag actually followed — see `toggleLidAwakeAction`.
     var onLidAwakeEnabledChanged: ((Bool) -> Bool)?
     /// 🏠 Home Wi-Fi. Unlike 🔋 this cannot fail — there is no privileged flag
@@ -242,14 +241,22 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         voiceCorpusItem.target = self
         voiceCorpusItem.isEnabled = true
 
-        // Tail (was Monitor)
-        tailItem = addItem("🐕 Tail", action: #selector(monitorAction))
+        // 🐕 Tail (was Monitor). Built here but NOT added to the main menu: it
+        // moved into the 💬 Transcribing submenu (2026-09-14), above its own
+        // separator. Its title is a readout OF the transcription — "🐕 Tail
+        // 2 minutes ago" answers how fresh the transcript is — so it belongs
+        // under the row that says whether transcription is running at all,
+        // not next to it at the top level.
+        tailItem = NSMenuItem(title: "🐕 Tail", action: #selector(monitorAction), keyEquivalent: "")
+        tailItem.target = self
+        tailItem.isEnabled = true
 
-        // 🔬 Fact-check what was just said. Sits under the Tail because both
-        // rows are "what is the transcript doing" — one shows it, this one
-        // argues with it. The window is in the title because 10 minutes is the
-        // whole contract: it checks the topic being taught, not the sentence
-        // that just ended.
+        // 🔬 Fact-check what was just said. It KEPT the top level when the Tail
+        // moved down, and that is the line between them: the Tail is a readout
+        // of the transcription, this is something you fire mid-sentence and
+        // want in one click. The window is in the title because 10 minutes is
+        // the whole contract: it checks the topic being taught, not the
+        // sentence that just ended.
         addItem("🔬 Fact-check last 10 min", action: #selector(researchProofAction))
 
         // 📬 Check task inbox — the manual override for the poller's power
@@ -285,12 +292,29 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let reminderMailItem = addItem("📤 Mail clipboard to myself", action: #selector(sendReminderMailAction))
         reminderMailItem.keyEquivalent = "m"
         reminderMailItem.keyEquivalentModifierMask = [.command, .control]
-        // The Gmail "TO DO" draft lost ⌘⌃M to the row above (2026-09-08) — the
-        // two were the same gesture and the sent one won. It keeps a row rather
-        // than being deleted: drafting is still the right shape when the note
-        // needs editing before it goes, and a click is a fine price for the
-        // rarer of the two.
-        addItem("✉️ Draft TO DO mail with clipboard", action: #selector(composeTodoMailAction))
+        // The Gmail "TO DO" draft that used to sit here is gone (2026-09-14),
+        // and with it `GmailCompose`. It lost ⌘⌃M to the row above in
+        // 2026-09-08 — the two were the same gesture and the sent one won — and
+        // the row it kept afterwards never answered the question it was left
+        // with: a draft waiting in a Chrome window is the same note, unfinished.
+        //
+        // 📝/🤖 The two clipboard→notes rows were promoted out of 👩🏻‍💻 Extra to
+        // land here instead, because this is the block that answers "what is on
+        // the clipboard and where does it go": onto the wall for the room, into
+        // Victor's inbox, into the session notes, onto the room's Prompts tab.
+        // In the submenu they were a feature hidden behind a hover.
+        let appendNotesItem = addItem("📝 Paste Clipboard to Notes", action: #selector(appendClipboardToNotesAction))
+        appendNotesItem.keyEquivalent = "v"
+        appendNotesItem.keyEquivalentModifierMask = [.control, .option]
+
+        // The 🤖 sibling: the same clipboard, filed as an agent PROMPT, which is
+        // what puts it on the participants' Prompts tab. ⌘⌃P does this from the
+        // keyboard and prefers the *selection* when there is one — a menu click
+        // cannot capture the previous app's selection (the menu holds the
+        // focus), so this row is deliberately the clipboard-only half and
+        // carries NO key equivalent that would promise the selection too.
+        let appendPromptItem = addItem("🤖 Paste Clipboard as Prompt", action: #selector(appendClipboardAsPromptAction))
+        appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
 
         menu.addItem(.separator())
 
@@ -306,14 +330,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
 
-        // Append clipboard to session notes (⌃⌥V)
-        let appendNotesItem = NSMenuItem(title: "📝 Paste Clipboard to Notes", action: #selector(appendClipboardToNotesAction), keyEquivalent: "v")
-        appendNotesItem.keyEquivalentModifierMask = [.control, .option]
-        appendNotesItem.target = self
-        appendNotesItem.isEnabled = true
-        extraSubmenu.addItem(appendNotesItem)
+        // 📝 Paste Clipboard to Notes (⌃⌥V) and its 🤖 prompt sibling are NOT
+        // here any more — they sit at the top level with the other clipboard
+        // rows (2026-09-14).
 
-        hotspotFallbackItem = NSMenuItem(title: "📶 Hotspot Fallback", action: #selector(toggleHotspotFallbackAction), keyEquivalent: "")
+        // Both hotspot rows name the phone (2026-09-14). "Hotspot" alone reads
+        // as the Mac's own sharing; what these two actually do is reach the
+        // Galaxy running `victor-phone-addons` over Bluetooth and make IT hand
+        // out the network — and when the room's Wi-Fi has just died, which
+        // device is about to be asked for internet is the whole question.
+        hotspotFallbackItem = NSMenuItem(title: "📶 Victor Phone Hotspot Fallback", action: #selector(toggleHotspotFallbackAction), keyEquivalent: "")
         hotspotFallbackItem.target = self
         hotspotFallbackItem.isEnabled = true
         hotspotFallbackItem.state = HotspotFallbackSettings.isEnabled ? .on : .off
@@ -323,7 +349,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // whether the *automatic* fallback is armed — and the whole reason this
         // exists is the case where the automatic path never fires and the repair
         // is otherwise to pick up the phone and open the app by hand.
-        hotspotNowItem = NSMenuItem(title: "📱 Start Phone Hotspot Now", action: #selector(hotspotNowAction), keyEquivalent: "")
+        hotspotNowItem = NSMenuItem(title: "📱 Start Victor Phone Hotspot Now", action: #selector(hotspotNowAction), keyEquivalent: "")
         hotspotNowItem.target = self
         hotspotNowItem.isEnabled = true
         extraSubmenu.addItem(hotspotNowItem)
@@ -334,11 +360,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         emojiOverlayItem.state = KeymapOverlaySettings.isEnabled ? .on : .off
         extraSubmenu.addItem(emojiOverlayItem)
 
-        cursorGlowItem = NSMenuItem(title: "🟡 Cursor Glow", action: #selector(toggleCursorGlowAction), keyEquivalent: "")
-        cursorGlowItem.target = self
-        cursorGlowItem.isEnabled = true
-        cursorGlowItem.state = CursorGlowSettings.isEnabled ? .on : .off
-        extraSubmenu.addItem(cursorGlowItem)
+        // 🟡 Cursor Glow is gone (2026-09-14), together with `CursorGlow.swift`
+        // and its stored setting: it was an experiment — a panel chasing the
+        // pointer 30 times a second to fake a glow macOS has no API for — and
+        // it never became something a workshop actually needed.
 
         // 🔄 Reverse Mouse Wheel — the Scroll Reverser replacement. It breaks
         // "the menu is not a second cheat-sheet" for the reason the 🔴 raw-audio
@@ -386,35 +411,32 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
         extraSubmenu.addItem(homeAwakeItem)
 
-        // Dark Mode (⌘⌃⌥D)
+        // Dark Mode (⌘⌃⌥D) — a checkbox like every other row in here
+        // (2026-09-14). It toggles a state, and a toggle that does not tick
+        // reads as an action, which is what makes you click it just to find out
+        // which way it goes. The tick is repainted on every menu open from the
+        // LIVE system appearance rather than from `DarkModeToggle`'s cache: that
+        // cache only knows about the flips this process made, and System
+        // Settings (or another Mac's sync) flips it too.
         darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
         darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]
         darkModeItem.target = self
         darkModeItem.isEnabled = true
+        darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
         extraSubmenu.addItem(darkModeItem)
 
         // Gmail (⌘⌃G), Calendar (⌘⌃L), Tile (⌘⌃A), Terminal (⌘⌃T) and Claude in
         // ~/workspace (F8, ⌘⌃C) have no rows here: every one of those keys is
         // taught by the ⌘⌃ cheat-sheet you get by *holding* the modifiers, which
         // is both faster to reach than a submenu and shows all of them at once.
-        // What stays is what the sheet can't replace: the two toggles, and the
-        // clipboard→notes item (a menu click cannot capture the previous app's
-        // selection, so ⌘⌃S has no menu form at all).
+        // What stays is what the sheet can't replace: the toggles — state that
+        // exists nowhere else on screen.
         //
-        // The claude-per-repo launchers stay because they are not a key: each
-        // opens claude in a specific repo, renamed, in its own screen quarter.
-        // `🎅 workspace` pointed at ~/workspace/ai, which no longer exists (it
-        // became skills-private), so that one is gone.
-        let dreamEntries: [(String, Selector)] = [
-            ("🎅 training-assistant", #selector(openDreamTrainingAssistant)),
-            ("🎅 macos-addons",       #selector(openDreamMacOSAddons)),
-        ]
-        for (title, sel) in dreamEntries {
-            let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
-            item.target = self
-            item.isEnabled = true
-            extraSubmenu.addItem(item)
-        }
+        // The 🎅 per-repo claude launchers are gone too (2026-09-14).
+        // `🎅 workspace` had already gone when ~/workspace/ai became
+        // skills-private; `🎅 training-assistant` and `🎅 macos-addons` followed,
+        // because a row per repo is a list that only ever grows, and F8 / ⌘⌃C
+        // opens claude where the work is anyway.
 
         menu.addItem(extraItem)
 
@@ -518,7 +540,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         portItem.target = self
         killSubmenu.addItem(portItem)
 
-        darkModeItem.title = "Dark Mode"
+        darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
 
         updateTranscribeTitle()
         updateTailItem()
@@ -727,13 +749,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onEmojiOverlayEnabledChanged?(enabled)
     }
 
-    @objc private func toggleCursorGlowAction() {
-        let enabled = !CursorGlowSettings.isEnabled
-        CursorGlowSettings.isEnabled = enabled
-        cursorGlowItem.state = enabled ? .on : .off
-        onCursorGlowEnabledChanged?(enabled)
-    }
-
     /// 🔄 Reverse Mouse Wheel. Unlike its neighbours this notifies nobody: the
     /// event tap reads `ScrollReversalSettings` itself, on the scroll it is
     /// holding, so there is no second copy of the answer to keep in step and no
@@ -804,12 +819,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onSendReminderMail?()
     }
 
-    @objc private func composeTodoMailAction() {
-        onComposeTodoMail?()
-    }
-
     @objc private func appendClipboardToNotesAction() {
         onAppendClipboardToNotes?()
+    }
+
+    @objc private func appendClipboardAsPromptAction() {
+        onAppendClipboardAsPrompt?()
     }
 
     @objc private func startTrainingAssistantAction() {
@@ -820,14 +835,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         end tell
         """
         DispatchQueue.global().async { AppleScriptRunner.run(script) }
-    }
-
-    @objc private func openDreamTrainingAssistant() {
-        openDreamClaude(directory: "~/workspace/training-assistant", sessionName: "training-assistant", quarter: .topRight)
-    }
-
-    @objc func openDreamMacOSAddons() {
-        openDreamClaude(directory: "~/workspace/victor-macos-addons", sessionName: "macos-addons", quarter: .bottomRight)
     }
 
     /// F8 / ⌘⌃C global hotkey lands here.
@@ -1305,6 +1312,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private func rebuildTranscribeSubmenu() {
         transcribeSubmenu.removeAllItems()
+        // 🐕 Tail first, alone above a separator: the parent row says whether
+        // transcription is running, this says how fresh the transcript is and
+        // opens it. Everything under the line is a *setting* of the
+        // transcription — which mic is heard, and whether it also goes to disk
+        // — so the line is what keeps a readout from being read as one.
+        transcribeSubmenu.addItem(tailItem)
+        transcribeSubmenu.addItem(.separator())
         for src in Self.knownSources {
             // Titles are drawn by AppKit in the menu's own label colour, so the
             // monochrome  needs no tinting here — only the substitution.

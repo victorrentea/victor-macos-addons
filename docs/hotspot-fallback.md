@@ -342,7 +342,7 @@ app sees network changes all day, and a location fix costs radios.
 
 ## Toggle
 
-**💬 → 👩🏻‍💻 Extra → 📶 Hotspot Fallback**, persisted in `UserDefaults`
+**💬 → 👩🏻‍💻 Extra → 📶 Victor Phone Hotspot Fallback**, persisted in `UserDefaults`
 (`HotspotFallback.enabled`, default on). Default on is safe: the feature does
 nothing at all unless the Mac is already offline and away from home.
 
@@ -373,9 +373,13 @@ Nothing was going to arrive. So `heartbeat` (60 s) re-evaluates on a clock as
 well as on edges. While online that is one TCP probe a minute; while offline the
 attempts stay bounded by `cooldown` exactly as before.
 
-## Starting it by hand: 📱 Start Phone Hotspot Now
+## Starting it by hand: 📱 Start Victor Phone Hotspot Now
 
-**💬 → 👩🏻‍💻 Extra → 📱 Start Phone Hotspot Now**, right under the toggle.
+**💬 → 👩🏻‍💻 Extra → 📱 Start Victor Phone Hotspot Now**, right under the toggle.
+
+Both rows name the phone since 2026-09-14: "Hotspot" alone reads as the Mac's
+own sharing, and what these do is make the Galaxy running `victor-phone-addons`
+hand out the network.
 
 It runs the whole chain immediately — signal, then join — and skips *every*
 guard: the connectivity probe, the geofence, the cooldown, and the enabled

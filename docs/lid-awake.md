@@ -13,7 +13,8 @@ the thing this deliberately does not do.
 Code: `LidAwake.swift` (runtime), `LidAwakePolicy.swift` (the decision),
 `ClaudeActivity.swift` (is a session working?), `LidAwakePolicyTests.swift`.
 Menu row + toggle in `MenuBarManager.swift`, wired in `AppDelegate.swift` next
-to `CursorGlow`.
+to the 🏠 Home Wi-Fi toggle (it used to sit next to `CursorGlow`, deleted
+2026-09-14).
 
 ## Why `caffeinate` is the wrong tool, and what is the right one
 

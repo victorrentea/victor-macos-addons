@@ -4,7 +4,6 @@ import Foundation
 import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
-    private var cursorGlow: CursorGlow!
     /// 🏁 End-of-training sequence, armed from the tablet's 🏁 button.
     private let trainingEnd = TrainingEndSequence()
     private var menuBarManager: MenuBarManager!
@@ -1079,23 +1078,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
+        // 🤖 The same append, one marker over — the clipboard filed as an agent
+        // prompt, which is what puts it on the participants' Prompts tab.
+        menuBarManager.onAppendClipboardAsPrompt = {
+            DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboardAsPrompt() }
+        }
         menuBarManager.onEmojiOverlayEnabledChanged = { [weak self] enabled in
             if !enabled {
                 self?.keymapHoldCoordinator?.reset()
             }
         }
-        cursorGlow = CursorGlow()
-        menuBarManager.onCursorGlowEnabledChanged = { [weak self] enabled in
-            if enabled {
-                self?.cursorGlow.start()
-            } else {
-                self?.cursorGlow.stop()
-            }
-        }
-        if CursorGlowSettings.isEnabled {
-            cursorGlow.start()
-        }
-
         // 🔋 Awake Lid Closed. Re-armed on launch when it was left on, so the
         // rebuild loop (`pkill` + `open`) cannot silently drop the lid guard in
         // the middle of a flight.
@@ -1379,24 +1371,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // tab. Run off the main thread: the AX read and the ⌘C fallback block.
         eventTap.onSendSelectionAsPrompt = {
             SessionNotesAppender.sendSelectionAsPrompt()
-        }
-        // No hotkey any more (⌘⌃M now sends the Reminder mail) — this is the
-        // menu row's handler.
-        menuBarManager.onComposeTodoMail = { [weak self] in
-            // The whole draft is a URL by the time Chrome is asked to open it —
-            // so nothing races the browser and nothing is typed into a window
-            // that may not have focus yet.
-            let draft = GmailCompose.draft(clipboard: ClipboardManager.read())
-            DispatchQueue.main.async {
-                self?.openUrlInChrome(draft.url, target: .screenUnderMouse)
-                // Only the shortened case says anything: the draft on screen is
-                // its own confirmation, but a body that was cut short doesn't
-                // look cut short, and the clipboard still holds the rest.
-                if draft.truncated {
-                    self?.statusBanner?.showNow(text: "✉️ TO DO — text scurtat, întregul e în clipboard (⌘V)",
-                                                sound: nil, visibleDuration: 6.0)
-                }
-            }
         }
         // ⌘⌃M — the clipboard leaves the Mac as a "Reminder" mail. Same
         // AgentMail key as the 📬 poller, used in the sending direction; no

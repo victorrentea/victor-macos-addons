@@ -44,6 +44,19 @@ enum SessionNotesAppender {
     /// timeout. Only one prompt-capture offer is on screen at a time.
     private static var pendingPrompt: String?
 
+    /// The 🤖 menu row: the clipboard, filed as an agent **prompt** rather than
+    /// a hand-sent note. Deliberately clipboard-only, unlike ⌘⌃P — a menu click
+    /// happens while the menu holds the focus, so there is no selection left to
+    /// read and nothing to be gained by reaching for one.
+    static func appendClipboardAsPrompt() {
+        let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            showResult("(empty clipboard)")
+            return
+        }
+        pasteAndOfferUndo(text: text, marker: .agentPrompt)
+    }
+
     static func appendClipboard() {
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {

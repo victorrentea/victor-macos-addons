@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// Whether the wheel is reversed, surviving app restarts — the 🔄 row under
-/// 👩🏻‍💻 Extra. It is the sibling of `CursorGlowSettings` and reads the same way,
+/// 👩🏻‍💻 Extra. It is the sibling of `KeymapOverlaySettings` and reads the same way,
 /// with **one deliberate difference: the default is ON.**
 ///
 /// That difference is the whole point. This feature is not a nicety being

@@ -20,4 +20,13 @@ enum DarkModeToggle {
     static func isDark() -> Bool {
         return _cachedIsDark
     }
+
+    /// The live system appearance, for the menu's checkbox. `isDark()` above is
+    /// a cache of the flips THIS process made — enough to decide what the next
+    /// ⌘⌃⌥D should do, wrong for a tick that has to be right every time the
+    /// menu opens, since System Settings flips the same switch. Main thread
+    /// only (`NSApp`), which is where the menu is built and refreshed.
+    static func isDarkNow() -> Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
 }

@@ -1,15 +1,15 @@
 import AppKit
 import Foundation
 
-/// ⌘⌃P — "remind me of this": whatever is on the clipboard right now (a
+/// ⌘⌃M — "remind me of this": whatever is on the clipboard right now (a
 /// picture, some text, or both) is **sent** to Victor's own Gmail through
 /// AgentMail's REST API, subject `Reminder`.
 ///
-/// **Sent, not drafted** — that is the whole difference from ⌘⌃M
-/// (`GmailCompose`), which fills a Gmail compose window and then waits for a
-/// human to press Send. A draft is a second thing to finish; this key is done
-/// the moment it is released, which is what makes it usable mid-sentence in
-/// front of a room. The cost of that is symmetric: there is no confirmation
+/// **Sent, not drafted.** The other half of the pair — `GmailCompose`, which
+/// filled a Gmail compose window and then waited for a human to press Send —
+/// lost this key in 2026-09-08 and was deleted in 2026-09-14. A draft is a
+/// second thing to finish; this key is done the moment it is released, which is
+/// what makes it usable mid-sentence in front of a room. The cost of that is symmetric: there is no confirmation
 /// step, so the banner afterwards is the only proof, and it reports the real
 /// HTTP outcome rather than "probably sent".
 ///
