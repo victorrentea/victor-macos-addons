@@ -222,8 +222,16 @@ enum SessionNotesAppender {
     /// and the byte offset *before* the write (for undo). Throws on any failure.
     /// Banner-free: callers decide the visual feedback (rising-fade, undo offer,
     /// or an error flash) so the same write powers every entry point.
+    ///
+    /// **This is the cross-repo contract, not an implementation detail.** The
+    /// line it writes — `- 🤖 <text>` — is the ONLY thing that puts a prompt on
+    /// the participants' Prompts tab: `training-assistant` keeps no second
+    /// store, it re-reads this file and treats the 🤖 stamp as the whole
+    /// distinction (`daemon/misc/content_files.py: _PROMPT_LINE_RE`). Hence
+    /// internal rather than private — `SessionNotesPromptLineTests` pins the
+    /// shape against that regex, on this side of the wire too.
     @discardableResult
-    private static func writeNotes(_ text: String, marker: Marker) throws -> (file: URL, offset: UInt64) {
+    static func writeNotes(_ text: String, marker: Marker) throws -> (file: URL, offset: UInt64) {
         guard let folder = ScreenshotManager.sessionFolder else { throw NotesError.noSession }
         guard let notes = findNotesFile(in: folder) else { throw NotesError.noNotesFile }
         let offset = try appendLine(marker.rawValue + " " + text, to: notes)
