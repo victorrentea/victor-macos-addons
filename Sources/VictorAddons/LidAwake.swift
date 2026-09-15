@@ -187,11 +187,11 @@ final class LidAwake {
     /// Set while the boost is being refused because something else is playing,
     /// so the reason is logged once per streak rather than six times a minute.
     private var boostRefused = false
-    /// The mute switch as it was before the beats lifted it — `nil` whenever we
-    /// have not looked yet, which is what makes this restore idempotent the same
-    /// way `volumeBeforeBeats` does. Kept apart from the volume because mute is
-    /// its own property: a device can answer one control and not the other, and
-    /// each half has to be restorable without the other.
+    /// `true` while we are holding a **mute the beats lifted** and still owe
+    /// back; `nil` when nothing is owed, which is what makes the restore
+    /// idempotent the same way `volumeBeforeBeats` does. Kept apart from the
+    /// volume because mute is its own property: a device can answer one control
+    /// and not the other, and each half has to be restorable without the other.
     private var muteBeforeBeats: Bool?
     /// Whether the audible pulse was running as of the last tick — the one
     /// input that tells a release owed five last beats from a release nobody
@@ -535,7 +535,6 @@ final class LidAwake {
     /// is set to — the pulse is worth more than the level.
     private func boostForBeats(_ wanted: Bool) {
         if wanted {
-            guard volumeBeforeBeats == nil || muteBeforeBeats == nil else { return }
             // Never raise the volume onto something that is already playing.
             if let playing = SystemAudioActivity.otherAppPlayingOutput() {
                 if !boostRefused {
@@ -547,8 +546,10 @@ final class LidAwake {
             boostRefused = false
             // The mute first: a volume parked at 100% on a muted Mac is 100%
             // of silence, and the lid coming down on a muted laptop is the
-            // ordinary case — a meeting, a library, a flight.
-            liftMute()
+            // ordinary case — a meeting, a library, a flight. Asked on **every**
+            // tick, not once on the rising edge the way the volume is: a mute
+            // that goes up halfway through a pulse takes the whole proof with
+            // it, where a volume nudged mid-pulse only makes it quieter.
             guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get() else { return }
             volumeBeforeBeats = current
             guard current < Self.beatSystemVolume else { return }
@@ -582,19 +583,23 @@ final class LidAwake {
     /// difference between them is a slider, and both end with the playlist in
     /// the room.
     ///
-    /// The old state is captured on the rising edge only, and captured even
-    /// when it was *not* muted (`false`), so a device that cannot answer the
-    /// switch at all is examined once rather than on every tick.
+    /// **Asked on every tick, unlike the volume**, which is captured once on the
+    /// rising edge and left alone after that. The asymmetry is deliberate: a
+    /// volume moved while the pulse is running still leaves a pulse, but a mute
+    /// switched on halfway through is total silence — and silence is the one
+    /// thing this feature is not allowed to invent, because it is also how it
+    /// reports a dead Mac. The cost is one CoreAudio property read every ten
+    /// seconds.
     private func liftMute() {
-        guard muteBeforeBeats == nil else { return }
-        let muted = SystemOutputVolume.isMuted() ?? false
-        muteBeforeBeats = muted
-        guard muted else { return }
+        guard SystemOutputVolume.isMuted() == true else { return }
         guard SystemOutputVolume.setMuted(false) else {
-            overlayError("LidAwake: output is muted and the device refused to unmute — the pulse will not be heard")
+            if muteBeforeBeats != true {
+                overlayError("LidAwake: the output is muted and the device refused to unmute — the pulse cannot be heard")
+            }
             return
         }
-        overlayInfo("LidAwake: output was muted — unmuting so the heartbeat carries")
+        muteBeforeBeats = true
+        overlayInfo("LidAwake: the output was muted — unmuting so the heartbeat carries")
     }
 
     /// Put the mute back, and put it back **before the Mac is allowed to
@@ -603,9 +608,8 @@ final class LidAwake {
     /// a heartbeat needed to be heard hours ago is the feature leaking into the
     /// next room Victor opens the lid in.
     private func restoreMute() {
-        guard let previous = muteBeforeBeats else { return }
+        guard muteBeforeBeats == true else { return }
         muteBeforeBeats = nil
-        guard previous else { return }
         SystemOutputVolume.setMuted(true)
         overlayInfo("LidAwake: output muted again — it wakes up as quiet as it went in")
     }

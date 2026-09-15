@@ -404,9 +404,15 @@ the same edge that raises the volume, remembers it in `muteBeforeBeats`, and
   `otherAppPlayingOutput()` came back empty — lifting a mute on a Mac with a
   stream open is the same violence as taking it to 100%, only with a slider
   between them, and both end with Victor's playlist in the room.
-- **Captured even when it was not muted**, as `false` rather than left `nil`, so
-  a device that cannot answer the mute switch at all is asked once instead of on
-  every tick.
+- **Asked on every tick**, unlike the volume, which is captured once on the
+  false→true edge and then left alone. A volume nudged while the pulse is
+  running still leaves a pulse; a mute switched on halfway through is total
+  silence — and silence is the one thing this feature must not invent, because
+  it is also how it reports a dead Mac. Measured cost: one CoreAudio property
+  read per 10 s tick. (This is also why the first build of it did *not* work:
+  capturing on the rising edge like the volume meant a Mac muted after the
+  beats had started stayed muted, which `/test/lid-awake/state` showed as
+  `muted:true, mute_lifted:false` for as long as you cared to poll it.)
 - **Restored before the sleep, not after it** — the part that makes the Mac wake
   up as quiet as it went in. `hold(false)` is what calls `pmset sleepnow`, and
   every caller restores the audio on the line *after* that call: a line that may
