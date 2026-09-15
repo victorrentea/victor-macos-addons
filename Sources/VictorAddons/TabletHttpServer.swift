@@ -130,6 +130,10 @@ case testTerminalFont
         /// its hotspot — whatever the Mac's connectivity, the geofence or the
         /// cooldown; returns a JSON snapshot (test hook).
         case testHotspot
+        /// Run one 🖱️ mouse-reconnect round now, whatever the poll clock says;
+        /// returns a JSON snapshot of which trusted addresses are connected
+        /// (test hook).
+        case testMouseReconnect
         /// JSON snapshot of the 📱 phone low-battery mirror (read-only): whether
         /// the tablet is being told to blink, at what charge, and how fresh the
         /// underlying Soduto notification is (test hook).
@@ -259,6 +263,9 @@ case testTerminalFont
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
     var onTestHotspot: (() -> String)?
+    /// Run one 🖱️ mouse-reconnect round now; returns a JSON snapshot of
+    /// which trusted addresses ended up connected.
+    var onTestMouseReconnect: (() -> String)?
     /// Read-only JSON snapshot of the 📱 phone low-battery mirror.
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
@@ -507,6 +514,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestHotspot?() ?? "{\"error\":\"hotspot fallback unavailable\"}"
                 if self.onTestHotspot == nil { statusCode = 503 }
+            case .testMouseReconnect:
+                contentType = "application/json"
+                body = self.onTestMouseReconnect?() ?? "{\"error\":\"mouse auto-reconnect unavailable\"}"
+                if self.onTestMouseReconnect == nil { statusCode = 503 }
             case .testPhoneBattery:
                 contentType = "application/json"
                 body = self.onTestPhoneBattery?() ?? "{\"error\":\"phone battery monitor unavailable\"}"
@@ -792,6 +803,8 @@ case testTerminalFont
             return .testAndroidDeploy
         case "/test/hotspot":
             return .testHotspot
+        case "/test/mouse-reconnect":
+            return .testMouseReconnect
         case "/test/phone-battery":
             return .testPhoneBattery
         case "/test/screen-lock":

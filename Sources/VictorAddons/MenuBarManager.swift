@@ -24,6 +24,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var homeAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
+    private(set) var mouseReconnectItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
     private(set) var voiceCorpusItem: NSMenuItem!
@@ -353,6 +354,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotNowItem.target = self
         hotspotNowItem.isEnabled = true
         extraSubmenu.addItem(hotspotNowItem)
+
+        mouseReconnectItem = NSMenuItem(title: "🖱️ Mouse Auto-Reconnect", action: #selector(toggleMouseReconnectAction), keyEquivalent: "")
+        mouseReconnectItem.target = self
+        mouseReconnectItem.isEnabled = true
+        mouseReconnectItem.state = MouseAutoReconnectSettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(mouseReconnectItem)
 
         emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
         emojiOverlayItem.target = self
@@ -740,6 +747,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func hotspotNowAction() {
         onHotspotNow?()
+    }
+
+    @objc private func toggleMouseReconnectAction() {
+        let enabled = !MouseAutoReconnectSettings.isEnabled
+        MouseAutoReconnectSettings.isEnabled = enabled
+        mouseReconnectItem.state = enabled ? .on : .off
     }
 
     @objc private func toggleEmojiOverlayAction() {

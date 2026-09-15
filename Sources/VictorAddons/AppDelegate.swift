@@ -33,6 +33,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
     private var hotspotFallback: HotspotFallback?
+    /// 🖱️ Reconnects Victor's own Bluetooth mouse when it's paired-but-not-
+    /// connected while nearby; see `MouseAutoReconnect` for the allow-list.
+    private var mouseAutoReconnect: MouseAutoReconnect?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// ✋ The amber "an agent is driving" frame. Owned here rather than by a
@@ -1283,6 +1286,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
         hotspot.start()
+
+        let mouseReconnect = MouseAutoReconnect()
+        self.mouseAutoReconnect = mouseReconnect
+        tabletServer?.onTestMouseReconnect = { [weak mouseReconnect] in
+            mouseReconnect?.forceAttemptJSON() ?? "{\"error\":\"mouse auto-reconnect unavailable\"}"
+        }
+        mouseReconnect.start()
 
         let eventTap = EventTapManager()
         // The tap fires this off a background queue; the controller is main-actor
