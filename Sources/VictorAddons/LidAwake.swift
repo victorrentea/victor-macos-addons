@@ -550,6 +550,7 @@ final class LidAwake {
             // tick, not once on the rising edge the way the volume is: a mute
             // that goes up halfway through a pulse takes the whole proof with
             // it, where a volume nudged mid-pulse only makes it quieter.
+            liftMute()
             guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get() else { return }
             volumeBeforeBeats = current
             guard current < Self.beatSystemVolume else { return }
