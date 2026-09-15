@@ -193,8 +193,14 @@ final class LidAwake {
     /// log can say *who* — and say it only when the set changes, not six times
     /// a minute.
     private var holders: [Int32] = []
+    /// Whether the last tick had given up on the network, so the "they are all
+    /// parked" line is written once per outage instead of six times a minute.
+    private var stalled = false
     private var ticks = 0
     private let queue = DispatchQueue(label: "ro.victorrentea.lidawake")
+    /// Is there internet, and for how long has there not been? Started and
+    /// stopped with the row, so an unticked row costs no probes at all.
+    private let net = InternetWatch()
 
     // MARK: - Lifecycle
 
@@ -226,6 +232,8 @@ final class LidAwake {
             boostForBeats(false)
             wasBeating = false
             stopTimer()
+            net.stop()
+            stalled = false
             overlayInfo("LidAwake disarmed")
             return true
         }
@@ -238,10 +246,14 @@ final class LidAwake {
             LidAwakeSettings.isEnabled = false
             boostForBeats(false)
             stopTimer()
+            net.stop()
             return false
         }
         holding = true
-        overlayInfo("LidAwake armed — watching for working Claude sessions, floor \(LidAwakePolicy.batteryFloorPercent)%")
+        overlayInfo("LidAwake armed — watching for working Claude sessions with internet, floor \(LidAwakePolicy.batteryFloorPercent)%")
+        // Before the first tick: the offline clock has to be running (and
+        // starting from now) before anything can ask how long it has been.
+        net.start()
         startTimer()
         // Arming plays the same lub-dub the bag will hear, not a different
         // confirmation chime: the click is also the volume check.
@@ -259,13 +271,15 @@ final class LidAwake {
     func stateJSON() -> String {
         let working = ClaudeActivity.workingSessions()
         let battery = Self.batteryPercent()
+        let offlineFor = net.offlineFor()
         let action = LidAwakePolicy.decide(
             enabled: LidAwakeSettings.isEnabled,
             claudeWorking: !working.isEmpty,
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
-            beating: wasBeating)
+            beating: wasBeating,
+            offlineFor: offlineFor)
         return "{\"enabled\":\(LidAwakeSettings.isEnabled),"
             + "\"holding\":\(holding),"
             + "\"sleep_disabled\":\(Self.isSleepDisabled()),"
@@ -273,6 +287,8 @@ final class LidAwake {
             + "\"on_ac\":\(PowerMonitor.isOnAC()),"
             + "\"battery\":\(battery.map(String.init) ?? "null"),"
             + "\"working\":[\(working.map(String.init).joined(separator: ","))],"
+            + "\"offline_for\":\(Int(offlineFor)),"
+            + "\"offline_grace\":\(Int(LidAwakePolicy.offlineGrace)),"
             + "\"beating\":\(wasBeating),"
             + "\"boosted\":\(volumeBeforeBeats != nil),"
             + "\"next_action\":\"\(action)\"}"
@@ -328,13 +344,30 @@ final class LidAwake {
             }
             holders = working
         }
+        // The second gate (2026-09-15): a session with no link to the API is
+        // parked, not working — and a parked turn still refreshes its
+        // `caffeinate`, so without this the pids above would hold a bagged
+        // laptop awake all night waiting for a Wi-Fi that is not coming back.
+        let offlineFor = net.offlineFor()
+        let nowStalled = offlineFor >= LidAwakePolicy.offlineGrace
+        if nowStalled != stalled {
+            if nowStalled {
+                overlayInfo("LidAwake: no internet for \(Int(offlineFor))s — "
+                    + "\(working.count) Claude session(s) are parked, not working; letting the Mac sleep")
+            } else {
+                overlayInfo("LidAwake: internet is back — watching for working Claude sessions again")
+            }
+            stalled = nowStalled
+        }
+
         let action = LidAwakePolicy.decide(
             enabled: LidAwakeSettings.isEnabled,
             claudeWorking: !working.isEmpty,
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
-            beating: wasBeating)
+            beating: wasBeating,
+            offlineFor: offlineFor)
 
         switch action {
         case .beat:
@@ -362,9 +395,13 @@ final class LidAwake {
         case .farewell:
             // Same release, announced first: the pulse was audible right up to
             // this tick, so the bag is told the Mac is going down instead of
-            // just never hearing another beat.
+            // just never hearing another beat. One flatline covers both reasons
+            // — the work finished, or the network died under it — because from
+            // inside the bag they mean the same thing: this sleep is on
+            // purpose, not a crash. The *log* says which; the ear only needs
+            // "deliberate".
             wasBeating = false
-            farewell()
+            farewell(reason: nowStalled ? "no internet — nothing can be working" : "no Claude working")
 
         case .standDown:
             let pct = battery ?? -1
@@ -542,10 +579,10 @@ final class LidAwake {
     /// through, and a flatline that stops early is exactly the truncated shape
     /// that reads as a crash. Same discipline as the floor's three beeps, which
     /// delay their disarm rather than race it.
-    private func farewell() {
+    private func farewell(reason: String = "no Claude working") {
         guard !farewellInFlight else { return }
         farewellInFlight = true
-        overlayInfo("LidAwake: no Claude working — flatline, then the Mac may sleep")
+        overlayInfo("LidAwake: \(reason) — flatline, then the Mac may sleep")
         lastBeats()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength + 0.2) { [weak self] in
@@ -558,7 +595,12 @@ final class LidAwake {
                 // Claude that is working again, and five seconds is long enough
                 // for that to happen. Leaving `holding` alone here is the whole
                 // fix — the next tick sees `.beat` and simply carries on.
-                guard !ClaudeActivity.isClaudeWorking() else {
+                // …and only if it could actually *do* anything: a session that
+                // wakes up during the flatline with the link still down is the
+                // same parked turn we just decided not to hold the lid open
+                // for, so the offline gate is re-checked here too.
+                if ClaudeActivity.isClaudeWorking(),
+                   self.net.offlineFor() < LidAwakePolicy.offlineGrace {
                     overlayInfo("LidAwake: a Claude started again during the flatline — still holding")
                     return
                 }

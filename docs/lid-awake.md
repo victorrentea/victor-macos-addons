@@ -153,6 +153,74 @@ the exact failure this is meant to prevent.
   for hours on a battery, and no dependence on `ps` seeing the whole table
   (under a sandbox it does not — measured at 31 rows of several hundred).
 
+## The internet gate: a parked Claude is not a working Claude (2026-09-15)
+
+`ClaudeActivity` answers "is a session working?" and, on a laptop with no Wi-Fi,
+it answers **yes to a session that cannot do a thing**. Since 2026-09-14 Victor's
+`~/.claude/hooks/net-gate.sh` parks a turn the moment `api.anthropic.com` stops
+answering and polls once a minute until it comes back — deliberately, because
+Claude Code's internal retry ladder is a hardcoded ~3 minutes and a turn that
+runs it out is killed with its work. That park is right for the session and
+wrong for the lid: a parked turn is a **live** turn, Claude Code keeps refreshing
+its `caffeinate`, and the pids are still named as holders. A bag out of Wi-Fi
+range would hold the Mac awake all night waiting for a network that is not coming
+back until the bag is opened — and then hit the 20% floor having done nothing.
+
+So the tick asks a second question. The rule, in Victor's words: **only activity
+with internet keeps the laptop on.**
+
+- **Five minutes** (`LidAwakePolicy.offlineGrace`, 300 s — the same number as
+  Claude Code's own `caffeinate -t`). Below it every Wi-Fi hiccup, AP roam and
+  hotspot re-association is absorbed; above it the link is genuinely gone.
+- **It is a release, not a stand-down.** The flag comes off, `pmset sleepnow`
+  follows on a shut lid on battery exactly as it does for the ordinary ending,
+  and **the row stays ticked**. An outage is a reason to stop holding, never a
+  reason to stop watching: the first session to do real work once the link is
+  back re-arms all of this with nobody clicking anything.
+- **One flatline covers both endings.** From inside the bag "the work finished"
+  and "the network died under it" mean the same thing — *this sleep is on
+  purpose, not a crash* — and inventing a third sound would be one more thing to
+  explain through a closed lid. The **log** is where they are told apart:
+  `no internet for 312s — 3 Claude session(s) are parked, not working; letting
+  the Mac sleep`, written once per outage, with `internet is back` on the way
+  out. The floor keeps its own three Bassos, because that says something the
+  other two do not.
+- **The trade is stated, not hidden**: a session compiling for an hour with the
+  Wi-Fi off no longer holds the lid open either. This feature was built for a
+  mid-flight `claude` loop, not for an offline build, and Victor's rule decides
+  the tie.
+
+### How "offline" is measured — `InternetWatch.swift`
+
+- **The host is `api.anthropic.com`**, not "the internet". The failure that
+  matters is Claude Code being unable to reach *its* API, which is also what
+  `net-probe.sh` tests, so a captive portal that carries LAN traffic but not
+  Anthropic counts as offline. One TCP handshake proves DNS + TCP in one shot.
+- **One failed probe is enough here**, unlike `HotspotFallback`'s two. There a
+  bogus "offline" costs a `networksetup` join that takes the Wi-Fi down; here it
+  only leaves a clock running that the next probe 30 s later resets. **The
+  five-minute grace is the confirmation**, and it is a hundred times longer than
+  any gap between two back-to-back probes.
+- **Three sources, cheapest first.** `NWPathMonitor` says "no route" for free —
+  the bag case, and no point burning four seconds on a handshake to learn it.
+  Then the hooks' own `~/.claude/net-probe` stamp: `net-probe.sh` writes the
+  epoch of every **successful** probe there, so a stamp under 45 s old is proof a
+  Claude reached the API, for free. Only then a handshake of our own, at most
+  every 30 s.
+- **Missing evidence is never an outage.** `offlineFor()` returns 0 whenever the
+  watch is not running or has never measured — the same discipline as the
+  unreadable battery below: of the two possible mistakes, sleeping a Mac
+  mid-flight because nobody was probing is much worse than holding it awake
+  longer than needed.
+- **Waking resets the clock.** The lid opens in a new room and the Mac has been
+  "offline" for the whole sleep; judging it on that would sleep it again
+  immediately. `didWakeNotification` restarts the five minutes and asks again.
+- **It runs only while the row is ticked.** `LidAwake` starts and stops the watch
+  with its own timer, so an unticked row costs nothing — and an armed one costs
+  one handshake every 30 s, less than `HotspotFallback` already pays.
+- Reported in `GET /test/lid-awake/state` as `offline_for` / `offline_grace`, so
+  "why did it sleep in the bag" is one `curl` away.
+
 ## Two kinds of stop, and they are not the same
 
 | | flag | row | why |
