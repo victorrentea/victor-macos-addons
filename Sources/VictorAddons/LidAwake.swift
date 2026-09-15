@@ -51,10 +51,15 @@ enum LidAwakeSettings {
 /// the safety half has stopped running.
 ///
 /// **A proof nobody can hear is not a proof, so the beats set their own
-/// volume** (2026-09-09). The moment the pulse starts — lid shut, on battery, a
-/// Claude working — the system output goes **all the way up** and whatever it
-/// was before is remembered; the moment it stops, for any reason, that number
-/// goes back. The laptop is in a bag by then and nobody is going to reach in
+/// volume** (2026-09-09) **and lift the mute** (2026-09-15). The moment the
+/// pulse starts — lid shut, on battery, a Claude working — the system output
+/// goes **all the way up**, the mute switch comes off, and both of those are
+/// remembered; the moment it stops, for any reason, they go back. Mute is a
+/// separate property from the level — a muted Mac still reports the volume it
+/// had — so without the second half the boost was parking a silent machine at
+/// 100%, and the lid closing on a muted laptop (a meeting, a library, a plane)
+/// is the ordinary case, not the exotic one. The restore happens **before**
+/// `pmset sleepnow`, so the Mac wakes up as quiet as it went into the bag. The laptop is in a bag by then and nobody is going to reach in
 /// and turn it up, and the level it happened to be left at when the lid came
 /// down has nothing to do with how loud a bag needs. **Only onto silence,
 /// though**: if another app is playing, the volume is left alone rather than
@@ -182,6 +187,12 @@ final class LidAwake {
     /// Set while the boost is being refused because something else is playing,
     /// so the reason is logged once per streak rather than six times a minute.
     private var boostRefused = false
+    /// The mute switch as it was before the beats lifted it — `nil` whenever we
+    /// have not looked yet, which is what makes this restore idempotent the same
+    /// way `volumeBeforeBeats` does. Kept apart from the volume because mute is
+    /// its own property: a device can answer one control and not the other, and
+    /// each half has to be restorable without the other.
+    private var muteBeforeBeats: Bool?
     /// Whether the audible pulse was running as of the last tick — the one
     /// input that tells a release owed five last beats from a release nobody
     /// could have heard (lid open, on AC, or never beating at all).
@@ -257,7 +268,16 @@ final class LidAwake {
         startTimer()
         // Arming plays the same lub-dub the bag will hear, not a different
         // confirmation chime: the click is also the volume check.
-        if announce { heartbeat() }
+        if announce {
+            heartbeat()
+            // …and a check that hears nothing has to say so. The mute is only
+            // lifted once the pulse actually starts (lid shut, on battery),
+            // never at the desk, so a muted Mac swallows this beat and the
+            // silence would otherwise read as a broken sound path.
+            if SystemOutputVolume.isMuted() == true {
+                overlayInfo("LidAwake: the Mac is muted — this beat is inaudible; the pulse unmutes by itself once the lid is shut")
+            }
+        }
         // Land in the right state now rather than ten seconds from now.
         tick()
         return true
@@ -291,6 +311,8 @@ final class LidAwake {
             + "\"offline_grace\":\(Int(LidAwakePolicy.offlineGrace)),"
             + "\"beating\":\(wasBeating),"
             + "\"boosted\":\(volumeBeforeBeats != nil),"
+            + "\"muted\":\(SystemOutputVolume.isMuted().map(String.init) ?? "null"),"
+            + "\"mute_lifted\":\(muteBeforeBeats == true),"
             + "\"next_action\":\"\(action)\"}"
     }
 
@@ -455,7 +477,16 @@ final class LidAwake {
         // bag with the lid shut until some idle timer eventually gets to it.
         // With the lid already down and nothing left holding it open, the sleep
         // it was promised is asked for explicitly.
-        if !wanted, Self.isLidClosed(), !PowerMonitor.isOnAC() { Self.sleepNow() }
+        // …and the audio goes back **before** that sleep, not after it. The
+        // callers all restore too, but they do it on the line after this one,
+        // which is a line that may never run: `sleepnow` can freeze the machine
+        // mid-statement, and a mute restored into a sleeping Mac is a Mac that
+        // wakes up at full volume in the next meeting. Restoring here is
+        // idempotent — the caller's own call then finds nothing owed.
+        if !wanted, Self.isLidClosed(), !PowerMonitor.isOnAC() {
+            boostForBeats(false)
+            Self.sleepNow()
+        }
     }
 
     /// `pmset sleepnow` — the one `pmset` verb here that needs no privileges,
@@ -504,7 +535,7 @@ final class LidAwake {
     /// is set to — the pulse is worth more than the level.
     private func boostForBeats(_ wanted: Bool) {
         if wanted {
-            guard volumeBeforeBeats == nil else { return }
+            guard volumeBeforeBeats == nil || muteBeforeBeats == nil else { return }
             // Never raise the volume onto something that is already playing.
             if let playing = SystemAudioActivity.otherAppPlayingOutput() {
                 if !boostRefused {
@@ -514,18 +545,69 @@ final class LidAwake {
                 return
             }
             boostRefused = false
-            guard let current = SystemOutputVolume.get() else { return }
+            // The mute first: a volume parked at 100% on a muted Mac is 100%
+            // of silence, and the lid coming down on a muted laptop is the
+            // ordinary case — a meeting, a library, a flight.
+            liftMute()
+            guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get() else { return }
             volumeBeforeBeats = current
             guard current < Self.beatSystemVolume else { return }
             SystemOutputVolume.set(Self.beatSystemVolume)
             overlayInfo("LidAwake: output \(Int((current * 100).rounded()))% → \(Int(Self.beatSystemVolume * 100))% so the heartbeat carries")
         } else {
             boostRefused = false
+            restoreMute()
             guard let previous = volumeBeforeBeats else { return }
             volumeBeforeBeats = nil
             SystemOutputVolume.set(previous)
             overlayInfo("LidAwake: output back to \(Int((previous * 100).rounded()))%")
         }
+    }
+
+    /// **Lift a mute for the duration of the pulse, and put it back before the
+    /// Mac sleeps** (2026-09-15).
+    ///
+    /// The volume boost above was written as if silence had one cause, the
+    /// level. It has two: a Mac muted with F10 (or by Wispr, or by any app that
+    /// pushes the switch) reports its old `VolumeScalar` unchanged, so
+    /// `boostForBeats` would faithfully park a muted machine at 100% and the
+    /// bag would hear nothing. And a muted lid-close is the *ordinary* one — a
+    /// meeting, a library, a flight is exactly when the laptop goes into the
+    /// bag with a session running. A proof that is only audible when Victor
+    /// happened not to have muted is not a proof.
+    ///
+    /// **It follows the same refusal as the volume**: this is only ever reached
+    /// after `otherAppPlayingOutput()` came back empty, because unmuting a Mac
+    /// with a stream open is the same violence as taking it to 100% — the
+    /// difference between them is a slider, and both end with the playlist in
+    /// the room.
+    ///
+    /// The old state is captured on the rising edge only, and captured even
+    /// when it was *not* muted (`false`), so a device that cannot answer the
+    /// switch at all is examined once rather than on every tick.
+    private func liftMute() {
+        guard muteBeforeBeats == nil else { return }
+        let muted = SystemOutputVolume.isMuted() ?? false
+        muteBeforeBeats = muted
+        guard muted else { return }
+        guard SystemOutputVolume.setMuted(false) else {
+            overlayError("LidAwake: output is muted and the device refused to unmute — the pulse will not be heard")
+            return
+        }
+        overlayInfo("LidAwake: output was muted — unmuting so the heartbeat carries")
+    }
+
+    /// Put the mute back, and put it back **before the Mac is allowed to
+    /// sleep** — see `hold`. A Mac that went into the bag muted has to come out
+    /// of it muted: waking to a machine that is suddenly at full volume because
+    /// a heartbeat needed to be heard hours ago is the feature leaking into the
+    /// next room Victor opens the lid in.
+    private func restoreMute() {
+        guard let previous = muteBeforeBeats else { return }
+        muteBeforeBeats = nil
+        guard previous else { return }
+        SystemOutputVolume.setMuted(true)
+        overlayInfo("LidAwake: output muted again — it wakes up as quiet as it went in")
     }
 
     /// One lub-dub, cut live out of the 💓 effect's loop.

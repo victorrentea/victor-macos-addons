@@ -11,6 +11,12 @@ import Foundation
 /// out of — which by then may be the built-in speakers, the JBLs or whatever
 /// `BluetoothAutoOutput` last handed the system.
 ///
+/// **The mute switch is a second, independent knob** (`isMuted`/`setMuted`,
+/// 2026-09-15). Muting a Mac does not move its volume — the device keeps
+/// reporting the level it had — so a volume this class parks at 100% is still
+/// 100% of nothing while the mute flag is up. `LidAwake` therefore has to lift
+/// it as well, and put it back, which is why both halves live here.
+///
 /// **Not every device answers the master control.** Aggregates and some USB
 /// interfaces expose no `VolumeScalar` on element 0 and only per-channel ones on
 /// elements 1 and 2, so both are tried, in that order — and `nil`/`false` come
@@ -69,8 +75,58 @@ enum SystemOutputVolume {
         return wrote
     }
 
+    /// Is the default output **muted**? `nil` when the device exposes no mute
+    /// control at all (plenty of Bluetooth and USB devices do not — macOS then
+    /// mutes them by driving the volume to 0 instead).
+    ///
+    /// Mute is a separate property from the volume, and that is the whole
+    /// reason this exists: a muted device still reports whatever
+    /// `VolumeScalar` it had before, so `get()` answering `0.6` says nothing
+    /// about whether a sound will be heard. `LidAwake` parking the output at
+    /// 100% on a muted Mac is 100% of silence.
+    static func isMuted() -> Bool? {
+        guard let device = defaultOutputDevice() else { return nil }
+        for element in elements {
+            var addr = muteAddress(element)
+            guard AudioObjectHasProperty(device, &addr) else { continue }
+            var muted: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(device, &addr, 0, nil, &size, &muted) == noErr {
+                return muted != 0
+            }
+        }
+        return nil
+    }
+
+    /// Mute or unmute the default output. Returns whether anything took — the
+    /// same "leave it alone" contract as `set`.
+    @discardableResult
+    static func setMuted(_ muted: Bool) -> Bool {
+        guard let device = defaultOutputDevice() else { return false }
+        var wanted: UInt32 = muted ? 1 : 0
+        var wrote = false
+        for element in elements {
+            var addr = muteAddress(element)
+            guard AudioObjectHasProperty(device, &addr) else { continue }
+            var settable: DarwinBoolean = false
+            guard AudioObjectIsPropertySettable(device, &addr, &settable) == noErr, settable.boolValue else { continue }
+            if AudioObjectSetPropertyData(device, &addr, 0, nil,
+                                          UInt32(MemoryLayout<UInt32>.size), &wanted) == noErr {
+                wrote = true
+                if element == kAudioObjectPropertyElementMain { break }
+            }
+        }
+        return wrote
+    }
+
     /// Master first, then left and right — see the note on the enum.
     private static let elements: [AudioObjectPropertyElement] = [kAudioObjectPropertyElementMain, 1, 2]
+
+    private static func muteAddress(_ element: AudioObjectPropertyElement) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute,
+                                   mScope: kAudioDevicePropertyScopeOutput,
+                                   mElement: element)
+    }
 
     private static func address(_ element: AudioObjectPropertyElement) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar,

@@ -260,7 +260,7 @@ judged by.
 While a Claude is working **and we are on battery and the lid is shut**, a
 **lub-dub every 10 seconds** at `NSSound.volume` **1.0** — full scale, on top of
 whatever the system output is set to (which the beats park at 100% themselves
-when they are allowed to, below).
+when they are allowed to, and unmute, below).
 
 **It was 0.2 until 2026-09-10, and the silence guard is what changed it.** A
 fifth was plenty while the beats could count on parking the output at 100%: a
@@ -377,6 +377,40 @@ Four things worth knowing about it:
   feature runs at. The three Basso beeps of a floor stand-down are deliberately
   let out *before* the restore (the disarm is delayed 1 s behind them), and so
   is the flatline: they are the last thing the bag ever says.
+
+**And mute is a second knob, not a low volume (2026-09-15).** Muting a Mac —
+F10, the Control Centre slider, Wispr, anything — does not move `VolumeScalar`:
+the device keeps reporting the level it had. So the boost above was happily
+parking a *muted* machine at 100%, which is 100% of nothing, and the bag heard
+no pulse and no flatline. It is also not a rare state: the lid comes down on a
+muted laptop in a meeting, a library or a plane, which is precisely when the
+session goes into the bag. `LidAwake.liftMute()` therefore takes the mute off on
+the same edge that raises the volume, remembers it in `muteBeforeBeats`, and
+`restoreMute()` puts it back on the way down.
+
+- **The same refusal covers it.** Unmuting is only ever reached after
+  `otherAppPlayingOutput()` came back empty — lifting a mute on a Mac with a
+  stream open is the same violence as taking it to 100%, only with a slider
+  between them, and both end with Victor's playlist in the room.
+- **Captured even when it was not muted**, as `false` rather than left `nil`, so
+  a device that cannot answer the mute switch at all is asked once instead of on
+  every tick.
+- **Restored before the sleep, not after it** — the part that makes the Mac wake
+  up as quiet as it went in. `hold(false)` is what calls `pmset sleepnow`, and
+  every caller restores the audio on the line *after* that call: a line that may
+  never run, because the sleep can freeze the machine mid-statement. So the
+  restore is done inside `hold` itself, immediately before `sleepnow`, and the
+  callers' own calls then find nothing owed. Waking up at full volume in the
+  next meeting because a heartbeat needed to be heard hours earlier is the
+  feature leaking out of the bag.
+- **Arming says so.** The lub-dub the click plays is the sound check, and on a
+  muted Mac it is inaudible — the mute is only lifted once the pulse actually
+  starts, never at the desk. So `setEnabled` logs "the Mac is muted — this beat
+  is inaudible; the pulse unmutes by itself once the lid is shut" instead of
+  leaving that silence to read as a broken sound path.
+- `GET /test/lid-awake/state` reports both halves: `muted` (what the device says
+  right now, `null` if it has no mute control) and `mute_lifted` (whether we are
+  holding one).
 
 The volume moved is the **default output device's**, read and written by
 `SystemOutputVolume` — not `CoreAudioManager`'s named `🔊OS Output` aggregate,
