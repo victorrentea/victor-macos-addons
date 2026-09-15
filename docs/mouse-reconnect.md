@@ -6,21 +6,56 @@ observed 15 Sep 2026: System Settings › Bluetooth showed it "Not Connected"
 with the mouse awake on the desk, macOS's own auto-reconnect simply not
 firing.
 
-## The allow-list, and why it exists
+## Why CoreBluetooth, and not `IOBluetoothDevice.openConnection()`
+
+The first version called `IOBluetoothDevice.openConnection` — the same call
+`HotspotFallback` uses for the phone. **It does not work here, and not in a
+"returns failure" way — it hangs forever.** Measured 15 Sep 2026: the call
+never returned at all, well past its own page timeout, and `blueutil
+--connect <address>` against the same device hung identically — which rules
+out "our code called it wrong", since blueutil is a separate, mature binary
+hitting the same underlying IOBluetooth API. The reason: that call issues a
+classic HCI `CREATE_CONNECTION` (a BR/EDR baseband **page**), and the M650 L
+is BLE-only (`system_profiler` shows `Services: <BLE>`, no BR/EDR) — there is
+no classic radio on the other end to page. So the whole class now runs on
+`CBCentralManager`, the API family LE peripherals actually connect through,
+and there is no page-timeout hang risk left: `connect()` is properly
+asynchronous, answered by a delegate callback.
+
+**The cost of the first version's bug**: once the mouse was disconnected,
+every 20 s poll queued another `openConnection()` call onto the same
+dedicated thread behind the one already hung — the feature went
+permanently inert after the very first miss, silently (no crash, no busy
+loop, just one thread parked forever in a blocking HCI call). Caught before
+the planned test tonight, from the disconnected-mouse state that happened to
+already exist when this was checked.
+
+## The allow-list, and why it lives one layer down from CoreBluetooth
 
 `blueutil --paired` on this Mac shows **six different physical mice all
-named "Logi M650 L"** (same vendor/product ID, 0x046D/0xB02A) — the same
-model bought more than once over time, plus possibly one paired during a
-demo with a trainee's identical mouse. Reconnecting on a name match would
-happily grab any of the other five: someone else's mouse, or a dead one from
-a drawer. So the class only ever acts on an explicit `Set<String>` of
-addresses (`MouseAutoReconnect.trustedAddresses`), the same allow-list shape
-`HotspotFallback` uses for the phone — never a name, never "whatever showed
-up".
+named "Logi M650 L"** — the same model bought more than once over time, plus
+possibly one paired during a demo with a trainee's identical mouse.
+Reconnecting on a name match would happily grab any of the other five:
+someone else's mouse, or a dead one from a drawer.
+
+CoreBluetooth itself never reveals a peripheral's Bluetooth **address** —
+only a per-app `CBPeripheral.identifier` UUID, for privacy — so a
+CoreBluetooth-only allow-list isn't possible. Instead, `bootstrap()` only
+ever captures a `CBPeripheral` identity at the moment the **classic**
+`IOBluetoothDevice` for a trusted address (`MouseAutoReconnect.trustedAddresses`,
+an explicit `Set<String>`, the same allow-list shape `HotspotFallback` uses
+for the phone) reports itself connected — i.e. only while the address is
+already known to be Victor's own mouse. From then on the captured
+`CBPeripheral.identifier` is reused directly
+(`retrievePeripherals(withIdentifiers:)`), so every later reconnect targets
+that exact peripheral and never has to guess which of the six advertising
+"Logi M650 L" peripherals is his. The identifier is also persisted
+(`UserDefaults`), so bootstrap only ever has to happen once across the app's
+whole life, not once per launch.
 
 **The address survives a factory reset.** Resetting the mouse (to pair it
-elsewhere, then back to this Mac) clears the *bond*, not the address — a
-BLE peripheral's address is fixed in the chip at manufacture. So one entry
+elsewhere, then back to this Mac) clears the *bond*, not the address — a BLE
+peripheral's address is fixed in the chip at manufacture. So one entry
 covers that physical mouse forever; only a genuinely different unit needs a
 new one. `logUnknownMice()` prints the address of any other paired
 "Logi"-named device it sees, once each, so the value to add is never a
@@ -28,29 +63,36 @@ guess — it is in the log the first time this app notices it.
 
 ## How the reconnect itself works
 
+1. **Bootstrap** (until it succeeds once, then never again): every poll,
+   check whether any trusted address's classic `IOBluetoothDevice` reports
+   `isConnected()`. If so, ask CoreBluetooth for
+   `retrieveConnectedPeripherals(withServices: [HID-over-GATT, 0x1812])` and
+   take the first match — that peripheral is trusted by construction, since
+   the classic address just proved it.
+2. **Reconnect**: once bootstrapped, every 20 s check
+   `knownPeripheral.state`; if not `.connected`, call
+   `central.connect(peripheral, options: nil)`. CoreBluetooth answers
+   asynchronously via `centralManager(_:didConnect:)` /
+   `centralManager(_:didFailToConnect:error:)` — no blocking, no page
+   timeout, no thread that can get stuck.
+
 No push notification exists for "a specific already-paired device is back
 in range but not connected" — CoreAudio has one for the device *list*
 (`BluetoothAutoOutput` rides it for the JBL speakers), but a mouse is not an
-audio device and IOBluetooth has nothing equivalent for arbitrary peripherals.
-So this polls: every 20 s, for each trusted address, `IOBluetoothDevice.isConnected()`
-is checked and, if false, `openConnection(_:withPageTimeout:authenticationRequired:)`
-is called with a short bound (`0x0800` ≈ 1.28 s) rather than the ~5 s
-default — an absent mouse costs a fraction of a second per poll, not a
-noticeable stall, and there is no scan running between polls at all.
-
-Like `HotspotFallback`'s RFCOMM open, the call runs on a dedicated
-`RunLoopThread` rather than a bare `DispatchQueue`: IOBluetooth's synchronous
-calls still lean on the calling thread's run loop being pumped, which a
-`DispatchQueue` does not have.
+audio device — so this still polls on a 20 s timer rather than reacting to
+an event. That part hasn't changed from the first version.
 
 ## Menu & test hook
 
 - **🖱️ Mouse Auto-Reconnect** — checkbox in the 👩🏻‍💻 Extra submenu
   (`MouseAutoReconnectSettings.isEnabled`, default on).
-- `GET /test/mouse-reconnect` — run one round now and return
-  `{"enabled":…, "connected":{"<address>":true|false, …}}` for every trusted
-  address. Fast enough to answer synchronously (bounded by the page timeout),
-  unlike the phone's RFCOMM open.
+- `GET /test/mouse-reconnect` — kicks off one round now and returns the
+  **previous** round's snapshot: `{"enabled":…, "bootstrapped":…,
+  "state":"…"}` — `state` is a free-text readout (`"not bootstrapped yet — …"`,
+  `"connecting…"`, `"already connected"`, `"connected"`, `"connect failed: …"`)
+  meant to be read by a human mid-test, not parsed. Call it twice, like
+  `HotspotFallback`'s hook: CoreBluetooth's callback lands after the HTTP
+  response.
 
 ## Adding a mouse
 
@@ -61,16 +103,19 @@ calls still lean on the calling thread's run loop being pumped, which a
 3. Add it to `MouseAutoReconnect.trustedAddresses`, push, `./build-app.sh`,
    restart.
 
+If the *same* mouse is ever un-paired and re-paired for real (not just a
+reset-and-reconnect), delete `MouseAutoReconnect.peripheralUUID` from
+`UserDefaults` (or just wait — `bootstrap()` re-runs automatically whenever
+`knownPeripheral` is `nil`, which a fresh pairing's new identifier will
+trigger the next time the address is seen connected).
+
 ## Open question
 
-Whether `openConnection()` genuinely forces a reconnect for a BLE-only
-peripheral (the M650 L advertises `< BLE >` in `system_profiler`, not
-BR/EDR) the way it does for the phone's classic ACL link is **not yet
-proven live** — it was written and built, not exercised with the mouse
-actually out of range. Victor's plan: test tonight around 18:00 with the
-mouse deliberately disconnected/out of range, watching `GET
-/test/mouse-reconnect` and the log for a real reconnect. If `openConnection()`
-turns out not to do anything for a BLE peripheral, the fallback is shelling
-out to `blueutil --connect <address>` instead (already installed, already
-proven to work for this exact family of device in manual testing during
-`HotspotFallback` development).
+The CoreBluetooth rewrite fixed the hang and was verified to build and pass
+tests, but **bootstrap has not yet run live**: the mouse was already
+disconnected (all six addresses) at the moment this was checked, so there
+was nothing connected to capture an identity from. Victor's plan: test
+tonight around 18:00 — first get the mouse connected once (bootstrap should
+fire within 20 s and log "identity captured"), then disconnect/move it out
+of range and watch `GET /test/mouse-reconnect` plus the log for a real
+CoreBluetooth reconnect.
