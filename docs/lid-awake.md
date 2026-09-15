@@ -348,6 +348,18 @@ first tick asks the question, and it must not veto its own volume. A real player
 is caught: with one `afplay` running, its process and only it showed up beside
 those two.
 
+**Walkie Talkie was the third one, and it had killed the boost outright
+(2026-09-15).** Curling `/test/audio/playing` every 3 s for a minute on a silent
+Mac returned `ro.victorrentea.wispr-relay` every single time, at an RMS of
+exactly 0: the dictation overlay holds an output stream open permanently, the
+same way Audio Hijack holds the loopback. Since it runs all day, the refusal was
+permanent — `boosted:false` on a machine with the lid shut, on battery, beating
+into a muted output — and the pulse had been inaudible for as long as Walkie
+Talkie has been installed. It is listed by its **full** bundle id and not as
+`ro.victorrentea.`, because the other app in that family is `victor-effects`,
+the soundboard: that one *is* the music, and skipping it would mean taking the
+room's playlist to 100%.
+
 Why not the RMS tap that already exists: it measures the `🔊OS Output`
 aggregate, which is the music-mute path's device and not what a laptop in a
 rucksack is playing through. The process list needs no device to be present.

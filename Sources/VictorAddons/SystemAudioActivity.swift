@@ -64,9 +64,20 @@ enum SystemAudioActivity {
     /// Audio plumbing that holds an output stream open whether or not anything
     /// is playing through it — see the note on the enum. Prefixes, so the whole
     /// family (`arkaudiod`, `audiohijack`, Loopback) goes with the parent.
+    ///
+    /// **Walkie Talkie joined the list on 2026-09-15**, and it is the reason the
+    /// heartbeat's volume boost had quietly never fired on this Mac: sampled
+    /// every 3 s for a minute on a silent machine, `ro.victorrentea.wispr-relay`
+    /// reports `IsRunningOutput = 1` permanently at an RMS of exactly 0 — its
+    /// dictation engine holds the stream open the way Audio Hijack holds the
+    /// loopback. It is spelled in full rather than as `ro.victorrentea.`,
+    /// because the *other* app in that family, `victor-effects`, is the
+    /// soundboard: it is quite literally the music, and skipping it would put
+    /// the room's playlist at full blast.
     private static let alwaysOpenPrefixes = [
         "com.rogueamoeba.",
         "ai.krisp.",
+        "ro.victorrentea.wispr-relay",
     ]
 
     private static func processObjects() -> [AudioObjectID]? {
