@@ -1086,6 +1086,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onAppendClipboardAsPrompt = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboardAsPrompt() }
         }
+        // 📥 The clipboard's image, filed straight to ~/Downloads.
+        menuBarManager.onPasteImageToDownloads = { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async { self?.pasteClipboardImageToDownloads() }
+        }
         menuBarManager.onEmojiOverlayEnabledChanged = { [weak self] enabled in
             if !enabled {
                 self?.keymapHoldCoordinator?.reset()
@@ -1576,6 +1580,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DispatchQueue.main.async { [weak self] in
                 self?.statusBanner?.showNow(text: text, sound: nil, visibleDuration: 6.0)
             }
+        }
+    }
+
+    /// 📥 "Paste image to Downloads" — whatever image is on the clipboard right
+    /// now, written to disk with no picker and no manual save. Called off the
+    /// main thread; the pasteboard read and the PNG encode both happen inline.
+    func pasteClipboardImageToDownloads() {
+        let tiff: Data? = PasteboardGate.sync { pb in
+            guard pb.canReadObject(forClasses: [NSImage.self], options: nil),
+                  let img = NSImage(pasteboard: pb) else { return nil }
+            return img.tiffRepresentation
+        }
+        guard let tiff, let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            overlayError("📥 No image on the clipboard")
+            return
+        }
+        guard let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            overlayError("📥 Couldn't find ~/Downloads")
+            return
+        }
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let stem = stamp.string(from: Date())
+        var url = downloads.appendingPathComponent("\(stem).png")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = downloads.appendingPathComponent("\(stem)-\(n).png")
+            n += 1
+        }
+        do {
+            try png.write(to: url)
+            overlayInfo("📥 \(url.lastPathComponent) → ~/Downloads")
+        } catch {
+            overlayError("📥 Save failed: \(error.localizedDescription)")
         }
     }
 

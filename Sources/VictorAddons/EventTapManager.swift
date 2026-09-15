@@ -368,6 +368,19 @@ private let VK_F: CGKeyCode = 0x03
         let hasOpt   = flags.contains(.maskAlternate)
         let hasShift = flags.contains(.maskShift)
 
+        // ⌥ joining a P already held as plain ⌃P (physically pressed in that
+        // order — Ctrl, P, *then* Option, reaching for ⌃⌥P's parachute) must
+        // drop the pending screenshot latch. Without this, the keyDown that
+        // started the press already set `screenshotKeyDownAt` while Option was
+        // still up, and the emoji-layer branch below claims every later
+        // autorepeat once Option joins — so the crop-vs-tap decision on keyUp
+        // never sees the plain ⌃P condition fail and fires a screenshot (or
+        // opens the crosshair) behind what was meant to type 🪂.
+        if keyCode == VK_P, hasOpt, screenshotKeyDownAt != nil {
+            screenshotKeyDownAt = nil
+            screenshotCropFired = false
+        }
+
         // A key pressed under either cheat-sheet's modifiers means the hold was a
         // real shortcut, not a "remind me what's here" pause — drop the overlay.
         if hasOpt || (hasCmd && hasCtrl) {

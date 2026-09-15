@@ -67,7 +67,7 @@ enum ScreenshotManager {
         // *into* the capture.
         if saved, let screen = target.screen {
             DispatchQueue.main.async {
-                ScreenCaptureFlash.flash(on: screen, showCameraGlyph: true)
+                ScreenCaptureFlash.flash(on: screen)
                 if let cursor, let primaryMaxY = NSScreen.screens.first?.frame.maxY {
                     ScreenCaptureFlash.markCursor(at: CGPoint(x: cursor.x, y: primaryMaxY - cursor.y))
                 }

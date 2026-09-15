@@ -49,7 +49,7 @@ enum ScreenCaptureFlash {
         return suppressDepth > 0
     }
 
-    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30, color: NSColor = .systemYellow, showCameraGlyph: Bool = false) {
+    static func flash(on screen: NSScreen, duration: CFTimeInterval = 1.5, thickness: CGFloat = 30, color: NSColor = .systemYellow) {
         // A crosshair selection owns the screen right now; the crop draws its
         // own border when it lands.
         guard !isSuppressed else { return }
@@ -74,22 +74,6 @@ enum ScreenCaptureFlash {
 
         for edge in edgeGradients(size: size, thickness: thickness, color: color) {
             view.layer?.addSublayer(edge)
-        }
-
-        // Centered camera glyph (white→transparent, black→border color), 30% of Ox wide,
-        // at 30% opacity. Added under view.layer so it fades together with the border.
-        if showCameraGlyph, let glyph = tintedCameraGlyph(tint: color) {
-            let glyphW = size.width * 0.30
-            let aspect = glyph.size.height / max(glyph.size.width, 1)
-            let glyphH = glyphW * aspect
-            let glyphLayer = CALayer()
-            glyphLayer.frame = CGRect(x: (size.width - glyphW) / 2,
-                                      y: (size.height - glyphH) / 2,
-                                      width: glyphW, height: glyphH)
-            glyphLayer.contents = glyph
-            glyphLayer.contentsGravity = .resizeAspect
-            glyphLayer.opacity = 0.30
-            view.layer?.addSublayer(glyphLayer)
         }
 
         panel.contentView = view
@@ -257,50 +241,4 @@ enum ScreenCaptureFlash {
         ]
     }
 
-    // Cache the tinted glyph per color (the camera silhouette is recomputed only if the
-    // border color changes — in practice it's always systemYellow for screenshots).
-    private static var glyphCache: [String: NSImage] = [:]
-
-    /// Loads `camera_glyph.png` (black outline on white) and recolors it so white → fully
-    /// transparent and black → `tint`, with anti-aliased edges preserved as partial alpha.
-    private static func tintedCameraGlyph(tint: NSColor) -> NSImage? {
-        let key = tint.usingColorSpace(.deviceRGB)?.description ?? tint.description
-        if let cached = glyphCache[key] { return cached }
-
-        guard let url = Bundle.module.url(forResource: "camera_glyph", withExtension: "png", subdirectory: "Resources"),
-              let src = NSImage(contentsOf: url),
-              let cg = src.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-
-        let width = cg.width, height = cg.height
-        let bytesPerRow = width * 4
-        guard let ctx = CGContext(data: nil, width: width, height: height,
-                                  bitsPerComponent: 8, bytesPerRow: bytesPerRow,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let data = ctx.data else { return nil }
-
-        let rgb = tint.usingColorSpace(.deviceRGB) ?? tint
-        let tr = rgb.redComponent, tg = rgb.greenComponent, tb = rgb.blueComponent
-        let ptr = data.bindMemory(to: UInt8.self, capacity: height * bytesPerRow)
-
-        for y in 0..<height {
-            for x in 0..<width {
-                let i = y * bytesPerRow + x * 4
-                // Source is opaque; map luminance → inverse alpha (black→1, white→0).
-                let lum = (Double(ptr[i]) + Double(ptr[i + 1]) + Double(ptr[i + 2])) / (3.0 * 255.0)
-                let a = 1.0 - lum
-                // premultipliedLast: store tint × alpha.
-                ptr[i]     = UInt8((tr * a) * 255.0)
-                ptr[i + 1] = UInt8((tg * a) * 255.0)
-                ptr[i + 2] = UInt8((tb * a) * 255.0)
-                ptr[i + 3] = UInt8(a * 255.0)
-            }
-        }
-
-        guard let out = ctx.makeImage() else { return nil }
-        let image = NSImage(cgImage: out, size: NSSize(width: width, height: height))
-        glyphCache[key] = image
-        return image
-    }
 }

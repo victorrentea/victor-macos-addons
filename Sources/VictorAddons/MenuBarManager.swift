@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 15, 20:57"
+    static let BUILD_TIME = "Sep 15, 21:07"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -101,6 +101,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onAppendClipboardToNotes: (() -> Void)?
     /// 🤖 The same clipboard, filed as an agent prompt instead of a note.
     var onAppendClipboardAsPrompt: (() -> Void)?
+    /// 📥 The clipboard's image, written to ~/Downloads.
+    var onPasteImageToDownloads: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     /// A country picked from the 🌍 submenu — persists the day-scoped selection and
     /// repaints a showing Break overlay in that timezone.
@@ -304,7 +306,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the clipboard and where does it go": onto the wall for the room, into
         // Victor's inbox, into the session notes, onto the room's Prompts tab.
         // In the submenu they were a feature hidden behind a hover.
-        let appendNotesItem = addItem("📝 Paste Clipboard to Notes", action: #selector(appendClipboardToNotesAction))
+        let appendNotesItem = addItem("📝 Send Clipboard to Notes", action: #selector(appendClipboardToNotesAction))
         appendNotesItem.keyEquivalent = "v"
         appendNotesItem.keyEquivalentModifierMask = [.control, .option]
 
@@ -314,8 +316,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // cannot capture the previous app's selection (the menu holds the
         // focus), so this row is deliberately the clipboard-only half and
         // carries NO key equivalent that would promise the selection too.
-        let appendPromptItem = addItem("🤖 Paste Clipboard as Prompt", action: #selector(appendClipboardAsPromptAction))
+        let appendPromptItem = addItem("🤖 Send Clipboard as Prompt", action: #selector(appendClipboardAsPromptAction))
         appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
+
+        // 📥 The clipboard's image, filed to disk rather than anywhere in the
+        // app — for the one-off "just give me the file" case none of the rows
+        // above cover (they file into Notes or the Prompts tab, never onto disk
+        // on their own).
+        addItem("📥 Paste image to Downloads", action: #selector(pasteImageToDownloadsAction))
 
         menu.addItem(.separator())
 
@@ -425,7 +433,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // LIVE system appearance rather than from `DarkModeToggle`'s cache: that
         // cache only knows about the flips this process made, and System
         // Settings (or another Mac's sync) flips it too.
-        darkModeItem = NSMenuItem(title: "Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
+        //
+        // ⚫ prefix (2026-09-15): every other row here opens with an emoji —
+        // this was the one bare title in the submenu, relying on the native
+        // checkmark alone to read as a toggle at a glance.
+        darkModeItem = NSMenuItem(title: "⚫ Dark Mode", action: #selector(toggleDarkModeAction), keyEquivalent: "d")
         darkModeItem.keyEquivalentModifierMask = [.command, .control, .option]
         darkModeItem.target = self
         darkModeItem.isEnabled = true
@@ -838,6 +850,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func appendClipboardAsPromptAction() {
         onAppendClipboardAsPrompt?()
+    }
+
+    @objc private func pasteImageToDownloadsAction() {
+        onPasteImageToDownloads?()
     }
 
     @objc private func startTrainingAssistantAction() {
