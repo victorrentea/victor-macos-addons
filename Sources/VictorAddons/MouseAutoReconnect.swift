@@ -60,10 +60,17 @@ final class MouseAutoReconnect: NSObject, CBCentralManagerDelegate {
         "d8-2e-4e-7e-57-ff",
     ]
 
-    /// Human Interface Device over GATT — the standard service a BLE mouse
-    /// or keyboard advertises, used only to narrow
-    /// `retrieveConnectedPeripherals` at bootstrap time.
-    private static let hidServiceUUID = CBUUID(string: "1812")
+    /// Services tried, in order, to find the mouse's `CBPeripheral` at
+    /// bootstrap time. **Not** the HID service (0x1812): measured 16 Sep
+    /// 2026 with the mouse genuinely connected, `retrieveConnectedPeripherals`
+    /// under 0x1812 came back empty — macOS's own HID stack apparently keeps
+    /// that GATT service to itself. Battery Service (0x180F) and Device
+    /// Information (0x180A) both found it; Battery Service is tried first
+    /// since practically every BLE mouse reports its battery level.
+    private static let bootstrapServiceUUIDs: [CBUUID] = [
+        CBUUID(string: "180F"),
+        CBUUID(string: "180A"),
+    ]
     /// Where the captured `CBPeripheral.identifier` lives once bootstrap has
     /// run — CoreBluetooth hands back the same UUID for the same peripheral
     /// on every future launch, so this only ever has to happen once.
@@ -170,9 +177,13 @@ final class MouseAutoReconnect: NSObject, CBCentralManagerDelegate {
             lastState = "not bootstrapped yet — trusted mouse not seen connected since launch"
             return
         }
-        let candidates = central.retrieveConnectedPeripherals(withServices: [Self.hidServiceUUID])
-        guard let peripheral = candidates.first else {
-            lastState = "trusted mouse is connected (classic), but CoreBluetooth reports no matching HID peripheral"
+        var peripheral: CBPeripheral?
+        for uuid in Self.bootstrapServiceUUIDs {
+            peripheral = central.retrieveConnectedPeripherals(withServices: [uuid]).first
+            if peripheral != nil { break }
+        }
+        guard let peripheral else {
+            lastState = "trusted mouse is connected (classic), but CoreBluetooth reports no matching peripheral under any tried service"
             return
         }
         knownPeripheral = peripheral

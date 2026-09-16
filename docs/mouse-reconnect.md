@@ -66,9 +66,15 @@ guess — it is in the log the first time this app notices it.
 1. **Bootstrap** (until it succeeds once, then never again): every poll,
    check whether any trusted address's classic `IOBluetoothDevice` reports
    `isConnected()`. If so, ask CoreBluetooth for
-   `retrieveConnectedPeripherals(withServices: [HID-over-GATT, 0x1812])` and
-   take the first match — that peripheral is trusted by construction, since
-   the classic address just proved it.
+   `retrieveConnectedPeripherals(withServices:)` and take the first match —
+   that peripheral is trusted by construction, since the classic address
+   just proved it. **Not the HID-over-GATT service (0x1812)**: verified live
+   16 Sep 2026 with the mouse genuinely connected, that lookup came back
+   empty — macOS's own HID stack apparently keeps that GATT service to
+   itself, invisible to a third-party `CBCentralManager`. Battery Service
+   (0x180F) and Device Information (0x180A) both found it in the same test;
+   `bootstrapServiceUUIDs` tries 0x180F first, since practically every BLE
+   mouse reports its battery level.
 2. **Reconnect**: once bootstrapped, every 20 s check
    `knownPeripheral.state`; if not `.connected`, call
    `central.connect(peripheral, options: nil)`. CoreBluetooth answers
@@ -109,13 +115,15 @@ reset-and-reconnect), delete `MouseAutoReconnect.peripheralUUID` from
 `knownPeripheral` is `nil`, which a fresh pairing's new identifier will
 trigger the next time the address is seen connected).
 
-## Open question
+## Verified live (16 Sep 2026)
 
-The CoreBluetooth rewrite fixed the hang and was verified to build and pass
-tests, but **bootstrap has not yet run live**: the mouse was already
-disconnected (all six addresses) at the moment this was checked, so there
-was nothing connected to capture an identity from. Victor's plan: test
-tonight around 18:00 — first get the mouse connected once (bootstrap should
-fire within 20 s and log "identity captured"), then disconnect/move it out
-of range and watch `GET /test/mouse-reconnect` plus the log for a real
-CoreBluetooth reconnect.
+With the mouse connected, bootstrap captured its identity
+(`retrieveConnectedPeripherals` under 0x180F/Battery Service) and
+`GET /test/mouse-reconnect` moved `bootstrapped:false → true`, `state`
+`"connecting…" → "already connected"` within one poll — confirming
+`central.connect()` doesn't hang and correctly recognizes an already-live
+connection. **Not yet verified**: the actual out-of-range → back-in-range
+reconnect, since that needs the mouse physically moved away, which wasn't
+done in this pass. Next test: disconnect/move the mouse out of range and
+watch `GET /test/mouse-reconnect` (`state` should go to `"connecting…"`
+then `"connected"`) plus the log line `🖱️ Mouse reconnected`.
