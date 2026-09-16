@@ -54,6 +54,14 @@ import Foundation
 ///    (`--mpv-sub-file` + `--mpv-sub-visibility=yes`) rather than left to mpv's
 ///    `sub-auto`: the clip plays from the staging folder, and a personal
 ///    `sub-visibility=no` in mpv.conf would otherwise swallow it silently.
+///
+/// 5. **The opening beat, eaten by the move.** Without `--mpv-pause`, IINA
+///    starts playing the instant it launches — while the window is still
+///    windowed, possibly on the wrong screen, and mid-move/resize/fullscreen.
+///    The room's first 1-2s were spent on that dance, not on the clip. So the
+///    file is loaded **paused**, and only unpaused once `AXFullScreen` reads
+///    back true *and* a short settle has passed (`scheduleUnpause`) — the
+///    first frame the room sees is the one Victor meant to start on.
 final class VideoPlayer {
     static let shared = VideoPlayer()
 
@@ -66,6 +74,9 @@ final class VideoPlayer {
 
     /// Seconds after which the player is force-quit (0 disables auto-kill).
     var autoKillAfter: TimeInterval = 60
+    /// How long to wait, after fullscreen is confirmed, before unpausing —
+    /// long enough that the fullscreen transition itself has visibly settled.
+    var unpauseSettleDelay: TimeInterval = 1.2
 
     private var autoKill: DispatchWorkItem?
     /// 📱 What the tablet's video page needs to stay pinned: a play counts as
@@ -118,12 +129,15 @@ final class VideoPlayer {
         p.executableURL = URL(fileURLWithPath: iinaCLI)
         // `--no-stdin` makes iina-cli return immediately after launching IINA
         // (without it, it blocks reading stdin). NB no `--mpv-fullscreen`: the
-        // window has to stay movable until it is on the Retina.
+        // window has to stay movable until it is on the Retina. `--mpv-pause`
+        // holds the very first frame until `scheduleUnpause` releases it, so
+        // the move/resize/fullscreen dance never eats into the clip.
         var arguments = [
             "--no-stdin",
             "--mpv-start=\(max(0, startSeconds))",
             "--mpv-force-window=yes",
             "--mpv-keep-open=yes",
+            "--mpv-pause=yes",
             "--mpv-input-ipc-server=\(ipcSocket)",
         ]
         // Subtitles are passed EXPLICITLY rather than left to mpv's `sub-auto`:
@@ -282,8 +296,23 @@ final class VideoPlayer {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
-            if self.placeOnRetinaAndFullscreen() { return }
+            if self.placeOnRetinaAndFullscreen() {
+                self.scheduleUnpause()
+                return
+            }
             self.scheduleRetinaFullscreen(attemptsLeft: attemptsLeft - 1)
+        }
+    }
+
+    /// The clip was launched paused (`--mpv-pause=yes`) precisely so this
+    /// moment — fullscreen confirmed on the Retina — is when playback actually
+    /// starts, not whenever IINA happened to open. The extra `unpauseSettleDelay`
+    /// on top covers the fullscreen transition's own visible settling, so what
+    /// the room sees first is a steady frame, not the tail end of an animation.
+    private func scheduleUnpause() {
+        watchQueue.asyncAfter(deadline: .now() + unpauseSettleDelay) { [weak self] in
+            guard let self else { return }
+            MpvIPC.send(socketPath: self.ipcSocket, command: ["set_property", "pause", false])
         }
     }
 
