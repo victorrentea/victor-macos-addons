@@ -216,4 +216,17 @@ final class EffectsProxyRoutingTests: XCTestCase {
         }
         return obj
     }
+
+    // MARK: - /press/<n>
+
+    func testTilePressIsForwardedToTheEffectsApp() {
+        // Tiles, their sounds and their paired visuals all live on 55124. The
+        // training daemon presses them through this door like everything else.
+        XCTAssertTrue(TabletHttpServer.isProxied("/press/69"))
+    }
+
+    func testTilePressPrefixDoesNotSwallowOtherPaths() {
+        // Leading-prefix match, so nothing that merely contains "press" moves.
+        XCTAssertFalse(TabletHttpServer.isProxied("/training/prompt-capture"))
+    }
 }

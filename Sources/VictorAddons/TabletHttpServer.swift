@@ -652,7 +652,12 @@ case testTerminalFont
                                   // The tile press counts behind the tablet's
                                   // green dots now live in the effects app, with
                                   // the panel presses they were always missing.
-                                  "/usage"]
+                                  "/usage",
+                                  // Pressing a tile by number. The training
+                                  // daemon uses it for the room's secret FX
+                                  // link; the trailing slash keeps the match
+                                  // off anything else starting with "press".
+                                  "/press/"]
 
     /// The historic `/test/<effect>` aliases. They keep answering on 55123 —
     /// every script, doc and muscle memory points at them — and are simply
