@@ -24,6 +24,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var keymapHoldCoordinator: KeymapHoldCoordinator?
     private var keymapHoldWorkItem: DispatchWorkItem?
     private var transcriptPasteController: TranscriptPasteController?
+    /// 📋 The ⌘⇧V clipboard-history bezel. Held here, not built per press: the
+    /// key both opens it and walks it, so the second press has to find the
+    /// first one's state.
+    @MainActor private let clipboardHistory = ClipboardHistoryOverlay()
     private var coreAudioManager: CoreAudioManager?
     /// 🎵 Pushes the dictation window to the Chrome extension that pauses music.
     private var chromeBridge: ChromeBridge?
@@ -887,6 +891,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.breakTimer.stateJSON() ?? "{\"error\":\"break timer unavailable\"}"
         }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
+        // 📋 The ⌘⇧V bezel without the keyboard. `pastes: false` for the same
+        // reason the menu row uses it, and one more: an agent testing this must
+        // not be able to type a paste into whatever Victor has in front of him.
+        tabletServer?.onTestClipboardHistory = { [weak self] in
+            DispatchQueue.main.async { self?.toggleClipboardHistoryWithoutKeyboard() }
+        }
         // `at=x,y` in global Cocoa points, so a test can aim the mark at a screen
         // without dragging the pointer out from under whoever is using it.
         tabletServer?.onTestScreenshotMark = { at in
@@ -1085,6 +1095,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // prompt, which is what puts it on the participants' Prompts tab.
         menuBarManager.onAppendClipboardAsPrompt = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboardAsPrompt() }
+        }
+        // 📋 The clipboard history, opened without the keyboard. `pastes: false`
+        // — a menu click leaves no modifier to release and no certainty about
+        // which window should receive a synthetic ⌘V, so the pick lands on the
+        // clipboard and Victor pastes it where he means to.
+        menuBarManager.onClipboardHistory = { [weak self] in
+            self?.toggleClipboardHistoryWithoutKeyboard()
         }
         // 📥 The clipboard's image, filed straight to ~/Downloads.
         menuBarManager.onPasteImageToDownloads = { [weak self] in
@@ -1426,12 +1443,56 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.keymapHoldCoordinator?.keyDownWhileModifierHeld()
         }
         eventTap.onCtrlVPaste = { ClipboardStackManager.shared.onCtrlVPaste() }
+
+        // 📋 ⌘⇧V — the clipboard history (`ClipboardHistoryOverlay`). Every key
+        // of the gesture arrives through the tap because the bezel never takes
+        // focus; the app is what turns those keys into state, and what tells
+        // the tap when to start and stop claiming them.
+        eventTap.onClipboardHistoryNext = { [weak self, weak eventTap] in
+            guard let self else { return }
+            if self.clipboardHistory.isShowing {
+                self.clipboardHistory.next()
+            } else {
+                // `pastes: true` — this is the hotkey, so a hand is on ⌘⇧ and
+                // letting go is what finishes the gesture.
+                self.clipboardHistory.open(pastes: true)
+            }
+            eventTap?.setClipboardHistoryOpen(self.clipboardHistory.isShowing)
+        }
+        eventTap.onClipboardHistoryPrevious = { [weak self] in self?.clipboardHistory.previous() }
+        eventTap.onClipboardHistorySelect = { [weak self] number in
+            self?.clipboardHistory.select(number: number)
+        }
+        eventTap.onClipboardHistoryDelete = { [weak self, weak eventTap] in
+            self?.clipboardHistory.deleteHighlighted()
+            eventTap?.setClipboardHistoryOpen(self?.clipboardHistory.isShowing ?? false)
+        }
+        eventTap.onClipboardHistoryCommit = { [weak self, weak eventTap] in
+            self?.clipboardHistory.commit()
+            eventTap?.setClipboardHistoryOpen(false)
+        }
+        eventTap.onClipboardHistoryCancel = { [weak self, weak eventTap] in
+            self?.clipboardHistory.cancel()
+            eventTap?.setClipboardHistoryOpen(false)
+        }
+        eventTap.onClipboardHistoryCommandReleased = { [weak self, weak eventTap] in
+            // Only the hotkey-opened bezel ends on a modifier release; the one
+            // opened from the menu has no held key to let go of and would
+            // otherwise commit on the first ⇧ pressed afterwards.
+            guard let self, self.clipboardHistory.isShowing, self.clipboardHistory.commitsOnCommandRelease else { return }
+            self.clipboardHistory.commit()
+            eventTap?.setClipboardHistoryOpen(false)
+        }
         eventTap.start()
         self.eventTapManager = eventTap
 
         // Clipboard image stack: ⌃P screenshots accumulate; ⌃V pastes then pops
         // to the next-older image (Claude Code / Copilot CLI image workflow).
         ClipboardStackManager.shared.start()
+
+        // 📋 The ⌘⇧V history rides on that same poller (one pasteboard read,
+        // two consumers) and keeps its images on disk, never in this process.
+        ClipboardHistoryStore.shared.start()
 
         self.driveShareCache = GoogleDriveShareCache()
 
@@ -1609,6 +1670,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 📥 "Paste image to Downloads" — whatever image is on the clipboard right
     /// now, written to disk with no picker and no manual save. Called off the
     /// main thread; the pasteboard read and the PNG encode both happen inline.
+
+    /// 📋 Open or close the ⌘⇧V bezel from a path that has **no keyboard
+    /// behind it** — the menu row and `GET /test/clipboard-history`.
+    ///
+    /// A toggle rather than a plain open, and that is the whole reason it is a
+    /// separate function: the hotkey's bezel ends when ⌘ is released, but one
+    /// opened by a click has nothing to release, so without a second click (or
+    /// a second GET) there is no way to dismiss it except Esc — which an agent
+    /// testing this cannot press without taking Victor's keyboard.
+    ///
+    /// `pastes: false` for both: nothing here can promise which window a
+    /// synthetic ⌘V would land in. See `ClipboardHistoryOverlay.pastesOnCommit`.
+    @MainActor
+    private func toggleClipboardHistoryWithoutKeyboard() {
+        if clipboardHistory.isShowing {
+            clipboardHistory.cancel()
+        } else {
+            clipboardHistory.open(pastes: false)
+        }
+        eventTapManager?.setClipboardHistoryOpen(clipboardHistory.isShowing)
+    }
+
     func pasteClipboardImageToDownloads() {
         let tiff: Data? = PasteboardGate.sync { pb in
             guard pb.canReadObject(forClasses: [NSImage.self], options: nil),

@@ -65,6 +65,30 @@ class EventTapManager {
     /// append it to the session notes, stamped 🤖, so it shows up in the room's
     /// Prompts tab.
     var onSendSelectionAsPrompt: (() -> Void)?
+
+    // MARK: ⌘⇧V — the clipboard history bezel (`ClipboardHistoryOverlay`)
+    //
+    // The whole gesture is driven from here rather than from a key window,
+    // because the bezel must not take focus: it ends by pasting into the app
+    // that had focus when the shortcut was pressed. So the tap owns the keys
+    // for as long as the overlay is up (`setClipboardHistoryOpen`) and hands
+    // them over one meaning at a time.
+    /// ⌘⇧V — open the bezel, or step to the next-older clip when it is already
+    /// open. One callback for both because it is one key doing one thing.
+    var onClipboardHistoryNext: (() -> Void)?
+    var onClipboardHistoryPrevious: (() -> Void)?
+    /// A digit key 1–9 while the bezel is up.
+    var onClipboardHistorySelect: ((Int) -> Void)?
+    /// ⏎ — take the highlighted clip.
+    var onClipboardHistoryCommit: (() -> Void)?
+    /// Esc, or any key that is not part of the gesture: leave the clipboard be.
+    var onClipboardHistoryCancel: (() -> Void)?
+    /// ⌫ — forget the highlighted clip.
+    var onClipboardHistoryDelete: (() -> Void)?
+    /// ⌘ came up while the bezel was open. **A fact, not a decision**: only the
+    /// hotkey-opened bezel pastes on release, and which one this is belongs to
+    /// the app, not to the tap.
+    var onClipboardHistoryCommandReleased: (() -> Void)?
     var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
     var onKeyDownWhileModifierHeld: (() -> Void)?
 
@@ -133,6 +157,23 @@ private let VK_F: CGKeyCode = 0x03
     /// NSWorkspace notification so the tap callback can read them without touching
     /// AppKit off-thread. The pid is what `TerminalZoomSizeLock` addresses the
     /// window through.
+    /// Set from the main thread when the ⌘⇧V bezel opens and closes, read on
+    /// the tap's run-loop thread on every keystroke — hence the lock, same as
+    /// `frontmostBundleId` below.
+    private let clipboardHistoryLock = NSLock()
+    private var clipboardHistoryOpen = false
+
+    func setClipboardHistoryOpen(_ open: Bool) {
+        clipboardHistoryLock.lock()
+        clipboardHistoryOpen = open
+        clipboardHistoryLock.unlock()
+    }
+
+    private var isClipboardHistoryOpen: Bool {
+        clipboardHistoryLock.lock(); defer { clipboardHistoryLock.unlock() }
+        return clipboardHistoryOpen
+    }
+
     private let frontmostLock = NSLock()
     private var frontmostBundleId: String?
     private var frontmostPid: pid_t?
@@ -216,8 +257,14 @@ private let VK_F: CGKeyCode = 0x03
             let hasShift = flags.contains(.maskShift)
             let hasCmdFlag = flags.contains(.maskCommand)
             let hasCtrlFlag = flags.contains(.maskControl)
+            let historyOpen = isClipboardHistoryOpen
             DispatchQueue.main.async { [weak self] in
                 self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag)
+                // Letting go of ⌘ is how ⌘⇧V ends — the same way it ends in
+                // Flycut, and the reason the shortcut is worth having: the
+                // whole thing is one uninterrupted hold, tap V until you see
+                // the clip, let go.
+                if historyOpen && !hasCmdFlag { self?.onClipboardHistoryCommandReleased?() }
             }
             return Unmanaged.passUnretained(event)
         }
@@ -367,6 +414,20 @@ private let VK_F: CGKeyCode = 0x03
         let hasCtrl  = flags.contains(.maskControl)
         let hasOpt   = flags.contains(.maskAlternate)
         let hasShift = flags.contains(.maskShift)
+
+        // The ⌘⇧V bezel eats the keyboard while it is up. It has to be decided
+        // here, before every other rule: the keys it uses (V, the arrows, the
+        // digits) are keys other branches and other apps also want, and for the
+        // length of this hold they mean "walk the history" and nothing else.
+        //
+        // A key that is NOT part of the gesture **cancels and passes through**
+        // rather than being swallowed: you reached for something else, so the
+        // bezel was not what you wanted, and the character you typed still
+        // belongs in the document.
+        if isClipboardHistoryOpen, let outcome = clipboardHistoryAction(for: keyCode) {
+            DispatchQueue.main.async { [weak self] in outcome.run(self) }
+            return outcome.swallows ? nil : Unmanaged.passUnretained(event)
+        }
 
         // ⌥ joining a P already held as plain ⌃P (physically pressed in that
         // order — Ctrl, P, *then* Option, reaching for ⌃⌥P's parachute) must
@@ -653,6 +714,21 @@ private let VK_F: CGKeyCode = 0x03
             return nil
         }
 
+        // Cmd+Shift+V → the clipboard history bezel (suppress). Flycut's own
+        // shortcut, taken over deliberately: this app remembers **images** too,
+        // which is the one thing Flycut cannot do and the thing a workshop
+        // copies most (⌃P screenshots into an agent's terminal). Flycut must be
+        // quit, or it answers the same keypress with its own bezel underneath
+        // ours — ours swallows the event, so it never sees it, but a running
+        // Flycut is still a second history quietly filling up.
+        //
+        // Autorepeat is deliberately NOT excluded: holding V walks the list,
+        // which is how you get to clip #20 without twenty presses.
+        if hasCmd && hasShift && !hasCtrl && !hasOpt {
+            DispatchQueue.main.async { [weak self] in self?.onClipboardHistoryNext?() }
+            return nil
+        }
+
         // Ctrl+V → pass the paste through, then advance the clipboard image stack
         // to the next-older image (after a short delay so this paste reads the
         // current image first). No-op when the stack is empty.
@@ -661,6 +737,41 @@ private let VK_F: CGKeyCode = 0x03
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    // MARK: - ⌘⇧V bezel key routing
+
+    /// What one keystroke means while the clipboard bezel is up. `nil` means
+    /// "not this tap's business" (a modifier-only press, for instance), which
+    /// leaves the event alone entirely.
+    private struct ClipboardHistoryOutcome {
+        let swallows: Bool
+        let run: (EventTapManager?) -> Void
+    }
+
+    private func clipboardHistoryAction(for keyCode: CGKeyCode) -> ClipboardHistoryOutcome? {
+        // kVK_ANSI_1…9 — not contiguous, and not worth deriving from characters:
+        // reading `charactersIgnoringModifiers` off a CGEvent means building an
+        // NSEvent on the tap thread for every keystroke in the system.
+        let digitKeys: [CGKeyCode: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
+
+        if let digit = digitKeys[keyCode] {
+            return .init(swallows: true) { $0?.onClipboardHistorySelect?(digit) }
+        }
+        switch keyCode {
+        case VK_V, 125, 124:                      // V, ↓, →
+            return .init(swallows: true) { $0?.onClipboardHistoryNext?() }
+        case 126, 123:                            // ↑, ←
+            return .init(swallows: true) { $0?.onClipboardHistoryPrevious?() }
+        case 36, 76:                              // Return, keypad Enter
+            return .init(swallows: true) { $0?.onClipboardHistoryCommit?() }
+        case 51, 117:                             // ⌫, ⌦
+            return .init(swallows: true) { $0?.onClipboardHistoryDelete?() }
+        case 53:                                  // Esc
+            return .init(swallows: true) { $0?.onClipboardHistoryCancel?() }
+        default:
+            return .init(swallows: false) { $0?.onClipboardHistoryCancel?() }
+        }
     }
 
     // MARK: - Frontmost app tracking (for Cmd+scroll zoom targeting)

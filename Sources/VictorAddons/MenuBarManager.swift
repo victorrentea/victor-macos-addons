@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 16, 21:08"
+    static let BUILD_TIME = "Sep 16, 23:10"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -103,6 +103,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onAppendClipboardAsPrompt: (() -> Void)?
     /// 📥 The clipboard's image, written to ~/Downloads.
     var onPasteImageToDownloads: (() -> Void)?
+    /// 📋 Open the ⌘⇧V clipboard-history bezel from the menu.
+    var onClipboardHistory: (() -> Void)?
     var onBreak: ((Int) -> Void)?
     /// A country picked from the 🌍 submenu — persists the day-scoped selection and
     /// repaints a showing Break overlay in that timezone.
@@ -329,6 +331,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         appendPromptItem.keyEquivalent = "p"
         appendPromptItem.keyEquivalentModifierMask = [.command, .control]
         appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
+
+        // 📋 The history behind all of the above: the last 40 things that
+        // passed through the clipboard, **images included**, which is the whole
+        // reason it exists (Flycut, which this replaces, keeps text only). The
+        // key is advertised and is again only a label — the tap swallows ⌘⇧V —
+        // and a click opens the same bezel in its clipboard-only mode: there is
+        // no held ⌘ to release, so a menu-opened pick lands on the clipboard
+        // and is pasted by hand, into the window Victor chooses afterwards.
+        let historyItem = addItem("📋 Clipboard History…", action: #selector(clipboardHistoryAction))
+        historyItem.keyEquivalent = "v"
+        historyItem.keyEquivalentModifierMask = [.command, .shift]
+        historyItem.toolTip = "Hold ⌘⇧ and tap V to walk back through what you copied — text and images."
 
         // 📥 The clipboard's image, filed to disk rather than anywhere in the
         // app — for the one-off "just give me the file" case none of the rows
@@ -862,6 +876,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func appendClipboardAsPromptAction() {
         onAppendClipboardAsPrompt?()
+    }
+
+    @objc private func clipboardHistoryAction() {
+        onClipboardHistory?()
     }
 
     @objc private func pasteImageToDownloadsAction() {

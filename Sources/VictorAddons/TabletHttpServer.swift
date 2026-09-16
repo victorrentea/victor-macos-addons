@@ -69,6 +69,10 @@ case testTerminalFont
         /// human to drag (or Esc). Not read-only: it really writes a file and
         /// really replaces the clipboard.
         case testScreenshotCrop
+        /// The ⌘⇧V clipboard-history bezel, opened without the keyboard — the
+        /// only way to look at it while an agent is working, since pressing the
+        /// real shortcut means taking Victor's keyboard.
+        case testClipboardHistory
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
         case testScreenshotMark(String?)
@@ -233,6 +237,9 @@ case testTerminalFont
     var onTestTile: (() -> Void)?
     var onTestTranscriptPicker: ((String?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
+    /// 📋 Open the clipboard-history bezel (clipboard-only mode — nothing is
+    /// pasted, since no window asked for it).
+    var onTestClipboardHistory: (() -> Void)?
     var onTestScreenshotMark: ((String?) -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestGroupPhotoBreakEnd: (() -> Void)?
@@ -458,6 +465,8 @@ case testTerminalFont
                 self.onTestTranscriptPicker?(at)
             case .testScreenshotCrop:
                 self.onTestScreenshotCrop?()
+            case .testClipboardHistory:
+                self.onTestClipboardHistory?()
             case .testScreenshotMark(let at):
                 self.onTestScreenshotMark?(at)
             case .testGroupPhoto:
@@ -759,6 +768,8 @@ case testTerminalFont
             return .testTranscriptPicker(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/screenshot/crop":
             return .testScreenshotCrop
+        case "/test/clipboard-history":
+            return .testClipboardHistory
         case "/test/screenshot/mark":
             return .testScreenshotMark(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/group-photo":

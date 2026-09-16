@@ -59,12 +59,21 @@ final class ClipboardStackManager {
         // PasteboardGate — polling here while the event tap read the clipboard
         // on ⌘V is what crashed the app 4× during the 2026-07-22 workshop).
         // The slow parts — PNG encoding, disk writes — run after, outside it.
-        enum Change { case none, text, image(Data) }
+        // This is the app's ONLY pasteboard poll, and it has two readers now:
+        // the ⌃V image stack below, and the ⌘⇧V history
+        // (`ClipboardHistoryStore`), which would otherwise need a second timer
+        // and a second TIFF→PNG conversion of every screenshot copied. The
+        // text is carried along for the same reason — the stack only needs to
+        // know *that* text was copied, the history needs the string.
+        enum Change { case none, text(String), image(Data) }
         let change: Change = PasteboardGate.sync { pb in
             let cc = pb.changeCount
             guard cc != lastChangeCount else { return .none }   // no change (also skips our own writes)
             lastChangeCount = cc
-            if pb.string(forType: .string) != nil { return .text }
+            // A clip the history itself just put back on the pasteboard: not a
+            // new copy, and re-capturing it would rewrite its PNG one tick later.
+            guard !ClipboardHistoryStore.shared.shouldIgnore(changeCount: cc) else { return .none }
+            if let s = pb.string(forType: .string) { return .text(s) }
             if let tiff = currentImageTIFF(pb) { return .image(tiff) }
             return .none
         }
@@ -72,19 +81,21 @@ final class ClipboardStackManager {
         switch change {
         case .none:
             break
-        case .text:
+        case .text(let text):
             // A text copy ends the image run.
             if !stack.isEmpty {
                 stack.removeAll()
                 clearDisk()
                 NSLog("[ClipStack] cleared (text copied)")
             }
+            ClipboardHistoryStore.shared.record(text: text)
         case .image(let tiff):
             guard let rep = NSBitmapImageRep(data: tiff),
                   let png = rep.representation(using: .png, properties: [:]) else { return }
             stack.append(png)
             persist()
             NSLog("[ClipStack] +image (\(stack.count) in stack)")
+            ClipboardHistoryStore.shared.record(png: png)
         }
     }
 
