@@ -88,17 +88,14 @@ enum ScreenshotManager {
         return saved ? filepath : nil
     }
 
-    /// The words on the crosshair. They are a parameter of the shared overlay
-    /// rather than a constant inside it because Walkie Talkie draws the same
-    /// gesture in English — its chip goes on a projector in front of an
-    /// international room, and this one does not.
-    private static let cropStyle = CropSelectionStyle(
-        hint: "trage o zonă  ·  ⌘ mută  ·  ⌥ din centru  ·  Esc anulează",
-        // Both are on the readout for the whole drag now and light up only
-        // while the key is down, so they name the **key** rather than the effect
-        // — see `CropSelectionStyle.movingSuffix`.
-        movingSuffix: "⌘ mută",
-        centeredSuffix: "⌥ centru")
+    /// The words on the crosshair — **English since 2026-09-16**, i.e. the
+    /// shared overlay's own defaults. They used to be a Romanian override here,
+    /// on the grounds that only Walkie Talkie's copy of this gesture goes on a
+    /// projector; but this crosshair is drawn in front of the same rooms, and
+    /// the two apps showing different words for one gesture was the real cost.
+    /// Keeping the parameter empty is also what keeps the two in step: the
+    /// legend now changes in one place, in `CropSelectionStyle`.
+    private static let cropStyle = CropSelectionStyle()
 
     /// Hold ⌃P (or the menu item) → the crosshair selection, then the same two
     /// destinations as a plain ⌃P: clipboard **and** a dated file.

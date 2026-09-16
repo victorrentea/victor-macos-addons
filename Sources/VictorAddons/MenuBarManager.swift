@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 16, 08:58"
+    static let BUILD_TIME = "Sep 16, 21:08"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -316,9 +316,18 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // what puts it on the participants' Prompts tab. ⌘⌃P does this from the
         // keyboard and prefers the *selection* when there is one — a menu click
         // cannot capture the previous app's selection (the menu holds the
-        // focus), so this row is deliberately the clipboard-only half and
-        // carries NO key equivalent that would promise the selection too.
+        // focus), so this row stays the clipboard-only half.
+        //
+        // The key is nevertheless **advertised** here (2026-09-16), like ⌘⌃M on
+        // the mail row above: a menu is where a shortcut is learned, and a row
+        // whose whole point is "this is the 🤖 gesture" was the one row not
+        // saying which key performs it. It is only a label — the event tap
+        // swallows ⌘⌃P before AppKit could match a menu equivalent, so the row
+        // can never fire a second time — and the tooltip carries the one
+        // difference between the two ways in.
         let appendPromptItem = addItem("🤖 Send Clipboard as Prompt", action: #selector(appendClipboardAsPromptAction))
+        appendPromptItem.keyEquivalent = "p"
+        appendPromptItem.keyEquivalentModifierMask = [.command, .control]
         appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
 
         // 📥 The clipboard's image, filed to disk rather than anywhere in the
