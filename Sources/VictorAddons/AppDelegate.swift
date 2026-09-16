@@ -33,9 +33,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
     private var hotspotFallback: HotspotFallback?
-    /// 🖱️ Reconnects Victor's own Bluetooth mouse when it's paired-but-not-
-    /// connected while nearby; see `MouseAutoReconnect` for the allow-list.
-    private var mouseAutoReconnect: MouseAutoReconnect?
+    /// 🖱️ The menu row that connects a nearby Logi mouse left disconnected.
+    /// Manual only — see `MouseReconnect` for why there is no automatic path.
+    private var mouseReconnect: MouseReconnect?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// ✋ The amber "an agent is driving" frame. Owned here rather than by a
@@ -1291,10 +1291,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         hotspot.start()
 
-        let mouseReconnect = MouseAutoReconnect()
-        self.mouseAutoReconnect = mouseReconnect
+        let mouseReconnect = MouseReconnect()
+        self.mouseReconnect = mouseReconnect
         tabletServer?.onTestMouseReconnect = { [weak mouseReconnect] in
-            mouseReconnect?.forceAttemptJSON() ?? "{\"error\":\"mouse auto-reconnect unavailable\"}"
+            mouseReconnect?.forceAttemptJSON() ?? "{\"error\":\"mouse reconnect unavailable\"}"
+        }
+        // Like the hotspot row, the answer arrives seconds after the menu has
+        // closed — a scan window plus a connect — so it goes to Notification
+        // Center rather than the log window nobody is looking at.
+        menuBarManager.onReconnectMouse = { [weak mouseReconnect, weak self] in
+            mouseReconnect?.reconnectNow { ok, message in
+                DispatchQueue.main.async {
+                    self?.postAndroidDeployNotification(
+                        title: ok ? "🖱️ Mouse conectat" : "🖱️ Mouse-ul nu s-a conectat",
+                        body: message,
+                        identifier: "mouse-reconnect"
+                    )
+                }
+            }
         }
         mouseReconnect.start()
 

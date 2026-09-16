@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 16, 08:37"
+    static let BUILD_TIME = "Sep 16, 08:58"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -116,6 +116,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onHomeAwakeEnabledChanged: ((Bool) -> Void)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
+    /// Connect a nearby Logi mouse that is switched on but left disconnected.
+    var onReconnectMouse: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
@@ -363,10 +365,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotNowItem.isEnabled = true
         extraSubmenu.addItem(hotspotNowItem)
 
-        mouseReconnectItem = NSMenuItem(title: "🖱️ Mouse Auto-Reconnect", action: #selector(toggleMouseReconnectAction), keyEquivalent: "")
+        // An action, not a toggle, and deliberately so: reconnecting the
+        // moment a mouse is *seen* is wrong exactly when it is disconnected
+        // because it has just been put on another computer. The click is the
+        // consent. See `MouseReconnect`.
+        mouseReconnectItem = NSMenuItem(title: "🖱️ Reconnect Mouse", action: #selector(reconnectMouseAction), keyEquivalent: "")
         mouseReconnectItem.target = self
         mouseReconnectItem.isEnabled = true
-        mouseReconnectItem.state = MouseAutoReconnectSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(mouseReconnectItem)
 
         emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
@@ -761,10 +766,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onHotspotNow?()
     }
 
-    @objc private func toggleMouseReconnectAction() {
-        let enabled = !MouseAutoReconnectSettings.isEnabled
-        MouseAutoReconnectSettings.isEnabled = enabled
-        mouseReconnectItem.state = enabled ? .on : .off
+    @objc private func reconnectMouseAction() {
+        onReconnectMouse?()
     }
 
     @objc private func toggleEmojiOverlayAction() {
