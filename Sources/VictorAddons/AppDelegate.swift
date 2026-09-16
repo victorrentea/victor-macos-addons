@@ -1531,6 +1531,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// key deliberately has no window to put anywhere.
     ///
     /// Main thread, like the openers it replaced.
+    /// One number per ⌘⌃F press, shared by the probe and the call behind it.
+    /// Main thread only, like `startFocusPlaylist` itself.
+    static var focusPressCounter = 0
+
     func startFocusPlaylist() {
         let spec = AppDelegate.focusPlaylistTab
 
@@ -1540,7 +1544,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // the time a keypress takes. Only then do we spend a second on YouTube
         // for a URL that the second call opens **if the tab is still missing** —
         // where a random entry is the whole point of the key.
-        chromeBridge?.focusOrOpen(spec, url: nil, on: .zero)
+        // Both messages below are the same keypress, and the extension must not
+        // read the second as a new one — see `ChromeBridge.focusOrOpen(press:)`.
+        AppDelegate.focusPressCounter += 1
+        let press = AppDelegate.focusPressCounter
+
+        chromeBridge?.focusOrOpen(spec, url: nil, on: .zero, press: press)
         FocusPlaylist.resolveRandomUrl { url in
             DispatchQueue.main.async { [weak self] in
                 // No AppleScript fallback any more: `OfficialChrome.open` brings
@@ -1548,7 +1557,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 // one thing this key must never do. Without the extension on the
                 // socket there is simply no way to start music invisibly, and
                 // saying so beats throwing a YouTube window onto the projector.
-                if self?.chromeBridge?.focusOrOpen(spec, url: url, on: .zero) != true {
+                if self?.chromeBridge?.focusOrOpen(spec, url: url, on: .zero, press: press) != true {
                     overlayError("⌘⌃F: Chrome extension not on the socket — no background tab to start the mix in")
                 }
             }

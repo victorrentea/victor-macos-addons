@@ -152,8 +152,15 @@ final class ChromeBridge {
     /// Fire-and-forget, like `publishFeedbackForm`. The caller learns only
     /// whether a Chrome was listening, which is the one thing it must branch
     /// on — `false` means fall back to opening the URL the old way.
+    /// `press` ties the two messages of **one keypress** together. ⌘⌃F sends a
+    /// probe and then the real call a second later, and both are handled by the
+    /// extension; once that key became a toggle, an unlabelled second message was
+    /// indistinguishable from Victor pressing the key again, so the probe would
+    /// pause the music and its own sibling would start it right back. With the id
+    /// the extension acts once per press and a genuine second press — however
+    /// fast — is still a second press.
     @discardableResult
-    func focusOrOpen(_ spec: TabSpec, url: String?, on screen: CGRect) -> Bool {
+    func focusOrOpen(_ spec: TabSpec, url: String?, on screen: CGRect, press: Int? = nil) -> Bool {
         var listeners = 0
         queue.sync {
             listeners = self.features.values.count { $0.contains("focus-or-open") }
@@ -167,6 +174,7 @@ final class ChromeBridge {
                        "\"width\":\(Int(screen.width)),\"height\":\(Int(screen.height))}"
             if let c = spec.contains { json += ",\"contains\":\(Self.jsonString(c))" }
             if let n = spec.notContains { json += ",\"notContains\":\(Self.jsonString(n))" }
+            if let press { json += ",\"press\":\(press)" }
             json += ",\"seq\":\(self.seq)}"
             self.broadcast(json)
         }

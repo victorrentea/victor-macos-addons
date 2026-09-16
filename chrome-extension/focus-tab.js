@@ -221,6 +221,26 @@ export async function focusOrOpen(msg) {
  */
 async function playInBackground(msg) {
   const found = await findTab(msg);
+
+  // **The key is a toggle.** One shortcut for "music on" and none for "music
+  // off" is a key you can only press once: the mix keeps going until a window is
+  // dug out of the dock to stop it, which is the same window this whole mode
+  // exists not to show. `audible` is Chrome's own answer to "is this tab making
+  // a sound" and costs no injection, so the decision is made before anything is
+  // opened or painted.
+  //
+  // ⌘⌃F sends two messages per press — a probe, then the real call a second
+  // later — and both carry the same `press` id. When the tab is there the probe
+  // does everything the second call could, so the second one is dropped: without
+  // that, the probe would pause the music and its sibling would start it again a
+  // heartbeat later, and the toggle would be a key that does nothing. A tab that
+  // is *not* there is the one case the second message exists for (it carries the
+  // url), so no press is claimed on that path.
+  if (found) {
+    if (claimed(msg.press)) return;
+    if (found.audible && await pauseMedia(found.id)) return;
+  }
+
   let tab = found;
 
   if (!tab) {
@@ -232,23 +252,89 @@ async function playInBackground(msg) {
   // A tab we just made has certainly never been painted, so go straight for the
   // paint instead of spending a first attempt proving it. A tab that was already
   // there has usually been looked at, and `play()` alone is enough for it.
-  if (!found && await renderOnce(tab)) return;
+  //
+  // **Unless Chrome threw its document away.** Memory Saver (`high_efficiency
+  // _mode`, on by default and on here) discards a tab that has been idle for
+  // hours — and a discarded tab keeps its url and title in the strip, so
+  // `findTab` matches it exactly like a live one. There is nothing inside it to
+  // script: `play()` has no `<video>` to reach, and only *selecting* the tab
+  // makes Chrome load the page again. That is what had ⌘⌃F silent for two days —
+  // the mix tab from the morning was discarded by lunchtime, every press found
+  // it, poked an empty renderer for ten seconds and gave up, and the next press
+  // repeated it. A discarded tab therefore gets the same treatment as one we
+  // just created, and `renderOnce` waits for the reload it triggers.
+  // A discarded tab has to be *told* to come back. Selecting it is not enough:
+  // Chrome leaves `status: 'unloaded'` on a tab whose window is behind something
+  // else, and an unloaded tab cannot even be scripted — `executeScript` fails
+  // with "Cannot access contents of the page", which is what the ladder below
+  // was spending ten seconds re-discovering on every press. `reload()` commits
+  // the page; `renderOnce` then gives it the frames the player needs.
+  if (found && found.discarded) await reloadDiscarded(tab.id);
+  if ((!found || found.discarded) && await renderOnce(tab)) return;
 
   for (let attempt = 0; attempt < 8; attempt++) {
     if (await tryStart(tab.id)) return;
     // Two rounds of `play()` got us nowhere: this tab has never been rendered
     // either (a leftover from an earlier miss, or one Chrome discarded), so it
     // needs the same paint a new one does.
-    if (attempt === 1 && await renderOnce(tab)) return;
+    if (attempt === 1) {
+      const rendered = await renderOnce(tab);
+      if (rendered === BUSY) return;             // the other call owns this tab
+      if (rendered) return;
+    }
     await sleep(700);
   }
   // Thrown, not logged: `background.js` mirrors a rejected command into the
   // Mac's own log, and silence that leaves no trace anywhere is exactly how
   // this shortcut managed to be broken without anyone being able to see why.
-  throw new Error(`music never started in tab ${tab.id}`);
+  throw new Error(`music never started in tab ${tab.id} — ${await diagnose(tab)}`);
 }
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+/// Keypresses this worker has already acted on. A handful is all that is ever
+/// live — the second message of a press arrives about a second after the first —
+/// so the list is trimmed rather than expired on a clock.
+const handledPresses = [];
+
+function claimed(press) {
+  if (press === undefined || press === null) return false;
+  if (handledPresses.includes(press)) return true;
+  handledPresses.push(press);
+  if (handledPresses.length > 20) handledPresses.shift();
+  return false;
+}
+
+/// Stop everything that is playing in the tab, and say whether anything was.
+///
+/// The `data-va-dictation-paused` marker is deliberately **not** set: that one
+/// is `dictation-pause.js`'s ledger of what it owes a resume, and a track Victor
+/// silenced by hand must stay silent when the dictation window closes.
+async function pauseMedia(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        const playing = [...document.querySelectorAll('video, audio')].filter((el) => !el.paused && !el.ended);
+        playing.forEach((el) => el.pause());
+        return playing.length > 0;
+      },
+    });
+    return results.some((r) => r && r.result);
+  } catch (e) {
+    return false;
+  }
+}
+
+/// Bring a discarded tab's document back, and wait for it to commit.
+async function reloadDiscarded(tabId) {
+  try {
+    await chrome.tabs.reload(tabId);
+  } catch (e) {
+    // Gone, or Chrome refuses: `renderOnce` still gets its try.
+  }
+  await waitUntilLoaded(tabId);
+}
 
 /// One `startMedia` round trip. False for "not yet", never a throw: a tab that
 /// is still navigating, or a page we may not script, is a reason to try again.
@@ -284,8 +370,15 @@ async function tryStart(tabId) {
 /// the second one waits for nothing and simply reports "not rolling yet".
 const rendering = new Set();
 
+/// "Someone else is already painting this tab" — distinct from "painted it, no
+/// sound". ⌘⌃F fires a probe and then the real call a second later; the loser of
+/// that race used to run its own ladder out and throw `music never started` while
+/// the winner was still loading the page, so a *working* keypress could still
+/// report a failure. The loser now simply steps aside.
+const BUSY = 'busy';
+
 async function renderOnce(tab) {
-  if (rendering.has(tab.id)) return false;
+  if (rendering.has(tab.id)) return BUSY;
   rendering.add(tab.id);
   try {
     return await renderOnceNow(tab);
@@ -302,6 +395,11 @@ async function renderOnceNow(tab) {
   } catch (e) {
     return false;                              // the tab or window is already gone
   }
+  // Selecting a discarded tab starts a full page load, and YouTube cold is
+  // seconds — far longer than the poll below was ever given. Polling `play()`
+  // through that load burns the whole budget on a renderer that has no player
+  // yet, so wait for the document first and only then start counting.
+  await waitUntilLoaded(tab.id);
   let rolling = false;
   for (let attempt = 0; attempt < 16 && !rolling; attempt++) {
     await sleep(250);
@@ -315,6 +413,22 @@ async function renderOnceNow(tab) {
     }
   }
   return rolling;
+}
+
+/// Wait until the tab has a document again: not `discarded`, and done loading.
+///
+/// Bounded at 15s — a cold YouTube on a slow line, not a hang. Timing out is not
+/// an error here: the caller polls `play()` afterwards either way, and a page
+/// that is still loading may well have its player up already.
+async function waitUntilLoaded(tabId, budgetMs = 15000) {
+  const deadline = Date.now() + budgetMs;
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab) return false;
+    if (!tab.discarded && tab.status === 'complete') return true;
+    await sleep(250);
+  }
+  return false;
 }
 
 /// A new tab in the background of a window that already exists.
@@ -339,4 +453,25 @@ async function openHiddenTab(url) {
 
   const win = await chrome.windows.create({ url, focused: false, state: 'minimized' });
   return win.tabs && win.tabs[0];
+}
+
+/// Why the music did not start, in one line, gathered only on the failure path.
+async function diagnose(tab) {
+  const t = await chrome.tabs.get(tab.id).catch(() => null);
+  if (!t) return 'the tab is gone';
+  const w = await chrome.windows.get(t.windowId).catch(() => null);
+  let media = 'unscriptable';
+  try {
+    const r = await chrome.scripting.executeScript({
+      target: { tabId: t.id, allFrames: true },
+      func: () => [...document.querySelectorAll('video, audio')].map((el) => ({
+        p: el.paused, e: el.ended, r: el.readyState, m: el.muted,
+        t: Math.round(el.currentTime), d: Math.round(el.duration || 0),
+      })),
+    });
+    media = JSON.stringify(r.flatMap((x) => x && x.result ? x.result : []));
+  } catch (e) { media = 'unscriptable: ' + e.message; }
+  return `url=${t.url} status=${t.status} discarded=${t.discarded} audible=${t.audible} `
+       + `tabMuted=${t.mutedInfo && t.mutedInfo.muted} window=${w ? w.state : '?'}`
+       + `${w && w.focused ? '/focused' : ''} media=${media}`;
 }
