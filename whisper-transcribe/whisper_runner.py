@@ -1017,6 +1017,68 @@ def _score_speakers(scorer, audio, result, text):
     return rows
 
 
+# ── MLX memory ──────────────────────────────────────────────────────────────
+# **The buffer pool, not the weights, is what made this process look like a leak.**
+#
+# MLX keeps every Metal buffer it frees, for reuse, and `set_cache_limit`
+# defaults to the *memory* limit — on a 64 GB machine, effectively unbounded.
+# Measured 2026-09-17 over 40 corpus clips: weights sat flat at 1543 MB while the
+# pool climbed 1159 -> 1396 -> 1541 -> 1711 MB without levelling off. This runner
+# is the worse of the two consumers because it never stops: after three hours of
+# a live session it held 5.7 GB, of which 4.1 GB was pool and 2.7 GB had been
+# pushed to swap. The sibling in Walkie Talkie, which only fires on a gesture,
+# reached 3.5 GB the same way.
+#
+# Capping it cannot change a transcription — the pool holds only buffers already
+# freed, never weights or decoder state — and that was decoded rather than
+# assumed: 40 clips, capped vs uncapped, 39 byte-identical. The 40th is 1.6s of
+# silence with an empty reference, and two *uncapped* runs disagreed on it too,
+# so that one is temperature fallback resampling a hallucination, not the cap.
+#
+# 512 MB, not 0: a disabled cache sends every allocation back to the driver.
+# This keeps reuse for the shapes that repeat and cuts only the unbounded tail.
+_CACHE_LIMIT_MB = int(os.environ.get("WHISPER_CACHE_LIMIT_MB", "512"))
+_mlx_configured = False
+
+
+def _configure_mlx():
+    """Apply the cache limit once, after mlx has actually been imported."""
+    global _mlx_configured
+    if _mlx_configured:
+        return
+    _mlx_configured = True
+    if _CACHE_LIMIT_MB <= 0:
+        log.info("transcript", "🎙️ MLX cache limit disabled (WHISPER_CACHE_LIMIT_MB=0)")
+        return
+    try:
+        import mlx.core as mx
+
+        mx.set_cache_limit(_CACHE_LIMIT_MB * 1024 * 1024)
+        log.info("transcript", f"🎙️ MLX cache limit {_CACHE_LIMIT_MB} MB")
+    except Exception as exc:  # noqa: BLE001 — a missing knob must not cost a word
+        log.error("transcript", f"🎙️ could not set MLX cache limit: {exc}")
+
+
+def _mlx_memory() -> str:
+    """`active` is the weights, `cache` is the pool, `peak` the high-water mark.
+
+    Worth logging as three numbers rather than one: `ps` and Activity Monitor
+    fold them together into a single resident figure that looks like a leak and
+    cannot be argued with. These can — the whole diagnosis of 2026-09-17 turned
+    on being able to say "1543 MB of that is weights and the rest is reusable".
+    """
+    try:
+        import mlx.core as mx
+
+        return (
+            f"active={mx.get_active_memory() / 2**20:.0f}MB "
+            f"cache={mx.get_cache_memory() / 2**20:.0f}MB "
+            f"peak={mx.get_peak_memory() / 2**20:.0f}MB"
+        )
+    except Exception as exc:  # noqa: BLE001
+        return f"unavailable ({exc})"
+
+
 # ── Transcription thread ────────────────────────────────────────────────────
 def _transcribe(audio, language=None, initial_prompt=None, model=None):
     import mlx_whisper
@@ -1147,10 +1209,12 @@ def _supervised_transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None)
 
 def _transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None):
     log.info("transcript", "🎙️ Transcription loop started")
+    _configure_mlx()
     # Track last transcribed text per channel for context
     prev_text: dict[str, str] = {}
     model_mode = "balanced"
     carry_item = None
+    batches_done = 0
 
     while True:
         if carry_item is None:
@@ -1207,6 +1271,15 @@ def _transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None):
                 on_segment(label, lang, text, device_tag, verdicts)
         except Exception as exc:
             log.error("transcript", f"🎙️ Whisper error: {exc}")
+
+        # Every 50 batches — roughly every ten minutes of speech at a 12 s
+        # chunk — so a day's log carries the shape of the pool rather than a
+        # single reading. The cap above is a claim ("this stays near 512 MB");
+        # this is the line that would catch it being wrong, which is the only
+        # reason to keep printing a number nobody asked for.
+        batches_done += 1
+        if batches_done % 50 == 0:
+            log.info("transcript", f"🎙️ mlx memory: {_mlx_memory()}")
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────
