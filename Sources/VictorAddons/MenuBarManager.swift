@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 17, 08:13"
+    static let BUILD_TIME = "Sep 17, 09:28"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -501,8 +501,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // **A tick when it is on and nothing at all when it is off** — Victor's
         // words, and the reason this row has no emoji where every other row
         // here has one: the leading 🔋 would be "something in front" in both
-        // states, which is exactly what a checkbox must not have. AppKit draws
-        // the ✓ in the gutter from `state`, so the row is empty-then-ticked.
+        // states, which is exactly what a checkbox must not have.
+        //
+        // The tick is **in the title** (`LidAwakeMenu`), not the item's
+        // `state`: one natively-ticked row makes AppKit reserve a check column
+        // for the entire menu and shifts every other row's text to the right,
+        // which moves the leading emoji this menu is read by.
         //
         // It is also the one toggle that changes something *outside* the app (a
         // kernel flag), so the tick has to be the truth — the toggle reads the
@@ -513,10 +517,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // session is working, the Mac stays up"; when they all finish it sleeps
         // like any other Mac. A label like "Keep Awake" would promise the thing
         // this deliberately does not do.
-        lidAwakeItem = NSMenuItem(title: "Claude prevents sleep", action: #selector(toggleLidAwakeAction), keyEquivalent: "")
+        lidAwakeItem = NSMenuItem(title: LidAwakeMenu.title(LidAwakeSettings.isEnabled),
+                                  action: #selector(toggleLidAwakeAction), keyEquivalent: "")
         lidAwakeItem.target = self
         lidAwakeItem.isEnabled = true
-        lidAwakeItem.state = LidAwakeSettings.isEnabled ? .on : .off
         menu.addItem(lidAwakeItem)
 
         menu.addItem(extraItem)
@@ -750,6 +754,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// Titles for the 🔴 raw-capture row, kept together so the *on* state stays
     /// unmistakable at a glance — this is the row that says a microphone is
     /// being written to disk.
+    /// The 🔋 travel switch's row title. **The tick is part of the label, not
+    /// the menu item's `state`** — Victor, seeing the native one: *"toate
+    /// meniurile s-au dat, puțin, la dreapta"*. AppKit reserves a check column
+    /// for the whole menu the moment one item in it is ticked, so a single
+    /// checkbox shifts every other row's text sideways; and this menu's rows
+    /// are read by their leading emoji, so that shift moves the one thing the
+    /// eye uses to find a row. Putting the mark where every other row keeps its
+    /// emoji costs the menu nothing and reads the same.
+    ///
+    /// Off is the bare words, with nothing in front — also Victor's, and the
+    /// reason there is no 🔋 here: a mark in *both* states is not a checkbox.
+    enum LidAwakeMenu {
+        static let off = "Claude prevents sleep"
+        static let on = "✅ " + off
+        static func title(_ enabled: Bool) -> String { enabled ? on : off }
+    }
+
     enum RawAudioMenu {
         static let off = "Record raw audio"
         static func on(hours: Double) -> String {
@@ -852,13 +873,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func toggleLidAwakeAction() {
         let wanted = !LidAwakeSettings.isEnabled
         let applied = onLidAwakeEnabledChanged?(wanted) ?? false
-        lidAwakeItem.state = (wanted && applied) ? .on : .off
+        lidAwakeItem.title = LidAwakeMenu.title(wanted && applied)
     }
 
     /// Called by the battery floor when it stands the feature down on its own,
     /// so the row stops claiming the Mac is being held awake.
     func setLidAwakeTick(_ on: Bool) {
-        lidAwakeItem?.state = on ? .on : .off
+        lidAwakeItem?.title = LidAwakeMenu.title(on)
     }
 
     /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",
