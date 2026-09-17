@@ -36,6 +36,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var voiceCorpusSamples = 0
     private var voiceCorpusMinutes: Double = 0
     private(set) var wsStatusItem: NSMenuItem!
+    private var memoryPressureItem: NSMenuItem!
     private var feedbackFormItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
@@ -44,6 +45,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var portRefreshTimer: Timer?
     private var stopBlinkTimer: Timer?
     private var stopBlinkAlt: Bool = false
+    /// 🟥 Memory pressure — see `MemoryPressurePolicy`. Kept next to the stop
+    /// blink because they share the menu bar icon and must not fight over it:
+    /// the red plate is drawn *behind* whatever icon the transcription state
+    /// already chose, so both stay readable at once.
+    private var memoryBlinkTimer: Timer?
+    private var memoryBlinkOn: Bool = false
+    private var isMemoryHurting: Bool = false
     private var isTranscribing: Bool = false
     private var isTranscriptionStale: Bool = false
     private var isTranscriptionPausedByBattery: Bool = false
@@ -300,6 +308,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         screenshotItem.keyEquivalentModifierMask = .control
 
         menu.addItem(.separator())
+
+        // 🟥 Why the icon is flashing. A red menu bar with no explanation is a
+        // puzzle, and the answer ("the compressor is eating a core") is not one
+        // anybody guesses. Hidden entirely while the machine is comfortable —
+        // same rule as the feedback row below: a row that says nothing is noise
+        // on a menu read at a glance.
+        memoryPressureItem = addItem("", action: #selector(openActivityMonitorAction))
+        memoryPressureItem.isHidden = true
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
         wsStatusItem = addItem("", action: nil)
@@ -1212,7 +1228,78 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         } else {
             button.image = makeChatBubbleIcon(badge: badge)
         }
+        // Last, so it sits behind whatever the transcription state picked
+        // rather than competing with it for the same 18 points.
+        button.image = platedForMemoryPressure(button.image)
         updateStopBlinkTimer()
+        updateMemoryBlinkTimer()
+    }
+
+    // MARK: - 🟥 Memory pressure plate
+
+    /// Raise or drop the red plate. `detail` is the one-line "why" for the menu
+    /// row; the plate itself carries no text — 18 points of menu bar cannot hold
+    /// a number anybody can read.
+    func setMemoryPressure(_ hurting: Bool, detail: String) {
+        memoryPressureItem?.title = detail
+        memoryPressureItem?.isHidden = !hurting
+        guard hurting != isMemoryHurting else { return }
+        isMemoryHurting = hurting
+        // Always come back on the lit phase, so switching on is visible
+        // immediately instead of up to a beat later.
+        memoryBlinkOn = hurting
+        refreshMenuIcon()
+    }
+
+    /// The icon, on a red rounded plate, on the lit half of the blink.
+    ///
+    /// The plate is composited into the image rather than set as a layer
+    /// background on the status button: `NSStatusBarButton` redraws itself on
+    /// every appearance change, menu open and menu bar relayout, and each of
+    /// those quietly drops a `layer.backgroundColor` set from outside. A baked
+    /// bitmap is the only thing here that survives all three — the same reason
+    /// every other badge in this file is drawn rather than attached.
+    private func platedForMemoryPressure(_ image: NSImage?) -> NSImage? {
+        guard let image, isMemoryHurting, memoryBlinkOn else { return image }
+        let size = image.size
+        let plated = NSImage(size: size)
+        plated.lockFocus()
+        // Not pure red: at full saturation the plate wins over the icon sitting
+        // on it, and the icon is what says *which* app is shouting.
+        NSColor(calibratedRed: 0.85, green: 0.12, blue: 0.12, alpha: 0.92).setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size),
+                     xRadius: 4, yRadius: 4).fill()
+        image.draw(in: NSRect(origin: .zero, size: size))
+        plated.unlockFocus()
+        plated.isTemplate = false
+        return plated
+    }
+
+    private func updateMemoryBlinkTimer() {
+        guard isMemoryHurting else {
+            memoryBlinkTimer?.invalidate()
+            memoryBlinkTimer = nil
+            memoryBlinkOn = false
+            return
+        }
+        guard memoryBlinkTimer == nil else { return }
+        // 0.9 s — deliberately faster than the 2 s transcription blink. That one
+        // means "something is off"; this one means "the machine is choking right
+        // now", and the eye reads the quicker pulse as the more urgent of the
+        // two when both happen to be running.
+        let timer = Timer(timeInterval: 0.9, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.memoryBlinkOn.toggle()
+            self.refreshMenuIcon()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        memoryBlinkTimer = timer
+    }
+
+    /// The red row is clickable, and Activity Monitor's Memory tab is the one
+    /// place that answers the next question — *which* process.
+    @objc private func openActivityMonitorAction() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
     }
 
     private func updateStopBlinkTimer() {

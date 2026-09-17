@@ -147,6 +147,8 @@ case testTerminalFont
         case testPhoneBatterySimulate(Int)
         /// JSON snapshot of the 🔒 screen-lock mirror the tablet uses to go into
         /// standby: whether the Mac reports itself locked right now (test hook).
+        case testMemoryPressure
+        case testMemoryPressureSimulate(Bool?)
         case testScreenLock
         /// Pretend the Mac's screen is locked (1) / unlocked (0) for a few
         /// minutes, so the tablet's standby can be watched without locking the
@@ -277,6 +279,10 @@ case testTerminalFont
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
     var onTestPhoneBatterySimulate: ((Int) -> String)?
+    /// Read-only JSON snapshot of the 🟥 memory-pressure watch.
+    var onTestMemoryPressure: (() -> String)?
+    /// Force the red plate on (`1`), off (`0`) or back to measured (`auto`).
+    var onTestMemoryPressureSimulate: ((Bool?) -> String)?
     /// Read-only JSON snapshot of the 🔒 screen-lock mirror.
     var onTestScreenLock: (() -> String)?
     /// Force a synthetic lock state for a short while; returns the snapshot.
@@ -535,6 +541,14 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestPhoneBatterySimulate?(pct) ?? "{\"error\":\"phone battery monitor unavailable\"}"
                 if self.onTestPhoneBatterySimulate == nil { statusCode = 503 }
+            case .testMemoryPressure:
+                contentType = "application/json"
+                body = self.onTestMemoryPressure?() ?? "{\"error\":\"memory pressure monitor unavailable\"}"
+                if self.onTestMemoryPressure == nil { statusCode = 503 }
+            case .testMemoryPressureSimulate(let hurting):
+                contentType = "application/json"
+                body = self.onTestMemoryPressureSimulate?(hurting) ?? "{\"error\":\"memory pressure monitor unavailable\"}"
+                if self.onTestMemoryPressureSimulate == nil { statusCode = 503 }
             case .testScreenLock:
                 contentType = "application/json"
                 body = self.onTestScreenLock?() ?? "{\"error\":\"screen lock monitor unavailable\"}"
@@ -825,6 +839,8 @@ case testTerminalFont
             return .testPhoneBattery
         case "/test/screen-lock":
             return .testScreenLock
+        case "/test/memory-pressure":
+            return .testMemoryPressure
         case "/training/prompt-capture":
             return .promptCapture
         case "/intellij/file-opened":
@@ -897,7 +913,17 @@ case testTerminalFont
                     return .testPhoneBatterySimulate(pct)
                 }
             }
-            if pathOnly.hasPrefix("/test/screen-lock/simulate/") {
+            // `auto` (or anything else) hands the plate back to the measurement,
+        // so a forgotten override can be cleared without restarting the app.
+        if pathOnly.hasPrefix("/test/memory-pressure/simulate/") {
+            let suffix = String(pathOnly.dropFirst("/test/memory-pressure/simulate/".count))
+            switch suffix {
+            case "1", "true", "on": return .testMemoryPressureSimulate(true)
+            case "0", "false", "off": return .testMemoryPressureSimulate(false)
+            default: return .testMemoryPressureSimulate(nil)
+            }
+        }
+        if pathOnly.hasPrefix("/test/screen-lock/simulate/") {
                 let suffix = String(pathOnly.dropFirst("/test/screen-lock/simulate/".count))
                 if suffix == "1" { return .testScreenLockSimulate(true) }
                 if suffix == "0" { return .testScreenLockSimulate(false) }

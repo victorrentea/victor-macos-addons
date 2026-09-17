@@ -91,6 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 📱 Watches Soduto's low-battery notification for the paired Android and
     /// feeds it into `/ping` so the tablet can blink about it.
     private var phoneBattery: PhoneBatteryMonitor?
+    private var memoryPressure: MemoryPressureMonitor?
     /// 🔒 Mac screen locked → the tablet goes into standby (dim, no thumbnails).
     private var screenLock: ScreenLockMonitor?
     /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
@@ -770,6 +771,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestPhoneBattery = { [weak phoneBatteryMonitor] in
             phoneBatteryMonitor?.pollNow()
             return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
+        // 🟥 Memory pressure → the menu bar icon flashes on a red plate. The
+        // trigger is the *compressor*, not the swap file — see
+        // `MemoryPressurePolicy` for the measurement that settled which counter
+        // tells the truth. It lives in the menu bar rather than on an overlay on
+        // purpose: this fires while the Mac is already struggling, and a
+        // full-screen warning would be one more thing for it to composite, on
+        // the display that is projected to the room during a workshop.
+        let memoryPressureMonitor = MemoryPressureMonitor()
+        memoryPressureMonitor.onChange = { [weak self] hurting in
+            let detail = self?.memoryPressure?.detailLine ?? ""
+            self?.menuBarManager.setMemoryPressure(hurting, detail: detail)
+            overlayInfo(hurting ? "🟥 \(detail)" : "🟥 memory pressure cleared")
+        }
+        memoryPressureMonitor.start()
+        self.memoryPressure = memoryPressureMonitor
+        tabletServer?.onTestMemoryPressure = { [weak memoryPressureMonitor] in
+            memoryPressureMonitor?.pollNow()
+            return memoryPressureMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
+        tabletServer?.onTestMemoryPressureSimulate = { [weak memoryPressureMonitor] hurting in
+            memoryPressureMonitor?.simulate(hurting: hurting)
+            return memoryPressureMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
         }
         // 🔒 Screen lock → tablet standby. Nothing to poll: macOS posts the two
         // distributed notifications, and the state is seeded once at startup.
