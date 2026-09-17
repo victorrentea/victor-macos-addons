@@ -1,6 +1,6 @@
 # 🔋 Claude prevents sleep
 
-The travel switch, under 👩🏻‍💻 Extra. Keeps the Mac **running with the lid shut,
+The travel switch, a **top-level menu row since 2026-09-17** (it spent its life under 👩🏻‍💻 Extra; Victor moved it out — this is the one state in the app that decides whether the Mac is awake inside a bag, and a state you have to open a submenu to see is a state you forget you left on). The row is **`Claude prevents sleep`, with no emoji**: a tick when it is on and nothing at all when it is off, which is what a checkbox looks like — a leading 🔋 would be something in front in *both* states. The name keeps the 🔋 everywhere else, it is just not on the row. Keeps the Mac **running with the lid shut,
 on battery, with nothing plugged in** — the case it exists for is a `claude`
 session mid-loop that has to survive the laptop going into a bag on a flight.
 

@@ -1,6 +1,6 @@
 # 🏠 Home Wi-Fi keeps the screen on
 
-The home switch, under 👩🏻‍💻 Extra, next to 🔋 Claude prevents sleep. **While
+The home switch, under 👩🏻‍💻 Extra. It sat next to 🔋 Claude prevents sleep until that row went to the top level (2026-09-17); the two are still the pair about the Mac staying up, they just no longer share a submenu. **While
 the Mac is associated with a home Wi-Fi network, the screen does not lock
 itself.** Leave that network and ordinary locking comes back on its own, with
 nobody clicking anything.

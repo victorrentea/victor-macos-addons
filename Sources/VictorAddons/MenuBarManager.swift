@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 17, 08:03"
+    static let BUILD_TIME = "Sep 17, 08:13"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -440,28 +440,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(scrollReversalItem)
 
-        // 🔋 Claude prevents sleep — the travel switch. Earns a row for the
-        // same reason 🔄 does: no key teaches it, and there is nowhere else the
-        // state shows. It is also the one row here that changes something
-        // *outside* the app (a kernel flag), so the tick has to be the truth —
-        // the toggle reads the flag back and unticks itself if the kernel said
-        // no.
-        //
-        // The label names the *subject*, and that is the contract: it is Claude
-        // that prevents the sleep, not the switch. Ticked means "while a Claude
-        // session is working, the Mac stays up"; when they all finish it sleeps
-        // like any other Mac. A label like "Keep Awake" would promise the thing
-        // this deliberately does not do.
-        lidAwakeItem = NSMenuItem(title: "🔋 Claude prevents sleep", action: #selector(toggleLidAwakeAction), keyEquivalent: "")
-        lidAwakeItem.target = self
-        lidAwakeItem.isEnabled = true
-        lidAwakeItem.state = LidAwakeSettings.isEnabled ? .on : .off
-        extraSubmenu.addItem(lidAwakeItem)
+        // 🔋 Claude prevents sleep left this submenu for the **top level** on
+        // 2026-09-17 — see the row itself, further down.
 
-        // 🏠 Home Wi-Fi keeps the screen on. Next to 🔋 because they are the two
-        // rows about the Mac staying up, and deliberately worded to name a
-        // *different* subject: 🔋 is Claude holding the lid open, this is the
-        // home network holding the screen lit. The label says "screen", not
+        // 🏠 Home Wi-Fi keeps the screen on. It was next to 🔋 while that one
+        // was here, and the two are still the pair about the Mac staying up —
+        // deliberately worded to name a *different* subject: 🔋 is Claude
+        // holding the lid open, this is the home network holding the screen
+        // lit. The label says "screen", not
         // "Mac", because that is the whole of what it does — the screen saver
         // never starts, so the lock that follows it never starts either, while
         // ⌃⌘Q keeps working.
@@ -505,6 +491,33 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // skills-private; `🎅 training-assistant` and `🎅 macos-addons` followed,
         // because a row per repo is a list that only ever grows, and F8 / ⌘⌃C
         // opens claude where the work is anyway.
+
+        // Claude prevents sleep — the travel switch, at the **top level** since
+        // 2026-09-17 (Victor's call; it spent its life under 👩🏻‍💻 Extra). It is
+        // the one state in this app that decides whether the Mac is awake in a
+        // bag, and a state you have to open a submenu to see is a state you
+        // forget you left on.
+        //
+        // **A tick when it is on and nothing at all when it is off** — Victor's
+        // words, and the reason this row has no emoji where every other row
+        // here has one: the leading 🔋 would be "something in front" in both
+        // states, which is exactly what a checkbox must not have. AppKit draws
+        // the ✓ in the gutter from `state`, so the row is empty-then-ticked.
+        //
+        // It is also the one toggle that changes something *outside* the app (a
+        // kernel flag), so the tick has to be the truth — the toggle reads the
+        // flag back and unticks itself if the kernel said no.
+        //
+        // The label names the *subject*, and that is the contract: it is Claude
+        // that prevents the sleep, not the switch. Ticked means "while a Claude
+        // session is working, the Mac stays up"; when they all finish it sleeps
+        // like any other Mac. A label like "Keep Awake" would promise the thing
+        // this deliberately does not do.
+        lidAwakeItem = NSMenuItem(title: "Claude prevents sleep", action: #selector(toggleLidAwakeAction), keyEquivalent: "")
+        lidAwakeItem.target = self
+        lidAwakeItem.isEnabled = true
+        lidAwakeItem.state = LidAwakeSettings.isEnabled ? .on : .off
+        menu.addItem(lidAwakeItem)
 
         menu.addItem(extraItem)
 
