@@ -1088,6 +1088,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onPublishFeedbackForm = { [weak self] in
             self?.requestFeedbackForm()
         }
+        // 🎙️ The transcript picker's only human entry point since it gave ⌘⌃V
+        // up (2026-09-17). The controller is main-actor and drives two panels.
+        menuBarManager.onTranscriptPicker = { [weak self] in
+            DispatchQueue.main.async { self?.transcriptPasteController?.trigger() }
+        }
         menuBarManager.onAppendClipboardToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.appendClipboard() }
         }
@@ -1330,11 +1335,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         mouseReconnect.start()
 
         let eventTap = EventTapManager()
-        // The tap fires this off a background queue; the controller is main-actor
-        // (it drives two panels), so hop back before touching it.
-        eventTap.onTranscriptPicker = { [weak transcriptPaste] in
-            DispatchQueue.main.async { transcriptPaste?.trigger() }
-        }
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
         eventTap.onScreenshotCrop = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() }
@@ -1460,9 +1460,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             eventTap?.setClipboardHistoryOpen(self.clipboardHistory.isShowing)
         }
         eventTap.onClipboardHistoryPrevious = { [weak self] in self?.clipboardHistory.previous() }
-        eventTap.onClipboardHistorySelect = { [weak self] number in
-            self?.clipboardHistory.select(number: number)
-        }
         eventTap.onClipboardHistoryDelete = { [weak self, weak eventTap] in
             self?.clipboardHistory.deleteHighlighted()
             eventTap?.setClipboardHistoryOpen(self?.clipboardHistory.isShowing ?? false)

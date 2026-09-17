@@ -14,17 +14,28 @@ Victor asked for the same gesture with the one thing it could never do.
 
 ## The gesture
 
-| key | while the bezel is up |
-|---|---|
-| **⌘⇧V** | open it (on the current clipboard), then step one clip older each press |
-| **V** | the same step — the hold never has to be broken |
-| **↑ ↓ ← →** | walk, wrapping at both ends |
-| **1–9** | jump straight to that clip |
-| **⏎** | take this one |
-| **⌫ / ⌦** | forget this clip (and its files), stay open on the next |
-| **Esc** | out, clipboard untouched |
-| **release ⌘** | take this one — the way the gesture normally ends |
-| any other key | out, and the key **passes through** to whatever you were typing in |
+| key | while the bezel is up | on the legend |
+|---|---|---|
+| **⌘⇧V** | open it (on the current clipboard), then step one clip older each press | — |
+| **V** | the same step — the hold never has to be broken | ✅ |
+| **↑ ↓ ← →** | walk, wrapping at both ends | ✅ |
+| **release ⌘** | take this one — the way the gesture normally ends | — |
+| **Esc** | out, clipboard untouched | ✅ |
+| **⏎** | take this one | no |
+| **⌫ / ⌦** | forget this clip (and its files), stay open on the next | no |
+| any other key | out, and the key **passes through** to whatever you were typing in | — |
+
+**The legend is shorter than the key list, on purpose.** It is read at a glance
+with a hand already holding ⌘⇧, so it names only the keys that belong to *that
+hold*: `V next · ↑↓ walk · Esc`. ⏎ only duplicates what letting go of ⌘ already
+does and ⌫ is not something anyone reaches for mid-gesture, so both work and
+neither is advertised (2026-09-17).
+
+**The digits are gone entirely** — they jumped straight to a clip, as they do in
+Flycut, and Victor: *"1-9 jump nu voi folosi vreodată"*. A key the gesture claims
+but nobody presses is worse than one it ignores, because it is swallowed from
+whatever you were typing into; they now fall through like any other key — the
+bezel closes and the digit reaches the document.
 
 **Opening on clip #1 — the current clipboard — is deliberate**: it makes a quick
 double-tap of ⌘⇧V an ordinary paste, and every further V a step back in time.
@@ -47,19 +58,48 @@ One clip at a time, centred on the **screen under the cursor** (never pinned to
 the built-in retina — that is what the room's projector mirrors, and the last
 thing Victor copied is not always something the room should read).
 
-- **An image is drawn at a quarter of the screen's *area*** — Victor's size:
-  half the width and half the height for a full-screen capture, the clip's own
-  aspect ratio kept. It is never scaled *up* past 1:1; a copied 120×40 button
-  should look like a small thing, not a wall of interpolation.
-- **A text clip** is one paragraph of preview, whitespace collapsed so a copied
-  block of code reads as one thing, cut at 280 characters.
-- The footer is `3 / 40` on the left and **when it was copied** on the right —
-  `12 minutes ago`, plus `🖼️ 2048×1152 · 3,4 MB` or `📋 812 chars`.
+**The frame is the same for every clip**: one box, **a quarter of the screen's
+area** — Victor's size — i.e. half its width by half its height. Sizing the
+panel to its contents was the first version and it was wrong: walking a list of
+mixed clips made the whole thing grow and shrink around its own centre on every
+press, so the first line of a long text clip and of a short one landed at
+different heights and the eye had to find the words again each time. Now only
+the content changes (2026-09-17).
+
+- **An image** is fitted inside that box, aspect ratio kept, **never scaled up
+  past 1:1** — a copied 120×40 button should look like a small thing, not a wall
+  of interpolation — and centred in it.
+- **A text clip** hangs from the box's **top-left corner**, so its first line is
+  always on the same pixel; it is one paragraph of preview, whitespace collapsed
+  so a copied block of code reads as one thing, cut at 280 characters.
+
+**One line under the box, not two.** The counter, the legend and what-this-clip-
+is were a footer row plus a hint row, and two rows of small grey text under a
+picture read as a paragraph you are meant to study. Now: `3 / 40` in the accent
+colour and the legend on the left, and on the right **only what the clip cannot
+say for itself** — `12 minutes ago`, plus a character count when a text clip is
+longer than 500 characters (at that size the number stops being trivia: it is
+the one fact the panel cannot show, that these words are the opening of
+something much bigger).
+
+**Nothing describes an image any more.** `🖼️ 3000×2000 · 142 KB` was there on the
+theory that two screenshots of the same window are told apart by their size;
+Victor, looking at it: *"mărimea pozei în px și kb nu mă interesează"*. You
+recognise a picture by looking at it, and the picture is right there at a
+quarter of the screen. `📋 812 chars` went the same way for short text, for the
+same reason: the words are right there to be read.
 
 **"When", not "which app".** Flycut prints the source application; Victor
 explicitly does not want it. Two clips copied out of the same editor are told
 apart by *when* — which is also the only thing you actually remember about a
 clip you are hunting for.
+
+**The bezel logs where it drew itself** (`📋 clip 1/7 on screen 1728×1079 at
+414,239 (panel 900×601)`). It is the one piece of UI here that cannot be
+screenshotted on demand — any keystroke dismisses it, so an agent checking on it
+while Victor types sees an empty screen and concludes it is broken. One line per
+press, and the only way to answer "it did not appear" without taking his
+keyboard.
 
 ## Where the pixels live
 

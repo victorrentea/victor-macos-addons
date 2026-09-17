@@ -17,9 +17,13 @@ private let tapCallbackFunc: CGEventTapCallBack = { proxy, type, event, userInfo
 class EventTapManager {
 
     // MARK: Callbacks (set before calling start())
-    /// ⌘⌃V — the last minute of transcript, cleaned, offered at five lengths
-    /// (`TranscriptPasteController`).
-    var onTranscriptPicker: (() -> Void)?
+    // ⌘⌃V used to be the 🎙️ transcript picker
+    // (`TranscriptPasteController`). It lost the key on 2026-09-17 to the
+    // clipboard→notes append below and has **no shortcut at all** now: it is a
+    // menu row (and `GET /test/transcript-picker`). Victor's call, and the
+    // reason is how often each is reached for — the notes append is a dozen
+    // times a day, in any app; the picker only means anything while Whisper is
+    // running in the room.
     var onScreenshot: (() -> Void)?
     /// ⌃P **held** — macOS's crosshair crop (see `ScreenshotHoldPolicy`).
     var onScreenshotCrop: (() -> Void)?
@@ -77,8 +81,6 @@ class EventTapManager {
     /// open. One callback for both because it is one key doing one thing.
     var onClipboardHistoryNext: (() -> Void)?
     var onClipboardHistoryPrevious: (() -> Void)?
-    /// A digit key 1–9 while the bezel is up.
-    var onClipboardHistorySelect: ((Int) -> Void)?
     /// ⏎ — take the highlighted clip.
     var onClipboardHistoryCommit: (() -> Void)?
     /// Esc, or any key that is not part of the gesture: leave the clipboard be.
@@ -696,21 +698,22 @@ private let VK_F: CGKeyCode = 0x03
             return Unmanaged.passUnretained(event)
         }
 
-        // Ctrl+Opt+V → append clipboard to session notes (suppress)
-        if hasCtrl && hasOpt && !hasCmd {
-            DispatchQueue.global().async { [weak self] in self?.onAppendClipboardToNotes?() }
-            return nil
-        }
-
-        // Cmd+Ctrl+V → the 🎙️ transcript picker (suppress). This used to be the
-        // "emotional paste" (re-clean the text you had just pasted, via Haiku),
-        // which was replaced rather than moved: both answer "give me a tidied
-        // version of some text", but that one could only ever act on something
-        // already on the clipboard, i.e. on words that had already been written
-        // down somewhere. What is actually lost mid-workshop is the sentence
-        // just *said* out loud, and only the transcript has it.
+        // Cmd+Ctrl+V → append the clipboard to the session notes (suppress).
+        //
+        // **It moved here from ⌃⌥V on 2026-09-17**, taking the key off the 🎙️
+        // transcript picker, which now lives only on a menu row. Two reasons,
+        // both Victor's: the append is the everyday gesture of the pair — the
+        // picker needs Whisper running in the room to mean anything — and
+        // ⌘⌃ is where this app's everyday keys are (⌘⌃S is the same append for
+        // the *selection*, so the clipboard half sitting under a different
+        // modifier pair was the odd one out).
+        //
+        // ⌃⌥V is deliberately left unbound rather than kept as a second way in:
+        // ⌃⌥ is the emoji board (`EmojiKeyLayer`) and a lone survivor from the
+        // old arrangement is exactly the kind of thing that is discovered by
+        // accident, mid-workshop, years later.
         if hasCmd && hasCtrl {
-            DispatchQueue.global().async { [weak self] in self?.onTranscriptPicker?() }
+            DispatchQueue.global().async { [weak self] in self?.onAppendClipboardToNotes?() }
             return nil
         }
 
@@ -750,14 +753,12 @@ private let VK_F: CGKeyCode = 0x03
     }
 
     private func clipboardHistoryAction(for keyCode: CGKeyCode) -> ClipboardHistoryOutcome? {
-        // kVK_ANSI_1…9 — not contiguous, and not worth deriving from characters:
-        // reading `charactersIgnoringModifiers` off a CGEvent means building an
-        // NSEvent on the tap thread for every keystroke in the system.
-        let digitKeys: [CGKeyCode: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
-
-        if let digit = digitKeys[keyCode] {
-            return .init(swallows: true) { $0?.onClipboardHistorySelect?(digit) }
-        }
+        // The digits used to jump straight to a clip, as they do in Flycut.
+        // Victor: *"1-9 jump nu voi folosi vreodată"* (2026-09-17) — and a key
+        // the gesture claims but nobody presses is worse than one it ignores,
+        // because it is swallowed from whatever you were typing into. They now
+        // fall through the `default` below: the bezel closes and the digit
+        // reaches the document.
         switch keyCode {
         case VK_V, 125, 124:                      // V, ↓, →
             return .init(swallows: true) { $0?.onClipboardHistoryNext?() }

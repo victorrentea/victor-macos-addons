@@ -91,14 +91,21 @@ enum CommandControlShortcuts {
                          // passes straight through. This entry is display-only.
                          // The studio 🎙️ says whose paste it is: the listening is
                          // Wispr's job, never this app's.
-        9:  "spus",       // V — the last minute of transcript, cleaned, to pick from.
-                          // The key was blank while it meant the emotional paste,
-                          // precisely because "paste" was already ⌘⌃W's word and a
-                          // sheet with two of them makes you pick wrong at speed.
-                          // What it does now is a different thing entirely and needs
-                          // saying: `spus` — "said" — is the one word that separates
-                          // it from every paste on the board, because the text comes
-                          // from your mouth rather than from a clipboard.
+        9:  "clipboard", // V — the CLIPBOARD goes to the training notes. Took the
+                          // key on 2026-09-17 from the 🎙️ transcript picker
+                          // (`spus`), which now has a menu row and no shortcut,
+                          // and arrived from ⌃⌥V, where it was the one everyday
+                          // shortcut living outside this board.
+                          //
+                          // The word is the **source**, not the destination,
+                          // because S one row over already says `notes` and two
+                          // keys reading the same word is a key you press wrong
+                          // at speed (the reason this key stayed blank in its
+                          // emotional-paste days, when `paste` was already ⌘⌃W's).
+                          // S and V are the pair: same shelf, one takes what is
+                          // selected, the other what was copied — so the word
+                          // names whichever of the two you are holding, and the
+                          // 🚀 accent they share says where it lands.
     ]
 
     /// A small mark in the key's top-right corner, opposite the base letter —
@@ -110,6 +117,11 @@ enum CommandControlShortcuts {
         14: "@",   // E — email
         6:  "🔗",  // Z — the Zoom room link
         1:  "🚀",  // S — the selection is launched into the notes
+        9:  "🚀",  // V — the same launch, for the clipboard. The one deliberately
+                  // repeated accent on this board: the pair does the same thing
+                  // to two different things, and giving V its own mark would
+                  // hide exactly the fact worth knowing — that it ends up where
+                  // S does.
         15: "📋",  // R — the SRL details are pasted, not opened
         40: "📕",  // K — the training catalog
         3:  "🎧",  // F — headphones: the key plays music, it doesn't open a page
@@ -120,14 +132,13 @@ enum CommandControlShortcuts {
                   // room's Prompts tab, so the sheet, the pill and the list all
                   // say the same word. S's 🚀 is the sibling: both launch the
                   // selection, this one lands on the participants' screens.
-        9:  "🎙️",  // V — `spus` is the noun; the mic says where the words come from
         31: "🐘",  // O — the word names the man, the mark names what appears
         12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
                   // is going to the room as a prompt", and the same mark on a key
                   // that only animates would blur the two apart at a glance.
-        2:  "🎤",  // D — the hand mic, not V's studio 🎙️: same voice, but this
-                  // key is the one you speak *into* a session with, and two
-                  // identical marks on one board would blur that apart.
+        2:  "🎤",  // D — the hand mic. It used to be told apart from V's studio
+                  // 🎙️ (the transcript picker); that key is now the clipboard
+                  // note, so the mic is unique on this board again.
     ]
 
     /// Keys whose payload is a bundled picture rather than a word, by key code.

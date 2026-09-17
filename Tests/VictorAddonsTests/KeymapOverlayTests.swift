@@ -385,7 +385,10 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 17, 9, 13, 6, 31, 35])
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
-        XCTAssertEqual(CommandControlShortcuts.labels[9], "spus")
+        // V (9) stopped meaning the 🎙️ transcript picker on 2026-09-17: the key
+        // is the clipboard→notes append now, and the word is the *source*
+        // because S already says `notes`.
+        XCTAssertEqual(CommandControlShortcuts.labels[9], "clipboard")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 16, 23:10"
+    static let BUILD_TIME = "Sep 17, 08:03"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -99,6 +99,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTailPreview: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
+    /// 🎙️ The transcript picker — a menu row since it gave up ⌘⌃V.
+    var onTranscriptPicker: (() -> Void)?
     /// 🤖 The same clipboard, filed as an agent prompt instead of a note.
     var onAppendClipboardAsPrompt: (() -> Void)?
     /// 📥 The clipboard's image, written to ~/Downloads.
@@ -258,6 +260,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         tailItem.target = self
         tailItem.isEnabled = true
 
+        // 🎙️ The transcript picker (`TranscriptPasteController`): the last 40 s
+        // of speech, distilled by claude into five things worth pasting, the
+        // chosen one landing on the clipboard.
+        //
+        // **This row exists because the feature lost ⌘⌃V** on 2026-09-17 to the
+        // clipboard→notes append, and a hotkey was its only entry point. It
+        // carries no key equivalent because it now genuinely has no key — the
+        // one thing a menu row must never do is promise one.
+        //
+        // Directly above 🔬 Fact-check, because the pair is the same question:
+        // act on what was just *said* in the room. The 40 s is in the title for
+        // the same reason the 10 min is in the one below — the window is the
+        // whole contract.
+        addItem("🎙️ Distil the last 40 s of speech", action: #selector(transcriptPickerAction))
+
         // 🔬 Fact-check what was just said. It KEPT the top level when the Tail
         // moved down, and that is the line between them: the Tail is a readout
         // of the transcription, this is something you fire mid-sentence and
@@ -311,8 +328,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Victor's inbox, into the session notes, onto the room's Prompts tab.
         // In the submenu they were a feature hidden behind a hover.
         let appendNotesItem = addItem("📝 Send Clipboard to Notes", action: #selector(appendClipboardToNotesAction))
+        // ⌘⌃V since 2026-09-17, taken from the 🎙️ picker above — the append is
+        // the everyday half of that pair, and ⌘⌃ is where this app's everyday
+        // keys live (⌘⌃S is the same append for the selection). Advertised
+        // only: the tap swallows ⌘⌃V before AppKit could match the equivalent.
         appendNotesItem.keyEquivalent = "v"
-        appendNotesItem.keyEquivalentModifierMask = [.control, .option]
+        appendNotesItem.keyEquivalentModifierMask = [.command, .control]
 
         // The 🤖 sibling: the same clipboard, filed as an agent PROMPT, which is
         // what puts it on the participants' Prompts tab. ⌘⌃P does this from the
@@ -876,6 +897,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func appendClipboardAsPromptAction() {
         onAppendClipboardAsPrompt?()
+    }
+
+    @objc private func transcriptPickerAction() {
+        onTranscriptPicker?()
     }
 
     @objc private func clipboardHistoryAction() {

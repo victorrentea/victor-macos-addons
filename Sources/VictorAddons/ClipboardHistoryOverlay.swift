@@ -42,6 +42,12 @@ final class ClipboardHistoryOverlay {
     /// clipboard" — see `commit()`.
     private var pastesOnCommit = false
 
+    /// Past this many characters a text clip's length is worth printing — see
+    /// `statusRow`. Comfortably above `ClipboardHistoryPolicy.preview`'s 280-char
+    /// cut, so the number only ever appears next to something that visibly is
+    /// an excerpt.
+    private static let longTextThreshold = 500
+
     var isShowing: Bool { panel != nil }
     /// Whether letting go of ⌘ finishes this bezel — true only for the one the
     /// hotkey opened. See `pastesOnCommit`.
@@ -76,15 +82,6 @@ final class ClipboardHistoryOverlay {
     func previous() {
         guard isShowing, !entries.isEmpty else { return }
         index = (index - 1 + entries.count) % entries.count
-        render()
-    }
-
-    /// The digit keys: 1…9 jump straight to that clip. Out-of-range digits are
-    /// ignored rather than clamped — pressing 8 on a six-clip history should do
-    /// nothing, not silently pick the last one.
-    func select(number: Int) {
-        guard isShowing, entries.indices.contains(number - 1) else { return }
-        index = number - 1
         render()
     }
 
@@ -145,33 +142,47 @@ final class ClipboardHistoryOverlay {
         let screen = screenUnderCursor()
         let visible = screen.visibleFrame
 
+        // **The frame is the same for every clip** — one box, a quarter of the
+        // screen's area, whatever is in it. Victor's, after walking a list of
+        // mixed clips: sizing the panel to its contents made the whole thing
+        // grow and shrink around its own centre on every press, so the first
+        // line of a long text clip and of a short one were at different heights
+        // and the eye had to find the words again each time. A fixed box means
+        // an image is always in the same place and text always starts at the
+        // same point; only the content changes.
+        let box = bodyBox(on: screen)
         let body: NSView = entry.isImage
-            ? imageView(for: entry, screen: screen)
-            : textView(for: entry, visible: visible)
+            ? imageView(for: entry, in: box, screen: screen)
+            : textView(for: entry, in: box)
 
-        let footer = footerView(for: entry, width: body.frame.width)
-        let hint = label(text: "V next  ·  ↑↓ walk  ·  1–9 jump  ·  ⌫ forget  ·  ⏎ paste  ·  Esc",
-                         font: .systemFont(ofSize: 11),
-                         color: NSColor(white: 0.5, alpha: 1), width: body.frame.width)
+        // **One line under the box, not two** (2026-09-17). The counter, the
+        // legend and what-this-clip-is were a footer row plus a hint row, and
+        // two rows of small grey text under a picture read as a paragraph you
+        // are meant to *study*. Everything the bezel has to say fits on one
+        // line: where you are and how to move on the left, what you are looking
+        // at on the right.
+        let status = statusRow(for: entry, width: box.width)
 
         let pad: CGFloat = 18, gap: CGFloat = 10
-        let width = body.frame.width + 2 * pad
-        let height = pad + body.frame.height + gap + footer.frame.height + 4 + hint.frame.height + pad
+        let width = box.width + 2 * pad
+        let height = pad + box.height + gap + status.frame.height + pad
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         content.wantsLayer = true
         content.layer?.backgroundColor = NSColor(white: 0.11, alpha: 0.97).cgColor
         content.layer?.cornerRadius = 16
 
-        var y = height - pad - body.frame.height
-        body.setFrameOrigin(NSPoint(x: pad, y: y))
-        y -= gap + footer.frame.height
-        footer.setFrameOrigin(NSPoint(x: pad, y: y))
-        y -= 4 + hint.frame.height
-        hint.setFrameOrigin(NSPoint(x: pad, y: y))
+        // The body view is placed inside the box rather than *being* it: an
+        // image is centred in it, text hangs from its top-left corner.
+        var y = height - pad - box.height
+        body.setFrameOrigin(NSPoint(x: pad + (box.width - body.frame.width) / 2,
+                                    y: entry.isImage
+                                        ? y + (box.height - body.frame.height) / 2
+                                        : y + box.height - body.frame.height))
+        y -= gap + status.frame.height
+        status.setFrameOrigin(NSPoint(x: pad, y: y))
         content.addSubview(body)
-        content.addSubview(footer)
-        content.addSubview(hint)
+        content.addSubview(status)
 
         let panel = self.panel ?? BezelPanel()
         panel.contentView = content
@@ -181,28 +192,39 @@ final class ClipboardHistoryOverlay {
                        display: true)
         panel.orderFrontRegardless()
         self.panel = panel
+        // The bezel is the one piece of UI here nobody can screenshot on
+        // demand — any keystroke dismisses it — so it says where it drew
+        // itself. Cheap, once per press, and the only way to answer "it did
+        // not appear" without taking the keyboard away from Victor.
+        overlayInfo(String(format: "📋 clip %d/%d on screen %.0f×%.0f at %.0f,%.0f (panel %.0f×%.0f)",
+                           index + 1, entries.count,
+                           visible.width, visible.height,
+                           panel.frame.origin.x, panel.frame.origin.y, width, height))
     }
 
-    /// **A quarter of the screen's area, centred** — Victor's size for this.
-    ///
-    /// A quarter of the *area*, not of the width: the box keeps the clip's own
-    /// aspect ratio and lands at half the screen's width and half its height
-    /// for a full-screen capture, which is the common case here (⌃P).
-    ///
-    /// It never scales *up* past 1:1. A copied 120×40 button would become a
-    /// wall of interpolation at a quarter of a retina, and the size of a clip
-    /// is itself information — a tiny image should look tiny.
-    private func imageView(for entry: ClipboardEntry, screen: NSScreen) -> NSView {
+    /// **The box every clip is drawn in: a quarter of the screen's area** —
+    /// Victor's size — which is half the width by half the height of the
+    /// screen the bezel is on. Constant for that screen, so the panel is the
+    /// same rectangle in the same place for a 3000×2000 screenshot and for a
+    /// two-word clip.
+    private func bodyBox(on screen: NSScreen) -> NSSize {
+        let visible = screen.visibleFrame
+        return NSSize(width: (visible.width / 2).rounded(), height: (visible.height / 2).rounded())
+    }
+
+    /// The image, fitted inside the box with its aspect ratio kept and
+    /// **never scaled up past 1:1** — a copied 120×40 button would otherwise
+    /// become a wall of interpolation, and the size of a clip is itself
+    /// information: a small image should look small.
+    private func imageView(for entry: ClipboardEntry, in box: NSSize, screen: NSScreen) -> NSView {
         guard case .image(let pixelWidth, let pixelHeight, _) = entry.kind,
               pixelWidth > 0, pixelHeight > 0 else {
             return label(text: "(unreadable image)", font: .systemFont(ofSize: 14),
-                         color: .systemRed, width: 400)
+                         color: .systemRed, width: box.width)
         }
         let backing = max(1, screen.backingScaleFactor)
         let natural = NSSize(width: CGFloat(pixelWidth) / backing, height: CGFloat(pixelHeight) / backing)
-        let visible = screen.visibleFrame
-        let targetArea = visible.width * visible.height / 4
-        let factor = min(1, sqrt(targetArea / (natural.width * natural.height)))
+        let factor = min(1, box.width / natural.width, box.height / natural.height)
         let size = NSSize(width: (natural.width * factor).rounded(),
                           height: (natural.height * factor).rounded())
 
@@ -218,46 +240,86 @@ final class ClipboardHistoryOverlay {
         return view
     }
 
-    private func textView(for entry: ClipboardEntry, visible: NSRect) -> NSView {
+    /// Text hangs from the **top** of the box, at the box's full width, and is
+    /// cut off at its bottom rather than growing the panel: the first line has
+    /// to land on the same pixel for every clip, which is the whole point of
+    /// the fixed box.
+    private func textView(for entry: ClipboardEntry, in box: NSSize) -> NSView {
         guard case .text(let string) = entry.kind else { return NSView() }
-        let width = min(860, visible.width * 0.5)
         let field = NSTextField(wrappingLabelWithString: ClipboardHistoryPolicy.preview(string))
         field.font = .systemFont(ofSize: 17)
         field.textColor = NSColor(white: 0.95, alpha: 1)
         field.drawsBackground = false
         field.isBezeled = false
         field.isSelectable = false
-        field.preferredMaxLayoutWidth = width
-        let fitted = field.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude))
-        field.frame = NSRect(x: 0, y: 0, width: width, height: fitted.height)
+        field.lineBreakMode = .byTruncatingTail
+        field.preferredMaxLayoutWidth = box.width
+        let fitted = field.sizeThatFits(NSSize(width: box.width, height: .greatestFiniteMagnitude))
+        field.frame = NSRect(x: 0, y: 0, width: box.width, height: min(fitted.height, box.height))
         return field
     }
 
-    /// `3 / 40` on the left, `12 minutes ago` plus the clip's own measure on the
-    /// right. The **when** is the whole provenance line: which app a clip came
-    /// from is Flycut's answer to a question Victor does not ask — two copies
-    /// out of the same editor are told apart by *when*, not by *where*.
-    private func footerView(for entry: ClipboardEntry, width: CGFloat) -> NSView {
-        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 18))
-        let counter = label(text: "\(index + 1) / \(entries.count)",
-                            font: .monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
-                            color: NSColor.systemYellow.withAlphaComponent(0.9), width: width / 2)
-        let measure: String
-        switch entry.kind {
-        case .image(let w, let h, let bytes):
-            measure = "🖼️ \(w)×\(h) · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))"
-        case .text(let string):
-            measure = "📋 \(string.count) chars"
+    /// The one line under the box.
+    ///
+    /// **Left**: where you are in the list and how to move — `3 / 6` in the
+    /// accent colour, then the legend. ⏎ and ⌫ are not on it although they
+    /// work: the line is read at a glance with a hand holding ⌘⇧, and the keys
+    /// that belong to that hold are V and the arrows (⏎ only duplicates letting
+    /// go of ⌘, and nobody reaches for ⌫ mid-gesture).
+    ///
+    /// **Right**: only what the clip cannot say for itself. **When** it was
+    /// copied is the whole provenance — Flycut prints the source app, which is
+    /// the wrong question for two clips out of the same editor. Nothing else is
+    /// added, with one exception: a text clip longer than `longTextThreshold`
+    /// prints its length, because at that size the count stops being trivia and
+    /// becomes the one fact the panel cannot show — that these words are the
+    /// opening of something much bigger.
+    private func statusRow(for entry: ClipboardEntry, width: CGFloat) -> NSView {
+        // Sized to their own text, not to the box: three labels share this line
+        // and the two on the left are placed one after the other, so a label
+        // that reports the box's width as its own pushes the next one off the
+        // panel entirely.
+        let counter = fittedLabel(text: "\(index + 1) / \(entries.count)",
+                                  font: .monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
+                                  color: NSColor.systemYellow.withAlphaComponent(0.9))
+        let hint = fittedLabel(text: "V next  ·  ↑↓ walk  ·  Esc",
+                               font: .systemFont(ofSize: 11),
+                               color: NSColor(white: 0.5, alpha: 1))
+
+        // An image says nothing about itself. `🖼️ 3000×2000 · 142 KB` was there
+        // on the theory that two screenshots of the same window are told apart
+        // by their size; Victor, looking at it: *"mărimea pozei în px și kb nu
+        // mă interesează"* (2026-09-17). You recognise a picture by looking at
+        // it, and the picture is right there at a quarter of the screen.
+        var facts = [ClipboardHistoryPolicy.age(Date().timeIntervalSince(entry.copiedAt))]
+        if case .text(let string) = entry.kind, string.count > Self.longTextThreshold {
+            facts.append("\(string.count) chars")
         }
-        let age = ClipboardHistoryPolicy.age(Date().timeIntervalSince(entry.copiedAt))
-        let right = label(text: "\(age)  ·  \(measure)", font: .systemFont(ofSize: 12),
-                          color: NSColor(white: 0.62, alpha: 1), width: width)
-        right.alignment = .right
-        right.frame = NSRect(x: width - right.frame.width, y: 0, width: right.frame.width, height: row.frame.height)
-        counter.frame = NSRect(x: 0, y: 0, width: counter.frame.width, height: row.frame.height)
+        let right = fittedLabel(text: facts.joined(separator: "  ·  "), font: .systemFont(ofSize: 12),
+                                color: NSColor(white: 0.62, alpha: 1))
+
+        let height = max(counter.frame.height, hint.frame.height, right.frame.height)
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        counter.frame = NSRect(x: 0, y: 0, width: counter.frame.width, height: height)
+        hint.frame = NSRect(x: counter.frame.width + 14, y: 0, width: hint.frame.width, height: height)
+        right.frame = NSRect(x: max(hint.frame.maxX + 14, width - right.frame.width), y: 0,
+                             width: right.frame.width, height: height)
         row.addSubview(counter)
+        row.addSubview(hint)
         row.addSubview(right)
         return row
+    }
+
+    /// A label exactly as wide as its own text — what every label on the status
+    /// line needs, since they sit next to each other.
+    private func fittedLabel(text: String, font: NSFont, color: NSColor) -> NSTextField {
+        let field = NSTextField(labelWithString: text)
+        field.font = font
+        field.textColor = color
+        field.drawsBackground = false
+        field.isBezeled = false
+        field.sizeToFit()
+        return field
     }
 
     private func label(text: String, font: NSFont, color: NSColor, width: CGFloat) -> NSTextField {
