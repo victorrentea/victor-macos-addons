@@ -3,17 +3,17 @@ import XCTest
 @testable import VictorAddons
 
 /// Hermetic tests for the `BellCard` controller. The controller is built with a
-/// screens provider that returns `[]`, so `BottomLeftBanner` renders no panels
+/// screens provider that returns `[]`, so `BottomTabBanner` renders no panels
 /// (no window server needed) — the tests assert the observable controller state
-/// (the caller stack + card wording), leaving the actual on-screen rendering to
+/// (the caller stack + tab wording), leaving the actual on-screen rendering to
 /// the manual `/test/bell` GUI check.
 final class BellCardTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        // `BottomLeftBanner.show()` reads `NSApp.effectiveAppearance` to resolve
-        // its light/dark palette; ensure the shared application exists so that
-        // implicitly-unwrapped `NSApp` is non-nil in this headless test process.
+        // The banner touches AppKit on show(); ensure the shared application
+        // exists so implicitly-unwrapped `NSApp` is non-nil in this headless
+        // test process.
         _ = NSApplication.shared
     }
 
@@ -28,18 +28,18 @@ final class BellCardTests: XCTestCase {
     // MARK: - Card copy (pure)
 
     func testCardTextSingleCallerMatchesExactWording() {
-        XCTAssertEqual(BellCard.cardText(callers: ["Ana Pop"]), "🔔 Ana Pop is calling you")
+        XCTAssertEqual(BellCard.cardText(callers: ["Ana Pop"]), "🔔 Ana Pop")
     }
 
-    func testCardTextMultipleCallersCoalesceWithArePlural() {
-        XCTAssertEqual(BellCard.cardText(callers: ["Ana", "Dan"]), "🔔 Ana + Dan are calling you")
-        XCTAssertEqual(BellCard.cardText(callers: ["Ana", "Dan", "Eve"]), "🔔 Ana + Dan + Eve are calling you")
+    func testCardTextMultipleCallersCoalesceWithPlusSigns() {
+        XCTAssertEqual(BellCard.cardText(callers: ["Ana", "Dan"]), "🔔 Ana + Dan")
+        XCTAssertEqual(BellCard.cardText(callers: ["Ana", "Dan", "Eve"]), "🔔 Ana + Dan + Eve")
     }
 
     func testCardTextEmptyListStaysTotalWithNeutralName() {
         // Unreachable via show() (addCaller guarantees ≥ 1), but the pure
-        // function stays total — never the garbled "🔔  are calling you".
-        XCTAssertEqual(BellCard.cardText(callers: []), "🔔 Someone is calling you")
+        // function stays total — never a bare bell with no name after it.
+        XCTAssertEqual(BellCard.cardText(callers: []), "🔔 Someone")
     }
 
     // MARK: - Anonymous marker (BellCard.callerLabel + show(anonymous:))
@@ -60,14 +60,14 @@ final class BellCardTests: XCTestCase {
         let card = makeCard()
         card.show(caller: "Ana", anonymous: true)
         XCTAssertEqual(card.callers, ["Ana (anonymous)"])
-        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana (anonymous) is calling you")
+        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana (anonymous)")
     }
 
     func testNonAnonymousBellHasNoMarker() {
         let card = makeCard()
         card.show(caller: "Ana", anonymous: false)
         XCTAssertEqual(card.callers, ["Ana"])
-        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana is calling you")
+        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana")
     }
 
     func testAnonymousDefaultsFalseWhenFlagOmitted() {
@@ -84,8 +84,7 @@ final class BellCardTests: XCTestCase {
         card.show(caller: "Ana", anonymous: true)
         card.show(caller: "Dan")
         XCTAssertEqual(card.callers, ["Ana (anonymous)", "Dan"])
-        XCTAssertEqual(BellCard.cardText(callers: card.callers),
-                       "🔔 Ana (anonymous) + Dan are calling you")
+        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Ana (anonymous) + Dan")
     }
 
     // MARK: - Stacking / de-dup / cap (BellCard.addCaller)
@@ -120,27 +119,32 @@ final class BellCardTests: XCTestCase {
         let card = makeCard()
         card.show(caller: "   ")
         XCTAssertEqual(card.callers, ["Someone"])
-        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Someone is calling you")
+        XCTAssertEqual(BellCard.cardText(callers: card.callers), "🔔 Someone")
     }
 
-    // MARK: - Persistence + hover dismiss
-
-    func testCardIsPersistentNoAutoFade() {
-        let card = makeCard()
-        card.show(caller: "Ana")
-        // No auto-dismiss timer exists: after draining the main queue the caller
-        // stack is still present (a card would only clear on an explicit dismiss).
-        let drained = expectation(description: "main queue drained")
-        DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 1.0)
-        XCTAssertEqual(card.callers, ["Ana"], "the card must persist — nothing clears it on a timer")
-    }
+    // MARK: - Transience
 
     func testDismissClearsTheStack() {
+        // The tab announces and leaves; whoever it named is forgotten with it, so
+        // the next bell starts a fresh announcement rather than resurrecting
+        // names nobody can still see. (On screen the clear is driven by the
+        // banner's onDismissed once the tab has finished falling.)
         let card = makeCard()
         card.show(caller: "Ana")
         card.show(caller: "Dan")
         card.dismiss()
-        XCTAssertTrue(card.callers.isEmpty, "hover-dismiss acknowledges all callers and clears the stack")
+        XCTAssertTrue(card.callers.isEmpty)
+    }
+
+    func testCallersSurviveUntilTheTabActuallyLeaves() {
+        // Nothing clears the stack on the main queue alone — a second bell
+        // arriving in the same breath must still find the first caller there to
+        // coalesce with.
+        let card = makeCard()
+        card.show(caller: "Ana")
+        let drained = expectation(description: "main queue drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1.0)
+        XCTAssertEqual(card.callers, ["Ana"])
     }
 }

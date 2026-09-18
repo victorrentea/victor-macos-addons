@@ -1,34 +1,35 @@
 import Cocoa
 
-/// A participant rang the attention bell → play a bell sound and show a
-/// **persistent, hover-dismissible** bottom-left card reading exactly
-/// `🔔 [Name] is calling you`.
+/// A participant rang the attention bell → play a bell sound and announce *who*
+/// rang it on a **bottom-center tab** reading exactly `🔔 Ana Pop`: it sneaks up
+/// from the bottom edge, holds for three seconds, and falls back down on its own.
 ///
-/// Copied from the `SilentTranscriptionWarning` template: it owns a
-/// `BottomLeftBanner(hoverable: true)`, sets `banner.onHover = { dismiss }`, and
-/// shows with `hoverNudge: .down` and **no auto-fade timer** — the card stays
-/// until the host hovers it away, at which point it leaves with the sinking
-/// "put away" gesture (`dismissSinking`).
+/// **Why a tab and not the old corner card.** This started life as a persistent,
+/// hover-dismissible `BottomLeftBanner` pill saying `🔔 Ana is calling you` — the
+/// same surface the app uses for things Victor must *act* on. But a bell is not a
+/// decision; it is an announcement, and an announcement that waits in the corner
+/// until it is acknowledged is a chore in the middle of a talk. So the bell now
+/// uses `BottomTabBanner`: centred, where the eye already is, and gone by itself
+/// three seconds later. Nothing to hover, nothing left behind.
 ///
-/// The bell card is deliberately NOT a native `NSUserNotification`: as with the
-/// Group Photo / silent-transcription banners, macOS silently suppresses native
+/// The bell is deliberately NOT a native `NSUserNotification`: as with the Group
+/// Photo / silent-transcription banners, macOS silently suppresses native
 /// notifications for this locally-signed, un-entitled app while PowerPoint is
-/// presenting fullscreen. The app's own always-on-top `BottomLeftBanner` shows
-/// regardless — which is the whole point of ringing the trainer this way.
+/// presenting fullscreen. The app's own always-on-top panel shows regardless —
+/// which is the whole point of ringing the trainer this way.
 ///
-/// **Stacking:** when several bells arrive close together the card must not lose
-/// a caller. The spec allows either a vertical stack of independent cards or a
-/// single coalesced card listing callers; this uses the **coalesced** model —
-/// one banner whose text lists every active caller (`🔔 Ana + Dan are calling
-/// you`) — because it reuses the `BottomLeftBanner` primitive unchanged (it
-/// anchors every panel flush to the screen's bottom edge, with no per-card
-/// vertical offset). The caller list is capped so runaway bell-spam can't grow
-/// the text without bound.
+/// **Stacking:** when several bells arrive close together the tab must not lose a
+/// caller. It stays *one* tab whose text lists every active caller (`🔔 Ana +
+/// Dan`), widening around them and restarting the three seconds — because a
+/// second tab would have nowhere to go (they would both want the centre of the
+/// bottom edge). The caller list is capped so runaway bell-spam can't grow the
+/// text without bound.
 final class BellCard {
-    private let banner: BottomLeftBanner
+    private let banner: BottomTabBanner
 
-    /// Active callers currently represented on the card, oldest → newest. A
-    /// hover clears the whole list (all callers acknowledged at once).
+    /// Active callers currently named on the tab, oldest → newest. Cleared when
+    /// the tab finishes falling, so the next bell starts a fresh announcement
+    /// instead of resurrecting names nobody can still see.
     private(set) var callers: [String] = []
 
     /// Cap on distinct callers shown at once (D3: "cap ~3"). Beyond this the
@@ -57,29 +58,24 @@ final class BellCard {
     }
 
     init(screensProvider: @escaping () -> [NSScreen]) {
-        banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
-        banner.onHover = { [weak self] in self?.dismiss() }
+        banner = BottomTabBanner(screensProvider: screensProvider)
+        // The tab leaves on its own timer; when it is gone, so are the names.
+        banner.onDismissed = { [weak self] in self?.callers.removeAll() }
     }
 
-    /// A bell arrived from `caller`: play the bell sound and show/refresh the
-    /// persistent card with this caller added to the stack. Safe to call
-    /// repeatedly — each call plays the sound and, for a *new* caller, widens the
-    /// coalesced card; a repeat from a caller already shown re-plays the sound
-    /// without duplicating their name.
+    /// A bell arrived from `caller`: play the bell sound and show/refresh the tab
+    /// with this caller added to the stack. Safe to call repeatedly — each call
+    /// plays the sound and restarts the three seconds; a *new* caller widens the
+    /// tab, a repeat from a caller already named re-rings without duplicating it.
     ///
     /// `anonymous` (default `false`, so pre-flag call sites are unchanged) appends
-    /// an "(anonymous)" marker to this caller's label — e.g. the card then reads
-    /// `🔔 Ana (anonymous) is calling you`. The marker is baked into the stored
-    /// label, so coalescing/de-dup/cap all keep working unchanged.
+    /// an "(anonymous)" marker to this caller's label — e.g. the tab then reads
+    /// `🔔 Ana (anonymous)`. The marker is baked into the stored label, so
+    /// coalescing/de-dup/cap all keep working unchanged.
     func show(caller: String, anonymous: Bool = false) {
         addCaller(Self.callerLabel(caller, anonymous: anonymous))
         playChime()
-        // NO auto-dismiss timer — the card is persistent by design. `.down`
-        // previews the sinking "put away" exit that hovering triggers. The
-        // caller-tinted (amber) pill still gets the hover whitening for feedback.
-        banner.show(text: Self.cardText(callers: callers),
-                    backgroundColor: Self.cardColor,
-                    hoverNudge: .down)
+        banner.show(text: Self.cardText(callers: callers), backgroundColor: Self.cardColor)
     }
 
     /// Pure list update: append `caller` (de-duped by name), dropping the oldest
@@ -99,38 +95,33 @@ final class BellCard {
     /// A single caller's display label: the resolved (blank-proof) name, with an
     /// "(anonymous)" marker appended when the ring was anonymous. Pure, so the
     /// marker wording is unit-testable and stays identical in the single-caller
-    /// (`🔔 Ana (anonymous) is calling you`) and coalesced
-    /// (`🔔 Ana (anonymous) + Dan are calling you`) renderings.
+    /// (`🔔 Ana (anonymous)`) and coalesced (`🔔 Ana (anonymous) + Dan`)
+    /// renderings.
     static func callerLabel(_ caller: String, anonymous: Bool) -> String {
         let resolved = caller.nonBlank(or: "Someone")
         return anonymous ? "\(resolved) (anonymous)" : resolved
     }
 
-    /// The exact card copy for the active `callers`:
-    ///   • one caller   → `🔔 Ana is calling you`   (the spec's exact wording)
-    ///   • more callers → names joined with " + " and the plural "are", e.g.
-    ///     `🔔 Ana + Dan are calling you`.
-    /// Pure, so the wording is unit-testable.
+    /// The exact tab copy for the active `callers`: the bell glyph and the names,
+    /// nothing else. The old card spelled out "… is calling you"; on a tab that is
+    /// up for three seconds that sentence costs width and reading time to say what
+    /// the 🔔 already says. Names are joined with " + " when several ring at once
+    /// (`🔔 Ana + Dan`). Pure, so the wording is unit-testable, and total — an
+    /// empty list still renders a name rather than a bare bell.
     static func cardText(callers: [String]) -> String {
-        switch callers.count {
-        case 0:
-            return "🔔 Someone is calling you"
-        case 1:
-            return "🔔 \(callers[0]) is calling you"
-        default:
-            return "🔔 \(callers.joined(separator: " + ")) are calling you"
-        }
+        let named = callers.isEmpty ? ["Someone"] : callers
+        return "🔔 \(named.joined(separator: " + "))"
     }
 
-    /// Hover-dismiss: clear the stack and slide the card straight down off the
-    /// screen (the "put away" gesture), matching the silent-warning snooze exit.
+    /// Take the tab away early (it otherwise leaves on its own): slide it down off
+    /// the screen. The caller list clears from the banner's `onDismissed`, once
+    /// the tab has actually gone.
     func dismiss() {
-        callers.removeAll()
-        banner.dismissSinking()
+        banner.dismiss()
     }
 
-    /// True while the card is on screen. (False in a headless test with no
-    /// screens, since `BottomLeftBanner` builds one panel per screen.)
+    /// True while the tab is on screen. (False in a headless test with no
+    /// screens, since `BottomTabBanner` builds one panel per screen.)
     var isVisible: Bool { banner.isVisible }
 }
 

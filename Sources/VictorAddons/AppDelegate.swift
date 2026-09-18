@@ -116,7 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Gates the aggressive silent-transcription warning.
     private var presentationDetector: PresentationDetector?
     private var silentTranscriptionWarning: SilentTranscriptionWarning?
-    /// Persistent bottom-left "🔔 [Name] is calling you" card shown when a
+    /// Bottom-center "🔔 [Name]" tab — rises, holds 3s, falls away — shown when a
     /// participant rings the attention bell (via `wsServer.onBellRing`).
     private var bellCard: BellCard?
     private var meetingDetector: MeetingDetector?
@@ -255,9 +255,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         wsServer.onPdfExportAlarm = { [weak self] deck, slug, failing, detail in
             self?.postPdfExportAlarm(deck: deck, slug: slug, failing: failing, detail: detail)
         }
-        // A participant rang the attention bell → play a bell sound + show the
-        // persistent bottom-left card (BellCard owns the sound + banner). Already
-        // on the main thread (onBellRing is dispatched to main by the WS server).
+        // A participant rang the attention bell → play a bell sound + announce the
+        // caller on the bottom-center tab (BellCard owns the sound + banner).
+        // Already on the main thread (onBellRing is dispatched to main by the WS
+        // server).
         wsServer.onBellRing = { [weak self] caller, anonymous in
             self?.bellCard?.show(caller: caller, anonymous: anonymous)
         }
@@ -828,7 +829,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
-        // /test/bell(?name=…) — show the 🔔 bell card now (+ chime), bypassing the
+        // /test/bell(?name=…) — raise the 🔔 bell tab now (+ chime), bypassing the
         // daemon-connected gate so it can be previewed on the right-hand screen.
         tabletServer?.onTestBell = { [weak self] name in
             let caller = name.nonBlank(or: "Ana Pop")   // sample-name preview default
