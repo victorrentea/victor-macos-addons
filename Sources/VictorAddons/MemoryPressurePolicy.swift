@@ -28,13 +28,39 @@ import Foundation
 /// Swapins stay in the rule anyway, at a much lower threshold: a page that has
 /// to come back from the encrypted swap file costs far more than one that comes
 /// back from the compressor, so a hundredth of the rate is worth the same alarm.
+///
+/// **Why the compressor rate alone is not enough.** A busy-but-fine Mac lives
+/// near the line: measured on 2026-09-18, 353 decompressions/s with 53% of the
+/// CPU *idle* and nothing on the machine feeling slow. The compressor working is
+/// not the complaint — the complaint is the compressor working while there are
+/// no cycles left for anything else. So decompressions only light the plate when
+/// the CPU is genuinely saturated at the same time; below that line the kernel
+/// is decompressing in slack the machine had to spare, which is what slack is
+/// for. Swapins keep their unconditional threshold: a page coming off the
+/// encrypted swap file is a stall on disk, and a stall does not care how much
+/// CPU is idle.
 enum MemoryPressurePolicy {
+
+    /// The host's cumulative CPU ticks, summed over all cores. Like the VM
+    /// counters, only differences between two samples mean anything.
+    struct CPUTicks: Equatable {
+        /// user + system + nice.
+        let busy: UInt64
+        /// busy + idle.
+        let total: UInt64
+
+        /// The "counter did not move" reading. Deliberately scores as *fully
+        /// busy* downstream, so a failed CPU read can never silence a real
+        /// compressor alarm — see `Rates.between`.
+        static let unknown = CPUTicks(busy: 0, total: 0)
+    }
 
     /// One reading of the kernel's VM counters. The counters are cumulative
     /// since boot; only differences between two samples mean anything.
     struct Sample: Equatable {
         let decompressions: UInt64
         let swapins: UInt64
+        let cpu: CPUTicks
         let at: Date
     }
 
@@ -42,6 +68,8 @@ enum MemoryPressurePolicy {
     struct Rates: Equatable {
         let decompressionsPerSec: Double
         let swapinsPerSec: Double
+        /// Share of all CPU time that was not idle over the interval, 0…100.
+        let cpuBusyPercent: Double
 
         /// Rates over the interval between `previous` and `current`.
         ///
@@ -56,7 +84,21 @@ enum MemoryPressurePolicy {
                   current.swapins >= previous.swapins else { return nil }
             return Rates(
                 decompressionsPerSec: Double(current.decompressions - previous.decompressions) / seconds,
-                swapinsPerSec: Double(current.swapins - previous.swapins) / seconds)
+                swapinsPerSec: Double(current.swapins - previous.swapins) / seconds,
+                cpuBusyPercent: cpuBusyPercent(from: previous.cpu, to: current.cpu))
+        }
+
+        /// Busy share between two tick readings. Over a 5 s window on ten cores
+        /// the total moves by thousands of ticks, so a total that did *not*
+        /// move means the read failed, not that the CPU stood still: that
+        /// answers 100 and the gate stays open, leaving the old
+        /// decompressions-only behaviour rather than a plate that quietly
+        /// stopped working.
+        private static func cpuBusyPercent(from previous: CPUTicks, to current: CPUTicks) -> Double {
+            guard current.total > previous.total, current.busy >= previous.busy else { return 100 }
+            let busy = Double(current.busy - previous.busy)
+            let total = Double(current.total - previous.total)
+            return min(100, busy / total * 100)
         }
     }
 
@@ -65,18 +107,29 @@ enum MemoryPressurePolicy {
     /// react, not by cost.
     static let sampleInterval: TimeInterval = 5
 
-    /// Above this the compressor is costing real CPU. Measured thrash sat at
-    /// ~1000/s; an idle machine sits near zero and a cold app launch spikes for
-    /// a second or two, which `sustainedSamples` eats.
+    /// Above this the compressor is doing enough work to matter. Measured
+    /// thrash sat at ~1000/s; an idle machine sits near zero and a cold app
+    /// launch spikes for a second or two, which `sustainedSamples` eats. On its
+    /// own it is not an alarm — `cpuBusyWarn` has to agree.
     static let decompressionsWarn: Double = 400
     /// Hysteresis floor. Between `clear` and `warn` the plate keeps whatever
     /// state it already had, so a rate hovering around one number cannot make
     /// the menu bar strobe.
     static let decompressionsClear: Double = 150
 
+    /// The CPU half of the compressor rule: decompressing costs cycles, and
+    /// spent cycles only hurt when there were none to spare. A machine at 80%
+    /// busy has a fifth of a core's worth of headroom left across the box;
+    /// below that the kernel is decompressing in slack.
+    static let cpuBusyWarn: Double = 80
+    /// Hysteresis floor for the same gate, so a load hovering at four fifths
+    /// cannot strobe the plate either.
+    static let cpuBusyClear: Double = 65
+
     /// A page fetched from the swap file is one disk read plus a decrypt, an
     /// order of magnitude worse per page than a decompress — hence a threshold
-    /// an order of magnitude lower.
+    /// an order of magnitude lower, and no CPU gate: this one is a stall, not a
+    /// cycle cost, so an idle CPU is no consolation.
     static let swapinsWarn: Double = 50
     static let swapinsClear: Double = 10
 
@@ -98,10 +151,16 @@ enum MemoryPressurePolicy {
     }
 
     static func verdict(for rates: Rates) -> Verdict {
-        if rates.decompressionsPerSec >= decompressionsWarn || rates.swapinsPerSec >= swapinsWarn {
+        if rates.swapinsPerSec >= swapinsWarn { return .hurting }
+        if rates.decompressionsPerSec >= decompressionsWarn && rates.cpuBusyPercent >= cpuBusyWarn {
             return .hurting
         }
-        if rates.decompressionsPerSec <= decompressionsClear && rates.swapinsPerSec <= swapinsClear {
+        // Either half of the compressor rule dropping out is enough to call the
+        // machine comfortable: a busy CPU with a quiet compressor is just work
+        // getting done, and a busy compressor with idle cores is not costing
+        // anyone anything.
+        if rates.swapinsPerSec <= swapinsClear
+            && (rates.decompressionsPerSec <= decompressionsClear || rates.cpuBusyPercent <= cpuBusyClear) {
             return .calm
         }
         return .unchanged

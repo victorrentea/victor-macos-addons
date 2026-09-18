@@ -96,8 +96,10 @@ final class MemoryPressureMonitor {
         DispatchQueue.main.async { [weak self] in self?.onChange?(state) }
     }
 
-    /// One read of `HOST_VM_INFO64`. Nil only if the Mach call fails, which in
-    /// practice means the host port is gone and the app has bigger problems.
+    /// One read of `HOST_VM_INFO64`, plus the CPU tick counters that say whether
+    /// that paging is landing on a machine with cycles to spare. Nil only if the
+    /// VM call fails, which in practice means the host port is gone and the app
+    /// has bigger problems.
     static func readCounters(now: Date = Date()) -> MemoryPressurePolicy.Sample? {
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
@@ -110,7 +112,29 @@ final class MemoryPressureMonitor {
         return MemoryPressurePolicy.Sample(
             decompressions: UInt64(stats.decompressions),
             swapins: UInt64(stats.swapins),
+            cpu: readCPUTicks(),
             at: now)
+    }
+
+    /// `HOST_CPU_LOAD_INFO`: four cumulative tick counters summed over every
+    /// core. A failed read answers `.unknown`, which the policy scores as fully
+    /// busy — a CPU reading that is missing must not be the thing that hides a
+    /// real compressor alarm.
+    static func readCPUTicks() -> MemoryPressurePolicy.CPUTicks {
+        var info = host_cpu_load_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, reboundPointer, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return .unknown }
+        let user = UInt64(info.cpu_ticks.0)
+        let system = UInt64(info.cpu_ticks.1)
+        let idle = UInt64(info.cpu_ticks.2)
+        let nice = UInt64(info.cpu_ticks.3)
+        let busy = user + system + nice
+        return MemoryPressurePolicy.CPUTicks(busy: busy, total: busy + idle)
     }
 
     /// The one-line "why" for the menu row under the flashing icon. Names the
@@ -123,7 +147,12 @@ final class MemoryPressureMonitor {
         if rates.swapinsPerSec >= MemoryPressurePolicy.swapinsWarn {
             return String(format: "🟥 Swapping in %.0f pages/s — RAM is full", rates.swapinsPerSec)
         }
-        return String(format: "🟥 Compressor: %.0f decompressions/s", rates.decompressionsPerSec)
+        // The CPU number rides along because it is half the rule now: without
+        // it the row claims the compressor alone lit the plate, and the obvious
+        // next question — "is that actually slowing me down?" — is already
+        // answered here.
+        return String(format: "🟥 Compressor: %.0f decompressions/s, CPU %.0f%% busy",
+                      rates.decompressionsPerSec, rates.cpuBusyPercent)
     }
 
     /// Snapshot for `/test/memory-pressure`, so the thresholds can be checked
@@ -137,15 +166,22 @@ final class MemoryPressureMonitor {
         let simulated = _simulated
         lock.unlock()
 
-        let decomp = String(format: "%.1f", rates?.decompressionsPerSec ?? -1)
-        let swapin = String(format: "%.1f", rates?.swapinsPerSec ?? -1)
+        // `?? -1` alone prints **nan**: the literal reaches `%.1f` through
+        // CVarArg as an integer, and the bit pattern is read back as a double.
+        // Spelled `Double(-1)` it is the sentinel it was meant to be — the
+        // "no two samples yet" reading, matching lastSampleAgeSec.
+        let decomp = String(format: "%.1f", rates?.decompressionsPerSec ?? Double(-1))
+        let swapin = String(format: "%.1f", rates?.swapinsPerSec ?? Double(-1))
+        let cpu = String(format: "%.1f", rates?.cpuBusyPercent ?? Double(-1))
         let age = lastSampleAt.map { Int(Date().timeIntervalSince($0).rounded()) } ?? -1
         return """
         {"hurting":\(isHurting),"measuredHurting":\(tracker.isHurting),\
         "decompressionsPerSec":\(decomp),"swapinsPerSec":\(swapin),\
+        "cpuBusyPercent":\(cpu),\
         "streak":\(tracker.streak),"lastSampleAgeSec":\(age),\
         "simulating":\(simulating),"simulated":\(simulated.map(String.init) ?? "null"),\
         "warnAt":{"decompressionsPerSec":\(MemoryPressurePolicy.decompressionsWarn),\
+        "cpuBusyPercent":\(MemoryPressurePolicy.cpuBusyWarn),\
         "swapinsPerSec":\(MemoryPressurePolicy.swapinsWarn)}}
         """
     }

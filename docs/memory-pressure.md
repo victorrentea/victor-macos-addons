@@ -39,12 +39,36 @@ has to come back from the encrypted swap file costs a disk read plus a decrypt,
 an order of magnitude more per page than a decompress, so a fraction of the rate
 earns the same alarm.
 
+## Why the compressor rate alone is not enough
+
+The rate on its own lit the plate on a machine that was *fine*. Measured
+2026-09-18: **353 decompressions/s with 53% of the CPU idle**, nothing feeling
+slow, the plate flicking on and off around the 400 line for no reason a human
+could see.
+
+The compressor working is not the complaint. The complaint is the compressor
+working while there are no cycles left for anything else — the plate's own claim
+is "this is costing you CPU", and it costs you nothing while half the box is
+idle. So decompressions only light it when **the CPU is saturated at the same
+time**; under that line the kernel is decompressing in slack the machine had to
+spare, which is what slack is for.
+
+Swapins keep their unconditional threshold: that one is a stall on disk, not a
+cycle cost, so an idle CPU is no consolation.
+
+A CPU read that fails or does not move scores as **fully busy** — a missing
+reading must not be the thing that quietly silences a real alarm.
+
 ## Thresholds
 
 | | warn above | clear below |
 |---|---|---|
-| decompressions/s | 400 | 150 |
+| decompressions/s **and** CPU busy % | 400 **and** 80% | 150 **or** 65% |
 | swapins/s | 50 | 10 |
+
+The compressor rule needs both halves to light it, and either half dropping out
+clears it — the load easing while the compressor stays busy is how this plate
+goes out most often.
 
 Between the two lines the sample says **nothing** and the plate keeps whatever
 state it had — that band is what stops a rate hovering at one number from
@@ -81,7 +105,7 @@ both happen to run the quicker pulse reads as the more urgent one.
 ## Testing
 
 ```
-curl -s 127.0.0.1:55123/test/memory-pressure               # live rates + streak + thresholds
+curl -s 127.0.0.1:55123/test/memory-pressure               # live rates + cpuBusyPercent + streak + thresholds
 curl -s 127.0.0.1:55123/test/memory-pressure/simulate/1    # force the plate on (2 min)
 curl -s 127.0.0.1:55123/test/memory-pressure/simulate/0    # force it off
 curl -s 127.0.0.1:55123/test/memory-pressure/simulate/auto # hand it back to the measurement
