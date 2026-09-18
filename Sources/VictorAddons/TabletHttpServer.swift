@@ -118,6 +118,9 @@ case testTerminalFont
         /// Show a 🔔 bell card now with an optional "?name=" caller (defaulting to
         /// a sample name), bypassing the daemon-connected gate (test hook).
         case testBell(String?)
+        /// Show a 🔴 FX card now with an optional "?label=" tile name (defaulting
+        /// to a sample), without needing the daemon or the soundboard (test hook).
+        case testFx(String?)
         /// Show a bottom-left banner and dismiss it with the rising fade after a
         /// short beat — the "accepted / committed" exit — so the animation can be
         /// screen-recorded without a live session (test hook).
@@ -260,6 +263,8 @@ case testTerminalFont
     var onTestSummaryReminder: (() -> Void)?
     /// Show a 🔔 bell card now; the argument is the optional "?name=" caller.
     var onTestBell: ((String?) -> Void)?
+    /// Show a 🔴 FX card now; the argument is the optional "?label=" tile name.
+    var onTestFx: ((String?) -> Void)?
     var onTestBannerRise: ((String) -> Void)?
     /// Force one Flux-inbox poll now; returns the poller's JSON snapshot.
     var onTestEmailPoll: (() -> String)?
@@ -510,6 +515,8 @@ case testTerminalFont
                 self.onTestSummaryReminder?()
             case .testBell(let name):
                 self.onTestBell?(name)
+            case .testFx(let label):
+                self.onTestFx?(label)
             case .testBannerRise(let mode):
                 self.onTestBannerRise?(mode)
             case .testEmailPoll:
@@ -823,6 +830,8 @@ case testTerminalFont
             return .testSummaryReminder
         case "/test/bell":
             return .testBell(queryItems.first(where: { $0.name == "name" })?.value)
+        case "/test/fx":
+            return .testFx(queryItems.first(where: { $0.name == "label" })?.value)
         case "/test/banner/rise":
             return .testBannerRise(queryItems.first(where: { $0.name == "hover" })?.value ?? "")
         case "/test/email":
