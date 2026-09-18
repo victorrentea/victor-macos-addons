@@ -19,9 +19,10 @@ class LocalWebSocketServer {
     // ring was anonymous (false when the field is absent). Dispatched on main.
     var onBellRing: ((String, Bool) -> Void)?
     // Called when someone holding the secret FX link pressed its one button —
-    // carries the fired tile's display label plus the presser's resolved display
-    // name (never a UUID) and whether they joined anonymously. Dispatched on main.
-    var onFxFired: ((_ label: String, _ caller: String, _ anonymous: Bool) -> Void)?
+    // carries the presser's resolved display name (never a UUID) and whether they
+    // joined anonymously. The tile itself is not carried: it is already playing
+    // out loud, so the tab announces the one thing the room cannot. Dispatched on main.
+    var onFxFired: ((_ caller: String, _ anonymous: Bool) -> Void)?
 
     private var listener: NWListener?
     private var connections: [UUID: NWConnection] = [:]
@@ -208,14 +209,6 @@ class LocalWebSocketServer {
         json["anonymous"] as? Bool ?? false
     }
 
-    /// The tile label from an `fx_fired` payload, falling back to a neutral
-    /// placeholder when the field is missing/empty/whitespace — the banner must
-    /// still announce the press even if the daemon could not name the tile.
-    /// Pure, so the parsing rule is unit-testable without the WS transport.
-    static func fxLabel(from json: [String: Any]) -> String {
-        (json["label"] as? String).nonBlank(or: "a sound effect")
-    }
-
     /// The presser's name from an `fx_fired` payload, falling back to the same
     /// neutral placeholder the bell uses when the field is missing/empty — a
     /// payload from a daemon predating the field still announces the press,
@@ -278,11 +271,10 @@ class LocalWebSocketServer {
             // The room pulled the red-button link. Single consumer (the overlay
             // FX tab), so — like bell_ring and unlike display_emoji — this is not
             // relayed to other clients.
-            let label = Self.fxLabel(from: json)
             let caller = Self.fxCaller(from: json)
             let anonymous = Self.fxAnonymous(from: json)
             DispatchQueue.main.async { [weak self] in
-                self?.onFxFired?(label, caller, anonymous)
+                self?.onFxFired?(caller, anonymous)
             }
         case "ping":
             break  // ignore keep-alive

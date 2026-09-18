@@ -119,8 +119,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Bottom-center "🔔 [Name]" tab — rises, holds 3s, falls away — shown when a
     /// participant rings the attention bell (via `wsServer.onBellRing`).
     private var bellCard: BellCard?
-    /// Bottom-center "🔴 [name] · [tile]" tab — same surface as the bell, in red —
-    /// shown when someone holding the secret FX link presses it (via `wsServer.onFxFired`).
+    /// Bottom-center "[name]" tab — same surface as the bell, in red — shown when
+    /// someone holding the secret FX link presses it (via `wsServer.onFxFired`).
     private var fxCard: FxCard?
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
@@ -265,11 +265,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         wsServer.onBellRing = { [weak self] caller, anonymous in
             self?.bellCard?.show(caller: caller, anonymous: anonymous)
         }
-        // Someone pulled the secret FX link → announce who fired what on the same
-        // bottom-center tab, in red and without a chime: the tile's own sound is
-        // already playing, so the tab only has to say whose press it was.
-        wsServer.onFxFired = { [weak self] label, caller, anonymous in
-            self?.fxCard?.show(label: label, caller: caller, anonymous: anonymous)
+        // Someone pulled the secret FX link → name them on the same bottom-center
+        // tab, in red and without a chime: the tile's own sound is already playing,
+        // so the tab only has to say whose press it was.
+        wsServer.onFxFired = { [weak self] caller, anonymous in
+            self?.fxCard?.show(caller: caller, anonymous: anonymous)
         }
         wsServer.start()
         self.wsServer = wsServer
@@ -845,12 +845,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DispatchQueue.main.async { self?.bellCard?.show(caller: caller) }
         }
 
-        // /test/fx(?label=…&name=…) — raise the 🔴 FX tab now, without the daemon
-        // or the soundboard, so the announcement can be checked on its own.
-        tabletServer?.onTestFx = { [weak self] label, name in
-            let tile = label.nonBlank(or: "scream ghost")   // sample-tile preview default
-            let who = name.nonBlank(or: "Ana Pop")          // sample-name preview default
-            DispatchQueue.main.async { self?.fxCard?.show(label: tile, caller: who) }
+        // /test/fx(?name=…) — raise the FX tab now, without the daemon or the
+        // soundboard, so the announcement can be checked on its own.
+        tabletServer?.onTestFx = { [weak self] name in
+            let who = name.nonBlank(or: "Ana Pop")   // sample-name preview default
+            DispatchQueue.main.async { self?.fxCard?.show(caller: who) }
         }
 
         // /test/banner/rise — show a bottom-left pill and float it up 1.5 s later,
