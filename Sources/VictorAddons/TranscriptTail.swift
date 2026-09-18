@@ -1,6 +1,6 @@
 import Foundation
 
-/// "What was said in the last minute?" — the read side of the ⌘⌃V picker.
+/// "What was said in the last minute?" — the read side of the 🎙️ picker.
 ///
 /// Deliberately separate from `TranscriptActivity`, which answers a different
 /// question ("when did somebody last say *anything*?") off a tiny 8 KB tail and
@@ -91,7 +91,7 @@ enum TranscriptTail {
     /// A line is therefore worth somewhere in 1.5…10 s and 8 is the working
     /// estimate, deliberately biased low: this number divides the window, so
     /// under-estimating keeps *more* lines. For a panel that distills the last
-    /// 40 s, reaching slightly too far back is recoverable; stopping one sentence
+    /// 60 s, reaching slightly too far back is recoverable; stopping one sentence
     /// short is the failure this whole feature exists to avoid.
     static let secondsPerLine: Double = 8
 
@@ -100,13 +100,13 @@ enum TranscriptTail {
     ///
     /// Two things make this speech-time and not wall-clock, and both are what you
     /// want here. Whisper only writes a line when a chunk was loud enough to
-    /// transcribe, so silence costs nothing — "the last 40 seconds" means the
-    /// last 40 seconds somebody was *talking*, not 40 seconds that might be 35 s
+    /// transcribe, so silence costs nothing — "the last 60 seconds" means the
+    /// last 60 seconds somebody was *talking*, not 60 seconds that might be 50 s
     /// of nobody saying anything. And the count is exact where a stamp read could
-    /// never be: `[HH:MM]` cannot express 40 s at all.
+    /// never be: `[HH:MM]` cannot express 60 s at all.
     ///
     /// `maxMinutesBack` is the guard on the other side. After a long pause, eight
-    /// lines of speech can reach back half an hour, and distilling "the last 40
+    /// lines of speech can reach back half an hour, and distilling "the last 60
     /// seconds" out of a conversation that ended before the break would be
     /// confidently wrong. Past that bound the window is simply shorter.
     ///

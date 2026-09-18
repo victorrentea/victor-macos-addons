@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 18, 20:09"
+    static let BUILD_TIME = "Sep 19, 00:20"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -268,7 +268,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         tailItem.target = self
         tailItem.isEnabled = true
 
-        // 🎙️ The transcript picker (`TranscriptPasteController`): the last 40 s
+        // 🎙️ The transcript picker (`TranscriptPasteController`): the last 60 s
         // of speech, distilled by claude into five things worth pasting, the
         // chosen one landing on the clipboard.
         //
@@ -278,10 +278,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // one thing a menu row must never do is promise one.
         //
         // Directly above 🔬 Fact-check, because the pair is the same question:
-        // act on what was just *said* in the room. The 40 s is in the title for
+        // act on what was just *said* in the room. The 60 s is in the title for
         // the same reason the 10 min is in the one below — the window is the
         // whole contract.
-        addItem("🎙️ Distil the last 40 s of speech", action: #selector(transcriptPickerAction))
+        //
+        // The title ends in **→ 📋** because the pasteboard is the whole point
+        // and nothing else in this menu says so: every other row here *does*
+        // something you then watch happen, and this one leaves you holding a
+        // clipboard you have to remember to spend. The emoji is also what the
+        // bottom-left confirmation pill opens with, so the row and its receipt
+        // read as the same gesture.
+        addItem("🎙️ Distil the last 60 s of speech → 📋", action: #selector(transcriptPickerAction))
 
         // 🔬 Fact-check what was just said. It KEPT the top level when the Tail
         // moved down, and that is the line between them: the Tail is a readout

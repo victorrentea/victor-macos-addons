@@ -1,6 +1,6 @@
 import Foundation
 
-/// Compresses the last 40 seconds of transcript into **five things worth
+/// Compresses the last 60 seconds of transcript into **five things worth
 /// pasting**.
 ///
 /// The first version cleaned that window up *verbatim* and offered it at growing
@@ -80,7 +80,7 @@ enum TranscriptDistiller {
     private static let timeout: TimeInterval = 60
 
     private static let instructions = """
-    You receive the last ~40 seconds of a live speech-to-text transcript — raw \
+    You receive the last ~60 seconds of a live speech-to-text transcript — raw \
     Whisper output: filler words, false starts, missing punctuation, duplicated \
     fragments where audio chunks overlapped, and no speaker labels (the \
     microphones pick up the whole room, so do not invent attributions).

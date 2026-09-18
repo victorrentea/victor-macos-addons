@@ -64,7 +64,10 @@ case testTerminalFont
         /// runs the local cleanup and puts a modal up on the cursor's screen.
         /// `?at=HH:MM` rewinds to that minute of today's transcript and skips
         /// the wait — the only way to exercise this outside a live session.
-        case testTranscriptPicker(String?)
+        /// `?pick=N` then presses row N for you, which is the only way to reach
+        /// **everything downstream of the pick** — the pasteboard write, its
+        /// read-back and the confirmation pill — without a hand on the keyboard.
+        case testTranscriptPicker(at: String?, pick: Int?)
         /// ✂️ Interactive crop — puts macOS's crosshair up, so this one WAITS for a
         /// human to drag (or Esc). Not read-only: it really writes a file and
         /// really replaces the clipboard.
@@ -242,7 +245,7 @@ case testTerminalFont
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
     var onTestTile: (() -> Void)?
-    var onTestTranscriptPicker: ((String?) -> Void)?
+    var onTestTranscriptPicker: ((String?, Int?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
     /// 📋 Open the clipboard-history bezel (clipboard-only mode — nothing is
     /// pasted, since no window asked for it).
@@ -475,8 +478,8 @@ case testTerminalFont
                 self.onTestBreakPicker?(q)
             case .testTile:
                 self.onTestTile?()
-            case .testTranscriptPicker(let at):
-                self.onTestTranscriptPicker?(at)
+            case .testTranscriptPicker(let at, let pick):
+                self.onTestTranscriptPicker?(at, pick)
             case .testScreenshotCrop:
                 self.onTestScreenshotCrop?()
             case .testClipboardHistory:
@@ -793,7 +796,9 @@ case testTerminalFont
         case "/test/tile":
             return .testTile
         case "/test/transcript-picker":
-            return .testTranscriptPicker(queryItems.first(where: { $0.name == "at" })?.value)
+            return .testTranscriptPicker(at: queryItems.first(where: { $0.name == "at" })?.value,
+                                         pick: queryItems.first(where: { $0.name == "pick" })
+                                             .flatMap { $0.value }.flatMap { Int($0) })
         case "/test/screenshot/crop":
             return .testScreenshotCrop
         case "/test/clipboard-history":

@@ -953,9 +953,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Goes through `self` rather than capturing the controller: this whole
         // block wires the server long before `transcriptPasteController` is
         // built further down `applicationDidFinishLaunching`.
-        tabletServer?.onTestTranscriptPicker = { [weak self] at in
+        tabletServer?.onTestTranscriptPicker = { [weak self] at, pick in
             let stamp = at.flatMap(TranscriptTail.parseMoment)
-            DispatchQueue.main.async { self?.transcriptPasteController?.trigger(pretendItIs: stamp) }
+            DispatchQueue.main.async {
+                self?.transcriptPasteController?.trigger(pretendItIs: stamp, autoPick: pick)
+            }
         }
         // /test/projector — force-apply the display arrangement now and return a
         // JSON snapshot of what was detected + applied. The HTTP route switch
@@ -1296,6 +1298,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // for long enough that nobody noticed the shortcut had stopped working.
         // See `TranscriptCleaner` for why not `claude -p` either.
         let transcriptPaste = TranscriptPasteController(transcriptionFolder: transcriptionFolder)
+        // The picker's only output is the pasteboard, which is invisible. The
+        // panel closes a second after the pick and the clipboard looks the same
+        // whether the write landed or not, so `showNow` (not `showOnPresence` —
+        // the hand that just clicked a row is unambiguously present) puts the
+        // quote back on screen where it can still be read.
+        transcriptPaste.onCopied = { [weak self] banner, landed in
+            self?.statusBanner?.showNow(text: banner,
+                                        sound: nil,          // the picker already played Tink/Basso
+                                        visibleDuration: landed ? 5.0 : 10.0)
+        }
         self.transcriptPasteController = transcriptPaste
 
         // Flux inbox poller: every 10 min, but only while on battery. It is a

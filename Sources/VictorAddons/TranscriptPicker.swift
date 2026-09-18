@@ -348,6 +348,14 @@ final class TranscriptPicker: NSObject {
         for (i, card) in cards.enumerated() { card.isHighlighted = (i == highlighted) }
     }
 
+    /// Press row `oneBased` as if the digit had been typed — the test hook's
+    /// way in (`?pick=N`). It goes through the same `pick` the keyboard uses,
+    /// flash and all, precisely so that what is tested is the real path and not
+    /// a shortcut around it.
+    func choose(_ oneBased: Int) {
+        pick(oneBased - 1)
+    }
+
     private func pick(_ index: Int) {
         guard !isDismissing, segments.indices.contains(index) else { return }
         isDismissing = true
