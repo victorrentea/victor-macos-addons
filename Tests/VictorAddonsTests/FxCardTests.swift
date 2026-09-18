@@ -26,32 +26,71 @@ final class FxCardTests: XCTestCase {
         XCTAssertEqual(LocalWebSocketServer.fxLabel(from: ["label": "  wazzup  "]), "wazzup")
     }
 
-    // MARK: - End-to-end dispatch through handleText
+    // MARK: - Pure presser parsing (fxCaller / fxAnonymous)
 
-    func testFxFiredJsonInvokesOnFxFiredWithLabel() {
-        let server = LocalWebSocketServer()
-        let expect = expectation(description: "onFxFired fires")
-        var received: String?
-        server.onFxFired = { label in
-            received = label
-            expect.fulfill()
-        }
-        server.handleText(#"{"type":"fx_fired","tile_n":69,"label":"scream ghost"}"#, from: UUID())
-        wait(for: [expect], timeout: 1.0)
-        XCTAssertEqual(received, "scream ghost")
+    func testFxCallerReadsPresentName() {
+        XCTAssertEqual(LocalWebSocketServer.fxCaller(from: ["caller": "Ana Pop"]), "Ana Pop")
     }
 
-    func testFxFiredWithoutLabelInvokesOnFxFiredWithFallback() {
+    func testFxCallerFallsBackWhenMissingOrBlank() {
+        // A payload from a daemon predating the field must still announce the
+        // press — just without a name.
+        XCTAssertEqual(LocalWebSocketServer.fxCaller(from: [:]), "Someone")
+        XCTAssertEqual(LocalWebSocketServer.fxCaller(from: ["caller": "   "]), "Someone")
+    }
+
+    func testFxAnonymousDefaultsFalseWhenAbsentOrNotABool() {
+        XCTAssertTrue(LocalWebSocketServer.fxAnonymous(from: ["anonymous": true]))
+        XCTAssertFalse(LocalWebSocketServer.fxAnonymous(from: [:]))
+        XCTAssertFalse(LocalWebSocketServer.fxAnonymous(from: ["anonymous": "yes"]))
+    }
+
+    // MARK: - End-to-end dispatch through handleText
+
+    func testFxFiredJsonInvokesOnFxFiredWithLabelAndCaller() {
         let server = LocalWebSocketServer()
-        let expect = expectation(description: "onFxFired fires with fallback")
-        var received: String?
-        server.onFxFired = { label in
-            received = label
+        let expect = expectation(description: "onFxFired fires")
+        var received: (String, String, Bool)?
+        server.onFxFired = { label, caller, anonymous in
+            received = (label, caller, anonymous)
+            expect.fulfill()
+        }
+        server.handleText(
+            #"{"type":"fx_fired","tile_n":69,"label":"scream ghost","caller":"Ana Pop","anonymous":false}"#,
+            from: UUID())
+        wait(for: [expect], timeout: 1.0)
+        XCTAssertEqual(received?.0, "scream ghost")
+        XCTAssertEqual(received?.1, "Ana Pop")
+        XCTAssertEqual(received?.2, false)
+    }
+
+    func testFxFiredCarriesTheAnonymousFlag() {
+        let server = LocalWebSocketServer()
+        let expect = expectation(description: "onFxFired fires anonymous")
+        var anon: Bool?
+        server.onFxFired = { _, _, anonymous in
+            anon = anonymous
+            expect.fulfill()
+        }
+        server.handleText(
+            #"{"type":"fx_fired","label":"wazzup","caller":"Dan","anonymous":true}"#, from: UUID())
+        wait(for: [expect], timeout: 1.0)
+        XCTAssertEqual(anon, true)
+    }
+
+    func testFxFiredWithoutLabelOrCallerInvokesOnFxFiredWithFallbacks() {
+        let server = LocalWebSocketServer()
+        let expect = expectation(description: "onFxFired fires with fallbacks")
+        var received: (String, String, Bool)?
+        server.onFxFired = { label, caller, anonymous in
+            received = (label, caller, anonymous)
             expect.fulfill()
         }
         server.handleText(#"{"type":"fx_fired"}"#, from: UUID())
         wait(for: [expect], timeout: 1.0)
-        XCTAssertEqual(received, "a sound effect")
+        XCTAssertEqual(received?.0, "a sound effect")
+        XCTAssertEqual(received?.1, "Someone")
+        XCTAssertEqual(received?.2, false)
     }
 
     // MARK: - Additivity: fx_fired must not disturb existing handling
@@ -59,7 +98,7 @@ final class FxCardTests: XCTestCase {
     func testMalformedJsonDoesNotFireFx() {
         let server = LocalWebSocketServer()
         var fired = false
-        server.onFxFired = { _ in fired = true }
+        server.onFxFired = { _, _, _ in fired = true }
         server.handleText("not json at all", from: UUID())
         server.handleText(#"{"type":"totally_unknown"}"#, from: UUID())
         let settled = expectation(description: "main queue drained")
@@ -73,7 +112,7 @@ final class FxCardTests: XCTestCase {
         let server = LocalWebSocketServer()
         var fxFired = false
         var bellFired = false
-        server.onFxFired = { _ in fxFired = true }
+        server.onFxFired = { _, _, _ in fxFired = true }
         server.onBellRing = { _, _ in bellFired = true }
 
         let bellSeen = expectation(description: "bell dispatched")
@@ -85,7 +124,7 @@ final class FxCardTests: XCTestCase {
 
         bellFired = false
         let fxSeen = expectation(description: "fx dispatched")
-        server.onFxFired = { _ in fxFired = true; fxSeen.fulfill() }
+        server.onFxFired = { _, _, _ in fxFired = true; fxSeen.fulfill() }
         server.handleText(#"{"type":"fx_fired","label":"wazzup"}"#, from: UUID())
         wait(for: [fxSeen], timeout: 1.0)
         XCTAssertTrue(fxFired)
@@ -94,36 +133,61 @@ final class FxCardTests: XCTestCase {
 
     // MARK: - Card copy and state
 
-    func testCardTextIsGlyphPlusLabel() {
-        XCTAssertEqual(FxCard.cardText(label: "scream ghost"), "🔴 scream ghost")
+    func testCardTextIsGlyphNameAndTile() {
+        XCTAssertEqual(FxCard.cardText(caller: "Ana Pop", label: "scream ghost"),
+                       "🔴 Ana Pop · scream ghost")
     }
 
-    func testCardTextFallsBackOnBlankLabel() {
-        XCTAssertEqual(FxCard.cardText(label: "   "), "🔴 a sound effect")
+    func testCardTextFallsBackOnBlankInputs() {
+        XCTAssertEqual(FxCard.cardText(caller: "  ", label: "   "),
+                       "🔴 Someone · a sound effect")
     }
 
-    func testShowRecordsLatestLabelOnly() {
-        // Latest-wins: unlike the bell there is no list to grow — the link is
-        // anonymous, so a second press is the same holder, not a second person.
+    func testAnonymousPresserIsMarkedExactlyAsTheBellMarksOne() {
+        // One wording for the marker across both tabs — the reason
+        // `BellCard.callerLabel` is shared rather than re-spelled here.
         let card = FxCard(screensProvider: { [] })
-        card.show(label: "scream ghost")
-        XCTAssertEqual(card.label, "scream ghost")
-        card.show(label: "wazzup")
-        XCTAssertEqual(card.label, "wazzup")
+        card.show(label: "scream ghost", caller: "Ana Pop", anonymous: true)
+        XCTAssertEqual(card.announcement?.caller,
+                       BellCard.callerLabel("Ana Pop", anonymous: true))
+        XCTAssertEqual(card.announcement?.caller, "Ana Pop (anonymous)")
     }
 
-    func testShowNormalizesBlankLabel() {
+    func testShowRecordsLatestAnnouncementOnly() {
+        // Latest-wins: unlike the bell there is no list to grow — one link, one
+        // holder, so a second press replaces rather than joins.
         let card = FxCard(screensProvider: { [] })
-        card.show(label: "  ")
-        XCTAssertEqual(card.label, "a sound effect")
+        card.show(label: "scream ghost", caller: "Ana Pop")
+        XCTAssertEqual(card.announcement?.caller, "Ana Pop")
+        XCTAssertEqual(card.announcement?.label, "scream ghost")
+        card.show(label: "wazzup", caller: "Dan")
+        XCTAssertEqual(card.announcement?.caller, "Dan")
+        XCTAssertEqual(card.announcement?.label, "wazzup")
     }
 
-    func testDismissClearsTheLabel() {
+    func testShowNormalizesBlankInputs() {
+        let card = FxCard(screensProvider: { [] })
+        card.show(label: "  ", caller: " ")
+        XCTAssertEqual(card.announcement?.caller, "Someone")
+        XCTAssertEqual(card.announcement?.label, "a sound effect")
+    }
+
+    func testAPresserWithoutANameNeverShowsAUuid() {
+        // The daemon resolves the name and never puts a UUID on the wire; this
+        // is the overlay's own half of that guarantee.
+        let card = FxCard(screensProvider: { [] })
+        card.show(label: "scream ghost", caller: "Someone")
+        XCTAssertEqual(FxCard.cardText(caller: card.announcement!.caller,
+                                       label: card.announcement!.label),
+                       "🔴 Someone · scream ghost")
+    }
+
+    func testDismissClearsTheAnnouncement() {
         // `BottomTabBanner.dismiss()` fires `onDismissed` even with nothing
         // rendered, which is what makes the state consistent headlessly.
         let card = FxCard(screensProvider: { [] })
-        card.show(label: "scream ghost")
+        card.show(label: "scream ghost", caller: "Ana Pop")
         card.dismiss()
-        XCTAssertNil(card.label)
+        XCTAssertNil(card.announcement)
     }
 }
