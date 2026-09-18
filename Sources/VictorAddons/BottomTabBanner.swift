@@ -35,6 +35,14 @@ final class BottomTabBanner {
         static let cornerRadius: CGFloat = 18
         static let fontSize: CGFloat = 40
         static let horizontalPadding: CGFloat = 34
+        /// Points added to every measurement of the text (see `measure`). An
+        /// `NSTextField` asked to draw in exactly the width its own `sizeToFit()`
+        /// reported still truncates: the field keeps a little content inset of its
+        /// own, and a tail truncation does not shave one point off — it drops
+        /// whole characters and spends more width on the `…`. Six points of slack
+        /// is the difference between `🔔 Mariachi` and `🔔 Mariac…`, and is
+        /// invisible on a tab that hugs its text.
+        static let textSlack: CGFloat = 8
         /// Keeps a one-word tab from looking like a stub.
         static let minWidth: CGFloat = 220
         /// A runaway list of names must not span the whole screen.
@@ -242,11 +250,24 @@ final class BottomTabBanner {
 
     // MARK: - Building
 
-    private static func measure(_ text: String, font: NSFont) -> CGFloat {
+    /// Width of `text` on ONE line in `font`.
+    ///
+    /// The result carries `Style.textSlack`, so a tab built around it has room to
+    /// draw the text rather than exactly enough to truncate it.
+    ///
+    /// The single-line pinning is not decoration: left to itself `sizeToFit()`
+    /// happily wraps a label and reports the width of the *narrowest* wrap it
+    /// found, so a probe for `🔔 Mariachi` came back roughly one word wide and
+    /// the tab rendered at its minimum width with the name truncated to
+    /// `🔔 Mariac…`. `BottomLeftBanner.panelWidth` pins the same two properties
+    /// for the same reason.
+    static func measure(_ text: String, font: NSFont) -> CGFloat {
         let probe = NSTextField(labelWithString: text)
         probe.font = font
+        probe.maximumNumberOfLines = 1
+        probe.lineBreakMode = .byClipping
         probe.sizeToFit()
-        return probe.frame.width
+        return ceil(probe.frame.width) + Style.textSlack
     }
 
     /// The label's rectangle inside a `tabWidth`-wide tab: full width minus the

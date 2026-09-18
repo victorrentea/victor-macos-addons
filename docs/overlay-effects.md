@@ -17,7 +17,7 @@ between this app and **Victor Effects**.
   dependency on anything that left.
 - **`LocalWebSocketServer`** — the link to the training-assistant daemon on
   `/ws/__overlay__`: session lifecycle (`session_started`, `session_ended`,
-  which enable/disable the join-link menu item), the 🔔 bell card, the pdf
+  which enable/disable the join-link menu item), the 🔔 bell tab, the pdf
   alarms, and the **client count that is the classroom participant count in the
   menu bar**. That last one is why the server stayed here even though its emoji
   traffic is forwarded.

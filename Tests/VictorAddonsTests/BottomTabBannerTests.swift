@@ -90,6 +90,28 @@ final class BottomTabBannerTests: XCTestCase {
         XCTAssertEqual(Style.holdDuration, 3.0)
     }
 
+    // MARK: - Text measurement
+
+    func testLongNameMeasuresWiderThanTheMinimumTab() {
+        // Regression: `sizeToFit()` on an unpinned label wraps and reports the
+        // narrowest wrap it found, so `🔔 Mariachi` measured about one word wide
+        // and the tab rendered at its floor with the name truncated to
+        // `🔔 Mariac…`. A name this long must force the tab past `minWidth`.
+        _ = NSApplication.shared
+        let font = Style.defaultFont()
+        let width = BottomTabBanner.tabWidth(textWidth: BottomTabBanner.measure("🔔 Mariachi", font: font),
+                                             screenWidth: 3456)
+        XCTAssertGreaterThan(width, Style.minWidth)
+    }
+
+    func testMeasurementGrowsWithTheNumberOfCallers() {
+        // Coalescing widens the tab: two names must measure wider than one.
+        _ = NSApplication.shared
+        let font = Style.defaultFont()
+        XCTAssertGreaterThan(BottomTabBanner.measure("🔔 Ana + Dan", font: font),
+                             BottomTabBanner.measure("🔔 Ana", font: font))
+    }
+
     // MARK: - Label
 
     func testLabelIsInsetByThePaddingOnBothSides() {
