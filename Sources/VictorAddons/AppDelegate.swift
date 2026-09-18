@@ -125,6 +125,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
     private var zoomSharePrep: ZoomSharePrep?
+    private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
     /// that the next `whisperManager.onStateChanged(true)` shows the
@@ -974,6 +975,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestZoomShare = { [weak self] in
             self?.zoomSharePrep?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
+        // /test/zoom-join — what the Zoom join-preview watcher sees right now,
+        // and a forced re-press of an open preview.
+        tabletServer?.onTestZoomJoin = { [weak self] in
+            self?.zoomJoinAutoStart?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
+        }
         // /test/presentation/warn — force-show the aggressive silent warning now.
         tabletServer?.onTestPresentationWarn = { [weak self] in
             self?.silentTranscriptionWarning?.forceShow()
@@ -1232,6 +1238,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         zoomSharePrep = zoomPrep
         zoomPrep.start()
+
+        // ▶️ Zoom's join preview asks for one more click before every meeting;
+        // press it as soon as it appears. ⌥ held keeps it open.
+        let zoomJoin = ZoomJoinAutoStart()
+        zoomJoinAutoStart = zoomJoin
+        zoomJoin.start()
 
         let detector = MeetingDetector()
         // A live Zoom/Teams/Webex/Meet call (an app driving the 🎙️TO Zoom

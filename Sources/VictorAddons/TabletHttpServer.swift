@@ -95,6 +95,8 @@ case testTerminalFont
         case testPresentation
         /// JSON snapshot of Zoom's share picker + a forced re-prepare of it.
         case testZoomShare
+        /// JSON snapshot of Zoom's join-preview dialog + a forced re-press of it.
+        case testZoomJoin
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -256,6 +258,7 @@ case testTerminalFont
     var onTestPresentation: (() -> String)?
     /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
     var onTestZoomShare: (() -> String)?
+    var onTestZoomJoin: (() -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -498,6 +501,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestZoomShare?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestZoomShare == nil { statusCode = 503 }
+            case .testZoomJoin:
+                contentType = "application/json"
+                body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
+                if self.onTestZoomJoin == nil { statusCode = 503 }
             case .testEmojiLayer:
                 contentType = "application/json"
                 body = EmojiKeyLayer.statusJSON()
@@ -806,6 +813,8 @@ case testTerminalFont
             return .testPresentation
         case "/test/zoom-share":
             return .testZoomShare
+        case "/test/zoom-join":
+            return .testZoomJoin
         case "/test/emoji-layer":
             return .testEmojiLayer
         case "/test/emoji-layer/on":
