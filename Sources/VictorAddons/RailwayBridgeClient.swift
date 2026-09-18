@@ -94,8 +94,16 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
         queue.async { [weak self] in
             guard let self, let server = self.server else { return }
             let result = server.respond(path: path, requestBody: body)
+            // The relay carries a JSON envelope, so its body has to be text.
+            // Nothing binary is expected to reach it: the tablet fetches tile
+            // pictures over HTTP only, on purpose (`MacLink.reachBytes`), because
+            // tens of kilobytes of PNG have no business crossing the internet
+            // relay that exists for 200-byte control calls. A body that is not
+            // UTF-8 therefore means a client took a path it was not meant to —
+            // answered empty, exactly as before, rather than with mojibake.
             self.sendResponse(id: id, status: result.status,
-                              contentType: result.contentType, body: result.body)
+                              contentType: result.contentType,
+                              body: String(data: result.body, encoding: .utf8) ?? "")
         }
     }
 

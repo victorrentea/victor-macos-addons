@@ -51,15 +51,34 @@ enum EffectsProxy {
     /// Forward one request verbatim and hand back the effects app's own status,
     /// content type and body. `/ping` is special — see `mergedPing`.
     ///
+    /// **The body is `Data`, not `String`, and that is the whole point.** This
+    /// proxy used to decode every answer as UTF-8 (`String(data:encoding:) ?? ""`),
+    /// which is lossless for the JSON that all but one route returns and
+    /// silently catastrophic for the one that does not: `GET /tiles/<image>` is a
+    /// PNG, a PNG is not valid UTF-8, so the decode returned nil and the tablet
+    /// got **200 image/png with zero bytes** — a status and a content type that
+    /// say "here is your picture" wrapped around nothing.
+    ///
+    /// Nobody saw it for the length of the split, because every tile picture was
+    /// also in the APK and the tablet never had to ask: the fetch path exists
+    /// precisely for a tile added to the shared folder after the last Android
+    /// build, and #20's ⛈️ storm (2026-09-19) was the first one there had ever
+    /// been. It failed the way an empty body always fails on Android — a black
+    /// square — and it *stuck*, because the tablet wrote those zero bytes into
+    /// its own `tile-cache` and decoded that file happily forever after.
+    ///
     /// Never call on the main thread: it blocks on a semaphore, and the `/ping`
     /// branch does its own `DispatchQueue.main.sync`.
     static func forward(_ pathAndQuery: String,
                         body: String = "",
-                        pingExtras: (() -> String)? = nil) -> (status: Int, contentType: String, body: String) {
+                        pingExtras: (() -> String)? = nil) -> (status: Int, contentType: String, body: Data) {
         if pathAndQuery == "/ping" || pathAndQuery.hasPrefix("/ping?") {
             let extras = pingExtras.map { collect in DispatchQueue.main.sync { collect() } } ?? ""
-            let effects = get(pathAndQuery, body: body, timeout: pingTimeout)?.body
-            return (200, "application/json", mergedPing(effectsJSON: effects, extras: extras))
+            // The merge is string surgery on a JSON object, so this one route
+            // does want text — and `/ping` is the one route guaranteed to be it.
+            let effects = get(pathAndQuery, body: body, timeout: pingTimeout)
+                .flatMap { String(data: $0.body, encoding: .utf8) }
+            return (200, "application/json", Data(mergedPing(effectsJSON: effects, extras: extras).utf8))
         }
         guard let answer = get(pathAndQuery, body: body, timeout: session.configuration.timeoutIntervalForRequest) else {
             // The tablet reads a 404 on `/sound/play/<file>` as "the Mac does not
@@ -67,9 +86,9 @@ enum EffectsProxy {
             // behaviour wanted when the effects app is not running. Everything
             // else says "temporarily unavailable" instead.
             if pathAndQuery.hasPrefix("/sound/play/") {
-                return (404, "application/json", "{\"ok\":false,\"reason\":\"effects-down\"}")
+                return (404, "application/json", Data("{\"ok\":false,\"reason\":\"effects-down\"}".utf8))
             }
-            return (503, "application/json", "{\"ok\":false,\"reason\":\"effects-down\"}")
+            return (503, "application/json", Data("{\"ok\":false,\"reason\":\"effects-down\"}".utf8))
         }
         return answer
     }
@@ -125,7 +144,7 @@ enum EffectsProxy {
     /// through so the caller sees the real 404/503.
     private static func get(_ pathAndQuery: String,
                             body: String,
-                            timeout: TimeInterval) -> (status: Int, contentType: String, body: String)? {
+                            timeout: TimeInterval) -> (status: Int, contentType: String, body: Data)? {
         let path = pathAndQuery.hasPrefix("/") ? pathAndQuery : "/" + pathAndQuery
         // The path arrives already percent-encoded (it came off the wire);
         // re-encoding it here would double every %XX.
@@ -137,13 +156,15 @@ enum EffectsProxy {
             req.httpBody = body.data(using: .utf8)
         }
 
-        var result: (status: Int, contentType: String, body: String)?
+        var result: (status: Int, contentType: String, body: Data)?
         let done = DispatchSemaphore(value: 0)
         session.dataTask(with: req) { data, response, _ in
             defer { done.signal() }
             guard let http = response as? HTTPURLResponse else { return }
             let type = http.value(forHTTPHeaderField: "Content-Type") ?? "text/plain; charset=utf-8"
-            result = (http.statusCode, type, String(data: data ?? Data(), encoding: .utf8) ?? "")
+            // The bytes, untouched. Anything that wants text decodes them itself
+            // — see the note on `forward`.
+            result = (http.statusCode, type, data ?? Data())
         }.resume()
         // +0.5 s over the request timeout: the semaphore is the backstop for a
         // task that never calls back at all, not the timeout itself.

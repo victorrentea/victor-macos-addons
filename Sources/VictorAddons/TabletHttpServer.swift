@@ -370,7 +370,7 @@ case testTerminalFont
             let result = self.respond(path: path, requestBody: Self.extractBody(raw))
             let response = Self.httpResponse(statusCode: result.status,
                                              contentType: result.contentType, body: result.body)
-            conn.send(content: response.data(using: .utf8),
+            conn.send(content: response,
                       completion: .contentProcessed { _ in conn.cancel() })
         }
     }
@@ -380,9 +380,15 @@ case testTerminalFont
     /// the main thread, and returns the HTTP-style result. `requestBody` is the
     /// decoded request body, consulted only by the POST-like routes.
     ///
+    /// The answer's body is **`Data`**: every route this app owns builds text and
+    /// converts once at the end, but a proxied one hands back whatever the
+    /// effects app sent — and `GET /tiles/<image>` sends a PNG. Routing that
+    /// through a `String` is what made every fetched tile picture arrive as zero
+    /// bytes; see the note on `EffectsProxy.forward`.
+    ///
     /// Must NOT be called on the main thread (it does `DispatchQueue.main.sync`);
     /// both callers invoke it from a background queue.
-    func respond(path: String, requestBody: String) -> (status: Int, contentType: String, body: String) {
+    func respond(path: String, requestBody: String) -> (status: Int, contentType: String, body: Data) {
         let route = Self.route(forPath: path)
 
         // Proxied routes never touch the main thread: the effects app may be
@@ -652,7 +658,7 @@ case testTerminalFont
             _ = EffectsProxy.forward("/effect/stop-all")
         }
 
-        return (statusCode, contentType, body)
+        return (statusCode, contentType, Data(body.utf8))
     }
 
     /// Extract the body from a raw HTTP request — everything after the blank
@@ -967,7 +973,11 @@ case testTerminalFont
         return (comps.path, comps.queryItems ?? [])
     }
 
-    private static func httpResponse(statusCode: Int, contentType: String, body: String) -> String {
+    /// The head is text, the body is bytes, and the two are concatenated as
+    /// `Data` — never as one `String`. A PNG put through a Swift string does not
+    /// survive the round trip, and `Content-Length` taken off the *re-encoded*
+    /// text would not match the bytes actually on the wire even if it did.
+    static func httpResponse(statusCode: Int, contentType: String, body: Data) -> Data {
         let reason: String
         switch statusCode {
         case 200: reason = "OK"
@@ -975,7 +985,7 @@ case testTerminalFont
         case 503: reason = "Service Unavailable"
         default: reason = "OK"
         }
-        let bytes = body.utf8.count
-        return "HTTP/1.1 \(statusCode) \(reason)\r\nContent-Type: \(contentType)\r\nContent-Length: \(bytes)\r\n\r\n\(body)"
+        let head = "HTTP/1.1 \(statusCode) \(reason)\r\nContent-Type: \(contentType)\r\nContent-Length: \(body.count)\r\n\r\n"
+        return Data(head.utf8) + body
     }
 }
