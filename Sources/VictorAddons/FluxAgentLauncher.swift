@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Opens a foreground Terminal window running `flux-agent.sh` — an unattended
 /// `claude -p` over an email thread from Victor, which mails its answer back as
@@ -33,9 +34,27 @@ import Foundation
 /// 2. **`inFlight`** here — an in-process set of message ids, so a second call
 ///    within one app run is a no-op even if the mark-read round trip is slow.
 /// 3. **An atomic `mkdir` lock** inside `flux-agent.sh`, keyed by message id.
+///
+/// ## Never two agents for one CONVERSATION either
+///
+/// The three layers above are per *message*; a reply Victor sends while a run is
+/// still going is a different message, so they let a second agent open on the
+/// same thread — two claudes, one conversation, two replies, and whichever
+/// finishes last overwrites the thread's session record. `isThreadBusy` is the
+/// per-*thread* answer: the poller defers such mail instead of launching, and
+/// `flux-agent.sh` folds it into the running session before it replies
+/// (`absorb_followups`). Busy means either an in-process launch (`inFlightThreads`)
+/// or a **live thread claim on disk** — `/tmp/flux-agent-thread-<sha1-16>.claim`,
+/// written by the script with its pid, which is the only layer that survives this
+/// app being restarted (as it is, several times a day) mid-run.
 enum FluxAgentLauncher {
     private static let lock = NSLock()
     private static var inFlight = Set<String>()
+    /// Thread ids with a launch in flight, counted rather than a `Set`: two
+    /// messages of one thread can legitimately be in flight at once (the second
+    /// having slipped through before the first claim existed), and the first one
+    /// to finish must not declare the thread free.
+    private static var inFlightThreads: [String: Int] = [:]
 
     /// How many Terminal agents we have ever opened, for the 📬 menu item's
     /// rocket count. Persisted, because this app restarts several times a day
@@ -56,7 +75,10 @@ enum FluxAgentLauncher {
     static func launch(messageId: String, threadId: String, subject: String) {
         lock.lock()
         let alreadyRunning = inFlight.contains(messageId)
-        if !alreadyRunning { inFlight.insert(messageId) }
+        if !alreadyRunning {
+            inFlight.insert(messageId)
+            inFlightThreads[threadId, default: 0] += 1
+        }
         lock.unlock()
 
         guard !alreadyRunning else {
@@ -65,7 +87,7 @@ enum FluxAgentLauncher {
         }
         guard let script = findScript() else {
             overlayError("flux-agent: flux-agent.sh not found — skipping")
-            release(messageId)
+            release(messageId, thread: threadId)
             return
         }
         overlayInfo("flux-agent: launching claude for \"\(subject)\"")
@@ -74,10 +96,61 @@ enum FluxAgentLauncher {
 
     /// Forget a message id once its run has certainly ended, so a later manual
     /// retry is possible. Called on launch failure and by the sentinel waiter.
-    private static func release(_ messageId: String) {
+    private static func release(_ messageId: String, thread threadId: String) {
         lock.lock()
         inFlight.remove(messageId)
+        if let n = inFlightThreads[threadId] {
+            if n <= 1 { inFlightThreads.removeValue(forKey: threadId) }
+            else { inFlightThreads[threadId] = n - 1 }
+        }
         lock.unlock()
+    }
+
+    /// Is an agent already working on this email thread?
+    ///
+    /// Asked by `FluxInboxPoller` before claiming a message: a `true` means the
+    /// mail is left **unread and unclaimed**, so the running `flux-agent.sh`
+    /// picks it up as steering on its next thread re-check — and if it has
+    /// already gone past that point, the next poll launches an agent for it
+    /// normally. Deferring is therefore never a way to lose an email.
+    static func isThreadBusy(_ threadId: String) -> Bool {
+        guard !threadId.isEmpty else { return false }
+        lock.lock()
+        let inProcess = (inFlightThreads[threadId] ?? 0) > 0
+        lock.unlock()
+        return inProcess || threadClaimIsLive(threadId)
+    }
+
+    /// Where `flux-agent.sh` writes its per-thread claim. The path formula is
+    /// the script's, character for character:
+    /// `printf %s "$THREAD_ID" | shasum | cut -c1-16` — i.e. the first 16 hex
+    /// digits of the SHA-1. Both sides must agree or the claim is invisible.
+    static func threadClaimPath(_ threadId: String) -> String {
+        let hex = Insecure.SHA1.hash(data: Data(threadId.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return "/tmp/flux-agent-thread-\(hex.prefix(16)).claim"
+    }
+
+    /// A claim counts only while the process that wrote it is still alive, so a
+    /// killed run — or a Mac that rebooted with a claim left in `/tmp` — can
+    /// never wedge a thread shut. `pidIsAlive` is injected for the tests.
+    static func threadClaimIsLive(_ threadId: String,
+                                  pidIsAlive: (Int32) -> Bool = defaultPidIsAlive) -> Bool {
+        let path = threadClaimPath(threadId)
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8),
+              let first = raw.split(separator: "\n").first,
+              let pid = Int32(first.trimmingCharacters(in: .whitespaces)),
+              pid > 0
+        else { return false }
+        return pidIsAlive(pid)
+    }
+
+    /// `kill(pid, 0)`: 0 means alive, `EPERM` means alive but not ours (it never
+    /// is here, but a false "dead" would launch the very second agent this is
+    /// meant to prevent).
+    static let defaultPidIsAlive: (Int32) -> Bool = { pid in
+        if kill(pid, 0) == 0 { return true }
+        return errno == EPERM
     }
 
     /// Resolve the script next to the source tree — same strategy as
@@ -132,14 +205,14 @@ enum FluxAgentLauncher {
             if FluxAgentVerdict.parse(verdict) == .interactive {
                 overlayInfo("flux-agent: 💬 interactive session waiting in Terminal")
             }
-            release(messageId)
+            release(messageId, thread: threadId)
         }
         do {
             try p.run()  // fire-and-forget: survives an app redeploy
             recordLaunch()
         } catch {
             overlayError("flux-agent: failed to launch Terminal — \(error.localizedDescription)")
-            release(messageId)
+            release(messageId, thread: threadId)
         }
     }
 

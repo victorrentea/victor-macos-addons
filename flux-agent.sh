@@ -18,6 +18,14 @@
 # not pile up. A failure lingers ~25s first, and everything is tee'd to a
 # per-day log, so closing never loses a post-mortem.
 #
+# ── A SECOND MAIL WHILE WE WORK IS STEERING, NOT A SECOND AGENT ─────────────
+# Victor often sends a correction a minute after the mail that started the run.
+# Before the reply goes out we therefore re-read the thread, claim (mark read)
+# anything new he sent meanwhile, and feed it into the SAME session as steering —
+# so one reply answers everything. The Mac side (FluxAgentLauncher.isThreadBusy)
+# sees this script's thread claim in /tmp and defers such mail instead of opening
+# a second Terminal on the same thread. See absorb_followups() below.
+#
 # ── INTERACTIVE MODE ────────────────────────────────────────────────────────
 # If the new mail contains the word "interactiv" (interactivă / interactive …),
 # the window is NOT closed: once the work is done and the reply is mailed, this
@@ -166,9 +174,35 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
     finish; sleep 3; exit 0
   fi
 fi
+# --- thread claim, so no second agent opens on this conversation -------------
+# The lock above is per MESSAGE; this one is per THREAD, and it exists for the
+# other side of the race: Victor replying again while this run is still going.
+# FluxAgentLauncher.isThreadBusy() reads this file (same path formula, same sha)
+# and defers that mail rather than launching a second agent for the same
+# conversation — absorb_followups() below picks it up instead. It holds a pid so
+# a killed run can never block the thread forever; a claim whose pid is gone is
+# simply not live.
+THREAD_CLAIM="/tmp/flux-agent-thread-$(printf '%s' "$THREAD_ID" | shasum | cut -c1-16).claim"
+OWNS_THREAD_CLAIM=0
+CLAIM_PID="$(sed -n '1p' "$THREAD_CLAIM" 2>/dev/null)"
+if [ -n "$CLAIM_PID" ] && kill -0 "$CLAIM_PID" 2>/dev/null; then
+  echo "⚠️  another flux-agent (pid $CLAIM_PID) is already working this thread — continuing anyway"
+else
+  printf '%s\n' "$$" > "$THREAD_CLAIM"
+  OWNS_THREAD_CLAIM=1
+fi
+# Only the owner removes it: a later run for the same thread must not have its
+# claim deleted by ours.
+release_thread_claim() {
+  [ "${OWNS_THREAD_CLAIM:-0}" = "1" ] || return 0
+  [ "$(sed -n '1p' "$THREAD_CLAIM" 2>/dev/null)" = "$$" ] && rm -f "$THREAD_CLAIM"
+  OWNS_THREAD_CLAIM=0
+  return 0
+}
+
 # NB: never `kill $HEARTBEAT` unguarded — an unset var would expand to 0, and
 # `kill 0` signals the whole process group (this window's shell included).
-trap 'stop_heartbeat; rm -rf "$LOCKDIR"; finish' EXIT
+trap 'stop_heartbeat; rm -rf "$LOCKDIR"; release_thread_claim; finish' EXIT
 
 WORK="$(mktemp -d /tmp/flux-agent-work.XXXXXX)"
 THREAD_JSON="$WORK/thread.json"
@@ -335,6 +369,34 @@ HEADER
   append_interactive_note
 }
 
+# Mail that landed WHILE claude was working. The report it just wrote has not
+# been sent yet, and that is the whole point: the new message is steering on
+# work in progress, so it goes into the same session and one reply covers both.
+write_steering_prompt() {
+  {
+    cat <<'HEADER'
+[STOP — do not finish yet. Victor sent ANOTHER email on this same thread while
+you were working, and NOTHING HAS BEEN MAILED: the report you just wrote is
+still sitting here unsent. So this is not a new task and not something to
+apologise for — it is steering on the work you have just done, exactly as if he
+had said it before you started.
+
+Do what the new message asks (it may correct, extend, narrow or cancel what you
+did), then write ONE final report covering everything — the original request and
+this follow-up together. That single message is what gets mailed, as one reply;
+he will never see the report you wrote a moment ago, so do not refer to it as
+something he has read. The rules are unchanged: he is not at the keyboard, never
+ask questions, plain text, short.]
+
+--- NEWER EMAIL FROM VICTOR ---
+HEADER
+    cat "$1"
+    printf '\n--- END OF NEWER EMAIL ---\n'
+  } > "$PROMPT_FILE"
+  cap_prompt
+  append_interactive_note
+}
+
 # --- resume this thread's conversation, if it has one ------------------------
 # A reply to an email is a follow-up, not a new task: the session that wrote the
 # previous answer still holds what it learned — which repo it touched, what it
@@ -470,6 +532,137 @@ else
   run_claude --session-id "$SESSION_ID"
 fi
 
+# --- fold in anything Victor sent while claude was working -------------------
+# Replying and only then noticing the follow-up is the failure this prevents:
+# he would get an answer to a question he had already retracted, and the Mac
+# would open a second agent on the same thread to answer the correction — two
+# agents, same conversation, two replies.
+#
+# Trust gate: identical to FluxMailPolicy on the Swift side — exact address in
+# the LAST angle-bracket group of `From:` plus dkim=pass/dmarc=pass for
+# gmail.com in the receiving MTA's stamp. A stranger's message in this thread is
+# therefore never absorbed and, just as important, never marked read here: it
+# stays unread so the poller can forward it to Victor.
+#
+# Claim before feeding: `unread` is the same server-side claim token the poller
+# uses, so whoever clears it owns that message. A PATCH that fails means we
+# simply leave the mail alone and the poller starts its own agent for it later.
+REPLY_MID="$MESSAGE_ID"        # reply under his NEWEST mail, not the first one
+ABSORBED_IDS="$WORK/absorbed-ids.txt"
+: > "$ABSORBED_IDS"
+
+# Unclaimed, trusted, not-yet-absorbed messages of this thread, oldest first.
+new_followups() {
+  local out="$1" code
+  code="$(curl -s -o "$WORK/thread-recheck.json" -w '%{http_code}' \
+    -H "Authorization: Bearer $API_KEY" "$API/inboxes/$INBOX/threads/$THREAD_ID")"
+  if [ "$code" != "200" ]; then
+    echo "  ⚠️  re-check of the thread failed (HTTP $code)"
+    printf '[]' > "$out"; return 1
+  fi
+  jq --arg mid "$MESSAGE_ID" --rawfile absorbed "$ABSORBED_IDS" '
+    # The real sender is the LAST angle-bracket group: a display name of
+    # "victorrentea@gmail.com <attacker@evil.com>" renders as Victor in a mail
+    # client, but the address that sent it is the one in the brackets.
+    def addr:
+      (. // "") | ascii_downcase
+      | (if contains("<") then (split("<") | last | split(">") | first) else . end)
+      | gsub("\\s"; "");
+    def authstamp:
+      ((.headers // {}) | to_entries
+       | map(select(.key | ascii_downcase == "authentication-results"))
+       | (.[0].value // "")) | ascii_downcase | gsub("\\s"; "");
+    ($absorbed | split("\n")) as $done
+    | [ .messages[]?
+        | select((.labels // []) | index("unread"))
+        | select((.from | addr) == "victorrentea@gmail.com")
+        | select(authstamp
+                 | contains("dkim=pass") and contains("header.i=@gmail.com")
+                   and contains("dmarc=pass") and contains("header.from=gmail.com"))
+        # $done is the input inside `index(...)`, so the id has to be bound
+        # first — `$done | index(.message_id)` would index the array with
+        # itself and jq stops the whole filter with a type error.
+        | select(.message_id != $mid)
+        | select(.message_id as $id | ($done | index($id)) | not)
+      ] | sort_by(.timestamp)
+  ' "$WORK/thread-recheck.json" > "$out" 2>/dev/null || { printf '[]' > "$out"; return 1; }
+  [ -s "$out" ] || printf '[]' > "$out"
+  return 0
+}
+
+# Take a message off the board by clearing `unread`, exactly as the poller does.
+claim_message() {
+  local mid="$1" enc code
+  if [ -n "${FLUX_AGENT_DRY_RUN:-}" ]; then
+    echo "  🧪 DRY RUN — would claim $mid"
+    return 0
+  fi
+  enc="$(jq -rn --arg v "$mid" '$v|@uri')"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
+    -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+    --data '{"remove_labels":["unread"]}' \
+    "$API/inboxes/$INBOX/messages/$enc")"
+  case "$code" in
+    2*) return 0 ;;
+    *)  echo "  ⚠️  could not claim $mid (HTTP $code) — leaving it to the poller"; return 1 ;;
+  esac
+}
+
+# Loop, because a reply can arrive while we are answering the previous one.
+# Bounded: three rounds is generous for a burst, and a fourth would mostly mean
+# Victor is still typing — that mail is better served by its own agent.
+absorb_followups() {
+  local round=0 n claimed mid
+  local fups="$WORK/followups.json" steer="$WORK/steering.txt"
+  while [ "$round" -lt 3 ]; do
+    round=$((round + 1))
+    new_followups "$fups" || return 0
+    n="$(jq 'length' "$fups" 2>/dev/null || echo 0)"
+    if [ "${n:-0}" -eq 0 ]; then
+      [ "$round" -eq 1 ] && echo "  📭 nothing new arrived while claude was working"
+      return 0
+    fi
+    echo "  📬 $n newer mail on this thread — folding it into the same session"
+    : > "$steer"
+    claimed=0
+    while IFS= read -r mid; do
+      [ -n "$mid" ] || continue
+      claim_message "$mid" || continue
+      printf '%s\n' "$mid" >> "$ABSORBED_IDS"
+      REPLY_MID="$mid"
+      jq -r --arg mid "$mid" '
+        .[] | select(.message_id == $mid)
+        | "\n[\(.timestamp)]\n" +
+          ((.extracted_text // .text // .preview // "(empty body)") | rtrimstr("\n"))
+      ' "$fups" >> "$steer"
+      claimed=$((claimed + 1))
+    done < <(jq -r '.[].message_id' "$fups")
+    [ "$claimed" -gt 0 ] || return 0
+    # A follow-up may be the mail that asks for the live session.
+    grep -qi 'interactiv' "$steer" 2>/dev/null && INTERACTIVE=1
+    cp "$REPLY_FILE" "$WORK/reply-before-followup.txt"
+    write_steering_prompt "$steer"
+    echo "  Prompt  : $(wc -c < "$PROMPT_FILE" | tr -d ' ') bytes (steering)"
+    run_claude --resume "$SESSION_ID"
+    # A failed extra round must not cost Victor the answer we already have: mail
+    # the earlier report and say plainly that the newer mail was not processed.
+    if [ "$STATUS" -ne 0 ] || [ ! -s "$REPLY_FILE" ]; then
+      echo "  ⚠️  the follow-up run failed (status $STATUS) — mailing the earlier report with a note"
+      cp "$WORK/reply-before-followup.txt" "$REPLY_FILE"
+      printf '\n\n---\n(Another mail from you arrived while I was working; the extra run over it failed, so the report above does NOT take it into account. Resend it and I will pick it up.)\n' >> "$REPLY_FILE"
+      STATUS=0
+      return 0
+    fi
+  done
+  echo "  ⚠️  stopped folding in new mail after $round rounds — the rest gets its own agent"
+}
+
+if [ "$STATUS" -eq 0 ] && [ -s "$REPLY_FILE" ]; then
+  echo
+  echo "──────────────────── re-checking the inbox before replying ───────────────"
+  absorb_followups
+fi
+
 # Remember the conversation so Victor's next reply on this thread continues it
 # instead of starting over. Recorded whenever claude produced something: even a
 # partial run knows more about this thread than a cold start would.
@@ -499,10 +692,10 @@ jq -n --rawfile body "$REPLY_FILE" --arg to "$TRUSTED_SENDER" \
 
 # The message id is a Message-ID (<...@mail.gmail.com>) full of characters that
 # are illegal in a URL path — unencoded it makes the API answer a bare 400.
-MID_ENC="$(jq -rn --arg v "$MESSAGE_ID" '$v|@uri')"
+MID_ENC="$(jq -rn --arg v "${REPLY_MID:-$MESSAGE_ID}" '$v|@uri')"
 
 if [ -n "${FLUX_AGENT_DRY_RUN:-}" ]; then
-  echo "🧪 DRY RUN — not sending. The reply would have been:"
+  echo "🧪 DRY RUN — not sending. The reply would have been (in reply to ${REPLY_MID:-$MESSAGE_ID}):"
   echo "─────────────────────────────────────────────────────────────────────────"
   cat "$REPLY_FILE"
   echo "─────────────────────────────────────────────────────────────────────────"
@@ -566,6 +759,7 @@ if [ "$INTERACTIVE" = "1" ]; then
   stop_heartbeat
   trap - EXIT
   rm -rf "$LOCKDIR"
+  release_thread_claim
   exec 1>&3 2>&4
   printf '\033]0;💬 Flux — %s\007' "$SUBJECT"
   afplay /System/Library/Sounds/Hero.aiff >/dev/null 2>&1 &

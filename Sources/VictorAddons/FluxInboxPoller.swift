@@ -150,6 +150,36 @@ enum FluxMailPolicy {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
+    /// Split fresh mail into what may be launched now and what must wait for the
+    /// agent already running on its thread.
+    ///
+    /// A reply Victor sends while a run is still going is *steering on that run*,
+    /// not a second task: `flux-agent.sh` re-reads its thread before mailing and
+    /// folds such mail into the same session, so one reply answers everything.
+    /// Launching a second agent instead would put two claudes on one
+    /// conversation — the race Victor asked to be rid of.
+    static func splitByBusyThread(_ fresh: [FluxMessage],
+                                  isBusy: (String) -> Bool)
+    -> (launch: [FluxMessage], deferred: [FluxMessage]) {
+        var launch: [FluxMessage] = []
+        var deferred: [FluxMessage] = []
+        for message in fresh {
+            if isBusy(message.threadId) { deferred.append(message) } else { launch.append(message) }
+        }
+        return (launch, deferred)
+    }
+
+    /// How far the watermark may advance in a poll that deferred something.
+    ///
+    /// A deferred message is deliberately left **unread and unremembered**, so
+    /// the only thing that brings it back is being newer than the watermark. If
+    /// a *later* message from another thread were allowed to push the watermark
+    /// past it, the deferral would silently become a deletion. Nothing at or
+    /// after the oldest deferred message may therefore move it.
+    static func watermarkCeiling(deferred: [FluxMessage]) -> Date? {
+        deferred.map(\.timestamp).min()
+    }
+
     /// Mail that is NOT from Victor: same freshness rules, opposite trust verdict.
     ///
     /// `victor.flux@agentmail.to` is a public address, so this is where everything
@@ -253,6 +283,9 @@ final class FluxInboxPoller {
     static let arrivalSettleDelay: TimeInterval = 8
     /// One arrival = at most one poll, however many events macOS emits for it.
     static let arrivalCoalesceWindow: TimeInterval = 120
+    /// How soon to look again after leaving mail to a running agent — long
+    /// enough for that agent to absorb it, short enough not to look broken.
+    static let deferredRecheckDelay: TimeInterval = 90
 
     /// How many recent messages each poll inspects. Comfortably more than a
     /// 10-minute window can hold, so nothing is missed between ticks.
@@ -278,6 +311,9 @@ final class FluxInboxPoller {
     /// When the last AC-connect / wake-triggered poll ran. Lives on `queue` like
     /// every other mutable field here.
     private var lastArrivalPollAt: Date?
+
+    /// Whether a post-deferral re-check is already armed. On `queue`.
+    private var deferredRecheckScheduled = false
 
     // Diagnostics for the /test/email snapshot and the 📬 menu item.
     //
@@ -399,20 +435,34 @@ final class FluxInboxPoller {
                     case .success(let messages):
                         let fresh = FluxMailPolicy.newMail(
                             in: messages, since: self.watermark, seen: Set(self.seen))
+                        // Mail for a thread whose agent is still running is left
+                        // exactly as it is — unread, unremembered — for that
+                        // agent to fold into its own reply. See
+                        // `splitByBusyThread` and `watermarkCeiling`.
+                        let split = FluxMailPolicy.splitByBusyThread(
+                            fresh, isBusy: FluxAgentLauncher.isThreadBusy)
+                        let ceiling = FluxMailPolicy.watermarkCeiling(deferred: split.deferred)
                         self.setStatus {
                             $0.error = nil
-                            $0.matchCount = fresh.count
+                            $0.matchCount = split.launch.count
                             $0.outcome = fresh.isEmpty
                                 ? "polled — nothing new (\(messages.count) inspected)"
-                                : "polled — \(fresh.count) new from \(FluxMailPolicy.trustedSender)"
+                                : "polled — \(split.launch.count) new from \(FluxMailPolicy.trustedSender)"
+                                  + (split.deferred.isEmpty ? ""
+                                     : ", \(split.deferred.count) deferred to a running agent")
                         }
                         // Every completed poll leaves a trace, including the
                         // boring ones — "nothing arrived" and "we never looked"
                         // must not read the same in the log.
                         overlayInfo("📬 inbox checked: \(fresh.count) new"
                                     + " (\(messages.count) inspected)")
-                        for message in fresh {
-                            self.remember(message)
+                        if !split.deferred.isEmpty {
+                            overlayInfo("📬 \(split.deferred.count) lăsat(e) agentului care rulează"
+                                        + " deja pe firul lor — le preia el, nu pornesc altul")
+                            self.scheduleDeferredRecheck()
+                        }
+                        for message in split.launch {
+                            self.remember(message, ceiling: ceiling)
                             // CLAIM FIRST, notify second — and fail closed. Clearing
                             // `unread` server-side is what guarantees no second agent
                             // ever starts for this email, so if the claim fails we do
@@ -437,7 +487,7 @@ final class FluxInboxPoller {
                             overlayInfo("📬 \(strangers.count) de la altcineva — redirectionez")
                         }
                         for message in strangers {
-                            self.remember(message)
+                            self.remember(message, ceiling: ceiling)
                             self.claim(message) { claimed in
                                 guard claimed else {
                                     overlayError("FluxInboxPoller: could not claim \(message.messageId) — not forwarding")
@@ -454,6 +504,29 @@ final class FluxInboxPoller {
                     completion?()
                 }
             }
+        }
+    }
+
+    /// Look again soon after deferring mail, instead of waiting out the full
+    /// 10-minute tick.
+    ///
+    /// The deferred message is normally absorbed by the running agent and simply
+    /// vanishes from the next poll (it is no longer `unread`). The case this
+    /// covers is the other one: the agent had already re-checked its thread and
+    /// replied, so nobody will ever fold that mail in and it has to become an
+    /// agent of its own. Ten minutes of silence after Victor follows up is long
+    /// enough to look broken.
+    ///
+    /// One chain at a time — a re-check that defers again re-arms it — and still
+    /// through the normal power gate: a deferred mail is not a reason to run an
+    /// agent on battery.
+    private func scheduleDeferredRecheck() {
+        guard !deferredRecheckScheduled else { return }
+        deferredRecheckScheduled = true
+        queue.asyncAfter(deadline: .now() + Self.deferredRecheckDelay) { [weak self] in
+            guard let self else { return }
+            self.deferredRecheckScheduled = false
+            self.poll(force: false, completion: nil)
         }
     }
 
@@ -484,8 +557,14 @@ final class FluxInboxPoller {
     }
 
     /// Advance the watermark and record the id. Always on `queue`.
-    private func remember(_ message: FluxMessage) {
-        if message.timestamp > watermark {
+    ///
+    /// `ceiling` is the oldest message this poll deferred: that one is coming
+    /// back on a later poll *only* because it is still newer than the watermark,
+    /// so nothing at or after it may move the watermark (see
+    /// `FluxMailPolicy.watermarkCeiling`). The id still goes into `seen`.
+    private func remember(_ message: FluxMessage, ceiling: Date? = nil) {
+        let blockedByCeiling = ceiling.map { message.timestamp >= $0 } ?? false
+        if message.timestamp > watermark && !blockedByCeiling {
             watermark = message.timestamp
             UserDefaults.standard.set(watermark, forKey: Self.watermarkKey)
         }
