@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 19, 00:30"
+    static let BUILD_TIME = "Sep 19, 18:15"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -57,6 +57,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var isTranscriptionPausedByBattery: Bool = false
     private var transcribeSource: String = ""
     private var availableSources: [String] = []
+
+    /// The 🎬 row. Its title is a **readout** — minutes and dollars — so it is
+    /// repainted by `setLiveCaptions` on every state change and once a second
+    /// while the menu is open.
+    private var liveCaptionsItem: NSMenuItem!
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
     private(set) var tailItem: NSMenuItem!
@@ -87,6 +92,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onToggleDarkMode: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onToggleRecordRaw: (() -> Void)?
+
+    /// 🎬 Live subtitles, clicked. One switch, both ways.
+    var onToggleLiveCaptions: (() -> Void)?
+
+    /// Once a second while the menu is open — for rows whose title is a clock.
+    var onMenuTick: (() -> Void)?
     var onToggleVoiceCorpus: (() -> Void)?
     var onKillPort: ((Int) -> Void)?
     var onKillPortPrompt: (() -> Void)?
@@ -297,6 +308,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the whole contract: it checks the topic being taught, not the
         // sentence that just ended.
         addItem("🔬 Fact-check last 10 min", action: #selector(researchProofAction))
+
+        // 🎬 Live subtitles — the band across the bottom of the projector,
+        // fed by ElevenLabs Scribe v2 Realtime **only while it is on**.
+        //
+        // **Top level, and not inside 💬 Transcribing**, although both are
+        // speech. That submenu is the continuous, local, free one and everything
+        // in it is a *setting* of it; this is a feature you fire, watch, and
+        // turn off — and it is the one row in this menu that spends money while
+        // it sits there. Nesting it under the other would read as "the same
+        // thing, turned up", which is the one thing it must not be taken for.
+        //
+        // Directly under the two rows that also act on what was just said, for
+        // their reason: the eye looking for anything to do with the room's
+        // speech should find all three together.
+        liveCaptionsItem = addItem("🎬 Live subtitles", action: #selector(toggleLiveCaptionsAction))
 
         // 📬 Check task inbox — the manual override for the poller's power
         // gate. Scheduled polls only run on AC, so while unplugged this item is
@@ -616,6 +642,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             // Lets a "checking…" click resolve to its real result without the
             // user having to close and reopen the menu.
             self?.updateFluxInboxItem()
+            // The 🎬 row's title is minutes and dollars; held open for a minute
+            // it would otherwise be quoting a number from when the menu opened.
+            self?.onMenuTick?()
         }
     }
 
@@ -764,6 +793,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func monitorAction() {
         onMonitor?()
+    }
+
+    @objc private func toggleLiveCaptionsAction() {
+        onToggleLiveCaptions?()
+    }
+
+    /// - Parameter title: built by `LiveCaptionsController.menuTitle`, because
+    ///   only it knows the elapsed minutes and the rate. The menu draws what it
+    ///   is given and never computes a cost of its own — two places deciding
+    ///   what a feature costs is how a row comes to disagree with an invoice.
+    func setLiveCaptions(on: Bool, title: String) {
+        guard liveCaptionsItem != nil else { return }
+        liveCaptionsItem.title = title
+        liveCaptionsItem.state = on ? .on : .off
     }
 
     @objc private func toggleRecordRawAction() {

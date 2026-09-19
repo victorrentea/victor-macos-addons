@@ -8,6 +8,53 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
 
   **Alive ≠ working — the output watchdog.** The 60 s heartbeat used to check only that the process existed, which is not the same as it doing anything: a capture thread inside whisper can die on its own while the process, its other thread and the PID all stay healthy, so the icon reads 💬 and not one word gets transcribed for hours (observed 2026-07-28: 4 h of nothing). The heartbeat therefore also watches the **output** — when whisper is alive on AC but no *speech* has landed for 5 min it is killed and restarted (`TranscriptionController.shouldForceRestart`, pure + unit-tested), gated by a 5 min warm-up since the last start (a fresh whisper is silent while it loads its model) and a 10 min floor between forced restarts (if a restart didn't fix it, looping is worse than the silence). "Speech" is `TranscriptActivity`, not the file's mtime: whisper writes `--- Victor → 💻 ---` device markers into the same transcript, and each one bumped the mtime and so granted another full staleness window — which is exactly why the 😶😶😶 warning kept clearing itself while nothing was being transcribed. Only `[HH:MM] Speaker: text` lines count, and `TranscriptionWatcher` now uses the same probe. **Never interpolate the silence value directly**: it is `.infinity` when nothing has been transcribed all day — the likeliest case when the watchdog fires — and `Int(.infinity)` *traps*, which crashed the whole app the first two times this triggered (2026-07-29, `EXC_BREAKPOINT` in `heartbeatTick`), before the restart it was announcing. Go through `TranscriptionController.describe`.
 
+## 🎬 Live subtitles (2026-09-19) — ElevenLabs, and only while it is on
+
+- **It is not the 💬 transcription and must never be confused for it.** The continuous one stays
+  exactly where it was: `mlx-whisper`, **local**, two channels, automatic on AC, writing the day's
+  `[HH:MM] text` file that the 🎙️ picker and the summarizer read. Victor, asked directly:
+  *"Transcrierea continua de pe ac a mea+sala trebuie sa ramana pe mlx, locala. Doar cand activez
+  subtitrarile din meniul macos addons, doar atunci pleaca vocile streaming la eleven labs,
+  aparand pe ecran live. Doar cat sunt subtitles pornite."* Nothing in this section changes a line
+  of that one.
+- **A band across the bottom of the built-in retina** — the screen a venue projector mirrors, not
+  the "main" screen, which at a venue is the ASUS (`DisplayArrangementManager`). Click-through, on
+  every Space, above everything. It holds ~190 characters and older sentences fall off the front:
+  it is a caption read at a glance from the back of a room, not a transcript window.
+- **The engine is ElevenLabs Scribe v2 Realtime over a WebSocket**
+  (`wss://api.elevenlabs.io/v1/speech-to-text/realtime`), 250 ms chunks of 16 kHz mono int16 from
+  the **system default input**. The batch endpoint that Walkie Talkie uses is both cheaper and
+  *better* — measured on one clip, batch `scribe_v2` heard `label of the tooltip` where realtime
+  committed `label on the tooltip`, a smaller model — but a subtitle that arrives after the
+  sentence is over is not a subtitle.
+- **Two inks, because a partial is a guess.** `partial_transcript` is drawn at **55 %** and
+  `committed_transcript` solid. Measured 2026-09-19 on one clip: the partial rewrote itself four
+  times over two seconds (`label on the tool` → `label of the tooltip` → `label on the tool tip` →
+  `label of the tooltip`). In one ink that reads as the screen glitching; dimmed, it reads as *the
+  words are still arriving*, which is what it is.
+- **It lags ~1 second, not 150 ms.** Measured end to end feeding a clip at real time: words appear
+  **0.8–1.3 s** after they are spoken. The 150 ms on the pricing page is the model's share; the
+  rest is the network, their VAD and the 250 ms chunk.
+- **The row says what it costs while it is costing it** — `🎬 Live subtitles — 12 min · $0.08 ·
+  DJI MIC`, at $0.39/h. The 🔴 raw capture's rule, for the same reason: a state you cannot see is a
+  state you forget to turn off, and this one bills. The microphone is named because the failure
+  that looks most like "this feature is bad at its job" is it listening to the wrong device.
+- **Top level in the menu, not inside 💬 Transcribing.** That submenu is settings *of* the local
+  transcription; this is a feature you fire, watch and turn off. Nesting it would read as "the
+  same thing, turned up".
+- **Nothing fails quietly.** The socket dropping, a bad key, the microphone going — each takes the
+  feature down, leaves the band up for six seconds saying why, plays a Basso on the bottom-left
+  pill and repaints the row. A subtitle band that merely stops updating is indistinguishable from
+  a room that has gone quiet. `applicationWillTerminate` closes the socket and the microphone too:
+  quitting mid-sentence is exactly when nobody would think to turn them off.
+- **The key is the one already on this Mac.** `ELEVENLABS_API_KEY` from
+  `~/.training-assistants-secrets.env` if it is there, otherwise
+  **`~/.walkie-talkie/elevenlabs.env`**, which is where the relay keeps it. Two copies of one
+  secret is how they come to disagree.
+- **Test hook:** `GET /test/live-captions?on=1` / `?on=0` on `:55123`. The feature opens a
+  microphone, a socket and a panel on the projector, and none of that is reachable from a script
+  through an `NSMenuItem`.
+
 ## 🎙️ "Ce tocmai am spus" picker (menu row)
 
 - **🎙️ "Ce tocmai am spus" picker — a menu row, no shortcut since 2026-09-17** (**🎙️ Distil the last 60 s of speech → 📋**, directly above 🔬 Fact-check, because the pair is the same question: act on what was just *said* in the room). It owned **⌘⌃V** until then and lost it to the clipboard→notes append, which is reached for a dozen times a day in any app where this one only means something while Whisper is running — Victor's call. The row carries no key equivalent, because the feature genuinely has none now. — **the last 60 seconds of transcript, distilled into five things worth pasting**; click one (or press its digit) and it goes to the clipboard, which the bottom-left pill then quotes back. Replaced the *Emotional 🥹 Paste* that used to own this key (capture the clipboard on ⌘V, re-clean it on ⌘⌃V via Haiku): both answer "give me a tidy version of that", but the old one could only act on text already written down somewhere, and what gets lost mid-workshop is the sentence just *said out loud*.

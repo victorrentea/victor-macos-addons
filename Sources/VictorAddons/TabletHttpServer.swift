@@ -91,6 +91,12 @@ case testTerminalFont
     /// Force the dictation window open/closed, to exercise the Chrome
     /// pause/resume bridge without actually dictating (`?active=0|1`).
     case testDictation(Bool)
+    /// 🎬 Live subtitles on/off — `GET /test/live-captions?on=0｜1`.
+    case testLiveCaptions(Bool)
+    /// `GET /test/live-captions/state` — is it on, and why not.
+    case testLiveCaptionsState
+    /// `GET /test/live-captions/say?text=…&partial=…` — draw the band without talking.
+    case testLiveCaptionsSay(String?, String?)
         /// Force-apply the projector/standard display arrangement now and return
         /// a JSON snapshot of the detected displays + applied scene (test hook).
         case testProjector
@@ -255,6 +261,15 @@ case testTerminalFont
     var onTestGroupPhotoBreakEnd: (() -> Void)?
     /// Force the dictation window; returns the bridge's JSON snapshot.
     var onTestDictation: ((Bool) -> String)?
+
+    /// **The 🎬 switch, without the menu.** The feature opens a microphone, a
+    /// socket and a panel on the projector, and none of those can be exercised
+    /// from a script through an `NSMenuItem`. It is also the only way to check
+    /// that turning it off really closes the socket rather than merely hiding
+    /// the band.
+    var onTestLiveCaptions: ((Bool) -> String)?
+    var onTestLiveCaptionsState: (() -> String)?
+    var onTestLiveCaptionsSay: ((String?, String?) -> String)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
     var onTestProjector: (() -> String)?
     /// JSON snapshot of the presenting state + display classification.
@@ -548,6 +563,15 @@ case testTerminalFont
             case .testDictation(let active):
                 contentType = "application/json"
                 body = self.onTestDictation?(active) ?? "{\"error\":\"dictation bridge unavailable\"}"
+            case .testLiveCaptions(let on):
+                contentType = "application/json"
+                body = self.onTestLiveCaptions?(on) ?? "{\"error\":\"live captions unavailable\"}"
+            case .testLiveCaptionsState:
+                contentType = "application/json"
+                body = self.onTestLiveCaptionsState?() ?? "{\"error\":\"live captions unavailable\"}"
+            case .testLiveCaptionsSay(let text, let partial):
+                contentType = "application/json"
+                body = self.onTestLiveCaptionsSay?(text, partial) ?? "{\"error\":\"live captions unavailable\"}"
             case .testHotspot:
                 contentType = "application/json"
                 body = self.onTestHotspot?() ?? "{\"error\":\"hotspot fallback unavailable\"}"
@@ -818,6 +842,14 @@ case testTerminalFont
         case "/test/dictation":
             let raw = queryItems.first(where: { $0.name == "active" })?.value ?? "1"
             return .testDictation(raw != "0" && raw.lowercased() != "false")
+        case "/test/live-captions/state":
+            return .testLiveCaptionsState
+        case "/test/live-captions/say":
+            return .testLiveCaptionsSay(queryItems.first(where: { $0.name == "text" })?.value,
+                                        queryItems.first(where: { $0.name == "partial" })?.value)
+        case "/test/live-captions":
+            let raw = queryItems.first(where: { $0.name == "on" })?.value ?? "1"
+            return .testLiveCaptions(raw != "0" && raw.lowercased() != "false")
         case "/test/projector":
             return .testProjector
         case "/test/presentation":

@@ -106,6 +106,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// there's an audience to photograph.
     private var daemonConnected = false
     private var statusBanner: StatusBanner?
+
+    /// 🎬 Live subtitles — the projector band fed by ElevenLabs Scribe v2
+    /// Realtime, off unless Victor turns it on. Deliberately unrelated to the
+    /// 💬 transcription, which stays local on `mlx-whisper`.
+    /// → `LiveCaptionsController`
+    private let liveCaptions = LiveCaptionsController()
     /// Auto-arranges displays for the projector workflow (mirror Retina@1080p +
     /// ASUS-primary on connect; revert to Retina-main + ASUS-right on disconnect).
     private var displayArrangementManager: DisplayArrangementManager?
@@ -633,6 +639,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 hours: RawAudioRecording.hoursRecorded(in: self.transcriptionFolder))
         }
         refreshRecordRawTitle()
+
+        // 🎬 Live subtitles. The row is a readout, so it is repainted from the
+        // controller on every state change and once a second while the menu is
+        // open — a title quoting minutes has to be allowed to age in place.
+        liveCaptions.onStateChange = { [weak self] in
+            guard let self else { return }
+            self.menuBarManager.setLiveCaptions(on: self.liveCaptions.isOn,
+                                                title: self.liveCaptions.menuTitle)
+        }
+        liveCaptions.onFailed = { [weak self] why in
+            self?.statusBanner?.showNow(text: why,
+                                        sound: NSSound(named: NSSound.Name("Basso")),
+                                        visibleDuration: 8)
+        }
+        menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
+        menuBarManager.onMenuTick = { [weak self] in
+            guard let self, self.liveCaptions.isOn else { return }
+            self.menuBarManager.setLiveCaptions(on: true, title: self.liveCaptions.menuTitle)
+        }
+        menuBarManager.setLiveCaptions(on: false, title: liveCaptions.menuTitle)
+
         menuBarManager.onToggleRecordRaw = { [weak self] in
             guard let self else { return }
             let folder = self.transcriptionFolder
@@ -1350,6 +1377,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestDictation = { [weak bridge] active in
             bridge?.setActive(active)
             return "{\"ok\":true,\"active\":\(active)}"
+        }
+        // 🎬 Live subtitles, from a script. On the main queue because it puts a
+        // panel up and opens a microphone, and this arrives on the server's own
+        // thread.
+        tabletServer?.onTestLiveCaptions = { [weak self] on in
+            guard let self else { return "{\"error\":\"gone\"}" }
+            DispatchQueue.main.async { on ? self.liveCaptions.start() : self.liveCaptions.stop(why: nil) }
+            return "{\"ok\":true,\"on\":\(on)}"
+        }
+        tabletServer?.onTestLiveCaptionsState = { [weak self] in
+            guard let self else { return "{\"error\":\"gone\"}" }
+            let payload = try? JSONSerialization.data(withJSONObject: self.liveCaptions.diagnostics)
+            return payload.flatMap { String(data: $0, encoding: .utf8) } ?? "{\"error\":\"undescribable\"}"
+        }
+        tabletServer?.onTestLiveCaptionsSay = { [weak self] text, partial in
+            guard let self else { return "{\"error\":\"gone\"}" }
+            DispatchQueue.main.async { self.liveCaptions.preview(committed: text, partial: partial) }
+            return "{\"ok\":true}"
         }
         audioManager.start()
 
@@ -2136,6 +2181,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         } catch {
             overlayError("Failed to open monitor: \(error)")
         }
+    }
+
+    /// **Nothing outlives the app holding a microphone or a socket.** The
+    /// subtitles are the one feature here that does both, and quitting
+    /// mid-sentence is exactly when nobody would think to turn them off.
+    func applicationWillTerminate(_ notification: Notification) {
+        liveCaptions.shutdown()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
