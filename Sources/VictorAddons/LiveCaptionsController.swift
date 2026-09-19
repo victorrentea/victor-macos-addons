@@ -35,9 +35,25 @@ final class LiveCaptionsController {
     /// Repaint the menu row — the title is a readout and it goes stale by the
     /// minute.
     var onStateChange: (() -> Void)?
-    /// Something worth a bottom-left pill. Only ever a failure: turning it on
-    /// and off is a thing he did on purpose and watched happen.
+    /// Something worth a bottom-left pill, with a Basso behind it. Only ever a
+    /// failure — the switch moving on purpose is `onSwitched`.
     var onFailed: ((String) -> Void)?
+
+    /// **The switch moved, either way**, said on the *trainer's* screen.
+    ///
+    /// Restored from `4dba31a`, which arrived at it by watching the removed
+    /// feature fail rather than by reasoning about it: the band draws on the
+    /// built-in retina **for the room**, and the person who flipped the switch
+    /// is usually looking at another screen entirely — so the one thing missing
+    /// was the switch saying so where *he* is. The obvious counter-argument
+    /// ("he turned it on himself, he knows") is the one that was tried first and
+    /// did not survive contact: what he can see from the other screen is not the
+    /// band, it is a menu he has already closed.
+    ///
+    /// Deliberately **not** folded into `onStateChange`, which also fires once a
+    /// second while the menu is open so the minutes in the row can age in place
+    /// — that would raise a pill every second.
+    var onSwitched: ((Bool) -> Void)?
 
     private var startedAt: Date?
 
@@ -80,6 +96,7 @@ final class LiveCaptionsController {
         lastError = nil
         startedAt = Date()
         onStateChange?()
+        onSwitched?(true)
         stream.start { [weak self] why in
             guard let self = self, let why = why else { return }
             self.isOn = false
@@ -95,7 +112,17 @@ final class LiveCaptionsController {
     /// - Parameter why: nil when Victor turned it off himself, which needs no
     ///   explanation and gets none.
     func stop(why: String?) {
-        guard isOn || stream.isRunning else { return }
+        // **`overlay.isVisible` is in this guard because of `preview`.** A
+        // `/test/live-captions/say` puts the band up without ever starting the
+        // stream, so `isOn` is false — and the first version of this guard
+        // therefore returned early and left a black band across the bottom of
+        // the projected screen with nothing able to take it down but a restart
+        // of the app. Caught on 2026-09-19 doing exactly that: `?on=0` answered
+        // `{"ok":true,"on":false}` while the panel was still on screen. The
+        // switch has to be able to undo everything that can put the band up,
+        // not just the path it knows about.
+        guard isOn || stream.isRunning || overlay.isVisible else { return }
+        let wasOn = isOn
         stream.stop()
         let spent = minutes
         isOn = false
@@ -116,6 +143,10 @@ final class LiveCaptionsController {
         } else {
             overlay.hide()
             overlayInfo(String(format: "LiveCaptions off — %.0f min, $%.2f", spent, spent / 60 * LiveCaptionsStream.dollarsPerHour))
+            // Only on a deliberate stop of something that was actually running:
+            // a failure already raises its own pill carrying the reason, and
+            // clearing a `preview` band never turned anything on to report off.
+            if wasOn { onSwitched?(false) }
         }
         onStateChange?()
     }

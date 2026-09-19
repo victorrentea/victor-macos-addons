@@ -1,11 +1,31 @@
 import AppKit
 
-/// **The subtitle band across the bottom of the room's screen** (2026-09-19).
+/// **The subtitle band across the bottom of the room's screen.**
 ///
 /// A caption panel, not a transcript window: it holds the last couple of lines
 /// and nothing else. The transcript already exists, all day, in
 /// `TRANSCRIPTION_FOLDER`; what this is for is the person in the third row who
 /// missed a word.
+///
+/// ## This band has stood on this screen before, and the geometry is restored
+///
+/// A live-subtitle feature shipped on 2026-09-09 (`LiveCaptions` +
+/// `CaptionStream`, on ⌘⌃U) and was deleted the same day — *"remove the feature
+/// of subtitles completely. thoroughly. leave no trace."* (`c9a6141`). **What
+/// was wrong with it was never the band, it was the source.** `mlx-whisper`
+/// transcribes in 12 s chunks, so a line reached the screen twelve to twenty
+/// seconds after it was spoken, and a subtitle that arrives after the sentence
+/// is over is not a subtitle. `4dba31a` has the measurement that says it out
+/// loud: switched on at 19:26:51, off at 19:27:08 — seventeen seconds in which
+/// no line could possibly have landed. Scribe v2 Realtime (~1 s end to end) is
+/// that one defect fixed; everything below is the part that was already right.
+///
+/// **So these numbers are measured off Victor's drawing, not chosen here.** He
+/// drew the band in red over a screenshot: a strip along the bottom, **full
+/// width, flush to the edge**, about a tenth of the screen tall with one line in
+/// it and a bit over a quarter once several had accumulated. Re-deriving a
+/// centred rounded card from first principles would throw away the one part of
+/// the removed feature that had already been through his hands.
 ///
 /// ## Two colours, because a partial is a guess
 ///
@@ -25,22 +45,33 @@ import AppKit
 /// display, so "the main screen" is exactly the screen the room cannot see.
 final class LiveCaptionsOverlay {
 
-    /// How much of the screen's width the band takes. Wide, because a caption
-    /// that wraps every six words is a caption nobody can read at a distance.
-    private static let widthFraction: CGFloat = 0.86
-    /// Off the bottom edge. Clear of a projector's own overscan and of anything
-    /// a slide puts in its last inch.
-    private static let bottomMargin: CGFloat = 64
-    /// **Two lines' worth of characters, near enough.** The band is *read at a
-    /// glance from the back of a room*; a paragraph up there is not a caption,
-    /// it is homework nobody asked for. Older sentences fall off the front,
-    /// which is the same trade every subtitle track makes.
-    private static let maxCharacters = 190
+    /// **Full width, flush to the bottom edge, growing upward.** Both fractions
+    /// come off Victor's red drawing (see above).
+    ///
+    /// Growing *upward* out of a fixed floor is what keeps the newest words at a
+    /// constant height. A plate that grew downward, or one centred on a fixed
+    /// middle, slides the line currently being read out from under an eye that
+    /// is already there, every time another line arrives.
+    private static let minPlateFraction: CGFloat = 0.10
+    private static let maxPlateFraction: CGFloat = 0.28
+
+    /// **55 %.** Dark enough to read from the back, light enough that the eye
+    /// can tell at a glance which half of the line is still moving.
+    private static let partialInk: CGFloat = 0.55
+
+    /// A ceiling on what is **kept**, never on what is **shown** — the band
+    /// trims itself by measured height in `render`. This exists only so that an
+    /// hour of talking does not grow one string without end: every partial
+    /// repaints the whole band, so a `committed` nobody ever cut would make each
+    /// repaint walk more words than the last one did. Set far above anything
+    /// that can fit on the plate, precisely so it can never be the thing doing
+    /// the visible trimming.
+    private static let keptCharacters = 600
 
     private var panel: NSPanel?
     private var label: NSTextField?
 
-    /// The settled words, oldest first, already clipped to `maxCharacters`.
+    /// The settled words, oldest first.
     private var committed = ""
     /// The sentence still being revised.
     private var partial = ""
@@ -50,7 +81,8 @@ final class LiveCaptionsOverlay {
     func show() {
         guard panel == nil else { return }
         let screen = AppDelegate.findRetinaScreen()
-        let panel = NSPanel(contentRect: .zero,
+        let panel = NSPanel(contentRect: Self.bottomStrip(on: screen,
+                                                          height: screen.frame.height * Self.minPlateFraction),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -64,18 +96,27 @@ final class LiveCaptionsOverlay {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary,
                                     .stationary, .ignoresCycle]
 
-        let box = NSView()
+        let box = NSView(frame: NSRect(origin: .zero, size: panel.frame.size))
         box.wantsLayer = true
-        box.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        box.layer?.cornerRadius = 18
+        // **The 50 % black plate Victor asked for, in as many words**, and
+        // square-cornered because it runs the full width of the screen — a
+        // rounded card is a card, and this is a strip along an edge. An earlier
+        // build painted outlined text on nothing, arguing that a plate is a
+        // permanent grey slab over the bottom of the slide; that argument only
+        // ever held for a plate that is *always there*, and this one is only up
+        // while the switch is on.
+        box.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor
 
         let label = NSTextField(labelWithString: "")
         label.isBezeled = false
         label.drawsBackground = false
         label.isEditable = false
-        label.alignment = .center
+        label.isSelectable = false
+        label.alignment = .left
         label.lineBreakMode = .byWordWrapping
-        label.maximumNumberOfLines = 3
+        // No line cap: the plate's own height ceiling is the limit, and it is
+        // expressed in screen fractions rather than in lines.
+        label.maximumNumberOfLines = 0
         label.cell?.wraps = true
         box.addSubview(label)
 
@@ -83,7 +124,7 @@ final class LiveCaptionsOverlay {
         panel.orderFrontRegardless()
         self.panel = panel
         self.label = label
-        layout(on: screen)
+        render()
     }
 
     func hide() {
@@ -103,7 +144,7 @@ final class LiveCaptionsOverlay {
     func commit(_ text: String) {
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !words.isEmpty else { partial = ""; return render() }
-        committed = Self.clip(committed.isEmpty ? words : committed + " " + words)
+        committed = Self.keepTail(committed.isEmpty ? words : committed + " " + words)
         partial = ""
         render()
     }
@@ -129,48 +170,124 @@ final class LiveCaptionsOverlay {
     private func render() {
         guard let label = label, let panel = panel else { return }
         let screen = AppDelegate.findRetinaScreen()
-        let size = max(28, screen.frame.height * 0.030)
-        let font = NSFont.systemFont(ofSize: size, weight: .semibold)
 
-        let text = NSMutableAttributedString()
-        if !committed.isEmpty {
-            text.append(NSAttributedString(string: committed, attributes: [
-                .font: font, .foregroundColor: NSColor.white,
-            ]))
+        // Read from the back of a room, through whatever the projector is doing
+        // to the contrast — so sized off the screen's height rather than pinned
+        // to a point size that means something different on every display.
+        let size = max(28, screen.frame.height * 0.036)
+        let padX = screen.frame.width * 0.03
+        let padY = size * 0.45
+        let textWidth = screen.frame.width - 2 * padX
+        let maxTextHeight = screen.frame.height * Self.maxPlateFraction - 2 * padY
+
+        var settled = Self.words(committed)
+        var flight = Self.words(partial)
+        // Before the first word lands: an ellipsis rather than a void, in the
+        // partial's dim ink because nothing has settled yet. An empty black bar
+        // on the screen the room is watching is indistinguishable from a
+        // rendering bug, and the plate is up from the moment the switch is
+        // flipped — a switch has to answer at once.
+        if settled.isEmpty && flight.isEmpty { flight = ["…"] }
+
+        // **Trimmed by measured height, never by a character count.** How much
+        // text fits is a question about this font, this screen's width and where
+        // the words happen to wrap; a character count answers a different
+        // question every time one of those three moves. Words come off the
+        // *front*, and off the settled half first: the newest words are the ones
+        // the room needs, and the sentence still in flight is the newest there
+        // is.
+        var text = Self.band(settled: settled, flight: flight, size: size)
+        while settled.count + flight.count > 1,
+              Self.height(of: text, width: textWidth) > maxTextHeight {
+            if !settled.isEmpty { settled.removeFirst() } else { flight.removeFirst() }
+            text = Self.band(settled: settled, flight: flight, size: size)
         }
-        if !partial.isEmpty {
-            if !committed.isEmpty { text.append(NSAttributedString(string: " ")) }
-            // **55 %.** Dark enough to read from the back, light enough that the
-            // eye can tell at a glance which half of the line is still moving.
-            text.append(NSAttributedString(string: partial, attributes: [
-                .font: font, .foregroundColor: NSColor.white.withAlphaComponent(0.55),
-            ]))
-        }
+
+        let textHeight = Self.height(of: text, width: textWidth)
+        let plateHeight = min(screen.frame.height * Self.maxPlateFraction,
+                              max(screen.frame.height * Self.minPlateFraction, textHeight + 2 * padY))
+
         label.attributedStringValue = text
-        layout(on: screen)
-        _ = panel
+        panel.setFrame(Self.bottomStrip(on: screen, height: plateHeight), display: true)
+        panel.contentView?.frame = NSRect(origin: .zero,
+                                          size: NSSize(width: screen.frame.width, height: plateHeight))
+        // Sat on the plate's floor, so a second and third line push up into the
+        // room the plate has just grown rather than dragging the first line down
+        // past the bottom edge of the screen.
+        label.frame = NSRect(x: padX, y: padY, width: textWidth, height: ceil(textHeight))
     }
 
-    private func layout(on screen: NSScreen) {
-        guard let panel = panel, let label = label else { return }
-        let pad: CGFloat = 26
-        let width = screen.frame.width * Self.widthFraction
-        let textWidth = width - pad * 2
-        label.preferredMaxLayoutWidth = textWidth
-        let textHeight = label.sizeThatFits(NSSize(width: textWidth,
-                                                   height: .greatestFiniteMagnitude)).height
-        let height = max(textHeight, 1) + pad * 1.4
-        let frame = NSRect(x: screen.frame.minX + (screen.frame.width - width) / 2,
-                           y: screen.frame.minY + Self.bottomMargin,
-                           width: width, height: height)
-        panel.setFrame(frame, display: true)
-        label.frame = NSRect(x: pad, y: pad * 0.7, width: textWidth, height: textHeight)
+    /// The two inks in one string: settled words solid, the sentence in flight
+    /// at `partialInk`.
+    private static func band(settled: [String], flight: [String], size: CGFloat) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        if !settled.isEmpty {
+            out.append(NSAttributedString(string: settled.joined(separator: " "),
+                                          attributes: attributes(size: size, ink: 1)))
+        }
+        if !flight.isEmpty {
+            if out.length > 0 {
+                out.append(NSAttributedString(string: " ", attributes: attributes(size: size, ink: 1)))
+            }
+            out.append(NSAttributedString(string: flight.joined(separator: " "),
+                                          attributes: attributes(size: size, ink: partialInk)))
+        }
+        return out
     }
 
-    /// Keep the tail. Cut on a word so the band never opens mid-syllable.
-    private static func clip(_ text: String) -> String {
-        guard text.count > maxCharacters else { return text }
-        let tail = String(text.suffix(maxCharacters))
+    /// White, semibold, and **still outlined even though it sits on a plate**:
+    /// the plate is only half opaque, so a bright slide comes through it, and the
+    /// outline is what stops a light patch from eating a word.
+    private static func attributes(size: CGFloat, ink: CGFloat) -> [NSAttributedString.Key: Any] {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.85)
+        shadow.shadowBlurRadius = size * 0.14
+        shadow.shadowOffset = NSSize(width: 0, height: -size * 0.04)
+
+        let paragraph = NSMutableParagraphStyle()
+        // **Left, not centred.** Film subtitles are centred because they are one
+        // or two short lines; this plate is full-width and grows to several, and
+        // centring those starts every line at a different x — so a room reading
+        // live text has to hunt for the beginning of each one. Ragged on the
+        // right is the cheaper of the two raggednesses.
+        paragraph.alignment = .left
+        paragraph.lineBreakMode = .byWordWrapping
+        paragraph.lineHeightMultiple = 1.12
+
+        return [
+            .font: NSFont.systemFont(ofSize: size, weight: .semibold),
+            .foregroundColor: NSColor.white.withAlphaComponent(ink),
+            .strokeColor: NSColor.black,
+            // Negative width means stroke *and* fill; a positive one draws the
+            // outline only and leaves hollow letters.
+            .strokeWidth: -2.0,
+            .shadow: shadow,
+            .paragraphStyle: paragraph,
+        ]
+    }
+
+    private static func bottomStrip(on screen: NSScreen, height: CGFloat) -> NSRect {
+        NSRect(x: screen.frame.minX, y: screen.frame.minY,
+               width: screen.frame.width, height: height)
+    }
+
+    /// How tall this text wraps at `width`. `.usesLineFragmentOrigin` is the part
+    /// that matters — without it the rect comes back one line tall however much
+    /// text is in it, and the plate never grows.
+    private static func height(of text: NSAttributedString, width: CGFloat) -> CGFloat {
+        guard text.length > 0 else { return 0 }
+        return ceil(text.boundingRect(with: NSSize(width: width, height: .greatestFiniteMagnitude),
+                                      options: [.usesLineFragmentOrigin, .usesFontLeading]).height)
+    }
+
+    private static func words(_ text: String) -> [String] {
+        text.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).map(String.init)
+    }
+
+    /// Keep the tail. Cut on a word so the kept text never opens mid-syllable.
+    private static func keepTail(_ text: String) -> String {
+        guard text.count > keptCharacters else { return text }
+        let tail = String(text.suffix(keptCharacters))
         guard let space = tail.firstIndex(of: " ") else { return tail }
         return String(tail[tail.index(after: space)...])
     }

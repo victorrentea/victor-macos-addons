@@ -17,10 +17,51 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
   subtitrarile din meniul macos addons, doar atunci pleaca vocile streaming la eleven labs,
   aparand pe ecran live. Doar cat sunt subtitles pornite."* Nothing in this section changes a line
   of that one.
+- **This is the second time this band has been built, and the first one is why.** A live-subtitle
+  feature shipped on **2026-09-09** — `LiveCaptions` + `CaptionStream`, on ⌘⌃U, fed by the
+  **mlx-whisper transcript file** — and was deleted the same day at Victor's word: *"remove the
+  feature of subtitles completely. thoroughly. leave no trace."* (`c9a6141`; the four commits that
+  built it are `bebdec0`, `8e7217f`, `849f911`, `4dba31a`). **What was wrong with it was never the
+  band, it was the source.** Whisper transcribes in 12 s chunks, so a line reached the screen
+  twelve to twenty seconds after it was spoken; `4dba31a` records the switch going on at 19:26:51
+  and off at 19:27:08 — seventeen seconds in which no line could physically have arrived. A
+  subtitle that lands after the sentence is over is not a subtitle. **ElevenLabs realtime is that
+  one defect fixed** (~1 s end to end, below), which is exactly Victor's own recollection of it:
+  *"Subtitrarea era deja începută feat în macos addons, doar că folosea mlx până acum."* Two
+  further things the old build paid for and this one inherits rather than re-derives: the seam
+  repair (whisper's 12 s chunks overlapped by 2 s, so 6.5 % of the transcript was words written
+  twice — **a problem that does not exist here**, because Scribe sends `partial`/`committed` and
+  never re-sends a settled segment), and the geometry below.
 - **A band across the bottom of the built-in retina** — the screen a venue projector mirrors, not
   the "main" screen, which at a venue is the ASUS (`DisplayArrangementManager`). Click-through, on
-  every Space, above everything. It holds ~190 characters and older sentences fall off the front:
-  it is a caption read at a glance from the back of a room, not a transcript window.
+  every Space, above everything.
+- **The band's shape is Victor's drawing, restored — not a fresh decision.** He drew it in red over
+  a screenshot in 2026-09: **full width, flush to the bottom edge**, ~**10 %** of the screen tall
+  with one line in it and up to **28 %** once several have accumulated, on a **50 % black plate**
+  he asked for in as many words. It **grows upward out of a fixed floor**, which is what keeps the
+  newest words at a constant height — a plate growing downward slides the line being read out from
+  under an eye already on it. Text is **left-aligned, not centred**: film subtitles are centred
+  because they are one or two short lines, but a full-width plate several lines deep starts every
+  centred line at a different x, and a room reading live text then has to hunt for the beginning of
+  each one. White semibold, and **still outlined (`strokeWidth` −2) despite the plate**, because
+  the plate is only half opaque and a bright slide comes through it. The first rebuild (2026-09-19)
+  had picked a centred 86 %-wide rounded card 64 px off the bottom, capped at 190 characters —
+  every one of those numbers re-decided from scratch, and every one of them contradicting a drawing
+  that had already been through his hands. Reverted the same day.
+- **Trimmed by measured height, never by a character count.** How much text fits is a question
+  about this font, this screen's width and where the words happen to wrap; a character count
+  answers a different question every time one of those three moves. Words come off the **front**,
+  and off the settled half first — the newest words are what the room needs, and the sentence still
+  in flight is the newest there is. (A separate 600-character ceiling exists on what is *kept*, not
+  on what is *shown*: every partial repaints the whole band, so an uncut `committed` would make
+  each repaint walk more words than the last.)
+- **Flipping the switch raises a 🎬 Subtitles ON / OFF pill bottom-left**, on the trainer's screen.
+  Also restored from `4dba31a`, which found it by watching the thing fail: the band draws on the
+  retina *for the room*, and the person who flipped the switch is usually looking at another screen
+  entirely. The counter-argument — he turned it on himself, he knows — was what shipped first and
+  did not survive contact: what he can see from the other screen is not the band, it is a menu he
+  has already closed. A *failure* raises its own pill with the reason and a Basso instead, so the
+  two never stack.
 - **The engine is ElevenLabs Scribe v2 Realtime over a WebSocket**
   (`wss://api.elevenlabs.io/v1/speech-to-text/realtime`), 250 ms chunks of 16 kHz mono int16 from
   the **system default input**. The batch endpoint that Walkie Talkie uses is both cheaper and
@@ -41,7 +82,12 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
   that looks most like "this feature is bad at its job" is it listening to the wrong device.
 - **Top level in the menu, not inside 💬 Transcribing.** That submenu is settings *of* the local
   transcription; this is a feature you fire, watch and turn off. Nesting it would read as "the
-  same thing, turned up".
+  same thing, turned up". **The 2026-09-09 row ended up under Extra** with the other ticked state
+  rows (`4dba31a`: "what belongs in the main menu is what happens when you click it, and this is a
+  state that stays") and this one deliberately does not, because one fact changed: **this row
+  bills**, and its title is a live readout of minutes and dollars. A cost ticking upward is not a
+  checkbox, and Extra is a shelf nobody opens mid-session. Worth re-checking with Victor if the row
+  ever feels like it is in the way.
 - **Nothing fails quietly.** The socket dropping, a bad key, the microphone going — each takes the
   feature down, leaves the band up for six seconds saying why, plays a Basso on the bottom-left
   pill and repaints the row. A subtitle band that merely stops updating is indistinguishable from

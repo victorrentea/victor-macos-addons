@@ -653,6 +653,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                                         sound: NSSound(named: NSSound.Name("Basso")),
                                         visibleDuration: 8)
         }
+        // The band is on the retina, for the room; the switch has to report
+        // itself on whichever screen he is actually looking at. `showNow`, not
+        // `showOnPresence` — he has this second flipped the switch, so presence
+        // is not in question and a deferred pill would land minutes late.
+        liveCaptions.onSwitched = { [weak self] on in
+            self?.statusBanner?.showNow(text: on ? "🎬 Subtitles ON" : "🎬 Subtitles OFF",
+                                        sound: nil, visibleDuration: 4)
+        }
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
         menuBarManager.onMenuTick = { [weak self] in
             guard let self, self.liveCaptions.isOn else { return }
