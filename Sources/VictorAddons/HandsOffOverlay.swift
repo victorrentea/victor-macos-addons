@@ -1,8 +1,8 @@
 import AppKit
 
 /// "Hands off the keyboard" — the amber frame an agent raises around every
-/// screen while it is driving the mouse and keyboard, plus a small badge that
-/// rides the cursor saying who is driving.
+/// screen while it is driving the mouse and keyboard, plus a caption pinned to
+/// the bottom centre of every screen saying who is driving and what it does.
 ///
 /// It exists because synthetic input cannot be delivered politely. An agent
 /// that clicks a menu has to bring the app forward and physically move the
@@ -25,9 +25,9 @@ final class HandsOffOverlay {
     private(set) var session: HandsOffSession?
 
     private var framePanels: [NSPanel] = []
-    private var badgePanel: NSPanel?
-    private var badgeField: NSTextField?
-    private var follow: Timer?
+    /// One caption per frame panel, so the label appears, updates and goes
+    /// away with the frame — no second lifecycle to leak.
+    private var captionFields: [NSTextField] = []
     private var watchdog: Timer?
 
     private let borderWidth: CGFloat = 6
@@ -48,10 +48,13 @@ final class HandsOffOverlay {
     /// One slow breath ≈ 2.4 s round trip. Fast blinking reads as an error the
     /// eye wants to dismiss; this reads as "still running".
     private let lockPulseDuration: CFTimeInterval = 1.2
-    /// Below-right of the hotspot — the quadrant macOS cursor artwork leaves
-    /// free, same choice as `BusyCursorSpinner`, so the badge never covers the
-    /// thing being pointed at.
-    private let badgeOffset = CGPoint(x: 16, y: -34)
+    /// The caption used to ride the cursor like a tooltip. That failed its one
+    /// job: an agent whips the pointer across the screen, so the text was never
+    /// where Victor's eye was, and at 13 pt it was a smudge. Now it sits still,
+    /// centred at the bottom of every screen — a fixed place the eye learns —
+    /// and twice as large, so it is read from across the desk.
+    private let captionFontSize: CGFloat = 26
+    private let captionBottomInset: CGFloat = 28
     private let releaseChime = NSSound(named: NSSound.Name("Tink"))
 
     var isActive: Bool { session != nil }
@@ -75,7 +78,7 @@ final class HandsOffOverlay {
             buildFrames()
         }
         setBorder(color: amber)
-        showBadge(text: fresh.label)
+        setCaption(fresh.label)
         startWatchdog()
         overlayInfo("Hands off: \(fresh.label) (ttl \(Int(fresh.ttl))s)")
     }
@@ -99,7 +102,7 @@ final class HandsOffOverlay {
         guard isAutoRaised, let current = session else { return }
         let refreshed = HandsOffSession(agent: agent, what: current.what, ttl: ttl, startedAt: Date())
         session = refreshed
-        if badgeField?.stringValue != refreshed.label { showBadge(text: refreshed.label) }
+        if captionFields.first?.stringValue != refreshed.label { setCaption(refreshed.label) }
     }
 
     /// Give it back. Safe to call when nothing is active — an agent that ends
@@ -115,7 +118,6 @@ final class HandsOffOverlay {
         session = nil
         isAutoRaised = false
         watchdog?.invalidate(); watchdog = nil
-        hideBadge()
         flashFreeAndDismiss()
         if !silent { releaseChime?.play() }
         overlayInfo(expired ? "Hands off: released by watchdog"
@@ -158,6 +160,7 @@ final class HandsOffOverlay {
             view.layer?.cornerRadius = 12
             view.layer?.borderColor = amber.cgColor
             addCornerLocks(to: view)
+            addCaption(to: view)
             panel.contentView = view
             panel.orderFrontRegardless()
             framePanels.append(panel)
@@ -230,6 +233,7 @@ final class HandsOffOverlay {
         setBorder(color: free)
         let panels = framePanels
         framePanels = []
+        captionFields = []
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.25
@@ -240,86 +244,50 @@ final class HandsOffOverlay {
         }
     }
 
-    // MARK: - Badge
+    // MARK: - Caption
 
-    private func showBadge(text: String) {
-        if let field = badgeField {
-            field.stringValue = text
-            sizeBadge(to: field)
-            return
-        }
-
-        let field = NSTextField(labelWithString: text)
-        field.font = .systemFont(ofSize: 13, weight: .semibold)
+    /// The amber plate with the label, bottom centre of the screen. Built once
+    /// per frame; `setCaption` only swaps the text and re-centres it.
+    private func addCaption(to view: NSView) {
+        let field = NSTextField(wrappingLabelWithString: "")
+        field.font = .systemFont(ofSize: captionFontSize, weight: .semibold)
         field.textColor = .white
+        field.alignment = .center
         field.backgroundColor = .clear
         field.isBezeled = false
         field.isEditable = false
+        field.isSelectable = false
+        field.maximumNumberOfLines = 3
 
-        let panel = NSPanel(contentRect: .zero,
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
-        panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        let plate = NSView(frame: .zero)
+        plate.wantsLayer = true
+        plate.layer?.backgroundColor = amber.withAlphaComponent(0.92).cgColor
+        plate.layer?.cornerRadius = 12
+        plate.addSubview(field)
+        view.addSubview(plate)
+        captionFields.append(field)
+    }
 
-        let backdrop = NSView(frame: .zero)
-        backdrop.wantsLayer = true
-        backdrop.layer?.backgroundColor = amber.withAlphaComponent(0.92).cgColor
-        backdrop.layer?.cornerRadius = 7
-        backdrop.addSubview(field)
-        panel.contentView = backdrop
-
-        badgePanel = panel
-        badgeField = field
-        sizeBadge(to: field)
-        moveBadge()
-        panel.orderFrontRegardless()
-
-        // Same 30 ms as BusyCursorSpinner: enough to stay glued to a pointer
-        // the agent is whipping across the screen, cheap because the panel is a
-        // few dozen points of nothing.
-        let timer = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.moveBadge() }
+    private func setCaption(_ text: String) {
+        for field in captionFields {
+            field.stringValue = text
+            layoutCaption(field)
         }
-        RunLoop.main.add(timer, forMode: .common)
-        follow = timer
     }
 
-    private func sizeBadge(to field: NSTextField) {
-        field.sizeToFit()
-        let pad = NSSize(width: 20, height: 10)
-        let size = NSSize(width: field.frame.width + pad.width, height: field.frame.height + pad.height)
-        field.setFrameOrigin(NSPoint(x: pad.width / 2, y: pad.height / 2))
-        badgePanel?.setContentSize(size)
-        badgePanel?.contentView?.setFrameSize(size)
-    }
-
-    private func moveBadge() {
-        guard let panel = badgePanel else { return }
-        let mouse = NSEvent.mouseLocation
-        var origin = NSPoint(x: mouse.x + badgeOffset.x, y: mouse.y + badgeOffset.y - panel.frame.height)
-        // Keep it on the screen the cursor is on: pushed off the right or
-        // bottom edge the badge is clipped, and a half-visible warning is the
-        // one that gets misread.
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
-            let f = screen.frame
-            origin.x = min(origin.x, f.maxX - panel.frame.width - 4)
-            origin.x = max(origin.x, f.minX + 4)
-            origin.y = max(origin.y, f.minY + 4)
-            origin.y = min(origin.y, f.maxY - panel.frame.height - 4)
-        }
-        panel.setFrameOrigin(origin)
-    }
-
-    private func hideBadge() {
-        follow?.invalidate(); follow = nil
-        badgePanel?.orderOut(nil)
-        badgePanel = nil
-        badgeField = nil
+    private func layoutCaption(_ field: NSTextField) {
+        guard let plate = field.superview, let screenView = plate.superview else { return }
+        let pad = NSSize(width: 40, height: 20)
+        // Never wider than the gap between the two bottom locks: a long `what`
+        // wraps rather than running under them or off both edges.
+        let maxTextWidth = screenView.frame.width - 2 * (lockInset + lockSize * 1.4 + 16) - pad.width
+        field.preferredMaxLayoutWidth = maxTextWidth
+        var textSize = field.sizeThatFits(NSSize(width: maxTextWidth, height: 1000))
+        textSize.width = min(textSize.width, maxTextWidth)
+        field.frame = NSRect(x: pad.width / 2, y: pad.height / 2, width: textSize.width, height: textSize.height)
+        let size = NSSize(width: textSize.width + pad.width, height: textSize.height + pad.height)
+        plate.frame = NSRect(x: (screenView.frame.width - size.width) / 2, y: captionBottomInset,
+                             width: size.width, height: size.height)
     }
 
     // MARK: - Watchdog
