@@ -77,11 +77,20 @@ enum ClaudeActivity {
     /// on 2026-09-10, where the answer turned out to be the very Claude being
     /// asked to investigate.
     static func workingSessions() -> [Int32] {
-        let local = workingSessions(in: processTable(),
-                                    executablePath: executablePath(of:),
-                                    helperKind: helperKind(of:))
         // A session can answer both signals at once, so the union is a set.
-        return Array(Set(local + remoteWorkingSessions())).sorted()
+        Array(Set(interactiveWorkingSessions() + remoteWorkingSessions())).sorted()
+    }
+
+    /// The `caffeinate` half on its own — sessions someone is typing at.
+    ///
+    /// Split out from the union because the two halves are two menu rows since
+    /// 2026-09-21: a Mac that must stay up for the phone is not the same
+    /// promise as one that must stay up for the terminal, and Victor wanted to
+    /// be able to give one of them away without the other.
+    static func interactiveWorkingSessions() -> [Int32] {
+        workingSessions(in: processTable(),
+                        executablePath: executablePath(of:),
+                        helperKind: helperKind(of:))
     }
 
     /// The decision, separated from the syscalls so it can be tested against a

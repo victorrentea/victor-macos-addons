@@ -1211,13 +1211,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.statusBanner?.showOnPresence(text: "🔋 \(pct)% — lid may sleep",
                                                sound: StatusBannerSound.stop)
         }
-        menuBarManager.onLidAwakeEnabledChanged = { enabled in
-            lid.setEnabled(enabled)
+        menuBarManager.onLidAwakeModeChanged = { mode in
+            lid.setMode(mode)
         }
         lid.startIfEnabled()
         self.lidAwake = lid
         tabletServer?.onTestLidAwakeState = { [weak lid] in lid?.stateJSON() ?? "{}" }
         tabletServer?.onTestLidAwakeFlatline = { [weak lid] in lid?.playFlatlineForTest() }
+        // Setting the mode from the test hook goes through the same call the
+        // menu uses, and then repaints the rows — a mode the menu disagrees
+        // with is exactly the lie the tick is there to prevent.
+        tabletServer?.onTestLidAwakeMode = { [weak self, weak lid] raw in
+            guard let lid, let mode = LidAwakeMode(rawValue: raw) else {
+                return "{\"error\":\"unknown mode\"}"
+            }
+            let applied = lid.setMode(mode)
+            DispatchQueue.main.async { self?.menuBarManager.refreshLidAwakeMode(applied ? mode : .off) }
+            return lid.stateJSON()
+        }
 
         // 🏠 Home Wi-Fi keeps the screen on. Its neighbour above holds a kernel
         // flag through sudo; this one holds an ordinary display-sleep assertion

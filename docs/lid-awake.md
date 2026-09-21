@@ -1,11 +1,30 @@
-# 🔋 Claude prevents sleep
+# 😴 Claude insomnia (was 🔋 Claude prevents sleep)
+
+**Three states since 2026-09-21, in a submenu of their own** — `😴 Claude
+insomnia` with `Off`, `Interactive only` and `Background too`, Victor's shape.
+They are *ordered* (off ⊂ interactive ⊂ background), which is a picker rather
+than two checkboxes: the combination a pair of switches would also have allowed
+— hold the Mac up for the phone but not for the terminal in front of you —
+means nothing. `interactive` asks only the process table, so a session driven
+from the phone is exactly what it is declining to stay awake for.
+
+That would normally throw away the rule below about not hiding this state, so
+**the parent row carries the current mode in its own title** (`😴 Claude
+insomnia — background too`): the menu still answers *what is it doing* at a
+glance, and only *changing* it costs a hover. The tick still lives in the
+title, never in `NSMenuItem.state`, for the reason in the next paragraph.
+A Mac that had the old single switch on lands in `background`, which is what it
+was already doing by then (`LidAwakeSettings.mode(stored:legacyEnabled:)`,
+unit-tested) — nobody's lid guard changes underneath them on an update.
+
+The history of the row it replaced, which is still the reason for its shape:
 
 The travel switch, a **top-level menu row since 2026-09-17** (it spent its life under 👩🏻‍💻 Extra; Victor moved it out — this is the one state in the app that decides whether the Mac is awake inside a bag, and a state you have to open a submenu to see is a state you forget you left on). The row is **`Claude prevents sleep`, with no emoji**: a tick when it is on and nothing at all when it is off, which is what a checkbox looks like — a leading 🔋 would be something in front in *both* states. The name keeps the 🔋 everywhere else, it is just not on the row. The tick is **in the title** (`MenuBarManager.LidAwakeMenu`, unit-tested), never `NSMenuItem.state`: the native one makes AppKit reserve a check column for the whole menu and shifts every other row's text — including the leading emoji those rows are recognised by. Keeps the Mac **running with the lid shut,
 on battery, with nothing plugged in** — the case it exists for is a `claude`
 session mid-loop that has to survive the laptop going into a bag on a flight.
 
 **The label names the subject, and that is the contract.** It is Claude that
-prevents the sleep, not the switch: a ticked row does not mean the Mac is being
+stays awake, not the Mac on its own: a ticked row does not mean the Mac is being
 held awake, it means the Mac stays up *while a Claude session is working*, and
 is released the moment they all finish. A label like "Keep Awake" would promise
 the thing this deliberately does not do.

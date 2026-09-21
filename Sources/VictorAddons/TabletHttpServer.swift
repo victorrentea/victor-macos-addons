@@ -43,6 +43,8 @@ case testTerminalFont
         case testAudioPlaying
         case testLidAwakeState
         case testLidAwakeFlatline
+    /// Pick a 😴 mode without the mouse — see docs/testing.md.
+    case testLidAwakeMode(String)
         case testHomeAwake
         case testClaudeActivity
         case testWisprRecording
@@ -242,6 +244,9 @@ case testTerminalFont
     var onTestAudioPlaying: (() -> String)?
     var onTestLidAwakeState: (() -> String)?
     var onTestLidAwakeFlatline: (() -> Void)?
+    /// Returns the state JSON after the switch, so one call both sets and
+    /// proves it.
+    var onTestLidAwakeMode: ((String) -> String)?
     var onTestHomeAwake: (() -> String)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
@@ -461,6 +466,10 @@ case testTerminalFont
                 body = self.onTestLidAwakeState?() ?? "{\"error\":\"lid awake unavailable\"}"
             case .testLidAwakeFlatline:
                 self.onTestLidAwakeFlatline?()
+            case .testLidAwakeMode(let mode):
+                contentType = "application/json"
+                body = self.onTestLidAwakeMode?(mode) ?? "{\"error\":\"lid awake unavailable\"}"
+                if self.onTestLidAwakeMode == nil { statusCode = 503 }
             case .testHomeAwake:
                 contentType = "application/json"
                 body = self.onTestHomeAwake?() ?? "{\"error\":\"home awake unavailable\"}"
@@ -812,6 +821,8 @@ case testTerminalFont
             return .testAudioPlaying
         case "/test/lid-awake/state":
             return .testLidAwakeState
+        case let p where p.hasPrefix("/test/lid-awake/mode/"):
+            return .testLidAwakeMode(String(p.dropFirst("/test/lid-awake/mode/".count)))
         case "/test/lid-awake/flatline":
             return .testLidAwakeFlatline
         case "/test/home-awake":

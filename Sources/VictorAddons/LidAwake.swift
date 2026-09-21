@@ -8,12 +8,64 @@ import IOKit.ps
 /// row under 👩🏻‍💻 Extra. Default **off**: unlike 🔄 Reverse Mouse Wheel this
 /// replaces nothing, and a Mac that silently refuses to sleep is not a state to
 /// wake up in by accident.
-enum LidAwakeSettings {
-    static let enabledKey = "LidAwake.enabled"
+/// How far the 🔋 insomnia goes: off, sessions someone is typing at, or those
+/// plus the ones running in the background.
+///
+/// Three states rather than two checkboxes because they are ordered — each one
+/// is the previous plus more — and a pair of switches would have let Victor ask
+/// for the one combination that makes no sense: hold the Mac up for the phone
+/// but not for the terminal in front of him.
+enum LidAwakeMode: String, CaseIterable {
+    case off
+    /// Only sessions with a live `caffeinate` — someone is at the keyboard.
+    case interactive
+    /// Those **and** sessions driven from the phone, which hold no
+    /// `caffeinate` and are recognised by their transcript instead.
+    case background
 
+    /// Which of the two signals this mode is willing to stay awake for. Pure,
+    /// so the table is a test rather than a walk through `UserDefaults`.
+    var holdsInteractive: Bool { self != .off }
+    var holdsRemote: Bool { self == .background }
+}
+
+enum LidAwakeSettings {
+    /// The one switch this feature shipped with. Kept as the **migration
+    /// source**, not as state: a Mac that had it on keeps its lid guard on an
+    /// update, at `background` — which is what it was actually doing by the
+    /// time the modes arrived.
+    static let enabledKey = "LidAwake.enabled"
+    static let modeKey = "LidAwake.mode"
+
+    static var mode: LidAwakeMode {
+        get { mode(stored: UserDefaults.standard.string(forKey: modeKey),
+                   legacyEnabled: UserDefaults.standard.bool(forKey: enabledKey)) }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: modeKey) }
+    }
+
+    /// The migration, as a function of what is on disk: a mode that was written
+    /// wins, and anything else falls back to the old single switch. A Mac that
+    /// had the guard on lands in `background`, which is what it was already
+    /// doing by the time the modes arrived — nobody's lid guard changes
+    /// underneath them on an update.
+    static func mode(stored raw: String?, legacyEnabled: Bool) -> LidAwakeMode {
+        if let raw, let mode = LidAwakeMode(rawValue: raw) { return mode }
+        return legacyEnabled ? .background : .off
+    }
+
+    /// Sessions someone is typing at, recognised by their `caffeinate`.
+    static var interactiveIsEnabled: Bool { mode.holdsInteractive }
+
+    /// Sessions driven from the phone, recognised by their transcript.
+    static var remoteIsEnabled: Bool { mode.holdsRemote }
+
+    /// Armed at all — what the timer, the logging and the battery floor ask.
+    /// Setting it to `false` is the floor's stand-down: the Mac may sleep now,
+    /// whatever the mode was. Setting it to `true` means "as far as it goes",
+    /// and is only ever used by a test.
     static var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: enabledKey) }
-        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+        get { mode != .off }
+        set { mode = newValue ? .background : .off }
     }
 }
 
@@ -230,7 +282,17 @@ final class LidAwake {
     /// flight must not drop the lid guard.
     func startIfEnabled() {
         guard LidAwakeSettings.isEnabled else { return }
-        setEnabled(true, announce: false)
+        // `apply`, not `setMode`: re-arming must not write the mode back, or a
+        // launch would quietly promote `interactive` to `background`.
+        apply(announce: false)
+    }
+
+    /// Pick a mode from the menu: store it, then land in it.
+    @discardableResult
+    func setMode(_ mode: LidAwakeMode) -> Bool {
+        LidAwakeSettings.mode = mode
+        // The lub-dub only when there is a new state to prove, never on off.
+        return apply(announce: mode != .off)
     }
 
     /// Arm or disarm. Returns whether the kernel agreed — a `false` means the
@@ -244,6 +306,14 @@ final class LidAwake {
     @discardableResult
     func setEnabled(_ enabled: Bool, announce: Bool = true) -> Bool {
         LidAwakeSettings.isEnabled = enabled
+        return apply(announce: announce)
+    }
+
+    /// Arm or disarm to match whatever the mode currently says, without
+    /// touching the mode itself.
+    @discardableResult
+    private func apply(announce: Bool) -> Bool {
+        let enabled = LidAwakeSettings.isEnabled
         // The flag can already be up from before an app restart, so start from
         // what the kernel says rather than from an assumption.
         holding = Self.isSleepDisabled()
@@ -299,7 +369,7 @@ final class LidAwake {
     /// awake" and "why is it not beating" are answerable with one `curl`
     /// instead of a lid, a battery and an ear.
     func stateJSON() -> String {
-        let working = ClaudeActivity.workingSessions()
+        let working = workingNow()
         let battery = Self.batteryPercent()
         let offlineFor = net.offlineFor()
         let action = LidAwakePolicy.decide(
@@ -311,6 +381,7 @@ final class LidAwake {
             beating: wasBeating,
             offlineFor: offlineFor)
         return "{\"enabled\":\(LidAwakeSettings.isEnabled),"
+            + "\"mode\":\"\(LidAwakeSettings.mode.rawValue)\","
             + "\"holding\":\(holding),"
             + "\"sleep_disabled\":\(Self.isSleepDisabled()),"
             + "\"lid_closed\":\(Self.isLidClosed()),"
@@ -365,11 +436,22 @@ final class LidAwake {
 
     // MARK: - The tick
 
+    /// The sessions this mode is willing to stay up for.
+    ///
+    /// `interactive` deliberately asks only the process table: a phone-driven
+    /// session is exactly what that mode is declining to hold the lid open for.
+    private func workingNow() -> [Int32] {
+        var pids: [Int32] = []
+        if LidAwakeSettings.interactiveIsEnabled { pids += ClaudeActivity.interactiveWorkingSessions() }
+        if LidAwakeSettings.remoteIsEnabled { pids += ClaudeActivity.remoteWorkingSessions() }
+        return Array(Set(pids)).sorted()
+    }
+
     private func tick() {
         ticks += 1
 
         let battery = Self.batteryPercent()
-        let working = ClaudeActivity.workingSessions()
+        let working = workingNow()
         // "Everything has finished and it is still awake" is a question the log
         // has to be able to answer, so the holders are named the moment the set
         // changes. Once it is a list of pids, `ps -p <pid>` finishes the story.
@@ -703,7 +785,7 @@ final class LidAwake {
                 // wakes up during the flatline with the link still down is the
                 // same parked turn we just decided not to hold the lid open
                 // for, so the offline gate is re-checked here too.
-                if ClaudeActivity.isClaudeWorking(),
+                if !self.workingNow().isEmpty,
                    self.net.offlineFor() < LidAwakePolicy.offlineGrace {
                     overlayInfo("LidAwake: a Claude started again during the flatline — still holding")
                     return
