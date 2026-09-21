@@ -21,20 +21,30 @@ final class TerminalPromptKeysTests: XCTestCase {
                                    frontmostBundleId: front)
     }
 
-    func testTheThreeEditsCarryTheControlCharactersThePromptReads() {
-        // ^A / ^E / ^L are the three the Claude Code input handler binds to
-        // startOfLogicalLine, endOfLogicalLine and chat:clearInput.
-        XCTAssertEqual(rewrite(VK_LEFT)?.character, "\u{01}")
-        XCTAssertEqual(rewrite(VK_RIGHT)?.character, "\u{05}")
-        XCTAssertEqual(rewrite(VK_DELETE)?.character, "\u{0C}")
+    func testTheJumpsRepeatSoTheyCrossNewlines() {
+        // One `home` stops at the start of the wrapped row; it is the REPEAT that
+        // walks to the top of the prompt, because startOfLine() steps to the
+        // previous row once the cursor is already at column 0. A single keystroke
+        // here is the bug Victor reported: "ma duce la startul RANDULUI".
+        let reach = TerminalPromptKeys.reach
+        XCTAssertEqual(rewrite(VK_LEFT)?.characters, String(repeating: "\u{1b}[H", count: reach))
+        XCTAssertEqual(rewrite(VK_RIGHT)?.characters, String(repeating: "\u{1b}[F", count: reach))
+        XCTAssertGreaterThan(reach, 1, "a single press cannot leave the current row")
     }
 
-    func testTheKeycodeIsRewrittenTooNotJustTheCharacter() {
-        // A terminal may read either half; an event left claiming to be an arrow
-        // while carrying ^A is read one way by one and the other way by another.
-        XCTAssertEqual(rewrite(VK_LEFT)?.keyCode, 0x00)   // A
-        XCTAssertEqual(rewrite(VK_RIGHT)?.keyCode, 0x0E)  // E
-        XCTAssertEqual(rewrite(VK_DELETE)?.keyCode, 0x25) // L
+    func testDeleteClearsBothSidesOfTheCursor() {
+        // ^K forward then ^U backward, so it does not matter where the cursor is.
+        // Anything less leaves half a prompt behind.
+        let chars = rewrite(VK_DELETE)?.characters ?? ""
+        let reach = TerminalPromptKeys.reach
+        XCTAssertEqual(chars, String(repeating: "\u{0b}", count: reach)
+                            + String(repeating: "\u{15}", count: reach))
+    }
+
+    func testDeleteNeverSendsEscape() {
+        // Escape would clear the prompt in one byte -- and abort a running turn.
+        XCTAssertFalse(rewrite(VK_DELETE)?.characters.contains("\u{1b}") ?? true,
+                       "escape must never ride on the clear-the-prompt key")
     }
 
     func testOnlyCommandAloneQualifies() {

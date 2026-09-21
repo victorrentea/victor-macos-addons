@@ -502,7 +502,7 @@ private let VK_F: CGKeyCode = 0x03
                                                  hasCommand: hasCmd, hasControl: hasCtrl,
                                                  hasOption: hasOpt, hasShift: hasShift,
                                                  frontmostBundleId: currentFrontmost()?.bundleId) {
-            let utf16 = Array(String(edit.character).utf16)
+            let utf16 = Array(edit.characters.utf16)
             event.setIntegerValueField(.keyboardEventKeycode, value: Int64(edit.keyCode))
             event.flags = flags.subtracting([.maskCommand, .maskControl, .maskAlternate, .maskShift])
             event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
