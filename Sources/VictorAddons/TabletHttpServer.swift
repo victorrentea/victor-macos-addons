@@ -475,7 +475,12 @@ case testTerminalFont
                         guard let kind = ClaudeActivity.helperKind(of: pid) else { return nil }
                         return "\(pid):\(kind)"
                     }
+                // Remote sessions are named apart from the rest: they are the
+                // half with no `caffeinate`, so "working but not here" is the
+                // first thing to check when the two disagree.
+                let remote = ClaudeActivity.remoteWorkingSessions()
                 body = "{\"working\":[\(working.map(String.init).joined(separator: ","))],"
+                    + "\"remote\":[\(remote.map(String.init).joined(separator: ","))],"
                     + "\"skipped_helpers\":[\(helpers.map { "\"\($0)\"" }.joined(separator: ","))]}"
             case .testWisprRecording:
                 contentType = "application/json"

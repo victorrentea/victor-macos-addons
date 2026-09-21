@@ -11,7 +11,9 @@ is released the moment they all finish. A label like "Keep Awake" would promise
 the thing this deliberately does not do.
 
 Code: `LidAwake.swift` (runtime), `LidAwakePolicy.swift` (the decision),
-`ClaudeActivity.swift` (is a session working?), `LidAwakePolicyTests.swift`.
+`ClaudeActivity.swift` (is a session working? — **two** signals since 2026-09-21,
+because a session driven from the phone answers neither `caffeinate` nor its own
+`status` field), `LidAwakePolicyTests.swift`.
 Menu row + toggle in `MenuBarManager.swift`, wired in `AppDelegate.swift` next
 to the 🏠 Home Wi-Fi toggle (it used to sit next to `CursorGlow`, deleted
 2026-09-14).
@@ -152,6 +154,72 @@ the exact failure this is meant to prevent.
   shelling out to `ps`: no process spawn on a path that runs every ten seconds
   for hours on a battery, and no dependence on `ps` seeing the whole table
   (under a sandbox it does not — measured at 31 rows of several hundred).
+
+### The second signal: sessions driven from the phone (2026-09-21)
+
+**A remote-control session holds no `caffeinate`, so everything above was blind
+to it.** Victor asked the question the right way round — *"do remote sessions
+keep the laptop awake when the row is on? they should"* — and the answer was no:
+a turn started from the phone ran with the lid shut and the Mac went to sleep
+underneath it.
+
+Why, measured on 2026-09-21:
+
+- A session driven from the phone is **not a terminal session**. The
+  `claude remote-control` host (pid 66358, inside the `claude-rc` tmux) spawns
+  one `claude --print --sdk-url https://api.anthropic.com/v1/code/sessions/cse_…`
+  per session — four of them live that morning, all children of the host.
+- **Headless Claude Code never starts a `caffeinate`.** In the CLI bundle
+  (2.1.274) the sleep inhibitor is a ref-counted singleton with exactly **one**
+  acquire site: an effect inside the terminal UI component,
+  `if (status === "busy") acquire()`, released on cleanup and re-spawned every
+  240 s. `--print` never renders that component. Verified twice with a
+  `claude -p` doing ~50 s of real work — zero new `caffeinate`, only the
+  interactive session's own — and on the live rig, where remote session 5914
+  was appending to its transcript that very minute while holding nothing.
+- So `isClaudeWorking()` said false, `LidAwake` released the flag, and the lid
+  decided the rest. Battery and lid had nothing to do with it; the *signal* was
+  missing.
+
+**The signal that works is the transcript's mtime.** Claude Code appends to
+`~/.claude/projects/<slug>/<sessionId>.jsonl` on every message — each assistant
+turn, each tool call, each result — and stops the moment the session parks. On
+the four live remote sessions: the two mid-work were **0** and **2.8 minutes**
+old, the parked one **14 hours**. Same shape as a `caffeinate`: it tracks work,
+not existence.
+
+- **The session list comes from Claude Code's own presence files**,
+  `~/.claude/sessions/<pid>.json`, which carry `pid`, `sessionId`, `cwd` and
+  `entrypoint` (`cli` for a terminal, **`sdk-cli`** for a remote one).
+- **Their `status` field is a trap.** It reads `"busy"`/`"idle"` and looks like
+  exactly the signal wanted — and it is only kept honest by that same terminal
+  UI. Measured: remote session 5914 wrote `busy` two seconds after starting and
+  never touched the field again, staying `"busy"` through the two hours it then
+  sat idle. Believing it would hold the lid open forever, which is the failure
+  this whole feature exists to prevent. Only `sessionId` + `cwd` are used.
+- **Only `sdk-cli` sessions are judged this way**, deliberately. A terminal
+  session already answers the sharper signal, and its `caffeinate` is killed
+  ~30 s after a turn ends (the `-t 300` is only the orphan backstop); giving all
+  two dozen open terminals a five-minute tail instead would be a real
+  regression.
+- **The pid is still checked against the process table** — the presence file is
+  deleted on exit but survives a crash, and `proc_pidpath` must still say
+  `claude`, so a recycled pid cannot hold the lid.
+- **The path is derived, not searched.** `cwd` → folder name is Claude Code's
+  own encoding: everything outside `[A-Za-z0-9]` becomes a dash
+  (`/Users/victorrentea/workspace` → `-Users-victorrentea-workspace`), checked
+  against all 14 live sessions. There are **287** project directories on this
+  Mac; walking them six times a minute to find one file is not worth it. The
+  cost: a session resumed in a different directory than its presence file
+  records looks silent — which is the behaviour of the day before this existed.
+- **Known blind spot**: a single tool call longer than five minutes with nothing
+  written in between (a very long build) looks like silence, and the Mac is let
+  go. Widen `ClaudeActivity.transcriptFreshness` if it ever bites.
+
+`GET /test/claude-activity` now answers `{working, remote, skipped_helpers}`,
+with `remote` the pids counted through this half — the first thing to look at
+when "it is working but the Mac slept" comes back.
+
 
 ## The internet gate: a parked Claude is not a working Claude (2026-09-15)
 

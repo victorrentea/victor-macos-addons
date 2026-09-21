@@ -452,4 +452,128 @@ final class ClaudeHelperTests: XCTestCase {
             helperKind: { _ in nil }),
             [200, 300])
     }
+
+    // MARK: - Remote-control sessions, which hold no `caffeinate` at all
+
+    private let claudeBinary = "/Users/v/.local/share/claude/versions/2.1.274"
+
+    private func remote(_ pid: Int32, cwd: String = "/Users/v/workspace") -> SessionPresence {
+        SessionPresence(pid: pid, sessionId: "s\(pid)", cwd: cwd, entrypoint: "sdk-cli")
+    }
+
+    private func working(_ sessions: [SessionPresence],
+                         ages: [Int32: TimeInterval],
+                         paths: [Int32: String]? = nil) -> [Int32] {
+        let now = Date()
+        return ClaudeActivity.remoteWorkingSessions(
+            in: sessions,
+            transcriptModified: { ages[$0.pid].map { now.addingTimeInterval(-$0) } },
+            executablePath: { (paths ?? [:])[$0] ?? self.claudeBinary },
+            now: now)
+    }
+
+    func testARemoteSessionWritingItsTranscriptIsWorking() {
+        // The case the feature was blind to: a turn started from the phone,
+        // thinking or running a tool, with no `caffeinate` anywhere.
+        XCTAssertEqual(working([remote(5914)], ages: [5914: 30]), [5914])
+    }
+
+    func testARemoteSessionParkedAtItsPromptIsNot() {
+        // Measured on the live rig: the parked remote session's transcript was
+        // fourteen hours old while two working ones were under three minutes.
+        XCTAssertEqual(working([remote(34155)], ages: [34155: 14 * 3600.0]), [])
+    }
+
+    func testTheFiveMinuteTailIsInclusiveAndEndsSharply() {
+        // A session pausing between turns keeps the flag; one that genuinely
+        // stopped loses it. Same tail the `caffeinate` half has.
+        XCTAssertEqual(working([remote(700)], ages: [700: 300]), [700])
+        XCTAssertEqual(working([remote(700)], ages: [700: 301]), [])
+    }
+
+    func testATerminalSessionIsNotJudgedByItsTranscript() {
+        // Terminal sessions already answer the sharper signal, and their
+        // `caffeinate` goes away ~30 s after a turn. Giving all two dozen of
+        // them a five-minute tail instead would be the regression this feature
+        // exists to prevent.
+        let terminal = SessionPresence(pid: 800, sessionId: "s800",
+                                       cwd: "/Users/v/workspace", entrypoint: "cli")
+        XCTAssertEqual(working([terminal], ages: [800: 5]), [])
+    }
+
+    func testAPresenceFileLeftByADeadSessionIsNot() {
+        // The file is deleted on exit, but not after a crash — and a pid can be
+        // handed to something else entirely by then.
+        XCTAssertEqual(working([remote(900)], ages: [900: 5], paths: [900: ""]), [])
+        XCTAssertEqual(working([remote(901)], ages: [901: 5], paths: [901: "/bin/zsh"]), [])
+    }
+
+    func testARemoteSessionThatHasWrittenNothingYetIsNot() {
+        // Started, never asked to do anything: no transcript file at all.
+        XCTAssertEqual(working([remote(46245)], ages: [:]), [])
+    }
+
+    func testTheRemoteHoldersAreReportedSortedToo() {
+        XCTAssertEqual(
+            working([remote(69858), remote(5914), remote(34155)],
+                    ages: [69858: 60.0, 5914: 10.0, 34155: 14 * 3600.0]),
+            [5914, 69858])
+    }
+
+    // MARK: - Finding a remote session's transcript
+
+    func testTheProjectSlugIsTheCwdWithEverythingElseDashed() {
+        // Verbatim from this Mac, checked against all 14 live sessions.
+        XCTAssertEqual(ClaudeActivity.projectSlug(cwd: "/Users/victorrentea/workspace"),
+                       "-Users-victorrentea-workspace")
+        XCTAssertEqual(ClaudeActivity.projectSlug(cwd: "/Users/victorrentea/workspace/petclinic-main"),
+                       "-Users-victorrentea-workspace-petclinic-main")
+    }
+
+    func testDotsAndUnderscoresAreDashesToo() {
+        // The rule is not "replace slashes": `victorrentea.ro` is a folder here.
+        XCTAssertEqual(ClaudeActivity.projectSlug(cwd: "/Users/v/workspace/victorrentea.ro"),
+                       "-Users-v-workspace-victorrentea-ro")
+        XCTAssertEqual(ClaudeActivity.projectSlug(cwd: "/Users/v/my_stuff"), "-Users-v-my-stuff")
+    }
+
+    func testTheTranscriptPathIsSlugThenSessionId() {
+        let path = ClaudeActivity.transcriptPath(
+            for: SessionPresence(pid: 5914,
+                                 sessionId: "64f5980e-c996-5796-9f83-eb92e7516b3b",
+                                 cwd: "/Users/victorrentea/workspace",
+                                 entrypoint: "sdk-cli"),
+            projects: URL(fileURLWithPath: "/Users/victorrentea/.claude/projects"))
+        XCTAssertEqual(path.path,
+                       "/Users/victorrentea/.claude/projects/-Users-victorrentea-workspace/"
+                       + "64f5980e-c996-5796-9f83-eb92e7516b3b.jsonl")
+    }
+
+    func testPresenceFilesAreReadOffDisk() throws {
+        // The parse, against the shape the CLI actually writes (2.1.274).
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("presence-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try """
+        {"pid":5914,"sessionId":"64f5980e-c996-5796-9f83-eb92e7516b3b",\
+        "cwd":"/Users/victorrentea/workspace","kind":"interactive",\
+        "entrypoint":"sdk-cli","status":"busy","tmux":"claude-rc:@0.%0"}
+        """.write(to: dir.appendingPathComponent("5914.json"), atomically: true, encoding: .utf8)
+        // Not JSON, and not a presence file: neither may take the reader down.
+        try "{".write(to: dir.appendingPathComponent("broken.json"), atomically: true, encoding: .utf8)
+        try "x".write(to: dir.appendingPathComponent("5914.abc.key"), atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(ClaudeActivity.sessionPresence(dir: dir),
+                       [SessionPresence(pid: 5914,
+                                        sessionId: "64f5980e-c996-5796-9f83-eb92e7516b3b",
+                                        cwd: "/Users/victorrentea/workspace",
+                                        entrypoint: "sdk-cli")])
+    }
+
+    func testAMissingSessionsDirectoryIsSilent() {
+        XCTAssertEqual(ClaudeActivity.sessionPresence(
+            dir: URL(fileURLWithPath: "/nope/not/here")), [])
+    }
 }

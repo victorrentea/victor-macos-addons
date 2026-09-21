@@ -10,6 +10,25 @@ struct RunningProcess: Equatable {
     let name: String
 }
 
+/// One row of `~/.claude/sessions/<pid>.json` — Claude Code's own presence
+/// file — reduced to what the question needs.
+///
+/// The CLI writes one of these per live session and deletes it on exit. Its
+/// `status` field ("busy"/"idle") looks like exactly the signal this file
+/// wants and **is not**: measured 2026-09-21, a remote session wrote `busy`
+/// two seconds after it started and never touched the field again, staying
+/// "busy" for the two hours it then sat idle. Only the CLI's terminal UI keeps
+/// that field honest, and a remote session has no terminal UI. What is used
+/// here instead is `sessionId` + `cwd`, which locate the transcript.
+struct SessionPresence: Equatable {
+    let pid: Int32
+    let sessionId: String
+    let cwd: String
+    /// `cli` for a session in a terminal, `sdk-cli` for one the
+    /// `claude remote-control` host drives. The field this struct exists for.
+    let entrypoint: String
+}
+
 /// Answers one question for `LidAwake`: **is any Claude Code session actually
 /// working right now?**
 ///
@@ -58,9 +77,11 @@ enum ClaudeActivity {
     /// on 2026-09-10, where the answer turned out to be the very Claude being
     /// asked to investigate.
     static func workingSessions() -> [Int32] {
-        workingSessions(in: processTable(),
-                        executablePath: executablePath(of:),
-                        helperKind: helperKind(of:))
+        let local = workingSessions(in: processTable(),
+                                    executablePath: executablePath(of:),
+                                    helperKind: helperKind(of:))
+        // A session can answer both signals at once, so the union is a set.
+        return Array(Set(local + remoteWorkingSessions())).sorted()
     }
 
     /// The decision, separated from the syscalls so it can be tested against a
@@ -220,4 +241,131 @@ enum ClaudeActivity {
             return RunningProcess(pid: p.kp_proc.p_pid, ppid: p.kp_eproc.e_ppid, name: name)
         }
     }
+
+    // MARK: - Sessions driven from the phone, which never spawn a `caffeinate`
+
+    /// **Everything above reads the process table, and the process table cannot
+    /// see a remote session working.** Measured 2026-09-21, and it is why this
+    /// half exists:
+    ///
+    /// A session driven from the phone is not a terminal session. The
+    /// `claude remote-control` host (in the `claude-rc` tmux) spawns one
+    /// `claude --print --sdk-url https://api.anthropic.com/v1/code/sessions/…`
+    /// per session, and **headless Claude Code never starts a
+    /// `caffeinate`**: in the CLI bundle the sleep inhibitor has exactly one
+    /// acquire site, an effect inside the terminal UI component
+    /// (`if (status === "busy") acquire()`), and `--print` never renders it.
+    /// Verified twice with a `claude -p` doing ~50 s of real work — zero new
+    /// `caffeinate` — and on the live rig, where a remote session was writing
+    /// its transcript that very minute while holding nothing.
+    ///
+    /// So with the row ticked and the lid shut, a turn started from the phone
+    /// ran and the Mac went to sleep underneath it. That is the hole this
+    /// closes.
+    ///
+    /// **The signal is the transcript's mtime.** Claude Code appends to
+    /// `~/.claude/projects/<slug>/<sessionId>.jsonl` on every message — each
+    /// assistant turn, each tool call, each result — and stops the moment the
+    /// session parks at its prompt. Measured on the four live remote sessions:
+    /// the two mid-work were 0 and 2.8 minutes old, the parked one 14 hours.
+    /// That is the same shape as a `caffeinate`: it tracks work, not existence.
+    ///
+    /// **Only remote sessions get this rule**, deliberately. A terminal session
+    /// already answers the sharper signal, and its `caffeinate` is released ~30 s
+    /// after a turn ends — giving every idle terminal a five-minute tail instead
+    /// would be a real regression for the two dozen Victor keeps open.
+    ///
+    /// **Known blind spot**: one tool call longer than `transcriptFreshness`
+    /// with nothing written in between (a very long build) looks like silence,
+    /// and the Mac is let go. Widen the window if it ever bites.
+    static func remoteWorkingSessions() -> [Int32] {
+        remoteWorkingSessions(
+            in: sessionPresence(),
+            transcriptModified: { modificationDate(of: transcriptPath(for: $0)) },
+            executablePath: executablePath(of:),
+            now: Date())
+    }
+
+    /// The decision, separated from the filesystem the same way the process
+    /// half is separated from the syscalls.
+    static func remoteWorkingSessions(
+        in sessions: [SessionPresence],
+        transcriptModified: (SessionPresence) -> Date?,
+        executablePath: (Int32) -> String?,
+        now: Date,
+        freshness: TimeInterval = transcriptFreshness
+    ) -> [Int32] {
+        sessions.filter { session in
+            guard session.entrypoint == remoteEntrypoint else { return false }
+            // The file outlives nothing, but a stale one outlives a crash — and
+            // the same path test as above keeps a recycled pid from counting.
+            guard let path = executablePath(session.pid), isClaudeExecutable(path: path) else { return false }
+            guard let touched = transcriptModified(session) else { return false }
+            return now.timeIntervalSince(touched) <= freshness
+        }
+        .map(\.pid)
+        .sorted()
+    }
+
+    /// The `entrypoint` a remote-control session writes. `cli` is a terminal.
+    static let remoteEntrypoint = "sdk-cli"
+
+    /// How long after its last written message a remote session still counts as
+    /// working. 300 s on purpose: the same five-minute tail the `caffeinate`
+    /// half has, so a session pausing between turns — an API round-trip, a long
+    /// tool call — does not drop the flag underneath itself.
+    static let transcriptFreshness: TimeInterval = 300
+
+    /// Every presence file Claude Code currently has on disk.
+    ///
+    /// Read fresh on every tick rather than watched: the whole directory is a
+    /// dozen small files, and a `DispatchSource` per file would be more moving
+    /// parts than the thing it watches.
+    static func sessionPresence(dir: URL = sessionsDirectory) -> [SessionPresence] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }
+        return names.filter { $0.hasSuffix(".json") }.compactMap { name in
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pid = (json["pid"] as? NSNumber)?.int32Value,
+                  let sessionId = json["sessionId"] as? String,
+                  let cwd = json["cwd"] as? String
+            else { return nil }
+            return SessionPresence(pid: pid,
+                                   sessionId: sessionId,
+                                   cwd: cwd,
+                                   entrypoint: json["entrypoint"] as? String ?? "")
+        }
+    }
+
+    /// Where a session's transcript is, derived rather than searched: the 287
+    /// project directories on this Mac are not worth walking six times a minute.
+    ///
+    /// A session that was resumed in a different directory than the one its
+    /// presence file records therefore looks silent. Accepted: that is the
+    /// behaviour of the day before this existed, not a new failure.
+    static func transcriptPath(for session: SessionPresence, projects: URL = projectsDirectory) -> URL {
+        projects
+            .appendingPathComponent(projectSlug(cwd: session.cwd))
+            .appendingPathComponent(session.sessionId + ".jsonl")
+    }
+
+    /// Claude Code's own encoding of a working directory into a folder name:
+    /// everything outside `[A-Za-z0-9]` becomes a dash, leading slash included
+    /// (`/Users/victorrentea/workspace` → `-Users-victorrentea-workspace`).
+    /// Checked against all 14 live sessions on 2026-09-21.
+    static func projectSlug(cwd: String) -> String {
+        String(cwd.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" })
+    }
+
+    static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    static var claudeHome: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+    }
+
+    static var sessionsDirectory: URL { claudeHome.appendingPathComponent("sessions") }
+
+    static var projectsDirectory: URL { claudeHome.appendingPathComponent("projects") }
 }
