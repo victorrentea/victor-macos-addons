@@ -461,13 +461,20 @@ final class ClaudeHelperTests: XCTestCase {
         SessionPresence(pid: pid, sessionId: "s\(pid)", cwd: cwd, entrypoint: "sdk-cli")
     }
 
+    /// `ages` is "how many seconds ago the transcript was last written", and
+    /// `states` what its last line said. A session with no age has no
+    /// transcript at all.
     private func working(_ sessions: [SessionPresence],
                          ages: [Int32: TimeInterval],
+                         states: [Int32: ClaudeActivity.TranscriptState] = [:],
                          paths: [Int32: String]? = nil) -> [Int32] {
         let now = Date()
         return ClaudeActivity.remoteWorkingSessions(
             in: sessions,
-            transcriptModified: { ages[$0.pid].map { now.addingTimeInterval(-$0) } },
+            transcript: { session in
+                ages[session.pid].map { (now.addingTimeInterval(-$0),
+                                         states[session.pid] ?? .working) }
+            },
             executablePath: { (paths ?? [:])[$0] ?? self.claudeBinary },
             now: now)
     }
@@ -481,14 +488,106 @@ final class ClaudeHelperTests: XCTestCase {
     func testARemoteSessionParkedAtItsPromptIsNot() {
         // Measured on the live rig: the parked remote session's transcript was
         // fourteen hours old while two working ones were under three minutes.
-        XCTAssertEqual(working([remote(34155)], ages: [34155: 14 * 3600.0]), [])
+        XCTAssertEqual(working([remote(34155)], ages: [34155: 14 * 3600.0], states: [34155: .finished]), [])
     }
 
-    func testTheFiveMinuteTailIsInclusiveAndEndsSharply() {
-        // A session pausing between turns keeps the flag; one that genuinely
-        // stopped loses it. Same tail the `caffeinate` half has.
-        XCTAssertEqual(working([remote(700)], ages: [700: 300]), [700])
-        XCTAssertEqual(working([remote(700)], ages: [700: 301]), [])
+    func testAFinishedTurnLetsGoAfterAMinute() {
+        // What Victor asked for: closing the lid a minute after the remote work
+        // ended should let the Mac sleep, not five minutes after.
+        XCTAssertEqual(working([remote(700)], ages: [700: 59], states: [700: .finished]), [700])
+        XCTAssertEqual(working([remote(700)], ages: [700: 61], states: [700: .finished]), [])
+    }
+
+    func testALongToolCallSurvivesTheFiveMinuteMark() {
+        // The blind spot the mtime alone had: a build that prints nothing for
+        // ten minutes is still a session working, and its last line says so.
+        XCTAssertEqual(working([remote(701)], ages: [701: 600], states: [701: .working]), [701])
+        XCTAssertEqual(working([remote(701)], ages: [701: 901], states: [701: .working]), [])
+    }
+
+    func testATranscriptThatSaysNothingFallsBackToFiveMinutes() {
+        XCTAssertEqual(working([remote(702)], ages: [702: 300], states: [702: .unknown]), [702])
+        XCTAssertEqual(working([remote(702)], ages: [702: 301], states: [702: .unknown]), [])
+    }
+
+    // MARK: - Reading the state off the last line
+
+    private func state(_ lines: [String]) -> ClaudeActivity.TranscriptState {
+        ClaudeActivity.transcriptState(tail: lines.joined(separator: "\n"))
+    }
+
+    func testAPendingToolCallIsWork() {
+        // Verbatim shape from a live remote session mid-tool-call (2.1.274).
+        XCTAssertEqual(state([
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"thinking"}]}}"#,
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use"}]}}"#,
+        ]), .working)
+    }
+
+    func testAnEndedTurnIsFinishedEvenWithASystemLineAfterIt() {
+        // The parked session's tail, verbatim: the `system` line lands after
+        // the last assistant message and must not hide it.
+        XCTAssertEqual(state([
+            #"{"type":"attachment"}"#,
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text"}]}}"#,
+            #"{"type":"system"}"#,
+        ]), .finished)
+    }
+
+    func testAQueuedMessageIsWorkEvenAfterAnEndedTurn() {
+        // A message sent from the phone while the session was finishing: the
+        // queue line is the only trace of it until the turn picks it up.
+        XCTAssertEqual(state([
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn"}}"#,
+            #"{"type":"queue-operation"}"#,
+        ]), .working)
+    }
+
+    func testAThinkingSessionIsWork() {
+        XCTAssertEqual(state([
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn"}}"#,
+            #"{"type":"user"}"#,
+        ]), .working)
+    }
+
+    func testASubagentFinishingIsNotTheSessionFinishing() {
+        // A sidechain `end_turn` while the parent carries on would read as
+        // "everything is done" — and on a shut lid that reads as "sleep now".
+        XCTAssertEqual(state([
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"tool_use"}}"#,
+            #"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","stop_reason":"end_turn"}}"#,
+        ]), .working)
+    }
+
+    func testBookkeepingLinesAreNotAnAnswer() {
+        XCTAssertEqual(state([#"{"type":"mode"}"#, #"{"type":"ai-title"}"#, #"{"type":"atis-latch"}"#]), .unknown)
+        XCTAssertEqual(state([]), .unknown)
+    }
+
+    func testTheHalfLineTheTailWindowCutIsIgnored() {
+        // The tail starts 64 KB from the end, which lands mid-line; the broken
+        // first line must not stop the scan or crash it.
+        XCTAssertEqual(state([
+            #"ontent":[{"type":"text","text":"…"}]}}"#,
+            #"{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn"}}"#,
+        ]), .finished)
+    }
+
+    func testTheTailIsReadFromTheEndOfARealFile() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("tail-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let filler = String(repeating: #"{"type":"user"}"# + "\n", count: 5000)
+        try (filler + #"{"type":"assistant","message":{"stop_reason":"end_turn"}}"# + "\n")
+            .write(to: url, atomically: true, encoding: .utf8)
+
+        let tail = try XCTUnwrap(ClaudeActivity.transcriptTail(at: url, bytes: 1024))
+        XCTAssertLessThanOrEqual(tail.utf8.count, 1024)
+        XCTAssertEqual(ClaudeActivity.transcriptState(tail: tail), .finished)
+    }
+
+    func testAMissingTranscriptHasNoTail() {
+        XCTAssertNil(ClaudeActivity.transcriptTail(at: URL(fileURLWithPath: "/nope/none.jsonl")))
     }
 
     func testATerminalSessionIsNotJudgedByItsTranscript() {
@@ -516,7 +615,8 @@ final class ClaudeHelperTests: XCTestCase {
     func testTheRemoteHoldersAreReportedSortedToo() {
         XCTAssertEqual(
             working([remote(69858), remote(5914), remote(34155)],
-                    ages: [69858: 60.0, 5914: 10.0, 34155: 14 * 3600.0]),
+                    ages: [69858: 60.0, 5914: 10.0, 34155: 14 * 3600.0],
+                    states: [34155: .finished]),
             [5914, 69858])
     }
 

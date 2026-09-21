@@ -212,9 +212,26 @@ not existence.
   Mac; walking them six times a minute to find one file is not worth it. The
   cost: a session resumed in a different directory than its presence file
   records looks silent — which is the behaviour of the day before this existed.
-- **Known blind spot**: a single tool call longer than five minutes with nothing
-  written in between (a very long build) looks like silence, and the Mac is let
-  go. Widen `ClaudeActivity.transcriptFreshness` if it ever bites.
+- **The mtime alone was too blunt in both directions, and the last line fixed
+  both** (same day, after Victor asked why he now had to wait five minutes for a
+  shut lid to sleep). The tail of the transcript says *which* of the two is
+  happening, so it is read backwards to the first line that means something:
+  - `stop_reason: "end_turn"` with nothing after it — the turn is over. **One
+    minute** of grace and the Mac may sleep, instead of five. Not zero: the gap
+    between one turn ending and the next queued message being picked up is a
+    second or two of `end_turn`, and a tick landing in that gap would sleep the
+    Mac in the middle of a conversation.
+  - `stop_reason: "tool_use"`, or a `user` / `queue-operation` / `attachment`
+    line last — the session is inside a tool call or thinking about the next
+    one. Believed for up to **15 minutes**, which is what carries a long build
+    across the old five-minute mark. The cap exists only so a session blocked
+    forever on something that never answers cannot hold the lid open all night.
+  - nothing decisive in the tail — the plain five-minute mtime rule, as before.
+  **Sub-agent lines are skipped** (`isSidechain: true`): a subagent finishing
+  with `end_turn` while its parent carries on would read as the whole session
+  going idle, and on a shut lid that reads as "sleep now". Only the last 64 KB
+  of the file is read — these transcripts reach 20 MB and this runs every ten
+  seconds.
 
 `GET /test/claude-activity` now answers `{working, remote, skipped_helpers}`,
 with `remote` the pids counted through this half — the first thing to look at
@@ -427,6 +444,20 @@ Talkie has been installed. It is listed by its **full** bundle id and not as
 `ro.victorrentea.`, because the other app in that family is `victor-effects`,
 the soundboard: that one *is* the music, and skipping it would mean taking the
 room's playlist to 100%.
+
+**Wispr Flow itself was the fourth, and it had killed the boost again
+(2026-09-21).** Same symptom, reported the same way: lid shut, a remote session
+working, no heartbeat at all. Sampled every 4 s on a silent Mac,
+`com.electron.wispr-flow.helper` reported an open output stream every single
+time at RMS 0 — the dictation app, running all day, holds the stream the way its
+relay does. Beside it sat a **process with no bundle id at all**: Playwright's
+`chrome-headless-shell` audio utility, left behind by the WhatsApp and LinkedIn
+skills, which also holds one open at RMS 0. So the probe now falls back to the
+binary's path when there is no bundle id, both to skip that one and to *name* it
+in the refusal — `pid 46038` says nothing, `pid 46038 (chrome-headless-shell)`
+says everything. Proven on the lid: with both skipped, a 40-second close beat
+five times at `boosted:true`, where the same close an hour earlier had been
+silent.
 
 Why not the RMS tap that already exists: it measures the `🔊OS Output`
 aggregate, which is the music-mute path's device and not what a laptop in a

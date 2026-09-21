@@ -54,11 +54,28 @@ enum SystemAudioActivity {
             guard isRunningOutput(object) else { continue }
             if processPID(object) == mine { continue }
             let bundle = bundleID(object) ?? ""
-            guard !alwaysOpenPrefixes.contains(where: bundle.hasPrefix) else { continue }
+            // A process with no bundle id is identified by its binary instead —
+            // both to skip the headless plumbing and so the refusal names
+            // something a human can act on.
+            let path = bundle.isEmpty ? processPID(object).flatMap(ClaudeActivity.executablePath(of:)) : nil
+            guard !isAlwaysOpenPlumbing(bundleID: bundle, executablePath: path) else { continue }
             if !bundle.isEmpty { return bundle }
+            if let path, let pid = processPID(object) {
+                return "pid \(pid) (\((path as NSString).lastPathComponent))"
+            }
             return processPID(object).map { "pid \($0)" } ?? "an app"
         }
         return nil
+    }
+
+    /// Is this process plumbing that holds an output stream open whether or not
+    /// anything is playing, rather than something that is actually the music?
+    ///
+    /// Separated out so the list is testable without a sound card.
+    static func isAlwaysOpenPlumbing(bundleID: String, executablePath: String?) -> Bool {
+        if !bundleID.isEmpty { return alwaysOpenPrefixes.contains(where: bundleID.hasPrefix) }
+        guard let executablePath else { return false }
+        return alwaysOpenBinaries.contains { executablePath.contains($0) }
     }
 
     /// Audio plumbing that holds an output stream open whether or not anything
@@ -74,10 +91,31 @@ enum SystemAudioActivity {
     /// because the *other* app in that family, `victor-effects`, is the
     /// soundboard: it is quite literally the music, and skipping it would put
     /// the room's playlist at full blast.
-    private static let alwaysOpenPrefixes = [
+    /// **Wispr Flow itself joined on 2026-09-21**, for the same reason and
+    /// after the same symptom: Victor shut the lid with a remote session
+    /// working and heard no heartbeat at all. Sampled every 4 s on a silent
+    /// machine, `com.electron.wispr-flow.helper` reports `IsRunningOutput = 1`
+    /// permanently at RMS 0 — the dictation app holds the output stream open
+    /// the way its relay does, and it is running all day on this Mac. So the
+    /// boost *and* the mute lift had been refused on every single tick: the
+    /// pulse went out at whatever the slider happened to be, and on a muted Mac
+    /// it would have gone out as nothing. It is the microphone app, never the
+    /// music.
+    static let alwaysOpenPrefixes = [
         "com.rogueamoeba.",
         "ai.krisp.",
         "ro.victorrentea.wispr-relay",
+        "com.electron.wispr-flow",
+    ]
+
+    /// The same thing for processes with **no bundle id at all**, matched on the
+    /// binary's path. Playwright's headless Chromium — the one the WhatsApp and
+    /// LinkedIn skills leave running — spawns an audio utility child that holds
+    /// an output stream open at RMS 0; measured beside Wispr Flow on
+    /// 2026-09-21, both at once, which is why the boost never fired even when
+    /// Wispr was closed. A headless browser is automation, not the room's sound.
+    static let alwaysOpenBinaries = [
+        "chrome-headless-shell",
     ]
 
     private static func processObjects() -> [AudioObjectID]? {

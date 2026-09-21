@@ -281,40 +281,132 @@ enum ClaudeActivity {
     static func remoteWorkingSessions() -> [Int32] {
         remoteWorkingSessions(
             in: sessionPresence(),
-            transcriptModified: { modificationDate(of: transcriptPath(for: $0)) },
+            transcript: { transcriptSignal(for: $0) },
             executablePath: executablePath(of:),
             now: Date())
     }
 
+    /// When a session's transcript was last written, and what its last line
+    /// says the session is doing.
+    static func transcriptSignal(for session: SessionPresence) -> (modified: Date, state: TranscriptState)? {
+        let url = transcriptPath(for: session)
+        guard let modified = modificationDate(of: url) else { return nil }
+        return (modified, transcriptState(tail: transcriptTail(at: url) ?? ""))
+    }
+
     /// The decision, separated from the filesystem the same way the process
     /// half is separated from the syscalls.
+    ///
+    /// **The mtime alone was too blunt in both directions** (2026-09-21, the
+    /// afternoon of the morning above). A five-minute tail on every remote
+    /// session meant Victor had to wait five minutes after the work finished
+    /// before a shut lid would sleep — and it *still* dropped the flag under a
+    /// tool call that ran longer than that without printing. The last line of
+    /// the transcript answers both, because it says which of the two is
+    /// happening:
+    ///
+    /// - `stop_reason: "end_turn"` — the turn is over, nothing is running. One
+    ///   minute of grace and the Mac may sleep.
+    /// - `stop_reason: "tool_use"`, or a `user` / queued line last — the
+    ///   session is inside a tool call or thinking about the next one. Held for
+    ///   up to `stallTimeout`, which is what makes a long build survive.
     static func remoteWorkingSessions(
         in sessions: [SessionPresence],
-        transcriptModified: (SessionPresence) -> Date?,
+        transcript: (SessionPresence) -> (modified: Date, state: TranscriptState)?,
         executablePath: (Int32) -> String?,
-        now: Date,
-        freshness: TimeInterval = transcriptFreshness
+        now: Date
     ) -> [Int32] {
         sessions.filter { session in
             guard session.entrypoint == remoteEntrypoint else { return false }
             // The file outlives nothing, but a stale one outlives a crash — and
             // the same path test as above keeps a recycled pid from counting.
             guard let path = executablePath(session.pid), isClaudeExecutable(path: path) else { return false }
-            guard let touched = transcriptModified(session) else { return false }
-            return now.timeIntervalSince(touched) <= freshness
+            guard let signal = transcript(session) else { return false }
+            let age = now.timeIntervalSince(signal.modified)
+            switch signal.state {
+            case .finished: return age <= endTurnGrace
+            case .working: return age <= stallTimeout
+            case .unknown: return age <= transcriptFreshness
+            }
         }
         .map(\.pid)
         .sorted()
     }
 
+    /// What the tail of a transcript says the session is doing.
+    enum TranscriptState: Equatable {
+        /// Inside a tool call, or thinking about the next one.
+        case working
+        /// The last turn ended — `stop_reason: "end_turn"` with nothing after it.
+        case finished
+        /// Nothing decisive in the tail. Falls back to the plain mtime rule.
+        case unknown
+    }
+
+    /// Read the tail backwards to the first line that says something.
+    ///
+    /// **Sub-agent lines are skipped** (`isSidechain: true`): a subagent
+    /// finishing with `end_turn` while its parent carries on would otherwise
+    /// read as the whole session going idle, and on a shut lid that reads as
+    /// "sleep now".
+    ///
+    /// `attachment` and `queue-operation` count as work: they are what a
+    /// message queued from the phone looks like on its way in, and the `user`
+    /// line only follows once the session picks it up.
+    static func transcriptState(tail: String) -> TranscriptState {
+        for line in tail.split(separator: "\n").reversed() {
+            guard let data = line.data(using: .utf8),
+                  let entry = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }   // also the half line the tail window cut in two
+            if entry["isSidechain"] as? Bool == true { continue }
+            switch entry["type"] as? String {
+            case "assistant":
+                let message = entry["message"] as? [String: Any]
+                return (message?["stop_reason"] as? String) == "end_turn" ? .finished : .working
+            case "user", "queue-operation", "attachment":
+                return .working
+            default:
+                continue    // mode, ai-title, atis-latch, system, file-history-snapshot…
+            }
+        }
+        return .unknown
+    }
+
+    /// The last slice of a file, without reading the rest of it: these
+    /// transcripts reach 20 MB and this runs every ten seconds.
+    static func transcriptTail(at url: URL, bytes: UInt64 = tailBytes) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let end = try? handle.seekToEnd() else { return nil }
+        try? handle.seek(toOffset: end > bytes ? end - bytes : 0)
+        guard let data = try? handle.readToEnd() else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     /// The `entrypoint` a remote-control session writes. `cli` is a terminal.
     static let remoteEntrypoint = "sdk-cli"
 
-    /// How long after its last written message a remote session still counts as
-    /// working. 300 s on purpose: the same five-minute tail the `caffeinate`
-    /// half has, so a session pausing between turns — an API round-trip, a long
-    /// tool call — does not drop the flag underneath itself.
+    /// The fallback tail, for a transcript whose last lines say nothing either
+    /// way: the same five minutes the `caffeinate` half has.
     static let transcriptFreshness: TimeInterval = 300
+
+    /// How long a finished turn keeps the lid open. **Not zero**, because the
+    /// gap between one turn ending and the next queued message being picked up
+    /// is a second or two of `end_turn` — and a tick landing in that gap with
+    /// the lid shut would sleep the Mac in the middle of a conversation.
+    /// A minute is short enough to be the answer to "I closed the lid, why is
+    /// it still awake" and long enough to cover that gap.
+    static let endTurnGrace: TimeInterval = 60
+
+    /// How long a session that says it is mid-tool-call is believed. This is
+    /// what carries a long build across the five-minute mark; the cap exists
+    /// only so a session blocked forever on something that never answers (a
+    /// permission prompt nobody taps) cannot hold the lid open all night.
+    static let stallTimeout: TimeInterval = 900
+
+    /// Enough tail to hold the last few lines of any transcript, and small
+    /// enough to read six times a minute without noticing.
+    static let tailBytes: UInt64 = 64 * 1024
 
     /// Every presence file Claude Code currently has on disk.
     ///

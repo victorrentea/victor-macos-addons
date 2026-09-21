@@ -207,6 +207,16 @@ final class LidAwake {
     /// Whether the last tick had given up on the network, so the "they are all
     /// parked" line is written once per outage instead of six times a minute.
     private var stalled = false
+    /// How many beats have gone out since launch, and when the last one did.
+    ///
+    /// Counted for one reason: **"I shut the lid and heard nothing" is two
+    /// different bugs** — a pulse that never fired, and a pulse that fired into
+    /// a volume nobody could hear — and from the outside they are the same
+    /// silence. On 2026-09-21 that cost an hour of guessing at sound files and
+    /// output devices. With these in `/test/lid-awake/state`, the next one is
+    /// one `curl` away.
+    private var beatCount = 0
+    private var lastBeatAt: Date?
     private var ticks = 0
     private let queue = DispatchQueue(label: "ro.victorrentea.lidawake")
     /// Is there internet, and for how long has there not been? Started and
@@ -310,6 +320,11 @@ final class LidAwake {
             + "\"offline_for\":\(Int(offlineFor)),"
             + "\"offline_grace\":\(Int(LidAwakePolicy.offlineGrace)),"
             + "\"beating\":\(wasBeating),"
+            + "\"beats\":\(beatCount),"
+            + "\"last_beat_ago\":\(lastBeatAt.map { String(Int(Date().timeIntervalSince($0))) } ?? "null"),"
+            + "\"boost_refused\":\(boostRefused),"
+            + "\"other_app_playing\":\"\(SystemAudioActivity.otherAppPlayingOutput() ?? "")\","
+            + "\"beat_sound\":\"\(AddonSounds.shared.soundURL(for: Self.beatFile)?.path ?? "MISSING")\","
             + "\"boosted\":\(volumeBeforeBeats != nil),"
             + "\"muted\":\(SystemOutputVolume.isMuted().map(String.init) ?? "null"),"
             + "\"mute_lifted\":\(muteBeforeBeats == true),"
@@ -396,6 +411,8 @@ final class LidAwake {
             hold(true)
             boostForBeats(true)
             heartbeat()
+            beatCount += 1
+            lastBeatAt = Date()
             wasBeating = true
 
         case .hold:

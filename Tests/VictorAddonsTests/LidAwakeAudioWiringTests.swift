@@ -1,4 +1,5 @@
 import XCTest
+@testable import VictorAddons
 
 /// The three lines of `LidAwake` that the heartbeat's audibility hangs on, and
 /// that nothing else can catch.
@@ -45,5 +46,41 @@ final class LidAwakeAudioWiringTests: XCTestCase {
                 + "a restore on the line after the sleep is a line that may never run")
         }
         XCTAssertFalse(restore.isEmpty)
+    }
+
+    // MARK: - What counts as "something else is playing"
+
+    func testThePermanentlyOpenPlumbingIsNotTheMusic() {
+        // Each of these was, at some point, the reason the heartbeat's volume
+        // boost quietly never fired: Audio Hijack and Krisp (2026-09-10),
+        // Walkie Talkie (2026-09-15), Wispr Flow itself (2026-09-21).
+        for id in ["com.rogueamoeba.audiohijack", "ai.krisp.krispMac",
+                   "ro.victorrentea.wispr-relay", "com.electron.wispr-flow.helper"] {
+            XCTAssertTrue(SystemAudioActivity.isAlwaysOpenPlumbing(bundleID: id, executablePath: String?.none),
+                          "\(id) holds an output stream open at RMS 0 all day and must not veto the boost")
+        }
+    }
+
+    func testTheSoundboardIsTheMusicAndStillVetoesIt() {
+        // The reason Walkie Talkie is listed by its full bundle id rather than
+        // as `ro.victorrentea.`: the other app in that family is the room's
+        // playlist, and skipping it would take it to 100%.
+        XCTAssertFalse(SystemAudioActivity.isAlwaysOpenPlumbing(
+            bundleID: "ro.victorrentea.victor-effects", executablePath: String?.none))
+        XCTAssertFalse(SystemAudioActivity.isAlwaysOpenPlumbing(
+            bundleID: "com.apple.Music", executablePath: String?.none))
+    }
+
+    func testABundlelessProcessIsJudgedByItsBinary() {
+        // Playwright's headless Chromium spawns an audio utility child with no
+        // bundle id that holds a stream open at RMS 0 — measured beside Wispr
+        // Flow on 2026-09-21, which is why skipping Wispr alone was not enough.
+        XCTAssertTrue(SystemAudioActivity.isAlwaysOpenPlumbing(
+            bundleID: "",
+            executablePath: "/Users/v/Library/Caches/ms-playwright/chromium_headless_shell-1208/"
+                + "chrome-headless-shell-mac-arm64/chrome-headless-shell"))
+        XCTAssertFalse(SystemAudioActivity.isAlwaysOpenPlumbing(
+            bundleID: "", executablePath: "/usr/bin/afplay"))
+        XCTAssertFalse(SystemAudioActivity.isAlwaysOpenPlumbing(bundleID: "", executablePath: String?.none))
     }
 }
