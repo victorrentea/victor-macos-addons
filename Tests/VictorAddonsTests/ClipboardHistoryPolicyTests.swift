@@ -135,12 +135,27 @@ final class ClipboardHistoryPolicyTests: XCTestCase {
         XCTAssertEqual(ClipboardHistoryPolicy.age(3 * 86400), "3 days ago")
     }
 
-    /// A copied paragraph or block of code has to read as ONE thing in the
-    /// bezel, so every run of whitespace collapses to a single space.
-    func testPreviewCollapsesWhitespaceAndTruncates() {
-        XCTAssertEqual(ClipboardHistoryPolicy.preview("  one\n\ttwo   three \n"), "one two three")
+    /// The bezel shows a clip the way it was copied: the line breaks are the
+    /// point, since the shape of a block of code is how you recognise it.
+    func testPreviewKeepsTheLineBreaks() {
+        XCTAssertEqual(ClipboardHistoryPolicy.preview("one\n  two\nthree"), "one\n  two\nthree")
+    }
+
+    /// Only what would waste the box is normalised: CRLF, tabs (which would
+    /// jump the label's own tab stops), trailing blanks, runs of blank lines,
+    /// and blank lines at either end — the first line has to start at the top.
+    func testPreviewNormalisesOnlyWhatWastesTheBox() {
+        XCTAssertEqual(ClipboardHistoryPolicy.preview("\n\r\nfunc f() {\r\n\tlet x = 1   \n}\n\n\n"),
+                       "func f() {\n    let x = 1\n}")
+        XCTAssertEqual(ClipboardHistoryPolicy.preview("a\n\n\n\n\nb"), "a\n\nb")
+    }
+
+    /// The character cap is a safety stop for a pasted log, not the visible
+    /// cut — the box decides what shows.
+    func testPreviewStopsAtTheSafetyCap() {
         let long = String(repeating: "x", count: 500)
-        let preview = ClipboardHistoryPolicy.preview(long, limit: 10)
-        XCTAssertEqual(preview, String(repeating: "x", count: 10) + "…")
+        XCTAssertEqual(ClipboardHistoryPolicy.preview(long, limit: 10),
+                       String(repeating: "x", count: 10) + "…")
+        XCTAssertEqual(ClipboardHistoryPolicy.preview(long).count, 500)
     }
 }

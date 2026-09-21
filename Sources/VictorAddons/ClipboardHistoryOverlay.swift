@@ -42,11 +42,13 @@ final class ClipboardHistoryOverlay {
     /// clipboard" — see `commit()`.
     private var pastesOnCommit = false
 
-    /// Past this many characters a text clip's length is worth printing — see
-    /// `statusRow`. Comfortably above `ClipboardHistoryPolicy.preview`'s 280-char
-    /// cut, so the number only ever appears next to something that visibly is
-    /// an excerpt.
-    private static let longTextThreshold = 500
+    /// Set by `textView` while the body is being built and read by
+    /// `statusRow` a moment later: true when the clip did not fit the box and
+    /// what you are reading is its opening. It replaces a fixed character
+    /// threshold (2026-09-21) — now that the box shows the text as it was
+    /// copied, "is there more?" is a question about *this* box and *this* clip,
+    /// not about a number of characters.
+    private var textIsTruncated = false
 
     var isShowing: Bool { panel != nil }
     /// Whether letting go of ⌘ finishes this bezel — true only for the one the
@@ -151,6 +153,7 @@ final class ClipboardHistoryOverlay {
         // an image is always in the same place and text always starts at the
         // same point; only the content changes.
         let box = bodyBox(on: screen)
+        textIsTruncated = false
         let body: NSView = entry.isImage
             ? imageView(for: entry, in: box, screen: screen)
             : textView(for: entry, in: box)
@@ -244,16 +247,32 @@ final class ClipboardHistoryOverlay {
     /// cut off at its bottom rather than growing the panel: the first line has
     /// to land on the same pixel for every clip, which is the whole point of
     /// the fixed box.
+    ///
+    /// **It fills the box.** The line breaks are the ones that were copied (see
+    /// `ClipboardHistoryPolicy.preview`) and the box takes as many lines as it
+    /// has room for — `maximumNumberOfLines` counts *drawn* lines, so one long
+    /// line that wraps four times spends four of them, which is exactly the
+    /// accounting the box needs. The last line that fits gets the ellipsis;
+    /// clipping the height alone would have sliced a row of glyphs in half and
+    /// said nothing about there being more.
     private func textView(for entry: ClipboardEntry, in box: NSSize) -> NSView {
         guard case .text(let string) = entry.kind else { return NSView() }
+        let font = NSFont.systemFont(ofSize: 17)
         let field = NSTextField(wrappingLabelWithString: ClipboardHistoryPolicy.preview(string))
-        field.font = .systemFont(ofSize: 17)
+        field.font = font
         field.textColor = NSColor(white: 0.95, alpha: 1)
         field.drawsBackground = false
         field.isBezeled = false
         field.isSelectable = false
         field.lineBreakMode = .byTruncatingTail
         field.preferredMaxLayoutWidth = box.width
+        field.maximumNumberOfLines = 0
+        // Measured uncapped first, because the honest answer to "is there more
+        // of this clip?" is whether the whole of it would have overflowed the
+        // box — and after the cap is set, nothing can overflow it any more.
+        let full = field.sizeThatFits(NSSize(width: box.width, height: .greatestFiniteMagnitude))
+        textIsTruncated = full.height > box.height + 1
+        field.maximumNumberOfLines = max(1, Int(box.height / NSLayoutManager().defaultLineHeight(for: font)))
         let fitted = field.sizeThatFits(NSSize(width: box.width, height: .greatestFiniteMagnitude))
         field.frame = NSRect(x: 0, y: 0, width: box.width, height: min(fitted.height, box.height))
         return field
@@ -270,10 +289,10 @@ final class ClipboardHistoryOverlay {
     /// **Right**: only what the clip cannot say for itself. **When** it was
     /// copied is the whole provenance — Flycut prints the source app, which is
     /// the wrong question for two clips out of the same editor. Nothing else is
-    /// added, with one exception: a text clip longer than `longTextThreshold`
-    /// prints its length, because at that size the count stops being trivia and
-    /// becomes the one fact the panel cannot show — that these words are the
-    /// opening of something much bigger.
+    /// added, with one exception: a text clip the box could not hold prints its
+    /// length, because then the count stops being trivia and becomes the one
+    /// fact the panel cannot show — that these words are the opening of
+    /// something much bigger.
     private func statusRow(for entry: ClipboardEntry, width: CGFloat) -> NSView {
         // Sized to their own text, not to the box: three labels share this line
         // and the two on the left are placed one after the other, so a label
@@ -292,7 +311,7 @@ final class ClipboardHistoryOverlay {
         // mă interesează"* (2026-09-17). You recognise a picture by looking at
         // it, and the picture is right there at a quarter of the screen.
         var facts = [ClipboardHistoryPolicy.age(Date().timeIntervalSince(entry.copiedAt))]
-        if case .text(let string) = entry.kind, string.count > Self.longTextThreshold {
+        if case .text(let string) = entry.kind, textIsTruncated {
             facts.append("\(string.count) chars")
         }
         let right = fittedLabel(text: facts.joined(separator: "  ·  "), font: .systemFont(ofSize: 12),

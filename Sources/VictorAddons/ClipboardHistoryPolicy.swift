@@ -140,12 +140,43 @@ enum ClipboardHistoryPolicy {
         }
     }
 
-    /// One line of preview for a text clip: whitespace collapsed, so a copied
-    /// block of code or a paragraph with hard wraps still reads as *one thing*
-    /// in a list, and cut to `limit` characters with an ellipsis.
-    static func preview(_ text: String, limit: Int = 280) -> String {
-        let collapsed = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-        guard collapsed.count > limit else { return collapsed }
-        return String(collapsed.prefix(limit)) + "…"
+    /// A text clip as the bezel shows it: **the way it was copied, line breaks
+    /// and all**.
+    ///
+    /// The first version collapsed every run of whitespace into one space, on
+    /// the theory that a clip has to read as one thing in a list. It does not
+    /// have a list — it has a quarter of the screen for one clip, and the
+    /// shape of what you copied (an indented block, a stack trace, three
+    /// paragraphs) is most of how you recognise it. Flattening that threw away
+    /// the one cue the box was big enough to show. Victor, 2026-09-21: *"should
+    /// show the text as it was copied along with the new lines, as much as fits
+    /// the area in which it is displayed"*.
+    ///
+    /// What is still normalised is only what would waste that area: CRLF and
+    /// lone CR become `\n`, a tab becomes four spaces (a real tab jumps to the
+    /// label's default tab stop and throws indentation off), trailing blanks go
+    /// per line, a run of blank lines squeezes to one, and blank lines at
+    /// either end are dropped so the first line starts at the top of the box.
+    ///
+    /// `limit` is a **safety stop, not the visible cut**: how much shows is
+    /// decided by the box, in `ClipboardHistoryOverlay.textView`, which fills it
+    /// to the last line that fits and truncates there. The cap only keeps a
+    /// pasted 4 MB log from being laid out in full for nothing.
+    static func preview(_ text: String, limit: Int = 4000) -> String {
+        let normalised = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\t", with: "    ")
+        var lines: [String] = []
+        for raw in normalised.split(separator: "\n", omittingEmptySubsequences: false) {
+            var line = String(raw)
+            while line.last == " " { line.removeLast() }
+            if line.isEmpty, lines.last?.isEmpty ?? true { continue }
+            lines.append(line)
+        }
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        let body = lines.joined(separator: "\n")
+        guard body.count > limit else { return body }
+        return String(body.prefix(limit)) + "…"
     }
 }

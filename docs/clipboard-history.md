@@ -70,17 +70,29 @@ the content changes (2026-09-17).
   past 1:1** — a copied 120×40 button should look like a small thing, not a wall
   of interpolation — and centred in it.
 - **A text clip** hangs from the box's **top-left corner**, so its first line is
-  always on the same pixel; it is one paragraph of preview, whitespace collapsed
-  so a copied block of code reads as one thing, cut at 280 characters.
+  always on the same pixel, and it **fills the box the way it was copied — line
+  breaks and all**, down to the last line that fits, which gets an ellipsis.
+  The first version collapsed all whitespace into one paragraph and cut it at
+  280 characters; that threw away the one cue the box is big enough to show,
+  since an indented block, a stack trace and three paragraphs are recognised by
+  their shape (2026-09-21: *"should show the text as it was copied along with
+  the new lines, as much as fits the area in which it is displayed"*). Only
+  what would waste the area is still normalised: CRLF, tabs → four spaces
+  (a real tab jumps the label's own tab stops), trailing blanks, runs of blank
+  lines squeezed to one, blank lines at either end. The 4000-character cap in
+  `preview` is a safety stop for a pasted log, not the visible cut — the cut is
+  `maximumNumberOfLines`, counted in *drawn* lines, so one long line that wraps
+  four times spends four of them.
 
 **One line under the box, not two.** The counter, the legend and what-this-clip-
 is were a footer row plus a hint row, and two rows of small grey text under a
 picture read as a paragraph you are meant to study. Now: `3 / 40` in the accent
 colour and the legend on the left, and on the right **only what the clip cannot
-say for itself** — `12 minutes ago`, plus a character count when a text clip is
-longer than 500 characters (at that size the number stops being trivia: it is
-the one fact the panel cannot show, that these words are the opening of
-something much bigger).
+say for itself** — `12 minutes ago`, plus a character count when the clip did
+not fit the box (then the number stops being trivia: it is the one fact the
+panel cannot show, that these words are the opening of something much bigger).
+It used to be a fixed 500-character threshold; with the box now showing the text
+as copied, "is there more?" is a question about *this* box and *this* clip.
 
 **Nothing describes an image any more.** `🖼️ 3000×2000 · 142 KB` was there on the
 theory that two screenshots of the same window are told apart by their size;
