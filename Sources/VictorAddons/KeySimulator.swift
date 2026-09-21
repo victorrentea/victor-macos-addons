@@ -87,6 +87,10 @@ enum KeySimulator {
     }
 
     static func cmdV() { chord(0x09, modifier: VK_COMMAND, flag: .maskCommand) }
+    /// ⌃V — what Claude Code binds `chat:imagePaste` to. The only caller is
+    /// the clipboard bezel, and only for an image clip; see
+    /// `ClipboardPasteKeystroke` for why a terminal needs a second paste key.
+    static func ctrlV() { chord(0x09, modifier: VK_CONTROL, flag: .maskControl) }
     static func cmdC() { chord(0x08, modifier: VK_COMMAND, flag: .maskCommand) }
     static func cmdZ() { chord(0x06, modifier: VK_COMMAND, flag: .maskCommand) }
 

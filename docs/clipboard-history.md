@@ -181,6 +181,19 @@ save) are swept on every capture; nothing else would ever reclaim them.
   match-style in half the apps here, and this app's own shortcut in the other
   half, i.e. the bezel re-opening forever. The same trap cost ⌘⌃S a workshop
   once; see `KeySimulator`.
+- **An image going into a Claude Code prompt is pasted with ⌃V, not ⌘V**
+  (2026-09-22, `ClipboardPasteKeystroke`). Terminal.app answers ⌘V by writing
+  the pasteboard's *text* to the pty, and an image clip has none — the ⌃P
+  screenshot you just walked to in the bezel simply never appeared. Claude Code
+  reads the clipboard itself instead: `chat:imagePaste`, bound to ⌃V, shells out
+  to `osascript -e 'the clipboard as «class PNGf»'` and attaches the PNG (its own
+  hint says *"control+v (not cmd+v!)"*). The swap is scoped as tightly as it can
+  be: **image clips only** (text already pastes fine with ⌘V, through bracketed
+  paste and no subprocess) and **only when Terminal.app is in front with a
+  Claude window focused** — the `ClaudeSessionTitle` spinner test that ⌘⌃A
+  already uses. Everywhere else ⌃V is readline's `quoted-insert`, which eats the
+  next keystroke; Copilot CLI has no clipboard-image path at all (checked
+  2026-09-22), so it keeps ⌘V and the no-op.
 
 ## Files
 
@@ -189,6 +202,7 @@ save) are swept on every capture; nothing else would ever reclaim them.
 | `ClipboardHistoryPolicy.swift` | `ClipboardEntry` + the pure rules (insert/dedup/cap, the two ceilings, the age caption, the text preview) |
 | `ClipboardHistoryStore.swift` | disk, thumbnails, fingerprints, the index, `place()` |
 | `ClipboardHistoryOverlay.swift` | the bezel and its geometry |
+| `ClipboardPasteKeystroke.swift` | ⌘V or ⌃V, and the AX read of the window it is about to land in |
 | `EventTapManager.swift` | ⌘⇧V, the key routing while it is up, the ⌘-release |
 | `ClipboardStackManager.swift` | the shared poll that feeds it |
 

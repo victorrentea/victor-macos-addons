@@ -104,6 +104,10 @@ final class ClipboardHistoryOverlay {
         guard isShowing, entries.indices.contains(index) else { close(); return }
         let entry = entries[index]
         let shouldPaste = pastesOnCommit
+        // Read the target while we are still on the main thread and the bezel is
+        // still up — the paste itself runs on a background queue that sleeps
+        // waiting for the hand to leave ⌘⇧. See `ClipboardPasteTarget`.
+        let target = ClipboardPasteTarget.current()
         close()
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -122,7 +126,11 @@ final class ClipboardHistoryOverlay {
             // endless re-open). `waitForModifiersReleased` is exactly this
             // trap, found once already by ⌘⌃S; see `KeySimulator`.
             KeySimulator.waitForModifiersReleased()
-            KeySimulator.cmdV()
+            // ⌘V for everything except an image going into a Claude Code
+            // prompt, which only ⌃V can carry — `ClipboardPasteKeystroke`.
+            ClipboardPasteKeystroke.choose(isImage: entry.isImage,
+                                           frontmostBundleID: target.bundleID,
+                                           focusedWindowTitle: target.focusedWindowTitle).post()
         }
     }
 
