@@ -204,7 +204,7 @@ Why, measured on 2026-09-21:
   decided the rest. Battery and lid had nothing to do with it; the *signal* was
   missing.
 
-**The signal that works is the transcript's mtime.** Claude Code appends to
+**The transcript is the second signal, and was the first one shipped.** Claude Code appends to
 `~/.claude/projects/<slug>/<sessionId>.jsonl` on every message — each assistant
 turn, each tool call, each result — and stops the moment the session parks. On
 the four live remote sessions: the two mid-work were **0** and **2.8 minutes**
@@ -214,7 +214,8 @@ not existence.
 - **The session list comes from Claude Code's own presence files**,
   `~/.claude/sessions/<pid>.json`, which carry `pid`, `sessionId`, `cwd` and
   `entrypoint` (`cli` for a terminal, **`sdk-cli`** for a remote one).
-- **Their `status` field was dismissed too fast, and that is corrected here.**
+- **Their `status` field leads the decision** (since the afternoon of the same
+  day; it was dismissed in the morning, and that is corrected here).
   The first reading was a single sample: remote session 5914 at `"busy"` with
   `statusUpdatedAt` two seconds after its own start looked like a field written
   once and abandoned, which would have held the lid open forever. Re-measured
@@ -224,9 +225,19 @@ not existence.
   earlier — a clean falling edge on a session with no terminal UI. So it is a
   live signal, and a **more responsive and cheaper one** than the transcript:
   written at the moment of the change, no 64 KB tail, no grace period.
-  The transcript rule is what ships, because it was proven on the lid; the
-  status field is the obvious next move, with the transcript kept as the
-  cross-check. Today only `sessionId` + `cwd` are read.
+  So the rule is now:
+  - `busy` → working, for as long as there is any **sign of life** — the more
+    recent of the status change and the last transcript write, capped at 15
+    minutes. Measured live: two sessions busy for 151 and 131 minutes with
+    transcripts 24 and 18 seconds old, both genuinely inside long tool calls,
+    both held. One blocked forever on something that never answers goes quiet in
+    both clocks and is let go.
+  - `idle` / `waiting` / `shell` → finished, with the transcript guarding the
+    falling edge: a status that lags, or one left behind by a restart, cannot
+    sleep the Mac while lines are still being written. The grace is **15
+    seconds** rather than the 60 the transcript rule needed, because the end of
+    a turn is now *stated* instead of inferred from the shape of the last line.
+  - no `status` at all (an older CLI) → the transcript rule below, unchanged.
 - **Only `sdk-cli` sessions are judged this way**, deliberately. A terminal
   session already answers the sharper signal, and its `caffeinate` is killed
   ~30 s after a turn ends (the `-t 300` is only the orphan backstop); giving all

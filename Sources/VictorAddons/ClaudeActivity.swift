@@ -34,8 +34,13 @@ struct SessionPresence: Equatable {
     let sessionId: String
     let cwd: String
     /// `cli` for a session in a terminal, `sdk-cli` for one the
-    /// `claude remote-control` host drives. The field this struct exists for.
+    /// `claude remote-control` host drives.
     let entrypoint: String
+    /// `busy` while a turn is running, then `idle` / `waiting` / `shell`.
+    /// Empty when the field is missing, which is an older CLI.
+    let status: String
+    /// When `status` last changed — **not** when the file was last touched.
+    let statusUpdatedAt: Date?
 }
 
 /// Answers one question for `LidAwake`: **is any Claude Code session actually
@@ -315,19 +320,29 @@ enum ClaudeActivity {
     /// The decision, separated from the filesystem the same way the process
     /// half is separated from the syscalls.
     ///
-    /// **The mtime alone was too blunt in both directions** (2026-09-21, the
-    /// afternoon of the morning above). A five-minute tail on every remote
-    /// session meant Victor had to wait five minutes after the work finished
-    /// before a shut lid would sleep — and it *still* dropped the flag under a
-    /// tool call that ran longer than that without printing. The last line of
-    /// the transcript answers both, because it says which of the two is
-    /// happening:
+    /// **The session's own `status` leads, and the transcript is the
+    /// cross-check** (2026-09-21, second correction of the day). The field was
+    /// dismissed in the morning on a single sample — a remote session at `busy`
+    /// with `statusUpdatedAt` two seconds after its own start, which looked
+    /// written-once and was simply a session that had been busy since it
+    /// started. Re-measured over all 13 live sessions, it has both edges: the
+    /// parked remote session sat at `idle`, stamped **twelve seconds after** its
+    /// last transcript line, 14 hours earlier. It is written the moment the
+    /// state changes, so it is the more responsive signal *and* the cheaper one.
     ///
-    /// - `stop_reason: "end_turn"` — the turn is over, nothing is running. One
-    ///   minute of grace and the Mac may sleep.
-    /// - `stop_reason: "tool_use"`, or a `user` / queued line last — the
-    ///   session is inside a tool call or thinking about the next one. Held for
-    ///   up to `stallTimeout`, which is what makes a long build survive.
+    /// - `busy` — working, for as long as there is any **sign of life**: the
+    ///   more recent of the status change and the last transcript write, capped
+    ///   at `stallTimeout`. Measured live: two sessions busy for 145 and 125
+    ///   minutes with transcripts 1 and 5 minutes old — genuinely inside long
+    ///   tool calls, and held. A session blocked forever on something that never
+    ///   answers goes quiet in both and is let go.
+    /// - anything else (`idle`, `waiting`, `shell`) — finished. The transcript
+    ///   is what guards the falling edge: a status that lags, or one left behind
+    ///   by a restart, cannot sleep the Mac while lines are still being written.
+    ///   `endTurnGrace` is 15 s now rather than 60, because the status flips at
+    ///   the moment of the change instead of having to be inferred.
+    /// - no status field at all — an older CLI. Falls back to the transcript
+    ///   rule, unchanged.
     static func remoteWorkingSessions(
         in sessions: [SessionPresence],
         transcript: (SessionPresence) -> (modified: Date, state: TranscriptState)?,
@@ -339,12 +354,22 @@ enum ClaudeActivity {
             // The file outlives nothing, but a stale one outlives a crash — and
             // the same path test as above keeps a recycled pid from counting.
             guard let path = executablePath(session.pid), isClaudeExecutable(path: path) else { return false }
-            guard let signal = transcript(session) else { return false }
-            let age = now.timeIntervalSince(signal.modified)
-            switch signal.state {
-            case .finished: return age <= endTurnGrace
-            case .working: return age <= stallTimeout
-            case .unknown: return age <= transcriptFreshness
+            let signal = transcript(session)
+            let writeAge = signal.map { now.timeIntervalSince($0.modified) } ?? .greatestFiniteMagnitude
+            switch session.status {
+            case workingStatus:
+                let statusAge = session.statusUpdatedAt.map { now.timeIntervalSince($0) }
+                    ?? Double.greatestFiniteMagnitude
+                return min(writeAge, statusAge) <= stallTimeout
+            case "":
+                guard let signal else { return false }
+                switch signal.state {
+                case .finished: return writeAge <= endTurnGrace
+                case .working: return writeAge <= stallTimeout
+                case .unknown: return writeAge <= transcriptFreshness
+                }
+            default:
+                return writeAge <= endTurnGrace
             }
         }
         .map(\.pid)
@@ -410,11 +435,15 @@ enum ClaudeActivity {
 
     /// How long a finished turn keeps the lid open. **Not zero**, because the
     /// gap between one turn ending and the next queued message being picked up
-    /// is a second or two of `end_turn` — and a tick landing in that gap with
-    /// the lid shut would sleep the Mac in the middle of a conversation.
-    /// A minute is short enough to be the answer to "I closed the lid, why is
-    /// it still awake" and long enough to cover that gap.
-    static let endTurnGrace: TimeInterval = 60
+    /// is a second or two — and a tick landing in that gap with the lid shut
+    /// would sleep the Mac in the middle of a conversation. Fifteen seconds
+    /// since the status field took over: the end of a turn is now *stated*
+    /// rather than inferred from the shape of the last line, so the grace only
+    /// has to cover that gap, not the ambiguity.
+    static let endTurnGrace: TimeInterval = 15
+
+    /// The one `status` value that means a turn is running.
+    static let workingStatus = "busy"
 
     /// How long a session that says it is mid-tool-call is believed. This is
     /// what carries a long build across the five-minute mark; the cap exists
@@ -440,10 +469,15 @@ enum ClaudeActivity {
                   let sessionId = json["sessionId"] as? String,
                   let cwd = json["cwd"] as? String
             else { return nil }
+            let changed = (json["statusUpdatedAt"] as? NSNumber).map {
+                Date(timeIntervalSince1970: $0.doubleValue / 1000)   // the CLI writes milliseconds
+            }
             return SessionPresence(pid: pid,
                                    sessionId: sessionId,
                                    cwd: cwd,
-                                   entrypoint: json["entrypoint"] as? String ?? "")
+                                   entrypoint: json["entrypoint"] as? String ?? "",
+                                   status: json["status"] as? String ?? "",
+                                   statusUpdatedAt: changed)
         }
     }
 

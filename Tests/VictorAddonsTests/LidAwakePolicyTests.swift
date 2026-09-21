@@ -457,8 +457,15 @@ final class ClaudeHelperTests: XCTestCase {
 
     private let claudeBinary = "/Users/v/.local/share/claude/versions/2.1.274"
 
-    private func remote(_ pid: Int32, cwd: String = "/Users/v/workspace") -> SessionPresence {
-        SessionPresence(pid: pid, sessionId: "s\(pid)", cwd: cwd, entrypoint: "sdk-cli")
+    /// A remote session as its presence file describes it. `status` defaults to
+    /// `busy` and `statusChanged` to "just now", so a test only says the part
+    /// it is about.
+    private func remote(_ pid: Int32,
+                        status: String = "busy",
+                        statusChanged: TimeInterval = 0,
+                        cwd: String = "/Users/v/workspace") -> SessionPresence {
+        SessionPresence(pid: pid, sessionId: "s\(pid)", cwd: cwd, entrypoint: "sdk-cli",
+                        status: status, statusUpdatedAt: Date().addingTimeInterval(-statusChanged))
     }
 
     /// `ages` is "how many seconds ago the transcript was last written", and
@@ -488,26 +495,49 @@ final class ClaudeHelperTests: XCTestCase {
     func testARemoteSessionParkedAtItsPromptIsNot() {
         // Measured on the live rig: the parked remote session's transcript was
         // fourteen hours old while two working ones were under three minutes.
-        XCTAssertEqual(working([remote(34155)], ages: [34155: 14 * 3600.0], states: [34155: .finished]), [])
+        XCTAssertEqual(working([remote(34155, status: "idle", statusChanged: 14 * 3600.0)],
+                               ages: [34155: 14 * 3600.0]), [])
     }
 
-    func testAFinishedTurnLetsGoAfterAMinute() {
-        // What Victor asked for: closing the lid a minute after the remote work
-        // ended should let the Mac sleep, not five minutes after.
-        XCTAssertEqual(working([remote(700)], ages: [700: 59], states: [700: .finished]), [700])
-        XCTAssertEqual(working([remote(700)], ages: [700: 61], states: [700: .finished]), [])
+    func testAFinishedTurnLetsGoAfterFifteenSeconds() {
+        // What Victor asked for: shut the lid just after the remote work ended
+        // and the Mac sleeps, instead of waiting out a tail.
+        XCTAssertEqual(working([remote(700, status: "idle")], ages: [700: 14]), [700])
+        XCTAssertEqual(working([remote(700, status: "idle")], ages: [700: 16]), [])
     }
 
-    func testALongToolCallSurvivesTheFiveMinuteMark() {
-        // The blind spot the mtime alone had: a build that prints nothing for
-        // ten minutes is still a session working, and its last line says so.
-        XCTAssertEqual(working([remote(701)], ages: [701: 600], states: [701: .working]), [701])
-        XCTAssertEqual(working([remote(701)], ages: [701: 901], states: [701: .working]), [])
+    func testASessionWaitingForAnAnswerIsNotWorking() {
+        // `waiting` is a question nobody is going to tap on a shut laptop.
+        XCTAssertEqual(working([remote(703, status: "waiting")], ages: [703: 120]), [])
     }
 
-    func testATranscriptThatSaysNothingFallsBackToFiveMinutes() {
-        XCTAssertEqual(working([remote(702)], ages: [702: 300], states: [702: .unknown]), [702])
-        XCTAssertEqual(working([remote(702)], ages: [702: 301], states: [702: .unknown]), [])
+    func testALongToolCallIsHeldWhileThereIsAnySignOfLife() {
+        // Measured live: remote sessions busy for 145 and 125 minutes, with
+        // transcripts 1 and 5 minutes old — genuinely inside long tool calls.
+        XCTAssertEqual(working([remote(701, statusChanged: 145 * 60)], ages: [701: 60]), [701])
+        // …and a session busy with nothing written at all yet is held on the
+        // strength of the status change alone.
+        XCTAssertEqual(working([remote(704, statusChanged: 5)], ages: [:]), [704])
+    }
+
+    func testABusySessionThatHasGoneQuietInBothIsLetGo() {
+        // Blocked forever on something that never answers: no writes, no status
+        // change. The cap is the only thing between that and a Mac that never
+        // sleeps again.
+        XCTAssertEqual(working([remote(705, statusChanged: 3600)], ages: [705: 3600]), [])
+    }
+
+    func testTheTranscriptGuardsTheFallingEdge() {
+        // A status that lags, or one left behind by a restart, must not sleep
+        // the Mac while lines are still being written.
+        XCTAssertEqual(working([remote(706, status: "idle")], ages: [706: 2]), [706])
+    }
+
+    func testAnOlderCliWithNoStatusFallsBackToTheTranscript() {
+        XCTAssertEqual(working([remote(707, status: "")], ages: [707: 14], states: [707: .finished]), [707])
+        XCTAssertEqual(working([remote(707, status: "")], ages: [707: 16], states: [707: .finished]), [])
+        XCTAssertEqual(working([remote(708, status: "")], ages: [708: 600], states: [708: .working]), [708])
+        XCTAssertEqual(working([remote(709, status: "")], ages: [709: 301], states: [709: .unknown]), [])
     }
 
     // MARK: - Reading the state off the last line
@@ -595,8 +625,8 @@ final class ClaudeHelperTests: XCTestCase {
         // `caffeinate` goes away ~30 s after a turn. Giving all two dozen of
         // them a five-minute tail instead would be the regression this feature
         // exists to prevent.
-        let terminal = SessionPresence(pid: 800, sessionId: "s800",
-                                       cwd: "/Users/v/workspace", entrypoint: "cli")
+        let terminal = SessionPresence(pid: 800, sessionId: "s800", cwd: "/Users/v/workspace",
+                                       entrypoint: "cli", status: "busy", statusUpdatedAt: Date())
         XCTAssertEqual(working([terminal], ages: [800: 5]), [])
     }
 
@@ -608,15 +638,17 @@ final class ClaudeHelperTests: XCTestCase {
     }
 
     func testARemoteSessionThatHasWrittenNothingYetIsNot() {
-        // Started, never asked to do anything: no transcript file at all.
-        XCTAssertEqual(working([remote(46245)], ages: [:]), [])
+        // Started, never asked to do anything: `idle` and no transcript file at
+        // all — measured, that is exactly what the fourth live remote session
+        // looked like. (A session that says `busy` with no transcript yet is
+        // the opposite case and is held; see the sign-of-life test above.)
+        XCTAssertEqual(working([remote(46245, status: "idle", statusChanged: 117 * 60)], ages: [:]), [])
     }
 
     func testTheRemoteHoldersAreReportedSortedToo() {
         XCTAssertEqual(
-            working([remote(69858), remote(5914), remote(34155)],
-                    ages: [69858: 60.0, 5914: 10.0, 34155: 14 * 3600.0],
-                    states: [34155: .finished]),
+            working([remote(69858), remote(5914), remote(34155, status: "idle", statusChanged: 14 * 3600.0)],
+                    ages: [69858: 60.0, 5914: 10.0, 34155: 14 * 3600.0]),
             [5914, 69858])
     }
 
@@ -642,7 +674,9 @@ final class ClaudeHelperTests: XCTestCase {
             for: SessionPresence(pid: 5914,
                                  sessionId: "64f5980e-c996-5796-9f83-eb92e7516b3b",
                                  cwd: "/Users/victorrentea/workspace",
-                                 entrypoint: "sdk-cli"),
+                                 entrypoint: "sdk-cli",
+                                 status: "busy",
+                                 statusUpdatedAt: nil),
             projects: URL(fileURLWithPath: "/Users/victorrentea/.claude/projects"))
         XCTAssertEqual(path.path,
                        "/Users/victorrentea/.claude/projects/-Users-victorrentea-workspace/"
@@ -656,10 +690,13 @@ final class ClaudeHelperTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
+        // Verbatim shape from a live remote session (2.1.274), milliseconds and
+        // all — the timestamp is the field the whole decision now leans on.
         try """
         {"pid":5914,"sessionId":"64f5980e-c996-5796-9f83-eb92e7516b3b",\
         "cwd":"/Users/victorrentea/workspace","kind":"interactive",\
-        "entrypoint":"sdk-cli","status":"busy","tmux":"claude-rc:@0.%0"}
+        "entrypoint":"sdk-cli","status":"busy","tmux":"claude-rc:@0.%0",\
+        "updatedAt":1789961815975,"statusUpdatedAt":1789961815975}
         """.write(to: dir.appendingPathComponent("5914.json"), atomically: true, encoding: .utf8)
         // Not JSON, and not a presence file: neither may take the reader down.
         try "{".write(to: dir.appendingPathComponent("broken.json"), atomically: true, encoding: .utf8)
@@ -669,7 +706,9 @@ final class ClaudeHelperTests: XCTestCase {
                        [SessionPresence(pid: 5914,
                                         sessionId: "64f5980e-c996-5796-9f83-eb92e7516b3b",
                                         cwd: "/Users/victorrentea/workspace",
-                                        entrypoint: "sdk-cli")])
+                                        entrypoint: "sdk-cli",
+                                        status: "busy",
+                                        statusUpdatedAt: Date(timeIntervalSince1970: 1789961815.975))])
     }
 
     func testAMissingSessionsDirectoryIsSilent() {
