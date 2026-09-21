@@ -56,10 +56,28 @@ final class ClipboardHistoryStore {
     /// re-capture the clip as a brand-new copy (and re-write its PNG) one tick
     /// of the poller later.
     private var ignoredChangeCount: Int = -1
+    /// Bundle id of the app in front, cached from the main thread so the
+    /// poller's queue can stamp a clip with it without touching AppKit
+    /// off-thread — the same arrangement `EventTapManager` uses, and for the
+    /// same reason. It is read up to 300 ms after the ⌘C (that is the poll
+    /// interval), so a copy followed instantly by a ⌘⇥ is credited to the app
+    /// switched *to*; the alternative is an event tap on ⌘C, which is a lot of
+    /// machinery for a watermark.
+    private var frontmostBundleID: String?
 
     // MARK: - Lifecycle
 
     func start() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.setFrontmost(NSWorkspace.shared.frontmostApplication)
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification,
+                object: nil, queue: .main
+            ) { [weak self] note in
+                self?.setFrontmost(note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
+            }
+        }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             try? FileManager.default.createDirectory(at: self.folder, withIntermediateDirectories: true)
@@ -89,7 +107,12 @@ final class ClipboardHistoryStore {
         return changeCount == ignoredChangeCount
     }
 
-    func record(text: String) {
+    func record(text: String) { record(text: text, source: currentFrontmost()) }
+
+    /// `source` is spelled out rather than looked up here because the one
+    /// caller that must *not* look it up is the launch capture below: the app
+    /// in front when this app starts is not the app that clip came from.
+    private func record(text: String, source: String?) {
         // A copy of nothing but whitespace is a slip of the hand — usually a
         // ⌘C with an empty selection — and it would push a real clip off the
         // end of the list.
@@ -97,8 +120,20 @@ final class ClipboardHistoryStore {
         let entry = ClipboardEntry(id: UUID().uuidString,
                                    kind: .text(text),
                                    copiedAt: Date(),
-                                   fingerprint: "t:" + Self.digest(Data(text.utf8)))
+                                   fingerprint: "t:" + Self.digest(Data(text.utf8)),
+                                   sourceBundleID: source)
         add(entry)
+    }
+
+    private func setFrontmost(_ app: NSRunningApplication?) {
+        lock.lock()
+        frontmostBundleID = app?.bundleIdentifier
+        lock.unlock()
+    }
+
+    private func currentFrontmost() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return frontmostBundleID
     }
 
     /// `png` comes from the poller, which has already converted the clipboard's
@@ -251,7 +286,7 @@ final class ClipboardHistoryStore {
         }
         switch current {
         case .none: break
-        case .text(let s): record(text: s)
+        case .text(let s): record(text: s, source: nil)
         case .image(let tiff):
             guard let rep = NSBitmapImageRep(data: tiff),
                   let png = rep.representation(using: .png, properties: [:]) else { return }

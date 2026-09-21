@@ -255,6 +255,17 @@ final class ClipboardHistoryOverlay {
     /// accounting the box needs. The last line that fits gets the ellipsis;
     /// clipping the height alone would have sliced a row of glyphs in half and
     /// said nothing about there being more.
+    ///
+    /// **Behind the words, the icon of the app the text was copied from**, at
+    /// 30% and centred on the box (2026-09-22). It is the fact Flycut puts in
+    /// its footer, in the only form that does not cost a glance: nothing about
+    /// a watermark asks to be read, and by the time the eye has taken in two
+    /// lines of a stack trace it already knows the clip came out of the
+    /// terminal. Centred rather than tucked in a corner because the text hangs
+    /// from the top and leaves the middle of the box empty for short clips —
+    /// which are exactly the ones whose words say least about where they came
+    /// from. Nothing is drawn when the clip has no source app (the one picked
+    /// up at launch) or the app is gone from the disk.
     private func textView(for entry: ClipboardEntry, in box: NSSize) -> NSView {
         guard case .text(let string) = entry.kind else { return NSView() }
         let font = NSFont.systemFont(ofSize: 17)
@@ -275,7 +286,48 @@ final class ClipboardHistoryOverlay {
         field.maximumNumberOfLines = max(1, Int(box.height / NSLayoutManager().defaultLineHeight(for: font)))
         let fitted = field.sizeThatFits(NSSize(width: box.width, height: .greatestFiniteMagnitude))
         field.frame = NSRect(x: 0, y: 0, width: box.width, height: min(fitted.height, box.height))
-        return field
+
+        // The container **is** the box, so the text keeps hanging from its top
+        // (render() top-aligns a body the size of the box) and the watermark
+        // gets the whole box to be centred in.
+        let layered = NSView(frame: NSRect(origin: .zero, size: box))
+        if let mark = watermark(for: entry, in: box) { layered.addSubview(mark) }
+        field.setFrameOrigin(NSPoint(x: 0, y: box.height - field.frame.height))
+        layered.addSubview(field)
+        return layered
+    }
+
+    /// The source app's icon, washed out and centred on the box. Sized to a bit
+    /// over half the box's short side: big enough to be recognised at a glance
+    /// as a shape, small enough that the text keeps the box.
+    private func watermark(for entry: ClipboardEntry, in box: NSSize) -> NSView? {
+        guard let bundleID = entry.sourceBundleID, let icon = appIcon(bundleID) else { return nil }
+        let side = (min(box.width, box.height) * 0.55).rounded()
+        let view = NSImageView(frame: NSRect(x: ((box.width - side) / 2).rounded(),
+                                             y: ((box.height - side) / 2).rounded(),
+                                             width: side, height: side))
+        view.image = icon
+        view.imageScaling = .scaleProportionallyUpOrDown
+        // Victor's number: 30% opaque. Enough to read the icon's silhouette and
+        // its colour, far enough back that a line of text crossing it is still
+        // the thing the eye lands on first.
+        view.alphaValue = 0.3
+        return view
+    }
+
+    /// Bundle id → icon, remembered for the run. `urlForApplication` is a
+    /// LaunchServices lookup and this is called on every press of V, walking a
+    /// list where the same few apps come round again and again. An id that
+    /// resolves to nothing (app deleted since the copy) is remembered as such,
+    /// so the miss is paid once too.
+    private var iconCache: [String: NSImage?] = [:]
+
+    private func appIcon(_ bundleID: String) -> NSImage? {
+        if let hit = iconCache[bundleID] { return hit }
+        let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            .map { NSWorkspace.shared.icon(forFile: $0.path) }
+        iconCache[bundleID] = icon
+        return icon
     }
 
     /// The one line under the box.
@@ -287,8 +339,10 @@ final class ClipboardHistoryOverlay {
     /// go of ⌘, and nobody reaches for ⌫ mid-gesture).
     ///
     /// **Right**: only what the clip cannot say for itself. **When** it was
-    /// copied is the whole provenance — Flycut prints the source app, which is
-    /// the wrong question for two clips out of the same editor. Nothing else is
+    /// copied is the whole of the provenance *in words* — Flycut spends a line
+    /// of its footer naming the source app, which is the wrong question for two
+    /// clips out of the same editor and, since 2026-09-22, an answer this bezel
+    /// gives without words anyway (the watermark in `textView`). Nothing else is
     /// added, with one exception: a text clip the box could not hold prints its
     /// length, because then the count stops being trivia and becomes the one
     /// fact the panel cannot show — that these words are the opening of

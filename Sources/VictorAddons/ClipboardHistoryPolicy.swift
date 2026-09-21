@@ -20,15 +20,27 @@ struct ClipboardEntry: Equatable, Codable {
     /// `<id>-thumb.png`.
     let id: String
     let kind: Kind
-    /// When it was copied — the one piece of provenance this picker shows.
-    /// Victor does not want to know *which app* a clip came from (Flycut's
-    /// answer, and the wrong question when you are looking for something you
-    /// copied twice in the same editor); he wants to know *when*.
+    /// When it was copied — the one piece of provenance the picker puts into
+    /// *words*. Victor does not want to **read** which app a clip came from
+    /// (Flycut's answer, and the wrong question when you are looking for
+    /// something you copied twice in the same editor); he wants to read *when*.
+    /// The app is still here, but as a picture — see `sourceBundleID`.
     var copiedAt: Date
     /// What makes two clips "the same" for the move-to-front rule: the text
     /// itself, or the SHA-256 of the image bytes. Comparing image *files* would
     /// mean reading both off disk on every copy.
     let fingerprint: String
+    /// The app that was frontmost when the clip was copied, as a bundle id
+    /// (`com.apple.Safari`). Nil for the clip picked up at launch — nobody
+    /// copied that one just now — and for an app that has no bundle id.
+    ///
+    /// Only text clips do anything with it, and what they do is not to print
+    /// it: the icon is washed out to 30% and drawn *behind* the words (see
+    /// `ClipboardHistoryOverlay.textView`). A word in a footer has to be read,
+    /// which costs the whole glance the bezel is built around; an icon under
+    /// the text is recognised without looking at it. An image clip needs none
+    /// of this — it already shows the app it came out of.
+    var sourceBundleID: String? = nil
 
     var isImage: Bool {
         if case .image = kind { return true }
