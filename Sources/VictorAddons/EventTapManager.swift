@@ -487,6 +487,28 @@ private let VK_F: CGKeyCode = 0x03
             }
         }
 
+        // ⌘← / ⌘→ / ⌘⌫ while Terminal.app is focused → ^A / ^E / ^L, the moves
+        // Claude Code's prompt understands. `TerminalPromptKeys` carries the why
+        // — the short version is that Terminal's own key map cannot see ⌘ at all,
+        // and ⌃←/⌃→ already belong to Mission Control.
+        //
+        // Rewritten in place rather than swallowed and re-posted, for exactly the
+        // reason spelled out on the emoji layer above: a synthetic keystroke would
+        // re-enter this tap and get merged with the ⌘ still physically held.
+        //
+        // ⌘ must come off the event. Left on, the control character arrives as a
+        // ⌘ chord and AppKit routes it to a menu equivalent instead of the terminal.
+        if let edit = TerminalPromptKeys.rewrite(keyCode: keyCode,
+                                                 hasCommand: hasCmd, hasControl: hasCtrl,
+                                                 hasOption: hasOpt, hasShift: hasShift,
+                                                 frontmostBundleId: currentFrontmost()?.bundleId) {
+            let utf16 = Array(String(edit.character).utf16)
+            event.setIntegerValueField(.keyboardEventKeycode, value: Int64(edit.keyCode))
+            event.flags = flags.subtracting([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+            return Unmanaged.passUnretained(event)
+        }
+
         // ⌃P → screenshot (suppressed): clipboard AND /tmp/victor-screenshots,
         // always both. ⌃⇧P is deliberately NOT bound — it used to be the
         // "save to the session folder" half of this feature, and with one
