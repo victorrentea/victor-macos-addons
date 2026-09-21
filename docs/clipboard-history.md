@@ -166,6 +166,15 @@ save) are swept on every capture; nothing else would ever reclaim them.
 - **A clip the history itself puts back is not re-captured**: `place()` records
   the resulting `changeCount` and the poller skips it, or pasting from the
   history would rewrite that PNG one tick later.
+- **The screen behind it is washed 20% black** (2026-09-22, Victor's) — a
+  `ScrimPanel` over the whole `screen.frame` (menu bar and Dock included), one
+  window level under the bezel, `ignoresMouseEvents` like everything else here,
+  put up and taken down with it. The bezel is read in one glance and the glance
+  has to land *in* it; over a bright page a dark box in the middle is just one
+  more rectangle. 20% and no more because what is underneath is the context for
+  choosing *which* clip — the window you are about to paste into — so it is a
+  tint, not a curtain. It follows the cursor's screen on every render, so the
+  wash is never left behind on the display the bezel just left.
 - **The bezel never takes focus.** `.nonactivatingPanel`, `orderFrontRegardless`,
   and every key arrives through `EventTapManager` — the same way the ⌥
   cheat-sheet and the ⌃P crosshair work. It has to be this way: the gesture ends

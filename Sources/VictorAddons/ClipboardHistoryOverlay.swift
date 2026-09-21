@@ -32,7 +32,47 @@ final class ClipboardHistoryOverlay {
         }
     }
 
+    /// The 20% black wash over everything else while the bezel is up
+    /// (2026-09-22, Victor's). The bezel is read in one glance and the glance
+    /// has to land *in* it: over a bright IDE or a white browser page, a dark
+    /// box in the middle is one more rectangle among twenty. Dimming the screen
+    /// behind it is the cheapest way to say "this is the only thing on screen
+    /// right now" — the same trick a Quick Look or a sheet plays.
+    ///
+    /// **20%, not more.** What is underneath still has to be legible: the
+    /// window you are about to paste into is the context for choosing *which*
+    /// clip, so the wash is a tint, not a curtain.
+    ///
+    /// It sits one level under the bezel and, like it, never takes focus and
+    /// never takes a click — `ignoresMouseEvents`, so a scrim that somehow
+    /// outlived its gesture could not trap the Mac (`ScreenBlackout` earns its
+    /// click-through the same way).
+    private final class ScrimPanel: NSPanel {
+        static let opacity: CGFloat = 0.2
+
+        init() {
+            super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                       backing: .buffered, defer: false)
+            isOpaque = false
+            backgroundColor = .clear
+            hasShadow = false
+            ignoresMouseEvents = true
+            alphaValue = Self.opacity
+            // One below the bezel: the wash covers the desktop, never the clip
+            // it is there to set off.
+            level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) - 1)
+            collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            let content = NSView()
+            content.wantsLayer = true
+            content.layer?.backgroundColor = NSColor.black.cgColor
+            contentView = content
+        }
+    }
+
     private var panel: BezelPanel?
+    /// Torn down in `close()` together with the bezel — the two are one piece of
+    /// UI and must never be able to outlive each other.
+    private var scrim: ScrimPanel?
     private var entries: [ClipboardEntry] = []
     private var index = 0
     /// True when the overlay was opened by the hotkey, i.e. with a hand on ⌘⇧:
@@ -141,16 +181,33 @@ final class ClipboardHistoryOverlay {
     func close() {
         panel?.orderOut(nil)
         panel = nil
+        scrim?.orderOut(nil)
+        scrim = nil
         entries = []
     }
 
     // MARK: - Drawing
+
+    /// Put the wash up (or move it) under the bezel. Ordered front *before* the
+    /// bezel is, every time, so the two arrive in the right order even on the
+    /// first press.
+    private func showScrim(covering frame: NSRect) {
+        let scrim = self.scrim ?? ScrimPanel()
+        scrim.setFrame(frame, display: false)
+        scrim.orderFrontRegardless()
+        self.scrim = scrim
+    }
 
     private func render() {
         guard entries.indices.contains(index) else { return }
         let entry = entries[index]
         let screen = screenUnderCursor()
         let visible = screen.visibleFrame
+        // **The whole screen, not `visibleFrame`**: the menu bar and the Dock
+        // are part of what the bezel is asking you to stop looking at. Re-aimed
+        // on every render because the bezel follows the cursor's screen, and a
+        // wash left behind on the previous one would be a stain.
+        showScrim(covering: screen.frame)
 
         // **The frame is the same for every clip** — one box, a quarter of the
         // screen's area, whatever is in it. Victor's, after walking a list of
