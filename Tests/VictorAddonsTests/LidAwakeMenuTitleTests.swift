@@ -14,20 +14,25 @@ final class LidAwakeMenuTitleTests: XCTestCase {
 
     typealias Menu = MenuBarManager.LidAwakeMenu
 
-    func testTheInactiveModesHaveNothingInFront() {
-        for mode in LidAwakeMode.allCases where mode != .interactive {
-            let title = Menu.title(mode, current: .interactive)
-            XCTAssertEqual(title, Menu.label(mode))
-            XCTAssertFalse(title.hasPrefix("✅"), "\(mode) is not the current mode and must carry no tick")
+    func testTheRowsAreTheWordsAloneAndTheTickIsTheNativeOne() {
+        // Victor asked for the classic Mac checkmark in this submenu
+        // (2026-09-21): no marker in the text at all, the state carries it.
+        // Safe here and nowhere else in this app — the check column AppKit
+        // reserves belongs to these three rows, which have no leading emoji to
+        // be shifted.
+        for mode in LidAwakeMode.allCases {
+            let label = Menu.label(mode)
+            XCTAssertFalse(label.contains("✅"), "\(mode) must carry no tick of its own")
+            XCTAssertTrue(label.first?.isLetter == true, "the row is the words alone")
         }
     }
 
-    func testTheCurrentModeIsTheSameWordsBehindATick() {
-        for mode in LidAwakeMode.allCases {
-            let on = Menu.title(mode, current: mode)
-            XCTAssertTrue(on.hasPrefix("✅ "))
-            XCTAssertTrue(on.hasSuffix(Menu.label(mode)),
-                          "the words must not change with the state — only what is in front of them")
+    func testOnlyTheCurrentModeIsChecked() {
+        for current in LidAwakeMode.allCases {
+            XCTAssertEqual(Menu.state(current, current: current), .on)
+            for other in LidAwakeMode.allCases where other != current {
+                XCTAssertEqual(Menu.state(other, current: current), .off)
+            }
         }
     }
 

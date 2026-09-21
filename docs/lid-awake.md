@@ -11,8 +11,12 @@ from the phone is exactly what it is declining to stay awake for.
 That would normally throw away the rule below about not hiding this state, so
 **the parent row carries the current mode in its own title** (`😴 Claude
 insomnia — background too`): the menu still answers *what is it doing* at a
-glance, and only *changing* it costs a hover. The tick still lives in the
-title, never in `NSMenuItem.state`, for the reason in the next paragraph.
+glance, and only *changing* it costs a hover. **The three rows use the classic
+Mac checkmark** — `NSMenuItem.state`, Victor's call — which the rule in the next
+paragraph forbids everywhere else in this app and which is free exactly here:
+the check column AppKit reserves belongs to those three rows alone, and they
+carry no leading emoji to be shifted. The rows are the words alone, with no
+marker of their own in the text.
 A Mac that had the old single switch on lands in `background`, which is what it
 was already doing by then (`LidAwakeSettings.mode(stored:legacyEnabled:)`,
 unit-tested) — nobody's lid guard changes underneath them on an update.
@@ -210,12 +214,19 @@ not existence.
 - **The session list comes from Claude Code's own presence files**,
   `~/.claude/sessions/<pid>.json`, which carry `pid`, `sessionId`, `cwd` and
   `entrypoint` (`cli` for a terminal, **`sdk-cli`** for a remote one).
-- **Their `status` field is a trap.** It reads `"busy"`/`"idle"` and looks like
-  exactly the signal wanted — and it is only kept honest by that same terminal
-  UI. Measured: remote session 5914 wrote `busy` two seconds after starting and
-  never touched the field again, staying `"busy"` through the two hours it then
-  sat idle. Believing it would hold the lid open forever, which is the failure
-  this whole feature exists to prevent. Only `sessionId` + `cwd` are used.
+- **Their `status` field was dismissed too fast, and that is corrected here.**
+  The first reading was a single sample: remote session 5914 at `"busy"` with
+  `statusUpdatedAt` two seconds after its own start looked like a field written
+  once and abandoned, which would have held the lid open forever. Re-measured
+  the same afternoon across all 13 live sessions, it tracks: that session had
+  been busy since it started, and the parked one sat at `"idle"` with a
+  `statusUpdatedAt` **twelve seconds after** its last transcript line, 14 hours
+  earlier — a clean falling edge on a session with no terminal UI. So it is a
+  live signal, and a **more responsive and cheaper one** than the transcript:
+  written at the moment of the change, no 64 KB tail, no grace period.
+  The transcript rule is what ships, because it was proven on the lid; the
+  status field is the obvious next move, with the transcript kept as the
+  cross-check. Today only `sessionId` + `cwd` are read.
 - **Only `sdk-cli` sessions are judged this way**, deliberately. A terminal
   session already answers the sharper signal, and its `caffeinate` is killed
   ~30 s after a turn ends (the `-t 300` is only the orphan backstop); giving all

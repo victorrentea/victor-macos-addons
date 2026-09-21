@@ -13,13 +13,22 @@ struct RunningProcess: Equatable {
 /// One row of `~/.claude/sessions/<pid>.json` — Claude Code's own presence
 /// file — reduced to what the question needs.
 ///
-/// The CLI writes one of these per live session and deletes it on exit. Its
-/// `status` field ("busy"/"idle") looks like exactly the signal this file
-/// wants and **is not**: measured 2026-09-21, a remote session wrote `busy`
-/// two seconds after it started and never touched the field again, staying
-/// "busy" for the two hours it then sat idle. Only the CLI's terminal UI keeps
-/// that field honest, and a remote session has no terminal UI. What is used
-/// here instead is `sessionId` + `cwd`, which locate the transcript.
+/// The CLI writes one of these per live session and deletes it on exit.
+///
+/// **Its `status` field is better than this file first claimed**, and the
+/// correction is worth writing down because the first reading was one sample.
+/// Seeing a remote session at `busy` with `statusUpdatedAt` two seconds after
+/// its own start looked like a field written once and abandoned; it was a
+/// session that had simply been busy since it started. Re-measured across all
+/// 13 live sessions later the same day, the falling edge is there too: a parked
+/// remote session sat at `idle` with a `statusUpdatedAt` **twelve seconds
+/// after** its last transcript line, 14 hours earlier.
+///
+/// It is not used *yet* — the transcript signal below was already shipped and
+/// proven on the lid — but it is the more responsive of the two, and cheaper: a
+/// state change is written the moment it happens, where the transcript has to
+/// be read backwards and given a grace period. `sessionId` + `cwd` are what
+/// locate the transcript.
 struct SessionPresence: Equatable {
     let pid: Int32
     let sessionId: String

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 21, 08:59"
+    static let BUILD_TIME = "Sep 21, 09:01"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -581,12 +581,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         lidAwakeItem = NSMenuItem(title: LidAwakeMenu.parentTitle(LidAwakeSettings.mode),
                                   action: nil, keyEquivalent: "")
         lidAwakeItem.isEnabled = true
+        // **The native tick, here and nowhere else** (Victor, 2026-09-21). The
+        // rule everywhere above is that a checked `NSMenuItem.state` makes
+        // AppKit reserve a check column for the *whole* menu and shift every
+        // row's text — which moves the leading emoji this menu is read by. A
+        // submenu is its own menu: the column it reserves is three rows wide,
+        // those three rows carry no emoji, and nothing else moves. So the
+        // classic Mac checkmark costs nothing here and looks like what it is,
+        // while the parent row keeps its mode in plain text.
         let lidAwakeSubmenu = NSMenu()
         for mode in LidAwakeMode.allCases {
-            let item = NSMenuItem(title: LidAwakeMenu.title(mode, current: LidAwakeSettings.mode),
+            let item = NSMenuItem(title: LidAwakeMenu.label(mode),
                                   action: #selector(pickLidAwakeModeAction(_:)), keyEquivalent: "")
             item.target = self
             item.isEnabled = true
+            item.state = LidAwakeMenu.state(mode, current: LidAwakeSettings.mode)
             item.representedObject = mode.rawValue
             lidAwakeSubmenu.addItem(item)
             lidAwakeModeItems[mode] = item
@@ -871,12 +880,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             "\(name) — \(label(mode).lowercased())"
         }
 
-        /// A tick in front of the current mode and nothing at all in front of
-        /// the others — Victor's words about the old row, kept: the tick is in
-        /// the **title**, never `NSMenuItem.state`, which would make AppKit
-        /// reserve a check column and shift every other row's text sideways.
-        static func title(_ mode: LidAwakeMode, current: LidAwakeMode) -> String {
-            mode == current ? "✅ " + label(mode) : label(mode)
+        /// The classic Mac checkmark on the current mode. Safe *inside a
+        /// submenu* and nowhere else in this app: the check column AppKit
+        /// reserves for it belongs to these three rows alone, and they carry no
+        /// leading emoji to be shifted.
+        static func state(_ mode: LidAwakeMode, current: LidAwakeMode) -> NSControl.StateValue {
+            mode == current ? .on : .off
         }
     }
 
@@ -1000,7 +1009,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func refreshLidAwakeMode(_ mode: LidAwakeMode) {
         lidAwakeItem?.title = LidAwakeMenu.parentTitle(mode)
         for (each, item) in lidAwakeModeItems {
-            item.title = LidAwakeMenu.title(each, current: mode)
+            item.state = LidAwakeMenu.state(each, current: mode)
         }
     }
 
