@@ -382,7 +382,7 @@ final class KeymapOverlayTests: XCTestCase {
         // Q (12) left the sheet on 2026-09-09 with the 🤖 mascot, which had moved
         // to ⌃⌥G, and came back on 2026-09-10 with it: ⌃⌥ became the emoji board
         // and G was needed for the goose, so ⌘⌃Q shadows Lock Screen again.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 17, 9, 13, 6, 31, 35])
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 35])
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         // V (9) stopped meaning the 🎙️ transcript picker on 2026-09-17: the key
@@ -391,6 +391,10 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.labels[9], "clipboard")
         XCTAssertEqual(CommandControlShortcuts.labels[17], "terminal")
         XCTAssertEqual(CommandControlShortcuts.labels[8], "claude")
+        // Y is C's twin — the same terminal with the other agent in it — so the
+        // word must name the agent and nothing else.
+        XCTAssertEqual(CommandControlShortcuts.labels[16], "copilot")
+        XCTAssertNotEqual(CommandControlShortcuts.labels[16], CommandControlShortcuts.labels[8])
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
         XCTAssertEqual(CommandControlShortcuts.labels[31], "trump")
         XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
@@ -424,6 +428,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
         XCTAssertEqual(CommandControlShortcuts.accents[35], "🤖")  // P — the marker the notes get
         XCTAssertEqual(CommandControlShortcuts.accents[12], "👋")  // Q — the wave, not P's 🤖
+        XCTAssertEqual(CommandControlShortcuts.accents[16], "🐙")  // Y — whose agent it is
         // The mascot key and the prompt stamp must not read as the same thing:
         // one only animates, the other sends text to the room.
         XCTAssertNotEqual(CommandControlShortcuts.accents[12], CommandControlShortcuts.accents[35])

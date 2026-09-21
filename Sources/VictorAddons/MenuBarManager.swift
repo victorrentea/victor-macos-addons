@@ -1091,6 +1091,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         openWorkspaceTerminal(command: "claude")
     }
 
+    /// ⌘⌃Y global hotkey lands here — the ⌘⌃C window with the other agent in
+    /// it. `copilot` is on the PATH via Homebrew, and the window's login shell
+    /// finds it there the same way it finds `claude`.
+    @objc func openCopilotWorkspace() {
+        openWorkspaceTerminal(command: "copilot")
+    }
+
     /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.
     /// The empty `do script ""` opens the window and runs NOTHING: ~/.zshrc
     /// already cds a shell that started in $HOME to ~/workspace, so an explicit

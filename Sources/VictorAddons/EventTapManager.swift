@@ -38,6 +38,8 @@ class EventTapManager {
     /// 2026-09-10 when ⌃⌥ became the emoji board and G was needed for the goose.
     var onClaudeMascotHotkey: (() -> Void)?
     var onPlainTerminalHotkey: (() -> Void)?
+    /// ⌘⌃Y — the same Terminal as ⌘⌃C, running `copilot` instead of `claude`.
+    var onCopilotWorkspaceHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
@@ -107,6 +109,7 @@ class EventTapManager {
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
     private let VK_T: CGKeyCode = 0x11
+    private let VK_Y: CGKeyCode = 0x10
     private let VK_K: CGKeyCode = 0x28
     private let VK_L: CGKeyCode = 0x25
     private let VK_G: CGKeyCode = 0x05
@@ -555,6 +558,17 @@ private let VK_F: CGKeyCode = 0x03
         // thing wanted in a hurry, mid-talk.
         if keyCode == VK_C && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+Y → the same terminal as ⌘⌃C, running `copilot` (suppress).
+        // The two agents deserve the same gesture, so this is the C branch with
+        // one word changed. Y because every letter of "copilot" is spoken for on
+        // this board (C is Claude, O the elephant, P the prompt, T the Terminal,
+        // L the calendar) and Y sits one key from T — the terminal keys stay
+        // neighbours even when the letters have to be borrowed.
+        if keyCode == VK_Y && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onCopilotWorkspaceHotkey?() }
             return nil
         }
 

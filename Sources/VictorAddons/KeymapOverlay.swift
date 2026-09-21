@@ -74,6 +74,12 @@ enum CommandControlShortcuts {
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
+        16: "copilot",   // Y — the ⌘⌃C terminal running `copilot` instead. The
+                         // word names the agent, because that is the only thing
+                         // that separates this key from C; the letter is a
+                         // borrowed one (C, O, P, T and L are all taken) and Y's
+                         // only claim is that it sits next to T, keeping the
+                         // three terminal keys in one corner of the board.
         12: "salut",     // Q — 🤖 the Claude mark waves in from the left edge and
                          // goes away again. It said `claude` while the key also
                          // opened a permissions-bypassed Terminal; now that C is
@@ -136,6 +142,9 @@ enum CommandControlShortcuts {
         12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
                   // is going to the room as a prompt", and the same mark on a key
                   // that only animates would blur the two apart at a glance.
+        16: "🐙",  // Y — GitHub's octopus: the word says which agent, the mark
+                  // says whose, which is the fastest way to tell this key from
+                  // C at a glance.
         2:  "🎤",  // D — the hand mic. It used to be told apart from V's studio
                   // 🎙️ (the transcript picker); that key is now the clipboard
                   // note, so the mic is unique on this board again.

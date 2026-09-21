@@ -1500,6 +1500,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onPlainTerminalHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openPlainTerminalWorkspace() }
         }
+        eventTap.onCopilotWorkspaceHotkey = { [weak menuBarManager] in
+            DispatchQueue.main.async { menuBarManager?.openCopilotWorkspace() }
+        }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
             audioManager?.notifyMouseButton5Pressed()
         }
