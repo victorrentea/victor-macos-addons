@@ -138,7 +138,8 @@ final class LiveCaptionsStream: NSObject {
     /// default input**, named so the row can say it.
     ///
     /// Deliberately not the 💬 transcription's own priority ladder (Wireless Mic
-    /// → Room Speakerphone → XLR → Bose → MacBook): that lives inside
+    /// → DJI Mic over Bluetooth → Room Speakerphone → XLR → Bose → MacBook):
+    /// that lives inside
     /// `whisper_runner.py`, and reaching into another process's choice to guess
     /// at a device is how the two come to disagree silently. The default input
     /// is a thing Victor can see and change in one place, and the row names it
