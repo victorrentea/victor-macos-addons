@@ -45,6 +45,24 @@ import ApplicationServices
 /// `SilentTranscriptionWarning`'s `😶😶😶`. When Victor re-opens the picker
 /// during an ongoing share, the room is watching his screen; `🔊✅` reads as
 /// innocuous, an English sentence about automation would not.
+/// Whether 🔊 `ZoomSharePrep` touches Zoom's share picker at all.
+///
+/// **Why a switch exists.** Everything this class does is a *guess* about what
+/// Victor wants — share sound on, presenter layout, his face bottom-right, the
+/// retina picked and Share pressed. The guess is right for a workshop and wrong
+/// the moment he is doing something else with the picker: a different share
+/// target, "Portion of Screen", or an agent driving the dialog. Then the
+/// automation is not a helper, it is a second pair of hands fighting his.
+/// Default **on** — the workshop case is the common one.
+enum ZoomSharePrepSettings {
+    static let enabledKey = "ZoomSharePrep.enabled"
+
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+}
+
 final class ZoomSharePrep {
 
     /// Zoom's share picker, as it identifies itself to Accessibility.
@@ -81,7 +99,17 @@ final class ZoomSharePrep {
 
     /// Set to nil to leave the layout alone and only handle the sound checkbox.
     var presenterLayout: PresenterLayout? = .asBackground
-    var isEnabled = true
+
+    /// Backed by `ZoomSharePrepSettings`, so the 🔊 row in the Extra submenu
+    /// turns the whole thing off and the answer survives a restart. Read on
+    /// every scan rather than cached, so a mid-session untick takes effect on
+    /// the next 1.5 s tick instead of at the next launch — which matters
+    /// precisely when it matters at all: Victor has reached for the picker,
+    /// this got in his way, and he wants it out of the way *now*.
+    var isEnabled: Bool {
+        get { ZoomSharePrepSettings.isEnabled }
+        set { ZoomSharePrepSettings.isEnabled = newValue }
+    }
 
     /// Where Victor's camera cut-out should sit inside the presenter-layout
     /// preview: flush to the right and bottom edges, a third of the width.

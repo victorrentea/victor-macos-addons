@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 22, 18:45"
+    static let BUILD_TIME = "Sep 22, 19:05"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -29,6 +29,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
+    private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var lidAwakeItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     private(set) var lidAwakeModeItems: [LidAwakeMode: NSMenuItem] = [:]
@@ -515,6 +516,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.isEnabled = true
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(scrollReversalItem)
+
+        // 🔊 Zoom Share Prep — the picker automation. Same justification as the
+        // row above for being in the menu at all: no key to teach, and nowhere
+        // else the state shows. It earns its place for a different reason
+        // though — this one *acts on its own*, and a row that acts on its own
+        // needs a visible way to be told to stop. Default on.
+        zoomSharePrepItem = NSMenuItem(title: "🔊 Zoom Share Prep", action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
+        zoomSharePrepItem.target = self
+        zoomSharePrepItem.isEnabled = true
+        zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
+        extraSubmenu.addItem(zoomSharePrepItem)
 
         // 🔋 Claude prevents sleep left this submenu for the **top level** on
         // 2026-09-17 — see the row itself, further down.
@@ -1004,6 +1016,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !ScrollReversalSettings.isEnabled
         ScrollReversalSettings.isEnabled = enabled
         scrollReversalItem.state = enabled ? .on : .off
+    }
+
+    /// 🔊 Zoom Share Prep. Notifies nobody, for the same reason as its
+    /// neighbour: `ZoomSharePrep` reads the setting on each of its own scans,
+    /// so there is no second copy of the answer that could drift out of step
+    /// with the tick.
+    @objc private func toggleZoomSharePrepAction() {
+        let enabled = !ZoomSharePrepSettings.isEnabled
+        ZoomSharePrepSettings.isEnabled = enabled
+        zoomSharePrepItem.state = enabled ? .on : .off
     }
 
     /// 🔋 Awake Lid Closed. The one toggle here that can *fail*: the kernel flag
