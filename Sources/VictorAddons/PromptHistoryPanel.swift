@@ -36,6 +36,11 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     }
 
     private var panel: Panel?
+    /// The ⌘⇧V bezel's 20% black wash over the screen, behind the panel
+    /// (2026-09-23, Victor: *"fereastra rotunjită cu gri în spate
+    /// semitransp"*). Click-through, and it hides with the panel when the app
+    /// is deactivated, so a click anywhere else takes both away.
+    private var scrim: NSPanel?
     private let tableView = NSTableView()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "")
@@ -61,7 +66,17 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         shown = 0
         reloadDay()
 
+        // **The ⌘⇧V bezel's look** (2026-09-23, Victor: *"poți să eviți bara +
+        // butoane? dă-i look de cmd-shift-v"*): no title bar, no traffic
+        // lights — a dark rounded slab, the same 0.11 grey at 97% and 16 pt
+        // corners as `ClipboardHistoryOverlay`, dark appearance forced so the
+        // text is light whatever the system mode. Esc or a click elsewhere
+        // closes it; it can be dragged by its background.
         let content = NSView()
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor(white: 0.11, alpha: 0.97).cgColor
+        content.layer?.cornerRadius = 16
+        content.layer?.masksToBounds = true
 
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder
@@ -92,22 +107,41 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         emptyLabel.isHidden = !today.isEmpty
         content.addSubview(emptyLabel)
 
+        // The bezel's one line under the box: a yellow count, then the keys.
+        let footer = NSTextField(labelWithString: "")
+        let count = NSAttributedString(string: "\(today.count) today", attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: NSColor.systemYellow.withAlphaComponent(0.9)])
+        let hint = NSAttributedString(string: "    Send puts it on the Prompts tab  ·  Esc", attributes: [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(white: 0.5, alpha: 1)])
+        let line = NSMutableAttributedString(attributedString: count)
+        line.append(hint)
+        footer.attributedStringValue = line
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(footer)
+
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: content.topAnchor),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: 14),
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
+            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -8),
+            scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -8),
+            footer.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+            footer.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
             emptyLabel.centerXAnchor.constraint(equalTo: content.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: content.centerYAnchor),
             emptyLabel.widthAnchor.constraint(equalToConstant: width - 80),
         ])
 
-        let height = min(maxHeight, max(160, CGFloat(today.count) * (rowH + 2)))
+        let height = min(maxHeight, max(160, CGFloat(today.count) * (rowH + 2) + 50))
         let panel = Panel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                          styleMask: [.titled, .closable, .resizable, .utilityWindow],
+                          styleMask: [.borderless, .resizable],
                           backing: .buffered,
                           defer: false)
-        panel.title = "🤖 Today's prompts"
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.isMovableByWindowBackground = true
         panel.contentView = content
         panel.isFloatingPanel = true
         // Floats above the windows it is read against — but only while this app
@@ -118,8 +152,23 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         panel.hidesOnDeactivate = true
         panel.level = .floating
         panel.onCancel = { [weak self] in self?.close() }
-        panel.setFrame(frameCentredUnderMouse(width: width, height: height), display: false)
+        let frame = frameCentredUnderMouse(width: width, height: height)
+        panel.setFrame(frame, display: false)
         self.panel = panel
+
+        let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let scrim = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        scrim.isOpaque = false
+        scrim.backgroundColor = NSColor.black.withAlphaComponent(0.2)
+        scrim.hasShadow = false
+        scrim.ignoresMouseEvents = true
+        scrim.hidesOnDeactivate = true
+        scrim.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
+        scrim.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        scrim.setFrame(screen.frame, display: false)
+        scrim.orderFrontRegardless()
+        self.scrim = scrim
 
         // Redraw when a prompt arrives (or is marked sent) while the list is up.
         observers.append(NotificationCenter.default.addObserver(
@@ -146,6 +195,8 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         clock = nil
         panel?.orderOut(nil)
         panel = nil
+        scrim?.orderOut(nil)
+        scrim = nil
     }
 
     /// Open on the screen the hand is on, not the projected retina: this is a
