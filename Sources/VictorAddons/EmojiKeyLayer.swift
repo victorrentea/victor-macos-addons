@@ -340,6 +340,11 @@ enum EmojiKeyLayer {
     /// take freely: the only S bound anywhere near it is ⌘⌃S's note grab, and
     /// ⌃⌥S was never a shortcut here, so the map claims it and nothing else
     /// loses a key.
+    ///
+    /// M for mail (2026-09-22). The letter was free on every board the tap owns
+    /// — ⌃⌥M is bound to nothing here — and ⌥M's 🤪 keeps its key: the rule is
+    /// a letter that means the word, not a letter reclaimed from a board that
+    /// already works.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
           1: "🐑",   // S — sheep
@@ -347,6 +352,7 @@ enum EmojiKeyLayer {
           8: "😂",   // C — crying laughter
          11: "🪲",   // B — bug, the beetle rather than the caterpillar
          35: "🪂",   // P — parachute, off ⌥⇧8
+         46: "✉️",   // M — mail
     ]
 
     static let optionSeed: [Int: String] = [

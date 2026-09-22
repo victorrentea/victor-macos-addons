@@ -318,12 +318,16 @@ final class KeymapOverlayTests: XCTestCase {
         // word, it does not move the digit that already worked.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[28], "🪿")
         // B for bug, P for parachute, C for crying laughter, A for autobuz,
-        // S for sheep — letters that mean the word.
+        // S for sheep, M for mail — letters that mean the word.
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[11], "🪲")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[1], "🐑")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[0], "🚌")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[35], "🪂")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[8], "😂")
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[46], "✉️")
+        // ⌥M keeps its own 🤪: a free letter on the new board costs the old one
+        // nothing.
+        XCTAssertEqual(EmojiKeyLayer.optionSeed[46], "🤪")
         // 🪂 *moved* off ⌥⇧8 rather than being duplicated: unlike ⌥8's goose,
         // that digit was not muscle memory anybody had built.
         XCTAssertNil(EmojiKeyLayer.optionShiftSeed[28])
