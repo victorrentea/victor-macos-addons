@@ -57,6 +57,15 @@ enum ZoomLensModePolicy {
         guard previous != current else { return nil }
         return current.pill
     }
+
+    /// What ⌘⌃U switches to. The board has three styles but the key is a
+    /// **two-position switch**, because only two of them answer the question it is
+    /// asked: "can the people on the call see this or not". Split screen is neither
+    /// a yes nor a no, so it leaves by the same door as full screen — towards the
+    /// one style that is known to be carried by a share.
+    static func toggled(from current: ZoomLensMode) -> ZoomLensMode {
+        current == .pictureInPicture ? .fullScreen : .pictureInPicture
+    }
 }
 
 /// Watches the magnifier style and reports changes.
@@ -101,6 +110,31 @@ final class ZoomLensWatch {
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
+    }
+
+    /// Flip the style and say so at once.
+    ///
+    /// The pill is emitted here rather than left to the next tick for the reason a
+    /// shortcut exists at all: a key you press and then wait a second to see the
+    /// result of is a key you press twice. `previous` is advanced in the same breath,
+    /// so the watcher does not announce the same change a second time when it catches
+    /// up.
+    ///
+    /// Writing the preference **is** the mechanism, not a nudge towards it: this is how
+    /// the style was switched to picture-in-picture in the first place, and the small
+    /// lens appeared on screen within the second. Apple's own ⌥⌘F
+    /// (`AX_ZOOM_TOGGLE_FS_AND_PIP`) does the same thing, but only while a
+    /// magnification is already on screen — which is exactly when you have least
+    /// patience for a key that silently does nothing.
+    @discardableResult
+    func toggle() -> ZoomLensMode {
+        let current = Self.current() ?? .fullScreen
+        let next = ZoomLensModePolicy.toggled(from: current)
+        CFPreferencesSetAppValue(Self.key, next.rawValue as CFNumber, Self.domain)
+        CFPreferencesAppSynchronize(Self.domain)
+        queue.async { [weak self] in self?.previous = next }
+        DispatchQueue.main.async { [weak self] in self?.onChange?(next.pill) }
+        return next
     }
 
     private func tick() {

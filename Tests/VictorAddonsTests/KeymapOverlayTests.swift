@@ -388,7 +388,12 @@ final class KeymapOverlayTests: XCTestCase {
         // Q (12) left the sheet on 2026-09-09 with the 🤖 mascot, which had moved
         // to ⌃⌥G, and came back on 2026-09-10 with it: ⌃⌥ became the emoji board
         // and G was needed for the goose, so ⌘⌃Q shadows Lock Screen again.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 35])
+        // U (32) joined on 2026-09-22 with the magnifier flip. It is the one key
+        // here whose effect is invisible on this Mac — both magnifier styles look
+        // identical on screen, and only a screen share can tell them apart — which
+        // is precisely why it needs a word on the sheet and a pill when pressed.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 35, 32])
+        XCTAssertEqual(CommandControlShortcuts.labels[32], "lupă")
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         // V (9) stopped meaning the 🎙️ transcript picker on 2026-09-17: the key

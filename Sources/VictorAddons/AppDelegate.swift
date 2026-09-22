@@ -1614,6 +1614,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onOpenFocusPlaylist = { [weak self] in
             DispatchQueue.main.async { self?.startFocusPlaylist() }
         }
+        // ⌘⌃U — flip the magnifier style. The pill comes from the toggle itself, not
+        // from the watcher's next tick, so the key answers immediately.
+        eventTap.onToggleZoomLens = { [weak self] in
+            self?.zoomLensWatch?.toggle()
+        }
         // ⌘⌃P — the selection (or the clipboard) is filed as an agent prompt in
         // the session notes, which is what puts it on the participants' Prompts
         // tab. Run off the main thread: the AX read and the ⌘C fallback block.

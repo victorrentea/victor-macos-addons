@@ -74,6 +74,13 @@ enum CommandControlShortcuts {
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
+        32: "lupă",      // U — flip the screen magnifier between the style a Zoom
+                         // share carries and the one it drops. The word is the thing
+                         // you are reaching for, not the switch: "zoom" is already Z
+                         // (the room link), and naming this key after the mode you
+                         // land in would need two words and change every press. What
+                         // the sheet has to answer at speed is "which key is the
+                         // magnifier", and `lupă` is that answer.
         16: "copilot",   // Y — the ⌘⌃C terminal running `copilot` instead. The
                          // word names the agent, because that is the only thing
                          // that separates this key from C; the letter is a

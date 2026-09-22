@@ -64,6 +64,9 @@ class EventTapManager {
     var onOpenNotesDoc: (() -> Void)?
     /// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
     var onOpenFocusPlaylist: (() -> Void)?
+    /// 🔍 ⌘⌃U — flip the screen magnifier between the style a screen share carries
+    /// and the one it silently drops.
+    var onToggleZoomLens: (() -> Void)?
     /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
     /// subject "Reminder". Nothing to confirm: it is already gone.
     var onSendClipboardReminder: (() -> Void)?
@@ -110,6 +113,7 @@ class EventTapManager {
     private let VK_A: CGKeyCode = 0x00
     private let VK_T: CGKeyCode = 0x11
     private let VK_Y: CGKeyCode = 0x10
+    private let VK_U: CGKeyCode = 0x20
     private let VK_K: CGKeyCode = 0x28
     private let VK_L: CGKeyCode = 0x25
     private let VK_G: CGKeyCode = 0x05
@@ -683,6 +687,27 @@ private let VK_F: CGKeyCode = 0x03
         // track (suppress). F for focus — the music is the point, not YouTube.
         if keyCode == VK_F && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenFocusPlaylist?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+U → flip the screen magnifier between Full screen and
+        // Picture-in-picture (suppress). **The two look identical on screen** — same
+        // pixels, same magnification — and differ only in where macOS applies them:
+        // full screen at scanout, *after* the frame every capture client reads, so a
+        // Zoom share never carries it; picture-in-picture as an ordinary composited
+        // window, which a share does carry. So this key does not change what Victor
+        // sees at all. It changes whether the people on the call see anything.
+        //
+        // Apple binds ⌥⌘F to the same flip (`AX_ZOOM_TOGGLE_FS_AND_PIP`) but appears
+        // to act only while a magnification is already on screen, which is a key that
+        // does nothing the one time you reach for it cold. This one always works,
+        // because it writes the setting rather than asking the magnifier to.
+        //
+        // U because every letter with a claim is taken: Z is the Zoom room link, F is
+        // the focus playlist, L is the calendar. U is free, and it sits under the
+        // finger that just pressed it.
+        if keyCode == VK_U && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onToggleZoomLens?() }
             return nil
         }
 
