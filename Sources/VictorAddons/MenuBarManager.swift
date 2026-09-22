@@ -1774,13 +1774,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeSubmenu.addItem(.separator())
 
         for mic in MicRoster.all {
-            // Titles are drawn by AppKit in the menu's own label colour, so the
-            // monochrome  needs no tinting here — only the substitution.
+            // **The raw glyph, not `displayGlyph`** (2026-09-23, Victor: *"pune
+            // aceleași emoji ca-n walkie … toate itemii să fie identici"*): these
+            // rows are Walkie Talkie's `Mic` submenu row for row, and there 💻 is
+            // 💻. The  stays where it was drawn for — the menu bar icon.
             let here = availableSources.contains(mic.glyph)
             // **The absent ones say why they are grey.** A disabled row with no
             // explanation is indistinguishable from a broken one, and the
             // explanation is the only thing he can act on — it is a cable.
-            let item = NSMenuItem(title: "\(Self.displayGlyph(mic.glyph)) \(mic.label)"
+            let item = NSMenuItem(title: "\(mic.glyph) \(mic.label)"
                                       + (here ? "" : " — not connected"),
                                   action: #selector(pickSource(_:)),
                                   keyEquivalent: "")
