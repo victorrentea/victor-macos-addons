@@ -1,15 +1,22 @@
 import AppKit
 
-/// 🤖 **Prompts…** — the week of intercepted prompts, with a Send button on
+/// 🤖 **Last Prompts…** — today's intercepted prompts, with a Send button on
 /// each one that never reached the room.
 ///
 /// The bottom-left offer pill (`SessionNotesAppender.offerPrompt`) asks once
 /// and gives up after 9.5 s. This panel is the second chance for everything
-/// that pill offered: one scrollable list, newest first, day by day, where a
-/// click writes the prompt into the session notes exactly as hovering the pill
-/// would have — the same `- 🤖 <text>` line `training-assistant` turns into the
+/// that pill offered: one scrollable list, newest first, where a click writes
+/// the prompt into the session notes exactly as hovering the pill would have —
+/// the same `- 🤖 <text>` line `training-assistant` turns into the
 /// participants' Prompts tab. Nothing new reaches the room through here; the
 /// only thing that changes is *when* Victor gets to decide.
+///
+/// **Today only, one line a prompt, paged as it scrolls** (2026-09-22, Victor:
+/// *"sunt foarte multe-n lista și se încarcă greu … și doar prompturi de azi"*).
+/// A day of workshop is 150 prompts; the week the panel used to open on was a
+/// wall of two-line rows nobody read past the first screen. It now opens on the
+/// newest `pageSize` and appends the next page when the scroll nears the end.
+/// The line is `<agent icon> [Send] 5m ago | <prompt>`, his shape.
 ///
 /// A row whose prompt already went to the notes (by pill or by this panel) is
 /// greyed and its button reads "Sent" — that flag is the single reason the
@@ -28,29 +35,22 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         override func cancelOperation(_ sender: Any?) { onCancel?() }
     }
 
-    private enum Row {
-        case header(String)
-        case prompt(CapturedPrompt)
-    }
-
     private var panel: Panel?
     private let tableView = NSTableView()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "")
-    private var rows: [Row] = []
-    private var observer: NSObjectProtocol?
+    /// Today's prompts, newest first — the whole day, of which `shown` are rows.
+    private var today: [CapturedPrompt] = []
+    private var shown = 0
+    private var observers: [NSObjectProtocol] = []
+    /// Re-reads the `5m ago` column once a minute while the panel is up.
+    private var clock: Timer?
 
     private let width: CGFloat = 760
     private let maxHeight: CGFloat = 620
-    private let headerRowH: CGFloat = 30
-    private let promptRowH: CGFloat = 56
-
-    private let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm"
-        return f
-    }()
+    private let rowH: CGFloat = 26
+    private let pageSize = 40
+    private static let rowId = NSUserInterfaceItemIdentifier("promptRow")
 
     // MARK: Present / dismiss
 
@@ -64,7 +64,8 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
 
     func present() {
         close()
-        rebuildRows()
+        shown = 0
+        reloadDay()
 
         let content = NSView()
 
@@ -81,19 +82,20 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.selectionHighlightStyle = .none
         tableView.usesAutomaticRowHeights = false
+        tableView.rowHeight = rowH
         tableView.dataSource = self
         tableView.delegate = self
         scroll.documentView = tableView
         content.addSubview(scroll)
 
-        emptyLabel.stringValue = "No prompts captured yet.\n"
+        emptyLabel.stringValue = "No prompts captured today.\n"
             + "Prompts are recorded only while a training session is running."
         emptyLabel.alignment = .center
         emptyLabel.textColor = .secondaryLabelColor
         emptyLabel.font = .systemFont(ofSize: 13)
         emptyLabel.maximumNumberOfLines = 3
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
-        emptyLabel.isHidden = !rows.isEmpty
+        emptyLabel.isHidden = !today.isEmpty
         content.addSubview(emptyLabel)
 
         NSLayoutConstraint.activate([
@@ -106,12 +108,12 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
             emptyLabel.widthAnchor.constraint(equalToConstant: width - 80),
         ])
 
-        let height = min(maxHeight, max(160, contentHeight()))
+        let height = min(maxHeight, max(160, CGFloat(today.count) * (rowH + 2)))
         let panel = Panel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                           styleMask: [.titled, .closable, .resizable, .utilityWindow],
                           backing: .buffered,
                           defer: false)
-        panel.title = "🤖 Prompts — last \(PromptCapturePolicy.retentionDays) days"
+        panel.title = "🤖 Today's prompts"
         panel.contentView = content
         panel.isFloatingPanel = true
         // Floats above the windows it is read against — but only while this app
@@ -126,9 +128,17 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         self.panel = panel
 
         // Redraw when a prompt arrives (or is marked sent) while the list is up.
-        observer = NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: PromptCaptureStore.changed, object: nil, queue: .main
-        ) { [weak self] _ in self?.reload() }
+        ) { [weak self] _ in self?.reload() })
+        // The next page, when the scroll nears the end of what is drawn.
+        scroll.contentView.postsBoundsChangedNotifications = true
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
+        ) { [weak self] _ in self?.loadMoreIfNeeded() })
+        clock = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.tableView.reloadData()
+        }
 
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
@@ -136,8 +146,10 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     }
 
     func close() {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-        observer = nil
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        clock?.invalidate()
+        clock = nil
         panel?.orderOut(nil)
         panel = nil
     }
@@ -155,64 +167,53 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
                       width: width, height: height)
     }
 
-    private func contentHeight() -> CGFloat {
-        rows.reduce(0) { total, row in
-            switch row {
-            case .header: return total + headerRowH + 2
-            case .prompt: return total + promptRowH + 2
-            }
-        }
-    }
-
     // MARK: Data
 
-    private func rebuildRows() {
-        rows = PromptCaptureStore.shared.sections().flatMap { section -> [Row] in
-            [.header(section.title)] + section.prompts.map { Row.prompt($0) }
-        }
+    /// Today's prompts from the store, newest first; `shown` keeps what has
+    /// already been paged in and never exceeds the day.
+    private func reloadDay() {
+        let calendar = Calendar.current
+        today = PromptCaptureStore.shared.all()
+            .filter { calendar.isDateInToday($0.date) }
+            .reversed()
+        shown = min(today.count, max(shown, pageSize))
     }
 
     private func reload() {
-        rebuildRows()
-        emptyLabel.isHidden = !rows.isEmpty
+        reloadDay()
+        emptyLabel.isHidden = !today.isEmpty
         tableView.reloadData()
     }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
-
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        guard row < rows.count else { return promptRowH }
-        switch rows[row] {
-        case .header: return headerRowH
-        case .prompt: return promptRowH
-        }
+    private func loadMoreIfNeeded() {
+        guard shown < today.count else { return }
+        let visible = scroll.contentView.bounds
+        guard visible.maxY >= tableView.bounds.height - rowH * 5 else { return }
+        let from = shown
+        shown = min(today.count, shown + pageSize)
+        tableView.insertRows(at: IndexSet(from..<shown), withAnimation: [])
     }
 
-    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
-        guard row < rows.count else { return false }
-        if case .header = rows[row] { return true }
-        return false
-    }
+    func numberOfRows(in tableView: NSTableView) -> Int { shown }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { false }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard row < rows.count else { return nil }
-        switch rows[row] {
-        case .header(let title):
-            let label = NSTextField(labelWithString: title)
-            label.font = .systemFont(ofSize: 12, weight: .semibold)
-            label.textColor = .secondaryLabelColor
-            return label
-        case .prompt(let prompt):
-            let view = PromptRowView()
-            view.configure(prompt: prompt,
-                           time: timeFormatter.string(from: prompt.date),
-                           target: self,
-                           action: #selector(sendAction(_:)),
-                           tag: row)
-            return view
-        }
+        guard row < shown, row < today.count else { return nil }
+        let view = (tableView.makeView(withIdentifier: Self.rowId, owner: nil) as? PromptRowView)
+            ?? { let v = PromptRowView(); v.identifier = Self.rowId; return v }()
+        view.configure(prompt: today[row], age: Self.age(of: today[row].date),
+                       target: self, action: #selector(sendAction(_:)), tag: row)
+        return view
+    }
+
+    /// `now`, `5m ago`, `3h ago` — the list is one day long, so nothing longer
+    /// is ever needed.
+    static func age(of date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        if seconds < 60 { return "now" }
+        if seconds < 3600 { return "\(seconds / 60)m ago" }
+        return "\(seconds / 3600)h ago"
     }
 
     // MARK: Send
@@ -222,44 +223,57 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     /// store's change notification is what redraws the row.
     @objc private func sendAction(_ sender: NSButton) {
         let index = sender.tag
-        guard index < rows.count, case .prompt(let prompt) = rows[index] else { return }
+        guard index < today.count else { return }
+        let prompt = today[index]
         guard SessionNotesAppender.sendPrompt(prompt.text) else { return }
         PromptCaptureStore.shared.markSent(prompt.id)
     }
 }
 
-/// One prompt in the list: source badge + time on the left, the prompt itself
-/// in the middle (two lines, truncated — the full text is the tooltip), and the
-/// Send button on the right, live only for a prompt the room has not seen.
+/// One prompt, one line: `<agent icon> [Send] 5m ago | <prompt>`. The full text
+/// is the tooltip.
 private final class PromptRowView: NSTableCellView {
+    private let icon = NSImageView()
     private let badge = NSTextField(labelWithString: "")
-    private let time = NSTextField(labelWithString: "")
-    private let body = NSTextField(labelWithString: "")
     private let button = NSButton(title: "Send", target: nil, action: nil)
+    private let age = NSTextField(labelWithString: "")
+    private let bar = NSTextField(labelWithString: "|")
+    private let body = NSTextField(labelWithString: "")
+
+    /// The agent's own icon, read off the Mac at runtime — nothing brand-owned
+    /// is bundled. Claude from its app, Copilot from the extension VS Code
+    /// ships; nil falls back to `PromptSource.badge`.
+    private static let icons: [PromptSource: NSImage] = {
+        var out: [PromptSource: NSImage] = [:]
+        if FileManager.default.fileExists(atPath: "/Applications/Claude.app") {
+            out[.claude] = NSWorkspace.shared.icon(forFile: "/Applications/Claude.app")
+        }
+        let copilot = "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions/copilot/assets/copilot.png"
+        if let image = NSImage(contentsOfFile: copilot) { out[.copilot] = image }
+        return out
+    }()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        badge.font = .systemFont(ofSize: 15)
-        time.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        time.textColor = .tertiaryLabelColor
-        body.font = .systemFont(ofSize: 13)
-        body.maximumNumberOfLines = 2
-        body.lineBreakMode = .byTruncatingTail
-        body.cell?.usesSingleLineMode = false
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        badge.font = .systemFont(ofSize: 13)
         button.bezelStyle = .rounded
-        button.controlSize = .small
-        button.font = .systemFont(ofSize: 11)
+        button.controlSize = .mini
+        button.font = .systemFont(ofSize: 10)
+        age.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        age.textColor = .secondaryLabelColor
+        age.alignment = .right
+        bar.textColor = .tertiaryLabelColor
+        body.font = .systemFont(ofSize: 13)
+        body.maximumNumberOfLines = 1
+        body.lineBreakMode = .byTruncatingTail
+        body.cell?.usesSingleLineMode = true
 
-        let left = NSStackView(views: [badge, time])
-        left.orientation = .vertical
-        left.alignment = .centerX
-        left.spacing = 0
-
-        let stack = NSStackView(views: [left, body, button])
+        let stack = NSStackView(views: [icon, badge, button, age, bar, body])
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -267,21 +281,27 @@ private final class PromptRowView: NSTableCellView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            left.widthAnchor.constraint(equalToConstant: 42),
-            button.widthAnchor.constraint(equalToConstant: 62),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+            button.widthAnchor.constraint(equalToConstant: 44),
+            age.widthAnchor.constraint(equalToConstant: 52),
         ])
-        // The prompt text is the part that gives: the badge column and the
-        // button keep their size, the middle absorbs the panel's width.
+        // The prompt text is the part that gives.
         body.setContentHuggingPriority(.defaultLow, for: .horizontal)
         body.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(prompt: CapturedPrompt, time timeText: String,
+    func configure(prompt: CapturedPrompt, age ageText: String,
                    target: AnyObject, action: Selector, tag: Int) {
+        let image = Self.icons[prompt.source]
+        icon.image = image
+        icon.isHidden = image == nil
         badge.stringValue = prompt.source.badge
-        time.stringValue = timeText
+        badge.isHidden = image != nil
+        icon.toolTip = prompt.source.name
+        age.stringValue = ageText
         body.stringValue = PromptCapturePolicy.singleLine(prompt.text)
         body.textColor = prompt.sent ? .tertiaryLabelColor : .labelColor
         toolTip = prompt.text

@@ -401,7 +401,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the clipboard and where does it go": onto the wall for the room, into
         // Victor's inbox, into the session notes, onto the room's Prompts tab.
         // In the submenu they were a feature hidden behind a hover.
-        let appendNotesItem = addItem("📝 Send Clipboard to Notes", action: #selector(appendClipboardToNotesAction))
+        let appendNotesItem = addItem("📝 Clipboard ↗ Notes", action: #selector(appendClipboardToNotesAction))
         // ⌘⌃V since 2026-09-17, taken from the 🎙️ picker above — the append is
         // the everyday half of that pair, and ⌘⌃ is where this app's everyday
         // keys live (⌘⌃S is the same append for the selection). Advertised
@@ -422,7 +422,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // swallows ⌘⌃P before AppKit could match a menu equivalent, so the row
         // can never fire a second time — and the tooltip carries the one
         // difference between the two ways in.
-        let appendPromptItem = addItem("🤖 Send Clipboard as Prompt", action: #selector(appendClipboardAsPromptAction))
+        let appendPromptItem = addItem("🤖 Clipboard ↗ Prompts", action: #selector(appendClipboardAsPromptAction))
         appendPromptItem.keyEquivalent = "p"
         appendPromptItem.keyEquivalentModifierMask = [.command, .control]
         appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
@@ -433,8 +433,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // opens the week's list, where every one of them still has a live Send
         // button. Deliberately no shortcut: it is read between topics, never
         // mid-gesture, and the ⌘⌃ sheet is already full.
-        let promptHistoryItem = addItem("🤖 Prompts…", action: #selector(promptHistoryAction))
-        promptHistoryItem.toolTip = "The last \(PromptCapturePolicy.retentionDays) days of intercepted prompts — send the ones the room never saw."
+        let promptHistoryItem = addItem("🤖 Last Prompts…", action: #selector(promptHistoryAction))
+        promptHistoryItem.toolTip = "Today's intercepted prompts — send the ones the room never saw."
 
         // 📋 The history behind all of the above: the last 40 things that
         // passed through the clipboard, **images included**, which is the whole
@@ -443,10 +443,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // and a click opens the same bezel in its clipboard-only mode: there is
         // no held ⌘ to release, so a menu-opened pick lands on the clipboard
         // and is pasted by hand, into the window Victor chooses afterwards.
-        let historyItem = addItem("📋 Clipboard History…", action: #selector(clipboardHistoryAction))
-        historyItem.keyEquivalent = "v"
-        historyItem.keyEquivalentModifierMask = [.command, .shift]
-        historyItem.toolTip = "Hold ⌘⇧ and tap V to walk back through what you copied — text and images."
+        // …and since 2026-09-22 it lives in 👩🏻‍💻 Extra (Victor: *"clipboard
+        // history să meargă în extras"*): ⌘⇧V is how it is reached, and the row
+        // was only ever the legend for it.
 
         // 📥 The clipboard's image, filed to disk rather than anywhere in the
         // app — for the one-off "just give me the file" case none of the rows
@@ -467,6 +466,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         extraItem.isEnabled = true
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
+
+        let historyItem = NSMenuItem(title: "📋 Clipboard History…", action: #selector(clipboardHistoryAction), keyEquivalent: "v")
+        historyItem.keyEquivalentModifierMask = [.command, .shift]
+        historyItem.target = self
+        historyItem.isEnabled = true
+        historyItem.toolTip = "Hold ⌘⇧ and tap V to walk back through what you copied — text and images."
+        extraSubmenu.addItem(historyItem)
 
         // 📝 Paste Clipboard to Notes (⌃⌥V) and its 🤖 prompt sibling are NOT
         // here any more — they sit at the top level with the other clipboard
