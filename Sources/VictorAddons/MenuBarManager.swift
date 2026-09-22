@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 22, 19:05"
+    static let BUILD_TIME = "Sep 22, 19:30"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -30,6 +30,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
+    private(set) var claudeRemoteControlItem: NSMenuItem!
     private(set) var lidAwakeItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     private(set) var lidAwakeModeItems: [LidAwakeMode: NSMenuItem] = [:]
@@ -156,6 +157,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// to be refused, just an assertion this process owns — so it returns
     /// nothing and the tick follows the click.
     var onHomeAwakeEnabledChanged: ((Bool) -> Void)?
+    /// 🛰️ Claude RC in background. Like 🏠 it cannot be refused by anything
+    /// outside the app, so the tick follows the click; what it costs is a `tmux
+    /// kill-session` on the way down and a script launch on the way up, both on
+    /// the watcher's own queue.
+    var onClaudeRemoteControlEnabledChanged: ((Bool) -> Void)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
     /// Connect a nearby Logi mouse that is switched on but left disconnected.
@@ -527,6 +533,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         zoomSharePrepItem.isEnabled = true
         zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
         extraSubmenu.addItem(zoomSharePrepItem)
+
+        // 🛰️ Claude RC in background — the `claude remote-control` server the
+        // phone opens sessions against, kept alive in a detached tmux session.
+        // It is in the menu for the reason 🔊 above it is: it *acts on its own*,
+        // once a minute, and a thing that acts on its own needs a visible way to
+        // be told to stop. Until now there was none — the behaviour lived in a
+        // LaunchAgent whose only off switch was `launchctl bootout`. Default on,
+        // because that LaunchAgent was unconditional and this row inherits its
+        // job (see `ClaudeRemoteControlSettings`).
+        claudeRemoteControlItem = NSMenuItem(title: "🛰️ Claude RC in background", action: #selector(toggleClaudeRemoteControlAction), keyEquivalent: "")
+        claudeRemoteControlItem.target = self
+        claudeRemoteControlItem.isEnabled = true
+        claudeRemoteControlItem.state = ClaudeRemoteControlSettings.isEnabled ? .on : .off
+        claudeRemoteControlItem.toolTip = "Keeps `claude remote-control` up in the detached tmux session \"claude-rc\", rechecking every minute, so the phone can open new sessions. Unticking kills it."
+        extraSubmenu.addItem(claudeRemoteControlItem)
 
         // 🔋 Claude prevents sleep left this submenu for the **top level** on
         // 2026-09-17 — see the row itself, further down.
@@ -1056,6 +1077,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         for (each, item) in lidAwakeModeItems {
             item.state = LidAwakeMenu.state(each, current: mode)
         }
+    }
+
+    /// 🛰️ Claude RC in background. The tick means "armed and minding it", and
+    /// unlike its neighbours the click has an immediate effect on something
+    /// outside the app — unticking kills the tmux session, ticking starts it if
+    /// it is down. What tmux actually holds this instant is in
+    /// `GET /test/claude-rc` (`alive`), which is the row's own proof.
+    @objc private func toggleClaudeRemoteControlAction() {
+        let enabled = !ClaudeRemoteControlSettings.isEnabled
+        claudeRemoteControlItem.state = enabled ? .on : .off
+        onClaudeRemoteControlEnabledChanged?(enabled)
     }
 
     /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",

@@ -48,6 +48,8 @@ case testTerminalFont
     /// Pick a 😴 mode without the mouse — see docs/testing.md.
     case testLidAwakeMode(String)
         case testHomeAwake
+        /// What the 🛰️ row claims and what tmux says — see docs/testing.md.
+        case testClaudeRemoteControl
         case testClaudeActivity
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
@@ -259,6 +261,7 @@ case testTerminalFont
     /// proves it.
     var onTestLidAwakeMode: ((String) -> String)?
     var onTestHomeAwake: (() -> String)?
+    var onTestClaudeRemoteControl: (() -> String)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
     var onTestBreakUntil: (() -> Void)?
@@ -490,6 +493,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestHomeAwake?() ?? "{\"error\":\"home awake unavailable\"}"
                 if self.onTestHomeAwake == nil { statusCode = 503 }
+            case .testClaudeRemoteControl:
+                contentType = "application/json"
+                body = self.onTestClaudeRemoteControl?() ?? "{\"error\":\"claude rc unavailable\"}"
+                if self.onTestClaudeRemoteControl == nil { statusCode = 503 }
             case .testClaudeActivity:
                 contentType = "application/json"
                 let working = ClaudeActivity.workingSessions()
@@ -848,6 +855,8 @@ case testTerminalFont
             return .testSleepChime
         case "/test/home-awake":
             return .testHomeAwake
+        case "/test/claude-rc":
+            return .testClaudeRemoteControl
         case "/test/claude-activity":
             return .testClaudeActivity
         case "/test/wispr/recording":

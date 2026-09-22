@@ -72,6 +72,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var powerMonitor: PowerMonitor?
     private var lidAwake: LidAwake?
     private var homeAwake: HomeAwake?
+    /// 🛰️ Keeps `claude remote-control` up in its tmux session — replaces the
+    /// `ro.victorrentea.claude-rc` LaunchAgent, which is booted out and disabled.
+    private var claudeRemoteControl: ClaudeRemoteControl?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
@@ -1281,6 +1284,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         homeAwake.startIfEnabled()
         self.homeAwake = homeAwake
         tabletServer?.onTestHomeAwake = { [weak homeAwake] in homeAwake?.stateJSON() ?? "{}" }
+
+        // 🛰️ Claude RC in background. Armed immediately rather than on the first
+        // tick, because the case this exists for includes "the app was just
+        // rebuilt and Remote Control did not survive whatever took it down".
+        let claudeRemoteControl = ClaudeRemoteControl()
+        menuBarManager.onClaudeRemoteControlEnabledChanged = { enabled in
+            claudeRemoteControl.setEnabled(enabled)
+        }
+        claudeRemoteControl.startIfEnabled()
+        self.claudeRemoteControl = claudeRemoteControl
+        tabletServer?.onTestClaudeRemoteControl = { [weak claudeRemoteControl] in
+            claudeRemoteControl?.stateJSON() ?? "{\"error\":\"claude rc unavailable\"}"
+        }
 
         let portKiller = PortKiller()
         self.portKiller = portKiller
