@@ -711,7 +711,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // timestamp used to be inlined into the Quit title to save a menu line;
         // Victor asked for the two to be separated, for cleanliness, the same
         // way in Victor Effects and Walkie Talkie.
-        let versionItem = addItem("Version: " + MenuBarManager.BUILD_TIME, action: nil)
+        let versionItem = addItem("Built " + MenuBarManager.BUILD_TIME, action: nil)
         versionItem.isEnabled = false
 
         // Quit carries the ⏻ SF Symbol as an *image*, the way Walkie Talkie's
