@@ -134,6 +134,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
     private var zoomSharePrep: ZoomSharePrep?
+    /// 🔍 Says which magnifier style is live, because ⌥⌘F changes it invisibly.
+    private var zoomLensWatch: ZoomLensWatch?
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
@@ -1342,6 +1344,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         zoomSharePrep = zoomPrep
         zoomPrep.start()
+
+        // 🔍 ⌥⌘F flips the magnifier between Full screen and Picture-in-picture, and
+        // the two look *identical* on screen — the difference is only where macOS
+        // applies the magnification, and therefore whether a Zoom share carries it.
+        // A toggle with no feedback that silently decides whether the remote half of
+        // the room can read the screen is worth a pill.
+        let lensWatch = ZoomLensWatch()
+        lensWatch.onChange = { [weak self] pill in
+            self?.statusBanner?.showNow(text: pill, sound: nil, visibleDuration: 2.5)
+        }
+        zoomLensWatch = lensWatch
+        lensWatch.start()
 
         // ▶️ Zoom's join preview asks for one more click before every meeting;
         // press it as soon as it appears. ⌥ held keeps it open.
