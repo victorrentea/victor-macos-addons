@@ -172,7 +172,13 @@ case testTerminalFont
         /// minutes, so the tablet's standby can be watched without locking the
         /// very screen you'd be watching it from.
         case testScreenLockSimulate(Bool)
-        case promptCapture
+        /// A prompt the human just submitted to an agent, forwarded by the
+        /// capture hook. `source` is the hook's `?src=` ("claude"/"copilot");
+        /// an older hook that sends none still captures, unbadged.
+        case promptCapture(source: String?)
+        /// Open the 🤖 prompt-history panel (test hook), or empty the week's
+        /// list with `?clear=1` before doing so.
+        case testPromptHistory(clear: Bool)
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
         case videos
@@ -322,7 +328,10 @@ case testTerminalFont
     /// Force a synthetic lock state for a short while; returns the snapshot.
     var onTestScreenLockSimulate: ((Bool) -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
-    var onPromptCapture: ((String) -> String)?
+    /// (prompt text, `?src=` value) -> JSON answer for the hook.
+    var onPromptCapture: ((String, String?) -> String)?
+    /// Open the 🤖 prompt-history panel; the flag empties the list first.
+    var onTestPromptHistory: ((Bool) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
     var onIntellijFileOpened: ((String) -> String)?
     /// Video page: manifest JSON of downloaded videos, for the tablet to build tiles.
@@ -623,9 +632,12 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestScreenLockSimulate?(locked) ?? "{\"error\":\"screen lock monitor unavailable\"}"
                 if self.onTestScreenLockSimulate == nil { statusCode = 503 }
-            case .promptCapture:
+            case .promptCapture(let source):
                 contentType = "application/json"
-                body = self.onPromptCapture?(requestBody) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
+                body = self.onPromptCapture?(requestBody, source) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
+            case .testPromptHistory(let clear):
+                contentType = "application/json"
+                body = self.onTestPromptHistory?(clear) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .intellijFileOpened:
                 contentType = "application/json"
                 body = self.onIntellijFileOpened?(requestBody) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
@@ -926,7 +938,9 @@ case testTerminalFont
         case "/test/memory-pressure":
             return .testMemoryPressure
         case "/training/prompt-capture":
-            return .promptCapture
+            return .promptCapture(source: queryItems.first(where: { $0.name == "src" })?.value)
+        case "/test/prompt-history":
+            return .testPromptHistory(clear: queryItems.first(where: { $0.name == "clear" })?.value == "1")
         case "/intellij/file-opened":
             return .intellijFileOpened
         case "/hands-off/start":

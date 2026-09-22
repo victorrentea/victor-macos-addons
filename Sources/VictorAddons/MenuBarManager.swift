@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 22, 15:28"
+    static let BUILD_TIME = "Sep 22, 15:33"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -126,6 +126,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onAppendClipboardAsPrompt: (() -> Void)?
     /// 📥 The clipboard's image, written to ~/Downloads.
     var onPasteImageToDownloads: (() -> Void)?
+    /// 🤖 Open the prompt-history panel — the last 7 days of intercepted
+    /// prompts, each with a Send button.
+    var onPromptHistory: (() -> Void)?
     /// 📋 Open the ⌘⇧V clipboard-history bezel from the menu.
     var onClipboardHistory: (() -> Void)?
     var onBreak: ((Int) -> Void)?
@@ -405,6 +408,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         appendPromptItem.keyEquivalent = "p"
         appendPromptItem.keyEquivalentModifierMask = [.command, .control]
         appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
+
+        // 🤖 The prompts that got away. The offer pill under the same 🤖 marker
+        // asks once and gives up after 9.5 s — and a prompt typed mid-sentence
+        // in front of a room is exactly the one nobody hovers in time. This row
+        // opens the week's list, where every one of them still has a live Send
+        // button. Deliberately no shortcut: it is read between topics, never
+        // mid-gesture, and the ⌘⌃ sheet is already full.
+        let promptHistoryItem = addItem("🤖 Prompts…", action: #selector(promptHistoryAction))
+        promptHistoryItem.toolTip = "The last \(PromptCapturePolicy.retentionDays) days of intercepted prompts — send the ones the room never saw."
 
         // 📋 The history behind all of the above: the last 40 things that
         // passed through the clipboard, **images included**, which is the whole
@@ -1066,6 +1078,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func transcriptPickerAction() {
         onTranscriptPicker?()
+    }
+
+    @objc private func promptHistoryAction() {
+        onPromptHistory?()
     }
 
     @objc private func clipboardHistoryAction() {

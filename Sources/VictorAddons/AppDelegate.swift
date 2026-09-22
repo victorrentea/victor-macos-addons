@@ -504,13 +504,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
             return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)"
         }
-        tabletServer?.onPromptCapture = { [weak self] prompt in
+        tabletServer?.onPromptCapture = { [weak self] prompt, source in
             guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
             guard self.isSessionActive else {
                 return "{\"captured\":false,\"reason\":\"no-session\"}"
             }
-            SessionNotesAppender.offerPrompt(prompt)
-            return "{\"captured\":true}"
+            // Two consumers of one interception, in this order: the week-long
+            // store first (it decides nothing, it only remembers), then the
+            // 9.5 s offer pill. If the pill is hovered, `onAccepted` marks the
+            // stored copy sent, so the 🤖 history panel shows it retired
+            // instead of offering the room the same line twice.
+            let id = PromptCaptureStore.shared.record(prompt, source: PromptSource.parse(source))
+            SessionNotesAppender.offerPrompt(prompt, onAccepted: {
+                if let id { PromptCaptureStore.shared.markSent(id) }
+            })
+            return "{\"captured\":true,\"stored\":\(id != nil)}"
+        }
+        // Test hook: open the 🤖 panel (optionally on an emptied list) without
+        // reaching for the menu — see docs/testing.md.
+        tabletServer?.onTestPromptHistory = { clear in
+            DispatchQueue.main.async {
+                if clear { PromptCaptureStore.shared.clear() }
+                PromptHistoryPanel.shared.present()
+            }
+            return "{\"ok\":true,\"cleared\":\(clear)}"
         }
         tabletServer?.start()
         overlayInfo("TabletHttpServer.start() called")
@@ -1192,6 +1209,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // clipboard and Victor pastes it where he means to.
         menuBarManager.onClipboardHistory = { [weak self] in
             self?.toggleClipboardHistoryWithoutKeyboard()
+        }
+        // 🤖 The week of intercepted prompts, with a Send button on each one
+        // the offer pill never got a hover for.
+        menuBarManager.onPromptHistory = {
+            PromptHistoryPanel.shared.toggle()
         }
         // 📥 The clipboard's image, filed straight to ~/Downloads.
         menuBarManager.onPasteImageToDownloads = { [weak self] in

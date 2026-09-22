@@ -35,10 +35,11 @@ enum SessionNotesAppender {
     private static var resultDismissWork: DispatchWorkItem?
 
     /// Prompts whose trimmed text starts with any of these prefixes are silently
-    /// dropped — no banner, no notes append. Extend as new system-noise prefixes appear.
-    private static let blockedPromptPrefixes: [String] = [
-        "<task-notification>",
-    ]
+    /// dropped — no banner, no notes append. The list lives in
+    /// `PromptCapturePolicy` because the 🤖 history panel has to drop exactly
+    /// the same texts: a prompt the pill refuses to offer must not turn up in
+    /// the week's list with a live Send button.
+    private static var blockedPromptPrefixes: [String] { PromptCapturePolicy.blockedPrefixes }
 
     /// Currently-pending prompt text, if any. Cleared on hover-accept or
     /// timeout. Only one prompt-capture offer is on screen at a time.
@@ -153,7 +154,13 @@ enum SessionNotesAppender {
 
     /// Offer to append `text` to the current session notes via the bottom-left
     /// hover banner. No-op when there is no active session folder.
-    static func offerPrompt(_ text: String) {
+    ///
+    /// `onAccepted` fires only when the hover actually commits the prompt to
+    /// the notes. It is how `PromptCaptureStore` learns that this prompt is
+    /// already on the participants' screens, so the row the 🤖 history panel
+    /// shows for it a minute later reads "Sent" instead of offering to post it
+    /// a second time.
+    static func offerPrompt(_ text: String, onAccepted: (() -> Void)? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if blockedPromptPrefixes.contains(where: { trimmed.hasPrefix($0) }) { return }
@@ -175,6 +182,7 @@ enum SessionNotesAppender {
             // fade *is* the "sent" feedback, so there's no follow-up flash.
             do {
                 _ = try writeNotes(captured, marker: .agentPrompt)
+                onAccepted?()
                 banner?.dismissRisingFade()
             } catch {
                 reportWriteFailure(error)
@@ -217,6 +225,26 @@ enum SessionNotesAppender {
     }
 
     enum NotesError: Error { case noSession, noNotesFile }
+
+    /// Send a prompt to the notes without any pill — the 🤖 history panel's
+    /// Send button, where the click *is* the confirmation and the row itself
+    /// (greyed, button retired) is the feedback. Failures still flash in the
+    /// bottom-left banner, because "no active session" is the one answer that
+    /// has to reach the eye: the panel can be open on a day with no session,
+    /// and then there is no notes file for the line to land in.
+    ///
+    /// Returns whether the line was written, so the caller only marks the
+    /// prompt sent when it really is.
+    @discardableResult
+    static func sendPrompt(_ text: String) -> Bool {
+        do {
+            _ = try writeNotes(text, marker: .agentPrompt)
+            return true
+        } catch {
+            reportWriteFailure(error)
+            return false
+        }
+    }
 
     /// Write a "- <marker> text" line to the active notes file, returning the file URL
     /// and the byte offset *before* the write (for undo). Throws on any failure.
