@@ -385,13 +385,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // it outright when there is none, rather than greying it out: a row
         // that cannot do anything is noise on a menu read at a glance.
         feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
-        // Two rows under 🔗, because both answer "what is on the clipboard":
-        // one shows it in the room, this one mails it to Victor. The key is only
-        // advertised here — the event tap swallows ⌘⌃M before AppKit could match a
-        // menu equivalent, so the row cannot fire the send a second time.
-        let reminderMailItem = addItem("📤 Mail clipboard to myself", action: #selector(sendReminderMailAction))
-        reminderMailItem.keyEquivalent = "m"
-        reminderMailItem.keyEquivalentModifierMask = [.command, .control]
+        // 📤 Mail clipboard to myself lives in 👩🏻‍💻 Extras since 2026-09-23
+        // (Victor) — ⌘⌃M is how it is reached, the row is only its legend.
         // The Gmail "TO DO" draft that used to sit here is gone (2026-09-14),
         // and with it `GmailCompose`. It lost ⌘⌃M to the row above in
         // 2026-09-08 — the two were the same gesture and the sent one won — and
@@ -470,6 +465,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         extraItem.isEnabled = true
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
+
+        // The key is only advertised — the event tap swallows ⌘⌃M before AppKit
+        // could match a menu equivalent, so the row cannot fire the send twice.
+        let reminderMailItem = NSMenuItem(title: "📤 Mail clipboard to myself", action: #selector(sendReminderMailAction), keyEquivalent: "m")
+        reminderMailItem.keyEquivalentModifierMask = [.command, .control]
+        reminderMailItem.target = self
+        reminderMailItem.isEnabled = true
+        extraSubmenu.addItem(reminderMailItem)
 
         let downloadsItem = NSMenuItem(title: "📥 Paste image to Downloads", action: #selector(pasteImageToDownloadsAction), keyEquivalent: "")
         downloadsItem.target = self
