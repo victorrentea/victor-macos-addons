@@ -32,7 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 🎵 Pushes the dictation window to the Chrome extension that pauses music.
     private var chromeBridge: ChromeBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
-    private var bluetoothAutoOutput: BluetoothAutoOutput?
+    private var outputRouter: OutputRouter?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
@@ -1441,9 +1441,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         audioManager.start()
 
-        let btAutoOutput = BluetoothAutoOutput()
-        self.bluetoothAutoOutput = btAutoOutput
-        btAutoOutput.start()
+        let router = OutputRouter()
+        self.outputRouter = router
+        router.start()
 
         let hotspot = HotspotFallback()
         self.hotspotFallback = hotspot

@@ -9,7 +9,7 @@ import Foundation
 /// not sung over. This one exists for `LidAwake`, whose heartbeat has to be *heard
 /// through a closed bag*, and a heartbeat is only as loud as the device it comes
 /// out of — which by then may be the built-in speakers, the JBLs or whatever
-/// `BluetoothAutoOutput` last handed the system.
+/// `OutputRouter` last handed the system.
 ///
 /// **The mute switch is a second, independent knob** (`isMuted`/`setMuted`,
 /// 2026-09-15). Muting a Mac does not move its volume — the device keeps

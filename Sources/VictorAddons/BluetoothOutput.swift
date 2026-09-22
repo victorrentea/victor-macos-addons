@@ -20,14 +20,15 @@ import Foundation
 /// `stopContinuousWarm`) went with its only caller and lives in that app's copy
 /// of this file. What is left is what addons itself still needs — the transport probe
 /// for `AddonSounds`, the wake tone before the break gong, and the device
-/// enumeration `BluetoothAutoOutput` / `CoreAudioManager` / `SystemOutputVolume`
+/// enumeration `OutputRouter` / `CoreAudioManager` / `SystemOutputVolume`
 /// drive.
 enum BluetoothOutput {
 
     /// Substring (case-insensitive) a Bluetooth output's name must contain to
-    /// be "the speakers" — the boxes that must grab the output when they
-    /// connect (`BluetoothAutoOutput`). The standby keep-alive that shared this
-    /// name moved to Victor Effects with the soundboard it was protecting.
+    /// be "the speakers" — the boxes that grab the output when they connect.
+    /// The ranking that uses it lives in `OutputRouterPolicy.ladder`, which is
+    /// where the Bose headset sits above it. The standby keep-alive that shared
+    /// this name moved to Victor Effects with the soundboard it was protecting.
     static let speakerNameMatch = "JBL"
 
     // MARK: - Output device transport
@@ -160,6 +161,61 @@ enum BluetoothOutput {
         var dev = id
         let size = UInt32(MemoryLayout<AudioDeviceID>.size)
         return AudioObjectSetPropertyData(sys, &addr, 0, nil, size, &dev) == noErr
+    }
+
+    // MARK: - The *other* default output
+
+    /// **macOS has two default outputs, and the Sound pane only shows one.**
+    ///
+    /// `kAudioHardwarePropertyDefaultSystemOutputDevice` is where alerts, the
+    /// volume-key feedback and anything using `NSSound` go; the one the Sound
+    /// pane calls "Output" is `kAudioHardwarePropertyDefaultOutputDevice`. They
+    /// are usually the same device and nothing makes them stay that way — on
+    /// 2026-09-22 this Mac was found with the system output on the
+    /// `DJI Mic Mini` (a microphone) while the ordinary output was the built-in
+    /// speakers, which is exactly the shape of "the sound disappeared and the
+    /// Sound pane says everything is fine". `OutputRouter` guards both.
+    static func defaultSystemOutputID() -> AudioDeviceID {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var devID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &size, &devID) == noErr else { return 0 }
+        return devID
+    }
+
+    @discardableResult
+    static func setDefaultSystemOutput(_ id: AudioDeviceID) -> Bool {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var dev = id
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectSetPropertyData(sys, &addr, 0, nil, size, &dev) == noErr
+    }
+
+    /// **The one output this Mac always has**, for when the ladder is empty and
+    /// something still has to carry the sound. Found by transport rather than by
+    /// name: "MacBook Pro Speakers" is a localised string, and the built-in
+    /// output is the only device that answers `kAudioDeviceTransportTypeBuiltIn`.
+    static func builtInOutputName() -> String? {
+        outputDevices().first { transportType($0.id) == kAudioDeviceTransportTypeBuiltIn }?.name
+    }
+
+    private static func transportType(_ id: AudioDeviceID) -> UInt32 {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &transport) == noErr else { return 0 }
+        return transport
     }
 
     // MARK: - A2DP wake tone
