@@ -18,7 +18,7 @@ connectivity; the tablet↔Mac transport lives in `tablet.md`.
 
 **JBL speakers grab the output when they connect (`BluetoothAutoOutput` + `BluetoothAutoOutputPolicy`).** macOS only *sometimes* re-routes to a Bluetooth speaker on connect; when it doesn't, the next soundboard hit plays out of the laptop in front of a room. So the app watches the CoreAudio device list and, when a connected Bluetooth output whose name contains `JBL` (`BluetoothOutput.speakerNameMatch`, shared with the keep-alive) **appears**, writes it into `kAudioHardwarePropertyDefaultOutputDevice`. **No polling, no battery cost:** it is an `AudioObjectAddPropertyListenerBlock` on `kAudioHardwarePropertyDevices` — `coreaudiod` pushes a callback only when a device actually appears or disappears, which for a BT speaker is exactly the connect/disconnect moment; between events the app schedules no wakeups at all (strictly cheaper than the keep-alive that used to sit next to it, and which now runs in the effects app). A speaker is listed a moment before CoreAudio will accept it as the default output, so the write is attempted immediately and re-verified at **+1 s and +2.5 s**, then given up on — three bounded attempts per connect edge. The trigger is the **appearance edge only**, which is what stops it fighting the user: with the JBL still connected, switching the output by hand to the headphones or to `🔊OS Output` changes no device list, so nothing pulls it back; the snapshot seeded at startup is ignored for the same reason, so relaunching the app never hijacks a chosen output. Devices without output channels are filtered out (a BT headset also registers an input-only HFP device). Pure edge logic + tests: `BluetoothAutoOutputPolicy` / `BluetoothAutoOutputPolicyTests`. ⚠️ Interaction: while the JBL is the default output, the Wispr music-duck above is inert (it needs `🔊OS Output` as default) and will post its drift notification on the next dictation.
 
-## The three sounds this app still plays (`AddonSounds`)
+## The four sounds this app still plays (`AddonSounds`)
 
 Going over HTTP for these was rejected outright: **"the break is over" must be
 audible whatever else is running**, and a gong that depends on a second process
@@ -26,15 +26,23 @@ is a gong that will one day not ring. So this app keeps a thin player of its own
 and its own `Resources/sounds` symlink into the tablet's assets (dereferenced
 into the bundle by `build-app.sh`).
 
-Three callers, and only three:
+Four callers, and only four:
 
 - **`BreakTimerOverlay`** — the ☕️ break gong: two full strikes at expiry, and
   the interrupt when the watch is closed mid-strike (`stopOverlapping` with
   `fade: 0`, because closing the watch means silence *now*).
 - **`LidAwake`** — 💓 `13_heartbeat.mp3` and 🫀 `15_flatline.mp3`.
 - **`TrainingEndSequence`** — 🏁 `82_over_and_out.mp3`.
+- **`SleepChime`** — 🚪 `25_dark_door.mp3`, the one sound here that does **not**
+  go through `AddonSounds.play`. It is played from
+  `NSWorkspace.willSleepNotification` with its own `AVAudioPlayer` on the main
+  thread, and blocks there until the file has finished: `play` hops to the main
+  queue with `async`, which at that moment schedules the playback for after the
+  handler returns — i.e. onto a Mac that is already asleep. It borrows
+  `soundURL(for:)` and `currentBluetoothCompensation` and nothing else. See
+  [docs/lid-awake.md](lid-awake.md) for why it exists.
 
-`AddonSounds` deliberately keeps **only** what those three need: `soundURL(for:)`,
+`AddonSounds` deliberately keeps **only** what those four need: `soundURL(for:)`,
 `soundDuration`, `play`, `playOverlapping`, `stopOverlapping`, and
 `currentBluetoothCompensation` — read from `sound-timing.json`'s
 `macBluetoothCompensationMs` as a **file default** (`fileCompensationSeconds`),

@@ -1218,6 +1218,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.lidAwake = lid
         tabletServer?.onTestLidAwakeState = { [weak lid] in lid?.stateJSON() ?? "{}" }
         tabletServer?.onTestLidAwakeFlatline = { [weak lid] in lid?.playFlatlineForTest() }
+        tabletServer?.onTestSleepChime = { SleepChime.sound() }
         // Setting the mode from the test hook goes through the same call the
         // menu uses, and then repaints the rows — a mode the menu disagrees
         // with is exactly the lie the tick is there to prevent.
@@ -1979,6 +1980,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             overlayInfo("System sleeping — SIGKILL whisper to avoid PortAudio wake crash")
             whisperManager?.killImmediate()
         }
+        // Last, because it parks this thread for a second and a half and the
+        // whisper kill above is the one thing here that is racing the sleep.
+        SleepChime.sound()
     }
 
     @objc private func handleDidWake() {

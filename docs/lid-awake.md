@@ -640,6 +640,80 @@ the bag hears and the effect the room sees are the same recording.
   with (1.40 s apart) and then a `Submarine` under them, the nearest thing macOS
   ships to a long low note.
 
+## The door: what the Mac says when it *does* sleep (2026-09-22)
+
+`SleepChime.swift` + `SleepChimeTests.swift`. Not part of this feature's
+machinery — it hangs off `NSWorkspace.willSleepNotification` in `AppDelegate`
+and runs whatever the mode is — but it exists entirely because of it, and it is
+the last piece of the argument the flatline started.
+
+**Silence was still overloaded, one level up.** The flatline fixed "done" vs
+"dead" *for a pulse that was already running*. It did nothing for the case
+Victor actually stands in several times a day: the lid comes down and he waits,
+three or four seconds, to hear whether a heartbeat starts. Nothing starts. That
+silence had four readings and no way to tell them apart —
+
+- the Mac went to sleep (the ordinary, correct one);
+- 😴 Claude insomnia is `off`;
+- it is armed, but nothing counted as working (nothing running, or running
+  without internet past the five-minute grace, or a `background` session while
+  the mode is `interactive`);
+- the feature is broken — the sudoers rule gone, the app not running, `pmset`
+  refusing.
+
+The first is by far the most common, and it is the one worth a sound, because
+saying it out loud leaves the other three as the only thing silence can mean.
+
+**So sleep announces itself.** 🚪 `25_dark_door.mp3`, 1.5 s, once, as the Mac
+goes down. After the lid closes there are now exactly two audible outcomes:
+
+| what you hear | what happened |
+|---|---|
+| 💓 lub-dub every 10 s | awake, a Claude is working, insomnia is holding |
+| 🚪 a door closing | asleep — whatever the reason |
+| *nothing* | **something is wrong** |
+
+The third row is the point. It is the first time a missing signal here means
+only one thing.
+
+**Why a door and not a fifth variation on the pulse.** Same argument as the
+flatline's: through a closed bag the signals have to be distinguishable by
+someone who is not looking and not counting. A door is neither a lub-dub nor a
+continuous tone, so 💓 / 🫀 / 🚪 are three sounds you cannot mishear for each
+other. Victor picked it from the shortlist on 2026-09-22.
+
+**It blocks the sleep for its own length, deliberately.**
+`willSleepNotification` is delivered before the machine goes down and macOS
+waits for the observers to return, so `SleepChime.sound()` parks the main
+thread until the file has played. `AddonSounds.play` is unusable here — it
+dispatches to the main queue with `async`, which at that moment means "after
+this handler returns", i.e. onto a sleeping Mac. `SleepChime.maxBlock` (3 s)
+caps it so a swapped file can never turn closing the lid into a wait, and
+`SleepChimeTests` asserts the file is shorter than the budget.
+
+**The volume follows `boostForBeats`'s rules exactly**, because it is the same
+problem: a chime nobody can hear is not a signal. Lid shut **and** on battery
+**and** nothing else playing → lift the mute, take the output to 100%. Lid open
+or on AC → play at whatever level Victor chose, because he is looking at the
+screen and the screen already told him. Something else playing → chime at that
+level and log which app refused the boost; unmuting a Mac with an open stream
+is how a playlist ends up at full blast in a bag.
+
+**And it restores before returning, in a `defer`.** The trap `hold()` documents
+one section up, in a place with even less margin: here the very next thing that
+happens is the machine sleeping, so a restore below the playback line is a
+restore that a throw, the cap, or a freeze simply skips — and the Mac wakes up
+unmuted at 100% in the next meeting. `SleepChimeTests` reads the source and
+fails if the `defer` is not registered before the player starts.
+
+**The two sounds compose rather than collide.** A `.farewell` tick plays the
+5.25 s flatline, then `hold(false)` calls `pmset sleepnow`, which raises
+`willSleepNotification`, which sounds the door. 🫀 then 🚪 is the whole story in
+order: the session ended, and now the Mac is asleep.
+
+**No counterpart on wake** (asked and declined, 2026-09-22): opening the lid
+puts a screen in front of him, which is a better answer than a sound.
+
 ## The 20% floor
 
 With `SleepDisabled` set, the normal low-battery sleep never fires, so a
