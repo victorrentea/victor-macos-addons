@@ -294,6 +294,35 @@ private final class PromptRowView: NSTableCellView {
 
     required init?(coder: NSCoder) { nil }
 
+    /// The prompt on one line, before it is fitted.
+    private var fullLine = ""
+
+    /// **A long prompt keeps its last 20 characters** (2026-09-23, Victor:
+    /// *"prompturile lungi să conțină și ultimele 20 char (elipsis [...]
+    /// între)"*) — the end of a prompt is usually the actual ask. When the line
+    /// does not fit, it becomes `<as much of the start as fits> [...] <last 20>`,
+    /// the start found by a binary search on the drawn width.
+    override func layout() {
+        super.layout()
+        let width = body.bounds.width
+        guard width > 0, let font = body.font else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        func fits(_ text: String) -> Bool { (text as NSString).size(withAttributes: attrs).width <= width - 4 }
+        guard !fits(fullLine), fullLine.count > 40 else {
+            if body.stringValue != fullLine { body.stringValue = fullLine }
+            return
+        }
+        let tail = " [...] " + String(fullLine.suffix(20))
+        let head = Array(fullLine.dropLast(20))
+        var lo = 0, hi = head.count
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if fits(String(head[..<mid]) + tail) { lo = mid } else { hi = mid - 1 }
+        }
+        let fitted = String(head[..<lo]).trimmingCharacters(in: .whitespaces) + tail
+        if body.stringValue != fitted { body.stringValue = fitted }
+    }
+
     func configure(prompt: CapturedPrompt, age ageText: String,
                    target: AnyObject, action: Selector, tag: Int) {
         let image = Self.icons[prompt.source]
@@ -303,7 +332,9 @@ private final class PromptRowView: NSTableCellView {
         badge.isHidden = image != nil
         icon.toolTip = prompt.source.name
         age.stringValue = ageText
-        body.stringValue = PromptCapturePolicy.singleLine(prompt.text)
+        fullLine = PromptCapturePolicy.singleLine(prompt.text)
+        body.stringValue = fullLine
+        needsLayout = true
         body.textColor = prompt.sent ? .tertiaryLabelColor : .labelColor
         toolTip = prompt.text
         button.title = prompt.sent ? "Sent" : "Send"
