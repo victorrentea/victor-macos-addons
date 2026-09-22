@@ -383,13 +383,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
         wsStatusItem = addItem("", action: nil)
-        // The other ⧈ row, right under it (2026-09-23, Victor): both put a QR
-        // on the wall, and they read as a pair.
-        addItem("🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction))
-        // Under the two ⧈ rows, because it is the other link the
-        // room is given, and only ever during a session — refreshWsItem hides
-        // it outright when there is none, rather than greying it out: a row
-        // that cannot do anything is noise on a menu read at a glance.
+        // 🔗 Display clipboard link ⧈ went to 👩🏻‍💻 Extras (2026-09-23, Victor),
+        // and a line separates the room's link from the clipboard rows below.
+        menu.addItem(.separator())
         // 📤 Mail clipboard to myself lives in 👩🏻‍💻 Extras since 2026-09-23
         // (Victor) — ⌘⌃M is how it is reached, the row is only its legend.
         // The Gmail "TO DO" draft that used to sit here is gone (2026-09-14),
@@ -475,6 +471,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // port, 📬 Check Inbox, 📸 Screenshot, 📤 Mail clipboard — rows reached
         // by their keys or once a day, which the top level no longer spends a
         // line on.
+        let clipboardLinkItem = NSMenuItem(title: "🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction), keyEquivalent: "")
+        clipboardLinkItem.target = self
+        clipboardLinkItem.isEnabled = true
+        extraSubmenu.addItem(clipboardLinkItem)
         extraSubmenu.addItem(killItem)
         extraSubmenu.addItem(fluxInboxItem)
         extraSubmenu.addItem(screenshotItem)
