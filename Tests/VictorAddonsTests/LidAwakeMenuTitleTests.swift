@@ -53,8 +53,10 @@ final class LidAwakeMenuTitleTests: XCTestCase {
     /// The label names the subject: it is *Claude* that stays awake. "Keep
     /// Awake" would promise the thing this deliberately does not do — hold the
     /// Mac up when nothing is working.
+    /// Since 2026-09-23 the *icon* names Claude (the row's image is Claude's
+    /// own), so the words no longer repeat it.
     func testTheLabelNamesClaudeRatherThanPromisingToKeepTheMacAwake() {
-        XCTAssertTrue(Menu.name.contains("Claude"))
+        XCTAssertFalse(Menu.name.contains("Claude"))
         XCTAssertFalse(Menu.name.lowercased().contains("keep awake"))
     }
 

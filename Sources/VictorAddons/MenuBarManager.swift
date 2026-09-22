@@ -390,7 +390,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // room is given, and only ever during a session — refreshWsItem hides
         // it outright when there is none, rather than greying it out: a row
         // that cannot do anything is noise on a menu read at a glance.
-        feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
         // 📤 Mail clipboard to myself lives in 👩🏻‍💻 Extras since 2026-09-23
         // (Victor) — ⌘⌃M is how it is reached, the row is only its legend.
         // The Gmail "TO DO" draft that used to sit here is gone (2026-09-14),
@@ -682,6 +681,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         lidAwakeItem = NSMenuItem(title: LidAwakeMenu.parentTitle(LidAwakeSettings.mode),
                                   action: nil, keyEquivalent: "")
         lidAwakeItem.isEnabled = true
+        lidAwakeItem.image = LidAwakeMenu.icon
         // **The native tick, here and nowhere else** (Victor, 2026-09-21). The
         // rule everywhere above is that a checked `NSMenuItem.state` makes
         // AppKit reserve a check column for the *whole* menu and shift every
@@ -711,6 +711,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // than buried in the submenu: it's wanted in a hurry, mid-talk.
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
+
+        // 📝 Feedback form, after Arrange Monitors (2026-09-23, Victor) — it is
+        // the last thing a training asks for, so it sits at the foot of the
+        // menu. refreshWsItem still hides it outright outside a session.
+        feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
@@ -967,7 +972,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         /// The parent row: the name Victor gave it, plus the state it is in,
         /// because a submenu that hides its state is a state you forget you
         /// left on — the reason this stopped being a submenu in the first place.
-        static let name = "😴 Claude insomnia"
+        /// **Claude's own icon says whose insomnia** (2026-09-23, Victor: *"pune
+        /// iconița claude code în locul emoji din label … scoate «Claude»"*) —
+        /// the row's `image`, read off `/Applications/Claude.app` at runtime.
+        static let name = "Insomnia"
+
+        static let icon: NSImage? = {
+            guard FileManager.default.fileExists(atPath: "/Applications/Claude.app") else { return nil }
+            let image = NSWorkspace.shared.icon(forFile: "/Applications/Claude.app")
+            image.size = NSSize(width: 16, height: 16)
+            return image
+        }()
 
         static func label(_ mode: LidAwakeMode) -> String {
             switch mode {
