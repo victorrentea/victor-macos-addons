@@ -46,6 +46,15 @@ enum BreakTimerModel {
     /// measuring from the last real break instead of being reset by it.
     static func endsABreak(title: String) -> Bool { title != untilBreakTitle }
 
+    /// Which top corner a FRESH countdown with this title opens in.
+    /// A menu-started break opens **top-right**, where it has always lived. The
+    /// ☕-started "UNTIL BREAK" watch opens **top-left** instead: it is the one
+    /// that appears unasked, and the menu bar's own dropdown falls exactly under
+    /// the top-right corner — the panel sits at `.maximumWindow` level, so a watch
+    /// parked there covers the very ☕️ Break rows being reached for. Top-left is
+    /// the only corner of the retina nothing else claims.
+    static func opensTopLeft(title: String) -> Bool { title == untilBreakTitle }
+
     /// Format remaining seconds as `MM:SS`. Minutes are NOT capped at 59 — one
     /// hour shows `60:00` to keep the two-group "watch" look. Negative values
     /// clamp to `00:00`.

@@ -146,4 +146,11 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertFalse(BreakTimerModel.endsABreak(title: BreakTimerModel.untilBreakTitle))
         XCTAssertTrue(BreakTimerModel.endsABreak(title: "BREAK"))
     }
+
+    func testOnlyTheUntilBreakWatchOpensTopLeft() {
+        // Top-right is where the menu bar's own dropdown falls, and the panel sits
+        // above it — so the watch that opens unasked moves out of that corner.
+        XCTAssertTrue(BreakTimerModel.opensTopLeft(title: BreakTimerModel.untilBreakTitle))
+        XCTAssertFalse(BreakTimerModel.opensTopLeft(title: "BREAK"))
+    }
 }

@@ -59,6 +59,10 @@ final class BreakTimerController {
     private var titleText = "BREAK"
     private var nextFreshScale: CGFloat = 1.0
 
+    /// The corner this countdown belongs in, straight off its (already persisted)
+    /// title — no extra state to keep in sync across a redeploy.
+    private var opensTopLeft: Bool { BreakTimerModel.opensTopLeft(title: titleText) }
+
     /// Whether a break overlay is currently on screen (used to avoid a ☕ click
     /// disrupting a countdown that's already running).
     var isShowing: Bool { panel != nil }
@@ -515,7 +519,7 @@ final class BreakTimerController {
         isEnlarged = false
         removeBlackoutPanels()
         allowSleep()
-        let target = savedFrame ?? Self.defaultFrame()
+        let target = savedFrame ?? Self.defaultFrame(topLeft: opensTopLeft)
         savedFrame = nil
         bgView?.layer?.cornerRadius = target.height * 0.05   // restore the rounded corners
         NSAnimationContext.runAnimationGroup { ctx in
@@ -600,7 +604,7 @@ final class BreakTimerController {
 
     private func ensureWindow() -> BreakTimerView {
         if let view { return view }
-        let frame = Self.defaultFrame(scale: nextFreshScale)
+        let frame = Self.defaultFrame(scale: nextFreshScale, topLeft: opensTopLeft)
         let panel = BreakTimerPanel(contentRect: frame)
         let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
         container.autoresizingMask = [.width, .height]
@@ -730,15 +734,18 @@ final class BreakTimerController {
         let retinaID = Self.displayID(of: AppDelegate.findRetinaScreen())
         // Already home at normal size and not fullscreen → leave it in place.
         if !wasFullscreen && Self.displayID(of: panel.screen) == retinaID { return }
-        bgView?.layer?.cornerRadius = Self.defaultFrame().height * 0.05
-        panel.setFrame(Self.defaultFrame(), display: true)
+        let home = Self.defaultFrame(scale: nextFreshScale, topLeft: opensTopLeft)
+        bgView?.layer?.cornerRadius = home.height * 0.05
+        panel.setFrame(home, display: true)
     }
 
     private static func displayID(of screen: NSScreen?) -> CGDirectDisplayID? {
         screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
-    private static func defaultFrame(scale: CGFloat = 1.0) -> NSRect {
+    /// Where a fresh window opens. `topLeft` flips the corner for the ☕-started
+    /// "UNTIL BREAK" watch — see `BreakTimerModel.opensTopLeft`.
+    private static func defaultFrame(scale: CGFloat = 1.0, topLeft: Bool = false) -> NSRect {
         // Always the laptop's built-in retina display — that's what's projected to
         // the room. The macOS *primary* display (origin .zero) or NSScreen.main (the
         // focused screen) may be an external monitor when one is set as main during
@@ -749,7 +756,8 @@ final class BreakTimerController {
         // "until break" timer opens at 50%.
         let w = f.width * 0.29 * max(0.1, scale)
         let h = w / aspect
-        let x = f.maxX - w - f.width * 0.02
+        let gap = f.width * 0.02
+        let x = topLeft ? f.minX + gap : f.maxX - w - gap
         let y = f.maxY - f.height * 0.035 - h
         return NSRect(x: x, y: y, width: w, height: h)
     }
