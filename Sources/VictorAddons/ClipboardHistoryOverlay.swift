@@ -39,8 +39,33 @@ final class ClipboardHistoryOverlay {
     /// and calls a closure — this class is not an `NSObject` to be a target.
     private final class ClickButton: NSButton {
         var onClick: (() -> Void)?
+        /// Resting and hovered fills (2026-09-22, Victor: *"culoare de bg +
+        /// efect la hover"*). `.activeAlways` on the tracking area because the
+        /// bezel is never key and never active — any other option and the
+        /// hover would simply never fire.
+        var rest = NSColor.clear, hover = NSColor.clear
+
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func mouseDown(with event: NSEvent) { onClick?() }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: .zero,
+                                           options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                           owner: self, userInfo: nil))
+        }
+        override func mouseEntered(with event: NSEvent) { paint(hovered: true); NSCursor.pointingHand.set() }
+        override func mouseExited(with event: NSEvent) { paint(hovered: false); NSCursor.arrow.set() }
+
+        func paint(hovered: Bool) {
+            layer?.backgroundColor = (hovered ? hover : rest).cgColor
+            layer?.borderColor = NSColor(white: 1, alpha: hovered ? 0.7 : 0.3).cgColor
+            layer?.transform = hovered
+                ? CATransform3DConcat(CATransform3DMakeTranslation(-bounds.width * 0.03, -bounds.height * 0.03, 0),
+                                      CATransform3DMakeScale(1.06, 1.06, 1))
+                : CATransform3DIdentity
+        }
     }
 
     /// The bezel went away because of a click on it, not a key — the tap
@@ -337,10 +362,11 @@ final class ClipboardHistoryOverlay {
                                                width: side, height: side))
         button.isBordered = false
         button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.82).cgColor
         button.layer?.cornerRadius = 12
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor(white: 1, alpha: 0.25).cgColor
+        button.rest = NSColor(srgbRed: 0.10, green: 0.42, blue: 0.95, alpha: 0.88)
+        button.hover = NSColor(srgbRed: 0.24, green: 0.58, blue: 1.00, alpha: 1.00)
+        button.paint(hovered: false)
         let style = NSMutableParagraphStyle()
         style.alignment = .center
         let title = NSMutableAttributedString(string: "⬇️\n", attributes: [

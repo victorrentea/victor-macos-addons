@@ -433,7 +433,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // opens the week's list, where every one of them still has a live Send
         // button. Deliberately no shortcut: it is read between topics, never
         // mid-gesture, and the ⌘⌃ sheet is already full.
-        let promptHistoryItem = addItem("🤖 Last Prompts…", action: #selector(promptHistoryAction))
+        let promptHistoryItem = addItem("🤖 Last Prompts ↗…", action: #selector(promptHistoryAction))
         promptHistoryItem.toolTip = "Today's intercepted prompts — send the ones the room never saw."
 
         // 📋 The history behind all of the above: the last 40 things that
@@ -945,8 +945,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             }
         }
 
+        /// The parent's short word for the mode (2026-09-22, Victor's):
+        /// `+background` because it is interactive *plus* the phone's
+        /// sessions, and the 😴 on `off` because off is the one mode in
+        /// which the Mac is allowed to sleep.
+        static func short(_ mode: LidAwakeMode) -> String {
+            switch mode {
+            case .off: return "off😴"
+            case .interactive: return "interactive"
+            case .background: return "+background"
+            }
+        }
+
         static func parentTitle(_ mode: LidAwakeMode) -> String {
-            "\(name) — \(label(mode).lowercased())"
+            "\(name): \(short(mode))"
         }
 
         /// The classic Mac checkmark on the current mode. Safe *inside a

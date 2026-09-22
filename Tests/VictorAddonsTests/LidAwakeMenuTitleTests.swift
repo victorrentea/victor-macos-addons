@@ -44,7 +44,7 @@ final class LidAwakeMenuTitleTests: XCTestCase {
         for mode in LidAwakeMode.allCases {
             let parent = Menu.parentTitle(mode)
             XCTAssertTrue(parent.hasPrefix(Menu.name))
-            XCTAssertTrue(parent.lowercased().hasSuffix(Menu.label(mode).lowercased()),
+            XCTAssertTrue(parent.hasSuffix(": " + Menu.short(mode)),
                           "the parent must name the current mode, not just the feature")
         }
         XCTAssertNotEqual(Menu.parentTitle(.off), Menu.parentTitle(.background))

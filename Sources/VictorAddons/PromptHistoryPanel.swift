@@ -46,9 +46,11 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     /// Re-reads the `5m ago` column once a minute while the panel is up.
     private var clock: Timer?
 
-    private let width: CGFloat = 760
-    private let maxHeight: CGFloat = 620
-    private let rowH: CGFloat = 26
+    private let width: CGFloat = 1000
+    private let maxHeight: CGFloat = 800
+    /// Everything in the row is 1.5× what it was (2026-09-22, Victor: *"mărește
+    /// fontul cu 50% în last prompts window"*) — fonts, icon, columns, row.
+    private let rowH: CGFloat = 38
     private let pageSize = 40
     private static let rowId = NSUserInterfaceItemIdentifier("promptRow")
 
@@ -92,7 +94,7 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
             + "Prompts are recorded only while a training session is running."
         emptyLabel.alignment = .center
         emptyLabel.textColor = .secondaryLabelColor
-        emptyLabel.font = .systemFont(ofSize: 13)
+        emptyLabel.font = .systemFont(ofSize: 19.5)
         emptyLabel.maximumNumberOfLines = 3
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         emptyLabel.isHidden = !today.isEmpty
@@ -256,15 +258,16 @@ private final class PromptRowView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        badge.font = .systemFont(ofSize: 13)
+        badge.font = .systemFont(ofSize: 19.5)
         button.bezelStyle = .rounded
-        button.controlSize = .mini
-        button.font = .systemFont(ofSize: 10)
-        age.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        button.controlSize = .regular
+        button.font = .systemFont(ofSize: 15)
+        age.font = .monospacedDigitSystemFont(ofSize: 16.5, weight: .regular)
         age.textColor = .secondaryLabelColor
         age.alignment = .right
         bar.textColor = .tertiaryLabelColor
-        body.font = .systemFont(ofSize: 13)
+        bar.font = .systemFont(ofSize: 19.5)
+        body.font = .systemFont(ofSize: 19.5)
         body.maximumNumberOfLines = 1
         body.lineBreakMode = .byTruncatingTail
         body.cell?.usesSingleLineMode = true
@@ -281,10 +284,10 @@ private final class PromptRowView: NSTableCellView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 16),
-            icon.heightAnchor.constraint(equalToConstant: 16),
-            button.widthAnchor.constraint(equalToConstant: 44),
-            age.widthAnchor.constraint(equalToConstant: 52),
+            icon.widthAnchor.constraint(equalToConstant: 24),
+            icon.heightAnchor.constraint(equalToConstant: 24),
+            button.widthAnchor.constraint(equalToConstant: 66),
+            age.widthAnchor.constraint(equalToConstant: 78),
         ])
         // The prompt text is the part that gives.
         body.setContentHuggingPriority(.defaultLow, for: .horizontal)
