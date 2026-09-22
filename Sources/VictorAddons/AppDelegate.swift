@@ -1097,6 +1097,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 "menu_title": ui.menuTitle,
                 "icon_mode": ui.iconMode,
                 "source": ui.source,
+                "chosen_mic": ui.chosenMic,
+                "mic_rows": ui.micRows,
+                "listening_app": ui.listeningApp,
                 "event_tap_active": self.eventTapManager?.isActive == true,
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
@@ -1140,9 +1143,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onTailPreview = { [weak self] in
             self?.transcriptionTailPreview()
         }
-        menuBarManager.onPickSource = { [weak self] pattern in
-            self?.writePreferredSource(pattern)
-        }
+        // A click publishes the id to the file Walkie Talkie also reads; the
+        // tick comes back through the watcher below, so a pick made here and a
+        // pick made over there travel the exact same path.
+        menuBarManager.onPickSource = { id in MicPreference.write(id) }
+        MicPreference.watch { [weak self] in self?.adoptMicChoice() }
+        adoptMicChoice()
         menuBarManager.onMenuOpened = { [weak self] in
             // Opening the app menu is a clear "I'm done with the link" signal —
             // hide the banner + QR immediately so it never lingers on the screen.
@@ -1416,6 +1422,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         bridge.start()
         audioManager.onDictationActiveChanged = { [weak bridge] active in
             bridge?.setActive(active)
+        }
+        // The 💬 icon says which of the three is hearing him. Arrives on the
+        // watcher's own queue; the menu bar is AppKit.
+        audioManager.onDictationAppChanged = { [weak self] bundle in
+            DispatchQueue.main.async { self?.menuBarManager.setListeningApp(bundle) }
         }
         tabletServer?.onTestDictation = { [weak bridge] active in
             bridge?.setActive(active)
@@ -2112,14 +2123,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         whisperManager?.killImmediate()
     }
 
-    /// Persist the user's preferred ME-source pattern to disk so whisper
-    /// picks it up via its file watcher and switches without a restart.
+    /// **Take the shared choice and make both halves of this app agree with
+    /// it** — the tick in the menu, and the pattern the Python transcriber
+    /// watches. Called at launch and on every change of
+    /// `~/.walkie-talkie/mic/choice`, whichever app wrote it.
+    ///
+    /// The translation is the whole reason this sits here rather than in the
+    /// menu: the shared file holds a roster **id** because that is what two
+    /// Swift apps can agree on, while `whisper_runner.py` matches on a CoreAudio
+    /// **name fragment**. `.preferred-me-source` is therefore a derived file,
+    /// never edited by hand, and `auto` writes it empty — which is exactly the
+    /// state Python reads as *use your own ladder*.
+    private func adoptMicChoice() {
+        let id = MicPreference.read()
+        menuBarManager.setChosenMic(id)
+        writePreferredSource(MicRoster.byId(id)?.pattern ?? "")
+    }
+
+    /// Persist the preferred ME-source pattern to disk so whisper picks it up
+    /// via its file watcher and switches without a restart. An empty string is
+    /// *automatic*: Python falls back to `_ME_PATTERNS` in order.
     private func writePreferredSource(_ pattern: String) {
         let file = transcriptionFolder.appendingPathComponent(".preferred-me-source")
+        guard (try? String(contentsOf: file, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) != pattern else { return }
         do {
             try FileManager.default.createDirectory(at: transcriptionFolder, withIntermediateDirectories: true)
             try pattern.write(to: file, atomically: true, encoding: .utf8)
-            overlayInfo("Preferred source: \(pattern)")
+            overlayInfo("Preferred source: \(pattern.isEmpty ? "automatic" : pattern)")
         } catch {
             overlayError("Failed to write preferred source: \(error)")
         }

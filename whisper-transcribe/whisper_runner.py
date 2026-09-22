@@ -260,7 +260,18 @@ _THRESHOLDS = {
 }
 _DEFAULT_THRESHOLD = 0.018
 
-_ME_PATTERNS = ["Wireless Mic", "DJI Mic", "Room Speakerphone", "XLR", "Bose", "MacBook"]
+# The ladder for *automatic*, best first, and the order of the rows in the app's
+# mic menu — one list, because a menu whose order disagreed with the automatic
+# pick would teach the wrong thing every time it was opened.
+#
+# Victor's order (2026-09-19): "the preference of mic to use is: XLR>DJI>BOSE>MAC".
+# The XLR moved to the front on 2026-09-22, when this ladder and Walkie Talkie's
+# were made the same ladder; before that the receiver was first here and the XLR
+# fourth. The speakerphone came down with it, from second to fourth: a far-field
+# room mic with AGC does beat a condenser pointed at one chair in a hall, which
+# is why it used to be high — but the two DJI lavaliers are on his collar
+# wherever he walks, so they go above it.
+_ME_PATTERNS = ["XLR", "Wireless Mic", "DJI Mic", "Room Speakerphone", "Bose", "MacBook"]
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
@@ -371,14 +382,20 @@ def _is_garbage(text: str) -> bool:
 
     return False
 
-# Short display names for known devices
+# Short display names for known devices.
+#
+# The emoji is not decoration: it is the token this process hands the Swift app
+# on VICTOR_SOURCE: / VICTOR_AVAILABLE:, and the picture the menu draws. Keep it
+# identical to `MicRoster.all` in Sources/VictorAddons/MicRoster.swift — and to
+# `InputDevice.known` in the walkie-talkie repo, which shows the same rows in
+# its own menu. `MicRosterTests` reads this file and fails when they drift.
 _DEVICE_SHORT_NAMES = {
-    "wireless mic": "🎤",  # DJI Mic Mini reports as "Wireless Mic Rx"
+    "xlr": "🎙️",
+    "wireless mic": "🎤",  # the DJI receiver reports as "Wireless Mic Rx"
     "dji mic": "📡",  # DJI Mic Mini transmitter paired over Bluetooth, no receiver
     "speakerphone": "🏛️",  # Room Speakerphone (USB)
-    "xlr": "🎙️",
-    "bose": "🎧",
     "vic bose": "🎧",
+    "bose": "🎧",
     "macbook": "💻",
 }
 

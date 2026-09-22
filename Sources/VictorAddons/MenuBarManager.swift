@@ -12,6 +12,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let source: String
         let menuTitle: String
         let iconMode: String
+        /// `auto` or a `MicRoster` id — what the tick is on.
+        let chosenMic: String
+        /// The mic submenu as AppKit actually holds it. It exists because
+        /// *unavailable devices are greyed* is a claim about a menu, and a menu
+        /// is the one surface in this app that cannot be photographed from a
+        /// shell — `NSMenu` draws in the window server, on a click, over
+        /// whatever is in front. The flag AppKit is holding is the whole of the
+        /// fact. Same hook, same shape, as the relay's `/test/state`.
+        let micRows: [[String: Any]]
+        /// The bundle id of whichever dictation app holds the microphone, or "".
+        let listeningApp: String
     }
 
     private var statusItem: NSStatusItem!
@@ -59,6 +70,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var isTranscriptionPausedByBattery: Bool = false
     private var transcribeSource: String = ""
     private var availableSources: [String] = []
+    /// `auto`, or one of `MicRoster.ids`. See `setChosenMic`.
+    private var chosenMic: String = MicPreference.automatic
+    /// The bundle id of the dictation app currently holding the microphone, or
+    /// nil. See `listeningGlyph`.
+    private var listeningApp: String?
 
     /// The 🎬 row. Its title is a **readout** — minutes and dollars — so it is
     /// repainted by `setLiveCaptions` on every state change and once a second
@@ -1350,9 +1366,48 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         updateTranscribeTitle()
     }
 
+    /// **Which of the three is hearing him**, as one glyph on the 💬 icon.
+    ///
+    /// Victor's ask (2026-09-22): *"I can watch the icon of the MacOS add-ons to
+    /// tell what I am currently using at any point: Wispr, Walkie Talkie, or
+    /// continuous MacOS add-ons transcription."* The first two are apps that
+    /// take the microphone in bursts and give it back; the third is the standing
+    /// state. So a dictation, while it lasts, **replaces** the device glyph
+    /// rather than sitting beside it — 18 points of menu bar hold one picture,
+    /// and during a dictation the question is not which capsule but which app is
+    /// about to paste words somewhere.
+    ///
+    /// The device glyph underneath is not lost: it is on the `Transcribing:`
+    /// row a click away, with its name spelled out.
+    private static func listeningGlyph(_ bundle: String?) -> String? {
+        switch bundle {
+        case CoreAudioManager.wisprFlowBundle: return "🌊"
+        case CoreAudioManager.walkieTalkieBundle: return "📻"
+        default: return nil
+        }
+    }
+
+    /// Pushed in by `CoreAudioManager`'s dictation-app edge. Main thread.
+    func setListeningApp(_ bundle: String?) {
+        guard listeningApp != bundle else { return }
+        listeningApp = bundle
+        refreshMenuIcon()
+    }
+
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
         let badge = (wsConnected || sessionActive) ? "🟢" : "🟥"
+
+        // A live dictation outranks every transcription state below, including
+        // the paused ones: the microphone really is open, whatever this app's
+        // own transcription happens to be doing.
+        if let glyph = Self.listeningGlyph(listeningApp),
+           let icon = makeEmojiIcon(glyph, badge: badge) {
+            button.image = platedForMemoryPressure(icon)
+            updateStopBlinkTimer()
+            updateMemoryBlinkTimer()
+            return
+        }
 
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makePngIcon("icon_leaf", badge: badge)
@@ -1634,7 +1689,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
 
         if isTranscribing {
-            transcribeItem.title = raw + "Transcribing"
+            // **The device's short name rides on the parent row** (2026-09-22),
+            // which is Walkie Talkie's `Mic: 📡 DJI BT` applied here: the row is
+            // read out of the corner of the eye with the menu open over his
+            // work, and a bare picture is not a name — 🎤 and 📡 are the same
+            // lavalier with and without its receiver, and telling them apart is
+            // the whole reason the second one was added. The glyph stays in the
+            // image so the row keeps the colour emoji this menu draws
+            // everywhere else.
+            let mic = MicRoster.byGlyph(transcribeSource)
+            transcribeItem.title = raw + "Transcribing" + (mic.map { ": \($0.short)" } ?? "")
             transcribeItem.image = transcribeSource.isEmpty ? nil : emojiAsIcon(transcribeSource)
         } else {
             // On AC but momentarily down (starting up, or a crash before the
@@ -1642,16 +1706,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             transcribeItem.title = raw + "Transcribing (off)"
         }
     }
-
-    // Known _ME_PATTERNS in whisper_runner.py — order matches Python priority.
-    // Each tuple: (display name, short emoji emitted by whisper, pattern token sent back).
-    private static let knownSources: [(name: String, emoji: String, pattern: String)] = [
-        ("Wireless Mic",     "🎤",  "Wireless Mic"),
-        ("Stage Speakerphone","🏛️", "Room Speakerphone"),
-        ("XLR Mic",          "🎙️",  "XLR"),
-        ("Bose Headset",     "🎧",  "Bose"),
-        ("MacBook",          "💻",  "MacBook"),
-    ]
 
     private func rebuildTranscribeSubmenu() {
         transcribeSubmenu.removeAllItems()
@@ -1662,17 +1716,42 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // — so the line is what keeps a readout from being read as one.
         transcribeSubmenu.addItem(tailItem)
         transcribeSubmenu.addItem(.separator())
-        for src in Self.knownSources {
+        // **Automatic first, and it spells the ladder out** — the same row, in
+        // the same words, as Walkie Talkie's mic menu. `Automatic — 🎙️ ▸ 🎤 ▸
+        // 📡 ▸ 🏛️ ▸ 🎧 ▸ 💻` is the order of the rows under it, which is the
+        // point: the list he reads *is* the preference. Never disabled — it is
+        // the one row that is true whatever is on the desk. It was missing here
+        // entirely until 2026-09-22, which meant a pick made in this menu could
+        // never be taken back.
+        let auto = NSMenuItem(title: "Automatic — \(MicRoster.ladder)",
+                              action: #selector(pickSource(_:)), keyEquivalent: "")
+        auto.target = self
+        auto.representedObject = MicPreference.automatic
+        auto.state = (chosenMic == MicPreference.automatic) ? .on : .off
+        transcribeSubmenu.addItem(auto)
+        transcribeSubmenu.addItem(.separator())
+
+        for mic in MicRoster.all {
             // Titles are drawn by AppKit in the menu's own label colour, so the
             // monochrome  needs no tinting here — only the substitution.
-            let item = NSMenuItem(title: "\(Self.displayGlyph(src.emoji)) \(src.name)",
+            let here = availableSources.contains(mic.glyph)
+            // **The absent ones say why they are grey.** A disabled row with no
+            // explanation is indistinguishable from a broken one, and the
+            // explanation is the only thing he can act on — it is a cable.
+            let item = NSMenuItem(title: "\(Self.displayGlyph(mic.glyph)) \(mic.label)"
+                                      + (here ? "" : " — not connected"),
                                   action: #selector(pickSource(_:)),
                                   keyEquivalent: "")
             item.target = self
-            item.representedObject = src.pattern
-            let available = availableSources.contains(src.emoji)
-            item.isEnabled = available
-            item.state = (src.emoji == transcribeSource) ? .on : .off
+            item.representedObject = mic.id
+            item.isEnabled = here
+            // **The tick follows what he asked for, not what is recording.**
+            // The parent row above says which device is actually open, and a
+            // pick whose device has been unplugged falls back to automatic — so
+            // the two together read as *you asked for the receiver, you are on
+            // the built-in*, which is the sentence he needs when a cable has
+            // come out.
+            item.state = (mic.id == chosenMic) ? .on : .off
             transcribeSubmenu.addItem(item)
         }
         // …then the separator and the 🔴 raw-capture toggle. Below the line
@@ -1685,8 +1764,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     @objc private func pickSource(_ sender: NSMenuItem) {
-        guard let pattern = sender.representedObject as? String else { return }
-        onPickSource?(pattern)
+        guard let id = sender.representedObject as? String, id != chosenMic else { return }
+        onPickSource?(id)
+    }
+
+    /// **What he picked** — `auto` or one of `MicRoster.ids`. Pushed in by
+    /// `AppDelegate` rather than set from the click, so the tick can only ever
+    /// show what is actually on disk: the click publishes the id to the file
+    /// both apps share (`MicPreference`) and the tick follows the file coming
+    /// back, which is also the path a pick made in Walkie Talkie's menu takes.
+    func setChosenMic(_ id: String) {
+        guard chosenMic != id else { return }
+        chosenMic = id
+        updateTranscribeTitle()
     }
 
     private func updateFluxInboxItem() {
@@ -1753,13 +1843,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         } else {
             iconMode = "on"
         }
+        let micRows: [[String: Any]] = transcribeSubmenu.items
+            .filter { !$0.isSeparatorItem && $0.representedObject is String }
+            .map { ["title": $0.title,
+                    "enabled": $0.isEnabled,
+                    "ticked": $0.state == .on] }
         return TranscriptionDebugState(
             isTranscribing: isTranscribing,
             isStale: isTranscriptionStale,
             isPausedByBattery: isTranscriptionPausedByBattery,
             source: transcribeSource,
             menuTitle: transcribeItem.title,
-            iconMode: iconMode
+            iconMode: iconMode,
+            chosenMic: chosenMic,
+            micRows: micRows,
+            listeningApp: listeningApp ?? ""
         )
     }
 
