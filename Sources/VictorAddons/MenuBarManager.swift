@@ -1372,7 +1372,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshWsItem() {
         feedbackFormItem?.isHidden = !sessionActive
         if sessionActive {
-            wsStatusItem.title = "🟢 Interact Link"
+            wsStatusItem.title = "🟢 Display Interact Link ⧈"
             wsStatusItem.isEnabled = true
             wsStatusItem.action = #selector(displayJoinLinkAction)
             wsStatusItem.target = self
