@@ -265,11 +265,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         breakSubmenu.addItem(.separator())
         breakSubmenu.addItem(countryItem)
 
-        menu.addItem(.separator())
-
-        // Resume item
+        // ⏱️ Resumed, above the line with the break it follows (2026-09-23,
+        // Victor) — it answers "when did the last break end".
         resumeItem = addItem("⏱️ Resumed -", action: nil)
         resumeItem.isEnabled = false
+
+        menu.addItem(.separator())
         // Transcribe status row (read-only; opens the mic-source submenu).
         // Transcription runs automatically on AC — no manual start/stop here.
         transcribeItem = addItem("Transcribing", action: nil)
