@@ -1,7 +1,7 @@
 import AppKit
 
-/// 🤖 **Last Prompts…** — today's intercepted prompts, with a Send button on
-/// each one that never reached the room.
+/// 🤖 **Last Prompts…** — today's intercepted prompts; a click on one that never
+/// reached the room sends it.
 ///
 /// The bottom-left offer pill (`SessionNotesAppender.offerPrompt`) asks once
 /// and gives up after 9.5 s. This panel is the second chance for everything
@@ -19,7 +19,7 @@ import AppKit
 /// The line is `<agent icon> [Send] 5m ago | <prompt>`, his shape.
 ///
 /// A row whose prompt already went to the notes (by pill or by this panel) is
-/// greyed and its button reads "Sent" — that flag is the single reason the
+/// greyed and carries a ✓ — that flag is the single reason the
 /// store keeps state at all, and it is what makes the panel safe to scroll
 /// through twice without double-posting.
 final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
@@ -112,7 +112,7 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         let count = NSAttributedString(string: "\(today.count) today", attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
             .foregroundColor: NSColor.systemYellow.withAlphaComponent(0.9)])
-        let hint = NSAttributedString(string: "    Send puts it on the Prompts tab  ·  Esc", attributes: [
+        let hint = NSAttributedString(string: "    click a prompt to put it on the Prompts tab  ·  Esc", attributes: [
             .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(white: 0.5, alpha: 1)])
         let line = NSMutableAttributedString(attributedString: count)
         line.append(hint)
@@ -247,8 +247,10 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         guard row < shown, row < today.count else { return nil }
         let view = (tableView.makeView(withIdentifier: Self.rowId, owner: nil) as? PromptRowView)
             ?? { let v = PromptRowView(); v.identifier = Self.rowId; return v }()
-        view.configure(prompt: today[row], age: Self.age(of: today[row].date),
-                       target: self, action: #selector(sendAction(_:)), tag: row)
+        let prompt = today[row]
+        view.configure(prompt: prompt, age: Self.age(of: prompt.date)) { [weak self] in
+            self?.send(prompt)
+        }
         return view
     }
 
@@ -264,23 +266,25 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     // MARK: Send
 
     /// Write the row's prompt into today's session notes — the same call the
-    /// offer pill makes on hover — and mark it sent so the button retires. The
+    /// offer pill makes on hover — and mark it sent so the row greys. The
     /// store's change notification is what redraws the row.
-    @objc private func sendAction(_ sender: NSButton) {
-        let index = sender.tag
-        guard index < today.count else { return }
-        let prompt = today[index]
-        guard SessionNotesAppender.sendPrompt(prompt.text) else { return }
+    private func send(_ prompt: CapturedPrompt) {
+        guard !prompt.sent, SessionNotesAppender.sendPrompt(prompt.text) else { return }
         PromptCaptureStore.shared.markSent(prompt.id)
     }
 }
 
-/// One prompt, one line: `<agent icon> [Send] 5m ago | <prompt>`. The full text
-/// is the tooltip.
+/// One prompt, one line: `5m ago ✓ <agent icon> <prompt>`. **The whole row is
+/// the button** (2026-09-23, Victor: *"în loc de send, click pe tot rândul să
+/// trimită, scoate butonul"*): a click sends an unsent prompt, the row lights
+/// on hover while it still can, and a sent one is greyed with a ✓. The full
+/// text is the tooltip.
 private final class PromptRowView: NSTableCellView {
     private let icon = NSImageView()
     private let badge = NSTextField(labelWithString: "")
-    private let button = NSButton(title: "Send", target: nil, action: nil)
+    private let check = NSTextField(labelWithString: "✓")
+    private var onClick: (() -> Void)?
+    private var sent = false
     private let age = NSTextField(labelWithString: "")
     private let body = FittedLine()
 
@@ -300,17 +304,18 @@ private final class PromptRowView: NSTableCellView {
         super.init(frame: frameRect)
         icon.imageScaling = .scaleProportionallyUpOrDown
         badge.font = .systemFont(ofSize: 14)
-        button.bezelStyle = .rounded
-        button.controlSize = .large
-        button.font = .systemFont(ofSize: 17, weight: .medium)
+        check.font = .systemFont(ofSize: 17, weight: .semibold)
+        check.textColor = .tertiaryLabelColor
+        wantsLayer = true
+        layer?.cornerRadius = 8
         age.font = .monospacedDigitSystemFont(ofSize: 16.5, weight: .regular)
         age.textColor = .secondaryLabelColor
         age.alignment = .left
         body.font = .systemFont(ofSize: 19.5)
 
-        // `5m ago [Send] <icon> <prompt>` (2026-09-23, Victor: *"pune în
-        // ordine data, [Send mai mare] <icon mai mic> | <Prompt>"*).
-        let stack = NSStackView(views: [age, button, icon, badge, body])
+        // `5m ago ✓ <icon> <prompt>` (2026-09-23, Victor: *"pune în ordine
+        // data, … <icon mai mic> | <Prompt>"*, then the button went).
+        let stack = NSStackView(views: [age, check, icon, badge, body])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
@@ -324,7 +329,7 @@ private final class PromptRowView: NSTableCellView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
             icon.widthAnchor.constraint(equalToConstant: 20),
             icon.heightAnchor.constraint(equalToConstant: 16),
-            button.widthAnchor.constraint(equalToConstant: 84),
+            check.widthAnchor.constraint(equalToConstant: 18),
             age.widthAnchor.constraint(equalToConstant: 78),
         ])
         // The prompt text is the part that gives.
@@ -334,8 +339,7 @@ private final class PromptRowView: NSTableCellView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(prompt: CapturedPrompt, age ageText: String,
-                   target: AnyObject, action: Selector, tag: Int) {
+    func configure(prompt: CapturedPrompt, age ageText: String, onClick: @escaping () -> Void) {
         let image = Self.icons[prompt.source]
         icon.image = image
         icon.isHidden = image == nil
@@ -345,15 +349,34 @@ private final class PromptRowView: NSTableCellView {
         age.stringValue = ageText
         body.text = PromptCapturePolicy.singleLine(prompt.text)
         body.textColor = prompt.sent ? .tertiaryLabelColor : .labelColor
-        toolTip = prompt.text
-        button.title = prompt.sent ? "Sent" : "Send"
-        button.isEnabled = !prompt.sent
-        button.target = target
-        button.action = action
-        button.tag = tag
-        button.toolTip = prompt.sent
-            ? "Already on the participants' Prompts tab"
-            : "Append to the session notes — the room sees it"
+        toolTip = prompt.sent
+            ? prompt.text + "\n\n✓ Already on the participants' Prompts tab"
+            : prompt.text + "\n\nClick to put it on the participants' Prompts tab"
+        check.alphaValue = prompt.sent ? 1 : 0
+        sent = prompt.sent
+        self.onClick = onClick
+        paint(hovered: false)
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {
+        guard !sent, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        onClick?()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { paint(hovered: true) }
+    override func mouseExited(with event: NSEvent) { paint(hovered: false) }
+
+    private func paint(hovered: Bool) {
+        layer?.backgroundColor = (hovered && !sent)
+            ? NSColor(srgbRed: 0.24, green: 0.58, blue: 1.0, alpha: 0.28).cgColor
+            : NSColor.clear.cgColor
     }
 }
 
