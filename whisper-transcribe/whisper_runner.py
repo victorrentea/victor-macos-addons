@@ -391,8 +391,11 @@ def _is_garbage(text: str) -> bool:
 # its own menu. `MicRosterTests` reads this file and fails when they drift.
 _DEVICE_SHORT_NAMES = {
     "xlr": "🎙️",
-    "wireless mic": "🎤",  # the DJI receiver reports as "Wireless Mic Rx"
-    "dji mic": "📡",  # DJI Mic Mini transmitter paired over Bluetooth, no receiver
+    # The dish is the receiver (a dongle in the USB-C port) and the microphone
+    # is the microphone (the capsule on his collar). Swapped 2026-09-22 — they
+    # were the other way round for the few hours the transmitter existed.
+    "wireless mic": "📡",  # the DJI receiver reports as "Wireless Mic Rx"
+    "dji mic": "🎤",  # DJI Mic Mini transmitter paired over Bluetooth, no receiver
     "speakerphone": "🏛️",  # Room Speakerphone (USB)
     "vic bose": "🎧",
     "bose": "🎧",

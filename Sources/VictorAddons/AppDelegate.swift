@@ -141,6 +141,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // Session state for join link feature
     private var isSessionActive: Bool = false
     private var participantUrl: String?
+    /// The last day of the current set of course days, as the daemon parsed it
+    /// out of the session folder name ("2026-09-14..15 AI@X" → "2026-09-15").
+    /// nil when the folder carries no dates. Only the feedback-form offer reads
+    /// it; see `FeedbackFormPolicy`.
+    private var sessionLastDay: String?
 
     init(serverURL: String, pidFilePath: String, myPID: Int32) {
         self.serverURL = serverURL
@@ -257,7 +262,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let type = json["type"] as? String else { return }
             if type == "session_started", let url = json["participant_url"] as? String {
                 let folder = json["session_folder"] as? String
-                self?.handleSessionStarted(participantUrl: url, sessionFolder: folder)
+                let lastDay = json["session_last_day"] as? String
+                self?.handleSessionStarted(participantUrl: url, sessionFolder: folder, lastDay: lastDay)
             } else if type == "session_ended" {
                 self?.handleSessionEnded()
             }
@@ -1099,7 +1105,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 "source": ui.source,
                 "chosen_mic": ui.chosenMic,
                 "mic_rows": ui.micRows,
-                "listening_app": ui.listeningApp,
                 "event_tap_active": self.eventTapManager?.isActive == true,
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
@@ -1180,6 +1185,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         feedbackFormReminder = FeedbackFormReminder(
             screensProvider: { NSScreen.screens },
             isSessionActive: { [weak self] in self?.isSessionActive ?? false },
+            isLastDayOfSet: { [weak self] in
+                FeedbackFormPolicy.mayOffer(lastDay: self?.sessionLastDay,
+                                            now: Date(),
+                                            calendar: .current)
+            },
             onAccept: { [weak self] in self?.requestFeedbackForm() }
         )
         feedbackFormReminder?.start()
@@ -1422,11 +1432,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         bridge.start()
         audioManager.onDictationActiveChanged = { [weak bridge] active in
             bridge?.setActive(active)
-        }
-        // The 💬 icon says which of the three is hearing him. Arrives on the
-        // watcher's own queue; the menu bar is AppKit.
-        audioManager.onDictationAppChanged = { [weak self] bundle in
-            DispatchQueue.main.async { self?.menuBarManager.setListeningApp(bundle) }
         }
         tabletServer?.onTestDictation = { [weak bridge] active in
             bridge?.setActive(active)
@@ -2285,8 +2290,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // `confetti` message handling — was dead code kept alive by its own
     // scheduler and was removed with the effects extraction in 2026-09.
 
-    private func handleSessionStarted(participantUrl: String, sessionFolder: String?) {
+    private func handleSessionStarted(participantUrl: String, sessionFolder: String?, lastDay: String? = nil) {
         isSessionActive = true
+        sessionLastDay = lastDay
         self.participantUrl = stripProtocolPrefix(from: participantUrl)
         if let folder = sessionFolder, !folder.isEmpty {
             ScreenshotManager.sessionFolder = URL(fileURLWithPath: folder)
@@ -2299,6 +2305,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private func handleSessionEnded() {
         isSessionActive = false
         participantUrl = nil
+        sessionLastDay = nil
         ScreenshotManager.sessionFolder = nil
         menuBarManager.setJoinLinkEnabled(false)
         // Auto-hide banner if currently visible

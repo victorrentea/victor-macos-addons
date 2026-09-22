@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 22, 18:39"
+    static let BUILD_TIME = "Sep 22, 18:45"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -21,8 +21,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         /// whatever is in front. The flag AppKit is holding is the whole of the
         /// fact. Same hook, same shape, as the relay's `/test/state`.
         let micRows: [[String: Any]]
-        /// The bundle id of whichever dictation app holds the microphone, or "".
-        let listeningApp: String
     }
 
     private var statusItem: NSStatusItem!
@@ -72,9 +70,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var availableSources: [String] = []
     /// `auto`, or one of `MicRoster.ids`. See `setChosenMic`.
     private var chosenMic: String = MicPreference.automatic
-    /// The bundle id of the dictation app currently holding the microphone, or
-    /// nil. See `listeningGlyph`.
-    private var listeningApp: String?
 
     /// The 🎬 row. Its title is a **readout** — minutes and dollars — so it is
     /// repainted by `setLiveCaptions` on every state change and once a second
@@ -1366,49 +1361,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         updateTranscribeTitle()
     }
 
-    /// **Which of the three is hearing him**, as one glyph on the 💬 icon.
-    ///
-    /// Victor's ask (2026-09-22): *"I can watch the icon of the MacOS add-ons to
-    /// tell what I am currently using at any point: Wispr, Walkie Talkie, or
-    /// continuous MacOS add-ons transcription."* The first two are apps that
-    /// take the microphone in bursts and give it back; the third is the standing
-    /// state. So a dictation, while it lasts, **replaces** the device glyph
-    /// rather than sitting beside it — 18 points of menu bar hold one picture,
-    /// and during a dictation the question is not which capsule but which app is
-    /// about to paste words somewhere.
-    ///
-    /// The device glyph underneath is not lost: it is on the `Transcribing:`
-    /// row a click away, with its name spelled out.
-    private static func listeningGlyph(_ bundle: String?) -> String? {
-        switch bundle {
-        case CoreAudioManager.wisprFlowBundle: return "🌊"
-        case CoreAudioManager.walkieTalkieBundle: return "📻"
-        default: return nil
-        }
-    }
-
-    /// Pushed in by `CoreAudioManager`'s dictation-app edge. Main thread.
-    func setListeningApp(_ bundle: String?) {
-        guard listeningApp != bundle else { return }
-        listeningApp = bundle
-        refreshMenuIcon()
-    }
-
     private func refreshMenuIcon() {
         guard let button = statusItem.button else { return }
         let badge = (wsConnected || sessionActive) ? "🟢" : "🟥"
 
-        // A live dictation outranks every transcription state below, including
-        // the paused ones: the microphone really is open, whatever this app's
-        // own transcription happens to be doing.
-        if let glyph = Self.listeningGlyph(listeningApp),
-           let icon = makeEmojiIcon(glyph, badge: badge) {
-            button.image = platedForMemoryPressure(icon)
-            updateStopBlinkTimer()
-            updateMemoryBlinkTimer()
-            return
-        }
-
+        // **The icon says which microphone, and nothing else** (2026-09-22). It
+        // briefly also said *which app is hearing him* — 🌊 for Wispr Flow, 📻
+        // for Walkie Talkie, for the length of a dictation — and Victor had it
+        // taken back out the same evening: the capsule is what he watches this
+        // picture for, and a glyph that means something different twenty times
+        // an hour is one he has to stop and decode. `CoreAudioManager` still
+        // knows which app holds the microphone; nothing draws it.
         if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makePngIcon("icon_leaf", badge: badge)
         } else if !isTranscribing {
@@ -1856,8 +1819,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             menuTitle: transcribeItem.title,
             iconMode: iconMode,
             chosenMic: chosenMic,
-            micRows: micRows,
-            listeningApp: listeningApp ?? ""
+            micRows: micRows
         )
     }
 

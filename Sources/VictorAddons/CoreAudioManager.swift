@@ -38,8 +38,9 @@ class CoreAudioManager {
     /// Screen Recording and microphone grants to that string.
     private static let dictationBundlePrefixes = [wisprFlowBundle, walkieTalkieBundle]
 
-    /// Named, because the menu bar has to tell the two apart rather than just
-    /// count them (`onDictationAppChanged`).
+    /// Named rather than inline, because `recordingDictationApp` returns which
+    /// of the two it is and the log line that says *a dictation started* is the
+    /// only place on this Mac that can tell them apart.
     static let wisprFlowBundle = "com.electron.wispr-flow"
     static let walkieTalkieBundle = "ro.victorrentea.wispr-relay"
     /// Safety net only. The Wispr-recording edges arrive instantly from the
@@ -81,18 +82,6 @@ class CoreAudioManager {
     /// Invoked on `pollQueue`; the handler must hop wherever it needs.
     var onDictationActiveChanged: ((Bool) -> Void)?
 
-    /// **Which dictation app holds the microphone right now**, by bundle id, or
-    /// nil when neither does — the strictly finer-grained version of the latch
-    /// above, and the menu bar's only way to answer *what am I talking into*.
-    ///
-    /// Victor asked (2026-09-22) to be able to read off the 💬 icon which of the
-    /// three is hearing him: Wispr Flow, Walkie Talkie, or this app's own
-    /// continuous transcription. The first two are exactly the two bundle ids on
-    /// `dictationBundlePrefixes`, and the third is the standing state — so the
-    /// icon needs no fourth source of truth, only this edge. Invoked on
-    /// `pollQueue`; the handler must hop wherever it needs.
-    var onDictationAppChanged: ((String?) -> Void)?
-    private var lastDictationApp: String?
 
     /// Retained CoreAudio listener on the process list (see `startProcessListListener`).
     private var processListListener: AudioObjectPropertyListenerBlock?
@@ -225,13 +214,6 @@ class CoreAudioManager {
         let recording = app != nil
         let prev = lastWisprRecording
         lastWisprRecording = recording
-
-        // Edge only — this runs on every poll and on every process-list push,
-        // and the menu bar must not be asked to redraw an unchanged icon.
-        if app != lastDictationApp {
-            lastDictationApp = app
-            onDictationAppChanged?(app)
-        }
 
         if recording {
             dictationFirstNotRecordingAt = nil

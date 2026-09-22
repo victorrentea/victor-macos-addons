@@ -78,10 +78,21 @@ interleaved with that offer's 16:45 / 17:15 rather than aligned with it, since
 two pills in the same minute compete for the same glance. The third slot is for
 the days that run long.
 
-It is gated on a live session, and a slot whose gate fails is **not** marked
-fired — a session that starts late still gets the offer on the next tick inside
-the grace window, instead of having silently burned its slot while the daemon
-was down. `GET /test/feedback-reminder` shows it now, schedule and gate bypassed.
+It is gated on a live session **and on the last day of the set**: a workshop
+running 14..16 September is surveyed once, on the 16th, because a form handed
+out on the Monday evening asks about a third of it. The set's last day arrives
+with `session_started` as `session_last_day` ("2026-09-16"), parsed by the
+daemon out of the session folder name — training-assistant owns that convention
+(`daemon/config.py::parse_session_folder_dates`, `..` = every day between, `+` =
+only those two), so the Mac merely compares it to today (`FeedbackFormPolicy`).
+A folder with no dates sends nothing and the offer goes back to every evening:
+ask too often beats never asking. The 📝 menu item is **not** gated this way —
+pressing it is already the decision.
+
+A slot whose gate fails is **not** marked fired — a session that starts late
+still gets the offer on the next tick inside the grace window, instead of having
+silently burned its slot while the daemon was down.
+`GET /test/feedback-reminder` shows it now, schedule and gates bypassed.
 
 ## Anti-double-run
 

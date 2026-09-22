@@ -13,9 +13,14 @@ import Cocoa
 /// Gated on a live session, because the form is named after it: with no session
 /// there is nothing to call the survey, and the offer would lead to an error
 /// instead of a link.
+///
+/// Gated again on the last day of the set (`FeedbackFormPolicy`): a workshop
+/// that runs Monday to Wednesday is only worth surveying once, at the end, and
+/// an offer on Monday evening would collect opinions about a third of it.
 final class FeedbackFormReminder {
     private let banner: BottomLeftBanner
     private let isSessionActive: () -> Bool
+    private let isLastDayOfSet: () -> Bool
     private let onAccept: () -> Void
     private var tickTimer: Timer?
     /// Slot keys already fired, e.g. "2026-09-04 16:50". Persisted so the app's
@@ -36,9 +41,11 @@ final class FeedbackFormReminder {
 
     init(screensProvider: @escaping () -> [NSScreen],
          isSessionActive: @escaping () -> Bool,
+         isLastDayOfSet: @escaping () -> Bool,
          onAccept: @escaping () -> Void) {
         banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
         self.isSessionActive = isSessionActive
+        self.isLastDayOfSet = isLastDayOfSet
         self.onAccept = onAccept
         firedSlots = Set(UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? [])
     }
@@ -65,6 +72,9 @@ final class FeedbackFormReminder {
          * should still get the offer at the next tick inside the grace window,
          * instead of having silently burned its slot while the daemon was down. */
         guard isSessionActive() else { return }
+        /* Neither is the day-of-the-set gate allowed to burn the slot, for the
+         * same reason: it is only ever re-read, never re-decided within a day. */
+        guard isLastDayOfSet() else { return }
         markFired(slot)
         offer(reason: slot)
     }
@@ -99,5 +109,25 @@ final class FeedbackFormReminder {
                     hoverCountdown: Self.hoverWindow,
                     hoverNudge: .up)
         StatusBannerSound.start?.play()
+    }
+}
+
+/// Which day of a multi-day set may ask for feedback.
+///
+/// The daemon sends the set's last day with `session_started`, having parsed it
+/// out of the session folder name ("2026-09-14..15 AI@X" → "2026-09-15"): it
+/// owns that convention, so the Mac only compares it to today.
+enum FeedbackFormPolicy {
+    /// `lastDay` is an ISO day ("2026-09-15"), or nil when the daemon could not
+    /// name one — a folder without dates then still gets the offer, since the
+    /// old behaviour (ask every evening) beats never asking at all.
+    static func mayOffer(lastDay: String?, now: Date, calendar: Calendar) -> Bool {
+        guard let lastDay else { return true }
+        return isoDay(now, calendar: calendar) == lastDay
+    }
+
+    static func isoDay(_ date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 }

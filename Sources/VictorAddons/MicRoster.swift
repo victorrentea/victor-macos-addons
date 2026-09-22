@@ -63,14 +63,20 @@ enum MicRoster {
     static let all: [Mic] = [
         Mic(id: "xlr",   glyph: "🎙️", short: "XLR",    label: "Elgato Wave XLR",
             pattern: "XLR"),
-        Mic(id: "rx",    glyph: "🎤",  short: "DJI Rx", label: "DJI Wireless Mic Rx",
+        // **The dish is the receiver and the microphone is the microphone**
+        // (2026-09-22, Victor: *"use mic icon instead of sattelite"*). The two
+        // were the other way round for the few hours the transmitter existed,
+        // which had the collar-worn capsule drawn as a satellite dish and the
+        // USB-C dongle drawn as a microphone — backwards on both counts, and
+        // the reason the two rows were hard to tell apart at a glance.
+        Mic(id: "rx",    glyph: "📡",  short: "DJI Rx", label: "DJI Wireless Mic Rx",
             pattern: "Wireless Mic"),
         // The same lavalier with the receiver left in the bag: a Mic Mini
         // transmitter pairs straight to the Mac over Bluetooth and shows up as
         // `DJI Mic Mini-XXXXXX`. One rung below the receiver — same capsule on
         // the same collar, but the headset profile hands over 16 kHz mono while
         // the receiver on USB-C hands over 48 kHz.
-        Mic(id: "tx",    glyph: "📡",  short: "DJI TX", label: "DJI Mic Mini (Bluetooth)",
+        Mic(id: "tx",    glyph: "🎤",  short: "DJI TX", label: "DJI Mic Mini (Bluetooth)",
             pattern: "DJI Mic"),
         Mic(id: "stage", glyph: "🏛️", short: "Stage",  label: "Stage Speakerphone",
             pattern: "Room Speakerphone"),

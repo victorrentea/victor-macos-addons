@@ -113,7 +113,7 @@ final class MicRosterTests: XCTestCase {
     }
 
     func testTheLadderRowNamesEveryDeviceInOrder() {
-        XCTAssertEqual(MicRoster.ladder, "🎙️ ▸ 🎤 ▸ 📡 ▸ 🏛️ ▸ 🎧 ▸ 💻")
+        XCTAssertEqual(MicRoster.ladder, "🎙️ ▸ 📡 ▸ 🎤 ▸ 🏛️ ▸ 🎧 ▸ 💻")
     }
 
     func testTheTwoDjiRowsAreTellableApart() {
