@@ -382,7 +382,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // it outright when there is none, rather than greying it out: a row
         // that cannot do anything is noise on a menu read at a glance.
         feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
-        addItem("🔳 Display clipboard link", action: #selector(displayClipboardLinkAction))
+        addItem("🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction))
         // Directly under it, because both rows answer "what is on the clipboard":
         // one shows it in the room, this one mails it to Victor. The key is only
         // advertised here — the event tap swallows ⌘⌃M before AppKit could match a
