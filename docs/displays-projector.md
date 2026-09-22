@@ -62,3 +62,31 @@ Advanced → **Adjust Size and Location…** writes them; a plain `defaults writ
 by `killall universalaccessd`) did not take. So the lens is sized by hand, once — and it must
 be left **smaller than the screen**, or it stops being captured.
 
+### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
+
+The table above is what **`screencapture` and ScreenCaptureKit** see. Zoom does not always
+read the frame the same way. On 2026-09-22 Victor found that turning on the capture option
+in **Zoom → Settings → Share Screen → Advanced** that stops Zoom filtering its own windows
+out of the shared frame *does* carry a full-screen magnification to the far end — the one
+thing nothing else here achieves. (The option's exact label was cut off in the screenshot
+this is written from, so it is described by its effect rather than quoted; it is the
+capture-mode setting whose whole point is that window filtering is off.)
+
+The trade is in the name: **Zoom's own windows land in the share too** — the floating
+control bar, the self-view, the share indicator. Tolerable in this rig, because the retina
+is what gets shared and those windows can live on the right-hand screen.
+
+Why this is not a contradiction of the measurements above: filtering windows out of a frame
+means Zoom composites the picture itself from a window list, which is a *pre-composite* path
+and therefore blind to a transform applied at scanout. With filtering off it takes the
+display's picture as the system hands it over — and with `closeViewZoomScreenShareEnabledKey`
+set (which it is, since 2026-09-22), that path is exactly the one the macOS 15.1 flag was
+built for. The flag was never useless; it simply governs a capture route that ordinary
+ScreenCaptureKit clients do not take, which is why `screencapture` kept showing the
+unzoomed frame no matter what was toggled.
+
+**Victor's configuration, as of 2026-09-22:** picture-in-picture style with the lens sized
+to the whole screen — i.e. visually the full-screen magnifier he has always used — plus
+Zoom's unfiltered capture mode, which is what actually carries it. ⌘⌃U and the pill remain
+the way to see and change which style is live.
+
