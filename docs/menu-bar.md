@@ -10,6 +10,10 @@ What stays a menu row and why; rows removed in favour of the ⌘⌃ cheat-sheet 
   `👩🏻‍💻 Extra` → `Extras`, which now also holds `📋 Clipboard History…` and `📥 Paste image to
   Downloads` — the latter superseded by the ⬇️ button on a ⌘⇧V image clip. Older names below
   are history.
+- **2026-09-23**: `📥 Paste image to Downloads` deleted (the ⌘⇧V image has `⬇️ to Downloads` and
+  `👁 In Preview`), `🖱️ Reconnect Mouse` removed as a feature, `Extras` grouped with separators
+  (clipboard · kill port + inbox · keyboard sheets · screen + wheel · phone hotspot · staying up),
+  `💬 Last 1m summary ⇒ 📋`, and the 🎙️ moved to `🎙️ Transcribing: 💻 Mac`.
 - **🤖 Last Prompts…** — **today's** intercepted prompts (was the last 7 days), one line each —
   `<agent icon> [Send] 5m ago | <prompt>` — paged 40 at a time as the list scrolls, each with a
   Send button for the ones the 9.5 s offer pill never got a hover for. A row, not a key: it is read between

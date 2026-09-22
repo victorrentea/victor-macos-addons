@@ -37,7 +37,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var homeAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
-    private(set) var mouseReconnectItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
@@ -138,8 +137,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onTranscriptPicker: (() -> Void)?
     /// 🤖 The same clipboard, filed as an agent prompt instead of a note.
     var onAppendClipboardAsPrompt: (() -> Void)?
-    /// 📥 The clipboard's image, written to ~/Downloads.
-    var onPasteImageToDownloads: (() -> Void)?
     /// 🤖 Open the prompt-history panel — the last 7 days of intercepted
     /// prompts, each with a Send button.
     var onPromptHistory: (() -> Void)?
@@ -165,8 +162,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onClaudeRemoteControlEnabledChanged: ((Bool) -> Void)?
     /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
     var onHotspotNow: (() -> Void)?
-    /// Connect a nearby Logi mouse that is switched on but left disconnected.
-    var onReconnectMouse: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
@@ -273,7 +268,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         // Transcribe status row (read-only; opens the mic-source submenu).
         // Transcription runs automatically on AC — no manual start/stop here.
-        transcribeItem = addItem("Transcribing", action: nil)
+        transcribeItem = addItem("🎙️ Transcribing", action: nil)
         transcribeSubmenu = NSMenu()
         transcribeSubmenu.autoenablesItems = false
 
@@ -330,7 +325,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // clipboard you have to remember to spend. The emoji is also what the
         // bottom-left confirmation pill opens with, so the row and its receipt
         // read as the same gesture.
-        addItem("🎙️ Last 1m summary ⇒ 📋", action: #selector(transcriptPickerAction))
+        addItem("💬 Last 1m summary ⇒ 📋", action: #selector(transcriptPickerAction))
 
         // 🔬 Fact-check what was just said. It KEPT the top level when the Tail
         // moved down, and that is the line between them: the Tail is a readout
@@ -450,14 +445,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // history să meargă în extras"*): ⌘⇧V is how it is reached, and the row
         // was only ever the legend for it.
 
-        // 📥 The clipboard's image, filed to disk rather than anywhere in the
-        // app — for the one-off "just give me the file" case none of the rows
-        // above cover (they file into Notes or the Prompts tab, never onto disk
-        // on their own).
-        // …in 👩🏻‍💻 Extras since 2026-09-22: the ⬇️ button on a ⌘⇧V image is
-        // the everyday way now, and saves any clip of the walk, not only the
-        // current one.
-
         menu.addItem(.separator())
 
         // ⭐️ Effects moved out (2026-09): the whole submenu — `effectPairs`, the
@@ -479,10 +466,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let clipboardLinkItem = NSMenuItem(title: "🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction), keyEquivalent: "")
         clipboardLinkItem.target = self
         clipboardLinkItem.isEnabled = true
-        extraSubmenu.addItem(clipboardLinkItem)
-        extraSubmenu.addItem(killItem)
-        extraSubmenu.addItem(fluxInboxItem)
-        extraSubmenu.addItem(screenshotItem)
 
         // The key is only advertised — the event tap swallows ⌘⌃M before AppKit
         // could match a menu equivalent, so the row cannot fire the send twice.
@@ -490,19 +473,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         reminderMailItem.keyEquivalentModifierMask = [.command, .control]
         reminderMailItem.target = self
         reminderMailItem.isEnabled = true
-        extraSubmenu.addItem(reminderMailItem)
-
-        let downloadsItem = NSMenuItem(title: "📥 Paste image to Downloads", action: #selector(pasteImageToDownloadsAction), keyEquivalent: "")
-        downloadsItem.target = self
-        downloadsItem.isEnabled = true
-        extraSubmenu.addItem(downloadsItem)
 
         let historyItem = NSMenuItem(title: "📋 Clipboard History…", action: #selector(clipboardHistoryAction), keyEquivalent: "v")
         historyItem.keyEquivalentModifierMask = [.command, .shift]
         historyItem.target = self
         historyItem.isEnabled = true
         historyItem.toolTip = "Hold ⌘⇧ and tap V to walk back through what you copied — text and images."
-        extraSubmenu.addItem(historyItem)
 
         // 📝 Paste Clipboard to Notes (⌃⌥V) and its 🤖 prompt sibling are NOT
         // here any more — they sit at the top level with the other clipboard
@@ -517,7 +493,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotFallbackItem.target = self
         hotspotFallbackItem.isEnabled = true
         hotspotFallbackItem.state = HotspotFallbackSettings.isEnabled ? .on : .off
-        extraSubmenu.addItem(hotspotFallbackItem)
 
         // A row of its own, next to the toggle, because the toggle only says
         // whether the *automatic* fallback is armed — and the whole reason this
@@ -526,16 +501,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotNowItem = NSMenuItem(title: "📱 Start Victor Phone Hotspot Now", action: #selector(hotspotNowAction), keyEquivalent: "")
         hotspotNowItem.target = self
         hotspotNowItem.isEnabled = true
-        extraSubmenu.addItem(hotspotNowItem)
 
-        // An action, not a toggle, and deliberately so: reconnecting the
-        // moment a mouse is *seen* is wrong exactly when it is disconnected
-        // because it has just been put on another computer. The click is the
-        // consent. See `MouseReconnect`.
-        mouseReconnectItem = NSMenuItem(title: "🖱️ Reconnect Mouse", action: #selector(reconnectMouseAction), keyEquivalent: "")
-        mouseReconnectItem.target = self
-        mouseReconnectItem.isEnabled = true
-        extraSubmenu.addItem(mouseReconnectItem)
+        // 🖱️ Reconnect Mouse was removed on 2026-09-23 (Victor: *"scoate
+        // featureul"*) — `MouseReconnect`, its test route and its doc with it;
+        // `git log -- Sources/VictorAddons/MouseReconnect.swift` brings it back.
 
         // **Two cheat-sheets, two switches** (2026-09-23, Victor): the ⌥ emoji
         // layers and the ⌘⌃ shortcut sheet were one `Emoji Overlay` tick, which
@@ -547,14 +516,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         emojiOverlayItem.target = self
         emojiOverlayItem.isEnabled = true
         emojiOverlayItem.state = KeymapOverlaySettings.isEnabled ? .on : .off
-        extraSubmenu.addItem(emojiOverlayItem)
 
         commandOverlayItem = NSMenuItem(title: "", action: #selector(toggleCommandOverlayAction), keyEquivalent: "")
         commandOverlayItem.attributedTitle = Self.withHoldKey("⌨️ Command Overlay", "hold ⌘⌃")
         commandOverlayItem.target = self
         commandOverlayItem.isEnabled = true
         commandOverlayItem.state = KeymapOverlaySettings.isCommandEnabled ? .on : .off
-        extraSubmenu.addItem(commandOverlayItem)
 
         // 🟡 Cursor Glow is gone (2026-09-14), together with `CursorGlow.swift`
         // and its stored setting: it was an experiment — a panel chasing the
@@ -570,7 +537,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.target = self
         scrollReversalItem.isEnabled = true
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
-        extraSubmenu.addItem(scrollReversalItem)
 
         // 🔊 Zoom Share Prep — the picker automation. Same justification as the
         // row above for being in the menu at all: no key to teach, and nowhere
@@ -581,7 +547,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         zoomSharePrepItem.target = self
         zoomSharePrepItem.isEnabled = true
         zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
-        extraSubmenu.addItem(zoomSharePrepItem)
 
         // 🛰️ Claude RC in background — the `claude remote-control` server the
         // phone opens sessions against, kept alive in a detached tmux session.
@@ -596,7 +561,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         claudeRemoteControlItem.isEnabled = true
         claudeRemoteControlItem.state = ClaudeRemoteControlSettings.isEnabled ? .on : .off
         claudeRemoteControlItem.toolTip = "Keeps `claude remote-control` up in the detached tmux session \"claude-rc\", rechecking every minute, so the phone can open new sessions. Unticking kills it."
-        extraSubmenu.addItem(claudeRemoteControlItem)
 
         // 🔋 Claude prevents sleep left this submenu for the **top level** on
         // 2026-09-17 — see the row itself, further down.
@@ -617,7 +581,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         homeAwakeItem.isEnabled = true
         homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
-        extraSubmenu.addItem(homeAwakeItem)
 
         // Dark Mode (⌘⌃⌥D) — a checkbox like every other row in here
         // (2026-09-14). It toggles a state, and a toggle that does not tick
@@ -635,7 +598,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.target = self
         darkModeItem.isEnabled = true
         darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
-        extraSubmenu.addItem(darkModeItem)
+
+        // **The Extras, grouped** (2026-09-23, Victor: *"grupează logic intrările
+        // din Extras … cu ---- între"*). Built above in the order each was
+        // written; added here in the order they are read — what the clipboard
+        // holds, the two utilities, the keyboard's sheets, the screen, the
+        // mouse, the phone's hotspot, and what keeps this Mac and Claude up.
+        let extraGroups: [[NSMenuItem]] = [
+            [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem],
+            [killItem, fluxInboxItem],
+            [emojiOverlayItem, commandOverlayItem],
+            [darkModeItem, zoomSharePrepItem, scrollReversalItem],
+            [hotspotFallbackItem, hotspotNowItem],
+            [homeAwakeItem, claudeRemoteControlItem],
+        ]
+        for (i, group) in extraGroups.enumerated() {
+            if i > 0 { extraSubmenu.addItem(.separator()) }
+            group.forEach(extraSubmenu.addItem)
+        }
 
         // Gmail (⌘⌃G), Calendar (⌘⌃L), Tile (⌘⌃A), Terminal (⌘⌃T) and Claude in
         // ~/workspace (F8, ⌘⌃C) have no rows here: every one of those keys is
@@ -1090,10 +1070,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onHotspotNow?()
     }
 
-    @objc private func reconnectMouseAction() {
-        onReconnectMouse?()
-    }
-
     @objc private func toggleCommandOverlayAction() {
         let enabled = !KeymapOverlaySettings.isCommandEnabled
         KeymapOverlaySettings.isCommandEnabled = enabled
@@ -1241,10 +1217,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func clipboardHistoryAction() {
         onClipboardHistory?()
-    }
-
-    @objc private func pasteImageToDownloadsAction() {
-        onPasteImageToDownloads?()
     }
 
     /// The window is named **Training Assistant** (2026-09-23, Victor) — among a
@@ -1809,13 +1781,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             // the whole reason the second one was added. The glyph stays in the
             // image so the row keeps the colour emoji this menu draws
             // everywhere else.
+            // **🎙️ leads, the device follows in words** (2026-09-23, Victor:
+            // *"microfonul merge la Transcribing"*) — `🎙️ Transcribing: 💻 Mac`,
+            // the shape of Walkie Talkie's `Mic: 💻 Mac`. The 🎙️ came off
+            // `Last 1m summary`, which is 💬 now.
             let mic = MicRoster.byGlyph(transcribeSource)
-            transcribeItem.title = raw + "Transcribing" + (mic.map { ": \($0.short)" } ?? "")
-            transcribeItem.image = transcribeSource.isEmpty ? nil : emojiAsIcon(transcribeSource)
+            transcribeItem.title = raw + "🎙️ Transcribing" + (mic.map { ": \($0.glyph) \($0.short)" } ?? "")
+            transcribeItem.image = nil
         } else {
             // On AC but momentarily down (starting up, or a crash before the
             // heartbeat restart). Auto-recovers; nothing for the user to do.
-            transcribeItem.title = raw + "Transcribing (off)"
+            transcribeItem.title = raw + "🎙️ Transcribing (off)"
         }
     }
 

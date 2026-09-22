@@ -37,9 +37,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
     private var hotspotFallback: HotspotFallback?
-    /// 🖱️ The menu row that connects a nearby Logi mouse left disconnected.
-    /// Manual only — see `MouseReconnect` for why there is no automatic path.
-    private var mouseReconnect: MouseReconnect?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// ✋ The amber "an agent is driving" frame. Owned here rather than by a
@@ -1237,10 +1234,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onPromptHistory = {
             PromptHistoryPanel.shared.toggle()
         }
-        // 📥 The clipboard's image, filed straight to ~/Downloads.
-        menuBarManager.onPasteImageToDownloads = { [weak self] in
-            DispatchQueue.global(qos: .userInitiated).async { self?.pasteClipboardImageToDownloads() }
-        }
         menuBarManager.onEmojiOverlayEnabledChanged = { [weak self] enabled in
             if !enabled {
                 self?.keymapHoldCoordinator?.reset()
@@ -1512,27 +1505,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
         hotspot.start()
-
-        let mouseReconnect = MouseReconnect()
-        self.mouseReconnect = mouseReconnect
-        tabletServer?.onTestMouseReconnect = { [weak mouseReconnect] in
-            mouseReconnect?.forceAttemptJSON() ?? "{\"error\":\"mouse reconnect unavailable\"}"
-        }
-        // Like the hotspot row, the answer arrives seconds after the menu has
-        // closed — a scan window plus a connect — so it goes to Notification
-        // Center rather than the log window nobody is looking at.
-        menuBarManager.onReconnectMouse = { [weak mouseReconnect, weak self] in
-            mouseReconnect?.reconnectNow { ok, message in
-                DispatchQueue.main.async {
-                    self?.postAndroidDeployNotification(
-                        title: ok ? "🖱️ Mouse conectat" : "🖱️ Mouse-ul nu s-a conectat",
-                        body: message,
-                        identifier: "mouse-reconnect"
-                    )
-                }
-            }
-        }
-        mouseReconnect.start()
 
         let eventTap = EventTapManager()
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
@@ -1879,10 +1851,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    /// 📥 "Paste image to Downloads" — whatever image is on the clipboard right
-    /// now, written to disk with no picker and no manual save. Called off the
-    /// main thread; the pasteboard read and the PNG encode both happen inline.
-
     /// 📋 Open or close the ⌘⇧V bezel from a path that has **no keyboard
     /// behind it** — the menu row and `GET /test/clipboard-history`.
     ///
@@ -1902,29 +1870,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             clipboardHistory.open(pastes: false)
         }
         eventTapManager?.setClipboardHistoryOpen(clipboardHistory.isShowing)
-    }
-
-    func pasteClipboardImageToDownloads() {
-        let tiff: Data? = PasteboardGate.sync { pb in
-            guard pb.canReadObject(forClasses: [NSImage.self], options: nil),
-                  let img = NSImage(pasteboard: pb) else { return nil }
-            return img.tiffRepresentation
-        }
-        guard let tiff, let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else {
-            overlayError("📥 No image on the clipboard")
-            return
-        }
-        guard let url = DownloadsFolder.freshURL() else {
-            overlayError("📥 Couldn't find ~/Downloads")
-            return
-        }
-        do {
-            try png.write(to: url)
-            overlayInfo("📥 \(url.lastPathComponent) → ~/Downloads")
-        } catch {
-            overlayError("📥 Save failed: \(error.localizedDescription)")
-        }
     }
 
     private func openUrlInChrome(_ url: String, target: ChromeTarget = .retina,
