@@ -247,9 +247,8 @@ private final class PromptRowView: NSTableCellView {
     /// ships; nil falls back to `PromptSource.badge`.
     private static let icons: [PromptSource: NSImage] = {
         var out: [PromptSource: NSImage] = [:]
-        if FileManager.default.fileExists(atPath: "/Applications/Claude.app") {
-            out[.claude] = NSWorkspace.shared.icon(forFile: "/Applications/Claude.app")
-        }
+        // Clawd, Claude Code's own mark — these prompts are Claude Code's.
+        if let clawd = ClaudeCodeIcon.image(height: 24) { out[.claude] = clawd }
         let copilot = "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions/copilot/assets/copilot.png"
         if let image = NSImage(contentsOfFile: copilot) { out[.copilot] = image }
         return out
@@ -284,7 +283,7 @@ private final class PromptRowView: NSTableCellView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 24),
+            icon.widthAnchor.constraint(equalToConstant: 30),
             icon.heightAnchor.constraint(equalToConstant: 24),
             button.widthAnchor.constraint(equalToConstant: 66),
             age.widthAnchor.constraint(equalToConstant: 78),

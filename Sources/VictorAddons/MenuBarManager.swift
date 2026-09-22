@@ -719,7 +719,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // 📝 Feedback form, after Arrange Monitors (2026-09-23, Victor) — it is
         // the last thing a training asks for, so it sits at the foot of the
         // menu. refreshWsItem still hides it outright outside a session.
-        feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
+        feedbackFormItem = addItem("📝 Create Feedback Form", action: #selector(publishFeedbackFormAction))
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
@@ -976,17 +976,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         /// The parent row: the name Victor gave it, plus the state it is in,
         /// because a submenu that hides its state is a state you forget you
         /// left on — the reason this stopped being a submenu in the first place.
-        /// **Claude's own icon says whose insomnia** (2026-09-23, Victor: *"pune
+        /// **Claude Code's icon says whose insomnia** (2026-09-23, Victor: *"pune
         /// iconița claude code în locul emoji din label … scoate «Claude»"*) —
-        /// the row's `image`, read off `/Applications/Claude.app` at runtime.
+        /// the row's `image`, Clawd (`ClaudeCodeIcon`).
         static let name = "Insomnia"
 
-        static let icon: NSImage? = {
-            guard FileManager.default.fileExists(atPath: "/Applications/Claude.app") else { return nil }
-            let image = NSWorkspace.shared.icon(forFile: "/Applications/Claude.app")
-            image.size = NSSize(width: 16, height: 16)
-            return image
-        }()
+        static let icon: NSImage? = ClaudeCodeIcon.image(height: 16)
 
         static func label(_ mode: LidAwakeMode) -> String {
             switch mode {
