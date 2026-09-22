@@ -329,10 +329,17 @@ enum EmojiKeyLayer {
     /// just been vacated — the selection-or-clipboard note grab moved to ⌘⌃S to
     /// be discoverable on the shortcut sheet — so the board could take it
     /// without shadowing anything.
+    ///
+    /// A for autobuz (2026-09-22) — the Romanian word, since "bus" and "beetle"
+    /// would both want B otherwise — and B's bug changed glyph the same day:
+    /// 🐛 is a caterpillar, and the beetle 🪲 is what a bug looks like
+    /// everywhere else the word is used. Same key, same meaning, a picture that
+    /// reads at keyboard size.
     static let controlOptionSeed: [Int: String] = [
+          0: "🚌",   // A — autobuz
           5: "🪿",   // G — goose
           8: "😂",   // C — crying laughter
-         11: "🐛",   // B — bug
+         11: "🪲",   // B — bug, the beetle rather than the caterpillar
          35: "🪂",   // P — parachute, off ⌥⇧8
     ]
 
