@@ -259,7 +259,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         countrySubmenu = NSMenu()
         countrySubmenu.autoenablesItems = false
         countryItem.submenu = countrySubmenu
-        menu.addItem(countryItem)
+        // **Inside ☕️ Break, under a line** (2026-09-23, Victor): the country
+        // is only ever read to know when a break ends, so it lives with the
+        // breaks rather than on a top-level row of its own.
+        breakSubmenu.addItem(.separator())
+        breakSubmenu.addItem(countryItem)
 
         menu.addItem(.separator())
 
