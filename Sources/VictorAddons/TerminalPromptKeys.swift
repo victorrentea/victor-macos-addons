@@ -13,25 +13,40 @@ import Foundation
 /// no alternative: ⌃←/⌃→ are macOS's switch-Space hotkeys. So the only place
 /// left to catch ⌘ is an event tap, ahead of AppKit.
 ///
-/// **Why each is a repeated sequence and not one control character.** The
+/// **Why the jumps are a repeated sequence and not one control character.** The
 /// obvious `^A`/`^E` are `startOfLogicalLine`/`endOfLogicalLine` — they stop at
 /// the nearest newline, so in a dictated prompt they land at the start of the
 /// *paragraph* you are in, not of the prompt. The one thing that crosses a
 /// newline is `home`/`end` (`ESC[H` / `ESC[F`): `startOfLine()` jumps to the
 /// *previous* row when the cursor is already at column 0, so pressing it over
-/// and over walks to the very top. Same for `end` downwards, and same for `^U`
-/// (`deleteToLineStart`, which shares that `startOfLine`) and `^K`
-/// (`deleteToLineEnd`) — repeated, the pair empties the buffer from wherever
-/// the cursor happens to sit.
+/// and over walks to the very top. Same for `end` downwards.
 ///
 /// Sending them as one multi-character event is safe: Terminal writes the whole
 /// `characters` string to the pty verbatim (measured — a single event carrying
 /// "XYZ" arrived as `XYZ`), and Claude Code's stdin parser splits it back into
-/// that many keypresses. Repeats past the top or bottom are no-ops.
+/// that many keypresses. Repeats past the top or bottom are no-ops. 100 `home`s
+/// in one 300-byte event were measured working (2026-09-22, Claude Code 2.1.278).
 ///
-/// `escape` would clear the prompt in one keystroke, and is deliberately NOT
+/// **Why ⌘⌫ is `^S` (`chat:stash`) and not a pile of `^K`/`^U`.** The first
+/// version cleared the prompt with 100× `deleteToLineEnd` + 100× `deleteToLineStart`,
+/// which walk the rows the same way `home`/`end` do. Measured 2026-09-22: a chunk
+/// of **40 or more** of those control characters does *nothing* — Claude Code's
+/// stdin treats it as a paste and drops it — while 39 clear the prompt. (The
+/// `ESC[H` runs above are exempt; the heuristic is not plain length.) So ⌘⌫
+/// only ever worked on prompts short enough to sit under a reach that could not
+/// be lowered without giving up tall prompts. `^S` is one byte, empties the
+/// input whatever its height, works while a turn is running (tested), and keeps
+/// what it took: a second `^S` on an empty prompt brings it back, so ⌘⌫ twice is
+/// an undo instead of a loss.
+///
+/// `escape` would clear the prompt in one keystroke too, and is deliberately NOT
 /// used: while a turn is running, escape aborts the turn instead. ⌘⌫ must never
 /// be able to throw away a running response.
+///
+/// `^S` is XON/XOFF flow control in a plain shell, which would freeze the
+/// terminal's output until `^Q`. `~/.zshrc` therefore turns flow control off
+/// (`unsetopt flowcontrol` + `stty -ixon`) and binds `^S` to `kill-whole-line`,
+/// so ⌘⌫ means the same thing at a zsh prompt as it does in Claude Code.
 enum TerminalPromptKeys {
     /// Apps whose prompt gets this treatment. Deliberately just Terminal.app:
     /// the target is the Claude Code prompt, and the focused app is as close to
@@ -60,8 +75,7 @@ enum TerminalPromptKeys {
 
     private static let HOME = "\u{1b}[H"
     private static let END = "\u{1b}[F"
-    private static let KILL_FORWARD = "\u{0b}"     // ^K
-    private static let KILL_BACKWARD = "\u{15}"    // ^U
+    private static let STASH = "\u{13}"           // ^S, chat:stash
 
     /// `nil` = leave the event alone.
     ///
@@ -79,11 +93,8 @@ enum TerminalPromptKeys {
         case VK_RIGHT:
             return Rewrite(keyCode: CARRIER, characters: String(repeating: END, count: reach))
         case VK_DELETE:
-            // Forward first, then backward: together they clear the whole prompt
-            // without the cursor having to be moved anywhere first.
-            return Rewrite(keyCode: CARRIER,
-                           characters: String(repeating: KILL_FORWARD, count: reach)
-                                     + String(repeating: KILL_BACKWARD, count: reach))
+            // One byte, on purpose: see the paste-threshold note above.
+            return Rewrite(keyCode: CARRIER, characters: STASH)
         default:
             return nil
         }

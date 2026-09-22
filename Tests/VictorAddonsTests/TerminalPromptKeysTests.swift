@@ -32,13 +32,19 @@ final class TerminalPromptKeysTests: XCTestCase {
         XCTAssertGreaterThan(reach, 1, "a single press cannot leave the current row")
     }
 
-    func testDeleteClearsBothSidesOfTheCursor() {
-        // ^K forward then ^U backward, so it does not matter where the cursor is.
-        // Anything less leaves half a prompt behind.
+    func testDeleteIsASingleStashByte() {
+        // ^S = chat:stash: empties the prompt whatever its height and keeps it
+        // recoverable. It replaced 100×^K + 100×^U, which Claude Code's stdin
+        // drops as a paste once the chunk reaches 40 control characters — so the
+        // old ⌘⌫ silently did nothing on exactly the prompts worth clearing.
+        XCTAssertEqual(rewrite(VK_DELETE)?.characters, "\u{13}")
+    }
+
+    func testDeleteStaysUnderThePasteThreshold() {
+        // Measured 2026-09-22 on Claude Code 2.1.278: 39 control characters in
+        // one chunk are keypresses, 40 are a paste and vanish.
         let chars = rewrite(VK_DELETE)?.characters ?? ""
-        let reach = TerminalPromptKeys.reach
-        XCTAssertEqual(chars, String(repeating: "\u{0b}", count: reach)
-                            + String(repeating: "\u{15}", count: reach))
+        XCTAssertLessThan(chars.utf8.count, 40)
     }
 
     func testDeleteNeverSendsEscape() {

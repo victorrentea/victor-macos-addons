@@ -487,7 +487,7 @@ private let VK_F: CGKeyCode = 0x03
             }
         }
 
-        // ⌘← / ⌘→ / ⌘⌫ while Terminal.app is focused → ^A / ^E / ^L, the moves
+        // ⌘← / ⌘→ / ⌘⌫ while Terminal.app is focused → home / end / ^S, the moves
         // Claude Code's prompt understands. `TerminalPromptKeys` carries the why
         // — the short version is that Terminal's own key map cannot see ⌘ at all,
         // and ⌃←/⌃→ already belong to Mission Control.
