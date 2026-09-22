@@ -231,7 +231,7 @@ private final class PromptRowView: NSTableCellView {
     private let badge = NSTextField(labelWithString: "")
     private let button = NSButton(title: "Send", target: nil, action: nil)
     private let age = NSTextField(labelWithString: "")
-    private let body = NSTextField(labelWithString: "")
+    private let body = FittedLine()
 
     /// The agent's own icon, read off the Mac at runtime — nothing brand-owned
     /// is bundled. Claude from its app, Copilot from the extension VS Code
@@ -256,9 +256,6 @@ private final class PromptRowView: NSTableCellView {
         age.textColor = .secondaryLabelColor
         age.alignment = .left
         body.font = .systemFont(ofSize: 19.5)
-        body.maximumNumberOfLines = 1
-        body.lineBreakMode = .byTruncatingTail
-        body.cell?.usesSingleLineMode = true
 
         // `5m ago [Send] <icon> <prompt>` (2026-09-23, Victor: *"pune în
         // ordine data, [Send mai mare] <icon mai mic> | <Prompt>"*).
@@ -286,35 +283,6 @@ private final class PromptRowView: NSTableCellView {
 
     required init?(coder: NSCoder) { nil }
 
-    /// The prompt on one line, before it is fitted.
-    private var fullLine = ""
-
-    /// **A long prompt keeps its last 20 characters** (2026-09-23, Victor:
-    /// *"prompturile lungi să conțină și ultimele 20 char (elipsis [...]
-    /// între)"*) — the end of a prompt is usually the actual ask. When the line
-    /// does not fit, it becomes `<as much of the start as fits> [...] <last 20>`,
-    /// the start found by a binary search on the drawn width.
-    override func layout() {
-        super.layout()
-        let width = body.bounds.width
-        guard width > 0, let font = body.font else { return }
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        func fits(_ text: String) -> Bool { (text as NSString).size(withAttributes: attrs).width <= width - 4 }
-        guard !fits(fullLine), fullLine.count > 40 else {
-            if body.stringValue != fullLine { body.stringValue = fullLine }
-            return
-        }
-        let tail = " [...] " + String(fullLine.suffix(20))
-        let head = Array(fullLine.dropLast(20))
-        var lo = 0, hi = head.count
-        while lo < hi {
-            let mid = (lo + hi + 1) / 2
-            if fits(String(head[..<mid]) + tail) { lo = mid } else { hi = mid - 1 }
-        }
-        let fitted = String(head[..<lo]).trimmingCharacters(in: .whitespaces) + tail
-        if body.stringValue != fitted { body.stringValue = fitted }
-    }
-
     func configure(prompt: CapturedPrompt, age ageText: String,
                    target: AnyObject, action: Selector, tag: Int) {
         let image = Self.icons[prompt.source]
@@ -324,9 +292,7 @@ private final class PromptRowView: NSTableCellView {
         badge.isHidden = image != nil
         icon.toolTip = prompt.source.name
         age.stringValue = ageText
-        fullLine = PromptCapturePolicy.singleLine(prompt.text)
-        body.stringValue = fullLine
-        needsLayout = true
+        body.text = PromptCapturePolicy.singleLine(prompt.text)
         body.textColor = prompt.sent ? .tertiaryLabelColor : .labelColor
         toolTip = prompt.text
         button.title = prompt.sent ? "Sent" : "Send"
@@ -337,5 +303,45 @@ private final class PromptRowView: NSTableCellView {
         button.toolTip = prompt.sent
             ? "Already on the participants' Prompts tab"
             : "Append to the session notes — the room sees it"
+    }
+}
+
+/// **One line of text, fitted when it is drawn** — `<start> [...] <last 20>`
+/// when it does not fit (2026-09-23, Victor: *"prompturile lungi să conțină și
+/// ultimele 20 char"*).
+///
+/// A view that draws, not a label, and that is the fix: the first version
+/// rewrote an `NSTextField`'s string inside `layout()`, which invalidates its
+/// intrinsic size mid-pass, and AppKit ended the resulting constraint loop by
+/// throwing — the app died every time the panel opened. Fitting at `draw`
+/// changes pixels only; the view's size never depends on its text.
+private final class FittedLine: NSView {
+    var text = "" { didSet { needsDisplay = true } }
+    var font = NSFont.systemFont(ofSize: 13) { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var textColor = NSColor.labelColor { didSet { needsDisplay = true } }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: ceil(font.ascender - font.descender + font.leading) + 2)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let line = Self.fitted(text, width: bounds.width, attrs: attrs)
+        let size = (line as NSString).size(withAttributes: attrs)
+        (line as NSString).draw(at: NSPoint(x: 0, y: ((bounds.height - size.height) / 2).rounded()),
+                                withAttributes: attrs)
+    }
+
+    static func fitted(_ text: String, width: CGFloat, attrs: [NSAttributedString.Key: Any]) -> String {
+        func fits(_ s: String) -> Bool { (s as NSString).size(withAttributes: attrs).width <= width }
+        guard width > 0, !fits(text) else { return text }
+        let tail = text.count > 40 ? " [...] " + String(text.suffix(20)) : "…"
+        let head = Array(text.count > 40 ? text.dropLast(20) : Substring(text))
+        var lo = 0, hi = head.count
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if fits(String(head[..<mid]) + tail) { lo = mid } else { hi = mid - 1 }
+        }
+        return String(head[..<lo]).trimmingCharacters(in: .whitespaces) + tail
     }
 }
