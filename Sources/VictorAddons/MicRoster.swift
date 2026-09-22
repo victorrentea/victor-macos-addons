@@ -82,7 +82,7 @@ enum MicRoster {
             pattern: "Room Speakerphone"),
         Mic(id: "bose",  glyph: "🎧",  short: "Bose",   label: "Bose",
             pattern: "Bose"),
-        Mic(id: "mac",   glyph: "💻",  short: "MacBook", label: "MacBook Pro Microphone",
+        Mic(id: "mac",   glyph: "💻",  short: "Mac", label: "MacBook Pro Microphone",
             pattern: "MacBook"),
     ]
 
