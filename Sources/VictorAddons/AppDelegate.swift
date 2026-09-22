@@ -1680,6 +1680,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.clipboardHistory.cancel()
             eventTap?.setClipboardHistoryOpen(false)
         }
+        // ⬇️ on an image clip saves it and closes the bezel — the tap has to be
+        // told, or ⌘⇧'s release would still be read as the end of a gesture.
+        clipboardHistory.onClosedByClick = { [weak eventTap] in
+            eventTap?.setClipboardHistoryOpen(false)
+        }
         eventTap.onClipboardHistoryCommandReleased = { [weak self, weak eventTap] in
             // Only the hotkey-opened bezel ends on a modifier release; the one
             // opened from the menu has no held key to let go of and would
@@ -1908,19 +1913,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             overlayError("📥 No image on the clipboard")
             return
         }
-        guard let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+        guard let url = DownloadsFolder.freshURL() else {
             overlayError("📥 Couldn't find ~/Downloads")
             return
-        }
-        let stamp = DateFormatter()
-        stamp.locale = Locale(identifier: "en_US_POSIX")
-        stamp.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let stem = stamp.string(from: Date())
-        var url = downloads.appendingPathComponent("\(stem).png")
-        var n = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = downloads.appendingPathComponent("\(stem)-\(n).png")
-            n += 1
         }
         do {
             try png.write(to: url)

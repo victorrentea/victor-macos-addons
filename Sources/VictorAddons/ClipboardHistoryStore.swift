@@ -191,6 +191,19 @@ final class ClipboardHistoryStore {
     /// which the caller reports rather than pasting the previous clipboard by
     /// accident.
     @discardableResult
+    /// **The clip's own file, copied to `~/Downloads`** — the full image, never
+    /// the thumbnail the bezel draws. Nil when the file is gone or the copy
+    /// failed; the caller says so.
+    func exportToDownloads(_ entry: ClipboardEntry) -> URL? {
+        guard entry.isImage, let url = DownloadsFolder.freshURL() else { return nil }
+        do {
+            try FileManager.default.copyItem(at: fullURL(for: entry), to: url)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
     func place(_ entry: ClipboardEntry) -> Bool {
         var payload: Data?
         if entry.isImage {

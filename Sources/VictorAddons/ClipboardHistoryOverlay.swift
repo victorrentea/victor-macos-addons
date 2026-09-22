@@ -27,10 +27,25 @@ final class ClipboardHistoryOverlay {
             backgroundColor = .clear
             hasShadow = true
             level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
-            ignoresMouseEvents = true
+            // Takes clicks since 2026-09-22, for the ⬇️ button on an image —
+            // still `.nonactivatingPanel`, so a click does not take the focus
+            // the paste is aimed at. The scrim stays click-through.
+            ignoresMouseEvents = false
             collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         }
     }
+
+    /// A button that answers the **first** click on a window that is never key,
+    /// and calls a closure — this class is not an `NSObject` to be a target.
+    private final class ClickButton: NSButton {
+        var onClick: (() -> Void)?
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) { onClick?() }
+    }
+
+    /// The bezel went away because of a click on it, not a key — the tap
+    /// still thinks the gesture is running until someone says otherwise.
+    var onClosedByClick: (() -> Void)?
 
     /// The 20% black wash over everything else while the bezel is up
     /// (2026-09-22, Victor's). The bezel is read in one glance and the glance
@@ -251,6 +266,7 @@ final class ClipboardHistoryOverlay {
         status.setFrameOrigin(NSPoint(x: pad, y: y))
         content.addSubview(body)
         content.addSubview(status)
+        if entry.isImage { content.addSubview(downloadButton(for: entry, over: body.frame)) }
 
         let panel = self.panel ?? BezelPanel()
         panel.contentView = content
@@ -306,6 +322,47 @@ final class ClipboardHistoryOverlay {
         // copy, not the clip itself). See `ClipboardHistoryStore`.
         view.image = NSImage(contentsOf: ClipboardHistoryStore.shared.displayURL(for: entry))
         return view
+    }
+
+    /// **`⬇️ in Downloads`, a square in the image's bottom-right corner**
+    /// (2026-09-22, Victor: *"să afișeze un buton … pătrat pe poză în colț
+    /// dreapta jos care să pună poza în Downloads"*). It replaces the menu's
+    /// 📥 row as the way in — that one only ever saw the *current* clipboard,
+    /// this one saves whichever clip the walk has reached. A click saves the
+    /// full file and closes the bezel, clipboard untouched: saving it *was*
+    /// the choice, and a ⌘ released afterwards must not also paste it.
+    private func downloadButton(for entry: ClipboardEntry, over image: NSRect) -> NSView {
+        let side: CGFloat = 78, inset: CGFloat = 10
+        let button = ClickButton(frame: NSRect(x: image.maxX - side - inset, y: image.minY + inset,
+                                               width: side, height: side))
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.82).cgColor
+        button.layer?.cornerRadius = 12
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor(white: 1, alpha: 0.25).cgColor
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let title = NSMutableAttributedString(string: "⬇️\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 26), .paragraphStyle: style])
+        title.append(NSAttributedString(string: "in Downloads", attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor(white: 0.95, alpha: 1), .paragraphStyle: style]))
+        button.attributedTitle = title
+        button.toolTip = "Save this image to ~/Downloads"
+        button.onClick = { [weak self] in
+            guard let self else { return }
+            self.close()
+            self.onClosedByClick?()
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let url = ClipboardHistoryStore.shared.exportToDownloads(entry) {
+                    overlayInfo("⬇️ \(url.lastPathComponent) → ~/Downloads")
+                } else {
+                    overlayError("⬇️ that clip's file is gone — nothing saved")
+                }
+            }
+        }
+        return button
     }
 
     /// Text hangs from the **top** of the box, at the box's full width, and is

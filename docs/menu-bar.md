@@ -3,8 +3,16 @@
 What stays a menu row and why; rows removed in favour of the ⌘⌃ cheat-sheet (see `keyboard-overlays.md`).
 
 - **☠️ Kill port** — submenu with recent ports + custom port dialog
-- **🤖 Prompts…** — the last 7 days of intercepted prompts, each with a Send button for the
-  ones the 9.5 s offer pill never got a hover for. A row, not a key: it is read between
+- **Renamed on 2026-09-22** (Victor's menu pass): `🟢 Interact Link` → `🟢 Display Interact Link ⧈`,
+  `🔳 Display clipboard link` → `🔗 Display clipboard link ⧈` (⧈ = *this shows a QR*),
+  `Send Clipboard to Notes / as Prompt` → `Clipboard ↗ Notes / Prompts`, `🤖 Prompts…` →
+  `🤖 Last Prompts…`, `Distil the last 60 s of speech → 📋` → `Last 1m summary ⇒ 📋`,
+  `👩🏻‍💻 Extra` → `Extras`, which now also holds `📋 Clipboard History…` and `📥 Paste image to
+  Downloads` — the latter superseded by the ⬇️ button on a ⌘⇧V image clip. Older names below
+  are history.
+- **🤖 Last Prompts…** — **today's** intercepted prompts (was the last 7 days), one line each —
+  `<agent icon> [Send] 5m ago | <prompt>` — paged 40 at a time as the list scrolls, each with a
+  Send button for the ones the 9.5 s offer pill never got a hover for. A row, not a key: it is read between
   topics, never mid-gesture. Full reasoning in `session-notes.md`.
 
 **Banner chip layout (2026-06):** The bottom-left notification pill (`BottomLeftBanner`) renders the hover-hint chip ("Hover to undo/snooze/continue/Send") **pinned to the pill's bottom-left corner** (fixed — no longer riding/moving), with the **orange countdown bar filling the region to the right of the chip** (from the chip's right edge to the pill's right edge) left→right. Countdown banners are floored at **30% of the screen width** (`countdownMinWidthFraction`) so the fixed chip and the bar to its right always fit; plain (non-countdown) banners still hug their text. Reusable across every banner caller.

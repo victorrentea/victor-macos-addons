@@ -324,7 +324,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // clipboard you have to remember to spend. The emoji is also what the
         // bottom-left confirmation pill opens with, so the row and its receipt
         // read as the same gesture.
-        addItem("🎙️ Distil the last 60 s of speech → 📋", action: #selector(transcriptPickerAction))
+        addItem("🎙️ Last 1m summary ⇒ 📋", action: #selector(transcriptPickerAction))
 
         // 🔬 Fact-check what was just said. It KEPT the top level when the Tail
         // moved down, and that is the line between them: the Tail is a readout
@@ -451,7 +451,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // app — for the one-off "just give me the file" case none of the rows
         // above cover (they file into Notes or the Prompts tab, never onto disk
         // on their own).
-        addItem("📥 Paste image to Downloads", action: #selector(pasteImageToDownloadsAction))
+        // …in 👩🏻‍💻 Extras since 2026-09-22: the ⬇️ button on a ⌘⇧V image is
+        // the everyday way now, and saves any clip of the walk, not only the
+        // current one.
 
         menu.addItem(.separator())
 
@@ -462,10 +464,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // longer see the end of.
 
         // Extra submenu
-        let extraItem = NSMenuItem(title: "👩🏻‍💻 Extra", action: nil, keyEquivalent: "")
+        let extraItem = NSMenuItem(title: "👩🏻‍💻 Extras", action: nil, keyEquivalent: "")
         extraItem.isEnabled = true
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
+
+        let downloadsItem = NSMenuItem(title: "📥 Paste image to Downloads", action: #selector(pasteImageToDownloadsAction), keyEquivalent: "")
+        downloadsItem.target = self
+        downloadsItem.isEnabled = true
+        extraSubmenu.addItem(downloadsItem)
 
         let historyItem = NSMenuItem(title: "📋 Clipboard History…", action: #selector(clipboardHistoryAction), keyEquivalent: "v")
         historyItem.keyEquivalentModifierMask = [.command, .shift]
