@@ -239,7 +239,6 @@ private final class PromptRowView: NSTableCellView {
     private let badge = NSTextField(labelWithString: "")
     private let button = NSButton(title: "Send", target: nil, action: nil)
     private let age = NSTextField(labelWithString: "")
-    private let bar = NSTextField(labelWithString: "|")
     private let body = NSTextField(labelWithString: "")
 
     /// The agent's own icon, read off the Mac at runtime — nothing brand-owned
@@ -264,16 +263,14 @@ private final class PromptRowView: NSTableCellView {
         age.font = .monospacedDigitSystemFont(ofSize: 16.5, weight: .regular)
         age.textColor = .secondaryLabelColor
         age.alignment = .left
-        bar.textColor = .tertiaryLabelColor
-        bar.font = .systemFont(ofSize: 19.5)
         body.font = .systemFont(ofSize: 19.5)
         body.maximumNumberOfLines = 1
         body.lineBreakMode = .byTruncatingTail
         body.cell?.usesSingleLineMode = true
 
-        // `5m ago [Send] <icon> | <prompt>` (2026-09-23, Victor: *"pune în
+        // `5m ago [Send] <icon> <prompt>` (2026-09-23, Victor: *"pune în
         // ordine data, [Send mai mare] <icon mai mic> | <Prompt>"*).
-        let stack = NSStackView(views: [age, button, icon, badge, bar, body])
+        let stack = NSStackView(views: [age, button, icon, badge, body])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
