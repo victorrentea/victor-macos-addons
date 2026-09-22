@@ -335,8 +335,14 @@ enum EmojiKeyLayer {
     /// 🐛 is a caterpillar, and the beetle 🪲 is what a bug looks like
     /// everywhere else the word is used. Same key, same meaning, a picture that
     /// reads at keyboard size.
+    ///
+    /// S for sheep (2026-09-22) — the same rule, on a letter this board could
+    /// take freely: the only S bound anywhere near it is ⌘⌃S's note grab, and
+    /// ⌃⌥S was never a shortcut here, so the map claims it and nothing else
+    /// loses a key.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
+          1: "🐑",   // S — sheep
           5: "🪿",   // G — goose
           8: "😂",   // C — crying laughter
          11: "🪲",   // B — bug, the beetle rather than the caterpillar
