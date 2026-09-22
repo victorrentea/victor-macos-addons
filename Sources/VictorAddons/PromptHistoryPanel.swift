@@ -55,8 +55,11 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     // MARK: Present / dismiss
 
     /// The menu row's gesture: open it, or close it if it is already up.
+    /// Keyed on `isVisible`, not on the reference: the panel hides itself when
+    /// the app is deactivated, and after that a click on the row must bring it
+    /// back rather than spend itself "closing" something already off-screen.
     func toggle() {
-        if panel != nil { close() } else { present() }
+        if panel?.isVisible == true { close() } else { present() }
     }
 
     func present() {
@@ -111,7 +114,12 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         panel.title = "🤖 Prompts — last \(PromptCapturePolicy.retentionDays) days"
         panel.contentView = content
         panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
+        // Floats above the windows it is read against — but only while this app
+        // is the active one. On a Mac whose built-in display is a projector, a
+        // forgotten always-on-top panel is a panel the room reads for the rest
+        // of the afternoon; clicking back into Chrome or the IDE puts it away
+        // by itself, and the menu row brings it back.
+        panel.hidesOnDeactivate = true
         panel.level = .floating
         panel.onCancel = { [weak self] in self?.close() }
         panel.setFrame(frameCentredUnderMouse(width: width, height: height), display: false)

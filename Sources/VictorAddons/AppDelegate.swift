@@ -522,12 +522,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // Test hook: open the 🤖 panel (optionally on an emptied list) without
         // reaching for the menu — see docs/testing.md.
-        tabletServer?.onTestPromptHistory = { clear in
+        tabletServer?.onTestPromptHistory = { clear, close in
             DispatchQueue.main.async {
                 if clear { PromptCaptureStore.shared.clear() }
-                PromptHistoryPanel.shared.present()
+                if close { PromptHistoryPanel.shared.close() }
+                else { PromptHistoryPanel.shared.present() }
             }
-            return "{\"ok\":true,\"cleared\":\(clear)}"
+            return "{\"ok\":true,\"cleared\":\(clear),\"closed\":\(close)}"
         }
         tabletServer?.start()
         overlayInfo("TabletHttpServer.start() called")
