@@ -1182,10 +1182,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         onPasteImageToDownloads?()
     }
 
+    /// The window is named **Training Assistant** (2026-09-23, Victor) — among a
+    /// dozen Terminal windows it is the one that must be found again, to watch
+    /// its log or to stop it.
     @objc private func startTrainingAssistantAction() {
         let script = """
         tell application "Terminal"
-            do script "cd ~/workspace/training-assistant && ./start.sh"
+            set t to do script "cd ~/workspace/training-assistant && ./start.sh"
+            set custom title of t to "Training Assistant"
+            set title displays custom title of t to true
             activate
         end tell
         """
