@@ -57,6 +57,33 @@ final class HandsOffOverlay {
     private let captionBottomInset: CGFloat = 28
     private let releaseChime = NSSound(named: NSSound.Name("Tink"))
 
+    /// **Cu capacul închis, ochii lui sunt oricum în altă parte — rămâne doar
+    /// bătaia inimii.**
+    ///
+    /// Victor, 2026-09-22: *"acum aud heartbeat-uri și niște bip-uri de la
+    /// protecția de ecran să nu ating. Dacă am capacul închis, nu sunt necesare
+    /// acele bip-uri. Ajunge doar heartbeat-ul cu capacul închis, șansele să
+    /// miști mouse-ul sunt foarte mici."*
+    ///
+    /// Ce a declanșat-o: calea *anunțată* presupunea că un Tink e rar, fiindcă
+    /// un agent cere mâinile o dată și le ține. Rig-urile de capturi din
+    /// `walkie-talkie` au spart presupunerea — fiecare captură de câteva secunde
+    /// e propriul `hands-off run`, deci zeci de Tink-uri pe oră. E exact
+    /// enervarea pentru care există deja `silent` pe calea auto-ridicată, ajunsă
+    /// pe cealaltă cale.
+    ///
+    /// Se taie doar **sunetul**, și doar cu capacul închis. Rama chihlimbarie,
+    /// lacătele și badge-ul rămân neatinse pe orice ecran extern: contractul e
+    /// vizual, iar ăsta nu se negociază. Iar cât lucrează un agent cu capacul
+    /// închis, `LidAwake` bate oricum la fiecare 10 secunde — deci tăcerea asta
+    /// nu lasă mașina fără nicio dovadă că e ocupată, doar scoate al doilea
+    /// sunet care spunea același lucru.
+    /// `nonisolated`: e o funcție pură, fără stare, iar testele o cheamă din
+    /// afara actorului principal.
+    nonisolated static func shouldChime(silent: Bool, lidClosed: Bool) -> Bool {
+        !silent && !lidClosed
+    }
+
     var isActive: Bool { session != nil }
     /// True when the frame went up by itself, because `SyntheticInputWatch` saw
     /// software posting mouse/keyboard events. Kept apart from an announced
@@ -112,6 +139,8 @@ final class HandsOffOverlay {
     /// as a script works, and a chime per burst would become the annoyance the
     /// whole feature exists to avoid. An announced release stays audible —
     /// Victor is usually not looking at the screen while he waits for it.
+    ///
+    /// …unless the lid is shut: see `shouldChime`.
     func end(expired: Bool = false, silent: Bool = false) {
         guard session != nil else { return }
         let wasAuto = isAutoRaised
@@ -119,7 +148,7 @@ final class HandsOffOverlay {
         isAutoRaised = false
         watchdog?.invalidate(); watchdog = nil
         flashFreeAndDismiss()
-        if !silent { releaseChime?.play() }
+        if Self.shouldChime(silent: silent, lidClosed: LidAwake.isLidClosed()) { releaseChime?.play() }
         overlayInfo(expired ? "Hands off: released by watchdog"
                             : (wasAuto ? "Hands off: synthetic input stopped" : "Hands off: released"))
     }
