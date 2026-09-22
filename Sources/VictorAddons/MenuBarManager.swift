@@ -947,11 +947,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         /// The parent's short word for the mode (2026-09-22, Victor's):
         /// `+background` because it is interactive *plus* the phone's
-        /// sessions, and the 😴 on `off` because off is the one mode in
-        /// which the Mac is allowed to sleep.
+        /// sessions. `Off` carried a 😴 for an hour and lost it (2026-09-23,
+        /// Victor: *"Off fără emoji după"*) — the row already starts with one.
         static func short(_ mode: LidAwakeMode) -> String {
             switch mode {
-            case .off: return "off😴"
+            case .off: return "Off"
             case .interactive: return "interactive"
             case .background: return "+background"
             }

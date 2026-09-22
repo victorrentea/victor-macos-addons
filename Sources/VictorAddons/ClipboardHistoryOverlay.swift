@@ -357,35 +357,48 @@ final class ClipboardHistoryOverlay {
     /// full file and closes the bezel, clipboard untouched: saving it *was*
     /// the choice, and a ⌘ released afterwards must not also paste it.
     private func downloadButton(for entry: ClipboardEntry, over image: NSRect) -> NSView {
-        let side: CGFloat = 78, inset: CGFloat = 10
-        let button = ClickButton(frame: NSRect(x: image.maxX - side - inset, y: image.minY + inset,
-                                               width: side, height: side))
+        // **One line, a tray-and-arrow glyph, a rectangle** (2026-09-23, Victor,
+        // pointing at the `.md` / `.pdf` download buttons of his own summary
+        // page): the SF Symbol is the same open tray with the arrow dropping
+        // into it, and `to Downloads` says where.
+        let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let ink = NSColor(white: 0.97, alpha: 1)
+        let title = NSMutableAttributedString()
+        if let glyph = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Download")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))) {
+            let attachment = NSTextAttachment()
+            attachment.image = glyph
+            attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: glyph.size.width, height: glyph.size.height)
+            title.append(NSAttributedString(attachment: attachment))
+        }
+        title.append(NSAttributedString(string: "  to Downloads", attributes: [.font: font, .foregroundColor: ink]))
+        let size = NSSize(width: (title.size().width + 28).rounded(), height: 36)
+        let inset: CGFloat = 10
+        let button = ClickButton(frame: NSRect(x: image.maxX - size.width - inset, y: image.minY + inset,
+                                               width: size.width, height: size.height))
         button.isBordered = false
         button.wantsLayer = true
-        button.layer?.cornerRadius = 12
+        button.layer?.cornerRadius = 9
         button.layer?.borderWidth = 1
         button.rest = NSColor(srgbRed: 0.10, green: 0.42, blue: 0.95, alpha: 0.88)
         button.hover = NSColor(srgbRed: 0.24, green: 0.58, blue: 1.00, alpha: 1.00)
         button.paint(hovered: false)
-        let style = NSMutableParagraphStyle()
-        style.alignment = .center
-        let title = NSMutableAttributedString(string: "⬇️\n", attributes: [
-            .font: NSFont.systemFont(ofSize: 26), .paragraphStyle: style])
-        title.append(NSAttributedString(string: "in Downloads", attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(white: 0.95, alpha: 1), .paragraphStyle: style]))
         button.attributedTitle = title
-        button.toolTip = "Save this image to ~/Downloads"
+        button.toolTip = "Save this image to ~/Downloads and show it in Finder"
         button.onClick = { [weak self] in
             guard let self else { return }
             self.close()
             self.onClosedByClick?()
             DispatchQueue.global(qos: .userInitiated).async {
-                if let url = ClipboardHistoryStore.shared.exportToDownloads(entry) {
-                    overlayInfo("⬇️ \(url.lastPathComponent) → ~/Downloads")
-                } else {
+                guard let url = ClipboardHistoryStore.shared.exportToDownloads(entry) else {
                     overlayError("⬇️ that clip's file is gone — nothing saved")
+                    return
                 }
+                overlayInfo("⬇️ \(url.lastPathComponent) → ~/Downloads")
+                // **Finder, with the file selected** (2026-09-23) — the next
+                // thing he does with a saved picture is drag it somewhere.
+                DispatchQueue.main.async { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             }
         }
         return button
