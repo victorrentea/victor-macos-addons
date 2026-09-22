@@ -248,7 +248,7 @@ private final class PromptRowView: NSTableCellView {
     private static let icons: [PromptSource: NSImage] = {
         var out: [PromptSource: NSImage] = [:]
         // Clawd, Claude Code's own mark — these prompts are Claude Code's.
-        if let clawd = ClaudeCodeIcon.image(height: 24) { out[.claude] = clawd }
+        if let clawd = ClaudeCodeIcon.image(height: 16) { out[.claude] = clawd }
         let copilot = "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions/copilot/assets/copilot.png"
         if let image = NSImage(contentsOfFile: copilot) { out[.copilot] = image }
         return out
@@ -257,13 +257,13 @@ private final class PromptRowView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        badge.font = .systemFont(ofSize: 19.5)
+        badge.font = .systemFont(ofSize: 14)
         button.bezelStyle = .rounded
-        button.controlSize = .regular
-        button.font = .systemFont(ofSize: 15)
+        button.controlSize = .large
+        button.font = .systemFont(ofSize: 17, weight: .medium)
         age.font = .monospacedDigitSystemFont(ofSize: 16.5, weight: .regular)
         age.textColor = .secondaryLabelColor
-        age.alignment = .right
+        age.alignment = .left
         bar.textColor = .tertiaryLabelColor
         bar.font = .systemFont(ofSize: 19.5)
         body.font = .systemFont(ofSize: 19.5)
@@ -271,7 +271,9 @@ private final class PromptRowView: NSTableCellView {
         body.lineBreakMode = .byTruncatingTail
         body.cell?.usesSingleLineMode = true
 
-        let stack = NSStackView(views: [icon, badge, button, age, bar, body])
+        // `5m ago [Send] <icon> | <prompt>` (2026-09-23, Victor: *"pune în
+        // ordine data, [Send mai mare] <icon mai mic> | <Prompt>"*).
+        let stack = NSStackView(views: [age, button, icon, badge, bar, body])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
@@ -283,9 +285,9 @@ private final class PromptRowView: NSTableCellView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 30),
-            icon.heightAnchor.constraint(equalToConstant: 24),
-            button.widthAnchor.constraint(equalToConstant: 66),
+            icon.widthAnchor.constraint(equalToConstant: 20),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+            button.widthAnchor.constraint(equalToConstant: 84),
             age.widthAnchor.constraint(equalToConstant: 78),
         ])
         // The prompt text is the part that gives.
