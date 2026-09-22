@@ -90,9 +90,18 @@ enum OutputRouterPolicy {
     /// - Parameters:
     ///   - devices: every connected output device name, in CoreAudio's order.
     ///   - defaultOutput: what macOS has right now (`nil` if unreadable).
+    ///   - prefer: where to send it before consulting the ladder. This is how
+    ///     the **system** output is rescued onto whatever the *media* output is
+    ///     already playing through: the two are normally the same device, and
+    ///     splitting them is its own confusing state — alerts coming out of the
+    ///     boxes across the room while the film plays on the laptop is not an
+    ///     improvement on alerts going into a lavalier. Nil when rescuing the
+    ///     media output itself, which has nothing to follow.
     ///   - fallback: the built-in speakers' name, if this Mac reported one.
-    static func rescueTarget(devices: [String], defaultOutput: String?, fallback: String?) -> String? {
+    static func rescueTarget(devices: [String], defaultOutput: String?,
+                             prefer: String? = nil, fallback: String?) -> String? {
         guard let defaultOutput, isBlocked(defaultOutput) else { return nil }
+        if let prefer, !isBlocked(prefer), devices.contains(prefer) { return prefer }
         if let ranked = best(of: devices) { return ranked }
         if let fallback, !isBlocked(fallback), devices.contains(fallback) { return fallback }
         return devices.first { !isBlocked($0) }

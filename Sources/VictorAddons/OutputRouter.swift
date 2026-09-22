@@ -134,12 +134,18 @@ final class OutputRouter {
         let names = devices.map(\.name)
         let fallback = BluetoothOutput.builtInOutputName()
 
+        // The media output first, so the system output can then be pointed at
+        // the device the media output ended up on rather than at the ladder's
+        // own idea — the two are normally the same device and should stay so.
         for system in [false, true] {
             let currentID = system ? BluetoothOutput.defaultSystemOutputID() : BluetoothOutput.defaultOutputID()
             guard currentID != 0 else { continue }
             let currentName = BluetoothOutput.deviceName(currentID)
+            let mediaID = BluetoothOutput.defaultOutputID()
+            let prefer = (system && mediaID != 0) ? BluetoothOutput.deviceName(mediaID) : nil
             guard let target = OutputRouterPolicy.rescueTarget(
-                devices: names, defaultOutput: currentName, fallback: fallback) else { continue }
+                devices: names, defaultOutput: currentName,
+                prefer: prefer, fallback: fallback) else { continue }
             let which = system ? "system output (alerts)" : "output"
             overlayInfo("🚫 '\(currentName)' is a microphone, not a speaker — \(which) → '\(target)'")
             attempt(target: target, system: system, remaining: Self.retryDelays)

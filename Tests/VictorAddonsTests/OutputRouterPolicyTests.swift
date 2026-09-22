@@ -133,6 +133,31 @@ final class OutputRouterPolicyTests: XCTestCase {
             loopback)
     }
 
+    func testTheSystemOutputFollowsTheMediaOutput() {
+        // Alerts were on the DJI while the film plays on the laptop: put them
+        // where the film is, not on the ladder's own best idea (the JBL across
+        // the room), or the rescue swaps one confusing split for another.
+        XCTAssertEqual(
+            OutputRouterPolicy.rescueTarget(devices: [mac, jbl, dji], defaultOutput: dji,
+                                            prefer: mac, fallback: mac),
+            mac)
+    }
+
+    func testTheSystemOutputWillNotFollowTheMediaOutputOntoAMicrophone() {
+        // Both defaults on the DJI: there is nothing to follow, so the ladder.
+        XCTAssertEqual(
+            OutputRouterPolicy.rescueTarget(devices: [mac, jbl, dji], defaultOutput: dji,
+                                            prefer: dji, fallback: mac),
+            jbl)
+    }
+
+    func testAPreferredDeviceThatHasGoneIsIgnored() {
+        XCTAssertEqual(
+            OutputRouterPolicy.rescueTarget(devices: [mac, jbl, dji], defaultOutput: dji,
+                                            prefer: "Some DAC that left", fallback: mac),
+            jbl)
+    }
+
     func testNothingToRescueOntoIsLeftAlone() {
         XCTAssertNil(OutputRouterPolicy.rescueTarget(devices: [dji], defaultOutput: dji, fallback: nil))
     }
