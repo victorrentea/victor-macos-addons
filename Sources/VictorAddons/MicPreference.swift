@@ -74,23 +74,36 @@ enum MicPreference {
 
     // MARK: - Watching
 
-    private static var source: DispatchSourceFileSystemObject?
+    private static var folderSource: DispatchSourceFileSystemObject?
+    private static var fileSource: DispatchSourceFileSystemObject?
+    private static var handler: (() -> Void)?
 
     /// **Call `onChange` whenever Walkie Talkie rewrites the file.**
     ///
-    /// A `DispatchSource` on the **folder**, not on the file: an atomic write
-    /// replaces the inode, and a watch on the old descriptor stops firing after
-    /// the first change. The folder is a dedicated one for exactly this reason —
-    /// `~/.walkie-talkie/` itself has `relay.log` and `outbox.jsonl` being
-    /// appended to constantly, and watching it would wake this app on every log
-    /// line.
+    /// **Two watches, because one misses half the ways a file changes.** Both
+    /// apps publish with `write(to:atomically:true)`, which writes a temp file
+    /// and renames it over the target — that replaces the inode, so a watch on
+    /// the *file* descriptor stops firing after the first change and a watch on
+    /// the *folder* is what sees it. But a plain in-place write (a shell
+    /// `printf > choice`, a test harness, an editor that truncates) touches the
+    /// file and never the directory, and the folder watch sleeps through it.
+    /// Both cases are real — the second one is how this was found — so the
+    /// folder is watched for the replace and the file is watched for the write,
+    /// and the file watch is re-armed every time it is replaced out from under
+    /// itself.
+    ///
+    /// The folder is a dedicated one because `~/.walkie-talkie/` itself has
+    /// `relay.log` and `outbox.jsonl` being appended to constantly, and watching
+    /// it would wake this app on every log line.
     ///
     /// Fires on this app's own writes too. That is deliberate rather than
     /// filtered: the handler's job is *make the menu agree with the file*, and
     /// doing that twice is free.
     static func watch(_ onChange: @escaping () -> Void) {
         stopWatching()
+        handler = onChange
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
         let fd = open(folder.path, O_EVTONLY)
         guard fd >= 0 else {
             overlayError("Mic: cannot watch \(folder.path) — Walkie Talkie's picks will not arrive")
@@ -98,14 +111,41 @@ enum MicPreference {
         }
         let src = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .delete, .rename], queue: .main)
-        src.setEventHandler { onChange() }
+        src.setEventHandler {
+            // A replace lands here, and the file watch below is now pointed at
+            // a dead inode — re-aim it before answering.
+            armFileWatch()
+            handler?()
+        }
         src.setCancelHandler { close(fd) }
-        source = src
+        folderSource = src
+        src.resume()
+
+        armFileWatch()
+    }
+
+    /// Watch the `choice` file itself, for writes that do not go through a
+    /// rename. Re-arms itself when the file is replaced or removed.
+    private static func armFileWatch() {
+        fileSource?.cancel()
+        fileSource = nil
+        let fd = open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return }   // no file yet; the folder watch will catch its creation
+        let src = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename], queue: .main)
+        src.setEventHandler {
+            let gone = src.data.contains(.delete) || src.data.contains(.rename)
+            handler?()
+            if gone { armFileWatch() }
+        }
+        src.setCancelHandler { close(fd) }
+        fileSource = src
         src.resume()
     }
 
     static func stopWatching() {
-        source?.cancel()
-        source = nil
+        folderSource?.cancel(); folderSource = nil
+        fileSource?.cancel(); fileSource = nil
+        handler = nil
     }
 }
