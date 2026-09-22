@@ -291,7 +291,11 @@ final class ClipboardHistoryOverlay {
         status.setFrameOrigin(NSPoint(x: pad, y: y))
         content.addSubview(body)
         content.addSubview(status)
-        if entry.isImage { content.addSubview(downloadButton(for: entry, over: body.frame)) }
+        if entry.isImage {
+            let download = downloadButton(for: entry, over: body.frame)
+            content.addSubview(download)
+            content.addSubview(previewButton(for: entry, leftOf: download.frame))
+        }
 
         let panel = self.panel ?? BezelPanel()
         panel.contentView = content
@@ -356,35 +360,13 @@ final class ClipboardHistoryOverlay {
     /// this one saves whichever clip the walk has reached. A click saves the
     /// full file and closes the bezel, clipboard untouched: saving it *was*
     /// the choice, and a ⌘ released afterwards must not also paste it.
-    private func downloadButton(for entry: ClipboardEntry, over image: NSRect) -> NSView {
+    private func downloadButton(for entry: ClipboardEntry, over image: NSRect) -> ClickButton {
         // **One line, a tray-and-arrow glyph, a rectangle** (2026-09-23, Victor,
         // pointing at the `.md` / `.pdf` download buttons of his own summary
         // page): the SF Symbol is the same open tray with the arrow dropping
         // into it, and `to Downloads` says where.
-        let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        let ink = NSColor(white: 0.97, alpha: 1)
-        let title = NSMutableAttributedString()
-        if let glyph = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Download")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))) {
-            let attachment = NSTextAttachment()
-            attachment.image = glyph
-            attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: glyph.size.width, height: glyph.size.height)
-            title.append(NSAttributedString(attachment: attachment))
-        }
-        title.append(NSAttributedString(string: "  to Downloads", attributes: [.font: font, .foregroundColor: ink]))
-        let size = NSSize(width: (title.size().width + 28).rounded(), height: 36)
-        let inset: CGFloat = 10
-        let button = ClickButton(frame: NSRect(x: image.maxX - size.width - inset, y: image.minY + inset,
-                                               width: size.width, height: size.height))
-        button.isBordered = false
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 9
-        button.layer?.borderWidth = 1
-        button.rest = NSColor(srgbRed: 0.10, green: 0.42, blue: 0.95, alpha: 0.88)
-        button.hover = NSColor(srgbRed: 0.24, green: 0.58, blue: 1.00, alpha: 1.00)
-        button.paint(hovered: false)
-        button.attributedTitle = title
+        let button = actionButton(symbol: "square.and.arrow.down", text: "to Downloads",
+                                  rightEdge: image.maxX - 10, bottom: image.minY + 10)
         button.toolTip = "Save this image to ~/Downloads and show it in Finder"
         button.onClick = { [weak self] in
             guard let self else { return }
@@ -401,6 +383,66 @@ final class ClipboardHistoryOverlay {
                 DispatchQueue.main.async { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             }
         }
+        return button
+    }
+
+    /// **`In Preview`, left of `to Downloads`** (2026-09-23, Victor) — the
+    /// picture at full size, to read or mark up. Opened from a copy in the temp
+    /// folder, never from the history's own file: Preview saves in place, and a
+    /// markup would otherwise rewrite the clip under the bezel's feet.
+    private func previewButton(for entry: ClipboardEntry, leftOf other: NSRect) -> ClickButton {
+        let button = actionButton(symbol: "eye", text: "In Preview",
+                                  rightEdge: other.minX - 8, bottom: other.minY)
+        button.toolTip = "Open this image in Preview"
+        button.onClick = { [weak self] in
+            guard let self else { return }
+            self.close()
+            self.onClosedByClick?()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let source = ClipboardHistoryStore.shared.fullURL(for: entry)
+                let copy = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("clip-\(entry.id).png")
+                try? FileManager.default.removeItem(at: copy)
+                guard (try? FileManager.default.copyItem(at: source, to: copy)) != nil else {
+                    overlayError("👁 that clip's file is gone — nothing to open")
+                    return
+                }
+                DispatchQueue.main.async {
+                    let preview = URL(fileURLWithPath: "/System/Applications/Preview.app")
+                    NSWorkspace.shared.open([copy], withApplicationAt: preview,
+                                            configuration: NSWorkspace.OpenConfiguration())
+                }
+            }
+        }
+        return button
+    }
+
+    /// One of the image's action buttons: an SF Symbol and a few words on one
+    /// line, blue, brightening on hover, its right edge and bottom where asked.
+    private func actionButton(symbol: String, text: String, rightEdge: CGFloat, bottom: CGFloat) -> ClickButton {
+        let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let ink = NSColor(white: 0.97, alpha: 1)
+        let title = NSMutableAttributedString()
+        if let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: text)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))) {
+            let attachment = NSTextAttachment()
+            attachment.image = glyph
+            attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: glyph.size.width, height: glyph.size.height)
+            title.append(NSAttributedString(attachment: attachment))
+        }
+        title.append(NSAttributedString(string: "  " + text, attributes: [.font: font, .foregroundColor: ink]))
+        let size = NSSize(width: (title.size().width + 28).rounded(), height: 36)
+        let button = ClickButton(frame: NSRect(x: rightEdge - size.width, y: bottom,
+                                               width: size.width, height: size.height))
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 9
+        button.layer?.borderWidth = 1
+        button.rest = NSColor(srgbRed: 0.10, green: 0.42, blue: 0.95, alpha: 0.88)
+        button.hover = NSColor(srgbRed: 0.24, green: 0.58, blue: 1.00, alpha: 1.00)
+        button.paint(hovered: false)
+        button.attributedTitle = title
         return button
     }
 
