@@ -377,13 +377,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
         wsStatusItem = addItem("", action: nil)
-        // Directly under the Interact Link, because it is the other link the
+        // The other ⧈ row, right under it (2026-09-23, Victor): both put a QR
+        // on the wall, and they read as a pair.
+        addItem("🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction))
+        // Under the two ⧈ rows, because it is the other link the
         // room is given, and only ever during a session — refreshWsItem hides
         // it outright when there is none, rather than greying it out: a row
         // that cannot do anything is noise on a menu read at a glance.
         feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
-        addItem("🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction))
-        // Directly under it, because both rows answer "what is on the clipboard":
+        // Two rows under 🔗, because both answer "what is on the clipboard":
         // one shows it in the room, this one mails it to Victor. The key is only
         // advertised here — the event tap swallows ⌘⌃M before AppKit could match a
         // menu equivalent, so the row cannot fire the send a second time.
