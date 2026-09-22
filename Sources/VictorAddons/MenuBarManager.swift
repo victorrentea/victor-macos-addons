@@ -38,6 +38,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var hotspotNowItem: NSMenuItem!
     private(set) var mouseReconnectItem: NSMenuItem!
+    private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
     private(set) var voiceCorpusItem: NSMenuItem!
@@ -212,7 +213,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killItem.isEnabled = true
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu
-        menu.addItem(killItem)
+        // Added to 👩🏻‍💻 Extras further down (2026-09-23, Victor).
 
         // ☕️ Break — countdown "watch" overlay. The seven durations used to be
         // seven FLAT rows carrying the same "Break: " prefix seven times; they are
@@ -354,15 +355,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the ONLY way an email ever becomes a task. Its title carries the two
         // facts worth knowing at a glance: how long since the inbox was
         // actually read, and how many agents have been launched from it.
-        fluxInboxItem = addItem(FluxInboxMenu.base, action: #selector(checkTaskInboxAction))
+        // In 👩🏻‍💻 Extras since 2026-09-23 (Victor) — built here, added there.
+        fluxInboxItem = NSMenuItem(title: FluxInboxMenu.base, action: #selector(checkTaskInboxAction), keyEquivalent: "")
+        fluxInboxItem.target = self
+        fluxInboxItem.isEnabled = true
 
         // Screenshot — ONE item for one key. Clicking it takes the whole screen
         // (a click cannot be held); the title is where the other half of the
         // shortcut is taught, since a hold is the one gesture nothing on screen
         // reveals. A second item for the crop would have been a row you can
         // never usefully click, explaining a key you already have.
-        let screenshotItem = addItem("📸 Screenshot (hold to crop)", action: #selector(takeScreenshotAction))
-        screenshotItem.keyEquivalent = "p"
+        // In 👩🏻‍💻 Extras since 2026-09-23 (Victor) — ⌃P is the way in.
+        let screenshotItem = NSMenuItem(title: "📸 Screenshot (hold to crop)", action: #selector(takeScreenshotAction), keyEquivalent: "p")
+        screenshotItem.target = self
+        screenshotItem.isEnabled = true
         screenshotItem.keyEquivalentModifierMask = .control
 
         menu.addItem(.separator())
@@ -466,6 +472,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let extraSubmenu = NSMenu()
         extraItem.submenu = extraSubmenu
 
+        // **Moved in on 2026-09-23** (Victor, one row at a time): ☠️ Kill by
+        // port, 📬 Check Inbox, 📸 Screenshot, 📤 Mail clipboard — rows reached
+        // by their keys or once a day, which the top level no longer spends a
+        // line on.
+        extraSubmenu.addItem(killItem)
+        extraSubmenu.addItem(fluxInboxItem)
+        extraSubmenu.addItem(screenshotItem)
+
         // The key is only advertised — the event tap swallows ⌘⌃M before AppKit
         // could match a menu equivalent, so the row cannot fire the send twice.
         let reminderMailItem = NSMenuItem(title: "📤 Mail clipboard to myself", action: #selector(sendReminderMailAction), keyEquivalent: "m")
@@ -519,11 +533,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         mouseReconnectItem.isEnabled = true
         extraSubmenu.addItem(mouseReconnectItem)
 
-        emojiOverlayItem = NSMenuItem(title: "Emoji Overlay", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
+        // **Two cheat-sheets, two switches** (2026-09-23, Victor): the ⌥ emoji
+        // layers and the ⌘⌃ shortcut sheet were one `Emoji Overlay` tick, which
+        // turned off the menu of shortcuts along with the emoji. The key each
+        // one is held with is right-aligned after the name — a modifier on its
+        // own cannot be a key equivalent, so it is text.
+        emojiOverlayItem = NSMenuItem(title: "", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
+        emojiOverlayItem.attributedTitle = Self.withHoldKey("😀 Emoji Overlay", "hold ⌥")
         emojiOverlayItem.target = self
         emojiOverlayItem.isEnabled = true
         emojiOverlayItem.state = KeymapOverlaySettings.isEnabled ? .on : .off
         extraSubmenu.addItem(emojiOverlayItem)
+
+        commandOverlayItem = NSMenuItem(title: "", action: #selector(toggleCommandOverlayAction), keyEquivalent: "")
+        commandOverlayItem.attributedTitle = Self.withHoldKey("⌨️ Command Overlay", "hold ⌘⌃")
+        commandOverlayItem.target = self
+        commandOverlayItem.isEnabled = true
+        commandOverlayItem.state = KeymapOverlaySettings.isCommandEnabled ? .on : .off
+        extraSubmenu.addItem(commandOverlayItem)
 
         // 🟡 Cursor Glow is gone (2026-09-14), together with `CursorGlow.swift`
         // and its stored setting: it was an experiment — a panel chasing the
@@ -1050,6 +1077,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func reconnectMouseAction() {
         onReconnectMouse?()
+    }
+
+    @objc private func toggleCommandOverlayAction() {
+        let enabled = !KeymapOverlaySettings.isCommandEnabled
+        KeymapOverlaySettings.isCommandEnabled = enabled
+        commandOverlayItem.state = enabled ? .on : .off
+        onEmojiOverlayEnabledChanged?(enabled)
+    }
+
+    /// `name` then, right-aligned in grey, the modifier the sheet is held with.
+    private static func withHoldKey(_ name: String, _ key: String) -> NSAttributedString {
+        let font = NSFont.menuFont(ofSize: 0)
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: 250)]
+        let out = NSMutableAttributedString(string: name + "\t", attributes: [.font: font, .paragraphStyle: style])
+        out.append(NSAttributedString(string: key, attributes: [
+            .font: font, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: style]))
+        return out
     }
 
     @objc private func toggleEmojiOverlayAction() {

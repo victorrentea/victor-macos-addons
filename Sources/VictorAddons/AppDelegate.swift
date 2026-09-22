@@ -1640,7 +1640,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
-            guard KeymapOverlaySettings.isEnabled else {
+            guard let sheet = KeymapHoldCoordinator.sheet(option: option, shift: shift,
+                                                          command: command, control: control),
+                  KeymapOverlaySettings.allows(sheet) else {
                 self?.keymapHoldCoordinator?.reset()
                 return
             }

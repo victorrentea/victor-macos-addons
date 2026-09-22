@@ -185,6 +185,20 @@ enum CommandControlShortcuts {
 
 enum KeymapOverlaySettings {
     static let enabledKey = "EmojiOverlay.enabled"
+    /// The ⌘⌃ shortcut sheet's own switch (2026-09-23) — `isEnabled` is the
+    /// ⌥ emoji layers only since then.
+    static let commandEnabledKey = "CommandOverlay.enabled"
+
+    static var isCommandEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: commandEnabledKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: commandEnabledKey) }
+    }
+
+    /// Whether this sheet may be drawn: ⌘⌃ answers to its own switch, every
+    /// ⌥ layer to the emoji one.
+    static func allows(_ sheet: KeymapModifier) -> Bool {
+        sheet == .commandControl ? isCommandEnabled : isEnabled
+    }
 
     static var isEnabled: Bool {
         get {
