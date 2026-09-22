@@ -1232,7 +1232,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 🤖 The week of intercepted prompts, with a Send button on each one
         // the offer pill never got a hover for.
         menuBarManager.onPromptHistory = {
-            PromptHistoryPanel.shared.toggle()
+            // **Always open, never toggle** (2026-09-23, Victor: *"din 2 în 2
+            // click-uri, Last Prompts nu se deschide"*). The panel hides on
+            // deactivate, and opening the status menu re-activates the app —
+            // which un-hides it for an instant, so `toggle()` saw it visible and
+            // closed it: every second click. Esc and the close box close it.
+            PromptHistoryPanel.shared.present()
         }
         menuBarManager.onEmojiOverlayEnabledChanged = { [weak self] enabled in
             if !enabled {

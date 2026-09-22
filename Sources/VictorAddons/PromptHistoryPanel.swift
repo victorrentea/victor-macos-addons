@@ -56,14 +56,6 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
 
     // MARK: Present / dismiss
 
-    /// The menu row's gesture: open it, or close it if it is already up.
-    /// Keyed on `isVisible`, not on the reference: the panel hides itself when
-    /// the app is deactivated, and after that a click on the row must bring it
-    /// back rather than spend itself "closing" something already off-screen.
-    func toggle() {
-        if panel?.isVisible == true { close() } else { present() }
-    }
-
     func present() {
         close()
         shown = 0
