@@ -104,26 +104,26 @@ final class FluxInboxMenuTests: XCTestCase {
 
     func testNeverCheckedAndNothingLaunched() {
         XCTAssertEqual(FluxInboxMenu.title(lastCheck: nil, launches: 0),
-                       "📬 Check task inbox")
+                       "📬 Check Inbox")
     }
 
     func testShowsAgeAndRocketCount() {
         let now = Date()
         XCTAssertEqual(
             FluxInboxMenu.title(lastCheck: now.addingTimeInterval(-60), now: now, launches: 2),
-            "📬 Check task inbox (1m ago, 2🚀)")
+            "📬 Check Inbox (1m ago, 2🚀)")
     }
 
     func testOmitsZeroRockets() {
         let now = Date()
         XCTAssertEqual(
             FluxInboxMenu.title(lastCheck: now.addingTimeInterval(-300), now: now, launches: 0),
-            "📬 Check task inbox (5m ago)")
+            "📬 Check Inbox (5m ago)")
     }
 
     func testRocketsWithoutACheckYet() {
         XCTAssertEqual(FluxInboxMenu.title(lastCheck: nil, launches: 3),
-                       "📬 Check task inbox (3🚀)")
+                       "📬 Check Inbox (3🚀)")
     }
 
     func testAgeBuckets() {

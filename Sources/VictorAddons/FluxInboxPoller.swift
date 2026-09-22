@@ -210,7 +210,7 @@ enum FluxMailPolicy {
 /// a log. The rocket count is cumulative across restarts (see
 /// `FluxAgentLauncher.launchedCount`).
 enum FluxInboxMenu {
-    static let base = "📬 Check task inbox"
+    static let base = "📬 Check Inbox"
 
     /// Compact "how long ago", coarse on purpose: below a minute everything is
     /// "just now", because the exact second never changes what you'd do next.
