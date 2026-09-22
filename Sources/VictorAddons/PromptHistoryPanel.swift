@@ -178,7 +178,10 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         scroll.contentView.postsBoundsChangedNotifications = true
         observers.append(NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
-        ) { [weak self] _ in self?.loadMoreIfNeeded() })
+        ) { [weak self] _ in
+            self?.loadMoreIfNeeded()
+            self?.refreshHover()
+        })
         clock = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.tableView.reloadData()
         }
@@ -230,6 +233,12 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         tableView.reloadData()
     }
 
+    private func refreshHover() {
+        tableView.enumerateAvailableRowViews { rowView, _ in
+            (rowView.view(atColumn: 0) as? PromptRowView)?.refreshHover()
+        }
+    }
+
     private func loadMoreIfNeeded() {
         guard shown < today.count else { return }
         let visible = scroll.contentView.bounds
@@ -274,7 +283,7 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     }
 }
 
-/// One prompt, one line: `5m ago ✓ <agent icon> <prompt>`. **The whole row is
+/// One prompt, one line: `✓ 5m ago <agent icon> <prompt>`. **The whole row is
 /// the button** (2026-09-23, Victor: *"în loc de send, click pe tot rândul să
 /// trimită, scoate butonul"*): a click sends an unsent prompt, the row lights
 /// on hover while it still can, and a sent one is greyed with a ✓. The full
@@ -305,7 +314,7 @@ private final class PromptRowView: NSTableCellView {
         icon.imageScaling = .scaleProportionallyUpOrDown
         badge.font = .systemFont(ofSize: 14)
         check.font = .systemFont(ofSize: 17, weight: .semibold)
-        check.textColor = .tertiaryLabelColor
+        check.textColor = .systemGreen
         wantsLayer = true
         layer?.cornerRadius = 8
         age.font = .monospacedDigitSystemFont(ofSize: 16.5, weight: .regular)
@@ -315,7 +324,9 @@ private final class PromptRowView: NSTableCellView {
 
         // `5m ago ✓ <icon> <prompt>` (2026-09-23, Victor: *"pune în ordine
         // data, … <icon mai mic> | <Prompt>"*, then the button went).
-        let stack = NSStackView(views: [age, check, icon, badge, body])
+        // The ✓ first, green (2026-09-23, Victor: *"bifa să fie verde și să vină
+        // înainte de timestamp"*).
+        let stack = NSStackView(views: [check, age, icon, badge, body])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
@@ -372,6 +383,16 @@ private final class PromptRowView: NSTableCellView {
     }
     override func mouseEntered(with event: NSEvent) { paint(hovered: true) }
     override func mouseExited(with event: NSEvent) { paint(hovered: false) }
+
+    /// **Hover is re-read from where the pointer actually is** — scrolling
+    /// moves rows under a still pointer and AppKit sends them no exit, so the
+    /// highlight used to stay on every row the pointer had crossed (2026-09-23).
+    /// The panel calls this on every scroll.
+    func refreshHover() {
+        guard let window else { return paint(hovered: false) }
+        let p = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        paint(hovered: bounds.contains(p))
+    }
 
     private func paint(hovered: Bool) {
         layer?.backgroundColor = (hovered && !sent)
