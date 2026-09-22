@@ -142,7 +142,7 @@ enum ClipboardHistoryPolicy {
     static func age(_ seconds: TimeInterval) -> String {
         let s = max(0, seconds)
         switch s {
-        case ..<10:    return "just now"
+        case ..<10:    return "now"
         case ..<90:    return "a minute ago"
         case ..<3600:  return "\(Int((s / 60).rounded())) minutes ago"
         case ..<5400:  return "an hour ago"

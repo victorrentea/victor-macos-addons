@@ -220,7 +220,7 @@ enum FluxInboxMenu {
         // must never be the thing that kills the app.
         guard interval.isFinite else { return "never" }
         let seconds = max(0, Int(interval.rounded()))
-        if seconds < 60 { return "just now" }
+        if seconds < 60 { return "now" }
         let minutes = seconds / 60
         if minutes < 60 { return "\(minutes)m ago" }
         let hours = minutes / 60

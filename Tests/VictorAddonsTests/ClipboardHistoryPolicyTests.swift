@@ -125,7 +125,7 @@ final class ClipboardHistoryPolicyTests: XCTestCase {
     // MARK: captions
 
     func testAgeReadsAsAGlance() {
-        XCTAssertEqual(ClipboardHistoryPolicy.age(3), "just now")
+        XCTAssertEqual(ClipboardHistoryPolicy.age(3), "now")
         XCTAssertEqual(ClipboardHistoryPolicy.age(70), "a minute ago")
         XCTAssertEqual(ClipboardHistoryPolicy.age(240), "4 minutes ago")
         XCTAssertEqual(ClipboardHistoryPolicy.age(3500), "58 minutes ago")

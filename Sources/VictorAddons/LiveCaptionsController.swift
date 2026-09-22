@@ -196,9 +196,9 @@ final class LiveCaptionsController {
     /// *which microphone*, because the one failure that looks like the feature
     /// being bad at its job is the feature listening to the wrong thing.
     var menuTitle: String {
-        guard isOn else { return "🎬 Live subtitles" }
+        guard isOn else { return "🎬 Live Captions" }
         let spent = minutes
-        return String(format: "🎬 Live subtitles — %.0f min · $%.2f · %@",
+        return String(format: "🎬 Live Captions — %.0f min · $%.2f · %@",
                       spent, spent / 60 * LiveCaptionsStream.dollarsPerHour,
                       stream.deviceName)
     }

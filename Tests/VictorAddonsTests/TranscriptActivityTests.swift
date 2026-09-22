@@ -127,8 +127,8 @@ final class FluxInboxMenuTests: XCTestCase {
     }
 
     func testAgeBuckets() {
-        XCTAssertEqual(FluxInboxMenu.ago(0), "just now")
-        XCTAssertEqual(FluxInboxMenu.ago(59), "just now")
+        XCTAssertEqual(FluxInboxMenu.ago(0), "now")
+        XCTAssertEqual(FluxInboxMenu.ago(59), "now")
         XCTAssertEqual(FluxInboxMenu.ago(60), "1m ago")
         XCTAssertEqual(FluxInboxMenu.ago(59 * 60), "59m ago")
         XCTAssertEqual(FluxInboxMenu.ago(3600), "1h ago")

@@ -347,7 +347,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Directly under the two rows that also act on what was just said, for
         // their reason: the eye looking for anything to do with the room's
         // speech should find all three together.
-        liveCaptionsItem = addItem("🎬 Live subtitles", action: #selector(toggleLiveCaptionsAction))
+        liveCaptionsItem = addItem("🎬 Live Captions", action: #selector(toggleLiveCaptionsAction))
 
         // 📬 Check task inbox — the manual override for the poller's power
         // gate. Scheduled polls only run on AC, so while unplugged this item is
