@@ -512,13 +512,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // one is held with is right-aligned after the name — a modifier on its
         // own cannot be a key equivalent, so it is text.
         emojiOverlayItem = NSMenuItem(title: "", action: #selector(toggleEmojiOverlayAction), keyEquivalent: "")
-        emojiOverlayItem.attributedTitle = Self.withHoldKey("😀 Emoji Overlay", "hold ⌥")
+        emojiOverlayItem.attributedTitle = Self.withHoldKey("😀 Emoji Overlay", "⌥")
         emojiOverlayItem.target = self
         emojiOverlayItem.isEnabled = true
         emojiOverlayItem.state = KeymapOverlaySettings.isEnabled ? .on : .off
 
         commandOverlayItem = NSMenuItem(title: "", action: #selector(toggleCommandOverlayAction), keyEquivalent: "")
-        commandOverlayItem.attributedTitle = Self.withHoldKey("⌨️ Command Overlay", "hold ⌘⌃")
+        commandOverlayItem.attributedTitle = Self.withHoldKey("⌨️ Command Overlay", "⌘⌃")
         commandOverlayItem.target = self
         commandOverlayItem.isEnabled = true
         commandOverlayItem.state = KeymapOverlaySettings.isCommandEnabled ? .on : .off
