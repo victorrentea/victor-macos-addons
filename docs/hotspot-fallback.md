@@ -375,6 +375,8 @@ attempts stay bounded by `cooldown` exactly as before.
 
 ## Starting it by hand: 📱 Start Victor Phone Hotspot Now
 
+> **Removed on 2026-09-23** (Victor: *"șterge, rămâne pe auto"*) — the row, `onHotspotNow` and `HotspotFallback.triggerNow`. The automatic fallback is the only path; what follows is history.
+
 **💬 → 👩🏻‍💻 Extra → 📱 Start Victor Phone Hotspot Now**, right under the toggle.
 
 Both rows name the phone since 2026-09-14: "Hotspot" alone reads as the Mac's

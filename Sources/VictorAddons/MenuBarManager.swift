@@ -36,7 +36,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var lidAwakeModeItems: [LidAwakeMode: NSMenuItem] = [:]
     private(set) var homeAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
-    private(set) var hotspotNowItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
@@ -160,8 +159,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// kill-session` on the way down and a script launch on the way up, both on
     /// the watcher's own queue.
     var onClaudeRemoteControlEnabledChanged: ((Bool) -> Void)?
-    /// Run the whole phone-hotspot chain now, whatever the Mac's connectivity.
-    var onHotspotNow: (() -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
@@ -494,13 +491,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotFallbackItem.isEnabled = true
         hotspotFallbackItem.state = HotspotFallbackSettings.isEnabled ? .on : .off
 
-        // A row of its own, next to the toggle, because the toggle only says
-        // whether the *automatic* fallback is armed — and the whole reason this
-        // exists is the case where the automatic path never fires and the repair
-        // is otherwise to pick up the phone and open the app by hand.
-        hotspotNowItem = NSMenuItem(title: "📱 Start Victor Phone Hotspot Now", action: #selector(hotspotNowAction), keyEquivalent: "")
-        hotspotNowItem.target = self
-        hotspotNowItem.isEnabled = true
+        // 📱 Start Victor Phone Hotspot Now was deleted on 2026-09-23 (Victor:
+        // *"rămâne pe auto"*) — the automatic fallback above is the one path.
 
         // 🖱️ Reconnect Mouse was removed on 2026-09-23 (Victor: *"scoate
         // featureul"*) — `MouseReconnect`, its test route and its doc with it;
@@ -609,7 +601,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [killItem, fluxInboxItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
-            [hotspotFallbackItem, hotspotNowItem],
+            [hotspotFallbackItem],
             [homeAwakeItem, claudeRemoteControlItem],
         ]
         for (i, group) in extraGroups.enumerated() {
@@ -1064,10 +1056,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !HotspotFallbackSettings.isEnabled
         HotspotFallbackSettings.isEnabled = enabled
         hotspotFallbackItem.state = enabled ? .on : .off
-    }
-
-    @objc private func hotspotNowAction() {
-        onHotspotNow?()
     }
 
     @objc private func toggleCommandOverlayAction() {

@@ -306,45 +306,6 @@ final class HotspotFallback {
         return snapshot
     }
 
-    /// The menu row — and the answer to "why did I have to pick up the phone?".
-    ///
-    /// The automatic path is only ever as good as its triggers, and when none of
-    /// them fires there is nothing to nudge: the fallback sits there, correct
-    /// and idle, while the Mac has no internet. The manual repair Victor was
-    /// left with — unlock the phone, open the app so the routine sees
-    /// "App opened" — is exactly the signal this class sends. So there is now a
-    /// button that sends it.
-    ///
-    /// A click is an explicit instruction, so it outranks every guard that
-    /// exists to keep the *automatic* path polite: the connectivity probe, the
-    /// home geofence, the cooldown and the enabled toggle are all skipped. It
-    /// does run the full chain, not just the signal — opening the channel and
-    /// then actually getting this Mac onto `victor` — because "turn the hotspot
-    /// on" is never what is wanted, only ever a step towards being online.
-    func triggerNow(completion: ((_ ok: Bool, _ message: String) -> Void)? = nil) {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.lastAttemptAt = Date()
-            self.attemptInFlight = true
-            defer { self.attemptInFlight = false }
-
-            overlayInfo("📶 Hotspot asked for from the menu — signalling the phone")
-            if let err = self.openChannel() {
-                overlayError("📵 Hotspot from the menu — \(err)")
-                completion?(false, err)
-                return
-            }
-            let began = Date()
-            if self.waitForInternet(seconds: Self.waitAfterPlainConnect, stage: "menu") {
-                completion?(true, "online in \(Int(Date().timeIntervalSince(began)))s")
-                return
-            }
-            let why = "the channel is open but no internet followed — is the routine still armed on the phone?"
-            overlayError("📵 Hotspot from the menu — \(why)")
-            completion?(false, why)
-        }
-    }
-
     private static func jsonString(_ s: String) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data()
         let arr = String(data: data, encoding: .utf8) ?? "[\"\"]"
