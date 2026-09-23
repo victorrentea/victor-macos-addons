@@ -33,6 +33,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var chromeBridge: ChromeBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
     private var outputRouter: OutputRouter?
+    /// 🎙️ "Listening to: …" tab when the system default input changes.
+    private var micSourceAnnouncer: MicSourceAnnouncer?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
@@ -1496,6 +1498,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let router = OutputRouter()
         self.outputRouter = router
         router.start()
+
+        let micAnnouncer = MicSourceAnnouncer()
+        self.micSourceAnnouncer = micAnnouncer
+        micAnnouncer.start()
 
         let hotspot = HotspotFallback()
         self.hotspotFallback = hotspot
