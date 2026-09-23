@@ -12,6 +12,7 @@ final class TerminalPromptKeysTests: XCTestCase {
     private let VK_LEFT: CGKeyCode = 0x7B
     private let VK_RIGHT: CGKeyCode = 0x7C
     private let VK_DELETE: CGKeyCode = 0x33
+    private let VK_RETURN: CGKeyCode = 0x24
 
     private func rewrite(_ keyCode: CGKeyCode,
                          cmd: Bool = true, ctrl: Bool = false, opt: Bool = false, shift: Bool = false,
@@ -72,5 +73,14 @@ final class TerminalPromptKeysTests: XCTestCase {
         for keyCode: CGKeyCode in [0x0C, 0x0D, 0x11, 0x7D, 0x7E] {
             XCTAssertNil(rewrite(keyCode), "keycode \(keyCode) is not ours to take")
         }
+    }
+
+    func testShiftReturnIsANewlineNotASubmit() {
+        // ^J inserts a newline in Claude Code; a CR would send the prompt.
+        XCTAssertEqual(rewrite(VK_RETURN, cmd: false, shift: true)?.characters, "\n")
+        XCTAssertNil(rewrite(VK_RETURN, cmd: false), "plain ↩ must still submit")
+        XCTAssertNil(rewrite(VK_RETURN, cmd: true, shift: true), "⌘⇧↩ is not ours")
+        XCTAssertNil(rewrite(VK_RETURN, cmd: false, opt: true, shift: true))
+        XCTAssertNil(rewrite(VK_RETURN, cmd: false, shift: true, front: "com.microsoft.VSCode"))
     }
 }

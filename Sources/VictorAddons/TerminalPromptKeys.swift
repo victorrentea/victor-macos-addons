@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// ⌘← / ⌘→ / ⌘⌫ turned into the byte sequences a Claude Code prompt understands.
+/// ⌘← / ⌘→ / ⌘⌫ and ⇧↩ turned into the byte sequences a Claude Code prompt understands.
 ///
 /// **Why this cannot be a Terminal.app setting**, which is where it belongs:
 /// Terminal's per-profile `keyMapBoundKeys` honours the `^` (control), `~`
@@ -47,6 +47,12 @@ import Foundation
 /// terminal's output until `^Q`. `~/.zshrc` therefore turns flow control off
 /// (`unsetopt flowcontrol` + `stty -ixon`) and binds `^S` to `kill-whole-line`,
 /// so ⌘⌫ means the same thing at a zsh prompt as it does in Claude Code.
+///
+/// **⇧↩ is `^J` (line feed)**: Claude Code inserts a newline without submitting,
+/// same as ⌥↩. Stock Terminal sends a bare CR for ⇧↩, indistinguishable from ↩,
+/// and — measured 2026-09-23 — a `$000D` entry in `keyMapBoundKeys` is ignored,
+/// the same dead end as `@`. One byte and no ESC, so it can never read as
+/// escape (which would abort a running turn).
 enum TerminalPromptKeys {
     /// Apps whose prompt gets this treatment. Deliberately just Terminal.app:
     /// the target is the Claude Code prompt, and the focused app is as close to
@@ -62,6 +68,7 @@ enum TerminalPromptKeys {
     private static let VK_LEFT: CGKeyCode = 0x7B
     private static let VK_RIGHT: CGKeyCode = 0x7C
     private static let VK_DELETE: CGKeyCode = 0x33
+    private static let VK_RETURN: CGKeyCode = 0x24
 
     /// What the rewritten event becomes. An event has to claim *some* key, but
     /// `characters` is what a terminal actually writes out, so the keycode is
@@ -76,6 +83,7 @@ enum TerminalPromptKeys {
     private static let HOME = "\u{1b}[H"
     private static let END = "\u{1b}[F"
     private static let STASH = "\u{13}"           // ^S, chat:stash
+    private static let NEWLINE = "\n"             // ^J, newline without submit
 
     /// `nil` = leave the event alone.
     ///
@@ -85,8 +93,11 @@ enum TerminalPromptKeys {
     static func rewrite(keyCode: CGKeyCode,
                         hasCommand: Bool, hasControl: Bool, hasOption: Bool, hasShift: Bool,
                         frontmostBundleId: String?) -> Rewrite? {
-        guard hasCommand, !hasControl, !hasOption, !hasShift else { return nil }
         guard let bundleId = frontmostBundleId, scopeBundleIds.contains(bundleId) else { return nil }
+        if keyCode == VK_RETURN, hasShift, !hasCommand, !hasControl, !hasOption {
+            return Rewrite(keyCode: VK_RETURN, characters: NEWLINE)
+        }
+        guard hasCommand, !hasControl, !hasOption, !hasShift else { return nil }
         switch keyCode {
         case VK_LEFT:
             return Rewrite(keyCode: CARRIER, characters: String(repeating: HOME, count: reach))
