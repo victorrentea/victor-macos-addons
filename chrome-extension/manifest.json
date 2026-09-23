@@ -2,33 +2,8 @@
   "manifest_version": 3,
   "name": "Victor Chrome Addons",
   "version": "2.0",
-  "description": "The Chrome half of Victor Addons: pauses the music while Wispr Flow is dictating, and publishes the end-of-session feedback form on FreeOnlineSurveys when the Mac asks for one, and makes Teams web meetings default to noise suppression Off and to sharing the screen with clean system audio.",
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-  "permissions": [
-    "tabs",
-    "scripting",
-    "storage",
-    "alarms"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "https://teams.microsoft.com/*",
-        "https://teams.cloud.microsoft/*",
-        "https://teams.live.com/*"
-      ],
-      "js": [
-        "teams-guest-audio.js"
-      ],
-      "run_at": "document_start",
-      "all_frames": true,
-      "world": "MAIN"
-    }
-  ]
+  "description": "The Chrome half of Victor Addons: pauses the music while Wispr Flow is dictating, and publishes the end-of-session feedback form on FreeOnlineSurveys when the Mac asks for one.",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["tabs", "scripting", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"]
 }
