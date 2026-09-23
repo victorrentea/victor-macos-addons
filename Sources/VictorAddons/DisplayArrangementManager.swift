@@ -33,7 +33,7 @@ import CoreGraphics
 /// external = the projector.
 final class DisplayArrangementManager {
     /// Fired on the main queue after an arrangement is applied, with a short
-    /// human banner string (e.g. "🖥️ Projector: mirrored + ASUS primary").
+    /// human banner string (e.g. "🖥️ mirrored + ASUS primary").
     var onArrangementApplied: ((String) -> Void)?
 
     /// Fired (deduped) whenever the "an unknown external display is connected"
@@ -533,9 +533,9 @@ final class DisplayArrangementManager {
             // projector appeared, breaking that mirror leaves it there. Pin it
             // back to its native mode so it isn't primary at 800×600.
             if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
-            return "🖥️ Projector: mirror + ASUS primary (Retina 1080p left)"
+            return "🖥️ mirror + ASUS primary (Retina 1080p left)"
         } else {
-            return "🖥️ Projector: mirrored (Retina 1080p)"
+            return "🖥️ mirrored (Retina 1080p)"
         }
     }
 
@@ -561,9 +561,9 @@ final class DisplayArrangementManager {
             // Same guard as the projector path: restore the ASUS's native mode so
             // a mirror-break fallback (800×600) never survives into the layout.
             if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
-            return "🖥️ Standard: Retina main + ASUS right"
+            return "🖥️ Retina main + ASUS right"
         }
-        return "🖥️ Standard: Retina only"
+        return "🖥️ Retina only"
     }
 
     /// Home rig: enforce the single invariant "nothing mirrors the Retina" while
@@ -632,7 +632,7 @@ final class DisplayArrangementManager {
             x += Int32(mode?.width ?? CGDisplayCopyDisplayMode(ext)?.width ?? 1920)
         }
 
-        let banner = "🖥️ Home: un-mirrored \(mirroredExternals.count) monitor(s), layout preserved"
+        let banner = "🖥️ un-mirrored \(mirroredExternals.count) monitor(s), layout preserved"
         if CGCompleteDisplayConfiguration(config, .permanently) == .success {
             overlayInfo(banner)
             DispatchQueue.main.async { [weak self] in self?.onArrangementApplied?(banner) }
