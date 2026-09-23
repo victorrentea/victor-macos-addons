@@ -85,6 +85,14 @@ final class TerminalPromptKeysTests: XCTestCase {
         }
     }
 
+    func testOptionDeleteKillsOneWord() {
+        // Terminal has ⌥-as-Meta off, so on its own ⌥⌫ would be a plain DEL.
+        XCTAssertEqual(rewrite(VK_DELETE, cmd: false, opt: true)?.characters, "\u{1b}\u{7f}")
+        XCTAssertNil(rewrite(VK_DELETE, cmd: false), "plain ⌫ deletes one character")
+        XCTAssertNil(rewrite(VK_DELETE, cmd: false, opt: true, shift: true))
+        XCTAssertNil(rewrite(VK_DELETE, cmd: false, opt: true, front: "com.microsoft.VSCode"))
+    }
+
     func testShiftReturnIsANewlineNotASubmit() {
         // ^J inserts a newline in Claude Code; a CR would send the prompt.
         XCTAssertEqual(rewrite(VK_RETURN, cmd: false, shift: true)?.characters, "\n")

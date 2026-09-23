@@ -108,6 +108,12 @@ enum TerminalPromptKeys {
         if keyCode == VK_RETURN, hasShift, !hasCommand, !hasControl, !hasOption {
             return Rewrite(keyCode: VK_RETURN, characters: NEWLINE)
         }
+        // ⌥⌫ = one word back. useOptionAsMetaKey is off (a meta ⌥ sends a bare
+        // ESC = chat:cancel), so without this Terminal sends a plain DEL and
+        // ⌥⌫ eats a single character.
+        if keyCode == VK_DELETE, hasOption, !hasCommand, !hasControl, !hasShift {
+            return Rewrite(keyCode: CARRIER, characters: KILL_WORD)
+        }
         guard hasCommand, !hasControl, !hasOption, !hasShift else { return nil }
         switch keyCode {
         case VK_LEFT:
