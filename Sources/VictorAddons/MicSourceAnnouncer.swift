@@ -46,6 +46,9 @@ final class MicSourceAnnouncer {
             guard let self else { return }
             self.lastId = Self.defaultInputId()
             overlayInfo("🎙️ Mic source: baseline \(Self.name(of: self.lastId) ?? "none")")
+            // A headset already sitting on the default input at launch is moved
+            // now; the move fires the listener below and gets announced.
+            HeadphoneMicGuard.enforce()
             for selector in [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDevices] {
                 var addr = AudioObjectPropertyAddress(mSelector: selector,
                                                       mScope: kAudioObjectPropertyScopeGlobal,
@@ -71,6 +74,9 @@ final class MicSourceAnnouncer {
     }
 
     private func settled() {
+        // Moved off a banned headset → the move re-fires the listener; the
+        // replacement is announced on that settle, the headset never is.
+        if HeadphoneMicGuard.enforce() { return }
         let id = Self.defaultInputId()
         guard id != 0, id != lastId else { return }
         lastId = id
