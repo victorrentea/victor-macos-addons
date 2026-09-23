@@ -751,6 +751,41 @@ on battery, because everything here was gated on `!onAC`. Three holes, closed:
 - **`pmset sleepnow` on AC only without an external display** — the projector
   plugged into a closed laptop mid-workshop is still never slept.
 
+## The door never opened: `willSleep` cannot make a sound (2026-09-23, night)
+
+*"La 22:23 am închis capacul cu 5% … n-am auzit nimic."* Measured, not guessed:
+**the sleep chime has never been audible on a real sleep.** Every sleep since it
+shipped (2026-09-22) — clamshell, software, maintenance — shows the same trace:
+
+- `pmset -g log`: `Delays to Sleep notifications: [Victor Addons is slow(17226 ms)]`,
+  on every one of them; the lid-to-sleep gap is 17 s each time.
+- `coreaudiod`: the speaker `mute` goes to 0 as the lid closes (the boost ran) and
+  back to 1 fifteen seconds later.
+- the app's own AudioQueue: `AudioDeviceStart (err 0)`, then
+  `AQMEIO timed out after 15.000s (0 0)` and `client stopping after failed start`
+  — zero frames delivered.
+
+By the time `willSleepNotification` reaches us, `coreaudiod` has had its own
+sleep notice (it mutes the built-in mic at the same millisecond the lid closes)
+and **will not start a new output stream**. `play()` blocks the main thread for
+the full 15 s timeout, so the handler was a 17 s sleep delay with the speakers
+unmuted at 100%, and no sound. It is no longer called from `handleWillSleep`;
+`SleepChimeTests.testWillSleepDoesNotTryToPlay` pins that.
+
+**The same wall hits dark wakes.** Each maintenance wake re-sends the clamshell
+notification with the lid still shut, and `AppleClamshellCausesSleep` reads `No`
+inside one, so `announceIfStayingUp` decided "stays up" and played three beats
+into a Mac that had no audio (three more 15 s timeouts). The lid watcher now
+answers only a real open→closed transition (`lidWasClosed`).
+
+**What would make the "asleep" tone real** — not done, Victor's call: the app
+has to own the lid-close sleep, the way the 🫀 flatline already does. Keep
+`SleepDisabled` up while the lid is open; on close, play the tone on an awake
+Mac, then drop the flag and `pmset sleepnow`. The cost is that a dead app then
+means a lid that does not sleep the Mac (hot bag), and that idle sleep with the
+lid open would have to be re-implemented here — so it needs a watchdog that
+clears the flag when the app is gone, and cannot be shipped unattended.
+
 ## The 20% floor
 
 With `SleepDisabled` set, the normal low-battery sleep never fires, so a

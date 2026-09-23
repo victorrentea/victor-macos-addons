@@ -2003,9 +2003,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             overlayInfo("System sleeping — SIGKILL whisper to avoid PortAudio wake crash")
             whisperManager?.killImmediate()
         }
-        // Last, because it parks this thread for a second and a half and the
-        // whisper kill above is the one thing here that is racing the sleep.
-        SleepChime.sound()
+        // No sleep chime here any more (2026-09-23, night). Measured on every
+        // sleep since 2026-09-22 — clamshell, software, maintenance: by the time
+        // this notification arrives coreaudiod has already stopped letting new
+        // output start, so the player's AudioQueue waited 15 s for IO that never
+        // came ("AQMEIO timed out after 15.000s"), held the Mac up 17 s with the
+        // speakers unmuted at 100%, and never made a sound. See docs/lid-awake.md.
     }
 
     @objc private func handleDidWake() {

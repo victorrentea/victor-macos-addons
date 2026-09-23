@@ -234,6 +234,9 @@ final class LidAwake {
     /// answered at once instead of on the next 10-second tick.
     private var lidNotifyPort: IONotificationPortRef?
     private var lidNotifier: io_object_t = 0
+    /// The lid as the last clamshell notification left it, so a notification
+    /// that moved nothing is not answered as a lid close. Touched only on `queue`.
+    private var lidWasClosed = false
     /// When the last flatline finished — `SleepChime` stays quiet right after
     /// one, because the flatline already ends in the long tone it would play.
     private(set) static var lastFarewellAt: Date?
@@ -468,15 +471,22 @@ final class LidAwake {
         guard root != 0, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
         defer { IOObjectRelease(root) }
         IONotificationPortSetDispatchQueue(port, queue)
+        queue.async { [weak self] in self?.lidWasClosed = Self.isLidClosed() }
         let me = Unmanaged.passUnretained(self).toOpaque()
         let kr = IOServiceAddInterestNotification(port, root, kIOGeneralInterest, { refcon, _, type, _ in
             // kIOPMMessageClamshellStateChange — a C macro Swift does not import.
             guard type == 0xE003_4100, let refcon else { return }
             let lid = Unmanaged<LidAwake>.fromOpaque(refcon).takeUnretainedValue()
             let closed = LidAwake.isLidClosed()
-            overlayInfo("LidAwake: lid \(closed ? "closed" : "opened")")
+            // Every dark wake re-sends the notification with the lid still shut
+            // (measured 2026-09-23: 22:38, 22:50, 22:58, the Mac asleep in a bag
+            // at 3%). Answering those played three beats into a Mac with no audio,
+            // each stuck 15 s — and read as "it stays up", which it did not.
+            let moved = closed != lid.lidWasClosed
+            lid.lidWasClosed = closed
+            overlayInfo("LidAwake: lid \(closed ? "closed" : "opened")\(moved ? "" : " (again — a wake, not the lid)")")
             if LidAwakeSettings.isEnabled { lid.tick() }
-            if closed { lid.announceIfStayingUp() }
+            if closed && moved { lid.announceIfStayingUp() }
         }, me, &lidNotifier)
         guard kr == KERN_SUCCESS else {
             IONotificationPortDestroy(port)
@@ -494,7 +504,8 @@ final class LidAwake {
     /// are the same everywhere:
     ///
     /// - the Mac stays up → the three quick lub-dubs, here;
-    /// - the Mac sleeps → `SleepChime`'s long tone, on `willSleepNotification`.
+    /// - the Mac sleeps → *nothing yet*: `SleepChime` on `willSleepNotification`
+    ///   was measured dead on 2026-09-23 (docs/lid-awake.md, "The door never opened").
     ///
     /// Runs after the tick, so a lid close the pulse already answered (on
     /// battery, a Claude working: `.beat` plays the same three beats) is not

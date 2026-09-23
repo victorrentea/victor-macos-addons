@@ -75,13 +75,21 @@ final class SleepChimeTests: XCTestCase {
                           encoding: .utf8)
     }
 
-    func testWillSleepActuallySoundsIt() throws {
-        // The whole feature is one call site. Drop it and everything still
-        // compiles, every test above still passes, and the lid closes in
-        // silence again.
+    func testWillSleepDoesNotTryToPlay() throws {
+        // Measured 2026-09-23 on every sleep since the chime shipped: once
+        // willSleep is delivered, coreaudiod no longer starts new output. The
+        // call looked like a feature and was a 17 s sleep delay with the
+        // speakers unmuted at 100% and no sound. Putting it back needs the Mac
+        // held awake first (SleepDisabled), not this notification.
         let src = try source("AppDelegate.swift")
-        XCTAssertTrue(src.contains("SleepChime.sound()"),
-                      "handleWillSleep must call SleepChime.sound()")
+        guard let start = src.range(of: "@objc private func handleWillSleep()"),
+              let end = src.range(of: "@objc private func handleDidWake()") else {
+            return XCTFail("handleWillSleep / handleDidWake not found")
+        }
+        let body = src[start.upperBound..<end.lowerBound]
+        XCTAssertFalse(body.replacingOccurrences(of: "//.*", with: "", options: .regularExpression)
+                           .contains("SleepChime.sound()"),
+                       "willSleep cannot make a sound — the audio device is already refusing to start")
     }
 
     func testTheChimeBlocksRatherThanSchedulingItself() throws {
