@@ -34,6 +34,9 @@ final class ChromeBridge {
     /// the extension was reloaded by hand. Now an unannounced feature simply
     /// falls back to the old path.
     private var features: [UUID: Set<String>] = [:]
+    /// How many tabs each client last said are making sound (`audible`). A
+    /// client that never reported is absent — "unknown", not "silent".
+    private var audibleTabs: [UUID: Int] = [:]
     private var keepAliveTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.chrome-bridge", qos: .userInitiated)
     /// Current window state, mirrored to every client. Queue only.
@@ -238,6 +241,7 @@ final class ChromeBridge {
             case .failed, .cancelled:
                 self.connections.removeValue(forKey: id)
                 self.features.removeValue(forKey: id)
+                self.audibleTabs.removeValue(forKey: id)
             default:
                 break
             }
@@ -260,6 +264,12 @@ final class ChromeBridge {
                         self.features[id] = advertised
                         overlayInfo("🧩 Chrome extension speaks: \(advertised.sorted().joined(separator: ", "))")
                     }
+                case "audible":
+                    let tabs = msg["tabs"] as? Int ?? 0
+                    self.queue.async {
+                        guard self.connections[id] != nil else { return }
+                        self.audibleTabs[id] = tabs
+                    }
                 case "log":
                     // A service worker's console is only readable by opening
                     // DevTools on it, by hand, in Chrome — which is exactly the
@@ -279,6 +289,13 @@ final class ChromeBridge {
             }
             self.drain(conn, id: id)
         }
+    }
+
+    /// Is any Chrome tab making sound? `nil` when no connected extension has
+    /// reported — an old worker, or Chrome not running — so the caller keeps
+    /// treating Chrome's open output stream as music. Safe from any thread.
+    func anyTabAudible() -> Bool? {
+        queue.sync { audibleTabs.isEmpty ? nil : audibleTabs.values.contains { $0 > 0 } }
     }
 
     private func startKeepAlive() {

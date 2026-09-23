@@ -1457,6 +1457,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.coreAudioManager = audioManager
         let bridge = ChromeBridge()
         self.chromeBridge = bridge
+        SystemAudioActivity.chromeTabAudible = { [weak bridge] in bridge?.anyTabAudible() }
         bridge.start()
         audioManager.onDictationActiveChanged = { [weak bridge] active in
             bridge?.setActive(active)

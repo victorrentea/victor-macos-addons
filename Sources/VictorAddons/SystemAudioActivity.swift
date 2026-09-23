@@ -41,6 +41,10 @@ import Foundation
 /// `IsRunningOutput` instead of `IsRunningInput`.
 enum SystemAudioActivity {
 
+    /// Whether any Chrome tab is audible, as the Chrome extension reports it;
+    /// `nil` when unknown. Wired by `AppDelegate` to `ChromeBridge`.
+    static var chromeTabAudible: () -> Bool? = { nil }
+
     /// The bundle id of some other process currently running an output stream
     /// (or `pid N` for one that has no bundle), or `nil` when the Mac is quiet.
     ///
@@ -59,6 +63,7 @@ enum SystemAudioActivity {
             // something a human can act on.
             let path = bundle.isEmpty ? processPID(object).flatMap(ClaudeActivity.executablePath(of:)) : nil
             guard !isAlwaysOpenPlumbing(bundleID: bundle, executablePath: path) else { continue }
+            guard !isSilentChrome(bundleID: bundle, anyTabAudible: chromeTabAudible()) else { continue }
             if !bundle.isEmpty { return bundle }
             if let path, let pid = processPID(object) {
                 return "pid \(pid) (\((path as NSString).lastPathComponent))"
@@ -76,6 +81,20 @@ enum SystemAudioActivity {
         if !bundleID.isEmpty { return alwaysOpenPrefixes.contains(where: bundleID.hasPrefix) }
         guard let executablePath else { return false }
         return alwaysOpenBinaries.contains { executablePath.contains($0) }
+    }
+
+    /// Is this Chrome holding its output stream open with no tab making sound?
+    ///
+    /// **Chrome joined the offenders on 2026-09-23**, and is the one that cannot
+    /// go on the plumbing list: Victor shut the lid with a Claude working and
+    /// the pulse was barely there — `com.google.Chrome.helper` reported
+    /// `IsRunningOutput = 1` at an RMS of 0, so the boost was refused and the
+    /// beat went out at a slider of 13. Unlike Wispr or Krisp, Chrome *is*
+    /// where the music plays (⌘⌃F's mix), so it is skipped only when its own
+    /// extension says no tab is `audible`. Unknown (`nil`, no extension on the
+    /// socket) keeps the old, cautious answer: it counts as playing.
+    static func isSilentChrome(bundleID: String, anyTabAudible: Bool?) -> Bool {
+        bundleID.hasPrefix("com.google.Chrome") && anyTabAudible == false
     }
 
     /// Audio plumbing that holds an output stream open whether or not anything

@@ -17,6 +17,7 @@
 import { onDictation } from './dictation-pause.js';
 import { publishFeedbackForm } from './feedback-form.js';
 import { focusOrOpen } from './focus-tab.js';
+import { watchAudible } from './audible-report.js';
 
 const PORT = 8766;
 const RECONNECT_MIN_MS = 1000;
@@ -37,6 +38,10 @@ const ALARM_SLOW_MIN = 5;
 const FAILURES_BEFORE_SLOW = 4;
 
 let socket = null;
+
+const reportAudible = watchAudible((msg) => {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+});
 let reconnectDelay = RECONNECT_MIN_MS;
 /// The one pending fast retry, or null. **One**, because the bug this replaces
 /// was every drop starting a retry ladder of its own: the alarm woke a worker,
@@ -145,7 +150,8 @@ function connect() {
     // to hand it work that then vanished. The app now waits for a feature to be
     // named before routing anything through it, and falls back to its own path
     // otherwise. Add the name here in the same commit that adds the handler.
-    ws.send(JSON.stringify({ type: 'hello', features: ['dictation', 'publish-feedback-form', 'focus-or-open', 'reload'] }));
+    ws.send(JSON.stringify({ type: 'hello', features: ['dictation', 'publish-feedback-form', 'focus-or-open', 'reload', 'audible'] }));
+    reportAudible();
     noteConnectResult(true);
     log('[addons] connected to Victor Addons');
   };

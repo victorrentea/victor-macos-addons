@@ -71,6 +71,17 @@ final class LidAwakeAudioWiringTests: XCTestCase {
             bundleID: "com.apple.Music", executablePath: String?.none))
     }
 
+    func testChromeCountsOnlyWhenItsExtensionSaysATabIsAudible() {
+        // 2026-09-23: Chrome's helper held its stream open at RMS 0 and vetoed
+        // the boost. It is also where the music plays, so only its own answer
+        // clears it — and no answer (no extension) keeps it counted.
+        let chrome = "com.google.Chrome.helper"
+        XCTAssertTrue(SystemAudioActivity.isSilentChrome(bundleID: chrome, anyTabAudible: false))
+        XCTAssertFalse(SystemAudioActivity.isSilentChrome(bundleID: chrome, anyTabAudible: true))
+        XCTAssertFalse(SystemAudioActivity.isSilentChrome(bundleID: chrome, anyTabAudible: nil))
+        XCTAssertFalse(SystemAudioActivity.isSilentChrome(bundleID: "com.apple.Music", anyTabAudible: false))
+    }
+
     func testABundlelessProcessIsJudgedByItsBinary() {
         // Playwright's headless Chromium spawns an audio utility child with no
         // bundle id that holds a stream open at RMS 0 — measured beside Wispr
