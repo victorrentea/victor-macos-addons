@@ -54,7 +54,8 @@ import Foundation
 /// **⌘Z is `^_`** (`chat:undo`; also `undo` in zsh's emacs keymap).
 ///
 /// **⇧↩ is `^J` (line feed)**: Claude Code inserts a newline without submitting,
-/// same as ⌥↩. Stock Terminal sends a bare CR for ⇧↩, indistinguishable from ↩,
+/// and so is ⌥↩: with `useOptionAsMetaKey` off (see ⌥⌫), Terminal sends a bare
+/// CR for it too, so it submitted. Stock Terminal sends a bare CR for ⇧↩, indistinguishable from ↩,
 /// and — measured 2026-09-23 — a `$000D` entry in `keyMapBoundKeys` is ignored,
 /// the same dead end as `@`. One byte and no ESC, so it can never read as
 /// escape (which would abort a running turn).
@@ -105,7 +106,8 @@ enum TerminalPromptKeys {
                         hasCommand: Bool, hasControl: Bool, hasOption: Bool, hasShift: Bool,
                         frontmostBundleId: String?) -> Rewrite? {
         guard let bundleId = frontmostBundleId, scopeBundleIds.contains(bundleId) else { return nil }
-        if keyCode == VK_RETURN, hasShift, !hasCommand, !hasControl, !hasOption {
+        // ⇧↩ or ⌥↩ (one of them, not both) = newline without submit.
+        if keyCode == VK_RETURN, hasShift != hasOption, !hasCommand, !hasControl {
             return Rewrite(keyCode: VK_RETURN, characters: NEWLINE)
         }
         // ⌥⌫ = one word back. useOptionAsMetaKey is off (a meta ⌥ sends a bare

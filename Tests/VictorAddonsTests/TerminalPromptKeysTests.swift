@@ -101,4 +101,12 @@ final class TerminalPromptKeysTests: XCTestCase {
         XCTAssertNil(rewrite(VK_RETURN, cmd: false, opt: true, shift: true))
         XCTAssertNil(rewrite(VK_RETURN, cmd: false, shift: true, front: "com.microsoft.VSCode"))
     }
+
+    func testOptionReturnIsANewlineLikeShiftReturn() {
+        // useOptionAsMetaKey is off, so without this ⌥↩ reaches the pty as a bare CR = submit.
+        XCTAssertEqual(rewrite(VK_RETURN, cmd: false, opt: true)?.characters, "\n")
+        XCTAssertNil(rewrite(VK_RETURN, cmd: true, opt: true), "⌘⌥↩ is not ours")
+        XCTAssertNil(rewrite(VK_RETURN, cmd: false, ctrl: true, opt: true))
+        XCTAssertNil(rewrite(VK_RETURN, cmd: false, opt: true, front: "com.microsoft.VSCode"))
+    }
 }
