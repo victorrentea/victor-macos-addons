@@ -72,7 +72,7 @@ enum MicRoster {
         // straight over Bluetooth (`tx`, `DJI Mic Mini-XXXXXX`) had its own row
         // for a day; it fought the JBL for the Bluetooth link and is never
         // paired directly again. An old `tx` in the choice file reads as `auto`.
-        Mic(id: "rx",    glyph: "🎤",  short: "DJI Rx", label: "DJI Wireless Mic Rx",
+        Mic(id: "rx",    glyph: "🎤",  short: "DJI", label: "DJI",
             pattern: "Wireless Mic"),
         Mic(id: "stage", glyph: "🏛️", short: "Stage",  label: "Stage Speakerphone",
             pattern: "Room Speakerphone"),

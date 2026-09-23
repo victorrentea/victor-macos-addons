@@ -6,7 +6,7 @@ import XCTest
 final class MicSourceAnnouncerTests: XCTestCase {
 
     func testTheCopyIsTheRosterGlyphAndLabel() {
-        XCTAssertEqual(MicSourceAnnouncer.cardText(glyph: "🎤"), "🎤 Listening to: DJI Wireless Mic Rx")
+        XCTAssertEqual(MicSourceAnnouncer.cardText(glyph: "🎤"), "🎤 Listening to: DJI")
         XCTAssertEqual(MicSourceAnnouncer.cardText(glyph: "💻"), "💻 Listening to: MacBook Pro Microphone")
     }
 

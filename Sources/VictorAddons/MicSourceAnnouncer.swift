@@ -1,7 +1,7 @@
 import Cocoa
 import CoreAudio
 
-/// **"🎤 Listening to: DJI Wireless Mic Rx"** on the standard bottom-left status
+/// **"🎤 Listening to: DJI"** on the standard bottom-left status
 /// pill (`StatusBanner`) when the microphone **this app's Whisper records
 /// through** changes — plus the listener that runs `HeadphoneMicGuard`.
 ///
