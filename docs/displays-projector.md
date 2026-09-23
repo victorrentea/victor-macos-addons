@@ -56,11 +56,21 @@ changed from System Settings, which a hook never would. The cost is one preferen
 second, and it is not a workaround — `UAZoomCurrentMode()`, the private call the system uses
 itself, disassembles to exactly `UAPreferencesGetInteger` of this same key.
 
-**Lens geometry is manual.** `closeViewWindowSize` / `closeViewWindowPosition` hold it, but
-`universalaccessd` only re-reads them when System Settings → Accessibility → Zoom →
-Advanced → **Adjust Size and Location…** writes them; a plain `defaults write` (even followed
-by `killall universalaccessd`) did not take. So the lens is sized by hand, once — and it must
-be left **smaller than the screen**, or it stops being captured.
+**Lens geometry can be set programmatically (2026-09-23).** `closeViewWindowSize` /
+`closeViewWindowPosition` hold it, as `NSKeyedArchiver`-archived `NSValue`s (size, and the
+top-left point in global coordinates — the retina sat at `-1920,0` while mirrored to a
+projector). Writing them is not enough on its own: neither `killall` nor `kill -9
+universalaccessd` makes the lens re-read them. What does is **restarting the zoom engine**:
+`UAZoomSetEnabled(false)` then `UAZoomSetEnabled(true)` (private, `UniversalAccessCore`,
+~0.7 s apart), after which `UAZoomSetMode(1)` puts it back on PiP. Proven with three sizes in
+a row (960×540, 1500×844, then the final one), each showing up exactly in a `screencapture`.
+Two traps: `UAZoomSetEnabled` is the **"Use keyboard shortcuts to zoom"** switch
+(`closeViewHotkeysEnabled`), so a stray `false` leaves ⌥⌘8 and ⌥+scroll dead until it is set
+back; and ⌥⌘- does not leave zoom, ⌥⌘8 does. Why it mattered: switching to a 1920×1080
+projector left a lens sized for the retina's own 1725×1080-ish area, i.e. a strip of
+unmagnified screen on the right. Set to the screen minus 2 pt per side (1916×1076 at
+`-1918,2`). A lens exactly the screen's size is not captured by `screencapture` (see above),
+so verify geometry with a deliberately smaller size first.
 
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
