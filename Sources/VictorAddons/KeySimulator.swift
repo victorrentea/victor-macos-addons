@@ -20,7 +20,8 @@ enum KeySimulator {
     /// any code (ours or another app's) that consults modifier state was being
     /// told a lie by us. Ending on a flags-cleared modifier keyUp leaves the
     /// state at 0 (verified the same way).
-    private static func chord(_ keyCode: CGKeyCode, modifier: CGKeyCode, flag: CGEventFlags) {
+    private static func chord(_ keyCode: CGKeyCode, modifier: CGKeyCode, flag: CGEventFlags,
+                              keyFlags: CGEventFlags? = nil) {
         let source = CGEventSource(stateID: .hidSystemState)
         func post(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
             guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
@@ -29,8 +30,8 @@ enum KeySimulator {
             usleep(12_000)
         }
         post(modifier, down: true, flags: flag)
-        post(keyCode, down: true, flags: flag)
-        post(keyCode, down: false, flags: flag)
+        post(keyCode, down: true, flags: keyFlags ?? flag)
+        post(keyCode, down: false, flags: keyFlags ?? flag)
         post(modifier, down: false, flags: [])
     }
 
@@ -93,6 +94,14 @@ enum KeySimulator {
     static func ctrlV() { chord(0x09, modifier: VK_CONTROL, flag: .maskControl) }
     static func cmdC() { chord(0x08, modifier: VK_COMMAND, flag: .maskCommand) }
     static func cmdZ() { chord(0x06, modifier: VK_COMMAND, flag: .maskCommand) }
+
+    /// fn⌃F — macOS's Window ▸ Fill (Sequoia tiling). fn has no key of its own
+    /// to press here: it is only the `.maskSecondaryFn` flag on the F, which is
+    /// how the menu's key equivalent recognises it. ⌃ goes down and up as a real
+    /// key, for the latching reason above.
+    static func fillWindow() {
+        chord(0x03, modifier: VK_CONTROL, flag: .maskControl, keyFlags: [.maskControl, .maskSecondaryFn])
+    }
 
     /// Cmd+= — terminal "Bigger" (increase font size). Key 0x18 = kVK_ANSI_Equal.
     static func zoomBigger()  { chord(0x18, modifier: VK_COMMAND, flag: .maskCommand) }

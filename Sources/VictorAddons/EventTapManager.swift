@@ -127,6 +127,7 @@ class EventTapManager {
     private let VK_O: CGKeyCode = 0x1F
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
+    private let VK_F3: CGKeyCode = 0x63
     private let VK_F8: CGKeyCode = 0x64
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
@@ -568,6 +569,14 @@ private let VK_F: CGKeyCode = 0x03
         // a real keyDown rather than a media-key system event.
         if keyCode == VK_F8 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
+            return nil
+        }
+
+        // F3 → Window ▸ Fill on the focused window, by typing its own shortcut
+        // fn⌃F (suppress). Bare F3 for the same reason as F8: with standard
+        // function keys it is a real keyDown, not the Mission Control media key.
+        if keyCode == VK_F3 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
+            DispatchQueue.global().async { KeySimulator.fillWindow() }
             return nil
         }
 
