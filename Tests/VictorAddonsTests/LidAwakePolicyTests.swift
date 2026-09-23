@@ -57,7 +57,7 @@ final class LidAwakePolicyTests: XCTestCase {
         // sleep and the bag is told so.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
-                                  battery: 80, beating: true),
+                                  battery: 80, holding: true),
             .farewell)
     }
 
@@ -66,16 +66,26 @@ final class LidAwakePolicyTests: XCTestCase {
         // the next session to start work must re-arm without a click.
         XCTAssertNotEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
-                                  battery: 80, beating: true),
+                                  battery: 80, holding: true),
             .standDown)
     }
 
-    func testNoFarewellIfThePulseWasNotRunning() {
-        // Nothing was beating, so there is no ear mid-conversation to sign off
-        // to — this is the release that happens all day at the desk.
+    func testFarewellEvenIfThePulseNeverStarted() {
+        // 2026-09-23: lid shut as the last Claude finished, released before a
+        // single beat, Mac slept in silence. Holding a shut lid on battery is
+        // enough — this release is the one that sleeps the Mac.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
-                                  battery: 80, beating: false),
+                                  battery: 80, holding: true),
+            .farewell)
+    }
+
+    func testNoSecondFarewellOnceTheFlagIsDown() {
+        // The tick after the flatline finds nothing held: plain release, or
+        // the flatline would repeat every ten seconds until the Mac sleeps.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 80, holding: false),
             .release)
     }
 
@@ -84,7 +94,7 @@ final class LidAwakePolicyTests: XCTestCase {
         // five beats at the desk are noise, not a proof.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: false, onAC: false,
-                                  battery: 80, beating: true),
+                                  battery: 80, holding: true),
             .release)
     }
 
@@ -93,7 +103,7 @@ final class LidAwakePolicyTests: XCTestCase {
         // pulse was never announcing anything.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: true,
-                                  battery: 80, beating: true),
+                                  battery: 80, holding: true),
             .release)
     }
 
@@ -101,7 +111,7 @@ final class LidAwakePolicyTests: XCTestCase {
         // A deliberate click is not the sleep this sound is about.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: false, claudeWorking: false, lidClosed: true, onAC: false,
-                                  battery: 80, beating: true),
+                                  battery: 80, holding: true),
             .release)
     }
 
@@ -110,14 +120,14 @@ final class LidAwakePolicyTests: XCTestCase {
         // different: this was the floor, not the work finishing.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
-                                  battery: 9, beating: true),
+                                  battery: 9, holding: true),
             .standDown)
     }
 
     func testAWorkingClaudeStillBeats_NoFarewell() {
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: true, lidClosed: true, onAC: false,
-                                  battery: 80, beating: true),
+                                  battery: 80, holding: true),
             .beat)
     }
 
@@ -337,14 +347,14 @@ final class LidAwakePolicyTests: XCTestCase {
         // flatline. The log is where the two are told apart.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: true, lidClosed: true, onAC: false,
-                                  battery: 80, beating: true, offlineFor: 600),
+                                  battery: 80, holding: true, offlineFor: 600),
             .farewell)
     }
 
     func testAnOfflineReleaseAtTheDeskIsSilent() {
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: true, lidClosed: false, onAC: false,
-                                  battery: 80, beating: true, offlineFor: 600),
+                                  battery: 80, holding: true, offlineFor: 600),
             .release)
     }
 

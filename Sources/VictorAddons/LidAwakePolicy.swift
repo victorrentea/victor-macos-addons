@@ -44,9 +44,14 @@ enum LidAwakePolicy {
         /// Nothing is working. Clear the flag and let the Mac sleep, but keep
         /// watching: this is the ordinary end of a session, not a fault.
         case release
-        /// Nothing is working *and the pulse was audible* — lid shut, on
-        /// battery, someone listening through a bag. Sound the 🫀 Pulse
-        /// effect's flatline, then release exactly as above. The Mac is about
+        /// Nothing is working, we were holding the lid open, and the lid is
+        /// shut on battery — i.e. this release is about to `pmset sleepnow`.
+        /// Sound the 🫀 Pulse effect's flatline (ends in a long tone), then
+        /// release exactly as above. Since 2026-09-23 this no longer needs the
+        /// pulse to have been running: Victor shut the lid right as the last
+        /// Claude finished, the tick released before a single beat, and the
+        /// Mac went down in total silence — "I must hear a long beep before it
+        /// sleeps, so I know it is not stuck on heartbeat". The Mac is about
         /// to sleep and the pulse is the only thing that can say so: without
         /// this, the last thing the bag hears is a beat that is simply never
         /// followed by another, which is indistinguishable from the Mac having
@@ -60,10 +65,11 @@ enum LidAwakePolicy {
     ///   An unreadable battery is deliberately **not** a stand-down: the reader
     ///   failing is not evidence the charge is low, and taking the machine down
     ///   mid-flight on a missing number would be the worse of the two mistakes.
-    /// - Parameter beating: whether the audible pulse was running as of the
+    /// - Parameter holding: whether we were holding the lid open as of the
     ///   previous tick. It is the only reason `.farewell` and `.release` differ:
-    ///   the flatline is owed to an ear that was already being talked to, and
-    ///   defaulting it to `false` keeps every caller that does not care on the
+    ///   the flatline marks the one transition that ends in `pmset sleepnow`,
+    ///   and once the flag is down the next tick must not play it again.
+    ///   Defaulting it to `false` keeps every caller that does not care on the
     ///   plain release.
     /// - Parameter offlineFor: seconds since the internet was last proven
     ///   reachable (`InternetWatch`). **0 means online**, and so does "we do not
@@ -76,7 +82,7 @@ enum LidAwakePolicy {
         lidClosed: Bool,
         onAC: Bool,
         battery: Int?,
-        beating: Bool = false,
+        holding: Bool = false,
         offlineFor: TimeInterval = 0,
         floor: Int = batteryFloorPercent,
         offlineGrace: TimeInterval = offlineGrace
@@ -89,9 +95,9 @@ enum LidAwakePolicy {
         // going up, and cutting the flag there would sleep the Mac for nothing.
         if !onAC, let battery, battery < floor { return .standDown }
 
-        // The last Claude finished. If the pulse was audible right up to this
-        // tick, the release is announced before it happens; otherwise there is
-        // nobody to announce it to and the flag just comes off. Note this is
+        // The last Claude finished. If we were holding a shut lid on battery,
+        // this release sleeps the Mac, so it is announced before it happens;
+        // otherwise nothing is going down and the flag just comes off. Note this is
         // reached only while armed, so a deliberate disarm never sounds — the
         // flatline is for the sleep nobody asked for, not the one that was
         // clicked.
@@ -108,7 +114,7 @@ enum LidAwakePolicy {
         // build that survives a lid-close is not what this feature was built
         // for — a mid-flight `claude` loop is.
         let stalled = offlineFor >= offlineGrace
-        guard claudeWorking, !stalled else { return (beating && lidClosed && !onAC) ? .farewell : .release }
+        guard claudeWorking, !stalled else { return (holding && lidClosed && !onAC) ? .farewell : .release }
 
         return (lidClosed && !onAC) ? .beat : .hold
     }

@@ -55,7 +55,7 @@ final class SleepChimeTests: XCTestCase {
 
     // MARK: - The file has to be there, and it has to be short
 
-    func testTheDoorIsOnDisk() {
+    func testTheToneIsOnDisk() {
         XCTAssertNotNil(AddonSounds.shared.soundURL(for: SleepChime.file),
                         "\(SleepChime.file) must resolve — a chime whose file was renamed is the silence "
                         + "this feature exists to abolish")
@@ -67,7 +67,7 @@ final class SleepChimeTests: XCTestCase {
         // through.
         XCTAssertLessThanOrEqual(SleepChime.maxBlock, 3.5)
         if let duration = AddonSounds.shared.soundDuration(SleepChime.file) {
-            XCTAssertLessThan(duration, 2.5, "\(SleepChime.file) is longer than the chime budget")
+            XCTAssertLessThan(duration - SleepChime.toneStart, 2.5, "the tone is longer than the chime budget")
         }
     }
 

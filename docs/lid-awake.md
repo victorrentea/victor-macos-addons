@@ -619,11 +619,17 @@ the bag hears and the effect the room sees are the same recording.
   which is the one shape that reads as a crash. Same discipline as the floor's
   three beeps, which delay their disarm rather than race it. The system volume is
   restored only after, for the same reason.
-- **Only when the pulse was actually audible.** `wasBeating` — the previous tick
-  was a `.beat` — gates it, and the policy re-checks lid-shut and on-battery.
-  Lid open, on AC, or never beating: plain `.release`, silent. A flatline at the
-  desk every time a session finishes would make the feature unusable, which is
-  the same reason the ordinary pulse is silent there.
+- **Whenever this release is the one that sleeps the Mac** (since 2026-09-23).
+  It used to need `wasBeating` — the previous tick a `.beat`. Then Victor shut
+  the lid right as the last Claude finished: the tick released before a single
+  beat, `pmset sleepnow` ran, and the Mac went down in total silence — *"trebuie
+  să aud un beep prelungit înainte să intre în sleep, ca să știu că n-a rămas pe
+  heartbeat"*. The gate is now `holding` (we were keeping the lid open) plus lid
+  shut and on battery: exactly the case that ends in `pmset sleepnow`. Once the
+  flag is down the next tick sees `holding == false` and releases quietly, so it
+  plays once. Lid open or on AC: plain `.release`, silent. `farewell()` also
+  calls `boostForBeats(true)` itself now, since without a pulse nothing had
+  taken the output up.
 - **A deliberate disarm never plays it.** `decide` returns `.release` on
   `enabled: false` before it ever looks at `beating`. The sound is for the sleep
   nobody asked for, not the one that was clicked.

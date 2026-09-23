@@ -155,6 +155,9 @@ final class LidAwake {
     /// of the one that follows.
     private static let beatStart: TimeInterval = 0.50
     private static let beatLength: TimeInterval = 0.55
+    /// Lid shut and staying up: three quick lub-dubs, back to back.
+    static let arrivalBeats = 3
+    private static let arrivalBeatSpacing: TimeInterval = 0.6
 
     /// **The flatline**, played once when the work finishes and the flag is
     /// about to come off — `15_flatline.mp3`, the sound behind the 🫀 Pulse
@@ -227,6 +230,13 @@ final class LidAwake {
     var onAutoDisabled: ((Int) -> Void)?
 
     private var timer: DispatchSourceTimer?
+    /// IOKit interest notification on `IOPMrootDomain`, so a lid close is
+    /// answered at once instead of on the next 10-second tick.
+    private var lidNotifyPort: IONotificationPortRef?
+    private var lidNotifier: io_object_t = 0
+    /// When the last flatline finished — `SleepChime` stays quiet right after
+    /// one, because the flatline already ends in the long tone it would play.
+    private(set) static var lastFarewellAt: Date?
     private var cachedBeatPlayer: AVAudioPlayer?
     /// Kept alive only while the flatline is playing — see `lastBeats()`.
     private var farewellPlayer: AVAudioPlayer?
@@ -378,7 +388,7 @@ final class LidAwake {
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
-            beating: wasBeating,
+            holding: holding,
             offlineFor: offlineFor)
         return "{\"enabled\":\(LidAwakeSettings.isEnabled),"
             + "\"mode\":\"\(LidAwakeSettings.mode.rawValue)\","
@@ -427,11 +437,46 @@ final class LidAwake {
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
+        watchLid()
     }
 
     private func stopTimer() {
         timer?.cancel()
         timer = nil
+        unwatchLid()
+    }
+
+    /// **The lid is answered the moment it moves (2026-09-23).** Closing it
+    /// has to say *at once* which of the two outcomes this is — three quick
+    /// beats (awake) or the long tone (asleep) — and a 10-second tick meant up
+    /// to ten seconds of silence first, which is exactly the "did it sleep or
+    /// not?" Victor was left guessing at. `kIOPMMessageClamshellStateChange`
+    /// runs a tick right away; the timer stays as the steady beat.
+    private func watchLid() {
+        guard lidNotifyPort == nil else { return }
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        defer { IOObjectRelease(root) }
+        IONotificationPortSetDispatchQueue(port, queue)
+        let me = Unmanaged.passUnretained(self).toOpaque()
+        let kr = IOServiceAddInterestNotification(port, root, kIOGeneralInterest, { refcon, _, type, _ in
+            // kIOPMMessageClamshellStateChange — a C macro Swift does not import.
+            guard type == 0xE003_4100, let refcon else { return }
+            let lid = Unmanaged<LidAwake>.fromOpaque(refcon).takeUnretainedValue()
+            overlayInfo("LidAwake: lid \(LidAwake.isLidClosed() ? "closed" : "opened") — ticking now")
+            lid.tick()
+        }, me, &lidNotifier)
+        guard kr == KERN_SUCCESS else {
+            IONotificationPortDestroy(port)
+            overlayError("LidAwake: could not watch the lid (\(kr)) — the 10 s tick will notice it")
+            return
+        }
+        lidNotifyPort = port
+    }
+
+    private func unwatchLid() {
+        if lidNotifier != 0 { IOObjectRelease(lidNotifier); lidNotifier = 0 }
+        if let port = lidNotifyPort { IONotificationPortDestroy(port); lidNotifyPort = nil }
     }
 
     // MARK: - The tick
@@ -485,14 +530,17 @@ final class LidAwake {
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
-            beating: wasBeating,
+            holding: holding,
             offlineFor: offlineFor)
 
         switch action {
         case .beat:
             hold(true)
             boostForBeats(true)
-            heartbeat()
+            // The first beat of a run is three quick ones: the lid just came
+            // down (or work just started under a shut lid) and the answer to
+            // "is it staying up?" has to be unmistakable at once.
+            heartbeat(count: wasBeating ? 1 : Self.arrivalBeats)
             beatCount += 1
             lastBeatAt = Date()
             wasBeating = true
@@ -720,6 +768,14 @@ final class LidAwake {
     /// every ten seconds for hours on a battery, and decoding the same 42 KB
     /// file 360 times an hour to hear half a second of it is the kind of waste
     /// that shows up in the only number this feature is judged by.
+    private func heartbeat(count: Int) {
+        for i in 0..<count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * Self.arrivalBeatSpacing) { [weak self] in
+                self?.heartbeat()
+            }
+        }
+    }
+
     private func heartbeat() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -769,11 +825,16 @@ final class LidAwake {
         guard !farewellInFlight else { return }
         farewellInFlight = true
         overlayInfo("LidAwake: \(reason) — flatline, then the Mac may sleep")
+        // The pulse may never have started (lid shut as the last Claude
+        // finished), so the output was never taken up — do it here, or the
+        // flatline goes out at whatever the slider was left at.
+        boostForBeats(true)
         lastBeats()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.farewellLength + 0.2) { [weak self] in
             guard let self else { return }
             self.farewellPlayer = nil
+            LidAwake.lastFarewellAt = Date()
             self.queue.async {
                 self.farewellInFlight = false
                 // A session that woke up while the flatline was playing keeps

@@ -70,11 +70,20 @@ enum SleepChimePolicy {
 /// the machine is still awake to obey.
 enum SleepChime {
 
-    /// A heavy door closing. Picked against 🫀 `15_flatline.mp3` and 💓
-    /// `13_heartbeat.mp3` on **confusability**, not on taste: through a closed
-    /// bag the three signals have to be told apart by someone not looking, and
-    /// a door is neither a lub-dub nor a continuous tone.
-    static let file = "25_dark_door.mp3"
+    /// **The flatline's long tone, without its two QRS beats** (2026-09-23,
+    /// replacing the 🚪 door). Victor's rule: closing the lid has exactly two
+    /// sounds — three quick lub-dubs (staying up) or this tone (asleep). A
+    /// long beep is the sound of "it stopped", and it is the same tone the
+    /// full flatline ends in when a session finishes, so both ways to sleep
+    /// end on the same note.
+    static let file = "15_flatline.mp3"
+    /// Where the tone starts in the file: the QRS pair is before it
+    /// (RMS measured: silence at 3.28–3.33 s, the tone at −13.8 dB from 3.34 s).
+    static let toneStart: TimeInterval = 3.30
+
+    /// A flatline that finished this recently already ended in this tone;
+    /// playing it again on the way down would be the same beep twice.
+    static let afterFarewellQuiet: TimeInterval = 15
 
     /// Where the output goes for the bag case — the same 100% the heartbeat
     /// uses, and for the same reason: nobody is going to reach into a bag and
@@ -89,6 +98,10 @@ enum SleepChime {
     /// Sound it. Call from `NSWorkspace.willSleepNotification`, on the main
     /// thread, and let it block.
     static func sound() {
+        if let last = LidAwake.lastFarewellAt, Date().timeIntervalSince(last) < afterFarewellQuiet {
+            overlayInfo("SleepChime: the flatline just ended in the tone — not repeating it")
+            return
+        }
         guard let url = AddonSounds.shared.soundURL(for: file) else {
             overlayError("SleepChime: \(file) not found — the Mac sleeps without a word")
             return
@@ -135,11 +148,12 @@ enum SleepChime {
         do {
             let player = try AVAudioPlayer(contentsOf: url)
             player.volume = 1.0
+            player.currentTime = toneStart
             player.prepareToPlay()
             player.play(atTime: player.deviceCurrentTime + warmUp)
             // Playback runs on CoreAudio's own thread, so parking this one is
             // what keeps the machine awake long enough to hear it.
-            Thread.sleep(forTimeInterval: min(warmUp + player.duration + 0.15, maxBlock))
+            Thread.sleep(forTimeInterval: min(warmUp + player.duration - toneStart + 0.15, maxBlock))
         } catch {
             overlayError("SleepChime: \(file) failed to play — \(error)")
         }
