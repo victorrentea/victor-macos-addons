@@ -778,7 +778,12 @@ inside one, so `announceIfStayingUp` decided "stays up" and played three beats
 into a Mac that had no audio (three more 15 s timeouts). The lid watcher now
 answers only a real open→closed transition (`lidWasClosed`).
 
-**What would make the "asleep" tone real** — not done, Victor's call: the app
+**Decided 2026-09-23: no sound on an ordinary sleep — case closed.** Offered
+the design below, Victor declined it ("fără beep la somn normal"). A lid close
+that sleeps the Mac stays silent; the three beats (stays up) and the 🫀 flatline
+(a hold ending) are the only lid sounds. Do not bring the chime back.
+
+The rejected design, kept so nobody re-derives it: the app
 has to own the lid-close sleep, the way the 🫀 flatline already does. Keep
 `SleepDisabled` up while the lid is open; on close, play the tone on an awake
 Mac, then drop the flag and `pmset sleepnow`. The cost is that a dead app then
