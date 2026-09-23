@@ -1,19 +1,58 @@
 import CoreGraphics
 import Foundation
 
-/// When the cursor is held on its screen. Pure, so the rule can be tested without a
-/// magnifier, a tap or a second monitor.
+/// The sides of a display that touch another one: the only ways out for the cursor.
+struct FenceEdges: OptionSet, Equatable {
+    let rawValue: Int
+    static let left   = FenceEdges(rawValue: 1 << 0)
+    static let right  = FenceEdges(rawValue: 1 << 1)
+    static let top    = FenceEdges(rawValue: 1 << 2)
+    static let bottom = FenceEdges(rawValue: 1 << 3)
+}
+
+/// When the cursor is held on its screen, and how it moves while held. Pure, so the
+/// rules can be tested without a magnifier, a tap or a second monitor.
 enum ZoomLensCursorFencePolicy {
 
+    /// Width of the strip along an exit edge where the mouse is decoupled.
+    static let band: CGFloat = 80
+    /// Re-couple only this far past the band's inner line, so a hand resting on the
+    /// line does not flap between the two modes.
+    static let hysteresis: CGFloat = 6
+    /// Decoupled, macOS reports the mouse's **raw** motion, before its acceleration
+    /// curve. Measured on 2026-09-23 with Victor's Logitech: 16.9 raw units per event
+    /// against 4.0 points per event coupled, i.e. ×4.2. Dividing by 4.2 felt slow
+    /// (the curve adds speed to fast strokes that a constant cannot), dividing by 1
+    /// was unusable; 3.3 is the compromise, and it only applies inside the band.
+    static let rawScale: Double = 1 / 3.3
+
     /// Fenced only while a picture-in-picture lens is **actually magnifying**.
-    ///
-    /// The zoom factor is part of the gate on purpose: scrolling ⌥+wheel back down to
-    /// 1× is the way out. With no key of its own to learn, "zoom out, then go to the
-    /// other screen" is the gesture Victor already makes. Full screen and split screen
-    /// never fence: the flicker this exists for is the PiP lens being dragged off the
-    /// shared screen, and the other styles do not jump like that.
+    /// ⌥+scroll back down to 1× is the way out.
     static func shouldFence(mode: ZoomLensMode?, zoomedIn: Bool, factor: Double) -> Bool {
         mode == .pictureInPicture && zoomedIn && factor > 1.001
+    }
+
+    /// Which sides of `rect` another display touches (sharing a side, with some overlap
+    /// along it). Mirror slaves sit on `rect` itself and touch nothing.
+    static func exitEdges(of rect: CGRect, others: [CGRect]) -> FenceEdges {
+        var e: FenceEdges = []
+        for o in others where o != rect {
+            let vOverlap = o.minY < rect.maxY && o.maxY > rect.minY
+            let hOverlap = o.minX < rect.maxX && o.maxX > rect.minX
+            if vOverlap && o.minX == rect.maxX { e.insert(.right) }
+            if vOverlap && o.maxX == rect.minX { e.insert(.left) }
+            if hOverlap && o.minY == rect.maxY { e.insert(.bottom) }
+            if hOverlap && o.maxY == rect.minY { e.insert(.top) }
+        }
+        return e
+    }
+
+    /// Is `p` within `inset` of one of the exit edges (or already past it)?
+    static func inBand(_ p: CGPoint, rect: CGRect, edges: FenceEdges, inset: CGFloat = band) -> Bool {
+        (edges.contains(.right)  && p.x >= rect.maxX - inset) ||
+        (edges.contains(.left)   && p.x <  rect.minX + inset) ||
+        (edges.contains(.bottom) && p.y >= rect.maxY - inset) ||
+        (edges.contains(.top)    && p.y <  rect.minY + inset)
     }
 
     /// The point pulled back inside `rect`. The far edges are exclusive (`maxX - 1`),
@@ -22,35 +61,44 @@ enum ZoomLensCursorFencePolicy {
         CGPoint(x: min(max(p.x, rect.minX), rect.maxX - 1),
                 y: min(max(p.y, rect.minY), rect.maxY - 1))
     }
+
+    /// One decoupled step: raw delta scaled to points, clamped to the screen.
+    static func step(from p: CGPoint, rawDX: Double, rawDY: Double, in rect: CGRect) -> CGPoint {
+        clamp(CGPoint(x: p.x + rawDX * rawScale, y: p.y + rawDY * rawScale), to: rect)
+    }
 }
 
 /// 🔍 Holds the cursor on the screen being magnified while a PiP lens is zoomed in.
 ///
 /// **The problem (2026-09-23).** With the magnifier in picture-in-picture style (the
 /// only style a Zoom share carries, see `ZoomLensMode`), moving the pointer off the
-/// retina onto the ASUS drops the magnification abruptly and brings it back when
-/// the pointer returns: a nervous flicker on the screen the room and the call
-/// are both watching. macOS has no setting that keeps the lens where it is. Tried the
-/// same day: `closeViewZoomDisplayID` is a full-screen-style chooser, and nothing in
-/// `UniversalAccessCore`'s exports pins a PiP lens. So instead of keeping the lens
-/// when the cursor leaves, the cursor is simply not allowed to leave.
+/// retina onto the ASUS drops the magnification abruptly: a nervous flicker on the
+/// screen the room and the call are both watching. macOS has no setting that keeps
+/// the lens: `closeViewZoomDisplayID` is the full-screen style's chooser, and nothing
+/// in `UniversalAccessCore` pins a PiP lens.
 ///
-/// **How: an HID-level tap that rewrites the location of every move and drag.**
-/// Measured with a prototype before this was written: 98 moves aimed at the ASUS
-/// were clamped and the cursor stopped at `x = -1`, the retina's right edge. Warping
-/// the cursor back *after* it crosses (`CGWarpMouseCursorPosition`) is the obvious
-/// alternative and exactly wrong here: by then the pointer has already been on the
-/// other display for a frame, which is the flicker itself.
+/// **What did not work, all tested live with Victor's hand on the mouse:**
+/// - Rewriting `event.location` in an HID tap. It changes what *apps* are told, not
+///   where WindowServer draws the cursor: a prototype driven by synthetic moves
+///   stopped at the edge, the physical mouse sailed through. (The logger that
+///   "confirmed" it read the location from events too, so it was fooled the same way.)
+/// - That, plus `CGWarpMouseCursorPosition` back: the crossing has already happened.
+/// - `SLSSetCursorRegionLock` and `SLSSetZoomForceLockCursorInDisplay` (SkyLight,
+///   private): both return success and hold nothing for a background process.
 ///
-/// **The tap exists all the time but is enabled only while fenced**, so outside a
-/// zoom not a single mouse move takes a detour through this process. The gate is
-/// three `com.apple.universalaccess` keys read every 0.25 s: the magnifier offers no
-/// notification, and a key tap cannot see its gestures (see `ZoomLensWatch`).
+/// **What works: decoupling the mouse from the cursor**
+/// (`CGAssociateMouseAndMouseCursorPosition(false)`) and moving the cursor ourselves,
+/// clamped. Victor confirmed the cursor could no longer leave the retina. The price:
+/// decoupled, the deltas are **raw** — ×4.2 the points macOS would have moved, with no
+/// acceleration curve — so moving that way everywhere felt far too fast, and scaled by
+/// a constant it felt slow. Hence the **band**: the mouse stays coupled (native feel)
+/// except within 80 pt of an edge that leads to another display, where it is decoupled
+/// and driven by `rawScale`. Leaving the band inward couples it again.
 ///
-/// **Which screen**: whichever one holds the cursor at the moment the fence goes up,
-/// taken from the mirror *master*. A mirrored projector sits on the same rectangle as
-/// the retina, so the answer is the same either way, but the master is the one that
-/// is reliably reported. Normally that is the retina, where the lens lives.
+/// **The tap is enabled only while fenced**, and the gate is three
+/// `com.apple.universalaccess` keys read every 0.1 s — the magnifier offers no
+/// notification, and a key tap cannot see its gestures (see `ZoomLensWatch`). When the
+/// gate drops (zoom out, style change) the mouse is always coupled back first.
 final class ZoomLensCursorFence {
 
     private static let domain = "com.apple.universalaccess" as CFString
@@ -60,14 +108,16 @@ final class ZoomLensCursorFence {
     private var timer: DispatchSourceTimer?
     private var tapPort: CFMachPort?
 
-    /// Written on `queue`, read on the tap thread for every move: hence the lock.
+    /// Shared between `queue` (gate) and the tap thread (every move): hence the lock.
     private let lock = NSLock()
-    private var fenceRect: CGRect?
+    private var fence: (rect: CGRect, edges: FenceEdges)?
+    private var decoupled = false
+    private var pos = CGPoint.zero
 
     func start() {
         guard createTap() else { return }
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now() + 1, repeating: 0.25)
+        t.schedule(deadline: .now() + 1, repeating: 0.1)
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
@@ -103,14 +153,36 @@ final class ZoomLensCursorFence {
     }
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        lock.lock(); defer { lock.unlock() }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            lock.lock(); let fenced = fenceRect != nil; lock.unlock()
-            if fenced, let port = tapPort { CGEvent.tapEnable(tap: port, enable: true) }
+            if fence != nil, let port = tapPort { CGEvent.tapEnable(tap: port, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        lock.lock(); let rect = fenceRect; lock.unlock()
-        if let rect, !rect.contains(event.location) {
-            event.location = ZoomLensCursorFencePolicy.clamp(event.location, to: rect)
+        guard let (rect, edges) = fence else { return Unmanaged.passUnretained(event) }
+        typealias P = ZoomLensCursorFencePolicy
+
+        if !decoupled {
+            let p = event.location
+            guard P.inBand(p, rect: rect, edges: edges) || !rect.contains(p) else {
+                return Unmanaged.passUnretained(event)
+            }
+            pos = P.clamp(p, to: rect)
+            CGWarpMouseCursorPosition(pos)
+            CGAssociateMouseAndMouseCursorPosition(0)
+            decoupled = true
+            event.location = pos
+            return Unmanaged.passUnretained(event)
+        }
+
+        pos = P.step(from: pos,
+                     rawDX: event.getDoubleValueField(.mouseEventDeltaX),
+                     rawDY: event.getDoubleValueField(.mouseEventDeltaY),
+                     in: rect)
+        CGWarpMouseCursorPosition(pos)
+        event.location = pos
+        if !P.inBand(pos, rect: rect, edges: edges, inset: P.band + P.hysteresis) {
+            CGAssociateMouseAndMouseCursorPosition(1)
+            decoupled = false
         }
         return Unmanaged.passUnretained(event)
     }
@@ -123,32 +195,38 @@ final class ZoomLensCursorFence {
         let factor = (CFPreferencesCopyAppValue("closeViewZoomFactor" as CFString, Self.domain) as? Double) ?? 1
         let want = ZoomLensCursorFencePolicy.shouldFence(mode: mode, zoomedIn: zoomedIn, factor: factor)
 
-        lock.lock(); let fenced = fenceRect != nil; lock.unlock()
+        lock.lock(); let fenced = fence != nil; lock.unlock()
         guard want != fenced, let port = tapPort else { return }
 
         if want {
-            guard let rect = Self.screenUnderCursor() else { return }
-            lock.lock(); fenceRect = rect; lock.unlock()
+            guard let f = Self.fenceUnderCursor() else { return }
+            lock.lock(); fence = f; decoupled = false; lock.unlock()
             CGEvent.tapEnable(tap: port, enable: true)
-            overlayInfo("🔍 PiP zoomed in — cursor fenced to \(rect)")
+            overlayInfo("🔍 PiP zoomed in — cursor fenced to \(f.rect), exits \(f.edges.rawValue)")
         } else {
             CGEvent.tapEnable(tap: port, enable: false)
-            lock.lock(); fenceRect = nil; lock.unlock()
+            lock.lock(); fence = nil; decoupled = false; lock.unlock()
+            CGAssociateMouseAndMouseCursorPosition(1)
             overlayInfo("🔍 cursor fence released")
         }
     }
 
-    /// Bounds of the display the cursor is on, preferring a mirror master over its
-    /// slaves (they share the rectangle; the master is the one Quartz names).
-    private static func screenUnderCursor() -> CGRect? {
+    /// The display the cursor is on (its mirror master) and the sides of it that lead
+    /// to another display. `nil` when there is no way out — nothing to fence.
+    private static func fenceUnderCursor() -> (rect: CGRect, edges: FenceEdges)? {
         guard let p = CGEvent(source: nil)?.location else { return nil }
-        var ids = [CGDirectDisplayID](repeating: 0, count: 8)
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
         var n: UInt32 = 0
-        guard CGGetDisplaysWithPoint(p, 8, &ids, &n) == .success, n > 0 else { return nil }
-        let hits = ids.prefix(Int(n))
-        let id = hits.first { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay } ?? hits.first!
-        return CGDisplayBounds(id)
+        guard CGGetActiveDisplayList(16, &ids, &n) == .success else { return nil }
+        let masters = ids.prefix(Int(n)).filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
+        let rects = masters.map { CGDisplayBounds($0) }
+        guard let rect = rects.first(where: { $0.contains(p) }) else { return nil }
+        let edges = ZoomLensCursorFencePolicy.exitEdges(of: rect, others: rects)
+        return edges.isEmpty ? nil : (rect, edges)
     }
 
-    deinit { timer?.cancel() }
+    deinit {
+        timer?.cancel()
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
 }

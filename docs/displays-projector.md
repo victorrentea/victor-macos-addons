@@ -73,18 +73,28 @@ unmagnified screen on the right. Set to the screen minus 2 pt per side (1916×10
 so verify geometry with a deliberately smaller size first.
 
 **Cursor fence while a PiP lens is zoomed in (`ZoomLensCursorFence`, 2026-09-23).** With the
-lens magnifying, moving the pointer onto the ASUS dropped the magnification and brought it
-back on return: a flicker on the shared screen. There is no setting that keeps the lens:
-`closeViewZoomDisplayID` is the full-screen style's display chooser, and nothing in
-`UniversalAccessCore` pins a PiP lens. So the cursor is kept on the screen it was on when the
-fence went up: an **HID-level** tap (`.cghidEventTap`) rewrites the location of every move
-and drag. Warping back after the crossing would be too late, because the frame on the other
-display *is* the flicker. The tap is enabled only while `closeViewZoomMode = 1`,
-`closeViewZoomedIn = 1` and `closeViewZoomFactor > 1` (polled every 0.25 s). **The way out is
-⌥+scroll back to 1×.** Proven by a prototype (98 moves toward the ASUS clamped, cursor
-stopped at `x = -1`). The in-app version could **not** be verified with synthetic input:
-while the magnifier is zoomed in, posted `mouseMoved` events do not move the cursor at all,
-with or without this app running. So the end-to-end check needs a physical mouse.
+lens magnifying, moving the pointer onto the ASUS drops the magnification: a flicker on the
+shared screen. No setting keeps the lens (`closeViewZoomDisplayID` is the full-screen style's
+chooser; nothing in `UniversalAccessCore` pins a PiP lens), so the cursor is kept on its screen.
+Tested live with Victor's hand on the mouse, in this order:
+
+| attempt | result |
+|---|---|
+| rewrite `event.location` in an HID tap | **fooled only the apps**: WindowServer draws the physical cursor from HID deltas before any tap; synthetic moves stopped at the edge, the real mouse sailed through (and a logger reading event locations "confirmed" it — same blind spot) |
+| + `CGWarpMouseCursorPosition` back | too late, the crossing already happened |
+| `SLSSetCursorRegionLock`, `SLSSetZoomForceLockCursorInDisplay` (SkyLight, private) | return 0, hold nothing for a background process |
+| `CGAssociateMouseAndMouseCursorPosition(false)` + move the cursor ourselves, clamped | **holds** — but decoupled deltas are **raw**: 16.9 units/event vs 4.0 pt/event coupled (×4.2), no acceleration curve. Unscaled = far too fast; ÷4.2 = felt slow |
+
+Shipped: **decouple only in an 80 pt band along the edges that lead to another display**
+(`exitEdges`, computed from the active mirror masters), raw deltas ×1/3.3 inside it,
+coupled again 6 pt past the band's inner line. Everywhere else the mouse is native. Gate:
+`closeViewZoomMode = 1`, `closeViewZoomedIn = 1`, `closeViewZoomFactor > 1`, polled every
+0.1 s; **⌥+scroll back to 1× releases it** and always re-couples. No adjacent display → no
+fence. Synthetic input cannot test any of this: while the magnifier is zoomed, posted
+`mouseMoved` events do not move the cursor at all.
+
+**The lens geometry is lost on display changes**: after unplugging the projector it came
+back as a 90×90 square; refit with the prefs-write + engine-restart recipe above.
 
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
