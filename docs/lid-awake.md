@@ -697,11 +697,12 @@ this handler returns", i.e. onto a sleeping Mac. `SleepChime.maxBlock` (3 s)
 caps it so a swapped file can never turn closing the lid into a wait, and
 `SleepChimeTests` asserts the file is shorter than the budget.
 
-**The volume follows `boostForBeats`'s rules exactly**, because it is the same
-problem: a chime nobody can hear is not a signal. Lid shut **and** on battery
-**and** nothing else playing → lift the mute, take the output to 100%. Lid open
-or on AC → play at whatever level Victor chose, because he is looking at the
-screen and the screen already told him. Something else playing → chime at that
+**The volume follows `boostForBeats`'s rules**, because it is the same
+problem: a chime nobody can hear is not a signal. Lid shut **and** nothing else
+playing → lift the mute, take the output to 100% — **on AC too since
+2026-09-23** (it used to be battery only, and a muted Mac on its charger slept
+in total silence). Lid open → play at whatever level Victor chose, because he is
+looking at the screen and the screen already told him. Something else playing → chime at that
 level and log which app refused the boost; unmuting a Mac with an open stream
 is how a playlist ends up at full blast in a bag.
 
@@ -719,6 +720,36 @@ order: the session ended, and now the Mac is asleep.
 
 **No counterpart on wake** (asked and declined, 2026-09-22): opening the lid
 puts a screen in front of him, which is a better answer than a sound.
+
+## A lid close is never silent, plugged in or not (2026-09-23, evening)
+
+*"The beep at sleep should happen whether I'm on power or on battery … the
+hardware beep if it keeps open, or the long beep if it goes to sleep."* The
+morning's rule (three quick lub-dubs = awake, the long tone = asleep) only held
+on battery, because everything here was gated on `!onAC`. Three holes, closed:
+
+| lid comes down… | before | now |
+|---|---|---|
+| on AC, Mac sleeps (no external display) | tone at the slider's level — muted = silence | tone, unmuted at 100% (`SleepChimePolicy` no longer takes `onAC`) |
+| on AC, Mac stays up (a Claude working, or clamshell with an external display, or 😴 `off` + `SleepDisabled`) | silence | three quick lub-dubs (`announceIfStayingUp`) |
+| on AC, holding, the last Claude finishes, no external display | flag drops, Mac sits awake shut until idle sleep | 🫀 flatline + `pmset sleepnow`, same as on battery |
+
+- **The lid watcher is always on** now — installed in `startIfEnabled` before
+  the mode check, never removed — because the announcement does not depend on 😴
+  being armed. It ticks first (only when armed) and then calls
+  `announceIfStayingUp`, which skips if the tick itself just beat (battery +
+  working already played the three beats).
+- **"Does this close sleep the Mac?"** = `AppleClamshellCausesSleep` **and not**
+  `SleepDisabled`. `AppleClamshellCausesSleep` on `IOPMrootDomain` is `No` in
+  clamshell mode (AC + external display) and — measured — stays `Yes` with
+  `SleepDisabled` up, so the two have to be combined. Also exposed as
+  `clamshell_causes_sleep` in `/test/lid-awake/state`.
+- **The continuous pulse is still battery-only.** On AC the lid close gets one
+  confirmation, then silence: a lub-dub every 10 s in clamshell at the desk would
+  make the feature unusable. The boost for those three beats is put back ~2 s
+  later (`announcing` keeps a `.hold` tick from re-muting mid-way).
+- **`pmset sleepnow` on AC only without an external display** — the projector
+  plugged into a closed laptop mid-workshop is still never slept.
 
 ## The 20% floor
 

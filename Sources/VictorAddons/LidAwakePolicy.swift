@@ -45,7 +45,9 @@ enum LidAwakePolicy {
         /// watching: this is the ordinary end of a session, not a fault.
         case release
         /// Nothing is working, we were holding the lid open, and the lid is
-        /// shut on battery — i.e. this release is about to `pmset sleepnow`.
+        /// shut with nothing else keeping it up — on battery, or on AC with no
+        /// external display (`clamshellCausesSleep`) — i.e. this release is
+        /// about to `pmset sleepnow`.
         /// Sound the 🫀 Pulse effect's flatline (ends in a long tone), then
         /// release exactly as above. Since 2026-09-23 this no longer needs the
         /// pulse to have been running: Victor shut the lid right as the last
@@ -71,6 +73,12 @@ enum LidAwakePolicy {
     ///   and once the flag is down the next tick must not play it again.
     ///   Defaulting it to `false` keeps every caller that does not care on the
     ///   plain release.
+    /// - Parameter clamshellCausesSleep: `AppleClamshellCausesSleep` — whether
+    ///   macOS itself would sleep on this shut lid, i.e. no external display
+    ///   is driving it in clamshell mode. On AC it is the difference between a
+    ///   desk (the release changes nothing, stay silent) and a charger in a
+    ///   bag (the release sleeps the Mac, so it is announced — 2026-09-23).
+    ///   Defaulting to `false` keeps the AC callers on the silent release.
     /// - Parameter offlineFor: seconds since the internet was last proven
     ///   reachable (`InternetWatch`). **0 means online**, and so does "we do not
     ///   know" — missing evidence is never an outage, the same way an unreadable
@@ -83,6 +91,7 @@ enum LidAwakePolicy {
         onAC: Bool,
         battery: Int?,
         holding: Bool = false,
+        clamshellCausesSleep: Bool = false,
         offlineFor: TimeInterval = 0,
         floor: Int = batteryFloorPercent,
         offlineGrace: TimeInterval = offlineGrace
@@ -114,7 +123,8 @@ enum LidAwakePolicy {
         // build that survives a lid-close is not what this feature was built
         // for — a mid-flight `claude` loop is.
         let stalled = offlineFor >= offlineGrace
-        guard claudeWorking, !stalled else { return (holding && lidClosed && !onAC) ? .farewell : .release }
+        let releaseSleeps = lidClosed && (!onAC || clamshellCausesSleep)
+        guard claudeWorking, !stalled else { return (holding && releaseSleeps) ? .farewell : .release }
 
         return (lidClosed && !onAC) ? .beat : .hold
     }

@@ -8,24 +8,17 @@ final class SleepChimeTests: XCTestCase {
     // MARK: - When the chime may take the output up
 
     func testTheBagGetsTheBoost() {
-        // Lid shut, on battery, silence: the only case where anybody is
-        // listening *through* something, and the only one worth hijacking the
-        // volume for.
+        // Lid shut, silence: nobody can see the screen, so the sound is the
+        // only report — on the charger as much as in the bag (2026-09-23).
         XCTAssertEqual(
-            SleepChimePolicy.boost(lidClosed: true, onAC: false, otherAppPlaying: nil),
+            SleepChimePolicy.boost(lidClosed: true, otherAppPlaying: nil),
             .boost)
     }
 
     func testAnOpenLidChimesAtWhateverLevelVictorChose() {
         // He is looking at the screen; the screen already told him.
         XCTAssertEqual(
-            SleepChimePolicy.boost(lidClosed: false, onAC: false, otherAppPlaying: nil),
-            .asIs)
-    }
-
-    func testOnACTheLidIsNotEvidenceOfABag() {
-        XCTAssertEqual(
-            SleepChimePolicy.boost(lidClosed: true, onAC: true, otherAppPlaying: nil),
+            SleepChimePolicy.boost(lidClosed: false, otherAppPlaying: nil),
             .asIs)
     }
 
@@ -34,14 +27,14 @@ final class SleepChimeTests: XCTestCase {
         // an open stream puts the playlist in the room. The door still sounds —
         // it just doesn't get to move the slider.
         XCTAssertEqual(
-            SleepChimePolicy.boost(lidClosed: true, onAC: false, otherAppPlaying: "com.spotify.client"),
+            SleepChimePolicy.boost(lidClosed: true, otherAppPlaying: "com.spotify.client"),
             .refuse("com.spotify.client"))
     }
 
     func testAnEmptyNameIsNobodyPlaying() {
         // `SystemAudioActivity` answers "" for none as well as nil.
         XCTAssertEqual(
-            SleepChimePolicy.boost(lidClosed: true, onAC: false, otherAppPlaying: ""),
+            SleepChimePolicy.boost(lidClosed: true, otherAppPlaying: ""),
             .boost)
     }
 
@@ -49,7 +42,7 @@ final class SleepChimeTests: XCTestCase {
         // .refuse and .asIs do the same thing to the volume; they differ only
         // in the log line, so the desk case must not claim a refusal it isn't.
         XCTAssertEqual(
-            SleepChimePolicy.boost(lidClosed: false, onAC: false, otherAppPlaying: "com.spotify.client"),
+            SleepChimePolicy.boost(lidClosed: false, otherAppPlaying: "com.spotify.client"),
             .asIs)
     }
 

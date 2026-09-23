@@ -259,6 +259,9 @@ final class LidAwake {
     /// input that tells a release owed five last beats from a release nobody
     /// could have heard (lid open, on AC, or never beating at all).
     private var wasBeating = false
+    /// Set while `announceIfStayingUp`'s three beats are in the air, so a
+    /// `.hold` tick landing among them does not put the mute back mid-way.
+    private var announcing = false
     /// Set while the five last beats are in the air, so a tick landing in the
     /// middle of them cannot start a second set on top of the first.
     private var farewellInFlight = false
@@ -291,6 +294,9 @@ final class LidAwake {
     /// behaviour the rebuild loop needs: `pkill` + `open` in the middle of a
     /// flight must not drop the lid guard.
     func startIfEnabled() {
+        // The lid is watched whatever the mode: "a lid close always makes a
+        // sound" does not depend on 😴 being armed. See `announceIfStayingUp`.
+        watchLid()
         guard LidAwakeSettings.isEnabled else { return }
         // `apply`, not `setMode`: re-arming must not write the mode back, or a
         // launch would quietly promote `interactive` to `background`.
@@ -389,12 +395,14 @@ final class LidAwake {
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
             holding: holding,
+            clamshellCausesSleep: Self.clamshellCausesSleep(),
             offlineFor: offlineFor)
         return "{\"enabled\":\(LidAwakeSettings.isEnabled),"
             + "\"mode\":\"\(LidAwakeSettings.mode.rawValue)\","
             + "\"holding\":\(holding),"
             + "\"sleep_disabled\":\(Self.isSleepDisabled()),"
             + "\"lid_closed\":\(Self.isLidClosed()),"
+            + "\"clamshell_causes_sleep\":\(Self.clamshellCausesSleep()),"
             + "\"on_ac\":\(PowerMonitor.isOnAC()),"
             + "\"battery\":\(battery.map(String.init) ?? "null"),"
             + "\"working\":[\(working.map(String.init).joined(separator: ","))],"
@@ -437,13 +445,11 @@ final class LidAwake {
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
-        watchLid()
     }
 
     private func stopTimer() {
         timer?.cancel()
         timer = nil
-        unwatchLid()
     }
 
     /// **The lid is answered the moment it moves (2026-09-23).** Closing it
@@ -452,6 +458,10 @@ final class LidAwake {
     /// to ten seconds of silence first, which is exactly the "did it sleep or
     /// not?" Victor was left guessing at. `kIOPMMessageClamshellStateChange`
     /// runs a tick right away; the timer stays as the steady beat.
+    ///
+    /// Installed once at launch and never removed: since the evening of
+    /// 2026-09-23 it also serves the lid closes this feature is not holding —
+    /// see `announceIfStayingUp`.
     private func watchLid() {
         guard lidNotifyPort == nil else { return }
         let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
@@ -463,8 +473,10 @@ final class LidAwake {
             // kIOPMMessageClamshellStateChange — a C macro Swift does not import.
             guard type == 0xE003_4100, let refcon else { return }
             let lid = Unmanaged<LidAwake>.fromOpaque(refcon).takeUnretainedValue()
-            overlayInfo("LidAwake: lid \(LidAwake.isLidClosed() ? "closed" : "opened") — ticking now")
-            lid.tick()
+            let closed = LidAwake.isLidClosed()
+            overlayInfo("LidAwake: lid \(closed ? "closed" : "opened")")
+            if LidAwakeSettings.isEnabled { lid.tick() }
+            if closed { lid.announceIfStayingUp() }
         }, me, &lidNotifier)
         guard kr == KERN_SUCCESS else {
             IONotificationPortDestroy(port)
@@ -474,9 +486,38 @@ final class LidAwake {
         lidNotifyPort = port
     }
 
-    private func unwatchLid() {
-        if lidNotifier != 0 { IOObjectRelease(lidNotifier); lidNotifier = 0 }
-        if let port = lidNotifyPort { IONotificationPortDestroy(port); lidNotifyPort = nil }
+    /// **Every lid close makes a sound, on AC as much as on battery
+    /// (2026-09-23).** The pulse only runs on battery, so on the charger a shut
+    /// lid that stayed up — a Claude working, an external display (clamshell),
+    /// `SleepDisabled` set by hand — used to be silent, and silence is the one
+    /// answer that cannot be told apart from "asleep". Now the two outcomes
+    /// are the same everywhere:
+    ///
+    /// - the Mac stays up → the three quick lub-dubs, here;
+    /// - the Mac sleeps → `SleepChime`'s long tone, on `willSleepNotification`.
+    ///
+    /// Runs after the tick, so a lid close the pulse already answered (on
+    /// battery, a Claude working: `.beat` plays the same three beats) is not
+    /// answered twice. The output is taken up for the three beats and put back
+    /// right after — this is one confirmation, not a pulse, so a muted desk Mac
+    /// is unmuted for two seconds and no longer.
+    private func announceIfStayingUp() {
+        if let last = lastBeatAt, Date().timeIntervalSince(last) < 2 { return }
+        guard Self.isSleepDisabled() || !Self.clamshellCausesSleep() else {
+            // macOS is about to sleep on this lid; the tone is SleepChime's.
+            return
+        }
+        overlayInfo("LidAwake: lid closed and the Mac stays up — three quick beats")
+        announcing = true
+        boostForBeats(true)
+        heartbeat(count: Self.arrivalBeats)
+        let length = Double(Self.arrivalBeats - 1) * Self.arrivalBeatSpacing + Self.beatLength + 0.2
+        queue.asyncAfter(deadline: .now() + length) { [weak self] in
+            guard let self else { return }
+            self.announcing = false
+            // A pulse that started meanwhile owns the boost now.
+            if !self.wasBeating { self.boostForBeats(false) }
+        }
     }
 
     // MARK: - The tick
@@ -531,6 +572,7 @@ final class LidAwake {
             onAC: PowerMonitor.isOnAC(),
             battery: battery,
             holding: holding,
+            clamshellCausesSleep: Self.clamshellCausesSleep(),
             offlineFor: offlineFor)
 
         switch action {
@@ -550,7 +592,7 @@ final class LidAwake {
             // bag any more, so the volume goes back to whatever it was — and
             // no five last beats are owed, for the same reason.
             hold(true)
-            boostForBeats(false)
+            if !announcing { boostForBeats(false) }
             wasBeating = false
 
         case .release:
@@ -630,7 +672,7 @@ final class LidAwake {
         // mid-statement, and a mute restored into a sleeping Mac is a Mac that
         // wakes up at full volume in the next meeting. Restoring here is
         // idempotent — the caller's own call then finds nothing owed.
-        if !wanted, Self.isLidClosed(), !PowerMonitor.isOnAC() {
+        if !wanted, Self.isLidClosed(), !PowerMonitor.isOnAC() || Self.clamshellCausesSleep() {
             boostForBeats(false)
             Self.sleepNow()
         }
@@ -639,11 +681,12 @@ final class LidAwake {
     /// `pmset sleepnow` — the one `pmset` verb here that needs no privileges,
     /// so no sudoers rule and no `-n` games.
     ///
-    /// Only ever called with **the lid shut and on battery**, which is the state
-    /// macOS itself sleeps a Mac in: this only gets there first. On AC it is
-    /// never called, because clamshell-on-power is the case Apple supports
-    /// natively and a projector plugged into a closed laptop mid-workshop must
-    /// not be put to sleep by a heartbeat feature.
+    /// Only ever called with **the lid shut and nothing else keeping it up** —
+    /// on battery, or on AC with no external display — which is the state
+    /// macOS itself sleeps a Mac in: this only gets there first. On AC with an
+    /// external display it is never called, because clamshell-on-power is the
+    /// case Apple supports natively and a projector plugged into a closed
+    /// laptop mid-workshop must not be put to sleep by a heartbeat feature.
     private static func sleepNow() {
         overlayInfo("LidAwake: lid is shut and nothing is holding it — pmset sleepnow")
         do {
@@ -1002,14 +1045,22 @@ final class LidAwake {
     /// `AppleClamshellState` on `IOPMrootDomain` — true while the lid is shut.
     /// The registry is read directly rather than shelling out to `ioreg`,
     /// because this runs every five seconds for hours on a battery.
-    static func isLidClosed() -> Bool {
+    static func isLidClosed() -> Bool { rootDomainFlag("AppleClamshellState") ?? false }
+
+    /// `AppleClamshellCausesSleep` — whether macOS would sleep on a shut lid,
+    /// i.e. `false` in clamshell mode (AC + an external display). It ignores
+    /// `SleepDisabled` (measured: `Yes` with the flag up), so "does this lid
+    /// close sleep the Mac" is this **and** not `isSleepDisabled()`. Unreadable
+    /// counts as `true`: the macOS default, and the case that asks for a sound.
+    static func clamshellCausesSleep() -> Bool { rootDomainFlag("AppleClamshellCausesSleep") ?? true }
+
+    private static func rootDomainFlag(_ key: String) -> Bool? {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
-        guard service != 0 else { return false }
+        guard service != 0 else { return nil }
         defer { IOObjectRelease(service) }
-        guard let value = IORegistryEntryCreateCFProperty(
-            service, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0
-        )?.takeRetainedValue() as? Bool else { return false }
-        return value
+        return IORegistryEntryCreateCFProperty(
+            service, key as CFString, kCFAllocatorDefault, 0
+        )?.takeRetainedValue() as? Bool
     }
 
     /// Charge as a percentage, or `nil` if no battery answered.

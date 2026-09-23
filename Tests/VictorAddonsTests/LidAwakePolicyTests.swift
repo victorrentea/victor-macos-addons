@@ -98,13 +98,22 @@ final class LidAwakePolicyTests: XCTestCase {
             .release)
     }
 
-    func testNoFarewellOnAC() {
-        // Plugged in, so the lid close was macOS's own clamshell case and the
-        // pulse was never announcing anything.
+    func testNoFarewellOnACAtADesk() {
+        // Plugged in with an external display: macOS's own clamshell case, the
+        // release sleeps nothing, so there is nothing to announce.
         XCTAssertEqual(
             LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: true,
                                   battery: 80, holding: true),
             .release)
+    }
+
+    func testFarewellOnACWhenTheShutLidWouldSleepAnyway() {
+        // 2026-09-23: on the charger with no external display, the release is
+        // a sleep like any other — "whether I'm on power or on battery".
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: true,
+                                  battery: 80, holding: true, clamshellCausesSleep: true),
+            .farewell)
     }
 
     func testDisarmingNeverPlaysTheFarewell() {

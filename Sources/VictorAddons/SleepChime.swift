@@ -10,8 +10,8 @@ import Foundation
 enum SleepChimePolicy {
 
     enum Boost: Equatable {
-        /// Lid shut, on battery, nothing else sounding — the bag. Lift the mute
-        /// and take the level up, exactly like `LidAwake.boostForBeats`.
+        /// Lid shut, nothing else sounding. Lift the mute and take the level
+        /// up, exactly like `LidAwake.boostForBeats` — on battery *and* on AC.
         case boost
         /// Victor is at the machine and the screen is in front of him; the
         /// chime is a courtesy, not a proof, and it plays at whatever level he
@@ -24,11 +24,15 @@ enum SleepChimePolicy {
     /// - Parameter otherAppPlaying: the bundle id of any *other* app holding an
     ///   output stream, `nil` or empty when none — `SystemAudioActivity`'s
     ///   answer, passed in so the table is testable.
-    static func boost(lidClosed: Bool, onAC: Bool, otherAppPlaying: String?) -> Boost {
-        // On AC or with the lid open there is nothing to prove: the Mac is on a
-        // desk, the sound carries at any level, and hijacking the volume of a
-        // machine somebody is looking at is worse than a quiet chime.
-        guard lidClosed, !onAC else { return .asIs }
+    static func boost(lidClosed: Bool, otherAppPlaying: String?) -> Boost {
+        // With the lid open there is nothing to prove: the screen is in front
+        // of him, and hijacking the volume of a machine somebody is looking at
+        // is worse than a quiet chime. **The power source is not an input**
+        // (2026-09-23): it used to be — "on AC the lid is not evidence of a
+        // bag" — and the result was a Mac that slept on its charger, muted, in
+        // total silence. Victor's rule is that a lid close always says what
+        // happened, plugged in or not, and a muted chime says nothing.
+        guard lidClosed else { return .asIs }
         // Same refusal as the heartbeat's: unmuting a Mac with a stream open
         // ends with Victor's playlist at full blast in a bag.
         if let other = otherAppPlaying, !other.isEmpty { return .refuse(other) }
@@ -109,7 +113,6 @@ enum SleepChime {
 
         let decision = SleepChimePolicy.boost(
             lidClosed: LidAwake.isLidClosed(),
-            onAC: PowerMonitor.isOnAC(),
             otherAppPlaying: SystemAudioActivity.otherAppPlayingOutput())
 
         var volumeToRestore: Float?
