@@ -33,25 +33,35 @@ final class TerminalPromptKeysTests: XCTestCase {
         XCTAssertGreaterThan(reach, 1, "a single press cannot leave the current row")
     }
 
-    func testDeleteIsASingleStashByte() {
-        // ^S = chat:stash: empties the prompt whatever its height and keeps it
-        // recoverable. It replaced 100×^K + 100×^U, which Claude Code's stdin
-        // drops as a paste once the chunk reaches 40 control characters — so the
-        // old ⌘⌫ silently did nothing on exactly the prompts worth clearing.
-        XCTAssertEqual(rewrite(VK_DELETE)?.characters, "\u{13}")
-    }
-
-    func testDeleteStaysUnderThePasteThreshold() {
-        // Measured 2026-09-22 on Claude Code 2.1.278: 39 control characters in
-        // one chunk are keypresses, 40 are a paste and vanish.
+    func testDeleteKillsWordsFromTheBottom() {
+        // ESC[F walks to the end of the prompt, then ESC DEL eats it backwards.
+        // Not ^S (chat:stash): a stash is a toggle, so ⌘⌫ twice gave the text back.
         let chars = rewrite(VK_DELETE)?.characters ?? ""
-        XCTAssertLessThan(chars.utf8.count, 40)
+        let end = String(repeating: "\u{1b}[F", count: TerminalPromptKeys.reach)
+        XCTAssertEqual(chars, end + String(repeating: "\u{1b}\u{7f}", count: TerminalPromptKeys.killReach))
+        XCTAssertFalse(chars.contains("\u{13}"), "^S would make a second ⌘⌫ restore the prompt")
     }
 
-    func testDeleteNeverSendsEscape() {
-        // Escape would clear the prompt in one byte -- and abort a running turn.
-        XCTAssertFalse(rewrite(VK_DELETE)?.characters.contains("\u{1b}") ?? true,
-                       "escape must never ride on the clear-the-prompt key")
+    func testDeleteHasNoBareControlRun() {
+        // Measured 2026-09-22 on Claude Code 2.1.278: 40+ bare control characters
+        // (^K/^U) in one chunk read as a paste and vanish. Escape sequences don't.
+        let chars = rewrite(VK_DELETE)?.characters ?? ""
+        XCTAssertFalse(chars.contains("\u{0b}") || chars.contains("\u{15}"))
+    }
+
+    func testDeleteNeverSendsABareEscape() {
+        // A lone ESC would clear the prompt -- and abort a running turn.
+        let bytes = Array((rewrite(VK_DELETE)?.characters ?? "").utf8)
+        for (i, byte) in bytes.enumerated() where byte == 0x1b {
+            XCTAssertTrue(i + 1 < bytes.count && (bytes[i + 1] == 0x5b || bytes[i + 1] == 0x7f),
+                          "ESC at \(i) is not the head of a sequence")
+        }
+    }
+
+    func testCommandZIsUndo() {
+        // ^_ = chat:undo: the only way back after ⌘⌫.
+        XCTAssertEqual(rewrite(0x06)?.characters, "\u{1f}")
+        XCTAssertNil(rewrite(0x06, shift: true), "⌘⇧Z is not ours")
     }
 
     func testOnlyCommandAloneQualifies() {
