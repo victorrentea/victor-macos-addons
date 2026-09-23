@@ -5,7 +5,7 @@ import Foundation
 ///
 /// It is deliberately a **copy of `InputDevice.known` in `walkie-talkie`**, row
 /// for row, glyph for glyph, in the same order — the two apps show the same
-/// five-or-six rows for the same hardware, and Victor asked for the two menus
+/// five rows for the same hardware, and Victor asked for the two menus
 /// to look the same and to stay in step (*"the menu should look the same … when
 /// I change it in one, it should change it to the other automatically"*, plus
 /// `MicPreference` for the sync itself).
@@ -63,21 +63,17 @@ enum MicRoster {
     static let all: [Mic] = [
         Mic(id: "xlr",   glyph: "🎙️", short: "XLR",    label: "Elgato Wave XLR",
             pattern: "XLR"),
-        // **The dish is the receiver and the microphone is the microphone**
-        // (2026-09-22, Victor: *"use mic icon instead of sattelite"*). The two
-        // were the other way round for the few hours the transmitter existed,
-        // which had the collar-worn capsule drawn as a satellite dish and the
-        // USB-C dongle drawn as a microphone — backwards on both counts, and
-        // the reason the two rows were hard to tell apart at a glance.
-        Mic(id: "rx",    glyph: "📡",  short: "DJI Rx", label: "DJI Wireless Mic Rx",
+        // **One DJI row, the receiver, drawn as a stage microphone** (2026-09-23,
+        // Victor: *"vom scoate DJI mic mini tx din lista. pastram doar RX pt
+        // moment cu emoji = 🎤"* — *"DJI Mic Mini trebuie reprezentat doar ca
+        // emoji-ul de microfon de scenă, fără antenă de satelit, și să fie
+        // reprezentat de receiver. Niciodată nu vă mai conecta transmitter-ul
+        // direct, că intră în conflict cu JBL-ul."*). The transmitter paired
+        // straight over Bluetooth (`tx`, `DJI Mic Mini-XXXXXX`) had its own row
+        // for a day; it fought the JBL for the Bluetooth link and is never
+        // paired directly again. An old `tx` in the choice file reads as `auto`.
+        Mic(id: "rx",    glyph: "🎤",  short: "DJI Rx", label: "DJI Wireless Mic Rx",
             pattern: "Wireless Mic"),
-        // The same lavalier with the receiver left in the bag: a Mic Mini
-        // transmitter pairs straight to the Mac over Bluetooth and shows up as
-        // `DJI Mic Mini-XXXXXX`. One rung below the receiver — same capsule on
-        // the same collar, but the headset profile hands over 16 kHz mono while
-        // the receiver on USB-C hands over 48 kHz.
-        Mic(id: "tx",    glyph: "🎤",  short: "DJI TX", label: "DJI Mic Mini (Bluetooth)",
-            pattern: "DJI Mic"),
         Mic(id: "stage", glyph: "🏛️", short: "Stage",  label: "Stage Speakerphone",
             pattern: "Room Speakerphone"),
         Mic(id: "bose",  glyph: "🎧",  short: "Bose",   label: "Bose",
@@ -87,6 +83,20 @@ enum MicRoster {
     ]
 
     static let ids: [String] = all.map(\.id)
+
+    /// **Microphones never recorded through, whatever the ladder or the system
+    /// default say** (2026-09-23, Victor: *"niciodata nu voi folosi mic de pe
+    /// WH casti bt"* — *"e f prost"*). The Sony WH-1000XM3's microphone is a
+    /// Bluetooth HFP capsule at 16 kHz, and opening it drags the headphones'
+    /// playback down to 16 kHz mono as well. Case-insensitive substrings of the
+    /// CoreAudio name; `whisper_runner.py`'s `_NEVER_RECORD` is the same list
+    /// (`MicRosterTests` checks), and Walkie Talkie has its own
+    /// `InputDevice.neverRecord`.
+    static let neverRecord: [String] = ["WH-1000"]
+
+    static func isNeverRecord(_ deviceName: String) -> Bool {
+        neverRecord.contains { deviceName.range(of: $0, options: .caseInsensitive) != nil }
+    }
 
     /// The ladder spelled with the glyphs, for the `Automatic` row — the menu
     /// says what automatic *does* rather than asking him to remember it.

@@ -113,15 +113,31 @@ final class MicRosterTests: XCTestCase {
     }
 
     func testTheLadderRowNamesEveryDeviceInOrder() {
-        XCTAssertEqual(MicRoster.ladder, "🎙️ ▸ 📡 ▸ 🎤 ▸ 🏛️ ▸ 🎧 ▸ 💻")
+        XCTAssertEqual(MicRoster.ladder, "🎙️ ▸ 🎤 ▸ 🏛️ ▸ 🎧 ▸ 💻")
     }
 
-    func testTheTwoDjiRowsAreTellableApart() {
-        // The whole reason the transmitter was added: 🎤 and 📡 are the same
-        // lavalier with and without its receiver, so the short names — which are
-        // what the parent menu row shows — must not read the same.
-        XCTAssertEqual(MicRoster.byId("rx")?.short, "DJI Rx")
-        XCTAssertEqual(MicRoster.byId("tx")?.short, "DJI TX")
-        XCTAssertNotEqual(MicRoster.byId("rx")?.glyph, MicRoster.byId("tx")?.glyph)
+    func testTheDjiIsTheReceiverAloneDrawnAsAStageMic() {
+        // 2026-09-23, Victor: the transmitter is never paired directly again (it
+        // fights the JBL for Bluetooth); the receiver is the DJI, and it is 🎤.
+        XCTAssertNil(MicRoster.byId("tx"))
+        XCTAssertEqual(MicRoster.byId("rx")?.glyph, "🎤")
+        XCTAssertFalse(MicRoster.all.contains { $0.glyph == "📡" })
+    }
+
+    // MARK: - Never the WH-1000XM3
+
+    func testTheSonyHeadphonesAreNeverRecordedThrough() {
+        XCTAssertTrue(MicRoster.isNeverRecord("WH-1000XM3"))
+        XCTAssertTrue(MicRoster.isNeverRecord("wh-1000xm4"))
+        XCTAssertFalse(MicRoster.isNeverRecord("Wireless Mic Rx"))
+        XCTAssertFalse(MicRoster.isNeverRecord("MacBook Pro Microphone"))
+        XCTAssertFalse(MicRoster.all.contains { MicRoster.isNeverRecord($0.pattern) },
+                       "no ladder rung may match a device that is never recorded through")
+    }
+
+    func testThePythonBlocklistIsTheSameList() throws {
+        let runner = try source("whisper-transcribe/whisper_runner.py", in: repoRoot)
+        XCTAssertEqual(listLiteral(named: "_NEVER_RECORD =", in: runner), MicRoster.neverRecord,
+                       "whisper_runner.py's _NEVER_RECORD drifted from MicRoster.neverRecord")
     }
 }

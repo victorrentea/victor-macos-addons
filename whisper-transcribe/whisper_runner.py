@@ -1,8 +1,7 @@
 """Live Whisper transcription runner — writes directly to normalized transcript files.
 
-Victor's mic priority: Wireless Mic (DJI receiver on USB-C) > DJI Mic (the same
-transmitter paired over Bluetooth, 16 kHz HFP) > Room Speakerphone > XLR > Bose > MacBook
-(auto-switches on connect/disconnect)
+Victor's mic priority: XLR > Wireless Mic (DJI receiver on USB-C) > Room Speakerphone >
+Bose > MacBook (auto-switches on connect/disconnect). Never the WH-1000XM3's microphone.
 Audience: FROM Zoom loopback
 
 Uses CoreAudio for device detection (no stale devices) and sounddevice for capture.
@@ -252,7 +251,6 @@ _ADAPTIVE_BACKLOG_LOW = int(os.environ.get("WHISPER_ADAPTIVE_BACKLOG_LOW", "2"))
 _THRESHOLDS = {
     "xlr": 0.018,
     "wireless mic": 0.005,  # DJI Mic Mini reports much lower RMS than XLR
-    "dji mic": 0.005,  # the same transmitter over Bluetooth ("DJI Mic Mini-XXXXXX"); not yet measured, assumed like the receiver
     "speakerphone": 0.012,  # Room Speakerphone — far-field room mic with AGC; midrange between bose and wireless
     "bose": 0.015,
     "macbook": 0.008,
@@ -271,7 +269,23 @@ _DEFAULT_THRESHOLD = 0.018
 # room mic with AGC does beat a condenser pointed at one chair in a hall, which
 # is why it used to be high — but the two DJI lavaliers are on his collar
 # wherever he walks, so they go above it.
-_ME_PATTERNS = ["XLR", "Wireless Mic", "DJI Mic", "Room Speakerphone", "Bose", "MacBook"]
+#
+# The DJI transmitter paired over Bluetooth ("DJI Mic Mini-XXXXXX") had its own
+# rung for a day and went on 2026-09-23 — Victor: "Niciodată nu vă mai conecta
+# transmitter-ul direct, că intră în conflict cu JBL-ul." The receiver is the DJI.
+_ME_PATTERNS = ["XLR", "Wireless Mic", "Room Speakerphone", "Bose", "MacBook"]
+
+# Never recorded through, whatever the ladder, the preference file or a hint
+# say (2026-09-23, Victor: "niciodata nu voi folosi mic de pe WH casti bt" —
+# "e f prost"): the Sony WH-1000XM3's Bluetooth HFP microphone, 16 kHz, which
+# also drags the headphones' playback down to 16 kHz mono. Case-insensitive
+# substrings; the same list as `MicRoster.neverRecord` (MicRosterTests checks).
+_NEVER_RECORD = ["WH-1000"]
+
+
+def _is_never_record(name: str) -> bool:
+    lower = name.lower()
+    return any(p.lower() in lower for p in _NEVER_RECORD)
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
@@ -391,11 +405,9 @@ def _is_garbage(text: str) -> bool:
 # its own menu. `MicRosterTests` reads this file and fails when they drift.
 _DEVICE_SHORT_NAMES = {
     "xlr": "🎙️",
-    # The dish is the receiver (a dongle in the USB-C port) and the microphone
-    # is the microphone (the capsule on his collar). Swapped 2026-09-22 — they
-    # were the other way round for the few hours the transmitter existed.
-    "wireless mic": "📡",  # the DJI receiver reports as "Wireless Mic Rx"
-    "dji mic": "🎤",  # DJI Mic Mini transmitter paired over Bluetooth, no receiver
+    # The DJI is the receiver, drawn as a stage microphone (2026-09-23); the
+    # transmitter paired over Bluetooth is no longer a row.
+    "wireless mic": "🎤",  # the DJI receiver reports as "Wireless Mic Rx"
     "speakerphone": "🏛️",  # Room Speakerphone (USB)
     "vic bose": "🎧",
     "bose": "🎧",
@@ -467,7 +479,7 @@ def _available_me_short_names() -> list[str]:
             if d["max_input_channels"] <= 0:
                 continue
             sd_name = d["name"]
-            if plower not in sd_name.lower():
+            if plower not in sd_name.lower() or _is_never_record(sd_name):
                 continue
             if any(_names_equivalent(sd_name, ca_name) for ca_name in alive_ca_names):
                 short = _short_device_name(sd_name)
@@ -511,14 +523,14 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
             if d["max_input_channels"] <= 0:
                 continue
             sd_name = d["name"]
-            if plower not in sd_name.lower():
+            if plower not in sd_name.lower() or _is_never_record(sd_name):
                 continue
             if any(_names_equivalent(sd_name, ca_name) for ca_name in alive_ca_names):
                 return i, d["name"]
 
         # Fallback: match against CoreAudio names first, then map back to sounddevice.
         for ca_name in alive_ca_names:
-            if plower not in ca_name.lower():
+            if plower not in ca_name.lower() or _is_never_record(ca_name):
                 continue
             for i, d in enumerate(sd.query_devices()):
                 if d["max_input_channels"] <= 0:

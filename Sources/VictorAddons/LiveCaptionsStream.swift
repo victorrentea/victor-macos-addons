@@ -138,7 +138,7 @@ final class LiveCaptionsStream: NSObject {
     /// default input**, named so the row can say it.
     ///
     /// Deliberately not the 💬 transcription's own priority ladder (Wireless Mic
-    /// → DJI Mic over Bluetooth → Room Speakerphone → XLR → Bose → MacBook):
+    /// → Room Speakerphone → XLR → Bose → MacBook, as it stood then):
     /// that lives inside
     /// `whisper_runner.py`, and reaching into another process's choice to guess
     /// at a device is how the two come to disagree silently. The default input
@@ -260,6 +260,26 @@ final class LiveCaptionsStream: NSObject {
         let engine = AVAudioEngine()
         self.engine = engine
         let input = engine.inputNode
+        // **Never the WH-1000XM3** (2026-09-23, Victor: *"niciodata nu voi folosi
+        // mic de pe WH casti bt"*). This stream follows the system default,
+        // and macOS hands the default to the headphones the moment they
+        // connect — so when it is a `MicRoster.neverRecord` device, the input
+        // unit is pointed at the best ladder mic instead, before the format is
+        // read. With no other microphone at all, the captions do not start.
+        var steered: String?
+        if let name = Self.defaultInputName(), MicRoster.isNeverRecord(name) {
+            guard let target = Self.bestLadderInput() else {
+                return "the only microphone is \(name), which is never recorded through"
+            }
+            var id = target.id
+            guard let unit = input.audioUnit,
+                  AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                       &id, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else {
+                return "cannot move off \(name) to \(target.name)"
+            }
+            steered = target.name
+            overlayInfo("LiveCaptions: default input is \(name) — recording through \(target.name) instead")
+        }
         // **`inputFormat`, never `outputFormat`** — the lesson Walkie Talkie
         // paid for on this same Mac: `outputFormat(forBus:)` is the node's
         // cached idea and does not refresh when the device under it changes,
@@ -270,7 +290,7 @@ final class LiveCaptionsStream: NSObject {
         guard inFormat.channelCount > 0, inFormat.sampleRate > 0 else {
             return "no input device"
         }
-        deviceName = Self.defaultInputName() ?? "default input"
+        deviceName = steered ?? Self.defaultInputName() ?? "default input"
         guard let conv = AVAudioConverter(from: inFormat, to: Self.wireFormat) else {
             return "cannot convert \(Int(inFormat.sampleRate))Hz to 16kHz mono"
         }
@@ -403,6 +423,54 @@ final class LiveCaptionsStream: NSObject {
 // MARK: - Which microphone
 
 extension LiveCaptionsStream {
+    /// The first `MicRoster` rung present among the inputs, skipping
+    /// `neverRecord` devices; else any input that is not one. For steering off
+    /// the WH-1000XM3 when it is the system default (2026-09-23).
+    static func bestLadderInput() -> (id: AudioDeviceID, name: String)? {
+        let inputs = inputDevices().filter { !MicRoster.isNeverRecord($0.name) }
+        for mic in MicRoster.all {
+            if let hit = inputs.first(where: { $0.name.range(of: mic.pattern, options: .caseInsensitive) != nil }) {
+                return hit
+            }
+        }
+        return inputs.first
+    }
+
+    /// Every device with at least one input channel, with its name.
+    static func inputDevices() -> [(id: AudioDeviceID, name: String)] {
+        let sys = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                                              mScope: kAudioObjectPropertyScopeGlobal,
+                                              mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(sys, &addr, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(sys, &addr, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            var cfg = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration,
+                                                 mScope: kAudioDevicePropertyScopeInput,
+                                                 mElement: kAudioObjectPropertyElementMain)
+            var bytes: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &cfg, 0, nil, &bytes) == noErr, bytes > 0 else { return nil }
+            let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(bytes),
+                                                       alignment: MemoryLayout<AudioBufferList>.alignment)
+            defer { raw.deallocate() }
+            guard AudioObjectGetPropertyData(id, &cfg, 0, nil, &bytes, raw) == noErr else { return nil }
+            let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+            guard list.contains(where: { $0.mNumberChannels > 0 }) else { return nil }
+            var nameAddr = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
+                                                      mScope: kAudioObjectPropertyScopeGlobal,
+                                                      mElement: kAudioObjectPropertyElementMain)
+            var nameSize = UInt32(MemoryLayout<CFString?>.size)
+            var value: CFString?
+            let st = withUnsafeMutablePointer(to: &value) {
+                AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSize, $0)
+            }
+            guard st == noErr, let name = value as String? else { return nil }
+            return (id, name)
+        }
+    }
+
     /// The system default input's name, for the menu row. Nil rather than a
     /// guess: a row that names the wrong device is worse than one that admits
     /// it does not know.
