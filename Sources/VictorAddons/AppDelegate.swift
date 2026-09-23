@@ -596,6 +596,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         whisperManager.onDeviceChanged = { [weak self] emoji in
             self?.menuBarManager.setTranscribeSource(emoji)
+            self?.micSourceAnnouncer?.sourceChanged(emoji)
         }
         whisperManager.onAvailableDevicesChanged = { [weak self] devices in
             self?.menuBarManager.setAvailableSources(devices)
@@ -1499,7 +1500,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.outputRouter = router
         router.start()
 
-        let micAnnouncer = MicSourceAnnouncer()
+        let micAnnouncer = MicSourceAnnouncer(show: { [weak self] text in
+            self?.statusBanner?.showNow(text: text, sound: nil, visibleDuration: MicSourceAnnouncer.hold)
+        })
         self.micSourceAnnouncer = micAnnouncer
         micAnnouncer.start()
 
