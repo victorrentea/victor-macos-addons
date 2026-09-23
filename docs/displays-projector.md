@@ -72,6 +72,20 @@ unmagnified screen on the right. Set to the screen minus 2 pt per side (1916×10
 `-1918,2`). A lens exactly the screen's size is not captured by `screencapture` (see above),
 so verify geometry with a deliberately smaller size first.
 
+**Cursor fence while a PiP lens is zoomed in (`ZoomLensCursorFence`, 2026-09-23).** With the
+lens magnifying, moving the pointer onto the ASUS dropped the magnification and brought it
+back on return: a flicker on the shared screen. There is no setting that keeps the lens:
+`closeViewZoomDisplayID` is the full-screen style's display chooser, and nothing in
+`UniversalAccessCore` pins a PiP lens. So the cursor is kept on the screen it was on when the
+fence went up: an **HID-level** tap (`.cghidEventTap`) rewrites the location of every move
+and drag. Warping back after the crossing would be too late, because the frame on the other
+display *is* the flicker. The tap is enabled only while `closeViewZoomMode = 1`,
+`closeViewZoomedIn = 1` and `closeViewZoomFactor > 1` (polled every 0.25 s). **The way out is
+⌥+scroll back to 1×.** Proven by a prototype (98 moves toward the ASUS clamped, cursor
+stopped at `x = -1`). The in-app version could **not** be verified with synthetic input:
+while the magnifier is zoomed in, posted `mouseMoved` events do not move the cursor at all,
+with or without this app running. So the end-to-end check needs a physical mouse.
+
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
 The table above is what **`screencapture` and ScreenCaptureKit** see. Zoom does not always

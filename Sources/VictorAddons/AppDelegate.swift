@@ -133,6 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomSharePrep: ZoomSharePrep?
     /// 🔍 Says which magnifier style is live, because ⌥⌘F changes it invisibly.
     private var zoomLensWatch: ZoomLensWatch?
+    private var zoomLensFence: ZoomLensCursorFence?
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
@@ -1354,6 +1355,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         zoomLensWatch = lensWatch
         lensWatch.start()
+
+        // 🔍 A zoomed PiP lens flickers off and on when the cursor wanders onto
+        // another screen — so while it is magnifying, the cursor stays put.
+        let lensFence = ZoomLensCursorFence()
+        zoomLensFence = lensFence
+        lensFence.start()
 
         // ▶️ Zoom's join preview asks for one more click before every meeting;
         // press it as soon as it appears. ⌥ held keeps it open.
