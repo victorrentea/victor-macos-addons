@@ -751,10 +751,11 @@ final class BreakTimerController {
         // focused screen) may be an external monitor when one is set as main during
         // a course, which would open the timer on the wrong screen.
         let f = AppDelegate.findRetinaScreen().frame
-        // ~29% of screen width, tucked into the top-right corner with small gaps
-        // (hugs the edges). `scale` shrinks a fresh window — the ☕-triggered
-        // "until break" timer opens at 50%.
-        let w = f.width * 0.29 * max(0.1, scale)
+        // ~38% of screen width (was 29% — the room could not read it from the
+        // back), tucked into the top-right corner with small gaps (hugs the
+        // edges). `scale` shrinks a fresh window — the ☕-triggered "until
+        // break" timer opens at 50%.
+        let w = f.width * 0.38 * max(0.1, scale)
         let h = w / aspect
         let gap = f.width * 0.02
         let x = topLeft ? f.minX + gap : f.maxX - w - gap
@@ -828,6 +829,10 @@ final class BreakTimerView: NSView {
     // segments and a solid very-dark red for the unlit (ghost) segments.
     private static let lit = NSColor(calibratedRed: 0.847, green: 0.196, blue: 0.224, alpha: 1.0)
     private static let ghost = NSColor(calibratedRed: 0.137, green: 0.031, blue: 0.039, alpha: 1.0)
+    // The countdown digits and their colon are ORANGE, not the frame's red: the
+    // number is the one thing the room must read at a glance, and orange on
+    // black stands out where the red blended with the title and the brackets.
+    private static let digitLit = NSColor(calibratedRed: 1.0, green: 0.584, blue: 0.0, alpha: 1.0)
 
     // The colon dots live on their own layer so they can pulse gently (1.0↔0.5
     // every second) on the GPU, independent of the digit redraws. The "BREAK"
@@ -840,7 +845,7 @@ final class BreakTimerView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        colonLayer.fillColor = Self.lit.cgColor
+        colonLayer.fillColor = Self.digitLit.cgColor
         colonLayer.strokeColor = nil          // halo is a symmetric shadow, not a stroke
         colonLayer.lineWidth = 0
         colonLayer.shadowColor = NSColor.black.cgColor
@@ -1122,7 +1127,7 @@ final class BreakTimerView: NSView {
         }
         guard !combined.isEmpty else { return }
         combined.lineJoinStyle = .round
-        withDenseShadow { Self.lit.setFill(); combined.fill() }
+        withDenseShadow { Self.digitLit.setFill(); combined.fill() }
     }
 
     private func updateColonLayer(cx: CGFloat, originY: CGFloat, scale: CGFloat) {
