@@ -3,13 +3,16 @@ import CoreImage
 import Foundation
 
 /// Banner that displays participant join URL at top of screen.
-/// Stays visible while mouse hovers; starts 30s countdown on mouse-out, then 3s fade.
+/// A clipboard link stays visible while the mouse hovers and starts a 30s
+/// countdown on mouse-out, then a 3s fade. The session's Interact link is
+/// `persistent`: no countdown, no progress bar — it stays until toggled off.
 class JoinLinkBanner: NSPanel {
     private let urlLabel: NSTextField
     private var fadeTimer: Timer?
     private var mouseCheckTimer: Timer?
     private var mouseWasInside = false
     private var bannerShowing: Bool = false
+    private(set) var isPersistent = false
 
     private var targetScreen: NSScreen
     private let bannerHeight: CGFloat = 120
@@ -118,7 +121,8 @@ class JoinLinkBanner: NSPanel {
     ///   True for the session join link (participants type the id in caps and the
     ///   backend matches case-insensitively); false for arbitrary clipboard URLs,
     ///   whose paths are case-sensitive and must be shown verbatim.
-    func show(url: String, uppercaseLastSegment: Bool = false) {
+    /// - Parameter persistent: never expire — no countdown, no progress bar.
+    func show(url: String, uppercaseLastSegment: Bool = false, persistent: Bool = false) {
         let trimmedUrl = url.trimmingCharacters(in: .whitespaces)
         let maxWidth = targetScreen.frame.width - horizontalPadding * 2
 
@@ -148,13 +152,18 @@ class JoinLinkBanner: NSPanel {
         self.alphaValue = 1.0
         self.orderFrontRegardless()
         bannerShowing = true
+        isPersistent = persistent
         mouseWasInside = false
 
-        fadeTimer?.invalidate()
-        fadeTimer = nil
+        stopAll()
 
         // Show QR code
         showQR(for: trimmedUrl)
+
+        if persistent {
+            progressPanel?.orderOut(nil)
+            return
+        }
 
         // Position + show progress bar at the top edge of the screen.
         positionProgressPanel()
@@ -184,6 +193,7 @@ class JoinLinkBanner: NSPanel {
         stopAll()
         self.alphaValue = 0.0
         bannerShowing = false
+        isPersistent = false
         self.orderOut(nil)
         hideQR()
         progressPanel?.alphaValue = 0.0

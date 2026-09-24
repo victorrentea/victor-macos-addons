@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 23, 08:29"
+    static let BUILD_TIME = "Sep 23, 23:15"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -117,6 +117,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onKillPortPrompt: (() -> Void)?
     var onTakeScreenshot: (() -> Void)?
     var onDisplayJoinLink: (() -> Void)?
+    /// True while the Interact link banner is up — shown as a ✓ on its row.
+    var isJoinLinkShown: (() -> Bool)?
     var onDisplayClipboardLink: (() -> Void)?
     /// 📤 Mail the clipboard to Victor, subject "Reminder" — the ⌘⌃P key's row.
     var onSendReminderMail: (() -> Void)?
@@ -751,6 +753,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
         onMenuOpened?()
+        refreshWsItem()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
             // Lets a "checking…" click resolve to its real result without the
@@ -1427,7 +1430,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func refreshWsItem() {
         feedbackFormItem?.isHidden = !sessionActive
         if sessionActive {
-            wsStatusItem.title = "🟢 Display Interact Link ⧈"
+            let shown = isJoinLinkShown?() ?? false
+            wsStatusItem.title = "🟢 Display Interact Link ⧈" + (shown ? "  ✓" : "")
             wsStatusItem.isEnabled = true
             wsStatusItem.action = #selector(displayJoinLinkAction)
             wsStatusItem.target = self

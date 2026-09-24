@@ -1161,10 +1161,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         MicPreference.watch { [weak self] in self?.adoptMicChoice() }
         adoptMicChoice()
         menuBarManager.onMenuOpened = { [weak self] in
-            // Opening the app menu is a clear "I'm done with the link" signal —
-            // hide the banner + QR immediately so it never lingers on the screen.
-            if self?.joinLinkBanner?.bannerIsVisible == true {
-                self?.joinLinkBanner?.hide()
+            // Opening the app menu is a clear "I'm done with the link" signal
+            // for a clipboard link. The session's Interact link is the exception
+            // (2026-09-24): it stays up until its own ✓ row is clicked again.
+            if let banner = self?.joinLinkBanner, banner.bannerIsVisible, !banner.isPersistent {
+                banner.hide()
             }
             // Opening the menu is also the only moment the 🔴 row can be read,
             // so it is the right moment to re-read the flag behind it: it may
@@ -1201,6 +1202,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         feedbackFormReminder?.start()
         menuBarManager.onDisplayJoinLink = { [weak self] in
             self?.toggleJoinLinkBanner()
+        }
+        menuBarManager.isJoinLinkShown = { [weak self] in
+            guard let banner = self?.joinLinkBanner else { return false }
+            return banner.bannerIsVisible && banner.isPersistent
         }
         menuBarManager.onDisplayClipboardLink = { [weak self] in
             self?.displayClipboardLinkBanner()
@@ -2353,7 +2358,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         } else {
             guard isSessionActive, let url = participantUrl else { return }
             banner.setTargetScreen(AppDelegate.findRetinaScreen())
-            banner.show(url: url, uppercaseLastSegment: true)
+            banner.show(url: url, uppercaseLastSegment: true, persistent: true)
         }
     }
 

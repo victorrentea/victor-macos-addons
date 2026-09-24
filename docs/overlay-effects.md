@@ -13,16 +13,23 @@ between this app and **Victor Effects**.
 ## Overlay components still in this app
 
 - **`JoinLinkBanner`** — the participant join URL and its QR at the top of the
-  screen; auto-hides after 20 s with a 3 s fade-out. Its own `NSPanel`, with no
-  dependency on anything that left.
+  screen. Its own `NSPanel`, with no dependency on anything that left. Two modes:
+  a **clipboard link** (menu row / `/link/publish`) runs a 30 s yellow countdown
+  bar, then a 3 s fade, and opening the 💬 menu hides it; the **session's
+  Interact link** is `persistent` (2026-09-24, Victor's call) — no countdown, no
+  bar, and opening the menu no longer hides it. It goes away only when the
+  🟢 row is clicked again, the session ends, or `/link/hide` is called.
 - **`LocalWebSocketServer`** — the link to the training-assistant daemon on
   `/ws/__overlay__`: session lifecycle (`session_started`, `session_ended`,
   which enable/disable the join-link menu item), the 🔔 bell tab, the pdf
   alarms, and the **client count that is the classroom participant count in the
   menu bar**. That last one is why the server stayed here even though its emoji
   traffic is forwarded.
-- **🟢 Interact Link** (menu row) — shows the participant join URL banner;
-  enabled while a session is active.
+- **🟢 Interact Link** (menu row) — toggles the participant join URL banner;
+  enabled while a session is active. It shows a trailing **✓** while the banner
+  is up (`isJoinLinkShown`, re-read on every menu open) — that tick is the
+  reason the menu no longer hides this banner: you open the menu, see ✓, click
+  it to take the link down.
 - **`AddonsOverlayPanel` + `MinuteToken`** — the one piece of drawing that did
   *not* leave. See the coffee section below.
 
