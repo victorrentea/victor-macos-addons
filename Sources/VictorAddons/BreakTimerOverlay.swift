@@ -808,7 +808,9 @@ final class BreakTimerView: NSView {
     private var digitsVisible = true
     /// The big blinking title above the digits. "BREAK" for a menu-started timer,
     /// "UNTIL BREAK" for the one auto-started by clicking a floating ☕.
-    var titleText = "BREAK" { didSet { needsDisplay = true } }
+    var titleText = "BREAK" {
+        didSet { colonLayer.fillColor = lit.cgColor; needsDisplay = true }
+    }
 
     // Country dropdown: the finish line's flag is a click target. The hit rect is
     // recomputed each draw; picking from the dropdown calls back out.
@@ -827,12 +829,15 @@ final class BreakTimerView: NSView {
 
     // Red LED look — colors sampled from the reference: a deep red for lit
     // segments and a solid very-dark red for the unlit (ghost) segments.
-    private static let lit = NSColor(calibratedRed: 0.847, green: 0.196, blue: 0.224, alpha: 1.0)
+    private static let breakLit = NSColor(calibratedRed: 0.847, green: 0.196, blue: 0.224, alpha: 1.0)
     private static let ghost = NSColor(calibratedRed: 0.137, green: 0.031, blue: 0.039, alpha: 1.0)
-    // The countdown digits and their colon are ORANGE, not the frame's red: the
-    // number is the one thing the room must read at a glance, and orange on
-    // black stands out where the red blended with the title and the brackets.
-    private static let digitLit = NSColor(calibratedRed: 1.0, green: 0.584, blue: 0.0, alpha: 1.0)
+    // The ☕-started "UNTIL BREAK" watch is ORANGE all over — digits, title,
+    // finish line, brackets, buttons — so it can never be mistaken for a real
+    // break. A menu-started break stays entirely red.
+    private static let untilBreakLit = NSColor(calibratedRed: 1.0, green: 0.584, blue: 0.0, alpha: 1.0)
+    private var lit: NSColor {
+        titleText == BreakTimerModel.untilBreakTitle ? Self.untilBreakLit : Self.breakLit
+    }
 
     // The colon dots live on their own layer so they can pulse gently (1.0↔0.5
     // every second) on the GPU, independent of the digit redraws. The "BREAK"
@@ -845,7 +850,7 @@ final class BreakTimerView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        colonLayer.fillColor = Self.digitLit.cgColor
+        colonLayer.fillColor = lit.cgColor
         colonLayer.strokeColor = nil          // halo is a symmetric shadow, not a stroke
         colonLayer.lineWidth = 0
         colonLayer.shadowColor = NSColor.black.cgColor
@@ -955,7 +960,7 @@ final class BreakTimerView: NSView {
         let kinds: [BreakButtonKind] = [.pause, .close]
         // Natural finish line at full band height → its width and the "0" cap height.
         let natural = finishAttr(finishText, flag: flag, lineH: rowH,
-                                 maxW: .greatestFiniteMagnitude, color: Self.lit)
+                                 maxW: .greatestFiniteMagnitude, color: lit)
         let capH0 = (natural.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.capHeight ?? rowH
         var side = capH0 * Self.buttonHeightK           // buttons a bit larger than the digits
         var btnGap = side * 0.3                         // between the two buttons
@@ -1029,7 +1034,7 @@ final class BreakTimerView: NSView {
         NSColor.black.withAlphaComponent(alpha).setStroke()
         p.lineWidth = 4.5 + 2 * border
         p.stroke()
-        Self.lit.withAlphaComponent(alpha).setStroke()
+        lit.withAlphaComponent(alpha).setStroke()
         p.lineWidth = 4.5          // 3x thicker, easy to click
         p.stroke()
     }
@@ -1127,7 +1132,7 @@ final class BreakTimerView: NSView {
         }
         guard !combined.isEmpty else { return }
         combined.lineJoinStyle = .round
-        withDenseShadow { Self.digitLit.setFill(); combined.fill() }
+        withDenseShadow { lit.setFill(); combined.fill() }
     }
 
     private func updateColonLayer(cx: CGFloat, originY: CGFloat, scale: CGFloat) {
@@ -1277,7 +1282,7 @@ final class BreakTimerView: NSView {
         // band height IS the text line height now (the buttons match it), so use
         // it directly rather than shrinking it.
         let lineH = area.height
-        let a = finishAttr(finishText, flag: flag, lineH: lineH, maxW: area.width, color: Self.lit)
+        let a = finishAttr(finishText, flag: flag, lineH: lineH, maxW: area.width, color: lit)
         drawAttrCentered(a, x: area.minX, bottomY: area.minY, cellH: area.height)
         // The WHOLE line (flag + time) is the click target for the country dropdown
         // — a big, discoverable hit area rather than just the flag glyph.
@@ -1290,7 +1295,7 @@ final class BreakTimerView: NSView {
     /// by the line's descent, so the digits don't sit at the row-band center — the
     /// buttons align to THIS band (and take its height) instead of the row center.
     private func finishDigitBand(area: NSRect) -> (baselineFromBottom: CGFloat, capHeight: CGFloat) {
-        let attr = finishAttr(finishText, flag: flag, lineH: area.height, maxW: area.width, color: Self.lit)
+        let attr = finishAttr(finishText, flag: flag, lineH: area.height, maxW: area.width, color: lit)
         let capH = (attr.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.capHeight ?? area.height
         let ink = attr.boundingRect(with: NSSize(width: 1e5, height: 1e5), options: [.usesDeviceMetrics])
         let drawY = (area.height - ink.height) / 2 - ink.minY      // draw point y, relative to the row bottom
@@ -1396,8 +1401,9 @@ final class BreakTimerView: NSView {
         let imgH = ceil(font.ascender - font.descender + pad * 2)   // descender is negative
         guard imgW > 1, imgH > 1 else { titleLayer.isHidden = true; return }
         let title = titleText
+        let fill = lit
         let img = NSImage(size: NSSize(width: imgW, height: imgH), flipped: false) { [weak self] _ in
-            self?.drawOutlinedText(title, at: NSPoint(x: pad, y: pad), font: font, fill: Self.lit)
+            self?.drawOutlinedText(title, at: NSPoint(x: pad, y: pad), font: font, fill: fill)
             return true
         }
         // Caps occupy [baseline, baseline+capHeight] within the image; anchor that
@@ -1437,16 +1443,16 @@ final class BreakTimerView: NSView {
         NSColor.black.setFill()
         bg.fill()
         let bgAlpha: CGFloat = pressed ? 0.45 : (hovered ? 0.30 : 0.18)
-        Self.lit.withAlphaComponent(bgAlpha).setFill()
+        lit.withAlphaComponent(bgAlpha).setFill()
         bg.fill()
-        Self.lit.setStroke()
+        lit.setStroke()
         bg.lineWidth = 1
         bg.stroke()
 
         let inset = r.insetBy(dx: r.width * 0.28, dy: r.height * 0.28)
         switch kind {
         case .close:
-            Self.lit.setStroke()
+            lit.setStroke()
             let p = NSBezierPath()
             p.lineWidth = max(1.5, r.height * 0.08)
             p.lineCapStyle = .round
@@ -1454,7 +1460,7 @@ final class BreakTimerView: NSView {
             p.move(to: NSPoint(x: inset.minX, y: inset.maxY)); p.line(to: NSPoint(x: inset.maxX, y: inset.minY))
             p.stroke()
         case .pause:
-            Self.lit.setFill()
+            lit.setFill()
             if paused {
                 let tri = NSBezierPath()
                 tri.move(to: NSPoint(x: inset.minX, y: inset.minY))
