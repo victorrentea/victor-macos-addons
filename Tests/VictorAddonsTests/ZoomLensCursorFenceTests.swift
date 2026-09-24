@@ -51,3 +51,25 @@ final class ZoomLensCursorFenceTests: XCTestCase {
         XCTAssertEqual(P.clamp(CGPoint(x: 3000, y: 2000), to: retina), CGPoint(x: 1727, y: 1116))
     }
 }
+
+/// A fence measured on one display layout must not survive the next one: a
+/// mouse decoupled inside a rect that no display draws any more is a mouse that
+/// looks frozen (the suspicion of 2026-09-24).
+final class ZoomLensCursorFenceLayoutTests: XCTestCase {
+    typealias P = ZoomLensCursorFencePolicy
+    private let mirrored = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+    private let asusMain = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    private let retinaMain = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+    private let asusRight = CGRect(x: 1728, y: 0, width: 1920, height: 1080)
+
+    func testFenceHoldsWhileItsDisplayIsStillThere() {
+        XCTAssertTrue(P.fenceStillValid(rect: mirrored, masters: [asusMain, mirrored]))
+    }
+    func testFenceDropsWhenTheLayoutMoves() {
+        // "mirror + ASUS primary" → "Retina main + ASUS right": the old rect is gone.
+        XCTAssertFalse(P.fenceStillValid(rect: mirrored, masters: [retinaMain, asusRight]))
+    }
+    func testFenceDropsWhenTheOtherDisplayUnplugs() {
+        XCTAssertFalse(P.fenceStillValid(rect: mirrored, masters: [retinaMain]))
+    }
+}

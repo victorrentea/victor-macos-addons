@@ -1,170 +1,130 @@
 import AppKit
-import ApplicationServices
 import AVFoundation
 import Foundation
 
-/// Plays a downloaded video fullscreen in **IINA** and manages its lifetime:
-/// a new play **replaces** the previous one (never stacks a second window), and
-/// the player is **auto-killed ~60s after playback starts** so a snippet left
+/// Plays a downloaded video **in-process**, in a borderless window that covers
+/// the **built-in Retina** screen and sits above everything else on it — and
+/// manages its lifetime: a new play **replaces** the previous one, and the
+/// player is **auto-killed ~60s after playback starts** so a snippet left
 /// running doesn't linger on the projected screen.
 ///
-/// We orchestrate the external IINA player rather than embedding an AVPlayer:
-/// IINA gives precise `--mpv-start=<sec>` seeking + fullscreen for free, and is
-/// trivially replaced/killed by process name — matching "the media player should
-/// be killed by the macos-addons".
+/// **Why no IINA any more (2026-09-24).** Until today the clip was handed to
+/// IINA and its window was dragged onto the Retina through the Accessibility
+/// API, then `AXFullScreen`ed there. In the room, with the Retina mirrored to
+/// the projector and the ASUS made primary, that dance failed three times out
+/// of three (`IINA never confirmed fullscreen`, 7 s each): IINA opened on the
+/// **main** display — the ASUS — and the repeated fullscreen requests left
+/// Spaces mid-transition, during which macOS swallows every click
+/// ("I lost the ability to click, apparently" is in the transcript). The
+/// external player bought seeking, fullscreen and a rewind-at-end, all of
+/// which AVFoundation gives in-process, without a second app whose window
+/// placement we do not own. So:
 ///
-/// Four things IINA does *not* give for free, and which this class therefore
-/// takes over — each one learned from watching it misbehave in a room:
+/// 1. **Which screen: the built-in one, always.** `VideoPlayer.pickScreen`
+///    prefers `CGDisplayIsBuiltin`, then a name containing "Built-in", and only
+///    then whatever macOS calls main (lid closed, no built-in at all). The
+///    window is given that screen's `frame` verbatim — no AX coordinate flip,
+///    no Spaces fullscreen, no waiting for a confirmation.
 ///
-/// 1. **Which screen.** The clip must land on the **built-in Retina**, whatever
-///    macOS currently calls the main display — the Retina is what a venue
-///    projector mirrors, and at a venue the *ASUS* is made primary (see
-///    `DisplayArrangementManager`), so "the main screen" is exactly the wrong
-///    answer there. mpv's own `--fs-screen` is **ignored** (verified: IINA
-///    manages its NSWindow itself and never passes it on), and IINA otherwise
-///    restores wherever its window was last. So the window is launched
-///    *windowed*, moved onto the Retina through the **Accessibility API** — the
-///    same in-process grant `TerminalTiler` uses, no Automation consent — and
-///    only then fullscreened by setting `AXFullScreen`. A fullscreen window
-///    cannot be moved between displays afterwards, which is why the order is
-///    place-then-fullscreen and why we don't just pass `--mpv-fullscreen=yes`.
+/// 2. **Above every other window.** `.screenSaver` level with
+///    `canJoinAllSpaces` + `fullScreenAuxiliary`, so it shows over a
+///    full-screen deck and over the magnifier's PiP lens, on whichever Space the
+///    Retina is showing.
 ///
-/// 2. **What plays next: nothing, ever.** IINA loads the *containing folder* as
-///    a playlist, so finishing one snippet rolled straight into the next file in
-///    `videos/` — mid-workshop, on the projector (observed: "Papaguera" handing
-///    over to "Feel it coming"). Turning that off is not reliably reachable from
-///    the CLI (`playlistAutoPlayNext` was already `0` when it happened, and
-///    `--mpv-autocreate-playlist=no` didn't stop it), so instead the file is
-///    played from a **staging folder that contains exactly one file** —
-///    `videos/.play/`, a hardlink, rebuilt per play. A playlist built from that
-///    folder has nowhere to go. It's a hardlink, not a symlink, precisely so
-///    that resolving it can't lead back to the real folder full of siblings.
+/// 3. **The end: rewind and pause.** At the last frame the player seeks back
+///    to the snippet's start second and pauses — **SPACE replays** it, ESC or
+///    the tablet closes it. A replay re-arms the auto-kill so it gets a full
+///    window of its own.
 ///
-/// 3. **What happens at the end: rewind and pause.** With `--keep-open=yes` mpv
-///    stops at the last frame, which leaves a frozen still on the projector and
-///    needs a seek before it can be replayed. So the player is watched over
-///    mpv's JSON IPC socket and, the moment it reports EOF, told to seek back to
-///    the snippet's start second and pause — leaving it primed so **SPACE
-///    replays the clip**. Resuming re-arms both the watch and the auto-kill, so
-///    a replay gets a full 60s of its own rather than being cut off by the
-///    original deadline.
+/// 4. **Subtitles, when a clip has them.** A `<name>.srt` sidecar is parsed
+///    (`SRTSubtitles`) and drawn as a caption at the bottom of the window.
 ///
-/// 4. **Subtitles, when a clip has them.** A `<name>.srt` sidecar is hardlinked
-///    into the staging folder with the clip and named on the command line
-///    (`--mpv-sub-file` + `--mpv-sub-visibility=yes`) rather than left to mpv's
-///    `sub-auto`: the clip plays from the staging folder, and a personal
-///    `sub-visibility=no` in mpv.conf would otherwise swallow it silently.
-///
-/// 5. **The opening beat, eaten by the move.** Without `--mpv-pause`, IINA
-///    starts playing the instant it launches — while the window is still
-///    windowed, possibly on the wrong screen, and mid-move/resize/fullscreen.
-///    The room's first 1-2s were spent on that dance, not on the clip. So the
-///    file is loaded **paused**, and only unpaused once `AXFullScreen` reads
-///    back true *and* a short settle has passed (`scheduleUnpause`) — the
-///    first frame the room sees is the one Victor meant to start on.
+/// 5. **The cursor is never hidden by us.** `setHiddenUntilMouseMoves` at most
+///    — it restores itself on the first movement, so there is no hide/show
+///    pair that an error path could leave unbalanced.
 final class VideoPlayer {
     static let shared = VideoPlayer()
 
-    /// IINA's CLI launcher (installed at /Applications/IINA.app).
-    private let iinaCLI = "/Applications/IINA.app/Contents/MacOS/iina-cli"
-    private let playerProcessName = "IINA"
-    private let iinaBundleId = "com.colliderli.iina"
-    /// mpv's control socket. One player at a time, so one fixed path.
-    private let ipcSocket = "/tmp/victor-addons-iina.sock"
-
-    /// Seconds after which the player is force-quit (0 disables auto-kill).
+    /// Seconds after which the player is force-closed (0 disables auto-kill).
     var autoKillAfter: TimeInterval = 60
-    /// How long to wait, after fullscreen is confirmed, before unpausing —
-    /// long enough that the fullscreen transition itself has visibly settled.
-    var unpauseSettleDelay: TimeInterval = 1.2
 
     private var autoKill: DispatchWorkItem?
+    private var window: VideoWindow?
+    private var player: AVPlayer?
+    private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+    /// The app that had focus before the clip took it, given it back on close.
+    private var previousApp: NSRunningApplication?
+
     /// 📱 What the tablet's video page needs to stay pinned: a play counts as
-    /// **active** from the moment IINA is asked to start until the clip runs
-    /// out, the window goes away, or the auto-kill fires. Page 2 stays locked on
-    /// exactly this flag, so it must be true a beat *before* IINA's window
-    /// exists (see the grace in `isActive`) and false the instant Victor closes
-    /// the player by hand.
+    /// **active** from the moment playback is asked for until the clip runs
+    /// out, the window goes away, or the auto-kill fires.
     private var activeSince: Date?
     private var activeId: String?
     private var activeDeadline: Date?
-    /// The clip reached its end and was rewound+paused: the player is still up
+    /// The clip reached its end and was rewound+paused: the window is still up
     /// (SPACE replays it) but nothing is playing, which for the tablet is over.
     private var atEndPaused = false
-    /// EOF watch. Lives on `watchQueue`; `startSeconds` is where a rewind lands.
-    private let watchQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.video-eof", qos: .utility)
-    private var eofWatch: DispatchSourceTimer?
-    private var watchStartSeconds = 0
-    private var rewound = false
+    private var startSeconds = 0
 
-    /// Launch (or replace) the player at `startSeconds`, fullscreen on the Retina.
+    /// Launch (or replace) the player at `startSeconds`, covering the Retina.
     /// Returns **how many milliseconds it is scheduled to run** — the shorter of
     /// what is left of the clip and the auto-kill window — or nil if the file is
-    /// missing or IINA isn't installed. Same contract as
-    /// `VideoSoundtrackPlayer.play`: the tablet holds its video page open for
-    /// that long, and drains the ring on the tile over it.
+    /// missing. Same contract as `VideoSoundtrackPlayer.play`: the tablet holds
+    /// its video page open for that long, and drains the ring on the tile.
+    ///
+    /// Main thread only (AVPlayer + NSWindow); every caller is an HTTP handler,
+    /// which `TabletHttpServer` runs inside `DispatchQueue.main.sync`.
     @discardableResult
     func play(id: String, fileURL: URL, startSeconds: Int) -> Int? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             overlayError("VideoPlayer: file not found: \(fileURL.path)")
             return nil
         }
-        guard FileManager.default.isExecutableFile(atPath: iinaCLI) else {
-            overlayError("VideoPlayer: IINA CLI not found at \(iinaCLI)")
-            return nil
+        // Replace: close any player already up so we never stack windows.
+        stop()
+
+        let start = max(0, startSeconds)
+        self.startSeconds = start
+        let screen = Self.targetScreen()
+        let item = AVPlayerItem(url: fileURL)
+        let p = AVPlayer(playerItem: item)
+        p.actionAtItemEnd = .pause
+        p.volume = 1
+
+        let win = VideoWindow(screenFrame: screen.frame, player: p)
+        win.onSpace = { [weak self] in self?.togglePause() }
+        win.onEscape = { [weak self] in self?.stop() }
+        if let srt = Self.sidecarSubtitle(for: fileURL) {
+            win.subtitles = SRTSubtitles.parse(file: srt)
+            overlayInfo("VideoPlayer: subtitles \(srt.lastPathComponent) (\(win.subtitles.count) cues)")
+        }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in self?.reachedEnd() }
+        if !win.subtitles.isEmpty {
+            timeObserver = p.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
+            ) { [weak win] t in win?.showSubtitle(at: CMTimeGetSeconds(t)) }
         }
 
-        // Replace: quit any player already up so we never stack windows.
-        killPlayer()
-        stopEofWatch()
+        previousApp = NSWorkspace.shared.frontmostApplication
+        window = win
+        player = p
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        NSCursor.setHiddenUntilMouseMoves(true)
 
-        // Play from a folder holding this file alone (see the class comment):
-        // whatever playlist IINA builds around it has nowhere to continue to.
-        let staged = stage(fileURL)
-        let playURL = staged?.video ?? fileURL
-        let subtitleURL = staged?.subtitle ?? Self.sidecarSubtitle(for: fileURL)
-        try? FileManager.default.removeItem(atPath: ipcSocket)
+        // Exact seek, then play: the manifest's start second IS the joke, and
+        // a keyframe snap can land a scene away from it.
+        p.seek(to: CMTime(seconds: Double(start), preferredTimescale: 600),
+               toleranceBefore: .zero, toleranceAfter: .zero) { [weak p] _ in
+            p?.play()
+        }
 
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: iinaCLI)
-        // `--no-stdin` makes iina-cli return immediately after launching IINA
-        // (without it, it blocks reading stdin). NB no `--mpv-fullscreen`: the
-        // window has to stay movable until it is on the Retina. `--mpv-pause`
-        // holds the very first frame until `scheduleUnpause` releases it, so
-        // the move/resize/fullscreen dance never eats into the clip.
-        var arguments = [
-            "--no-stdin",
-            "--mpv-start=\(max(0, startSeconds))",
-            "--mpv-force-window=yes",
-            "--mpv-keep-open=yes",
-            "--mpv-pause=yes",
-            "--mpv-input-ipc-server=\(ipcSocket)",
-        ]
-        // Subtitles are passed EXPLICITLY rather than left to mpv's `sub-auto`:
-        // the clip plays from the staging folder, and IINA/mpv would only find a
-        // sidecar there if it had been copied along — and even then a user
-        // `sub-visibility=no` in mpv.conf would silently swallow it. Naming the
-        // file (and forcing visibility) makes the room see the text either way.
-        if let subtitleURL {
-            arguments += [
-                "--mpv-sub-file=\(subtitleURL.path)",
-                "--mpv-sub-visibility=yes",
-            ]
-            overlayInfo("VideoPlayer: subtitles \(subtitleURL.lastPathComponent)")
-        }
-        arguments.append(playURL.path)
-        p.arguments = arguments
-        do {
-            try p.run()
-        } catch {
-            overlayError("VideoPlayer: failed to launch IINA: \(error)")
-            return nil
-        }
-        overlayInfo("VideoPlayer: playing \(fileURL.lastPathComponent) from \(startSeconds)s")
-        scheduleRetinaFullscreen(attemptsLeft: 40)
-        startEofWatch(startSeconds: max(0, startSeconds))
+        overlayInfo("VideoPlayer: playing \(fileURL.lastPathComponent) from \(start)s on \(screen.localizedName) \(screen.frame)")
         scheduleAutoKill()
-        let planned = plannedSeconds(fileURL: fileURL, startSeconds: max(0, startSeconds))
+        let planned = plannedSeconds(fileURL: fileURL, startSeconds: start)
         activeSince = Date()
         activeId = id
         activeDeadline = Date().addingTimeInterval(planned)
@@ -187,15 +147,11 @@ final class VideoPlayer {
 
     /// 📱 Is a clip on screen right now? The tablet asks this once a second
     /// while its video page is pinned, so it un-pins on whichever end comes
-    /// first: the clip finishing, Victor quitting IINA, or the auto-kill.
+    /// first: the clip finishing, ESC, or the auto-kill.
     var isActive: Bool {
-        guard let since = activeSince, !atEndPaused else { return false }
+        guard activeSince != nil, !atEndPaused, window != nil else { return false }
         if let deadline = activeDeadline, Date() >= deadline { return false }
-        // `iina-cli` returns before IINA's window exists, so for the first
-        // couple of seconds "no process yet" means "still starting", not "over".
-        // Without this the tablet un-pins the page it just pinned.
-        if Date().timeIntervalSince(since) < 3 { return true }
-        return !NSRunningApplication.runningApplications(withBundleIdentifier: iinaBundleId).isEmpty
+        return true
     }
 
     /// The half of `GET /video/state` that speaks for the picture. Same shape as
@@ -207,12 +163,31 @@ final class VideoPlayer {
         return "{\"playing\":\(active),\"kind\":\"video\",\"id\":\(id),\"remainingMs\":\(remaining)}"
     }
 
-    /// Stop playback now (tablet stop / test hook) and cancel the pending auto-kill.
+    /// Stop playback now (tablet stop / ESC / test hook / replace) and cancel the
+    /// pending auto-kill. **The one exit**: every way a clip ends comes through
+    /// here, so the window, the player, the observers and the focus are all put
+    /// back in one place.
     func stop() {
         autoKill?.cancel()
         autoKill = nil
-        stopEofWatch()
-        killPlayer()
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
+        if let timeObserver, let player {
+            player.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
+        player?.pause()
+        player = nil
+        if let window {
+            window.orderOut(nil)
+            window.close()
+            self.window = nil
+            // The deck underneath had the keyboard before the clip took it.
+            previousApp?.activate()
+        }
+        previousApp = nil
         clearActive()
     }
 
@@ -223,10 +198,49 @@ final class VideoPlayer {
         atEndPaused = false
     }
 
-    // MARK: - One file, one folder
+    // MARK: - Which screen
 
-    /// Subtitle sidecar extensions understood by mpv, in the order they win.
-    private static let subtitleExtensions = ["srt", "ass", "ssa", "vtt", "sub"]
+    /// The screen the clip goes on: the built-in Retina if there is one — it is
+    /// what a venue projector mirrors — else what macOS calls main (lid closed).
+    /// `NSScreen.main` / `screens[0]` follow the **primary** display, which at a
+    /// venue is deliberately the ASUS (see `DisplayArrangementManager`).
+    static func targetScreen() -> NSScreen {
+        let screens = NSScreen.screens
+        let candidates = screens.map { s in
+            ScreenCandidate(
+                isBuiltIn: (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+                    .map { CGDisplayIsBuiltin($0) != 0 } ?? false,
+                name: s.localizedName,
+                isMain: s == NSScreen.main
+            )
+        }
+        if let i = pickScreen(candidates) { return screens[i] }
+        return NSScreen.main ?? screens[0]
+    }
+
+    /// What `targetScreen` needs to know about a screen, so the choice can be
+    /// unit-tested without an `NSScreen` (which cannot be constructed).
+    struct ScreenCandidate: Equatable {
+        var isBuiltIn: Bool
+        var name: String
+        var isMain: Bool
+    }
+
+    /// Pure half of `targetScreen`: index of the screen to use, or nil when the
+    /// list is empty. Built-in first (`CGDisplayIsBuiltin`), then a name that
+    /// says "Built-in" (the flag has been seen false for a built-in panel behind
+    /// a DisplayLink dock), then main, then the first one.
+    static func pickScreen(_ screens: [ScreenCandidate]) -> Int? {
+        if let i = screens.firstIndex(where: { $0.isBuiltIn }) { return i }
+        if let i = screens.firstIndex(where: { $0.name.localizedCaseInsensitiveContains("built-in") }) { return i }
+        if let i = screens.firstIndex(where: { $0.isMain }) { return i }
+        return screens.isEmpty ? nil : 0
+    }
+
+    // MARK: - Subtitles
+
+    /// Subtitle sidecar extensions understood, in the order they win.
+    private static let subtitleExtensions = ["srt"]
 
     /// The subtitle file sitting next to a clip under the same basename
     /// (`KLSdOY-6R_U.mp4` → `KLSdOY-6R_U.srt`), or nil when the clip has none.
@@ -239,205 +253,34 @@ final class VideoPlayer {
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    /// Hardlink the clip into `videos/.play/`, emptied first, and return the link
-    /// plus its subtitle sidecar if it has one. Nil when the staging fails, in
-    /// which case the caller falls back to the real path (auto-advance risk
-    /// beats not playing at all).
-    ///
-    /// The sidecar is hardlinked too even though it is passed by absolute path:
-    /// a subtitle that only exists outside the staging folder disappears the
-    /// moment anything decides to resolve it relative to the clip.
-    private func stage(_ fileURL: URL) -> (video: URL, subtitle: URL?)? {
-        let fm = FileManager.default
-        let dir = fileURL.deletingLastPathComponent().appendingPathComponent(".play")
-        do {
-            if fm.fileExists(atPath: dir.path) {
-                for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
-                    try? fm.removeItem(at: dir.appendingPathComponent(name))
-                }
-            } else {
-                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
-            let link = dir.appendingPathComponent(fileURL.lastPathComponent)
-            try fm.linkItem(at: fileURL, to: link)
-
-            // A failed subtitle link is not a failed staging: play the clip
-            // silently subtitle-less rather than fall back to the real folder,
-            // where IINA would auto-advance into the rest of the library.
-            var subLink: URL? = nil
-            if let sidecar = Self.sidecarSubtitle(for: fileURL) {
-                let target = dir.appendingPathComponent(sidecar.lastPathComponent)
-                if (try? fm.linkItem(at: sidecar, to: target)) != nil { subLink = target }
-                else { subLink = sidecar }
-            }
-            return (link, subLink)
-        } catch {
-            overlayInfo("VideoPlayer: could not stage \(fileURL.lastPathComponent) (\(error)) — playing in place")
-            return nil
-        }
-    }
-
-    // MARK: - Retina placement
-
-    /// Poll for IINA's window and place it. Fast cadence (0.15s) because until it
-    /// lands the clip is visible on whatever screen IINA opened on.
-    ///
-    /// **The request is repeated until it is confirmed**, not fired once: IINA
-    /// puts a window up before it is ready to be fullscreened, and an
-    /// `AXFullScreen` write that lands in that gap returns success and does
-    /// nothing (observed — the window merely covered the Retina's visible frame,
-    /// menu bar still showing). So each attempt re-asserts the frame, asks for
-    /// fullscreen, and **reads the attribute back**; only a true read stops the
-    /// loop.
-    private func scheduleRetinaFullscreen(attemptsLeft: Int) {
-        guard attemptsLeft > 0 else {
-            overlayError("VideoPlayer: IINA never confirmed fullscreen — the window covers the Retina instead")
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard let self else { return }
-            if self.placeOnRetinaAndFullscreen() {
-                self.scheduleUnpause()
-                return
-            }
-            self.scheduleRetinaFullscreen(attemptsLeft: attemptsLeft - 1)
-        }
-    }
-
-    /// The clip was launched paused (`--mpv-pause=yes`) precisely so this
-    /// moment — fullscreen confirmed on the Retina — is when playback actually
-    /// starts, not whenever IINA happened to open. The extra `unpauseSettleDelay`
-    /// on top covers the fullscreen transition's own visible settling, so what
-    /// the room sees first is a steady frame, not the tail end of an animation.
-    private func scheduleUnpause() {
-        watchQueue.asyncAfter(deadline: .now() + unpauseSettleDelay) { [weak self] in
-            guard let self else { return }
-            MpvIPC.send(socketPath: self.ipcSocket, command: ["set_property", "pause", false])
-        }
-    }
-
-    /// Move IINA's window onto the Retina and fullscreen it there. Main thread
-    /// (NSScreen). Returns true only once fullscreen is **confirmed**; false
-    /// while there is no window yet or the request hasn't taken, so the caller
-    /// keeps polling.
-    private func placeOnRetinaAndFullscreen() -> Bool {
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: iinaBundleId).first else {
-            return false
-        }
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(axApp, 0.3)
-        var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &raw) == .success,
-              let windows = raw as? [AXUIElement],
-              let win = Self.playerWindow(among: windows) else {
-            return false
-        }
-        let target = Self.axFrame(of: AppDelegate.findRetinaScreen())
-        var size = target.size
-        if let v = AXValueCreate(.cgSize, &size) {
-            AXUIElementSetAttributeValue(win, kAXSizeAttribute as CFString, v)
-        }
-        var origin = target.origin
-        if let v = AXValueCreate(.cgPoint, &origin) {
-            AXUIElementSetAttributeValue(win, kAXPositionAttribute as CFString, v)
-        }
-        // Fullscreen goes to the display the window is now on — hence the order.
-        AXUIElementSetAttributeValue(win, "AXFullScreen" as CFString, kCFBooleanTrue)
-        var isFull: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &isFull) == .success,
-              (isFull as? Bool) == true else {
-            return false   // not taken yet — the caller asks again
-        }
-        return true
-    }
-
-    /// IINA exposes **more than one** AX window, and the first one is not the
-    /// player: it is a 1728×37 strip with subrole `AXUnknown` whose
-    /// `AXFullScreen` isn't even settable. Writing the frame and the fullscreen
-    /// flag to it silently did nothing while looking like it worked — the clip
-    /// stayed wherever IINA had remembered it. The player is the
-    /// `AXStandardWindow`; when several qualify, the largest is the video.
-    private static func playerWindow(among windows: [AXUIElement]) -> AXUIElement? {
-        var best: (win: AXUIElement, area: CGFloat)?
-        for w in windows {
-            var subrole: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(w, kAXSubroleAttribute as CFString, &subrole) == .success,
-                  (subrole as? String) == (kAXStandardWindowSubrole as String) else { continue }
-            var raw: CFTypeRef?
-            var size = CGSize.zero
-            if AXUIElementCopyAttributeValue(w, kAXSizeAttribute as CFString, &raw) == .success, let v = raw {
-                AXValueGetValue(v as! AXValue, .cgSize, &size)
-            }
-            let area = size.width * size.height
-            if best == nil || area > best!.area { best = (w, area) }
-        }
-        return best?.win
-    }
-
-    /// Cocoa screen frame → Accessibility coordinates. The two disagree: AppKit
-    /// measures y **up** from the bottom of the primary screen, AX measures it
-    /// **down** from the top — identical only for the primary screen itself,
-    /// which is exactly the case that stops being true at a venue.
-    static func axFrame(of screen: NSScreen) -> CGRect {
-        axFrame(screenFrame: screen.frame, primaryTopY: (NSScreen.screens.first ?? screen).frame.maxY)
-    }
-
-    /// Pure half of the conversion, so the case that matters — the Retina *not*
-    /// being the primary screen, where the two systems actually differ — is
-    /// unit-tested rather than only ever exercised at a venue.
-    static func axFrame(screenFrame f: CGRect, primaryTopY: CGFloat) -> CGRect {
-        CGRect(x: f.origin.x, y: primaryTopY - f.maxY, width: f.width, height: f.height)
-    }
-
     // MARK: - End of playback: rewind + pause, never advance
 
-    private func startEofWatch(startSeconds: Int) {
-        watchQueue.async { [weak self] in
-            guard let self else { return }
-            self.watchStartSeconds = startSeconds
-            self.rewound = false
-            let t = DispatchSource.makeTimerSource(queue: self.watchQueue)
-            t.schedule(deadline: .now() + 1.0, repeating: 0.3)
-            t.setEventHandler { [weak self] in self?.eofTick() }
-            t.resume()
-            self.eofWatch = t
-        }
+    /// The clip ran out: back to the start second and hold the frame, so SPACE
+    /// replays it. Not `stop()`: the window stays up on purpose.
+    private func reachedEnd() {
+        guard let player else { return }
+        player.pause()
+        player.seek(to: CMTime(seconds: Double(startSeconds), preferredTimescale: 600),
+                    toleranceBefore: .zero, toleranceAfter: .zero)
+        atEndPaused = true
+        overlayInfo("VideoPlayer: clip ended — rewound to \(startSeconds)s and paused (SPACE replays)")
     }
 
-    private func stopEofWatch() {
-        watchQueue.async { [weak self] in
-            self?.eofWatch?.cancel()
-            self?.eofWatch = nil
-            self?.rewound = false
-        }
-    }
-
-    /// On `queue`. Two edges matter: playback reaching the end (rewind + pause),
-    /// and Victor pressing SPACE afterwards (re-arm, and give the replay its own
-    /// full auto-kill window instead of the one the first play started).
-    private func eofTick() {
-        let eof = MpvIPC.boolProperty(socketPath: ipcSocket, "eof-reached") ?? false
-        let paused = MpvIPC.boolProperty(socketPath: ipcSocket, "pause") ?? false
-        if eof, !rewound {
-            MpvIPC.send(socketPath: ipcSocket, command: ["seek", watchStartSeconds, "absolute"])
-            MpvIPC.send(socketPath: ipcSocket, command: ["set_property", "pause", true])
-            rewound = true
-            DispatchQueue.main.async { [weak self] in self?.atEndPaused = true }
-            overlayInfo("VideoPlayer: clip ended — rewound to \(watchStartSeconds)s and paused (SPACE replays)")
+    /// SPACE. A replay after the end is a new play as far as everyone is
+    /// concerned — its own auto-kill window, and the tablet's page pinned again.
+    private func togglePause() {
+        guard let player else { return }
+        if player.rate > 0 {
+            player.pause()
             return
         }
-        if rewound, !paused {
-            rewound = false
-            // SPACE: the replay is a new play as far as everyone is concerned —
-            // its own auto-kill window, and the tablet's page pinned again.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.atEndPaused = false
-                self.activeSince = Date()
-                self.activeDeadline = Date().addingTimeInterval(self.autoKillAfter)
-                self.scheduleAutoKill()
-            }
+        if atEndPaused {
+            atEndPaused = false
+            activeSince = Date()
+            activeDeadline = Date().addingTimeInterval(autoKillAfter)
+            scheduleAutoKill()
         }
+        player.play()
     }
 
     // MARK: - Lifetime
@@ -448,21 +291,126 @@ final class VideoPlayer {
         guard autoKillAfter > 0 else { return }
         let after = autoKillAfter
         let work = DispatchWorkItem { [weak self] in
-            self?.stopEofWatch()
-            self?.killPlayer()
-            self?.clearActive()
-            overlayInfo("VideoPlayer: auto-killed player after \(Int(after))s")
+            self?.stop()
+            overlayInfo("VideoPlayer: auto-closed player after \(Int(after))s")
         }
         autoKill = work
         DispatchQueue.main.asyncAfter(deadline: .now() + after, execute: work)
     }
+}
 
-    /// Quit IINA by process name (AppleScript-free, no Automation permission).
-    private func killPlayer() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        p.arguments = ["-x", playerProcessName]
-        try? p.run()
-        p.waitUntilExit()
+// MARK: - The window
+
+/// A borderless black window the size of one screen, showing an `AVPlayerLayer`
+/// and, under it, a caption. Key so SPACE / ESC reach it.
+final class VideoWindow: NSWindow {
+    var onSpace: (() -> Void)?
+    var onEscape: (() -> Void)?
+    var subtitles: [SRTSubtitles.Cue] = []
+
+    private let caption = NSTextField(labelWithString: "")
+
+    init(screenFrame: CGRect, player: AVPlayer) {
+        super.init(contentRect: screenFrame, styleMask: [.borderless], backing: .buffered, defer: false)
+        // Above a full-screen app and the PiP magnifier lens, on every Space.
+        level = .screenSaver
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        isOpaque = true
+        backgroundColor = .black
+        hasShadow = false
+        isReleasedWhenClosed = false
+        // Pinned to the screen's own frame; `setFrame` after init because a
+        // borderless window's contentRect is also its frame, but be explicit.
+        setFrame(screenFrame, display: false)
+
+        let view = NSView(frame: NSRect(origin: .zero, size: screenFrame.size))
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.black.cgColor
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspect
+        layer.frame = view.bounds
+        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        view.layer?.addSublayer(layer)
+
+        caption.alignment = .center
+        caption.font = .systemFont(ofSize: max(24, screenFrame.height / 28), weight: .semibold)
+        caption.textColor = .white
+        caption.backgroundColor = NSColor.black.withAlphaComponent(0.55)
+        caption.drawsBackground = true
+        caption.maximumNumberOfLines = 3
+        caption.lineBreakMode = .byWordWrapping
+        caption.isHidden = true
+        caption.frame = NSRect(x: screenFrame.width * 0.1, y: screenFrame.height * 0.06,
+                               width: screenFrame.width * 0.8, height: screenFrame.height * 0.16)
+        caption.autoresizingMask = [.width, .minYMargin]
+        view.addSubview(caption)
+        contentView = view
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 49: onSpace?()      // space
+        case 53: onEscape?()     // esc
+        default: super.keyDown(with: event)
+        }
+    }
+
+    func showSubtitle(at seconds: Double) {
+        let text = SRTSubtitles.text(at: seconds, in: subtitles)
+        caption.stringValue = text ?? ""
+        caption.isHidden = text == nil
+    }
+}
+
+// MARK: - SRT
+
+/// The subset of SubRip a training clip's sidecar uses: numbered cues,
+/// `HH:MM:SS,mmm --> HH:MM:SS,mmm`, one or more lines of text, blank line.
+enum SRTSubtitles {
+    struct Cue: Equatable {
+        var start: Double
+        var end: Double
+        var text: String
+    }
+
+    static func parse(file: URL) -> [Cue] {
+        guard let raw = try? String(contentsOf: file, encoding: .utf8) else { return [] }
+        return parse(raw)
+    }
+
+    static func parse(_ raw: String) -> [Cue] {
+        var cues: [Cue] = []
+        let blocks = raw.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n\n")
+        for block in blocks {
+            let lines = block.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            guard let timingIndex = lines.firstIndex(where: { $0.contains("-->") }) else { continue }
+            let parts = lines[timingIndex].components(separatedBy: "-->")
+            guard parts.count == 2,
+                  let start = seconds(parts[0].trimmingCharacters(in: .whitespaces)),
+                  let end = seconds(parts[1].trimmingCharacters(in: .whitespaces)) else { continue }
+            let text = lines[(timingIndex + 1)...].joined(separator: "\n")
+                .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            guard !text.isEmpty else { continue }
+            cues.append(Cue(start: start, end: end, text: text))
+        }
+        return cues
+    }
+
+    /// `HH:MM:SS,mmm` (a `.` is tolerated for the millisecond separator).
+    static func seconds(_ stamp: String) -> Double? {
+        let s = stamp.replacingOccurrences(of: ",", with: ".")
+        let parts = s.split(separator: ":").map(String.init)
+        guard parts.count == 3, let h = Double(parts[0]), let m = Double(parts[1]), let sec = Double(parts[2]) else {
+            return nil
+        }
+        return h * 3600 + m * 60 + sec
+    }
+
+    static func text(at t: Double, in cues: [Cue]) -> String? {
+        cues.first { $0.start <= t && t < $0.end }?.text
     }
 }

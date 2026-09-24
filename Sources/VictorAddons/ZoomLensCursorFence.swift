@@ -66,6 +66,15 @@ enum ZoomLensCursorFencePolicy {
     static func step(from p: CGPoint, rawDX: Double, rawDY: Double, in rect: CGRect) -> CGPoint {
         clamp(CGPoint(x: p.x + rawDX * rawScale, y: p.y + rawDY * rawScale), to: rect)
     }
+
+    /// Is a fence built on `rect` still describing a real display? After a
+    /// re-arrangement (venue mirror on/off, ASUS made primary) the rect the
+    /// cursor is clamped to may no longer exist, and a mouse decoupled inside a
+    /// rect nobody draws is a mouse that looks dead. Such a fence must be
+    /// dropped (re-coupling first) and rebuilt under the cursor.
+    static func fenceStillValid(rect: CGRect, masters: [CGRect]) -> Bool {
+        masters.contains(rect)
+    }
 }
 
 /// 🔍 Holds the cursor on the screen being magnified while a PiP lens is zoomed in.
@@ -195,8 +204,28 @@ final class ZoomLensCursorFence {
         let factor = (CFPreferencesCopyAppValue("closeViewZoomFactor" as CFString, Self.domain) as? Double) ?? 1
         let want = ZoomLensCursorFencePolicy.shouldFence(mode: mode, zoomedIn: zoomedIn, factor: factor)
 
-        lock.lock(); let fenced = fence != nil; lock.unlock()
-        guard want != fenced, let port = tapPort else { return }
+        lock.lock(); let current = fence; let isDecoupled = decoupled; lock.unlock()
+        var fenced = current != nil
+        guard let port = tapPort else { return }
+
+        // A fence outlives the display layout it was measured on only as long
+        // as that layout lasts: once its rect is gone, re-couple and start over
+        // (the next tick re-fences under the cursor if the lens is still zoomed).
+        // Same if the tap was switched off under a decoupled mouse (a
+        // `tapDisabledByTimeout` we never got to answer) — decoupled with no tap
+        // driving the cursor is exactly the frozen mouse.
+        if let current, fenced {
+            let stale = !ZoomLensCursorFencePolicy.fenceStillValid(rect: current.rect, masters: Self.masterBounds())
+            let tapDead = isDecoupled && !CGEvent.tapIsEnabled(tap: port)
+            if stale || tapDead {
+                CGEvent.tapEnable(tap: port, enable: false)
+                lock.lock(); fence = nil; decoupled = false; lock.unlock()
+                CGAssociateMouseAndMouseCursorPosition(1)
+                fenced = false
+                overlayInfo("🔍 cursor fence dropped (\(stale ? "display layout changed" : "tap died")) — mouse re-coupled")
+            }
+        }
+        guard want != fenced else { return }
 
         if want {
             guard let f = Self.fenceUnderCursor() else { return }
@@ -215,14 +244,20 @@ final class ZoomLensCursorFence {
     /// to another display. `nil` when there is no way out — nothing to fence.
     private static func fenceUnderCursor() -> (rect: CGRect, edges: FenceEdges)? {
         guard let p = CGEvent(source: nil)?.location else { return nil }
-        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
-        var n: UInt32 = 0
-        guard CGGetActiveDisplayList(16, &ids, &n) == .success else { return nil }
-        let masters = ids.prefix(Int(n)).filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
-        let rects = masters.map { CGDisplayBounds($0) }
+        let rects = masterBounds()
         guard let rect = rects.first(where: { $0.contains(p) }) else { return nil }
         let edges = ZoomLensCursorFencePolicy.exitEdges(of: rect, others: rects)
         return edges.isEmpty ? nil : (rect, edges)
+    }
+
+    /// Bounds of every active display that is not a mirror slave.
+    private static func masterBounds() -> [CGRect] {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+        var n: UInt32 = 0
+        guard CGGetActiveDisplayList(16, &ids, &n) == .success else { return [] }
+        return ids.prefix(Int(n))
+            .filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
+            .map { CGDisplayBounds($0) }
     }
 
     deinit {

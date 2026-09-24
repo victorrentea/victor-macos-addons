@@ -365,9 +365,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onChromeExtensionReload = { [weak self] in
             self?.chromeBridge?.reloadExtension() ?? false
         }
-        // Tablet video page: list downloaded videos, and play one fullscreen in
-        // IINA seeking to its manifest start-second (a new play replaces the
-        // previous player; VideoPlayer auto-kills it ~60s after start).
+        // Tablet video page: list downloaded videos, and play one fullscreen on
+        // the built-in screen, in-process, seeking to its manifest start-second
+        // (a new play replaces the previous one; VideoPlayer auto-closes it
+        // ~60s after start).
         tabletServer?.onVideos = { VideoLibrary.manifestJSON() }
         // Render any missing tile thumbnail into videos/<id>.jpg now, in the
         // background, so that first list call answers from cache instead of
@@ -404,7 +405,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onVideoSoundState = { VideoSoundtrackPlayer.shared.stateJSON() }
         // 📱 One question, two players: the tablet's video page holds itself open
         // on this answer and un-pins on whichever end comes first — the clip
-        // running out, IINA being closed by hand, or the soundtrack's 10 s cap.
+        // running out, ESC closing it, or the soundtrack's 10 s cap.
         tabletServer?.onVideoState = {
             if VideoPlayer.shared.isActive { return VideoPlayer.shared.stateJSON() }
             if VideoSoundtrackPlayer.shared.isPlaying { return VideoSoundtrackPlayer.shared.stateJSON() }
