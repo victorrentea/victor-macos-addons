@@ -342,7 +342,7 @@ app sees network changes all day, and a location fix costs radios.
 
 ## Toggle
 
-**💬 → 👩🏻‍💻 Extra → 📶 Victor Phone Hotspot Fallback**, persisted in `UserDefaults`
+**💬 → 📶 Auto Mobile Hotspot** (top level since 2026-09-25; was 👩🏻‍💻 Extra → 📶 Victor Phone Hotspot Fallback), persisted in `UserDefaults`
 (`HotspotFallback.enabled`, default on). Default on is safe: the feature does
 nothing at all unless the Mac is already offline and away from home.
 

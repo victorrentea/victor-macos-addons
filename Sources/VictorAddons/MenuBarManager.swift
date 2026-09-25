@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 23, 23:15"
+    static let BUILD_TIME = "Sep 25, 20:08"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -488,10 +488,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Galaxy running `victor-phone-addons` over Bluetooth and make IT hand
         // out the network — and when the room's Wi-Fi has just died, which
         // device is about to be asked for internet is the whole question.
-        hotspotFallbackItem = NSMenuItem(title: "📶 Victor Phone Hotspot Fallback", action: #selector(toggleHotspotFallbackAction), keyEquivalent: "")
+        //
+        // **"📶 Auto Mobile Hotspot", at the top level** since 2026-09-25
+        // (Victor: *"rename … and bring it up in the main menu"*). Being there
+        // costs it the native tick: one checked row at the top level makes
+        // AppKit reserve a check column for the whole menu and shifts every
+        // leading emoji. So, like Insomnia, the state is in the title —
+        // `HotspotMenu.title`.
+        hotspotFallbackItem = NSMenuItem(title: HotspotMenu.title(enabled: HotspotFallbackSettings.isEnabled),
+                                         action: #selector(toggleHotspotFallbackAction), keyEquivalent: "")
         hotspotFallbackItem.target = self
         hotspotFallbackItem.isEnabled = true
-        hotspotFallbackItem.state = HotspotFallbackSettings.isEnabled ? .on : .off
 
         // 📱 Start Victor Phone Hotspot Now was deleted on 2026-09-23 (Victor:
         // *"rămâne pe auto"*) — the automatic fallback above is the one path.
@@ -597,13 +604,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // din Extras … cu ---- între"*). Built above in the order each was
         // written; added here in the order they are read — what the clipboard
         // holds, the two utilities, the keyboard's sheets, the screen, the
-        // mouse, the phone's hotspot, and what keeps this Mac and Claude up.
+        // mouse, and what keeps this Mac and Claude up. (The phone's hotspot
+        // left for the top level on 2026-09-25.)
         let extraGroups: [[NSMenuItem]] = [
             [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem],
             [killItem, fluxInboxItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
-            [hotspotFallbackItem],
             [homeAwakeItem, claudeRemoteControlItem],
         ]
         for (i, group) in extraGroups.enumerated() {
@@ -682,6 +689,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
         lidAwakeItem.submenu = lidAwakeSubmenu
         menu.addItem(lidAwakeItem)
+        menu.addItem(hotspotFallbackItem)
 
         menu.addItem(extraItem)
 
@@ -948,6 +956,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     ///
     /// Off is the bare words, with nothing in front — also Victor's, and the
     /// reason there is no 🔋 here: a mark in *both* states is not a checkbox.
+    /// The 📶 top-level row. A trailing tick when armed and nothing when off:
+    /// the leading 📶 stays put in both states, so the row does not jump, and a
+    /// plain `✓` takes the menu's text colour in dark and light alike (an
+    /// emoji check would not).
+    enum HotspotMenu {
+        static func title(enabled: Bool) -> String {
+            "📶 Auto Mobile Hotspot" + (enabled ? "  ✓" : "")
+        }
+    }
+
     enum LidAwakeMenu {
         /// The parent row: the name Victor gave it, plus the state it is in,
         /// because a submenu that hides its state is a state you forget you
@@ -1058,7 +1076,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func toggleHotspotFallbackAction() {
         let enabled = !HotspotFallbackSettings.isEnabled
         HotspotFallbackSettings.isEnabled = enabled
-        hotspotFallbackItem.state = enabled ? .on : .off
+        hotspotFallbackItem.title = HotspotMenu.title(enabled: enabled)
     }
 
     @objc private func toggleCommandOverlayAction() {
