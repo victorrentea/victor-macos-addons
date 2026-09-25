@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 25, 22:45"
+    static let BUILD_TIME = "Sep 26, 00:45"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -356,7 +356,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // actually read, and how many agents have been launched from it.
         // In 👩🏻‍💻 Extras from 2026-09-23, back at the top level since
         // 2026-09-25 (Victor: *"move check inbox top level"*) — built here,
-        // added under 📶 Auto Mobile Hotspot.
+        // added under 🛜 Auto Mobile Hotspot.
         fluxInboxItem = NSMenuItem(title: FluxInboxMenu.base, action: #selector(checkTaskInboxAction), keyEquivalent: "")
         fluxInboxItem.target = self
         fluxInboxItem.isEnabled = true
@@ -491,7 +491,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // out the network — and when the room's Wi-Fi has just died, which
         // device is about to be asked for internet is the whole question.
         //
-        // **"📶 Auto Mobile Hotspot", at the top level** since 2026-09-25
+        // **"🛜 Auto Mobile Hotspot", at the top level** since 2026-09-25
         // (Victor: *"rename … and bring it up in the main menu"*). Being there
         // costs it the native tick: one checked row at the top level makes
         // AppKit reserve a check column for the whole menu and shifts every
@@ -959,13 +959,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     ///
     /// Off is the bare words, with nothing in front — also Victor's, and the
     /// reason there is no 🔋 here: a mark in *both* states is not a checkbox.
-    /// The 📶 top-level row. A trailing tick when armed and nothing when off:
-    /// the leading 📶 stays put in both states, so the row does not jump, and a
+    /// The 🛜 top-level row. A trailing tick when armed and nothing when off:
+    /// the leading 🛜 stays put in both states, so the row does not jump, and a
     /// plain `✓` takes the menu's text colour in dark and light alike (an
     /// emoji check would not).
     enum HotspotMenu {
         static func title(enabled: Bool) -> String {
-            "📶 Auto Mobile Hotspot" + (enabled ? "  ✓" : "")
+            "🛜 Auto Mobile Hotspot" + (enabled ? "  ✓" : "")
         }
     }
 
