@@ -298,7 +298,11 @@ final class ClipboardHistoryOverlay {
         content.addSubview(body)
         content.addSubview(status)
         if entry.isImage {
-            let download = downloadButton(for: entry, over: body.frame)
+            // Anchored to the **box**, not the picture (2026-09-26, Victor):
+            // the buttons sit in the same corner of the panel for every image,
+            // so the hand finds them without looking where this one ended.
+            let boxFrame = NSRect(x: pad, y: height - pad - box.height, width: box.width, height: box.height)
+            let download = downloadButton(for: entry, over: boxFrame)
             content.addSubview(download)
             content.addSubview(previewButton(for: entry, leftOf: download.frame))
         }
@@ -359,20 +363,21 @@ final class ClipboardHistoryOverlay {
         return view
     }
 
-    /// **`⬇️ in Downloads`, a square in the image's bottom-right corner**
+    /// **`⬇️ Downloads`, in the box's bottom-right corner** (the image's until
+    /// 2026-09-26; the words lost their "to"/"In" the same night)
     /// (2026-09-22, Victor: *"să afișeze un buton … pătrat pe poză în colț
     /// dreapta jos care să pună poza în Downloads"*). It replaces the menu's
     /// 📥 row as the way in — that one only ever saw the *current* clipboard,
     /// this one saves whichever clip the walk has reached. A click saves the
     /// full file and closes the bezel, clipboard untouched: saving it *was*
     /// the choice, and a ⌘ released afterwards must not also paste it.
-    private func downloadButton(for entry: ClipboardEntry, over image: NSRect) -> ClickButton {
+    private func downloadButton(for entry: ClipboardEntry, over area: NSRect) -> ClickButton {
         // **One line, a tray-and-arrow glyph, a rectangle** (2026-09-23, Victor,
         // pointing at the `.md` / `.pdf` download buttons of his own summary
         // page): the SF Symbol is the same open tray with the arrow dropping
-        // into it, and `to Downloads` says where.
-        let button = actionButton(symbol: "square.and.arrow.down", text: "to Downloads",
-                                  rightEdge: image.maxX - 10, bottom: image.minY + 10)
+        // into it, and `Downloads` says where.
+        let button = actionButton(symbol: "square.and.arrow.down", text: "Downloads",
+                                  rightEdge: area.maxX - 10, bottom: area.minY + 10)
         button.toolTip = "Save this image to ~/Downloads and show it in Finder"
         button.onClick = { [weak self] in
             guard let self else { return }
@@ -392,13 +397,13 @@ final class ClipboardHistoryOverlay {
         return button
     }
 
-    /// **`In Preview`, left of `to Downloads`** (2026-09-23, Victor) — the
+    /// **`Preview`, left of `Downloads`** (2026-09-23, Victor) — the
     /// picture at full size, to read or mark up. Opened from a copy in the temp
     /// folder, never from the history's own file: Preview saves in place, and a
     /// markup would otherwise rewrite the clip under the bezel's feet.
     private func previewButton(for entry: ClipboardEntry, leftOf other: NSRect) -> ClickButton {
-        let button = actionButton(symbol: "eye", text: "In Preview",
-                                  rightEdge: other.minX - 8, bottom: other.minY)
+        let button = actionButton(symbol: "eye", text: "Preview",
+                                  rightEdge: other.minX - 16, bottom: other.minY)
         button.toolTip = "Open this image in Preview"
         button.onClick = { [weak self] in
             guard let self else { return }
