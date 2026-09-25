@@ -129,6 +129,11 @@ final class ClipboardHistoryOverlay {
     /// copied, "is there more?" is a question about *this* box and *this* clip,
     /// not about a number of characters.
     private var textIsTruncated = false
+    /// Every font on the bezel is its base size times this — the clip text,
+    /// the status line and the image buttons (2026-09-26, Victor: "increase the
+    /// font x2"). The box itself is a quarter of the screen whatever the scale,
+    /// so a bigger font means fewer lines of a long clip, not a bigger panel.
+    private static let textScale: CGFloat = 2
 
     var isShowing: Bool { panel != nil }
     /// Whether letting go of ⌘ finishes this bezel — true only for the one the
@@ -332,7 +337,7 @@ final class ClipboardHistoryOverlay {
     private func imageView(for entry: ClipboardEntry, in box: NSSize, screen: NSScreen) -> NSView {
         guard case .image(let pixelWidth, let pixelHeight, _) = entry.kind,
               pixelWidth > 0, pixelHeight > 0 else {
-            return label(text: "(unreadable image)", font: .systemFont(ofSize: 14),
+            return label(text: "(unreadable image)", font: .systemFont(ofSize: 14 * Self.textScale),
                          color: .systemRed, width: box.width)
         }
         let backing = max(1, screen.backingScaleFactor)
@@ -420,11 +425,11 @@ final class ClipboardHistoryOverlay {
     /// One of the image's action buttons: an SF Symbol and a few words on one
     /// line, blue, brightening on hover, its right edge and bottom where asked.
     private func actionButton(symbol: String, text: String, rightEdge: CGFloat, bottom: CGFloat) -> ClickButton {
-        let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let font = NSFont.systemFont(ofSize: 14 * Self.textScale, weight: .semibold)
         let ink = NSColor(white: 0.97, alpha: 1)
         let title = NSMutableAttributedString()
         if let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: text)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15 * Self.textScale, weight: .semibold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [ink]))) {
             let attachment = NSTextAttachment()
             attachment.image = glyph
@@ -432,12 +437,12 @@ final class ClipboardHistoryOverlay {
             title.append(NSAttributedString(attachment: attachment))
         }
         title.append(NSAttributedString(string: "  " + text, attributes: [.font: font, .foregroundColor: ink]))
-        let size = NSSize(width: (title.size().width + 28).rounded(), height: 36)
+        let size = NSSize(width: (title.size().width + 28 * Self.textScale).rounded(), height: 36 * Self.textScale)
         let button = ClickButton(frame: NSRect(x: rightEdge - size.width, y: bottom,
                                                width: size.width, height: size.height))
         button.isBordered = false
         button.wantsLayer = true
-        button.layer?.cornerRadius = 9
+        button.layer?.cornerRadius = 9 * Self.textScale
         button.layer?.borderWidth = 1
         button.rest = NSColor(srgbRed: 0.10, green: 0.42, blue: 0.95, alpha: 0.88)
         button.hover = NSColor(srgbRed: 0.24, green: 0.58, blue: 1.00, alpha: 1.00)
@@ -471,7 +476,7 @@ final class ClipboardHistoryOverlay {
     /// up at launch) or the app is gone from the disk.
     private func textView(for entry: ClipboardEntry, in box: NSSize) -> NSView {
         guard case .text(let string) = entry.kind else { return NSView() }
-        let font = NSFont.systemFont(ofSize: 17)
+        let font = NSFont.systemFont(ofSize: 17 * Self.textScale)
         let field = NSTextField(wrappingLabelWithString: ClipboardHistoryPolicy.preview(string))
         field.font = font
         field.textColor = NSColor(white: 0.95, alpha: 1)
@@ -556,10 +561,10 @@ final class ClipboardHistoryOverlay {
         // that reports the box's width as its own pushes the next one off the
         // panel entirely.
         let counter = fittedLabel(text: "\(index + 1) / \(entries.count)",
-                                  font: .monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
+                                  font: .monospacedDigitSystemFont(ofSize: 12 * Self.textScale, weight: .semibold),
                                   color: NSColor.systemYellow.withAlphaComponent(0.9))
         let hint = fittedLabel(text: "V next  ·  ↑↓ walk  ·  Esc",
-                               font: .systemFont(ofSize: 11),
+                               font: .systemFont(ofSize: 11 * Self.textScale),
                                color: NSColor(white: 0.5, alpha: 1))
 
         // An image says nothing about itself. `🖼️ 3000×2000 · 142 KB` was there
@@ -571,14 +576,14 @@ final class ClipboardHistoryOverlay {
         if case .text(let string) = entry.kind, textIsTruncated {
             facts.append("\(string.count) chars")
         }
-        let right = fittedLabel(text: facts.joined(separator: "  ·  "), font: .systemFont(ofSize: 12),
+        let right = fittedLabel(text: facts.joined(separator: "  ·  "), font: .systemFont(ofSize: 12 * Self.textScale),
                                 color: NSColor(white: 0.62, alpha: 1))
 
         let height = max(counter.frame.height, hint.frame.height, right.frame.height)
         let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         counter.frame = NSRect(x: 0, y: 0, width: counter.frame.width, height: height)
-        hint.frame = NSRect(x: counter.frame.width + 14, y: 0, width: hint.frame.width, height: height)
-        right.frame = NSRect(x: max(hint.frame.maxX + 14, width - right.frame.width), y: 0,
+        hint.frame = NSRect(x: counter.frame.width + 14 * Self.textScale, y: 0, width: hint.frame.width, height: height)
+        right.frame = NSRect(x: max(hint.frame.maxX + 14 * Self.textScale, width - right.frame.width), y: 0,
                              width: right.frame.width, height: height)
         row.addSubview(counter)
         row.addSubview(hint)
