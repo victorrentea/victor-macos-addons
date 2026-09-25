@@ -128,6 +128,7 @@ class EventTapManager {
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
     private let VK_F3: CGKeyCode = 0x63
+    private let VK_F4: CGKeyCode = 0x76
     private let VK_F8: CGKeyCode = 0x64
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
@@ -569,6 +570,18 @@ private let VK_F: CGKeyCode = 0x03
         // a real keyDown rather than a media-key system event.
         if keyCode == VK_F8 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
+            return nil
+        }
+
+        // F4 → the ✂️ crosshair crop straight away, a second way into what a held
+        // ⌃P opens (suppress). Bare F4, standard function keys, same as F3/F8.
+        // No tap/hold split here — F4 means only the crop — and autorepeat is
+        // ignored so a held key does not re-open it. Walkie Talkie's F4 is
+        // ⌃⌥⌘F4 (a mouse side-button gesture), so the two never meet.
+        if keyCode == VK_F4 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.global().async { [weak self] in self?.onScreenshotCrop?() }
+            }
             return nil
         }
 
