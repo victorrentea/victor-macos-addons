@@ -37,7 +37,9 @@ import Foundation
 ///    window of its own.
 ///
 /// 4. **Subtitles, when a clip has them.** A `<name>.srt` sidecar is parsed
-///    (`SRTSubtitles`) and drawn as a caption at the bottom of the window.
+///    (`SRTSubtitles`) and drawn as an outlined caption over the picture —
+///    at the bottom, or at the top for a cue tagged `{\an8}`, in the colour of
+///    its `<font color=…>` tag (white when untagged). No backdrop box.
 ///
 /// 5. **The cursor is never hidden by us.** `setHiddenUntilMouseMoves` at most
 ///    — it restores itself on the first movement, so there is no hide/show
@@ -309,8 +311,16 @@ final class VideoWindow: NSWindow {
     var subtitles: [SRTSubtitles.Cue] = []
 
     private let caption = NSTextField(labelWithString: "")
+    /// The same text stroked thick and black, right under `caption`: the
+    /// outline that keeps it readable with no backdrop box. A negative
+    /// strokeWidth on one label draws a hairline, not an outline.
+    private let captionOutline = NSTextField(labelWithString: "")
+    private let playerLayer: AVPlayerLayer
+    private let captionFont: NSFont
 
     init(screenFrame: CGRect, player: AVPlayer) {
+        playerLayer = AVPlayerLayer(player: player)
+        captionFont = .systemFont(ofSize: max(36, screenFrame.height / 18), weight: .heavy)
         super.init(contentRect: screenFrame, styleMask: [.borderless], backing: .buffered, defer: false)
         // Above a full-screen app and the PiP magnifier lens, on every Space.
         level = .screenSaver
@@ -326,24 +336,20 @@ final class VideoWindow: NSWindow {
         let view = NSView(frame: NSRect(origin: .zero, size: screenFrame.size))
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.black.cgColor
-        let layer = AVPlayerLayer(player: player)
+        let layer = playerLayer
         layer.videoGravity = .resizeAspect
         layer.frame = view.bounds
         layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         view.layer?.addSublayer(layer)
 
         caption.alignment = .center
-        caption.font = .systemFont(ofSize: max(24, screenFrame.height / 28), weight: .semibold)
-        caption.textColor = .white
-        caption.backgroundColor = NSColor.black.withAlphaComponent(0.55)
-        caption.drawsBackground = true
-        caption.maximumNumberOfLines = 3
-        caption.lineBreakMode = .byWordWrapping
-        caption.isHidden = true
-        caption.frame = NSRect(x: screenFrame.width * 0.1, y: screenFrame.height * 0.06,
-                               width: screenFrame.width * 0.8, height: screenFrame.height * 0.16)
-        caption.autoresizingMask = [.width, .minYMargin]
-        view.addSubview(caption)
+        for label in [captionOutline, caption] {
+            label.drawsBackground = false
+            label.maximumNumberOfLines = 3
+            label.lineBreakMode = .byWordWrapping
+            label.isHidden = true
+            view.addSubview(label)
+        }
         contentView = view
     }
 
@@ -359,9 +365,55 @@ final class VideoWindow: NSWindow {
     }
 
     func showSubtitle(at seconds: Double) {
-        let text = SRTSubtitles.text(at: seconds, in: subtitles)
-        caption.stringValue = text ?? ""
-        caption.isHidden = text == nil
+        guard let cue = SRTSubtitles.cue(at: seconds, in: subtitles) else {
+            caption.isHidden = true
+            captionOutline.isHidden = true
+            return
+        }
+        let shadow = NSShadow()
+        shadow.shadowColor = .black
+        shadow.shadowBlurRadius = 6
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        caption.attributedStringValue = NSAttributedString(string: cue.text, attributes: [
+            .font: captionFont,
+            .foregroundColor: Self.color(cue.color),
+            .paragraphStyle: paragraph,
+        ])
+        captionOutline.attributedStringValue = NSAttributedString(string: cue.text, attributes: [
+            .font: captionFont,
+            .foregroundColor: NSColor.black,
+            .strokeColor: NSColor.black,
+            .strokeWidth: 22,
+            .shadow: shadow,
+            .paragraphStyle: paragraph,
+        ])
+        // Laid out against the picture itself, not the screen: on the 16:10
+        // Retina a 16:9 clip is letterboxed, and "top" means the top of the video.
+        let video = playerLayer.videoRect.isEmpty ? contentView?.bounds ?? frame : playerLayer.videoRect
+        let width = video.width * 0.9
+        let height = caption.sizeThatFits(NSSize(width: width, height: .greatestFiniteMagnitude)).height
+        let margin = video.height * 0.05
+        let y = cue.top ? video.maxY - margin - height : video.minY + margin
+        caption.frame = NSRect(x: video.minX + (video.width - width) / 2, y: y, width: width, height: height)
+        captionOutline.frame = caption.frame
+        caption.isHidden = false
+        captionOutline.isHidden = false
+    }
+
+    /// A `<font color=…>` value: a few names, or `#RRGGBB`. White otherwise.
+    static func color(_ value: String?) -> NSColor {
+        guard let v = value?.lowercased() else { return .white }
+        switch v {
+        case "yellow": return NSColor(red: 1, green: 0.87, blue: 0, alpha: 1)
+        case "red": return NSColor(red: 1, green: 0.2, blue: 0.15, alpha: 1)
+        case "white": return .white
+        default:
+            guard v.hasPrefix("#"), v.count == 7, let rgb = Int(v.dropFirst(), radix: 16) else { return .white }
+            return NSColor(red: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
+                           blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+        }
     }
 }
 
@@ -369,11 +421,15 @@ final class VideoWindow: NSWindow {
 
 /// The subset of SubRip a training clip's sidecar uses: numbered cues,
 /// `HH:MM:SS,mmm --> HH:MM:SS,mmm`, one or more lines of text, blank line.
+/// Two styling tags are honoured, the rest stripped: `<font color="red">`
+/// colours the cue, and the `{\an8}` position tag moves it to the top.
 enum SRTSubtitles {
     struct Cue: Equatable {
         var start: Double
         var end: Double
         var text: String
+        var color: String? = nil
+        var top: Bool = false
     }
 
     static func parse(file: URL) -> [Cue] {
@@ -392,10 +448,13 @@ enum SRTSubtitles {
             guard parts.count == 2,
                   let start = seconds(parts[0].trimmingCharacters(in: .whitespaces)),
                   let end = seconds(parts[1].trimmingCharacters(in: .whitespaces)) else { continue }
-            let text = lines[(timingIndex + 1)...].joined(separator: "\n")
+            let body = lines[(timingIndex + 1)...].joined(separator: "\n")
+            let text = body
                 .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "\\{\\\\[^}]*\\}", with: "", options: .regularExpression)
             guard !text.isEmpty else { continue }
-            cues.append(Cue(start: start, end: end, text: text))
+            cues.append(Cue(start: start, end: end, text: text,
+                            color: fontColor(body), top: body.contains("{\\an8}")))
         }
         return cues
     }
@@ -410,7 +469,19 @@ enum SRTSubtitles {
         return h * 3600 + m * 60 + sec
     }
 
+    static func cue(at t: Double, in cues: [Cue]) -> Cue? {
+        cues.first { $0.start <= t && t < $0.end }
+    }
+
     static func text(at t: Double, in cues: [Cue]) -> String? {
-        cues.first { $0.start <= t && t < $0.end }?.text
+        cue(at: t, in: cues)?.text
+    }
+
+    /// The `color` of the first `<font color=…>` tag, quotes optional.
+    static func fontColor(_ body: String) -> String? {
+        guard let r = body.range(of: #"<font[^>]*color\s*=\s*"?'?([#A-Za-z0-9]+)"#, options: .regularExpression)
+        else { return nil }
+        let tag = String(body[r])
+        return tag.range(of: #"[#A-Za-z0-9]+$"#, options: .regularExpression).map { String(tag[$0]) }
     }
 }

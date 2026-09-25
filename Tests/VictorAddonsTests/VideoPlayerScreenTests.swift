@@ -79,6 +79,28 @@ final class SRTSubtitlesTests: XCTestCase {
         XCTAssertNil(SRTSubtitles.text(at: 2.0, in: cues))
     }
 
+    func testFontColorAndTopTagStyleTheCue() {
+        let srt = """
+        1
+        00:00:01,000 --> 00:00:02,000
+        {\\an8}<font color="red">Deletes the tests</font>
+
+        2
+        00:00:03,000 --> 00:00:04,000
+        <font color=#FFD700>Plain</font>
+
+        3
+        00:00:05,000 --> 00:00:06,000
+        Untagged
+
+        """
+        let cues = SRTSubtitles.parse(srt)
+        XCTAssertEqual(cues[0], SRTSubtitles.Cue(start: 1, end: 2, text: "Deletes the tests", color: "red", top: true))
+        XCTAssertEqual(cues[1].color, "#FFD700")
+        XCTAssertFalse(cues[1].top)
+        XCTAssertNil(cues[2].color)
+    }
+
     func testTimestampWithHoursAndDot() {
         XCTAssertEqual(SRTSubtitles.seconds("01:02:03.250"), 3723.25)
         XCTAssertNil(SRTSubtitles.seconds("02:03"))
