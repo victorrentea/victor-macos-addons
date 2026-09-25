@@ -67,8 +67,6 @@ class EventTapManager {
     /// 🔍 ⌘⌃U — flip the screen magnifier between the style a screen share carries
     /// and the one it silently drops.
     var onToggleZoomLens: (() -> Void)?
-    /// ⌘⌃; — the 📏 on-screen ruler (`ScreenRuler`).
-    var onToggleScreenRuler: (() -> Void)?
     /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
     /// subject "Reminder". Nothing to confirm: it is already gone.
     var onSendClipboardReminder: (() -> Void)?
@@ -129,7 +127,6 @@ class EventTapManager {
     private let VK_O: CGKeyCode = 0x1F
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
-    private let VK_SEMICOLON: CGKeyCode = 0x29
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F8: CGKeyCode = 0x64
 
@@ -720,16 +717,6 @@ private let VK_F: CGKeyCode = 0x03
         // finger that just pressed it.
         if keyCode == VK_U && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onToggleZoomLens?() }
-            return nil
-        }
-
-        // Cmd+Ctrl+; → the 📏 „șubler": a ruler over every screen, drag to read
-        // a size in pixels (suppress). Autorepeat excluded — it is a toggle, and
-        // a held key would flicker it open and shut.
-        if keyCode == VK_SEMICOLON && hasCmd && hasCtrl && !hasOpt {
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.main.async { [weak self] in self?.onToggleScreenRuler?() }
-            }
             return nil
         }
 

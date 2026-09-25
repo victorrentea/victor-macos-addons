@@ -74,9 +74,6 @@ enum CommandControlShortcuts {
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
-        41: "șubler",    // ; — the 📏 on-screen ruler: drag a box, read its size
-                         // in pixels. Victor's own word for it; the key is the
-                         // one the ; sits on, free on this board.
         32: "lupă",      // U — flip the screen magnifier between the style a Zoom
                          // share carries and the one it drops. The word is the thing
                          // you are reaching for, not the switch: "zoom" is already Z
