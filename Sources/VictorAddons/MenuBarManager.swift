@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 25, 20:08"
+    static let BUILD_TIME = "Sep 25, 22:45"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -354,7 +354,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the ONLY way an email ever becomes a task. Its title carries the two
         // facts worth knowing at a glance: how long since the inbox was
         // actually read, and how many agents have been launched from it.
-        // In 👩🏻‍💻 Extras since 2026-09-23 (Victor) — built here, added there.
+        // In 👩🏻‍💻 Extras from 2026-09-23, back at the top level since
+        // 2026-09-25 (Victor: *"move check inbox top level"*) — built here,
+        // added under 📶 Auto Mobile Hotspot.
         fluxInboxItem = NSMenuItem(title: FluxInboxMenu.base, action: #selector(checkTaskInboxAction), keyEquivalent: "")
         fluxInboxItem.target = self
         fluxInboxItem.isEnabled = true
@@ -608,7 +610,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // left for the top level on 2026-09-25.)
         let extraGroups: [[NSMenuItem]] = [
             [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem],
-            [killItem, fluxInboxItem],
+            [killItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
             [homeAwakeItem, claudeRemoteControlItem],
@@ -690,6 +692,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         lidAwakeItem.submenu = lidAwakeSubmenu
         menu.addItem(lidAwakeItem)
         menu.addItem(hotspotFallbackItem)
+        menu.addItem(fluxInboxItem)
 
         menu.addItem(extraItem)
 
