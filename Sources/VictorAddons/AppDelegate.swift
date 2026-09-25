@@ -1030,6 +1030,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestClipboardHistory = { [weak self] in
             DispatchQueue.main.async { self?.toggleClipboardHistoryWithoutKeyboard() }
         }
+        // 📏 The ruler without the keyboard; `from`/`to` (global Cocoa points)
+        // draw a measurement without the mouse. `close=1` puts it away.
+        tabletServer?.onTestRuler = { from, to, close in
+            func point(_ raw: String?) -> NSPoint? {
+                let parts = (raw ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                return parts.count == 2 ? NSPoint(x: parts[0], y: parts[1]) : nil
+            }
+            DispatchQueue.main.async {
+                if close { ScreenRuler.shared.close() } else { ScreenRuler.shared.open(from: point(from), to: point(to)) }
+            }
+        }
         // `at=x,y` in global Cocoa points, so a test can aim the mark at a screen
         // without dragging the pointer out from under whoever is using it.
         tabletServer?.onTestScreenshotMark = { at in
@@ -1628,6 +1639,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // from the watcher's next tick, so the key answers immediately.
         eventTap.onToggleZoomLens = { [weak self] in
             self?.zoomLensWatch?.toggle()
+        }
+        // ⌘⌃; — the 📏 ruler. Already on main (the tap dispatches it there).
+        eventTap.onToggleScreenRuler = {
+            ScreenRuler.shared.toggle()
         }
         // ⌘⌃P — the selection (or the clipboard) is filed as an agent prompt in
         // the session notes, which is what puts it on the participants' Prompts

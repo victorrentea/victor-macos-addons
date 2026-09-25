@@ -82,6 +82,9 @@ case testTerminalFont
         /// only way to look at it while an agent is working, since pressing the
         /// real shortcut means taking Victor's keyboard.
         case testClipboardHistory
+        /// 📏 The ⌘⌃; ruler: `from=x,y&to=x,y` draws a measurement (global
+        /// Cocoa points), `close=1` puts the ruler away.
+        case testRuler(from: String?, to: String?, close: Bool)
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
         case testScreenshotMark(String?)
@@ -276,6 +279,7 @@ case testTerminalFont
     /// 📋 Open the clipboard-history bezel (clipboard-only mode — nothing is
     /// pasted, since no window asked for it).
     var onTestClipboardHistory: (() -> Void)?
+    var onTestRuler: ((String?, String?, Bool) -> Void)?
     var onTestScreenshotMark: ((String?) -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestGroupPhotoBreakEnd: (() -> Void)?
@@ -542,6 +546,8 @@ case testTerminalFont
                 self.onTestScreenshotCrop?()
             case .testClipboardHistory:
                 self.onTestClipboardHistory?()
+            case .testRuler(let from, let to, let close):
+                self.onTestRuler?(from, to, close)
             case .testScreenshotMark(let at):
                 self.onTestScreenshotMark?(at)
             case .testGroupPhoto:
@@ -879,6 +885,10 @@ case testTerminalFont
             return .testScreenshotCrop
         case "/test/clipboard-history":
             return .testClipboardHistory
+        case "/test/ruler":
+            return .testRuler(from: queryItems.first(where: { $0.name == "from" })?.value,
+                              to: queryItems.first(where: { $0.name == "to" })?.value,
+                              close: queryItems.first(where: { $0.name == "close" })?.value == "1")
         case "/test/screenshot/mark":
             return .testScreenshotMark(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/group-photo":

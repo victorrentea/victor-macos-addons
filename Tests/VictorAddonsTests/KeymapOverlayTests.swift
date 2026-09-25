@@ -392,7 +392,8 @@ final class KeymapOverlayTests: XCTestCase {
         // here whose effect is invisible on this Mac — both magnifier styles look
         // identical on screen, and only a screen share can tell them apart — which
         // is precisely why it needs a word on the sheet and a pill when pressed.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 35, 32])
+        // ; (41) joined on 2026-09-26 with the 📏 ruler („șubler").
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 35, 32, 41])
         XCTAssertEqual(CommandControlShortcuts.labels[32], "lupă")
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
