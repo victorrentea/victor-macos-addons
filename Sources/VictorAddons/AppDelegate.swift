@@ -93,6 +93,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 📱 Watches Soduto's low-battery notification for the paired Android and
     /// feeds it into `/ping` so the tablet can blink about it.
     private var phoneBattery: PhoneBatteryMonitor?
+    /// 📶 Roaming allowance, read from the phone over Bluetooth, and the pill
+    /// that says when it is nearly gone.
+    private var phoneRoaming: PhoneRoamingMonitor?
+    private var roamingWarning: RoamingWarning?
     private var memoryPressure: MemoryPressureMonitor?
     /// 🔒 Mac screen locked → the tablet goes into standby (dim, no thumbnails).
     private var screenLock: ScreenLockMonitor?
@@ -848,6 +852,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestPhoneBattery = { [weak phoneBatteryMonitor] in
             phoneBatteryMonitor?.pollNow()
             return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        }
+        // 📶 Roaming allowance under 15% on a roaming day → a red pill that stays
+        // until hovered, once a day. The phone counts; see docs/roaming-warning.md.
+        let roamingWarning = RoamingWarning(screensProvider: { NSScreen.screens })
+        let phoneRoaming = PhoneRoamingMonitor()
+        phoneRoaming.onReading = { [weak roamingWarning] r in roamingWarning?.update(r) }
+        roamingWarning.start()
+        phoneRoaming.start()
+        self.roamingWarning = roamingWarning
+        self.phoneRoaming = phoneRoaming
+        tabletServer?.onTestRoaming = { [weak phoneRoaming, weak roamingWarning] sub in
+            guard let phoneRoaming else { return "{\"error\":\"monitor unavailable\"}" }
+            if sub.hasPrefix("/simulate/") {
+                let arg = String(sub.dropFirst("/simulate/".count))
+                phoneRoaming.simulate(remainingPct: Int(arg) ?? -1)   // "off" clears
+            } else if sub == "/reset-dismissal" {
+                roamingWarning?.resetDismissal()
+            } else {
+                phoneRoaming.pollNow()
+            }
+            return phoneRoaming.diagnosticsJSON
         }
         // 🟥 Memory pressure → the menu bar icon flashes on a red plate. The
         // trigger is the *compressor*, not the swap file — see

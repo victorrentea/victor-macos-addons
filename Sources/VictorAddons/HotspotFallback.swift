@@ -73,7 +73,7 @@ enum HotspotFallbackSettings {
 final class HotspotFallback {
 
     /// The phone, as IOBluetooth addresses it (Victor S24u).
-    private static let phoneBluetoothAddress = "a8-ba-69-cf-8d-58"
+    static let phoneBluetoothAddress = "a8-ba-69-cf-8d-58"
     /// Serial Port Profile. The phone publishes an RFCOMM channel under it —
     /// see the `victor-phone-addons` repo — and connecting to that channel is
     /// the whole signal.
@@ -233,7 +233,7 @@ final class HotspotFallback {
     private var lastKnownOnline: Bool?
     private var channel: IOBluetoothRFCOMMChannel?
     private let geofence = HomeGeofence()
-    private var opener: ChannelOpener?
+    private var opener: PhoneChannelOpener?
     /// What the last channel open did, for the test hook to report.
     private var lastChannelError: String?
     private var lastChannelAt: Date?
@@ -623,7 +623,8 @@ final class HotspotFallback {
             guard let dev = IOBluetoothDevice(addressString: Self.phoneBluetoothAddress) else {
                 return finish("phone not in the Bluetooth pairing list")
             }
-            let opener = ChannelOpener(device: dev, sppUUID: Self.sppUUID) { [weak self] outcome in
+            let opener = PhoneChannelOpener(device: dev, service: IOBluetoothSDPUUID(uuid16: Self.sppUUID),
+                                            serviceName: "SPP") { [weak self] outcome in
                 switch outcome {
                 case .opened(let ch, let chID):
                     self?.channel = ch
@@ -650,144 +651,4 @@ final class HotspotFallback {
         opener = nil
     }
 
-    /// Runs one SDP query + RFCOMM open against the phone, on the main thread's
-    /// run loop, and reports what actually happened — including a retry with a
-    /// freshly queried channel number when the first open is refused.
-    ///
-    /// It is also the channel's delegate, and it is retained by `HotspotFallback`
-    /// for as long as the channel is meant to stay up: IOBluetooth does not
-    /// retain the delegate, and a deallocated delegate takes the channel with it.
-    private final class ChannelOpener: NSObject, IOBluetoothRFCOMMChannelDelegate {
-        enum Outcome {
-            case opened(IOBluetoothRFCOMMChannel, BluetoothRFCOMMChannelID)
-            case failed(String)
-        }
-
-        /// Page timeout for bringing the baseband link up, in 0.625 ms slots:
-        /// 0x2000 ≈ 5.1 s. Measured cold, the phone answers in 4.0 s.
-        private static let pageTimeout: BluetoothHCIPageTimeout = 0x2000
-
-        /// How long the phone gets to answer one SDP query.
-        ///
-        /// 6 s was too tight and produced a false negative on the first
-        /// automatic attempt of a real test: a query answers in about a second
-        /// once the ACL link is up, but when it is cold the phone has to be
-        /// paged first, and that is where the seconds go. This is paid only when
-        /// the phone is genuinely unreachable.
-        private static let sdpTimeout: TimeInterval = 15
-
-        private let device: IOBluetoothDevice
-        private let sppUUID: UInt16
-        private var report: ((Outcome) -> Void)?
-        private var channel: IOBluetoothRFCOMMChannel?
-        private var channelID: BluetoothRFCOMMChannelID = 0
-        /// One retry, and only after a *fresh* SDP query — the whole point is to
-        /// stop trusting a channel number that has gone stale.
-        private var triesLeft = 2
-        private var sdpWatchdog: Timer?
-
-        init(device: IOBluetoothDevice, sppUUID: UInt16, report: @escaping (Outcome) -> Void) {
-            self.device = device
-            self.sppUUID = sppUUID
-            self.report = report
-        }
-
-        func start() { querySDP() }
-
-        private func finish(_ outcome: Outcome) {
-            sdpWatchdog?.invalidate()
-            sdpWatchdog = nil
-            let r = report
-            report = nil
-            r?(outcome)
-        }
-
-        /// **The link has to be up before the SDP query, or the query never
-        /// comes back at all.** Measured 27 Aug 2026, with the adapter
-        /// power-cycled to imitate a lid-close: `performSDPQuery` returns
-        /// `kIOReturnSuccess` and `sdpQueryComplete` then simply never fires —
-        /// 42 s and counting. macOS will not page the phone on an SDP query's
-        /// behalf. `openConnection()` will, and takes **4.0 s** from cold; after
-        /// it the query answers in 0.0 s and the channel opens in 0.2 s.
-        ///
-        /// This is exactly what a lid-open hits, and it is why the chain kept
-        /// failing in the one situation it exists for while working perfectly
-        /// whenever it was tested with the link already warm.
-        private func querySDP() {
-            guard triesLeft > 0 else {
-                return finish(.failed("the phone refused the RFCOMM channel twice"))
-            }
-            triesLeft -= 1
-
-            if !device.isConnected() {
-                let began = Date()
-                // Bounded, so a phone that is out of range or switched off costs
-                // one page timeout rather than blocking this thread indefinitely.
-                let r = device.openConnection(nil, withPageTimeout: Self.pageTimeout, authenticationRequired: false)
-                let took = String(format: "%.1f", Date().timeIntervalSince(began))
-                guard r == kIOReturnSuccess else {
-                    return finish(.failed("the phone did not answer the Bluetooth page in \(took)s (\(r)) — out of range or switched off?"))
-                }
-                overlayInfo("📶 Bluetooth link to the phone up in \(took)s")
-            }
-
-            // A query that never comes back would otherwise hang the attempt for
-            // the whole outer budget with nothing in the log to say why.
-            sdpWatchdog = Timer.scheduledTimer(withTimeInterval: Self.sdpTimeout, repeats: false) { [weak self] _ in
-                self?.finish(.failed("the phone did not answer the SDP query in \(Int(Self.sdpTimeout))s"))
-            }
-            let status = device.performSDPQuery(self)
-            if status != kIOReturnSuccess {
-                finish(.failed("performSDPQuery failed (\(status))"))
-            }
-        }
-
-        /// `IOBluetoothDeviceAsyncCallbacks` — the SDP cache has just been
-        /// refreshed, so this is the first moment the channel number can be
-        /// trusted.
-        @objc func sdpQueryComplete(_ device: IOBluetoothDevice!, status: IOReturn) {
-            sdpWatchdog?.invalidate()
-            sdpWatchdog = nil
-            guard status == kIOReturnSuccess else {
-                return finish(.failed("SDP query failed (\(status)) — is the phone in range?"))
-            }
-            guard let rec = self.device.getServiceRecord(for: IOBluetoothSDPUUID(uuid16: sppUUID)) else {
-                return finish(.failed("the phone is not publishing the SPP channel — is victor-phone-addons running?"))
-            }
-            var chID: BluetoothRFCOMMChannelID = 0
-            guard rec.getRFCOMMChannelID(&chID) == kIOReturnSuccess, chID != 0 else {
-                return finish(.failed("the SPP record carries no RFCOMM channel number"))
-            }
-            channelID = chID
-
-            var ch: IOBluetoothRFCOMMChannel?
-            let r = self.device.openRFCOMMChannelAsync(&ch, withChannelID: chID, delegate: self)
-            guard r == kIOReturnSuccess, let ch else {
-                return finish(.failed("openRFCOMMChannelAsync failed on channel \(chID) (\(r))"))
-            }
-            channel = ch
-        }
-
-        func rfcommChannelOpenComplete(_ ch: IOBluetoothRFCOMMChannel!, status: IOReturn) {
-            guard status == kIOReturnSuccess else {
-                // Re-querying on its own would not help: with the link up, macOS
-                // answers an SDP query out of its own cache in 0.0 s — the same
-                // cache that just gave us a number nobody is listening on. The
-                // link has to go down and come back for the record to be fetched
-                // from the phone again.
-                overlayInfo("📵 channel \(channelID) refused (\(status)) — dropping the link to re-read the phone's SDP record")
-                channel = nil
-                device.closeConnection()
-                return querySDP()
-            }
-            guard let ch else { return finish(.failed("channel opened with no channel object")) }
-            finish(.opened(ch, channelID))
-        }
-
-        func rfcommChannelClosed(_ ch: IOBluetoothRFCOMMChannel!) {
-            overlayInfo("📵 RFCOMM channel to the phone closed")
-        }
-
-        func rfcommChannelData(_ ch: IOBluetoothRFCOMMChannel!, data: UnsafeMutableRawPointer!, length: Int) {}
-    }
 }

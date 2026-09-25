@@ -115,7 +115,7 @@ Note what this does *not* look like: `dumpsys wifi` shows no `CMD_SET_AP` betwee
 17:51 the day before and the manual toggle the next morning, and every Mac-side
 line reads healthy. Nothing points at Bluetooth.
 
-The fix is in `HotspotFallback.ChannelOpener`:
+The fix is in `HotspotFallback.ChannelOpener` (since 25 Sep 2026 `PhoneChannelOpener`, shared with the roaming poll):
 
 - a **callback-driven** SDP query (`sdpQueryComplete`), not a sleep, so the
   channel number is read only once the cache has actually been refreshed;

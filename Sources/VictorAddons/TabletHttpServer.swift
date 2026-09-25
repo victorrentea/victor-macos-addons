@@ -161,6 +161,11 @@ case testTerminalFont
         /// Pretend the phone is at N% for a couple of minutes, so the tablet's
         /// blink can be previewed without waiting for a genuinely flat phone.
         case testPhoneBatterySimulate(Int)
+        /// 📶 roaming allowance warning: `/test/roaming` polls the phone now and
+        /// answers with the previous poll; `/test/roaming/simulate/<pct|off>`
+        /// fakes a roaming day with that much left; `/test/roaming/reset-dismissal`
+        /// forgets today's dismissal. The payload is the part after `/test/roaming`.
+        case testRoaming(String)
         /// JSON snapshot of the 🔒 screen-lock mirror the tablet uses to go into
         /// standby: whether the Mac reports itself locked right now (test hook).
         case testMemoryPressure
@@ -317,6 +322,8 @@ case testTerminalFont
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
     var onTestPhoneBatterySimulate: ((Int) -> String)?
+    /// 📶 roaming warning hooks; the argument is the sub-path (see `.testRoaming`).
+    var onTestRoaming: ((String) -> String)?
     /// Read-only JSON snapshot of the 🟥 memory-pressure watch.
     var onTestMemoryPressure: (() -> String)?
     /// Force the red plate on (`1`), off (`0`) or back to measured (`auto`).
@@ -614,6 +621,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestPhoneBatterySimulate?(pct) ?? "{\"error\":\"phone battery monitor unavailable\"}"
                 if self.onTestPhoneBatterySimulate == nil { statusCode = 503 }
+            case .testRoaming(let sub):
+                contentType = "application/json"
+                body = self.onTestRoaming?(sub) ?? "{\"error\":\"roaming monitor unavailable\"}"
+                if self.onTestRoaming == nil { statusCode = 503 }
             case .testMemoryPressure:
                 contentType = "application/json"
                 body = self.onTestMemoryPressure?() ?? "{\"error\":\"memory pressure monitor unavailable\"}"
@@ -1003,6 +1014,9 @@ case testTerminalFont
             if pathOnly.hasPrefix("/test/video/") {
                 let id = String(pathOnly.dropFirst("/test/video/".count))
                 if !id.isEmpty { return .videoPlay(id, nil) }
+            }
+            if pathOnly == "/test/roaming" || pathOnly.hasPrefix("/test/roaming/") {
+                return .testRoaming(String(pathOnly.dropFirst("/test/roaming".count)))
             }
             if pathOnly.hasPrefix("/test/phone-battery/simulate/") {
                 let suffix = String(pathOnly.dropFirst("/test/phone-battery/simulate/".count))
