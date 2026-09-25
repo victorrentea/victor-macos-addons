@@ -130,10 +130,11 @@ final class ClipboardHistoryOverlay {
     /// not about a number of characters.
     private var textIsTruncated = false
     /// Every font on the bezel is its base size times this — the clip text,
-    /// the status line and the image buttons (2026-09-26, Victor: "increase the
-    /// font x2"). The box itself is a quarter of the screen whatever the scale,
-    /// so a bigger font means fewer lines of a long clip, not a bigger panel.
-    private static let textScale: CGFloat = 2
+    /// the status line and the image buttons. Doubled on 2026-09-26 (Victor:
+    /// "increase the font x2"), then taken back 20% the same night, to 1.6.
+    /// The box itself is a quarter of the screen whatever the scale, so a
+    /// bigger font means fewer lines of a long clip, not a bigger panel.
+    private static let textScale: CGFloat = 1.6
 
     var isShowing: Bool { panel != nil }
     /// Whether letting go of ⌘ finishes this bezel — true only for the one the
