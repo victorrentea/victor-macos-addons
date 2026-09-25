@@ -1,7 +1,7 @@
 import Cocoa
 import CoreAudio
 
-/// **"🎤 Listening to: DJI"** on the standard bottom-left status
+/// **"Listening 🎤"** on the standard bottom-left status
 /// pill (`StatusBanner`) when the microphone **this app's Whisper records
 /// through** changes — plus the listener that runs `HeadphoneMicGuard`.
 ///
@@ -67,11 +67,13 @@ final class MicSourceAnnouncer {
         show(text)
     }
 
-    /// The exact copy. Pure, so the wording is testable. A glyph `MicRoster`
-    /// does not know is Python's fallback — the raw device name.
+    /// The exact copy — just the source's glyph, no label (2026-09-26, Victor:
+    /// *"doar Listening + <emoji_sursa>"*). Pure, so the wording is testable. A
+    /// glyph `MicRoster` does not know is Python's fallback — the raw device
+    /// name, which is then the only thing that says which device it is.
     static func cardText(glyph: String) -> String {
-        if let mic = MicRoster.byGlyph(glyph) { return "\(mic.glyph) Listening to: \(mic.label)" }
-        return "🎙️ Listening to: \(glyph.nonBlank(or: "unknown input"))"
+        if let mic = MicRoster.byGlyph(glyph) { return "Listening \(mic.glyph)" }
+        return "Listening 🎙️ \(glyph.nonBlank(or: "unknown input"))"
     }
 
     // MARK: - The system default input, for HeadphoneMicGuard only

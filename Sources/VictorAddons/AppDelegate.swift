@@ -33,7 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var chromeBridge: ChromeBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
     private var outputRouter: OutputRouter?
-    /// 🎙️ "Listening to: …" tab when the system default input changes.
+    /// 🎙️ "Listening 🎤" pill when the mic Whisper records through changes.
     private var micSourceAnnouncer: MicSourceAnnouncer?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
