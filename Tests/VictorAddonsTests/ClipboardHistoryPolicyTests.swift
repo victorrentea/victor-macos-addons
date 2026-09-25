@@ -122,6 +122,27 @@ final class ClipboardHistoryPolicyTests: XCTestCase {
         XCTAssertTrue(doomed.isEmpty)
     }
 
+    // MARK: private windows
+
+    /// Titles as Chrome's Accessibility API reports them, read off real windows.
+    func testAChromeIncognitoWindowIsPrivate() {
+        XCTAssertTrue(ClipboardHistoryPolicy.isPrivateWindow(
+            bundleID: "com.google.Chrome", title: "Some page - Google Chrome (Incognito)"))
+    }
+
+    func testANormalChromeWindowIsNot() {
+        XCTAssertFalse(ClipboardHistoryPolicy.isPrivateWindow(
+            bundleID: "com.google.Chrome", title: "New tab - Google Chrome – Victor (Vic)"))
+    }
+
+    /// The word alone proves nothing: an editor with a file called
+    /// "Google Chrome (Incognito).md" open is not a private window.
+    func testOnlyChromeIsAsked() {
+        XCTAssertFalse(ClipboardHistoryPolicy.isPrivateWindow(
+            bundleID: "com.microsoft.VSCode", title: "Google Chrome (Incognito).md"))
+        XCTAssertFalse(ClipboardHistoryPolicy.isPrivateWindow(bundleID: "com.google.Chrome", title: nil))
+    }
+
     // MARK: captions
 
     func testAgeReadsAsAGlance() {

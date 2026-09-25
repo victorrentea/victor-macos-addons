@@ -64,6 +64,9 @@ final class ClipboardHistoryStore {
     /// switched *to*; the alternative is an event tap on ⌘C, which is a lot of
     /// machinery for a watermark.
     private var frontmostBundleID: String?
+    /// Pid of that same app — which of the Chromes it is (Playwright runs its
+    /// own under the same bundle id), for the incognito check.
+    private var frontmostPID: pid_t?
 
     // MARK: - Lifecycle
 
@@ -107,7 +110,10 @@ final class ClipboardHistoryStore {
         return changeCount == ignoredChangeCount
     }
 
-    func record(text: String) { record(text: text, source: currentFrontmost()) }
+    func record(text: String) {
+        guard !copiedInPrivateWindow() else { return }
+        record(text: text, source: currentFrontmost())
+    }
 
     /// `source` is spelled out rather than looked up here because the one
     /// caller that must *not* look it up is the launch capture below: the app
@@ -128,7 +134,23 @@ final class ClipboardHistoryStore {
     private func setFrontmost(_ app: NSRunningApplication?) {
         lock.lock()
         frontmostBundleID = app?.bundleIdentifier
+        frontmostPID = app?.processIdentifier
         lock.unlock()
+    }
+
+    /// A copy made in a Chrome incognito window never enters the history — the
+    /// window is private precisely so that nothing on this Mac remembers what
+    /// happened in it, and this list is written to disk. See
+    /// `ClipboardHistoryPolicy.isPrivateWindow` for how it is recognised.
+    /// Asked of the window in front up to 300 ms after the copy, the same
+    /// approximation the source icon lives with.
+    private func copiedInPrivateWindow() -> Bool {
+        lock.lock()
+        let bundleID = frontmostBundleID, pid = frontmostPID
+        lock.unlock()
+        guard let bundleID, bundleID.hasPrefix("com.google.Chrome"), let pid,
+              let window = AXWindows.focusedWindow(pid: pid) else { return false }
+        return ClipboardHistoryPolicy.isPrivateWindow(bundleID: bundleID, title: AXWindows.title(of: window))
     }
 
     private func currentFrontmost() -> String? {
@@ -140,6 +162,7 @@ final class ClipboardHistoryStore {
     /// TIFF once for the image stack — this re-uses that work rather than
     /// touching the pasteboard a second time.
     func record(png: Data) {
+        guard !copiedInPrivateWindow() else { return }
         let fingerprint = "i:" + Self.digest(png)
         // Same bytes as a clip we already hold: nothing to write, just move it
         // to the front with a fresh date (`insert` does both).

@@ -191,4 +191,17 @@ enum ClipboardHistoryPolicy {
         guard body.count > limit else { return body }
         return String(body.prefix(limit)) + "…"
     }
+
+    /// Whether a clip copied with this window in front must be **kept out of
+    /// the history**: a Chrome incognito window. Chrome marks such a copy
+    /// "no local clipboard history" on its side, but on the Mac that is only a
+    /// private expiry date on the pasteboard (`_setExpirationDate:`), which no
+    /// public API can read — so the window is asked instead. Its Accessibility
+    /// title is the page title plus `- Google Chrome (Incognito)`, where a
+    /// normal window has `- Google Chrome – <profile>`. The window's title
+    /// is the one thing that says so without an Apple Events grant.
+    static func isPrivateWindow(bundleID: String?, title: String?) -> Bool {
+        guard let bundleID, bundleID.hasPrefix("com.google.Chrome"), let title else { return false }
+        return title.contains("Google Chrome (Incognito")
+    }
 }
