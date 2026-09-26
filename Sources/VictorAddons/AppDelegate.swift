@@ -653,8 +653,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         djiReceiver.start()
         menuBarManager.djiMenuSuffix = { [weak self] in self?.djiReceiver.menuSuffix() }
-        tabletServer?.onTestMenuOpen = { [weak self] in self?.menuBarManager.openMenuForTest() }
-        tabletServer?.onTestMenuClose = { [weak self] in self?.menuBarManager.closeMenuForTest() }
+        tabletServer?.onTestMenuOpen = { [weak self] secs in self?.menuBarManager.openMenuForTest(closeAfter: secs) }
         tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
         // Replay a reading through the same handler the USB reader uses, so the
         // banners can be reviewed without draining a transmitter. Drawn off the

@@ -763,10 +763,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // MARK: - NSMenuDelegate
 
-    /// Test hooks: open the 💬 menu as a click would (so `menuWillOpen` runs
-    /// and the rows are what Victor would see), and close it again.
-    func openMenuForTest() { statusItem.button?.performClick(nil) }
-    func closeMenuForTest() { menu.cancelTracking() }
+    /// Test hook: open the 💬 menu as a click would (so `menuWillOpen` runs
+    /// and the rows are what Victor would see), and close it by itself after
+    /// `seconds`. The close has to be armed BEFORE opening: while the menu
+    /// tracks, the main queue is not drained, so a later "close" request can
+    /// never reach it (a separate close route hung the HTTP server that way).
+    func openMenuForTest(closeAfter seconds: TimeInterval) {
+        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.menu.cancelTracking()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .eventTracking)
+        statusItem.button?.performClick(nil)
+    }
 
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
@@ -1764,6 +1773,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     private func updateTranscribeTitle() {
+        // `setChosenMic` runs from `adoptMicChoice()` during launch, BEFORE
+        // `setup()` has built the menu; with any pick but `auto` in the shared
+        // file that dereferenced a nil row and crashed the app at every start
+        // (found 2026-09-26 with `rx` picked). `setup()` is followed by
+        // `setTranscribing(false)`, which renders the row once it exists.
+        guard transcribeItem != nil else { return }
         // Read-only status row. Transcription runs automatically on AC and
         // pauses on battery — there is no manual start/stop. The only
         // interaction is picking which mic captures your voice (submenu).

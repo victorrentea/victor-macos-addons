@@ -51,8 +51,7 @@ case testTerminalFont
     /// The 🎤 DJI receiver's status stream / a replayed reading — see docs/testing.md.
     case testDjiState
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
-    case testMenuOpen
-    case testMenuClose
+    case testMenuOpen(closeAfter: Double)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
     /// Pick a 😴 mode without the mouse — see docs/testing.md.
     case testLidAwakeMode(String)
@@ -270,8 +269,7 @@ case testTerminalFont
     var onTestMicDead: ((String?) -> String)?
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
-    var onTestMenuOpen: (() -> Void)?
-    var onTestMenuClose: (() -> Void)?
+    var onTestMenuOpen: ((Double) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
     /// Returns the state JSON after the switch, so one call both sets and
     /// proves it.
@@ -504,12 +502,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestMicDead?(screens) ?? "{\"error\":\"mic alarm unavailable\"}"
                 if self.onTestMicDead == nil { statusCode = 503 }
-            case .testMenuOpen:
+            case .testMenuOpen(let closeAfter):
                 // Async: the menu's tracking loop holds the main thread until
                 // it closes, so this must not wait for it.
-                DispatchQueue.main.async { self.onTestMenuOpen?() }
-            case .testMenuClose:
-                DispatchQueue.main.async { self.onTestMenuClose?() }
+                DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter) }
             case .testDjiState:
                 contentType = "application/json"
                 body = self.onTestDjiState?() ?? "{\"error\":\"dji monitor unavailable\"}"
@@ -897,9 +893,8 @@ case testTerminalFont
         case "/test/dji/state":
             return .testDjiState
         case "/test/menu/open":
-            return .testMenuOpen
-        case "/test/menu/close":
-            return .testMenuClose
+            let secs = queryItems.first(where: { $0.name == "close" })?.value.flatMap { Double($0) } ?? 3
+            return .testMenuOpen(closeAfter: min(max(secs, 0.5), 10))
         case let p where p.hasPrefix("/test/dji/"):
             return .testDjiEvent(kind: String(p.dropFirst("/test/dji/".count)),
                                  level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Int($0) },
