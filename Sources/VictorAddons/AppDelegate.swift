@@ -429,11 +429,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // machine on its own instead of leaving the frame up all afternoon.
         // `respond` already runs these inside `DispatchQueue.main.sync`, so the
         // isolation is real — `assumeIsolated` just says so to the compiler.
-        tabletServer?.onHandsOffStart = { [weak self] agent, what, ttl in
+        tabletServer?.onHandsOffStart = { [weak self] agent, what, ttl, holder in
             MainActor.assumeIsolated {
                 guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
-                self.handsOff.begin(agent: agent, what: what, ttl: ttl)
+                self.handsOff.begin(agent: agent, what: what, ttl: ttl, holderPid: holder)
                 return self.handsOff.stateJSON()
+            }
+        }
+        // ✋ Takeover plumbing: `hands-off run` registers its child so a click
+        // on a 🔒 can stop it; the two test hooks take control / draw the red
+        // state without anyone clicking.
+        tabletServer?.onHandsOffAttach = { [weak self] holder, child in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                let ok = self.handsOff.attach(holderPid: holder, childPid: child)
+                return "{\"ok\":\(ok)}"
+            }
+        }
+        tabletServer?.onTestHandsOffTakeover = { [weak self] marker, holder in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                if let holder, self.handsOff.holder?.holderPid != holder {
+                    return "{\"ok\":false,\"reason\":\"holder-mismatch\"}"
+                }
+                return self.handsOff.takeover(source: .test, markerURL: marker.map { URL(fileURLWithPath: $0) })
+            }
+        }
+        tabletServer?.onTestHandsOffRender = { [weak self] dark, out in
+            MainActor.assumeIsolated {
+                let ok = self?.handsOff.renderPreview(dark: dark, to: out) ?? false
+                return "{\"ok\":\(ok),\"out\":\"\(out)\"}"
             }
         }
         tabletServer?.onHandsOffEnd = { [weak self] in
@@ -1612,6 +1637,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }
+        }
+        // ✋ ⌃⌘⎋ (hardware, locks up) — twice within a second takes control.
+        eventTap.onHandsOffEscapeChord = { [weak self] in
+            MainActor.assumeIsolated { self?.handsOff.handleEscapeChord() }
         }
         eventTap.onPowerPointStrikethrough = {
             DispatchQueue.global(qos: .userInitiated).async { PowerPointStrikethrough.toggle() }

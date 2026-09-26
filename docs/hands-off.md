@@ -23,6 +23,75 @@ It starts the app if the door doesn't answer, and if it still doesn't it says so
 stderr instead of failing quietly — an agent that drives the mouse with no warning on
 screen is exactly the situation this exists to prevent.
 
+## ✋ Victor takes control — click a 🔒 (26 Sep 2026)
+Victor, 2026-09-26: *"un mecanism prin care să pot întrerupe blocajul ecranului: un
+click pe cele patru lăcățele din colțuri, și să comunice agentului care ținea lacătele
+că am preluat controlul și să întrerupă ce făcea."* Until then the locks were one-way:
+the agent said "don't touch" and the only way out was to fight the pointer or find the
+right terminal for a Ctrl-C.
+
+**The gesture.** A **real** click on any of the four 🔒 on any screen — or **⌃⌘⎋ twice
+within 1 s** (the mouse may be mid-drag by a synthetic event; the keyboard is not).
+Both are ignored when synthetic (source pid ≠ 0): the agent being stopped must not be
+able to press the stop button, and a synthetic click that happens to land in a corner
+must not stop itself. ⌃⌘⎋ is swallowed **only while the locks are up**; the rest of the
+day it passes through untouched. Not ⌥⌘⎋: that is macOS' Force Quit, and pressing it
+twice opens that window over whatever he is rescuing.
+
+**What happens** (`HandsOffOverlay.takeover`, in this order, because the wrapper reads
+them in this order):
+1. the marker `~/.victor-addons/hands-off.takeover` is written — JSON with `at`,
+   `atLocal`, `why` (the label), `agent`, `source` (`click`/`keyboard`/`test`),
+   `holderPid`, `childPid`, `message`;
+2. SIGUSR1 to the `hands-off run` wrapper, SIGTERM to its child's **process group**,
+   SIGKILL 3 s later to whatever ignored it (logged);
+3. the locks drop at once (`/hands-off/state` → `active:false`), while border, caption
+   and corners turn **red with ✋** — "✋ Victor took control — stopping the agent" — for
+   2 s with a **Basso**, then fade. No green flash and no Tink: green means "the agent
+   gave it back", which is not what happened. Clicks during the red beat are the same
+   takeover (`HandsOffTakeoverMachine`), and `SyntheticInputWatch` may not re-raise the
+   locks during it (the dying command's last events would put them straight back).
+4. the app log gets `✋ Hands off: TAKEOVER by Victor (click) at HH:MM:SS — was '…'; USR1→…, TERM→group …; marker …`.
+
+**The contract an agent sees** (`hands-off run`):
+```
+✋ HANDS-OFF INTERRUPTED: Victor took control at 20:48:25 — stop what you were doing
+```
+on stderr, and **exit code 75** (`EX_TEMPFAIL`). For **60 s** after a takeover the next
+`hands-off run` refuses (exit 75, `✋ HANDS-OFF REFUSED: …`) unless given
+`--after-takeover` — so an agent cannot grab the screen straight back; it has to read
+the message and ask. Otherwise `run` returns the command's own exit code, as before.
+
+**How the wrapper is found.** `hands-off run` passes `holder=$$` on `/hands-off/start`,
+starts the command in **its own process group** (`set -m`), then registers it with
+`/hands-off/attach?holder=$$&child=$!`. The own group is what lets a takeover kill the
+command *and everything it spawned* without touching the agent's shell above the
+wrapper; if the child did not get its own group, only its pid is signalled
+(`HandsOffKillPlan`, tested). Both pids are stored with their **process start time**
+(`ProcessStamp`): a wrapper SIGKILLed mid-run leaves its pid in a session that lives
+until the ttl, and by then the number may belong to something else — a stale stamp is
+never signalled. A `begin` without a holder (the guard hook, a sub-step's `start`)
+keeps the current holder while it is alive. On exit the wrapper releases the locks only
+if `/hands-off/state` still names it as holder. Side effects of the own group: a
+sentinel (also in its own group) kills the child if the wrapper is SIGKILLed, and
+INT/TERM/HUP to the wrapper are forwarded to the child's group (Ctrl-C → 130).
+
+**`hands-off start … ; … ; hands-off end`** registers no process — nor does the guard
+hook or the auto-raise. A takeover then only drops the locks and writes the marker, so
+**a start/end user must poll it** between steps: `hands-off takeover-status` prints the
+last takeover and exits **75 while it is younger than 60 s**, 0 otherwise.
+
+**The corners are no longer click-through.** Each 🔒 is now its own small panel
+(`HandsOffLockView`, `ignoresMouseEvents = false`); the frame and the caption stay
+click-through. The top two sit **below the menu bar** (`lockOrigins`, tested): on the
+notched retina the bar is 37 pt, and a lock 24 pt from the top would swallow an agent's
+click on the app menu. A synthetic click on a lock is absorbed and logged, not acted on.
+
+Tests: `HandsOffTakeoverTests` (state machine, double press, kill plan, stamps, marker,
+lock placement, routes) and `./test-hands-off-takeover.sh` against the running app
+(the sleep is gone, exit 75, the stderr line, the marker, locks down, the 60 s refusal,
+`--after-takeover`). The preview of both states: `GET /test/hands-off/render`.
+
 ## 🔒 The four corner locks (asked for 10 Sep 2026)
 The border alone says *something is happening*; the locks say **what Victor must not
 do** — hands off the mouse and the keyboard until they are gone. They pulse
@@ -38,9 +107,10 @@ screens.
 - **Corner + drop shadow, no plate**: the corner is where no app puts the content he
   was reading, and the shadow keeps the glyph legible over both a white document and a
   dark IDE without covering anything.
-- They are subviews of the frame panel, so they are built, faded and torn down with it
-  — no second lifecycle to leak.
-`GET /hands-off/state` is the read-only snapshot (`{"active":true,"agent":…,"label":…,"remainingSec":…}`),
+- Built, faded and torn down together with the frame panel — no second lifecycle to
+  leak. (Since 26 Sep 2026 each is its own small clickable panel rather than a subview
+  of the frame: see the takeover section above.)
+`GET /hands-off/state` is the read-only snapshot (`{"active":true,"agent":…,"label":…,"remainingSec":…,"holderPid":…,"childPid":…}`, the pids only when `hands-off run` registered them),
 which is how the behaviour is asserted from a script rather than from a screenshot.
 
 **Why the frame is on every screen, not the cursor's:** automation *moves* the pointer, and a

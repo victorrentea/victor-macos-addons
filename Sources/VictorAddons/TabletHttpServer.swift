@@ -214,7 +214,19 @@ case testTerminalFont
         /// ✋ An agent is about to drive the mouse and keyboard: raise the
         /// hands-off frame. Carries who is driving, what it is doing, and how
         /// long to believe it before releasing on its own.
-        case handsOffStart(agent: String?, what: String?, ttl: TimeInterval?)
+        /// `holder` = the `hands-off run` wrapper's pid, so a takeover can stop it.
+        case handsOffStart(agent: String?, what: String?, ttl: TimeInterval?, holder: Int32?)
+        /// ✋ `hands-off run` registers the pid of the command it started.
+        case handsOffAttach(holder: Int32, child: Int32)
+        /// ✋ Victor takes control, without a click (test hook). `marker`
+        /// redirects the takeover note so a test run does not make every other
+        /// agent's `hands-off run` refuse for a minute.
+        /// `holder`, if given, must be the registered holder or nothing
+        /// happens — so a test can never stop another agent that raised the
+        /// locks a millisecond earlier.
+        case testHandsOffTakeover(marker: String?, holder: Int32? = nil)
+        /// ✋ Render the normal and the takeover state to a PNG (test hook).
+        case testHandsOffRender(dark: Bool, out: String)
         /// ✋ The agent is done — release the machine.
         case handsOffEnd
         /// Read-only snapshot of the hands-off state (test hook).
@@ -371,7 +383,13 @@ case testTerminalFont
     /// players is running (clip wins; they are mutually exclusive by design).
     var onVideoState: (() -> String)?
     /// ✋ Raise the hands-off frame (agent, what, ttl seconds); returns the state JSON.
-    var onHandsOffStart: ((String?, String?, TimeInterval?) -> String)?
+    var onHandsOffStart: ((String?, String?, TimeInterval?, Int32?) -> String)?
+    /// ✋ Register the wrapper's child (holder, child); returns JSON.
+    var onHandsOffAttach: ((Int32, Int32) -> String)?
+    /// ✋ Take control as a click on a 🔒 would; returns JSON.
+    var onTestHandsOffTakeover: ((String?, Int32?) -> String)?
+    /// ✋ Render the preview PNG (dark?, path); returns JSON.
+    var onTestHandsOffRender: ((Bool, String) -> String)?
     /// ✋ Release it; returns the state JSON.
     var onHandsOffEnd: (() -> String)?
     /// ✋ Read-only snapshot.
@@ -712,9 +730,18 @@ case testTerminalFont
             case .videoState:
                 contentType = "application/json"
                 body = self.onVideoState?() ?? "{\"playing\":false,\"kind\":\"none\"}"
-            case .handsOffStart(let agent, let what, let ttl):
+            case .handsOffStart(let agent, let what, let ttl, let holder):
                 contentType = "application/json"
-                body = self.onHandsOffStart?(agent, what, ttl) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+                body = self.onHandsOffStart?(agent, what, ttl, holder) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .handsOffAttach(let holder, let child):
+                contentType = "application/json"
+                body = self.onHandsOffAttach?(holder, child) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .testHandsOffTakeover(let marker, let holder):
+                contentType = "application/json"
+                body = self.onTestHandsOffTakeover?(marker, holder) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .testHandsOffRender(let dark, let out):
+                contentType = "application/json"
+                body = self.onTestHandsOffRender?(dark, out) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .handsOffEnd:
                 contentType = "application/json"
                 body = self.onHandsOffEnd?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
@@ -1003,8 +1030,23 @@ case testTerminalFont
             return .handsOffStart(
                 agent: queryItems.first(where: { $0.name == "agent" })?.value,
                 what: queryItems.first(where: { $0.name == "what" })?.value,
-                ttl: queryItems.first(where: { $0.name == "ttl" })?.value.flatMap(Double.init)
+                ttl: queryItems.first(where: { $0.name == "ttl" })?.value.flatMap(Double.init),
+                holder: queryItems.first(where: { $0.name == "holder" })?.value.flatMap { Int32($0) }
             )
+        case "/hands-off/attach":
+            guard let holder = queryItems.first(where: { $0.name == "holder" })?.value.flatMap({ Int32($0) }),
+                  let child = queryItems.first(where: { $0.name == "child" })?.value.flatMap({ Int32($0) }) else {
+                return .unknown
+            }
+            return .handsOffAttach(holder: holder, child: child)
+        case "/test/hands-off/takeover":
+            return .testHandsOffTakeover(marker: queryItems.first(where: { $0.name == "marker" })?.value,
+                                         holder: queryItems.first(where: { $0.name == "holder" })?.value.flatMap { Int32($0) })
+        case "/test/hands-off/render":
+            let appearance = queryItems.first(where: { $0.name == "appearance" })?.value ?? "light"
+            let out = queryItems.first(where: { $0.name == "out" })?.value
+                ?? "/tmp/hands-off-takeover-\(appearance).png"
+            return .testHandsOffRender(dark: appearance == "dark", out: out)
         case "/hands-off/end":
             return .handsOffEnd
         case "/hands-off/state":

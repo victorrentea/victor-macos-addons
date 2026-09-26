@@ -28,6 +28,10 @@ class EventTapManager {
     /// ⌃P **held** — macOS's crosshair crop (see `ScreenshotHoldPolicy`).
     var onScreenshotCrop: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
+    /// ✋ ⌃⌘⎋ pressed on the **real** keyboard while the hands-off locks are up.
+    /// Called on main; the app counts two within a second as "Victor takes
+    /// control" (`HandsOffOverlay.handleEscapeChord`).
+    var onHandsOffEscapeChord: (() -> Void)?
     /// ⌘⇧X **inside PowerPoint only** — toggle strikethrough on the selection.
     var onPowerPointStrikethrough: (() -> Void)?
     var onTileTerminals: (() -> Void)?
@@ -127,6 +131,7 @@ class EventTapManager {
     private let VK_O: CGKeyCode = 0x1F
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
+    private let VK_ESCAPE: CGKeyCode = 0x35
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F4: CGKeyCode = 0x76
     private let VK_F8: CGKeyCode = 0x64
@@ -425,6 +430,23 @@ private let VK_F: CGKeyCode = 0x03
         let hasCtrl  = flags.contains(.maskControl)
         let hasOpt   = flags.contains(.maskAlternate)
         let hasShift = flags.contains(.maskShift)
+
+        // ✋ ⌃⌘⎋ while the hands-off locks are up = Victor reaching for the
+        // machine back (twice within a second takes it; see
+        // `HandsOffDoublePress`). First, before every other rule: a synthetic
+        // drag or a bezel must not be able to stand between him and the stop.
+        // Hardware only (source pid 0) — the agent being stopped must not be
+        // able to press it — and swallowed only while the locks are up, so the
+        // chord is untouched the rest of the day. Not ⌥⌘⎋: that is macOS'
+        // Force Quit, and twice would open it over whatever he is rescuing.
+        if keyCode == VK_ESCAPE, hasCmd, hasCtrl, !hasOpt, !hasShift,
+           event.getIntegerValueField(.eventSourceUnixProcessID) == 0,
+           HandsOffGate.shared.locksUp {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.main.async { [weak self] in self?.onHandsOffEscapeChord?() }
+            }
+            return nil
+        }
 
         // The ⌘⇧V bezel eats the keyboard while it is up. It has to be decided
         // here, before every other rule: the keys it uses (V, the arrows, the
