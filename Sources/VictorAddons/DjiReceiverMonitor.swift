@@ -170,6 +170,10 @@ final class DjiReceiverMonitor {
         match["idVendor"] = 0x2ca3
         match["idProduct"] = 0x4011
         match["bInterfaceNumber"] = 6
+        // Required: IOUSBHostInterface only matches on the USB-spec key sets,
+        // and vendor+product+interface is one only WITH the configuration.
+        // Without it the lookup silently finds nothing (seen 2026-09-26).
+        match["bConfigurationValue"] = 1
         return IOServiceGetMatchingService(kIOMainPortDefault, match)
     }
 }
