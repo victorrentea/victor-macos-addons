@@ -200,6 +200,7 @@ def list_input_devices() -> list[dict]:
         transport_name (str)   -- human-readable transport, e.g. 'USB', 'Built-in'
         channels   (int)       -- number of input channels
         uid        (str)       -- stable unique identifier (persists across reconnects)
+        manufacturer (str)     -- e.g. 'DJI Technology Co., Ltd.' ('' when unknown)
     """
     results = []
     for dev_id in _get_device_ids():
@@ -217,6 +218,9 @@ def list_input_devices() -> list[dict]:
             'transport_name': TRANSPORT_NAMES.get(transport_code, transport_code),
             'channels': channels,
             'uid': _get_string_property(dev_id, _fourcc('uid ')) or '<unknown>',
+            # kAudioObjectPropertyManufacturer. The DJI receiver's name is the
+            # generic `Wireless Mic Rx`; the brand lives only here.
+            'manufacturer': _get_string_property(dev_id, _fourcc('lmak')) or '',
         })
     return results
 

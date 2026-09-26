@@ -45,6 +45,9 @@ case testTerminalFont
         case testLidAwakeFlatline
     /// Sound the 🚪 sleep chime without sleeping the Mac — see docs/testing.md.
     case testSleepChime
+    /// Raise the 🎤 DJI dead-transmitter alarm — see docs/testing.md.
+    case testMicDead(String?)
+    case testMicDeadState
     /// Pick a 😴 mode without the mouse — see docs/testing.md.
     case testLidAwakeMode(String)
         case testHomeAwake
@@ -258,6 +261,8 @@ case testTerminalFont
     var onTestLidAwakeState: (() -> String)?
     var onTestLidAwakeFlatline: (() -> Void)?
     var onTestSleepChime: (() -> Void)?
+    var onTestMicDead: ((String?) -> String)?
+    var onTestMicDeadState: (() -> String)?
     /// Returns the state JSON after the switch, so one call both sets and
     /// proves it.
     var onTestLidAwakeMode: ((String) -> String)?
@@ -485,6 +490,14 @@ case testTerminalFont
                 self.onTestLidAwakeFlatline?()
             case .testSleepChime:
                 self.onTestSleepChime?()
+            case .testMicDead(let screens):
+                contentType = "application/json"
+                body = self.onTestMicDead?(screens) ?? "{\"error\":\"mic alarm unavailable\"}"
+                if self.onTestMicDead == nil { statusCode = 503 }
+            case .testMicDeadState:
+                contentType = "application/json"
+                body = self.onTestMicDeadState?() ?? "{\"error\":\"mic alarm unavailable\"}"
+                if self.onTestMicDeadState == nil { statusCode = 503 }
             case .testLidAwakeMode(let mode):
                 contentType = "application/json"
                 body = self.onTestLidAwakeMode?(mode) ?? "{\"error\":\"lid awake unavailable\"}"
@@ -853,6 +866,10 @@ case testTerminalFont
             return .testLidAwakeFlatline
         case "/test/sleep-chime":
             return .testSleepChime
+        case "/test/mic-dead":
+            return .testMicDead(queryItems.first(where: { $0.name == "screens" })?.value)
+        case "/test/mic-dead/state":
+            return .testMicDeadState
         case "/test/home-awake":
             return .testHomeAwake
         case "/test/claude-rc":

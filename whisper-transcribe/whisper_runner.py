@@ -57,6 +57,7 @@ def _device_set_changed() -> bool:
         return False
     _device_snapshot = snapshot
     return True
+from dead_input import DigitalSilenceWatch, is_dji_receiver
 from coreaudio_devices import (
     list_input_devices,
     register_device_change_callback,
@@ -699,6 +700,10 @@ class _ChannelCapture:
         # on every callback — a quiet room still delivers blocks — and read by
         # `_capture_stall_watchdog`. A plain float store: atomic under the GIL.
         self._last_block_at = time.monotonic()
+        # The DJI dead-transmitter watch (`dead_input.py`). None unless the
+        # stream just opened is the DJI receiver — decided in `_loop`, off the
+        # audio thread, because it asks CoreAudio for the manufacturer.
+        self._dead_watch: DigitalSilenceWatch | None = None
 
     def start(self):
         self._running = True
@@ -794,6 +799,7 @@ class _ChannelCapture:
             try:
                 s = self._open()
                 _consecutive_errors = 0
+                self._arm_dead_watch()
                 log.info(
                     "transcript",
                     f"🎙️ [{self.label}] capturing from {self.device_name!r}",
@@ -850,6 +856,39 @@ class _ChannelCapture:
                         f"🎙️ [{self.label}] re-resolve failed: {resolve_exc}",
                     )
 
+    def _arm_dead_watch(self):
+        """(Re)arm the DJI digital-silence watch for the stream just opened.
+
+        Every device change goes through a reopen here, so this is the one place
+        that has to decide. A fresh watch per stream: zeros counted on the
+        previous device say nothing about this one.
+        """
+        try:
+            dji = is_dji_receiver(self.device_name, list_input_devices())
+        except Exception as exc:  # noqa: BLE001 — never cost the capture a stream
+            log.error("transcript", f"🎤 [{self.label}] DJI check failed: {exc!r}")
+            dji = False
+        self._dead_watch = DigitalSilenceWatch() if dji else None
+        if dji:
+            log.info("transcript", f"🎤 [{self.label}] DJI receiver: dead-transmitter watch armed")
+
+    def _check_dead_input(self, block: np.ndarray) -> None:
+        """Feed the DJI watch one block; tell the Mac app when it trips.
+
+        `MIC_DIGITAL_SILENCE:<epoch>` carries the moment the zeros *began*, not
+        the moment the window elapsed, because that is when the recording was
+        lost. Printed once per dead run; `MIC_DIGITAL_SILENCE_END` when audio
+        comes back, which re-arms it.
+        """
+        watch = self._dead_watch
+        if watch is None:
+            return
+        event = watch.feed(float(np.max(np.abs(block))), len(block) / _SAMPLE_RATE, time.time())
+        if event == "dead":
+            print(f"MIC_DIGITAL_SILENCE:{watch.silent_since:.0f}", flush=True)
+        elif event == "alive":
+            print("MIC_DIGITAL_SILENCE_END", flush=True)
+
     def _cb(self, indata, frames, time_info, status):
         """PortAudio callback — must stay cheap; it runs on the audio thread.
 
@@ -859,6 +898,7 @@ class _ChannelCapture:
         """
         self._last_block_at = time.monotonic()
         block = indata[:, 0]
+        self._check_dead_input(block)
         # Recorded BEFORE any gating: the corpus needs the silence and the
         # below-threshold audio too, since the gate itself is one of the things
         # the speaker work may want to change.

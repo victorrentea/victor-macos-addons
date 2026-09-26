@@ -35,6 +35,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var outputRouter: OutputRouter?
     /// 🎙️ "Listening 🎤" pill when the mic Whisper records through changes.
     private var micSourceAnnouncer: MicSourceAnnouncer?
+    /// 🎤 red sticky tab when the DJI receiver delivers only zeros (dead TX).
+    private let micDeadAlarm = MicDeadAlarm()
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
@@ -612,6 +614,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         whisperManager.onVoice = { [weak self] _ in
             self?.trainingEnd.noteVoice()
         }
+        // The DJI transmitter died and the receiver is streaming zeros
+        // (`dead_input.py`). Sticky until clicked — see `MicDeadAlarm`.
+        whisperManager.onDigitalSilence = { [weak self] since in
+            self?.micDeadAlarm.raise(since: since)
+        }
+        whisperManager.onDigitalSilenceEnd = { [weak self] in
+            self?.micDeadAlarm.audioResumed()
+        }
+        // Raise it without killing a transmitter. `?screens=external` (the
+        // default here) keeps it off the built-in retina, which is what the room
+        // sees; `?screens=all` draws it exactly as the real alarm would.
+        tabletServer?.onTestMicDead = { [weak self] screens in
+            guard let self else { return "{}" }
+            let provider: () -> [NSScreen] = screens == "all"
+                ? { NSScreen.screens }
+                : { NSScreen.screens.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") } }
+            self.micDeadAlarm.raise(since: Date(), screens: provider)
+            return self.micDeadAlarm.stateJSON()
+        }
+        tabletServer?.onTestMicDeadState = { [weak self] in self?.micDeadAlarm.stateJSON() ?? "{}" }
         let startWhisper: () -> Void = { [weak whisperManager, weak self] in
             var env: [String: String] = [:]
             if let folder = self?.transcriptionFolder {

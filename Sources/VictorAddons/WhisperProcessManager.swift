@@ -12,6 +12,11 @@ class WhisperProcessManager {
     /// channel — whisper's own per-block RMS gate, forwarded. Feeds
     /// `TrainingEndSequence`; deliberately NOT logged, unlike every other line.
     var onVoice: ((String) -> Void)?
+    /// The DJI receiver has delivered exact zeros for 20 s — its transmitter is
+    /// gone (`dead_input.py`). Carries when the zeros BEGAN. Once per dead run.
+    var onDigitalSilence: ((Date) -> Void)?
+    /// Audio is back on the DJI after a reported dead run.
+    var onDigitalSilenceEnd: (() -> Void)?
 
     /// Bytes of a UTF-8 sequence split across two pipe reads.
     private var pendingOutput = Data()
@@ -97,6 +102,11 @@ class WhisperProcessManager {
                 } else if trimmed.hasPrefix("VICTOR_VOICE:") {
                     let label = String(trimmed.dropFirst("VICTOR_VOICE:".count))
                     DispatchQueue.main.async { self?.onVoice?(label) }
+                } else if trimmed.hasPrefix("MIC_DIGITAL_SILENCE:") {
+                    let epoch = Double(trimmed.dropFirst("MIC_DIGITAL_SILENCE:".count)) ?? Date().timeIntervalSince1970
+                    DispatchQueue.main.async { self?.onDigitalSilence?(Date(timeIntervalSince1970: epoch)) }
+                } else if trimmed == "MIC_DIGITAL_SILENCE_END" {
+                    DispatchQueue.main.async { self?.onDigitalSilenceEnd?() }
                 } else if trimmed.hasPrefix("VICTOR_AVAILABLE:") {
                     let csv = String(trimmed.dropFirst("VICTOR_AVAILABLE:".count))
                     let parts = csv.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
