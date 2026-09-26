@@ -8,6 +8,13 @@ import Foundation
 /// restarts Whisper if it died (crash, OOM) while still on AC, so the "100% of
 /// the time on AC" guarantee survives an unexpected exit.
 ///
+/// A Whisper that is alive but no longer capturing is Whisper's own business:
+/// its capture-stall watchdog (`_capture_stall_watchdog` in whisper_runner.py)
+/// exits when audio blocks stop arriving, and this heartbeat then sees a dead
+/// process. There is deliberately no rule here based on the transcript going
+/// quiet — silence cannot tell a dead microphone from an empty room, and it
+/// used to restart Whisper every 10 minutes all night.
+///
 /// This replaces the former TranscriptionStateMachine (off/on/onWorkday/battery)
 /// + TranscriptionScheduler (Mon–Fri 09:00–18:00) pair: the only input that
 /// matters now is the power source.
@@ -22,60 +29,17 @@ final class TranscriptionController {
     /// Fired when the heartbeat brings Whisper back after an unexpected death
     /// (distinct from a deliberate power-on start). Main queue.
     var onAutoRestart: (() -> Void)?
-    /// Fired when Whisper is alive but has stopped producing transcript: kill it
-    /// and start it again. Main queue.
-    var onForceRestart: (() -> Void)?
-
     private let isOnAC: () -> Bool
     private let isWhisperRunning: () -> Bool
-    private let transcriptSilenceSeconds: () -> TimeInterval
     private var heartbeat: DispatchSourceTimer?
     private let queue = DispatchQueue(
         label: "ro.victorrentea.macos-addons.transcription-controller", qos: .utility)
 
-    /// "Alive" was never the same as "working". A capture thread inside whisper
-    /// can die on its own while the process, its other thread and its PID stay
-    /// perfectly healthy — the icon says 💬, the heartbeat is satisfied, and not
-    /// one word gets transcribed for hours. So the heartbeat also watches the
-    /// *output*.
-    static let silenceRestartThreshold: TimeInterval = 300  // 5 min without speech
-    /// Never restart more often than this. If the room is simply quiet, or the
-    /// mic is genuinely broken, a restart won't help and a loop would be worse
-    /// than the silence.
-    static let minRestartInterval: TimeInterval = 600
-    private var lastForcedRestart: Date = .distantPast
-    /// When whisper last came up, for the model-loading warm-up grace.
-    private var runningSince: Date?
 
     init(isOnAC: @escaping () -> Bool = { PowerMonitor.isOnAC() },
-         isWhisperRunning: @escaping () -> Bool,
-         transcriptSilenceSeconds: @escaping () -> TimeInterval = { .infinity }) {
+         isWhisperRunning: @escaping () -> Bool) {
         self.isOnAC = isOnAC
         self.isWhisperRunning = isWhisperRunning
-        self.transcriptSilenceSeconds = transcriptSilenceSeconds
-    }
-
-    /// Silence is `.infinity` when nothing has been transcribed at all today —
-    /// which is the single most likely case when this fires. `Int(.infinity)`
-    /// **traps**, so it must never reach a string interpolation: that crashed
-    /// the whole app the first two times the watchdog triggered (2026-07-29,
-    /// EXC_BREAKPOINT in heartbeatTick), and it crashed *before* restarting
-    /// whisper, so it broke the very thing it was there to fix.
-    static func describe(_ silence: TimeInterval) -> String {
-        guard silence.isFinite else { return "nothing transcribed today" }
-        return "\(Int(silence))s"
-    }
-
-    /// Pure decision: is a live-but-mute whisper due for a restart?
-    ///
-    /// `sinceStart` gates the model-loading window (a fresh whisper is silent for
-    /// a minute or so by design) and `sinceLastRestart` gates the loop.
-    static func shouldForceRestart(silence: TimeInterval,
-                                   sinceStart: TimeInterval,
-                                   sinceLastRestart: TimeInterval) -> Bool {
-        silence > silenceRestartThreshold
-            && sinceStart > silenceRestartThreshold
-            && sinceLastRestart > minRestartInterval
     }
 
     /// Call once on launch: applies the current power state and arms the
@@ -103,10 +67,7 @@ final class TranscriptionController {
     /// `heartbeatTick` returns immediately off AC and `applyPowerState` only
     /// runs on a power *transition*, so a 1.8 GB model would sit there burning
     /// the battery until the next time the charger was plugged in — with the
-    /// menu still reading "paused on battery". And skipping `noteStarted()`
-    /// left the warm-up grace unset, so a quiet room could trip the
-    /// output watchdog into force-restarting a process that had only just
-    /// started loading its model.
+    /// menu still reading "paused on battery".
     func restartIfShouldBeRunning(stop: @escaping () -> Void,
                                   start: @escaping () -> Void,
                                   delay: TimeInterval = 1.5) {
@@ -117,7 +78,6 @@ final class TranscriptionController {
             return
         }
         stop()
-        noteStarted()
         // PortAudio needs a beat to release the devices before the replacement
         // grabs them, or the new process inherits the same mess.
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { start() }
@@ -130,45 +90,20 @@ final class TranscriptionController {
             guard let self else { return }
             self.onPausedByBatteryChanged?(!onAC)
             if onAC {
-                if !self.isWhisperRunning() { self.noteStarted(); self.onStart?() }
+                if !self.isWhisperRunning() { self.onStart?() }
             } else {
-                if self.isWhisperRunning() { self.runningSince = nil; self.onStop?() }
+                if self.isWhisperRunning() { self.onStop?() }
             }
         }
     }
 
-    /// Heartbeat: while on AC, bring Whisper back if it died — and also if it is
-    /// alive but has gone mute.
+    /// Heartbeat: while on AC, bring Whisper back if it died.
     private func heartbeatTick() {
-        guard isOnAC() else { return }
-        guard isWhisperRunning() else {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.isOnAC(), !self.isWhisperRunning() else { return }
-                self.noteStarted()
-                self.onStart?()
-                self.onAutoRestart?()
-            }
-            return
-        }
-
-        let silence = transcriptSilenceSeconds()
+        guard isOnAC(), !isWhisperRunning() else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.isOnAC(), self.isWhisperRunning() else { return }
-            let now = Date()
-            guard Self.shouldForceRestart(
-                    silence: silence,
-                    sinceStart: now.timeIntervalSince(self.runningSince ?? .distantPast),
-                    sinceLastRestart: now.timeIntervalSince(self.lastForcedRestart))
-            else { return }
-            self.lastForcedRestart = now
-            self.noteStarted()
-            overlayError("Whisper alive but silent (\(Self.describe(silence))) — forcing a restart")
-            self.onForceRestart?()
+            guard let self, self.isOnAC(), !self.isWhisperRunning() else { return }
+            self.onStart?()
             self.onAutoRestart?()
         }
-    }
-
-    private func noteStarted() {
-        runningSince = Date()
     }
 }

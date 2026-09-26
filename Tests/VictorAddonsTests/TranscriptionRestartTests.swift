@@ -11,8 +11,7 @@ final class TranscriptionRestartTests: XCTestCase {
     private func controller(onAC: Bool, running: Bool) -> TranscriptionController {
         TranscriptionController(
             isOnAC: { onAC },
-            isWhisperRunning: { running },
-            transcriptSilenceSeconds: { .infinity })
+            isWhisperRunning: { running })
     }
 
     func testOnACItStopsAndThenStarts() {
@@ -57,22 +56,5 @@ final class TranscriptionRestartTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
         XCTAssertFalse(touched)
-    }
-
-    func testItArmsTheWarmUpGraceSoTheWatchdogDoesNotKillTheNewProcess() {
-        // A bare stop/start skipped `noteStarted()`, leaving `runningSince`
-        // unset — so in a quiet room (exactly when raw capture gets armed) the
-        // output watchdog could force-restart a process that had only just
-        // begun loading its model.
-        let c = controller(onAC: true, running: true)
-        let expectation = expectation(description: "started")
-        c.restartIfShouldBeRunning(
-            stop: {}, start: { expectation.fulfill() }, delay: 0.01)
-        wait(for: [expectation], timeout: 2)
-
-        // With the grace armed a moment ago, a silent transcript must NOT be
-        // treated as a reason to restart again.
-        XCTAssertFalse(TranscriptionController.shouldForceRestart(
-            silence: .infinity, sinceStart: 1, sinceLastRestart: .infinity))
     }
 }

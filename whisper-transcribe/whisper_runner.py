@@ -148,6 +148,11 @@ _SILENCE_FLUSH_SEC = float(os.environ.get("WHISPER_SILENCE_FLUSH_SECONDS", "0.6"
 _MIN_FLUSH_SEC = float(os.environ.get("WHISPER_MIN_FLUSH_SECONDS", "1.5"))
 
 _SAMPLE_RATE = 16000
+# A capture stream that has delivered no block for this long is dead, whatever
+# its thread and the process look like. PortAudio calls back every 100 ms,
+# silence included, so this is ~300 missed callbacks — far past any device
+# switch or Bluetooth reconnect. See `_capture_stall_watchdog`.
+_CAPTURE_STALL_SEC = float(os.environ.get("WHISPER_CAPTURE_STALL_SECONDS", "30"))
 # How rarely an above-threshold block is announced as VICTOR_VOICE. See
 # `_ChannelCapture._report_voice`.
 _VOICE_PULSE_SEC = 1.0
@@ -690,9 +695,14 @@ class _ChannelCapture:
         # to whisper as its trailing overlap. They are audio, but they are not
         # *new* audio, and the silence flush must not count or re-send them.
         self._carried_overlap = 0
+        # Monotonic time of the last block PortAudio handed us. Written by `_cb`
+        # on every callback — a quiet room still delivers blocks — and read by
+        # `_capture_stall_watchdog`. A plain float store: atomic under the GIL.
+        self._last_block_at = time.monotonic()
 
     def start(self):
         self._running = True
+        self._last_block_at = time.monotonic()
         threading.Thread(
             target=self._supervised_loop, daemon=True, name=f"cap-{self.label}"
         ).start()
@@ -847,6 +857,7 @@ class _ChannelCapture:
         goes quiet (the pause). The second one is what makes 12 s chunks safe —
         see `_SILENCE_FLUSH_SEC`.
         """
+        self._last_block_at = time.monotonic()
         block = indata[:, 0]
         # Recorded BEFORE any gating: the corpus needs the silence and the
         # below-threshold audio too, since the gate itself is one of the things
@@ -1318,6 +1329,44 @@ def _transcriber_loop(tx_queue: queue.Queue, on_segment, scorer=None):
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────
+def _stalled_channels(channels, now: float, limit: float = _CAPTURE_STALL_SEC):
+    """Channels whose stream has delivered nothing for longer than `limit`."""
+    return [ch for ch in channels if now - ch._last_block_at > limit]
+
+
+def _capture_stall_watchdog(channels, period: float = 5.0):
+    """Exit the whole process when a capture stream stops delivering audio.
+
+    "Alive" was never the same as "working": a capture thread can die, or a
+    CoreAudio stream can wedge, while the PID and the other channel stay
+    healthy — and not one word gets transcribed for hours. The Swift side used
+    to guess this from the *transcript* going quiet for 5 minutes, which cannot
+    tell a dead microphone from an empty room, so it restarted whisper all
+    night long. Blocks arrive every 100 ms whether anyone speaks or not; their
+    absence is the real signal.
+
+    Exiting, not reopening the stream in place: whatever wedged may be inside
+    PortAudio itself, and the heartbeat in `TranscriptionController` already
+    brings a dead whisper back within a minute (with the 👂 banner).
+    """
+    while True:
+        time.sleep(period)
+        try:
+            stalled = _stalled_channels(channels, time.monotonic())
+        except Exception as exc:  # never let the watchdog itself die quietly
+            log.error("transcript", f"🎙️ capture watchdog check failed: {exc!r}")
+            continue
+        if stalled:
+            names = ", ".join(
+                f"{ch.label} ({ch.device_name!r}, "
+                f"{time.monotonic() - ch._last_block_at:.0f}s)"
+                for ch in stalled
+            )
+            log.error("transcript", f"🎙️ no audio blocks from {names} — exiting for a restart")
+            sys.stdout.flush()
+            os._exit(3)
+
+
 class WhisperTranscriptionRunner:
     """Starts Whisper capture threads and writes segments to normalized files."""
 
@@ -1439,6 +1488,13 @@ class WhisperTranscriptionRunner:
 
         for ch in self._channels:
             ch.start()
+
+        threading.Thread(
+            target=_capture_stall_watchdog,
+            args=(self._channels,),
+            daemon=True,
+            name="capture-watchdog",
+        ).start()
 
         threading.Thread(
             target=_supervised_transcriber_loop,

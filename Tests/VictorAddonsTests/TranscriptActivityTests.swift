@@ -55,50 +55,6 @@ final class TranscriptActivityTests: XCTestCase {
     }
 }
 
-/// The live-but-mute restart rule.
-final class TranscriptionControllerRestartTests: XCTestCase {
-
-    private let overThreshold = TranscriptionController.silenceRestartThreshold + 1
-    private let overInterval = TranscriptionController.minRestartInterval + 1
-
-    func testRestartsWhenSilentLongEnough() {
-        XCTAssertTrue(TranscriptionController.shouldForceRestart(
-            silence: overThreshold, sinceStart: overThreshold, sinceLastRestart: overInterval))
-    }
-
-    func testNeverRestartsDuringWarmUp() {
-        // A freshly started whisper is silent while it loads its model; that is
-        // not a fault, and restarting it would guarantee it never finishes.
-        XCTAssertFalse(TranscriptionController.shouldForceRestart(
-            silence: .infinity, sinceStart: 30, sinceLastRestart: overInterval))
-    }
-
-    func testNeverRestartsTwiceInARow() {
-        // If a restart didn't fix it, restarting every minute won't either — and
-        // a loop is worse than the silence it's chasing.
-        XCTAssertFalse(TranscriptionController.shouldForceRestart(
-            silence: .infinity, sinceStart: overThreshold, sinceLastRestart: 60))
-    }
-
-    func testRecentSpeechIsLeftAlone() {
-        XCTAssertFalse(TranscriptionController.shouldForceRestart(
-            silence: 10, sinceStart: overThreshold, sinceLastRestart: overInterval))
-    }
-
-    /// Regression: `Int(.infinity)` **traps**. Silence is infinite whenever
-    /// nothing has been transcribed all day — the single likeliest case when the
-    /// watchdog fires — so interpolating it crashed the entire app the first two
-    /// times this triggered (2026-07-29), and it crashed *before* the restart it
-    /// was announcing.
-    func testDescribesInfiniteSilenceWithoutTrapping() {
-        XCTAssertEqual(TranscriptionController.describe(.infinity), "nothing transcribed today")
-    }
-
-    func testDescribesFiniteSilenceInSeconds() {
-        XCTAssertEqual(TranscriptionController.describe(312), "312s")
-    }
-}
-
 /// The 📬 menu item's title.
 final class FluxInboxMenuTests: XCTestCase {
 

@@ -640,20 +640,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Whisper runs whenever we're on AC and pauses on battery — nothing
         // else. The controller owns that decision plus a 60s heartbeat that
         // restarts Whisper if it died while still plugged in.
-        let transcriptionFolderForProbe = transcriptionFolder
         let controller = TranscriptionController(
-            isWhisperRunning: { [weak whisperManager] in whisperManager?.isRunning == true },
-            transcriptSilenceSeconds: {
-                TranscriptActivity.speechSilenceSeconds(in: transcriptionFolderForProbe)
-            })
+            isWhisperRunning: { [weak whisperManager] in whisperManager?.isRunning == true })
         controller.onStart = startWhisper
         controller.onStop = stopWhisper
-        controller.onForceRestart = {
-            stopWhisper()
-            // PortAudio needs a beat to release the devices before the new
-            // process grabs them, or the replacement inherits the same mess.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { startWhisper() }
-        }
         controller.onAutoRestart = { [weak self] in
             // Whisper died while on AC — the heartbeat is bringing it back.
             // Arm the "started" banner; it fires once whisper is confirmed running.
@@ -665,8 +655,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.transcriptionController = controller
 
         // 🔴 Raw capture. Whisper only reads the flag at launch, so flipping it
-        // has to bounce the process — the same stop/start dance the watchdog
-        // uses, including the beat PortAudio needs to let go of the devices.
+        // has to bounce the process — a stop/start through the controller,
+        // including the beat PortAudio needs to let go of the devices.
         let refreshRecordRawTitle: () -> Void = { [weak self] in
             guard let self else { return }
             self.menuBarManager.setRecordingRaw(

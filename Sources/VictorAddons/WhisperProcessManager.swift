@@ -23,6 +23,9 @@ class WhisperProcessManager {
         6: "SIGABRT — likely a PortAudio double-free",
         10: "SIGBUS",
         11: "SIGSEGV",
+        // Not a signal: whisper's own capture-stall watchdog, asking the
+        // heartbeat for a fresh process. See `_capture_stall_watchdog`.
+        3: "capture stalled — no audio blocks",
     ]
 
     func start(env: [String: String]) {
