@@ -136,6 +136,77 @@ final class ClipboardHistoryOverlay {
     /// bigger font means fewer lines of a long clip, not a bigger panel.
     private static let textScale: CGFloat = 1.6
 
+    // MARK: - Theme
+
+    /// The colors that have to flip with the OS appearance. Every value here
+    /// was tuned on a dark Mac — Victor's daily one — so the dark case below is
+    /// **exactly** what used to be hardcoded, not a fresh guess; only the light
+    /// case is new. Resolved once per `render()` (see `palette`) rather than
+    /// read as `NSColor(name:dynamicProvider:)` from a dozen call sites, because
+    /// almost everything else in the bezel is already recomputed on every press
+    /// of V — one more read costs nothing and keeps every color a struct member
+    /// instead of a scattered `isDark ? … : …`.
+    private struct Palette {
+        /// The card itself. Near-black on a dark Mac, near-white on a light one.
+        let panelBackground: NSColor
+        /// A dark card needed no edge — its own darkness against the 20% scrim
+        /// was the edge. A near-white card sitting over a bright window (dimmed
+        /// only 20%) does, or it reads as a smudge, not a panel. `nil` on dark.
+        let panelBorder: NSColor?
+        /// The clip's own text.
+        let text: NSColor
+        /// The left-hand legend (`V next · ↑↓ walk · Esc`).
+        let hint: NSColor
+        /// The right-hand facts (`12 minutes ago`, the char count).
+        let rightFact: NSColor
+    }
+
+    /// Read on every `render()`, not cached across calls, so a theme flip is
+    /// never more than one press of V stale.
+    private static func isDarkNow() -> Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    private static func palette(isDark: Bool) -> Palette {
+        guard isDark else {
+            return Palette(panelBackground: NSColor(white: 0.97, alpha: 0.97),
+                           panelBorder: NSColor(white: 0, alpha: 0.12),
+                           text: NSColor(white: 0.08, alpha: 1),
+                           hint: NSColor(white: 0.38, alpha: 1),
+                           rightFact: NSColor(white: 0.32, alpha: 1))
+        }
+        // Pixel-identical to the bezel before light mode existed.
+        return Palette(panelBackground: NSColor(white: 0.11, alpha: 0.97),
+                       panelBorder: nil,
+                       text: NSColor(white: 0.95, alpha: 1),
+                       hint: NSColor(white: 0.5, alpha: 1),
+                       rightFact: NSColor(white: 0.62, alpha: 1))
+    }
+
+    /// Refreshed at the top of every `render()`; read by `textView` and
+    /// `statusRow` without threading it through as an argument, the same way
+    /// `textIsTruncated` already carries render-local state across those calls.
+    private var palette = ClipboardHistoryOverlay.palette(isDark: ClipboardHistoryOverlay.isDarkNow())
+
+    /// The bezel is long-lived (one instance for the app's run — see
+    /// `AppDelegate`), so a system theme flip while it happens to be *up*, with
+    /// no key pressed to trigger a `render()` on its own, would otherwise sit
+    /// there showing the wrong theme until the next V. `AppleInterfaceThemeChangedNotification`
+    /// is the same distributed notification `MenuBarManager` already watches
+    /// for the menu-bar glyph, and the same short delay applies: it lands
+    /// slightly *before* `effectiveAppearance` actually updates.
+    init() {
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                guard let self, self.isShowing else { return }
+                self.render()
+            }
+        }
+    }
+
     var isShowing: Bool { panel != nil }
     /// Whether letting go of ⌘ finishes this bezel — true only for the one the
     /// hotkey opened. See `pastesOnCommit`.
@@ -246,6 +317,10 @@ final class ClipboardHistoryOverlay {
 
     private func render() {
         guard entries.indices.contains(index) else { return }
+        // Recomputed on every render, same as `bodyBox`'s screen and `entry`
+        // itself — the cheapest way to make a theme flip land on the very next
+        // press of V (the `init` observer covers the case where none comes).
+        palette = Self.palette(isDark: Self.isDarkNow())
         let entry = entries[index]
         let screen = screenUnderCursor()
         let visible = screen.visibleFrame
@@ -283,8 +358,11 @@ final class ClipboardHistoryOverlay {
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor(white: 0.11, alpha: 0.97).cgColor
+        content.layer?.backgroundColor = palette.panelBackground.cgColor
         content.layer?.cornerRadius = 16
+        // Only the light card gets a hairline edge — see `Palette.panelBorder`.
+        content.layer?.borderWidth = palette.panelBorder == nil ? 0 : 1
+        content.layer?.borderColor = palette.panelBorder?.cgColor
 
         // The body view is placed inside the box rather than *being* it: an
         // image is centred in it, text hangs from its top-left corner.
@@ -485,7 +563,7 @@ final class ClipboardHistoryOverlay {
         let font = NSFont.systemFont(ofSize: 17 * Self.textScale)
         let field = NSTextField(wrappingLabelWithString: ClipboardHistoryPolicy.preview(string))
         field.font = font
-        field.textColor = NSColor(white: 0.95, alpha: 1)
+        field.textColor = palette.text
         field.drawsBackground = false
         field.isBezeled = false
         field.isSelectable = false
@@ -571,7 +649,7 @@ final class ClipboardHistoryOverlay {
                                   color: NSColor.systemYellow.withAlphaComponent(0.9))
         let hint = fittedLabel(text: "V next  ·  ↑↓ walk  ·  Esc",
                                font: .systemFont(ofSize: 11 * Self.textScale),
-                               color: NSColor(white: 0.5, alpha: 1))
+                               color: palette.hint)
 
         // An image says nothing about itself. `🖼️ 3000×2000 · 142 KB` was there
         // on the theory that two screenshots of the same window are told apart
@@ -583,7 +661,7 @@ final class ClipboardHistoryOverlay {
             facts.append("\(string.count) chars")
         }
         let right = fittedLabel(text: facts.joined(separator: "  ·  "), font: .systemFont(ofSize: 12 * Self.textScale),
-                                color: NSColor(white: 0.62, alpha: 1))
+                                color: palette.rightFact)
 
         let height = max(counter.frame.height, hint.frame.height, right.frame.height)
         let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
