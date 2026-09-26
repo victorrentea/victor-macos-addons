@@ -763,6 +763,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     // MARK: - NSMenuDelegate
 
+    /// Test hooks: open the 💬 menu as a click would (so `menuWillOpen` runs
+    /// and the rows are what Victor would see), and close it again.
+    func openMenuForTest() { statusItem.button?.performClick(nil) }
+    func closeMenuForTest() { menu.cancelTracking() }
+
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
         onMenuOpened?()
