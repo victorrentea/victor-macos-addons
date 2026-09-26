@@ -82,6 +82,17 @@ enum DjiReceiverProtocol {
         [56, 70, 84].contains(f.count) && f[9] == 0x5b && f[10] == 0x03 && f[11] == 0x00
     }
 
+    /// What the menu's `🎙️ Transcribing: 🎤 DJI` row appends, or nil for
+    /// nothing: `≈80 %` (one per linked transmitter, `≈80 % / ≈40 %` for two),
+    /// `— no TX` when the receiver says none is linked. Nil when the status
+    /// stream is not live — a stale number is worse than none.
+    static func menuSuffix(_ status: Status?, live: Bool) -> String? {
+        guard live, let status else { return nil }
+        guard status.anyLinked else { return "— no TX" }
+        let pcts = status.transmitters.compactMap { percent(level: $0.level) }.map { "≈\($0) %" }
+        return pcts.isEmpty ? nil : pcts.joined(separator: " / ")
+    }
+
     /// The gauge as an approximate percentage. **A 7-step level, not a
     /// measurement**: the receiver never says more than this, so every value
     /// here is shown as `≈NN %`, and the raw level goes to the log beside it.

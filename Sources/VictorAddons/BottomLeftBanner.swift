@@ -224,6 +224,11 @@ final class BottomLeftBanner {
     /// `hoverable: true`.
     var onHover: (() -> Void)?
     private var hoverFired = false
+    /// Only a click fires `onHover`; resting or dwelling on the pill does
+    /// nothing. For an alarm that must be acknowledged on purpose (the 🎤 DJI
+    /// transmitter-gone pill): a dwell is too easy to give by accident while
+    /// reaching for the Dock in the same corner. Set before `show()`.
+    var clickOnly = false
 
     private static let hoverDwellInterval: TimeInterval = 0.1
     // Hold-to-confirm dwell: 2.0s (was 1.0s) — +1s so a confirm is deliberate.
@@ -617,7 +622,7 @@ final class BottomLeftBanner {
     fileprivate func startHoverDwell() {
         // Only arm the dwell when hovering actually does something — error
         // flashes (onHover == nil) must not whiten or fire.
-        guard hoverable, onHover != nil, !hoverFired, hoverDwellTimer == nil else { return }
+        guard hoverable, onHover != nil, !clickOnly, !hoverFired, hoverDwellTimer == nil else { return }
         hoverDwellCount = 0
         hoverMotion = HoverMotionGate(position: NSEvent.mouseLocation,
                                       now: Date.timeIntervalSinceReferenceDate)

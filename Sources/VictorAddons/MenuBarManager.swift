@@ -132,6 +132,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onFixDisplayLayout: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
+    /// `≈80 %` / `— no TX` for the Transcribing row when the DJI is the input.
+    var djiMenuSuffix: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     /// 🎙️ The transcript picker — a menu row since it gave up ⌘⌃V.
@@ -764,6 +766,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === self.menu else { return }
         onMenuOpened?()
+        // The 🎤 DJI battery on the Transcribing row is read here, from the
+        // USB monitor's last status — the row is only ever seen with the menu
+        // open, so this is the one moment it has to be right.
+        updateTranscribeTitle()
         refreshWsItem()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
@@ -1799,7 +1805,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             // the shape of Walkie Talkie's `Mic: 💻 Mac`. The 🎙️ came off
             // `Last 1m summary`, which is 💬 now.
             let mic = MicRoster.byGlyph(transcribeSource)
-            transcribeItem.title = raw + "🎙️ Transcribing" + (mic.map { ": \($0.glyph) \($0.short)" } ?? "")
+            // The DJI's transmitter battery rides after its name (2026-09-26,
+            // `🎙️ Transcribing: 🎤 DJI ≈80 %`, or `— no TX`), only while the
+            // receiver's USB status is live; other microphones get nothing.
+            let dji = mic?.id == "rx" ? djiMenuSuffix?().map { " \($0)" } ?? "" : ""
+            transcribeItem.title = raw + "🎙️ Transcribing" + (mic.map { ": \($0.glyph) \($0.short)" } ?? "") + dji
             transcribeItem.image = nil
         } else {
             // On AC but momentarily down (starting up, or a crash before the

@@ -14,9 +14,6 @@ import Cocoa
 ///     and then gets out of the way on its own. Nothing to hover, nothing to
 ///     dismiss, no decision attached — which is exactly why it may sit in the
 ///     middle, where the eye already is, instead of hiding in a corner.
-///     One exception (2026-09-26): `show(…, hold: nil, onClick:)` makes it a
-///     sticky tab that a click takes down — the 🎤 `MicDeadAlarm`, which must
-///     be acknowledged, and wants the same place the eye already is.
 ///
 /// **Why the window never moves.** The tab slides *inside* a fixed panel whose
 /// frame is exactly the tab's resting rectangle, and the panel's content view
@@ -126,10 +123,6 @@ final class BottomTabBanner {
 
     private var motionTimer: Timer?
     private var holdTimer: Timer?
-    /// Set by a `show(…, onClick:)`: the tab then takes clicks on its own
-    /// rectangle — and nowhere else, since the panel is exactly that rectangle —
-    /// and a click is the only way it leaves.
-    private var onClick: (() -> Void)?
 
     init(screensProvider: @escaping () -> [NSScreen]) {
         self.screensProvider = screensProvider
@@ -146,25 +139,16 @@ final class BottomTabBanner {
     /// the text is swapped, the tab re-measured and re-centred around the new
     /// text, and the hold timer restarted. That is what makes a second bell
     /// arriving mid-hold widen the same tab instead of making it flicker.
-    ///
-    /// `hold: nil` makes the tab **sticky**: it stays up until `dismiss()`. With
-    /// an `onClick`, the tab also stops being see-through to the mouse and a
-    /// click on it calls `onClick` — the owner decides whether that dismisses
-    /// (the 🎤 dead-transmitter alarm does; nothing else uses it yet). The
-    /// click-through default is kept for every other caller: an announcement
-    /// must never eat a click meant for the slide behind it.
     func show(text: String,
               backgroundColor: NSColor,
               font: NSFont = Style.defaultFont(),
-              hold: TimeInterval? = Style.holdDuration,
-              onClick: (() -> Void)? = nil) {
+              hold: TimeInterval = Style.holdDuration) {
         if isVisible {
             updateText(text)
             updateTint(backgroundColor)
-            if let hold { startHold(hold) } else { holdTimer?.invalidate(); holdTimer = nil }
+            startHold(hold)
             return
         }
-        self.onClick = onClick
         for screen in screensProvider() {
             panels.append(buildPanel(on: screen, text: text, bg: backgroundColor, font: font))
         }
@@ -174,7 +158,7 @@ final class BottomTabBanner {
             entry.panel.orderFrontRegardless()
         }
         animate(rising: true, duration: Style.riseDuration) { [weak self] in
-            if let hold { self?.startHold(hold) }
+            self?.startHold(hold)
         }
     }
 
@@ -235,7 +219,6 @@ final class BottomTabBanner {
     private func teardown() {
         for entry in panels { entry.panel.orderOut(nil) }
         panels.removeAll()
-        onClick = nil
         onDismissed?()
     }
 
@@ -322,9 +305,7 @@ final class BottomTabBanner {
         panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         // Purely informational: never eat a click meant for the slide behind it.
-        // Unless the owner asked for the click (`show(…, onClick:)`) — and then
-        // only on this rectangle, which is all the panel is.
-        panel.ignoresMouseEvents = onClick == nil
+        panel.ignoresMouseEvents = true
 
         // The clipping frame the tab slides inside — this is what keeps the
         // motion from ever painting on a neighbouring display.
@@ -367,27 +348,7 @@ final class BottomTabBanner {
         label.autoresizingMask = [.width]
         tab.addSubview(label)
 
-        if onClick != nil {
-            // On top of everything in the tab, so the label cannot swallow it.
-            let catcher = ClickCatcherView(frame: tab.bounds)
-            catcher.autoresizingMask = [.width, .height]
-            catcher.onClick = { [weak self] in self?.onClick?() }
-            tab.addSubview(catcher)
-        }
-
         panel.contentView = content
         return PanelEntry(panel: panel, tab: tab, tint: tint, label: label, font: font, screen: screen)
     }
-}
-
-/// A transparent view that turns a click anywhere on it into a callback.
-///
-/// `acceptsFirstMouse` because the panel is non-activating: without it, the
-/// first click on an app that is not frontmost only activates, and the alarm
-/// would need two clicks — the second of which Victor has no reason to give.
-private final class ClickCatcherView: NSView {
-    var onClick: (() -> Void)?
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onClick?() }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }

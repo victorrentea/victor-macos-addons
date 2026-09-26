@@ -45,8 +45,9 @@ final class MicDeadAlarmTests: XCTestCase {
         var c = DateComponents()
         c.year = 2026; c.month = 9; c.day = 26; c.hour = 15; c.minute = 10
         let since = Calendar.current.date(from: c)!
-        XCTAssertEqual(MicDeadAlarm.text(since: since),
-                       "🎤 DJI transmitter is silent — battery dead? (since 15:10)")
+        XCTAssertEqual(MicDeadAlarm.text(since: since), "🎤 DJI TX silent since 15:10 — battery dead?")
+        XCTAssertEqual(MicDeadAlarm.linkLostText(since: since, lastLevel: 7), "🎤 DJI TX gone since 15:10 — battery dead?")
+        XCTAssertEqual(MicDeadAlarm.linkLostText(since: since, lastLevel: 1), "🎤 DJI TX gone since 15:10 — off or out of range?")
     }
 
     func testTestHooksRoute() {

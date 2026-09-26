@@ -39,7 +39,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private let micDeadAlarm = MicDeadAlarm()
     /// 🎤 the receiver's own status over USB: TX linked + battery gauge.
     private let djiReceiver = DjiReceiverMonitor()
-    private let djiBatteryTab = DjiBatteryTab()
+    private lazy var djiBatteryNotice = DjiBatteryNotice(show: { [weak self] text in
+        self?.statusBanner?.showNow(text: text, sound: nil, visibleDuration: DjiBatteryNotice.hold)
+    })
+    /// The test hooks' own corner pill, so a review can stay off the retina.
+    private var djiTestStatusBanner: StatusBanner?
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
@@ -648,6 +652,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.handleDjiReceiverEvent(event)
         }
         djiReceiver.start()
+        menuBarManager.djiMenuSuffix = { [weak self] in self?.djiReceiver.menuSuffix() }
         tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
         // Replay a reading through the same handler the USB reader uses, so the
         // banners can be reviewed without draining a transmitter. Drawn off the
@@ -661,7 +666,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             case "battery":
                 let lvl = level ?? 6
                 guard let pct = DjiReceiverProtocol.percent(level: lvl) else { return "{\"error\":\"level 1-7\"}" }
-                self.djiBatteryTab.show(level: lvl, percent: pct, screens: provider)
+                if screens == "all" {
+                    self.djiBatteryNotice.show(level: lvl, percent: pct)
+                } else {
+                    let banner = self.djiTestStatusBanner ?? StatusBanner(screensProvider: provider)
+                    self.djiTestStatusBanner = banner
+                    DjiBatteryNotice(show: { banner.showNow(text: $0, sound: nil, visibleDuration: DjiBatteryNotice.hold) })
+                        .show(level: lvl, percent: pct)
+                }
             case "link-lost":
                 self.handleDjiReceiverEvent(.linkLost(since: Date(), lastLevel: level), screens: provider)
             default:
@@ -2198,11 +2210,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let pct = DjiReceiverProtocol.percent(level: level).map { "≈\($0) %" } ?? "unknown"
             overlayInfo("🎤 DJI TX\(unit) battery level \(level)/7 (\(pct))\(charging ? ", charging" : "")")
         case .lowBattery(_, let level, let percent):
-            if let screens {
-                djiBatteryTab.show(level: level, percent: percent, screens: screens)
-            } else {
-                djiBatteryTab.show(level: level, percent: percent)
-            }
+            djiBatteryNotice.show(level: level, percent: percent)
         case .linkLost(let since, let lastLevel):
             overlayError("🎤 DJI receiver reports no transmitter linked since \(MicDeadAlarm.hhmm(since)) (last battery level \(lastLevel.map(String.init) ?? "?")/7)")
             micDeadAlarm.raise(since: since,

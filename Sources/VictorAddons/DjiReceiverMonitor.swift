@@ -54,6 +54,14 @@ final class DjiReceiverMonitor {
         return Date().timeIntervalSince(at) < Self.staleAfter
     }
 
+    /// The battery for the menu's Transcribing row (see
+    /// `DjiReceiverProtocol.menuSuffix`). Read on `menuWillOpen`, never polled.
+    func menuSuffix() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        let live = _lastStatusAt.map { Date().timeIntervalSince($0) < Self.staleAfter } ?? false
+        return DjiReceiverProtocol.menuSuffix(_status, live: live)
+    }
+
     func stateJSON() -> String {
         lock.lock(); defer { lock.unlock() }
         let live = _lastStatusAt.map { Date().timeIntervalSince($0) < Self.staleAfter } ?? false
