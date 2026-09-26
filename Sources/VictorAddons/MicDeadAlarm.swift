@@ -32,6 +32,7 @@ final class MicDeadAlarm {
     private let sound: () -> Void
     private var banner: BottomTabBanner?
     private(set) var silentSince: Date?
+    private var shownText: String?
 
     init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens },
          sound: @escaping () -> Void = { NSSound(named: NSSound.Name("Basso"))?.play() }) {
@@ -41,12 +42,26 @@ final class MicDeadAlarm {
 
     var isRaised: Bool { silentSince != nil }
 
-    static func text(since: Date) -> String {
+    static func hhmm(_ d: Date) -> String {
         let f = DateFormatter()
         // POSIX, or the user's 12-hour override turns HH into "3:10 PM".
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "HH:mm"
-        return "🎤 DJI transmitter is silent — battery dead? (since \(f.string(from: since)))"
+        return f.string(from: d)
+    }
+
+    /// Whisper's guess: the receiver is streaming exact zeros.
+    static func text(since: Date) -> String {
+        "🎤 DJI transmitter is silent — battery dead? (since \(hhmm(since)))"
+    }
+
+    /// The receiver's own word: no transmitter linked (`DjiReceiverMonitor`).
+    /// Worded from the last battery level seen before the link went: at 6–7
+    /// (DJI's own low warning and the shutdown step) it is almost certainly
+    /// the battery; higher, it was switched off or walked out of range.
+    static func linkLostText(since: Date, lastLevel: Int?) -> String {
+        let why = (lastLevel ?? 0) >= 6 ? "battery dead" : "switched off or out of range"
+        return "🎤 DJI transmitter gone — \(why)? (since \(hhmm(since)))"
     }
 
     /// Raise the alarm, or leave it alone if it is already up: the moment the
@@ -55,13 +70,14 @@ final class MicDeadAlarm {
     ///
     /// `screens` overrides where it is drawn — only the test hook uses it, to
     /// keep a test off the projected retina.
-    func raise(since: Date, screens: (() -> [NSScreen])? = nil) {
+    func raise(since: Date, text custom: String? = nil, screens: (() -> [NSScreen])? = nil) {
         guard silentSince == nil else {
             overlayInfo("🎤 DJI silence reported again — the alarm is already up")
             return
         }
         silentSince = since
-        let text = Self.text(since: since)
+        let text = custom ?? Self.text(since: since)
+        shownText = text
         overlayError("🎤❌ alarm raised: \(text)")
         let b = BottomTabBanner(screensProvider: screens ?? screensProvider)
         banner = b
@@ -83,7 +99,7 @@ final class MicDeadAlarm {
     /// Victor has seen it. The only way the tab leaves.
     func acknowledge(by how: String) {
         guard let since = silentSince else { return }
-        overlayInfo("🎤 alarm dismissed (\(how)); it said: \(Self.text(since: since))")
+        overlayInfo("🎤 alarm dismissed (\(how)); it said: \(shownText ?? Self.text(since: since))")
         silentSince = nil
         banner?.dismiss()   // `onDismissed` lets go of it once it is off screen
     }
@@ -97,5 +113,28 @@ final class MicDeadAlarm {
         let since = silentSince.map { String(Int($0.timeIntervalSince1970)) } ?? "null"
         let visible = banner?.isVisible ?? false
         return "{\"raised\":\(isRaised),\"silent_since\":\(since),\"visible\":\(visible)}"
+    }
+}
+
+/// 🎤 The DJI transmitter's battery, when it is low: a 5-second tab,
+/// `🎤 DJI TX battery ≈10 %`, shown each time the reading changes while it is
+/// under 20 % (Victor: "să o afișezi din % în % pentru 5 sec când e sub 20 %").
+/// On the receiver's 7-step gauge that is twice: level 6 (DJI's own warning)
+/// and level 7 (shutdown follows). Orange for the first, red for the last.
+final class DjiBatteryTab {
+    static let hold: TimeInterval = 5
+    private var banners: [BottomTabBanner] = []
+
+    static func text(percent: Int) -> String { "🎤 DJI TX battery ≈\(percent) %" }
+
+    func show(level: Int, percent: Int, screens: @escaping () -> [NSScreen] = { NSScreen.screens }) {
+        let text = Self.text(percent: percent)
+        overlayInfo("🎤 battery tab: \(text) (raw level \(level)/7)")
+        let b = BottomTabBanner(screensProvider: screens)
+        banners.append(b)
+        b.onDismissed = { [weak self, weak b] in self?.banners.removeAll { $0 === b } }
+        b.show(text: text,
+               backgroundColor: (level >= 7 ? NSColor.systemRed : NSColor.systemOrange).withAlphaComponent(0.85),
+               hold: Self.hold)
     }
 }

@@ -37,6 +37,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var micSourceAnnouncer: MicSourceAnnouncer?
     /// 🎤 red sticky tab when the DJI receiver delivers only zeros (dead TX).
     private let micDeadAlarm = MicDeadAlarm()
+    /// 🎤 the receiver's own status over USB: TX linked + battery gauge.
+    private let djiReceiver = DjiReceiverMonitor()
+    private let djiBatteryTab = DjiBatteryTab()
     /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
     /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
     /// the transport, and why the escalation has two stages.
@@ -617,7 +620,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // The DJI transmitter died and the receiver is streaming zeros
         // (`dead_input.py`). Sticky until clicked — see `MicDeadAlarm`.
         whisperManager.onDigitalSilence = { [weak self] since in
-            self?.micDeadAlarm.raise(since: since)
+            guard let self else { return }
+            // The receiver's link byte is the real signal; the zeros are only a
+            // guess, kept for when the status interface cannot be read.
+            if self.djiReceiver.isLive {
+                overlayInfo("🎤 DJI digital silence ignored — the receiver's status stream is live and decides")
+                return
+            }
+            self.micDeadAlarm.raise(since: since)
         }
         whisperManager.onDigitalSilenceEnd = { [weak self] in
             self?.micDeadAlarm.audioResumed()
@@ -634,6 +644,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return self.micDeadAlarm.stateJSON()
         }
         tabletServer?.onTestMicDeadState = { [weak self] in self?.micDeadAlarm.stateJSON() ?? "{}" }
+        djiReceiver.onEvent = { [weak self] event in
+            self?.handleDjiReceiverEvent(event)
+        }
+        djiReceiver.start()
+        tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
+        // Replay a reading through the same handler the USB reader uses, so the
+        // banners can be reviewed without draining a transmitter. Drawn off the
+        // retina unless `screens=all`.
+        tabletServer?.onTestDjiEvent = { [weak self] kind, level, screens in
+            guard let self else { return "{}" }
+            let provider: () -> [NSScreen] = screens == "all"
+                ? { NSScreen.screens }
+                : { NSScreen.screens.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") } }
+            switch kind {
+            case "battery":
+                let lvl = level ?? 6
+                guard let pct = DjiReceiverProtocol.percent(level: lvl) else { return "{\"error\":\"level 1-7\"}" }
+                self.djiBatteryTab.show(level: lvl, percent: pct, screens: provider)
+            case "link-lost":
+                self.handleDjiReceiverEvent(.linkLost(since: Date(), lastLevel: level), screens: provider)
+            default:
+                return "{\"error\":\"kind is battery or link-lost\"}"
+            }
+            return self.djiReceiver.stateJSON()
+        }
         let startWhisper: () -> Void = { [weak whisperManager, weak self] in
             var env: [String: String] = [:]
             if let folder = self?.transcriptionFolder {
@@ -2154,6 +2189,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Fast, synchronous teardown for "we're being replaced" / SIGTERM /
     /// parent-died paths. Kills any subprocesses we own so the new instance
     /// does not have to fight orphans. Safe to call multiple times.
+    /// What the DJI receiver's status stream means on screen. See
+    /// `DjiReceiverPolicy` for when each event fires.
+    private func handleDjiReceiverEvent(_ event: DjiReceiverPolicy.Event,
+                                        screens: (() -> [NSScreen])? = nil) {
+        switch event {
+        case .levelChanged(let unit, let level, let charging):
+            let pct = DjiReceiverProtocol.percent(level: level).map { "≈\($0) %" } ?? "unknown"
+            overlayInfo("🎤 DJI TX\(unit) battery level \(level)/7 (\(pct))\(charging ? ", charging" : "")")
+        case .lowBattery(_, let level, let percent):
+            if let screens {
+                djiBatteryTab.show(level: level, percent: percent, screens: screens)
+            } else {
+                djiBatteryTab.show(level: level, percent: percent)
+            }
+        case .linkLost(let since, let lastLevel):
+            overlayError("🎤 DJI receiver reports no transmitter linked since \(MicDeadAlarm.hhmm(since)) (last battery level \(lastLevel.map(String.init) ?? "?")/7)")
+            micDeadAlarm.raise(since: since,
+                               text: MicDeadAlarm.linkLostText(since: since, lastLevel: lastLevel),
+                               screens: screens)
+        case .linkBack:
+            micDeadAlarm.audioResumed()
+            overlayInfo("🎤 DJI transmitter linked again")
+        }
+    }
+
     func tearDownForReplacement() {
         whisperManager?.killImmediate()
     }

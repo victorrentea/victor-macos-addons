@@ -48,6 +48,9 @@ case testTerminalFont
     /// Raise the 🎤 DJI dead-transmitter alarm — see docs/testing.md.
     case testMicDead(String?)
     case testMicDeadState
+    /// The 🎤 DJI receiver's status stream / a replayed reading — see docs/testing.md.
+    case testDjiState
+    case testDjiEvent(kind: String, level: Int?, screens: String?)
     /// Pick a 😴 mode without the mouse — see docs/testing.md.
     case testLidAwakeMode(String)
         case testHomeAwake
@@ -263,6 +266,8 @@ case testTerminalFont
     var onTestSleepChime: (() -> Void)?
     var onTestMicDead: ((String?) -> String)?
     var onTestMicDeadState: (() -> String)?
+    var onTestDjiState: (() -> String)?
+    var onTestDjiEvent: ((String, Int?, String?) -> String)?
     /// Returns the state JSON after the switch, so one call both sets and
     /// proves it.
     var onTestLidAwakeMode: ((String) -> String)?
@@ -494,6 +499,14 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestMicDead?(screens) ?? "{\"error\":\"mic alarm unavailable\"}"
                 if self.onTestMicDead == nil { statusCode = 503 }
+            case .testDjiState:
+                contentType = "application/json"
+                body = self.onTestDjiState?() ?? "{\"error\":\"dji monitor unavailable\"}"
+                if self.onTestDjiState == nil { statusCode = 503 }
+            case .testDjiEvent(let kind, let level, let screens):
+                contentType = "application/json"
+                body = self.onTestDjiEvent?(kind, level, screens) ?? "{\"error\":\"dji monitor unavailable\"}"
+                if self.onTestDjiEvent == nil { statusCode = 503 }
             case .testMicDeadState:
                 contentType = "application/json"
                 body = self.onTestMicDeadState?() ?? "{\"error\":\"mic alarm unavailable\"}"
@@ -870,6 +883,12 @@ case testTerminalFont
             return .testMicDead(queryItems.first(where: { $0.name == "screens" })?.value)
         case "/test/mic-dead/state":
             return .testMicDeadState
+        case "/test/dji/state":
+            return .testDjiState
+        case let p where p.hasPrefix("/test/dji/"):
+            return .testDjiEvent(kind: String(p.dropFirst("/test/dji/".count)),
+                                 level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Int($0) },
+                                 screens: queryItems.first(where: { $0.name == "screens" })?.value)
         case "/test/home-awake":
             return .testHomeAwake
         case "/test/claude-rc":
