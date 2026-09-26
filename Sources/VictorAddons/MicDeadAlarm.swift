@@ -65,6 +65,13 @@ final class MicDeadAlarm {
         overlayError("🎤❌ alarm raised: \(text)")
         let b = BottomTabBanner(screensProvider: screens ?? screensProvider)
         banner = b
+        // Hold the banner until its fall has finished. Dropping it at the click
+        // killed the fall's timer (it holds the banner weakly) and left the
+        // panels on screen with nobody owning them — caught by the screenshot
+        // check on 2026-09-26, the click-dismiss "worked" and the tab stayed.
+        b.onDismissed = { [weak self, weak b] in
+            if let self, self.banner === b { self.banner = nil }
+        }
         b.show(text: text,
                backgroundColor: Self.color,
                font: NSFont.boldSystemFont(ofSize: Self.fontSize),
@@ -78,8 +85,7 @@ final class MicDeadAlarm {
         guard let since = silentSince else { return }
         overlayInfo("🎤 alarm dismissed (\(how)); it said: \(Self.text(since: since))")
         silentSince = nil
-        banner?.dismiss()
-        banner = nil
+        banner?.dismiss()   // `onDismissed` lets go of it once it is off screen
     }
 
     /// Audio is flowing again. Logged only — the tab stays (see the type doc).
@@ -89,7 +95,7 @@ final class MicDeadAlarm {
 
     func stateJSON() -> String {
         let since = silentSince.map { String(Int($0.timeIntervalSince1970)) } ?? "null"
-        let visible = banner != nil
+        let visible = banner?.isVisible ?? false
         return "{\"raised\":\(isRaised),\"silent_since\":\(since),\"visible\":\(visible)}"
     }
 }
