@@ -103,12 +103,12 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
 
 ### 🧾 ElevenLabs quota row (2026-09-28)
 
-Victor: *"Eleven labs should show remaining/total and reset date. In menu of addons"*. A disabled-looking readout directly under 🎬 (`ElevenLabsQuotaPolicy` + `ElevenLabsQuotaMonitor`): `🧾 ElevenLabs: 1 234 / 10 000 left · resets 1 Oct`, **red** once remaining ≤ 0 (same `attributedTitle` trick as the overdue ⏱️ Resumed row). Fetched off the main thread; refreshed on menu open when older than 5 min and every 30 min regardless; the result lands in `.common` run-loop modes so the row repaints *while the menu is open*. Click → elevenlabs.io (the API-keys page when the key lacks `user_read`, the subscription page otherwise).
+Victor: *"Eleven labs should show remaining/total and reset date. In menu of addons"*. A disabled-looking readout directly under 🎬 (`ElevenLabsQuotaPolicy` + `ElevenLabsQuotaMonitor`): `🧾 ElevenLabs 1234 / 10k / Oct 30` — remaining / total / reset, compact on Victor's request (*"33 / 10k / Oct 30"*; the words and the sources are in the tooltip), `−33 / 10k / ?` when overdrawn with no reset date — **red** once remaining ≤ 0 (same `attributedTitle` trick as the overdue ⏱️ Resumed row). Fetched off the main thread; refreshed on menu open when older than 5 min and every 30 min regardless; the result lands in `.common` run-loop modes so the row repaints *while the menu is open*. Click → elevenlabs.io (the API-keys page when the key lacks `user_read`, the subscription page otherwise).
 
 - **Key**: the same `LiveCaptionsStream.apiKey()` precedence as the band, which in practice is `ELEVENLABS_API_KEY` from `~/.walkie-talkie/elevenlabs.env` — **read only**; Walkie Talkie owns that file.
 - **`GET /v1/user/subscription`** gives used, limit and `next_character_count_reset_unix` at once — but needs the key's `user_read` permission. On 2026-09-28 Victor's key answered **`401 missing_permissions`** ("missing the permission user_read").
 - **Fallback for used**: `GET /v1/usage/character-stats?breakdown_type=none` summed over the **last 30 days** (works with the scoped key). The billing period is unknown without `user_read`, so a rolling window is the honest stand-in, and the tooltip names it. **Total** then comes from `WT_ELEVEN_QUOTA` in the same env file, else 10 000.
-- **The reset date is never invented**: without `user_read` the row says `resets ?` and the tooltip tells Victor to add that permission to the key at elevenlabs.io → API keys. Headless check: `GET /test/elevenlabs/state[?refresh=1]` (see [testing.md](testing.md)).
+- **The reset date is never invented**: without `user_read` the row ends in `/ ?` and the tooltip tells Victor to add that permission to the key at elevenlabs.io → API keys. Headless check: `GET /test/elevenlabs/state[?refresh=1]` (see [testing.md](testing.md)).
 
 ## 🎙️ "Ce tocmai am spus" picker (menu row)
 

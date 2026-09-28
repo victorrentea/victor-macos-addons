@@ -36,15 +36,22 @@ final class ElevenLabsQuotaPolicyTests: XCTestCase {
     func testTitleGroupsThousandsAndSaysWhenTheResetIsUnknown() {
         let s = P.Snapshot(used: 8766, total: 10000, reset: nil, usedSource: "", totalSource: "",
                            subscriptionStatus: 401, missingUserRead: true)
-        XCTAssertEqual(P.title(s, error: nil, timeZone: utc), "🧾 ElevenLabs: 1 234 / 10 000 left · resets ?")
+        XCTAssertEqual(P.title(s, error: nil, timeZone: utc), "🧾 ElevenLabs 1234 / 10k / ?")
         XCTAssertFalse(s.exhausted)
         XCTAssertTrue(P.tooltip(s, error: nil, fetchedAt: nil).contains("user_read"))
+    }
+
+    func testTotalsAreShortenedToK() {
+        XCTAssertEqual(P.kilo(10_000), "10k")
+        XCTAssertEqual(P.kilo(100_000), "100k")
+        XCTAssertEqual(P.kilo(1_500), "1.5k")
+        XCTAssertEqual(P.kilo(500), "500")
     }
 
     func testOverdrawnShowsNegativeAndIsExhausted() {
         let s = P.Snapshot(used: 10033, total: 10000, reset: Date(timeIntervalSince1970: 1790812800),
                            usedSource: "", totalSource: "", subscriptionStatus: 200, missingUserRead: false)
-        XCTAssertEqual(P.title(s, error: nil, timeZone: utc), "🧾 ElevenLabs: −33 / 10 000 left · resets 1 Oct")
+        XCTAssertEqual(P.title(s, error: nil, timeZone: utc), "🧾 ElevenLabs −33 / 10k / Oct 1")
         XCTAssertTrue(s.exhausted)
     }
 }

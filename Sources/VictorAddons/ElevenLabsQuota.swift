@@ -123,26 +123,39 @@ enum ElevenLabsQuotaPolicy {
         return (n < 0 ? "−" : "") + out
     }
 
+    /// `10000` → `10k`, `1500` → `1.5k`, `100000` → `100k`; under 1000 as is.
+    static func kilo(_ n: Int) -> String {
+        guard abs(n) >= 1000 else { return String(n) }
+        let k = Double(n) / 1000
+        let text = k == k.rounded() ? String(Int(k)) : String(format: "%.1f", k)
+        return text.replacingOccurrences(of: ".0", with: "") + "k"
+    }
+
+    /// `Oct 30`, or `?` when the reset date is unknown.
     static func resetText(_ date: Date?, timeZone: TimeZone = .current) -> String {
-        guard let date else { return "resets ?" }
+        guard let date else { return "?" }
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = timeZone
-        f.dateFormat = "d MMM"
-        return "resets " + f.string(from: date)
+        f.dateFormat = "MMM d"
+        return f.string(from: date)
     }
 
+    /// Compact on purpose (2026-09-28, Victor: *"33 / 10k / Oct 30"*):
+    /// remaining / total / reset. The words live in the tooltip.
     static func title(_ s: Snapshot?, error: String?, timeZone: TimeZone = .current) -> String {
         guard let s else {
-            return error == nil ? "🧾 ElevenLabs: checking…" : "🧾 ElevenLabs: ?"
+            return error == nil ? "🧾 ElevenLabs …" : "🧾 ElevenLabs ?"
         }
-        return "🧾 ElevenLabs: \(group(s.remaining)) / \(group(s.total)) left · \(resetText(s.reset, timeZone: timeZone))"
+        let remaining = (s.remaining < 0 ? "−" : "") + String(abs(s.remaining))
+        return "🧾 ElevenLabs \(remaining) / \(kilo(s.total)) / \(resetText(s.reset, timeZone: timeZone))"
     }
 
     static func tooltip(_ s: Snapshot?, error: String?, fetchedAt: Date?, now: Date = Date()) -> String {
         var lines: [String] = []
         if let s {
-            lines.append("Used \(group(s.used)) of \(group(s.total)) characters.")
+            lines.append("Used \(group(s.used)) of \(group(s.total)) characters — \(group(s.remaining)) left.")
+            if let reset = s.reset { lines.append("Resets \(resetText(reset)).") }
             lines.append("Used: \(s.usedSource). Total: \(s.totalSource).")
             if s.missingUserRead {
                 lines.append("Reset date unknown: the API key lacks the user_read permission "
