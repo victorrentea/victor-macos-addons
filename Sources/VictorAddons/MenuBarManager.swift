@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 28, 07:21"
+    static let BUILD_TIME = "Sep 28, 07:27"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -76,8 +76,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// repainted by `setLiveCaptions` on every state change and once a second
     /// while the menu is open.
     private var liveCaptionsItem: NSMenuItem!
-    private var elevenLabsQuotaItem: NSMenuItem!
-    let elevenLabsQuota = ElevenLabsQuotaMonitor()
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
     private(set) var tailItem: NSMenuItem!
@@ -352,16 +350,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // their reason: the eye looking for anything to do with the room's
         // speech should find all three together.
         liveCaptionsItem = addItem("🎬 Live Captions", action: #selector(toggleLiveCaptionsAction))
-
-        // 🧾 What is left of the ElevenLabs plan (2026-09-28, Victor: *"Eleven
-        // labs should show remaining/total and reset date"*). Directly under
-        // 🎬, the one row here that spends it — and the same key feeds Walkie
-        // Talkie, so this is where running out shows before a dictation comes
-        // back empty. `ElevenLabsQuotaMonitor` fetches off the main thread;
-        // the row only draws its last answer.
-        elevenLabsQuotaItem = addItem(elevenLabsQuota.title, action: #selector(elevenLabsQuotaAction))
-        elevenLabsQuota.onChange = { [weak self] in self?.applyElevenLabsQuota() }
-        elevenLabsQuota.start()
 
         // 📬 Check task inbox — the manual override for the poller's power
         // gate. Scheduled polls only run on AC, so while unplugged this item is
@@ -808,10 +796,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // open, so this is the one moment it has to be right.
         updateTranscribeTitle()
         refreshWsItem()
-        // 🧾 cached for 5 min; a stale one refreshes in the background and the
-        // row repaints while the menu is still open.
-        elevenLabsQuota.refreshIfStale()
-        applyElevenLabsQuota()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
             // Lets a "checking…" click resolve to its real result without the
@@ -972,23 +956,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func toggleLiveCaptionsAction() {
         onToggleLiveCaptions?()
-    }
-
-    @objc private func elevenLabsQuotaAction() {
-        NSWorkspace.shared.open(elevenLabsQuota.clickURL)
-    }
-
-    /// Plain title while there is quota left; **red** once remaining ≤ 0, drawn
-    /// through `attributedTitle` like the overdue ⏱️ Resumed row.
-    private func applyElevenLabsQuota() {
-        guard let item = elevenLabsQuotaItem else { return }
-        let title = elevenLabsQuota.title
-        item.title = title
-        item.toolTip = elevenLabsQuota.tooltip
-        item.attributedTitle = elevenLabsQuota.exhausted
-            ? NSAttributedString(string: title, attributes: [.foregroundColor: NSColor.systemRed,
-                                                             .font: NSFont.menuFont(ofSize: 0)])
-            : nil
     }
 
     /// - Parameter title: built by `LiveCaptionsController.menuTitle`, because

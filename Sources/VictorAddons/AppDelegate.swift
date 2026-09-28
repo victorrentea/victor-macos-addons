@@ -682,13 +682,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.menuBarManager.openMenuForTest(closeAfter: secs, appearance: appearance)
         }
         tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
-        // 🧾 `?refresh=1` starts a fetch and answers the state as it stands;
-        // ask again a second later for the fresh one.
-        tabletServer?.onTestElevenLabsState = { [weak self] refresh in
-            guard let quota = self?.menuBarManager.elevenLabsQuota else { return "{}" }
-            if refresh { quota.refresh() }
-            return quota.stateJSON()
-        }
         // Replay a reading through the same handler the USB reader uses, so the
         // banners can be reviewed without draining a transmitter. Drawn off the
         // retina unless `screens=all`.

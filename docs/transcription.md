@@ -101,15 +101,6 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
   microphone, a socket and a panel on the projector, and none of that is reachable from a script
   through an `NSMenuItem`.
 
-### 🧾 ElevenLabs quota row (2026-09-28)
-
-Victor: *"Eleven labs should show remaining/total and reset date. In menu of addons"*. A disabled-looking readout directly under 🎬 (`ElevenLabsQuotaPolicy` + `ElevenLabsQuotaMonitor`): `🧾 ElevenLabs 1234 / 10k / Oct 30` — remaining / total / reset, compact on Victor's request (*"33 / 10k / Oct 30"*; the words and the sources are in the tooltip), `−33 / 10k / ?` when overdrawn with no reset date — **red** once remaining ≤ 0 (same `attributedTitle` trick as the overdue ⏱️ Resumed row). Fetched off the main thread; refreshed on menu open when older than 5 min and every 30 min regardless; the result lands in `.common` run-loop modes so the row repaints *while the menu is open*. Click → elevenlabs.io (the API-keys page when the key lacks `user_read`, the subscription page otherwise).
-
-- **Key**: the same `LiveCaptionsStream.apiKey()` precedence as the band, which in practice is `ELEVENLABS_API_KEY` from `~/.walkie-talkie/elevenlabs.env` — **read only**; Walkie Talkie owns that file.
-- **`GET /v1/user/subscription`** gives used, limit and `next_character_count_reset_unix` at once — but needs the key's `user_read` permission. On 2026-09-28 Victor's key answered **`401 missing_permissions`** ("missing the permission user_read").
-- **Fallback for used**: `GET /v1/usage/character-stats?breakdown_type=none` summed over the **last 30 days** (works with the scoped key). The billing period is unknown without `user_read`, so a rolling window is the honest stand-in, and the tooltip names it. **Total** then comes from `WT_ELEVEN_QUOTA` in the same env file, else 10 000.
-- **The reset date is never invented**: without `user_read` the row ends in `/ ?` and the tooltip tells Victor to add that permission to the key at elevenlabs.io → API keys. Headless check: `GET /test/elevenlabs/state[?refresh=1]` (see [testing.md](testing.md)).
-
 ## 🎙️ "Ce tocmai am spus" picker (menu row)
 
 - **🎙️ "Ce tocmai am spus" picker — a menu row, no shortcut since 2026-09-17** (**🎙️ Distil the last 60 s of speech → 📋**, directly above 🔬 Fact-check, because the pair is the same question: act on what was just *said* in the room). It owned **⌘⌃V** until then and lost it to the clipboard→notes append, which is reached for a dozen times a day in any app where this one only means something while Whisper is running — Victor's call. The row carries no key equivalent, because the feature genuinely has none now. — **the last 60 seconds of transcript, distilled into five things worth pasting**; click one (or press its digit) and it goes to the clipboard, which the bottom-left pill then quotes back. Replaced the *Emotional 🥹 Paste* that used to own this key (capture the clipboard on ⌘V, re-clean it on ⌘⌃V via Haiku): both answer "give me a tidy version of that", but the old one could only act on text already written down somewhere, and what gets lost mid-workshop is the sentence just *said out loud*.
