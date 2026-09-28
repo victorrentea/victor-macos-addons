@@ -672,11 +672,18 @@ class _ChannelCapture:
         resolve_fn=None,
         recorder: "_RawRecorder | None" = None,
         corpus=None,
+        on_open=None,
     ):
         self.device = device
         self.label = label
         self.device_name = device_name
         self._resolve_fn = resolve_fn  # callable() -> (idx, name) | None
+        # callable(device_name) after every stream that actually opened. The
+        # device this channel records through changes in two places — a device
+        # check's `switch_device`, and the error-recovery re-resolve in `_loop`
+        # — and only the first used to tell the app. Reporting from the one
+        # spot both go through is what keeps the menu-bar glyph honest.
+        self._on_open = on_open
         self._recorder = recorder
         # `UtteranceRecorder | None` — the training corpus. Typed loosely so the
         # import stays optional: a missing `corpus_recorder` module must not be
@@ -804,6 +811,11 @@ class _ChannelCapture:
                     "transcript",
                     f"🎙️ [{self.label}] capturing from {self.device_name!r}",
                 )
+                if self._on_open:
+                    try:
+                        self._on_open(self.device_name)
+                    except Exception as exc:  # noqa: BLE001 — never cost the capture a stream
+                        log.error("transcript", f"🎙️ [{self.label}] on_open failed: {exc!r}")
                 while self._running and s.active:
                     time.sleep(0.5)
                 # Stream ended (device switched or disconnected)
@@ -1427,6 +1439,10 @@ class WhisperTranscriptionRunner:
         # errors on every start, and the double-frees that crashed Python.
         self._pref_watch_mtime: float = _preferred_source_mtime()
         self._device_check_event = threading.Event()
+        # The glyph last sent on VICTOR_SOURCE, so each device the Victor
+        # channel lands on is announced once, whichever path landed it there.
+        self._announced_source: str | None = None
+        self._announce_lock = threading.Lock()
 
     def _make_recorder(self, label: str) -> "_RawRecorder | None":
         if not _RECORD_RAW_ON:
@@ -1484,7 +1500,8 @@ class WhisperTranscriptionRunner:
         if resolved:
             me_idx, me_name = resolved
             log.info("transcript", f"🎙️ Resolved Victor: {me_name!r}")
-            print(f"VICTOR_SOURCE:{_short_device_name(me_name)}", flush=True)
+            self._announced_source = _short_device_name(me_name)
+            print(f"VICTOR_SOURCE:{self._announced_source}", flush=True)
             self._me_channel = _ChannelCapture(
                 me_idx,
                 _ME_SPEAKER,
@@ -1496,6 +1513,7 @@ class WhisperTranscriptionRunner:
                 # loopback — other people's voices, and the wrong training data
                 # for a model being fine-tuned on one speaker.
                 corpus=self._make_corpus(_ME_SPEAKER),
+                on_open=self._announce_source,
             )
             self._channels.append(self._me_channel)
         else:
@@ -1630,10 +1648,8 @@ class WhisperTranscriptionRunner:
                 best_name != self._me_channel.device_name
                 or best_idx != self._me_channel.device
             ):
-                short = _short_device_name(best_name)
                 self._me_channel.switch_device(best_idx, best_name)
-                self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
-                print(f"VICTOR_SOURCE:{short}", flush=True)
+                self._announce_source(best_name)
                 if self._on_device_change:
                     self._on_device_change()
             # Always re-emit availability — device-list change may have toggled
@@ -1641,6 +1657,22 @@ class WhisperTranscriptionRunner:
             self._emit_available()
         except Exception as exc:
             log.error("transcript", f"🎙️ Device change handler error: {exc}")
+
+    def _announce_source(self, device_name: str):
+        """Tell the app (and the transcript) which mic Victor's channel is on.
+
+        Called both when a device check switches the channel and whenever its
+        stream opens — the open is the ground truth, and it also covers the
+        error-recovery re-resolve, which switches device on its own. Deduped on
+        the glyph, so the reopen that follows a switch says nothing twice.
+        """
+        short = _short_device_name(device_name)
+        with self._announce_lock:
+            if short == self._announced_source:
+                return
+            self._announced_source = short
+        self._write_to_transcript(f"--- {_ME_SPEAKER} → {short} ---")
+        print(f"VICTOR_SOURCE:{short}", flush=True)
 
     def _emit_available(self):
         try:

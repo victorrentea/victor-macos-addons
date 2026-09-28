@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 28, 07:27"
+    static let BUILD_TIME = "Sep 28, 07:45"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -178,9 +178,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         loadPortHistory()
         buildMenu()
         setupStatusItem()
-        DistributedNotificationCenter.default().addObserver(
-            self, selector: #selector(systemAppearanceChanged),
-            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"), object: nil)
     }
 
     // MARK: - Status Item
@@ -1662,66 +1659,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return composite
     }
 
-    // MARK: - Source glyphs
-
-    /// Whisper reports the built-in mic as 💻. That string is the **wire value**
-    /// — it comes from `whisper_runner.py`'s `_ME_PATTERNS` and every lookup here
-    /// (`availableSources`, the checkmark in the submenu) is string equality — so
-    /// it stays 💻 on the protocol and only the glyph we *draw* changes, to the
-    /// Apple logo (U+F8FF, the bitten apple): "this Mac", not "a laptop".
-    private static let glyphOverrides: [String: String] = ["💻": "\u{F8FF}"]
-
-    private static func displayGlyph(_ emoji: String) -> String {
-        glyphOverrides[emoji] ?? emoji
-    }
-
-    /// Overridden glyphs are the only *monochrome* ones — every real emoji
-    /// carries its own colour. A monochrome glyph must be tinted to match the
-    /// surface it lands on, or a black apple vanishes into a dark menu bar.
-    private static func isMonochromeGlyph(_ emoji: String) -> Bool {
-        glyphOverrides[emoji] != nil
-    }
-
-    private static func glyphInk(_ appearance: NSAppearance?) -> NSColor {
-        let dark = (appearance ?? NSApp.effectiveAppearance)
-            .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return dark ? .white : .black
-    }
-
-    /// A text glyph is drawn inside its em-box, and the Apple logo occupies far
-    /// less of that box than an emoji does — measured at the same point size in
-    /// an 18×18 icon, 💻 inks the full 18×18 while  inks only 10.5×13, which
-    /// reads as a visibly *smaller* icon. Scale it up to compensate: ×1.25 gets
-    ///  to 13×16 and still clears both icon sizes we draw (18×18 menu bar,
-    /// 16×16 menu item). ×1.4 clips.
-    private static let monochromeGlyphScale: CGFloat = 1.25
-
-    /// Attributes for drawing one source glyph on `appearance`.
-    ///
-    /// The system font is the right one for U+F8FF — verified with
-    /// `CTFontGetGlyphsForCharacters`, `.AppleSystemUIFont` carries the glyph
-    /// directly while "Apple Symbols", despite the name, does not (it only
-    /// renders it through fallback).
-    private static func glyphAttributes(_ emoji: String, size: CGFloat,
-                                        on appearance: NSAppearance?) -> [NSAttributedString.Key: Any] {
-        guard isMonochromeGlyph(emoji) else {
-            return [.font: NSFont.systemFont(ofSize: size)]
-        }
-        return [.font: NSFont.systemFont(ofSize: size * monochromeGlyphScale),
-                .foregroundColor: glyphInk(appearance)]
-    }
-
-    /// Our menu-bar icons are baked bitmaps, so a light/dark flip cannot repaint
-    /// them by itself — the monochrome ones have to be re-drawn. The theme
-    /// notification lands slightly *before* `effectiveAppearance` updates, hence
-    /// the short delay.
-    @objc private func systemAppearanceChanged() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.refreshMenuIcon()
-            self?.updateTranscribeTitle()
-        }
-    }
-
     /// Render any emoji as a colored 18×18 menu-bar icon, optionally with a small
     /// emoji badge in the bottom-right 9×9 quadrant (50% w × 50% h).
     /// `isTemplate = false` is essential — template images are forced to a single
@@ -1732,9 +1669,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let size = NSSize(width: 18, height: 18)
         let composite = NSImage(size: size)
         composite.lockFocus()
-        let attrs = Self.glyphAttributes(emoji, size: 16,
-                                         on: statusItem.button?.effectiveAppearance)
-        let str = Self.displayGlyph(emoji) as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 16)]
+        let str = emoji as NSString
         let strSize = str.size(withAttributes: attrs)
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
@@ -1874,10 +1810,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         transcribeSubmenu.addItem(.separator())
 
         for mic in MicRoster.all {
-            // **The raw glyph, not `displayGlyph`** (2026-09-23, Victor: *"pune
-            // aceleași emoji ca-n walkie … toate itemii să fie identici"*): these
-            // rows are Walkie Talkie's `Mic` submenu row for row, and there 💻 is
-            // 💻. The  stays where it was drawn for — the menu bar icon.
+            // Same glyphs as Walkie Talkie's `Mic` submenu, row for row
+            // (2026-09-23, Victor: *"pune aceleași emoji ca-n walkie … toate
+            // itemii să fie identici"*).
             let here = availableSources.contains(mic.glyph)
             // **The absent ones say why they are grey.** A disabled row with no
             // explanation is indistinguishable from a broken one, and the
@@ -1960,11 +1895,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         guard !emoji.isEmpty else { return nil }
         let img = NSImage(size: size)
         img.lockFocus()
-        // Menu items are drawn on the menu's surface, which follows the system
-        // appearance — not the (possibly different) menu-bar one.
-        let attrs = Self.glyphAttributes(emoji, size: size.height - 2,
-                                         on: NSApp.effectiveAppearance)
-        let str = Self.displayGlyph(emoji) as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size.height - 2)]
+        let str = emoji as NSString
         let strSize = str.size(withAttributes: attrs)
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
