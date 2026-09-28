@@ -2,10 +2,13 @@
 # ✋🔒 hands-off — the one command an agent runs before it touches Victor's
 # mouse or keyboard, and again the moment it lets go.
 #
-# While it is on, the app draws an amber frame on every screen, a badge riding
-# the cursor, and four slowly pulsing 🔒 in the corners. That is the contract:
-# **locks visible = don't touch the mouse or the keyboard.** Locks gone = yours
-# again (the frame flashes green and a Tink plays).
+# While it is on, the app draws an amber frame on every screen and four slowly
+# pulsing 🔒 in the corners. That is the contract: **locks visible = don't
+# touch the mouse or the keyboard.** Locks gone = yours again (the frame
+# flashes green and a Tink plays). The "what" you pass is NOT shown on screen
+# by itself (no bottom pill since 2026-09-28): Victor reads it by hovering a 🔒,
+# so it has to say what you are doing and why you need his mouse, in words he
+# understands at a glance.
 #
 # Usage:
 #   hands-off start "click Restart to Update" [ttl] [agent]
@@ -20,8 +23,9 @@
 # so a dead agent never parks the locks on screen. The app's own ttl watchdog
 # (default 120 s, max 900) is the backstop for the case where even that fails.
 #
-# ✋ TAKEOVER (2026-09-26). Victor can click any 🔒 (or press ⌃⌘⎋ twice) to take
-# the machine back. Then, for `run`:
+# ✋ TAKEOVER (2026-09-26). Victor can click a 🔒 TWICE within 1.5 s (any lock;
+# since 2026-09-28 one click only arms) or press ⌃⌘⎋ twice to take the machine
+# back. Then, for `run`:
 #   - the command is SIGTERMed (its whole process group; SIGKILL after 3 s),
 #   - this prints on stderr
 #       ✋ HANDS-OFF INTERRUPTED: Victor took control at HH:MM:SS — stop what you were doing

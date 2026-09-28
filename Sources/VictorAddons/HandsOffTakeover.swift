@@ -12,7 +12,8 @@ import Darwin
 /// Victor waits. When the agent is doing the wrong thing — or he simply needs
 /// the machine back in the middle of a class — the only way out was to fight
 /// the pointer, or find the right terminal and press Ctrl-C in it. Now a click
-/// on any 🔒 (or ⌃⌘⎋ twice) is the stop button: the locks go red, the command
+/// on any 🔒 (or ⌃⌘⎋ twice) is the stop button — two clicks since 2026-09-28,
+/// see `HandsOffLockClicks`: the locks go red, the command
 /// that holds them is killed, and the agent is *told*, in its own tool output.
 ///
 /// Everything here is arithmetic and string composition; the AppKit and
@@ -57,9 +58,9 @@ struct ProcessStamp: Equatable {
 /// Where a takeover came from — written to the log and the marker, so "why did
 /// my command die" has an answer after the fact.
 enum HandsOffTakeoverSource: String {
-    case click       // a real click on one of the 🔒
+    case click       // two real clicks on the 🔒 within 1.5 s
     case keyboard    // ⌃⌘⎋ twice within a second
-    case test        // GET /test/hands-off/takeover
+    case test        // GET /test/hands-off/takeover or the second /test/hands-off/click
 }
 
 /// The one state machine: idle → taking over (red ✋ for ~2 s) → idle.
@@ -117,6 +118,84 @@ struct HandsOffDoublePress: Equatable {
         }
         lastPress = now
         return false
+    }
+}
+
+/// ✋ A click on a 🔒 **arms**, a second one takes over (2026-09-28).
+///
+/// Victor, 2026-09-28: *"it should take two clicks on the locks to unlock the
+/// screen and interrupt the flow. Not one single click."* One click had turned
+/// out to be too cheap: the locks sit in the corners, which is exactly where a
+/// hand parks the pointer or flicks it to get it out of the way, and a stray
+/// click there killed an agent's work mid-step.
+///
+/// The second click may land on **any** lock, not only the one that armed:
+/// the two clicks are one decision, and with four locks per screen and a
+/// pointer that may be jolted by the agent in between, insisting on the same
+/// corner would only make the deliberate gesture fail. A click after the window
+/// has run out is a new first click (it re-arms), never a takeover.
+struct HandsOffLockClicks: Equatable {
+    static let window: TimeInterval = 1.5
+
+    enum Outcome: Equatable {
+        /// First click (or first after the window ran out): show the hint.
+        case armed
+        /// Second click inside the window: take over.
+        case takeover
+    }
+
+    private(set) var armedAt: Date?
+
+    mutating func click(at now: Date) -> Outcome {
+        if isArmed(at: now) {
+            armedAt = nil
+            return .takeover
+        }
+        armedAt = now
+        return .armed
+    }
+
+    /// Armed = a first click happened less than `window` ago. A clock that went
+    /// backwards is not "inside the window".
+    func isArmed(at now: Date) -> Bool {
+        guard let armedAt else { return false }
+        let dt = now.timeIntervalSince(armedAt)
+        return dt >= 0 && dt <= Self.window
+    }
+
+    mutating func reset() { armedAt = nil }
+}
+
+/// Which corner a 🔒 sits in — the same order as `HandsOffOverlay.lockOrigins`.
+enum HandsOffCorner: Int, CaseIterable, Equatable {
+    case bottomLeft = 0, bottomRight, topLeft, topRight
+
+    var isLeft: Bool { self == .bottomLeft || self == .topLeft }
+    var isTop: Bool { self == .topLeft || self == .topRight }
+    var code: String { ["bl", "br", "tl", "tr"][rawValue] }
+
+    init?(code: String) {
+        guard let c = Self.allCases.first(where: { $0.code == code.lowercased() }) else { return nil }
+        self = c
+    }
+}
+
+/// Where the hover explanation goes: beside its lock, **inward** from the
+/// corner (right of a left lock, left of a right lock), its outer edge level
+/// with the lock's (bottom with bottom, top with top), then clamped into the
+/// screen so a long text never leaves it.
+enum HandsOffTipPlacement {
+    static let gap: CGFloat = 10
+
+    static func origin(lockFrame l: CGRect, corner: HandsOffCorner, tipSize s: CGSize,
+                       screenFrame f: CGRect, margin: CGFloat = 8) -> CGPoint {
+        var x = corner.isLeft ? l.maxX + gap : l.minX - gap - s.width
+        var y = corner.isTop ? l.maxY - s.height : l.minY
+        // Oversized (it never is: the plate is capped at 45 % of the screen),
+        // the text's start wins — its left edge and its top stay on screen.
+        x = max(min(x, f.maxX - margin - s.width), f.minX + margin)
+        y = min(max(y, f.minY + margin), f.maxY - margin - s.height)
+        return CGPoint(x: x, y: y)
     }
 }
 

@@ -1,8 +1,10 @@
 import AppKit
 
 /// "Hands off the keyboard" — the amber frame an agent raises around every
-/// screen while it is driving the mouse and keyboard, plus a caption pinned to
-/// the bottom centre of every screen saying who is driving and what it does.
+/// screen while it is driving the mouse and keyboard, plus four pulsing 🔒 in
+/// the corners. *Who* is driving and *what* it does is read by hovering a lock
+/// (since 2026-09-28; before that it was a caption pinned to the bottom centre
+/// of every screen — see `showTip`).
 ///
 /// It exists because synthetic input cannot be delivered politely. An agent
 /// that clicks a menu has to bring the app forward and physically move the
@@ -26,11 +28,27 @@ final class HandsOffOverlay {
 
     private var framePanels: [NSPanel] = []
     /// ✋ The four 🔒 per screen, each in its **own small panel** since
-    /// 2026-09-26 — the only part of the overlay that takes clicks. A click on
-    /// any of them is Victor taking the machine back (`takeover`). The frame and
-    /// the caption stay click-through: only the corners changed meaning.
+    /// 2026-09-26 — the only part of the overlay that takes clicks. Two clicks
+    /// on them (since 2026-09-28) are Victor taking the machine back
+    /// (`takeover`); hovering one shows the explanation. The frame stays
+    /// click-through: only the corners changed meaning.
     private var lockPanels: [NSPanel] = []
     private var lockViews: [HandsOffLockView] = []
+    /// Per lock, in the same order as `lockPanels`: which screen, which corner.
+    private var lockPlaces: [(screen: Int, corner: HandsOffCorner, screenFrame: NSRect)] = []
+    private var lockClicks = HandsOffLockClicks()
+    /// The one explanation panel (there is only ever one pointer), shown beside
+    /// the hovered lock. nil until first needed.
+    private var tipPanel: NSPanel?
+    /// Which lock the tip is showing for; nil = hidden (or fading out).
+    private var tipLockIndex: Int?
+    private var tipText = ""
+    private var tipHint = false
+    /// Bumped on every show/hide so a fade-out that finishes after a new show
+    /// does not order the fresh tip out.
+    private var tipGeneration = 0
+    private var tipHideWork: DispatchWorkItem?
+    private var hintExpiryWork: DispatchWorkItem?
     /// Who holds the locks — registered by `hands-off run` so a takeover can
     /// stop it. nil for `hands-off start`, the guard hook and the auto-raise.
     private(set) var holder: HandsOffHolder?
@@ -40,9 +58,8 @@ final class HandsOffOverlay {
     /// Basso — a low, final thud: "stopped", distinct from the release Tink.
     private let takeoverSound = NSSound(named: NSSound.Name("Basso"))
     static let takeoverCaption = "✋ Victor took control — stopping the agent"
-    /// One caption per frame panel, so the label appears, updates and goes
-    /// away with the frame — no second lifecycle to leak.
-    private var captionFields: [NSTextField] = []
+    /// The second line of the tip after one click on a 🔒.
+    static let armHint = "Click again to take over"
     private var watchdog: Timer?
 
     private let borderWidth: CGFloat = 6
@@ -63,13 +80,21 @@ final class HandsOffOverlay {
     /// One slow breath ≈ 2.4 s round trip. Fast blinking reads as an error the
     /// eye wants to dismiss; this reads as "still running".
     private let lockPulseDuration: CFTimeInterval = 1.2
-    /// The caption used to ride the cursor like a tooltip. That failed its one
-    /// job: an agent whips the pointer across the screen, so the text was never
-    /// where Victor's eye was, and at 13 pt it was a smudge. Now it sits still,
-    /// centred at the bottom of every screen — a fixed place the eye learns —
-    /// and twice as large, so it is read from across the desk.
+    /// The "why" used to ride the cursor like a tooltip (failed: an agent whips
+    /// the pointer across the screen, so the text was never where Victor's eye
+    /// was), then sat as an amber pill at the bottom centre of every screen.
+    /// Since 2026-09-28 it is shown **only on hover over a 🔒** — Victor: *"You
+    /// shouldn't stick this badge of orange text on the bottom when you take
+    /// over the control of my machine, but on hover, I should see that."* The
+    /// pill covered the bottom of whatever he was watching the agent do, for the
+    /// whole run, to answer a question he asks only sometimes. Same plate, same
+    /// size as the pill, so it reads the same.
     private let captionFontSize: CGFloat = 26
-    private let captionBottomInset: CGFloat = 28
+    private let hintFontSize: CGFloat = 18
+    /// ≤ 150 ms in, ~300 ms of grace before it goes: a pointer wobbling off the
+    /// lock's edge and back must not make it flicker.
+    private let tipFadeIn: TimeInterval = 0.12
+    private let tipHideGrace: TimeInterval = 0.3
     private let releaseChime = NSSound(named: NSSound.Name("Tink"))
 
     /// **Cu capacul închis, ochii lui sunt oricum în altă parte — rămâne doar
@@ -129,10 +154,11 @@ final class HandsOffOverlay {
         HandsOffGate.shared.locksUp = true
 
         if framePanels.isEmpty {
+            lockClicks.reset()
             buildFrames()
         }
         setBorder(color: amber)
-        setCaption(fresh.label)
+        refreshTip()
         startWatchdog()
         let who = holder.map { " holder \($0.holderPid)" } ?? ""
         overlayInfo("Hands off: \(fresh.label) (ttl \(Int(fresh.ttl))s)\(who)")
@@ -174,7 +200,7 @@ final class HandsOffOverlay {
         guard isAutoRaised, let current = session else { return }
         let refreshed = HandsOffSession(agent: agent, what: current.what, ttl: ttl, startedAt: Date())
         session = refreshed
-        if captionFields.first?.stringValue != refreshed.label { setCaption(refreshed.label) }
+        if tipText != refreshed.label { refreshTip() }
     }
 
     /// Give it back. Safe to call when nothing is active — an agent that ends
@@ -194,6 +220,8 @@ final class HandsOffOverlay {
         isAutoRaised = false
         HandsOffGate.shared.locksUp = false
         watchdog?.invalidate(); watchdog = nil
+        lockClicks.reset()
+        hideTip(after: 0)
         flashFreeAndDismiss()
         if Self.shouldChime(silent: silent, lidClosed: LidAwake.isLidClosed()) { releaseChime?.play() }
         overlayInfo(expired ? "Hands off: released by watchdog"
@@ -216,8 +244,8 @@ final class HandsOffOverlay {
 
     // MARK: - ✋ Takeover
 
-    /// Victor takes the machine back: a click on a 🔒, ⌃⌘⎋ twice, or the test
-    /// route. In this order, because the wrapper reads them in this order:
+    /// Victor takes the machine back: two clicks on the 🔒 (`lockClicked`),
+    /// ⌃⌘⎋ twice, or the test route. In this order, because the wrapper reads them in this order:
     ///
     /// 1. the marker file (`~/.victor-addons/hands-off.takeover`) — written
     ///    first, so a wrapper whose child dies before SIGUSR1 lands still finds
@@ -225,7 +253,8 @@ final class HandsOffOverlay {
     /// 2. SIGUSR1 to the `hands-off run` wrapper, SIGTERM to its child's process
     ///    group, SIGKILL 3 s later to whatever ignored it;
     /// 3. the locks drop at once (`/hands-off/state` says `active:false`) while
-    ///    the panels turn red with ✋ for ~2 s, with a Basso, then fade.
+    ///    the panels turn red with ✋ for ~2 s, with a Basso, then fade — and,
+    ///    when the tip is up beside the clicked lock, it turns red and says so.
     ///
     /// No green flash and no Tink: green means "the agent gave it back", and
     /// that is not what happened.
@@ -265,6 +294,7 @@ final class HandsOffOverlay {
         isAutoRaised = false
         HandsOffGate.shared.locksUp = false
         watchdog?.invalidate(); watchdog = nil
+        lockClicks.reset()
         showTakeoverAndDismiss()
         takeoverSound?.stop()
         takeoverSound?.play()
@@ -285,10 +315,213 @@ final class HandsOffOverlay {
         }
     }
 
+    // MARK: - 🔒 clicks and hover
+
+    /// A **real** click on lock `index` (the synthetic ones never get here),
+    /// or the `/test/hands-off/click` hook. The first click only arms and says
+    /// so in the tip; the second, on any lock, within 1.5 s, is the takeover.
+    @discardableResult
+    func lockClicked(index: Int, source: HandsOffTakeoverSource, markerURL: URL? = nil) -> String {
+        guard session != nil, !takeoverMachine.isTakingOver else { return "{\"ok\":false,\"reason\":\"no-locks\"}" }
+        let now = Date()
+        switch lockClicks.click(at: now) {
+        case .takeover:
+            return takeover(source: source, markerURL: markerURL)
+        case .armed:
+            overlayInfo("Hands off: 🔒 clicked once — click again within \(HandsOffLockClicks.window)s to take control")
+            tipHideWork?.cancel(); tipHideWork = nil
+            showTip(at: index)
+            hintExpiryWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !self.lockClicks.isArmed(at: Date()) else { return }
+                    self.lockClicks.reset()
+                    self.refreshTip()
+                }
+            }
+            hintExpiryWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + HandsOffLockClicks.window + 0.05, execute: work)
+            return tipStateJSON(outcome: "armed")
+        }
+    }
+
+    /// Pointer entered / left lock `index`.
+    func lockHover(index: Int, inside: Bool) {
+        if inside {
+            tipHideWork?.cancel(); tipHideWork = nil
+            showTip(at: index)
+        } else if tipLockIndex == index {
+            hideTip(after: tipHideGrace)
+        }
+    }
+
+    /// Test hooks: the lock at `corner` of screen `screen` (NSScreen order).
+    func lockIndex(screen: Int, corner: HandsOffCorner) -> Int? {
+        lockPlaces.firstIndex { $0.screen == screen && $0.corner == corner }
+    }
+
+    /// Read-only: what the tip and the arming look like right now.
+    func tipStateJSON(outcome: String? = nil) -> String {
+        var obj: [String: Any] = [
+            "active": session != nil,
+            "armed": lockClicks.isArmed(at: Date()),
+            "frames": framePanels.count,
+            "locks": lockPanels.count,
+        ]
+        if let outcome { obj["outcome"] = outcome }
+        var tip: [String: Any] = ["visible": tipLockIndex != nil]
+        if let i = tipLockIndex, i < lockPlaces.count, let panel = tipPanel {
+            tip["screen"] = lockPlaces[i].screen
+            tip["corner"] = lockPlaces[i].corner.code
+            tip["text"] = tipText
+            tip["hint"] = tipHint
+            let f = panel.frame
+            tip["frame"] = [Int(f.minX), Int(f.minY), Int(f.width), Int(f.height)]
+            tip["ignoresMouseEvents"] = panel.ignoresMouseEvents
+            tip["canBecomeKey"] = panel.canBecomeKey
+        }
+        obj["tip"] = tip
+        let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data("{}".utf8)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    // MARK: - Tip (the "why", on hover)
+
+    /// Shows (or updates) the tip beside lock `index`: the session label, plus
+    /// "Click again to take over" while a first click is armed.
+    private func showTip(at index: Int) {
+        guard let session, index < lockPanels.count, index < lockPlaces.count else { return }
+        let hint = lockClicks.isArmed(at: Date())
+        let place = lockPlaces[index]
+        let maxWidth = min(720, place.screenFrame.width * 0.45)
+        let content = Self.makeTipView(text: session.label, hint: hint ? Self.armHint : nil,
+                                       color: amber, fontSize: captionFontSize, hintSize: hintFontSize,
+                                       maxWidth: maxWidth)
+        let origin = HandsOffTipPlacement.origin(lockFrame: lockPanels[index].frame, corner: place.corner,
+                                                 tipSize: content.frame.size, screenFrame: place.screenFrame)
+        let panel = tipPanel ?? makeTipPanel()
+        tipPanel = panel
+        let wasShown = tipLockIndex != nil
+        // Size taken before `contentView =`, which resizes the view to the
+        // panel's current frame (a stale 10×10 tip, seen live on 2026-09-28).
+        let size = content.frame.size
+        panel.setFrame(NSRect(origin: origin, size: size), display: false)
+        panel.contentView = content
+        tipLockIndex = index
+        tipText = session.label
+        tipHint = hint
+        tipGeneration += 1
+        if !wasShown {
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = tipFadeIn
+                panel.animator().alphaValue = 1
+            }
+        } else {
+            panel.alphaValue = 1
+            panel.orderFrontRegardless()
+        }
+    }
+
+    /// Re-renders a visible tip (new label, hint expired). Hidden stays hidden.
+    private func refreshTip() {
+        if let i = tipLockIndex { showTip(at: i) }
+    }
+
+    private func hideTip(after delay: TimeInterval) {
+        tipHideWork?.cancel(); tipHideWork = nil
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.tipPanel, self.tipLockIndex != nil else { return }
+                self.tipLockIndex = nil
+                self.tipGeneration += 1
+                let generation = self.tipGeneration
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = self.tipFadeIn
+                    panel.animator().alphaValue = 0
+                } completionHandler: { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self, self.tipGeneration == generation else { return }
+                        panel.orderOut(nil)
+                    }
+                }
+            }
+        }
+        if delay <= 0 {
+            work.perform()
+        } else {
+            tipHideWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
+    /// Never takes a click, never becomes key, never activates the app: it is
+    /// read, not used — and it must not steal a keystroke Victor or the agent
+    /// is typing into the app underneath.
+    private func makeTipPanel() -> NSPanel {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        panel.ignoresMouseEvents = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        return panel
+    }
+
+    /// The plate: the old bottom pill's look (amber, 12 pt corners, white
+    /// semibold text) with an optional smaller second line. Sized to its text,
+    /// never wider than `maxWidth`. Shared by the live tip and the preview.
+    static func makeTipView(text: String, hint: String?, color: NSColor, fontSize: CGFloat,
+                            hintSize: CGFloat, maxWidth: CGFloat) -> NSView {
+        let para = NSMutableParagraphStyle()
+        para.alignment = .left
+        let body = NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .foregroundColor: NSColor.white,
+            .paragraphStyle: para,
+        ])
+        if let hint {
+            let hintPara = NSMutableParagraphStyle()
+            hintPara.alignment = .left
+            hintPara.paragraphSpacingBefore = 4
+            body.append(NSAttributedString(string: "\n" + hint, attributes: [
+                .font: NSFont.systemFont(ofSize: hintSize, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                .paragraphStyle: hintPara,
+            ]))
+        }
+        let field = NSTextField(wrappingLabelWithString: "")
+        field.attributedStringValue = body
+        field.backgroundColor = .clear
+        field.isBezeled = false
+        field.isEditable = false
+        field.isSelectable = false
+        field.maximumNumberOfLines = 5
+        let pad = NSSize(width: 40, height: 20)
+        let maxText = maxWidth - pad.width
+        field.preferredMaxLayoutWidth = maxText
+        var t = field.sizeThatFits(NSSize(width: maxText, height: 1000))
+        t.width = min(ceil(t.width), maxText)
+        t.height = ceil(t.height)
+        field.frame = NSRect(x: pad.width / 2, y: pad.height / 2, width: t.width, height: t.height)
+        let plate = NSView(frame: NSRect(x: 0, y: 0, width: t.width + pad.width, height: t.height + pad.height))
+        plate.wantsLayer = true
+        plate.layer?.backgroundColor = color.withAlphaComponent(0.92).cgColor
+        plate.layer?.cornerRadius = 12
+        plate.addSubview(field)
+        return plate
+    }
+
     // MARK: - Frame
 
     private func buildFrames() {
-        for screen in NSScreen.screens {
+        for (screenIndex, screen) in NSScreen.screens.enumerated() {
             let panel = NSPanel(contentRect: screen.frame,
                                 styleMask: [.borderless, .nonactivatingPanel],
                                 backing: .buffered, defer: false)
@@ -311,11 +544,10 @@ final class HandsOffOverlay {
             view.layer?.borderWidth = borderWidth
             view.layer?.cornerRadius = 12
             view.layer?.borderColor = amber.cgColor
-            addCaption(to: view)
             panel.contentView = view
             panel.orderFrontRegardless()
             framePanels.append(panel)
-            addCornerLocks(on: screen)
+            addCornerLocks(on: screen, index: screenIndex)
         }
     }
 
@@ -327,10 +559,11 @@ final class HandsOffOverlay {
     /// The top two sit **below the menu bar** rather than 24 pt from the screen
     /// edge: on a notched display the bar is 37 pt tall, and a clickable lock
     /// overlapping the app menu would swallow the very click an agent is making.
-    private func addCornerLocks(on screen: NSScreen) {
+    private func addCornerLocks(on screen: NSScreen, index screenIndex: Int) {
         let box = lockSize * 1.4
-        for origin in Self.lockOrigins(screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
-                                       box: box, inset: lockInset) {
+        let origins = Self.lockOrigins(screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
+                                       box: box, inset: lockInset)
+        for (origin, corner) in zip(origins, HandsOffCorner.allCases) {
             let panel = NSPanel(contentRect: NSRect(origin: origin, size: NSSize(width: box, height: box)),
                                 styleMask: [.borderless, .nonactivatingPanel],
                                 backing: .buffered, defer: false)
@@ -346,12 +579,15 @@ final class HandsOffOverlay {
 
             let view = HandsOffLockView(frame: NSRect(origin: .zero, size: NSSize(width: box, height: box)),
                                         glyph: lockGlyph, glyphSize: lockSize)
-            view.onClick = { [weak self] in self?.takeover(source: .click) }
+            let lockIndex = lockPanels.count
+            view.onClick = { [weak self] in self?.lockClicked(index: lockIndex, source: .click) }
+            view.onHover = { [weak self] inside in self?.lockHover(index: lockIndex, inside: inside) }
             view.startPulse(min: lockAlphaRange.min, max: lockAlphaRange.max, duration: lockPulseDuration)
             panel.contentView = view
             panel.orderFrontRegardless()
             lockPanels.append(panel)
             lockViews.append(view)
+            lockPlaces.append((screen: screenIndex, corner: corner, screenFrame: screen.frame))
         }
     }
 
@@ -386,7 +622,7 @@ final class HandsOffOverlay {
         framePanels = []
         lockPanels = []
         lockViews = []
-        captionFields = []
+        lockPlaces = []
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.25
@@ -397,26 +633,45 @@ final class HandsOffOverlay {
         }
     }
 
-    /// The red beat: border, caption plate and all four corners turn red, the
-    /// 🔒 become ✋ and stop breathing — one unmistakable "you have it" — then the
+    /// The red beat: border, the tip (if it is up beside the clicked lock) and
+    /// all four corners turn red, the 🔒 become ✋ and stop breathing — one unmistakable "you have it" — then the
     /// whole thing fades after `redStateDuration`. The panels are detached from
     /// the overlay at once, so a new `begin` during these two seconds builds a
     /// fresh amber frame instead of recolouring a dying one.
     private func showTakeoverAndDismiss() {
         setBorder(color: takeoverRed)
-        for field in captionFields {
-            field.superview?.layer?.backgroundColor = takeoverRed.withAlphaComponent(0.95).cgColor
-            field.stringValue = Self.takeoverCaption
-            layoutCaption(field)
-        }
         for view in lockViews { view.showTakeover(red: takeoverRed) }
         for panel in lockPanels { panel.ignoresMouseEvents = true }
 
-        let panels = framePanels + lockPanels
+        // The tip Victor was reading when he clicked turns into the answer.
+        // Detached like the rest, so the next session builds a fresh one.
+        tipHideWork?.cancel(); tipHideWork = nil
+        hintExpiryWork?.cancel(); hintExpiryWork = nil
+        var dying: [NSPanel] = []
+        if let i = tipLockIndex, let panel = tipPanel, i < lockPanels.count, i < lockPlaces.count {
+            let place = lockPlaces[i]
+            let content = Self.makeTipView(text: Self.takeoverCaption, hint: nil, color: takeoverRed,
+                                           fontSize: captionFontSize, hintSize: hintFontSize,
+                                           maxWidth: min(720, place.screenFrame.width * 0.45))
+            let origin = HandsOffTipPlacement.origin(lockFrame: lockPanels[i].frame, corner: place.corner,
+                                                     tipSize: content.frame.size, screenFrame: place.screenFrame)
+            let size = content.frame.size
+            panel.setFrame(NSRect(origin: origin, size: size), display: false)
+            panel.contentView = content
+            panel.alphaValue = 1
+            dying.append(panel)
+            tipPanel = nil
+        } else if let panel = tipPanel {
+            panel.orderOut(nil)
+        }
+        tipLockIndex = nil
+        tipGeneration += 1
+
+        let panels = framePanels + lockPanels + dying
         framePanels = []
         lockPanels = []
         lockViews = []
-        captionFields = []
+        lockPlaces = []
         DispatchQueue.main.asyncAfter(deadline: .now() + HandsOffTakeoverMachine.redStateDuration) { [weak self] in
             self?.takeoverMachine.finish()
             NSAnimationContext.runAnimationGroup { ctx in
@@ -430,7 +685,7 @@ final class HandsOffOverlay {
 
     // MARK: - Preview (test hook)
 
-    /// Draws one corner lock + the caption plate + a stretch of border over a
+    /// Draws one corner lock + its hover tip + a stretch of border over a
     /// light "document" or a dark "IDE" backdrop, into a PNG — in the normal
     /// 🔒 state and in the red ✋ takeover state, side by side. The only way to
     /// look at the takeover without taking one over the projected screen.
@@ -465,76 +720,23 @@ final class HandsOffOverlay {
             if taken { lock.showTakeover(red: takeoverRed) }
             pane.addSubview(lock)
 
-            let field = NSTextField(wrappingLabelWithString: taken ? Self.takeoverCaption : "✋ claude — click pe Restart to Update")
-            field.font = .systemFont(ofSize: captionFontSize * 0.75, weight: .semibold)
-            field.textColor = .white
-            field.alignment = .center
-            field.isBezeled = false
-            field.drawsBackground = false
-            let maxW = pane.frame.width - 40
-            var t = field.sizeThatFits(NSSize(width: maxW - 30, height: 400))
-            t.width = min(t.width, maxW - 30)
-            let plate = NSView(frame: NSRect(x: (pane.frame.width - t.width - 30) / 2, y: 20,
-                                             width: t.width + 30, height: t.height + 16))
-            plate.wantsLayer = true
-            plate.layer?.cornerRadius = 12
-            plate.layer?.backgroundColor = (taken ? takeoverRed.withAlphaComponent(0.95)
-                                                  : amber.withAlphaComponent(0.92)).cgColor
-            field.frame = NSRect(x: 15, y: 8, width: t.width, height: t.height)
-            plate.addSubview(field)
-            pane.addSubview(plate)
+            // The hover tip beside the lock: armed (label + hint) in the normal
+            // pane, the red "took control" answer in the takeover pane.
+            let tip = Self.makeTipView(text: taken ? Self.takeoverCaption : "✋ claude — click pe Restart to Update",
+                                       hint: taken ? nil : Self.armHint,
+                                       color: taken ? takeoverRed : amber,
+                                       fontSize: captionFontSize * 0.75, hintSize: hintFontSize * 0.75,
+                                       maxWidth: pane.frame.width - box - 50)
+            let o = HandsOffTipPlacement.origin(lockFrame: lock.frame, corner: .topLeft, tipSize: tip.frame.size,
+                                                screenFrame: pane.bounds)
+            tip.frame.origin = o
+            pane.addSubview(tip)
         }
 
         guard let rep = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return false }
         root.cacheDisplay(in: root.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil
-    }
-
-    // MARK: - Caption
-
-    /// The amber plate with the label, bottom centre of the screen. Built once
-    /// per frame; `setCaption` only swaps the text and re-centres it.
-    private func addCaption(to view: NSView) {
-        let field = NSTextField(wrappingLabelWithString: "")
-        field.font = .systemFont(ofSize: captionFontSize, weight: .semibold)
-        field.textColor = .white
-        field.alignment = .center
-        field.backgroundColor = .clear
-        field.isBezeled = false
-        field.isEditable = false
-        field.isSelectable = false
-        field.maximumNumberOfLines = 3
-
-        let plate = NSView(frame: .zero)
-        plate.wantsLayer = true
-        plate.layer?.backgroundColor = amber.withAlphaComponent(0.92).cgColor
-        plate.layer?.cornerRadius = 12
-        plate.addSubview(field)
-        view.addSubview(plate)
-        captionFields.append(field)
-    }
-
-    private func setCaption(_ text: String) {
-        for field in captionFields {
-            field.stringValue = text
-            layoutCaption(field)
-        }
-    }
-
-    private func layoutCaption(_ field: NSTextField) {
-        guard let plate = field.superview, let screenView = plate.superview else { return }
-        let pad = NSSize(width: 40, height: 20)
-        // Never wider than the gap between the two bottom locks: a long `what`
-        // wraps rather than running under them or off both edges.
-        let maxTextWidth = screenView.frame.width - 2 * (lockInset + lockSize * 1.4 + 16) - pad.width
-        field.preferredMaxLayoutWidth = maxTextWidth
-        var textSize = field.sizeThatFits(NSSize(width: maxTextWidth, height: 1000))
-        textSize.width = min(textSize.width, maxTextWidth)
-        field.frame = NSRect(x: pad.width / 2, y: pad.height / 2, width: textSize.width, height: textSize.height)
-        let size = NSSize(width: textSize.width + pad.width, height: textSize.height + pad.height)
-        plate.frame = NSRect(x: (screenView.frame.width - size.width) / 2, y: captionBottomInset,
-                             width: size.width, height: size.height)
     }
 
     // MARK: - Watchdog

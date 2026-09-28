@@ -227,6 +227,14 @@ case testTerminalFont
         case testHandsOffTakeover(marker: String?, holder: Int32? = nil)
         /// ✋ Render the normal and the takeover state to a PNG (test hook).
         case testHandsOffRender(dark: Bool, out: String)
+        /// 🔒 Pointer enters (or, `leave`, leaves) the lock at `corner`
+        /// (bl/br/tl/tr) of screen `screen` — without moving the real pointer.
+        /// With no `corner`, a read-only snapshot of the tip and the arming.
+        case testHandsOffHover(corner: String?, screen: Int, leave: Bool)
+        /// 🔒 One click on a lock, as a real one would count: the first arms,
+        /// a second within 1.5 s takes over (`marker`/`holder` as for
+        /// `testHandsOffTakeover`).
+        case testHandsOffClick(corner: String, screen: Int, marker: String?, holder: Int32?)
         /// ✋ The agent is done — release the machine.
         case handsOffEnd
         /// Read-only snapshot of the hands-off state (test hook).
@@ -390,6 +398,10 @@ case testTerminalFont
     var onTestHandsOffTakeover: ((String?, Int32?) -> String)?
     /// ✋ Render the preview PNG (dark?, path); returns JSON.
     var onTestHandsOffRender: ((Bool, String) -> String)?
+    /// 🔒 Synthetic hover on a lock / snapshot (corner, screen, leave).
+    var onTestHandsOffHover: ((String?, Int, Bool) -> String)?
+    /// 🔒 One counted click on a lock (corner, screen, marker, holder).
+    var onTestHandsOffClick: ((String, Int, String?, Int32?) -> String)?
     /// ✋ Release it; returns the state JSON.
     var onHandsOffEnd: (() -> String)?
     /// ✋ Read-only snapshot.
@@ -742,6 +754,12 @@ case testTerminalFont
             case .testHandsOffRender(let dark, let out):
                 contentType = "application/json"
                 body = self.onTestHandsOffRender?(dark, out) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .testHandsOffHover(let corner, let screen, let leave):
+                contentType = "application/json"
+                body = self.onTestHandsOffHover?(corner, screen, leave) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
+            case .testHandsOffClick(let corner, let screen, let marker, let holder):
+                contentType = "application/json"
+                body = self.onTestHandsOffClick?(corner, screen, marker, holder) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
             case .handsOffEnd:
                 contentType = "application/json"
                 body = self.onHandsOffEnd?() ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
@@ -1048,6 +1066,16 @@ case testTerminalFont
             let out = queryItems.first(where: { $0.name == "out" })?.value
                 ?? "/tmp/hands-off-takeover-\(appearance).png"
             return .testHandsOffRender(dark: appearance == "dark", out: out)
+        case "/test/hands-off/hover":
+            return .testHandsOffHover(corner: queryItems.first(where: { $0.name == "corner" })?.value,
+                                      screen: queryItems.first(where: { $0.name == "screen" })?.value.flatMap { Int($0) } ?? 0,
+                                      leave: queryItems.first(where: { $0.name == "leave" })?.value == "1")
+        case "/test/hands-off/click":
+            guard let corner = queryItems.first(where: { $0.name == "corner" })?.value else { return .unknown }
+            return .testHandsOffClick(corner: corner,
+                                      screen: queryItems.first(where: { $0.name == "screen" })?.value.flatMap { Int($0) } ?? 0,
+                                      marker: queryItems.first(where: { $0.name == "marker" })?.value,
+                                      holder: queryItems.first(where: { $0.name == "holder" })?.value.flatMap { Int32($0) })
         case "/hands-off/end":
             return .handsOffEnd
         case "/hands-off/state":

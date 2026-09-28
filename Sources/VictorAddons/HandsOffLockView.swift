@@ -1,8 +1,10 @@
 import AppKit
 
 /// One corner 🔒 of the hands-off overlay — and, since 2026-09-26, the stop
-/// button: a **real** click on it is Victor taking the machine back
-/// (`HandsOffOverlay.takeover`).
+/// button: **real** clicks on it are Victor taking the machine back
+/// (`HandsOffOverlay.takeover`). Since 2026-09-28 it takes two (the first only
+/// arms, `HandsOffLockClicks`), and hovering it is how the "why" is read — the
+/// bottom caption that used to say it is gone.
 ///
 /// "Real" is the point. While the locks are up an agent is posting synthetic
 /// clicks, and one that happened to land in a corner must not stop itself — so a
@@ -10,6 +12,9 @@ import AppKit
 /// `SyntheticInputWatch` uses to tell hardware from software.
 final class HandsOffLockView: NSView {
     var onClick: (() -> Void)?
+    /// Pointer in (true) / out (false): the overlay shows or hides the
+    /// explanation beside this lock.
+    var onHover: ((Bool) -> Void)?
 
     private let label: NSTextField
     private let plate = CALayer()
@@ -93,6 +98,7 @@ final class HandsOffLockView: NSView {
     }
 
     // Pointing hand on hover: the lock is a button now and should look like one.
+    // The same enter/exit pair shows and hides the explanation beside it.
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
@@ -103,6 +109,12 @@ final class HandsOffLockView: NSView {
 
     // `set`, not push/pop: a lock torn down while hovered must not leave a
     // pushed cursor on the stack.
-    override func mouseEntered(with event: NSEvent) { NSCursor.pointingHand.set() }
-    override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.pointingHand.set()
+        onHover?(true)
+    }
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
+        onHover?(false)
+    }
 }

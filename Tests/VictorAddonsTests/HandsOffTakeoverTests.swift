@@ -84,6 +84,113 @@ final class HandsOffTakeoverTests: XCTestCase {
         XCTAssertFalse(d.press(at: t0.addingTimeInterval(0.4)))
     }
 
+    // MARK: - Two clicks on a 🔒 (2026-09-28)
+
+    /// "It should take two clicks on the locks … Not one single click."
+    func testOneClickOnlyArms() {
+        var c = HandsOffLockClicks()
+        XCTAssertEqual(c.click(at: t0), .armed)
+        XCTAssertTrue(c.isArmed(at: t0.addingTimeInterval(1.0)))
+    }
+
+    func testASecondClickInsideTheWindowTakesOver() {
+        var c = HandsOffLockClicks()
+        _ = c.click(at: t0)
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(1.4)), .takeover)
+        XCTAssertFalse(c.isArmed(at: t0.addingTimeInterval(1.4)))
+    }
+
+    func testTheWindowIsOneAndAHalfSecondsInclusive() {
+        var c = HandsOffLockClicks()
+        _ = c.click(at: t0)
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(HandsOffLockClicks.window)), .takeover)
+    }
+
+    /// A click after the window is a new first click: it re-arms, and only the
+    /// one after it takes over.
+    func testAClickAfterTheWindowReArms() {
+        var c = HandsOffLockClicks()
+        _ = c.click(at: t0)
+        XCTAssertFalse(c.isArmed(at: t0.addingTimeInterval(1.6)))
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(1.6)), .armed)
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(2.5)), .takeover)
+    }
+
+    /// The pair resets on firing: a third click starts over rather than
+    /// taking over a second time.
+    func testAThirdClickStartsANewPair() {
+        var c = HandsOffLockClicks()
+        _ = c.click(at: t0)
+        _ = c.click(at: t0.addingTimeInterval(0.3))
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(0.6)), .armed)
+    }
+
+    func testResetDisarms() {
+        var c = HandsOffLockClicks()
+        _ = c.click(at: t0)
+        c.reset()
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(0.2)), .armed)
+    }
+
+    /// A clock that went backwards is not "inside the window".
+    func testAClickBeforeTheArmingOneDoesNotTakeOver() {
+        var c = HandsOffLockClicks()
+        _ = c.click(at: t0)
+        XCTAssertEqual(c.click(at: t0.addingTimeInterval(-0.5)), .armed)
+    }
+
+    // MARK: - Where the hover tip goes
+
+    private let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    private let tip = CGSize(width: 400, height: 60)
+
+    func testTipGoesRightOfALeftLockLevelWithItsBottom() {
+        let lock = CGRect(x: 24, y: 24, width: 90, height: 90)
+        let o = HandsOffTipPlacement.origin(lockFrame: lock, corner: .bottomLeft, tipSize: tip, screenFrame: screen)
+        XCTAssertEqual(o, CGPoint(x: 114 + HandsOffTipPlacement.gap, y: 24))
+    }
+
+    func testTipGoesLeftOfARightLockLevelWithItsTop() {
+        let lock = CGRect(x: 1398, y: 830, width: 90, height: 90)
+        let o = HandsOffTipPlacement.origin(lockFrame: lock, corner: .topRight, tipSize: tip, screenFrame: screen)
+        XCTAssertEqual(o, CGPoint(x: 1398 - HandsOffTipPlacement.gap - 400, y: 920 - 60))
+    }
+
+    /// A tip wider than the room beside its lock, or taller than the room
+    /// above it, is pushed back inside the screen — never off it.
+    func testTipIsClampedIntoTheScreen() {
+        let wide = CGSize(width: 1450, height: 60)
+        let o = HandsOffTipPlacement.origin(lockFrame: CGRect(x: 24, y: 830, width: 90, height: 90), corner: .topLeft,
+                                            tipSize: wide, screenFrame: screen)
+        XCTAssertEqual(o.x, screen.maxX - 8 - 1450, accuracy: 0.001)
+        let tall = CGSize(width: 300, height: 950)
+        let o2 = HandsOffTipPlacement.origin(lockFrame: CGRect(x: 1398, y: 24, width: 90, height: 90), corner: .bottomRight,
+                                             tipSize: tall, screenFrame: screen)
+        XCTAssertEqual(o2.y, screen.maxY - 8 - 950, accuracy: 0.001)
+    }
+
+    /// Bigger than the screen itself: the text's start (left edge, top) wins.
+    func testAnOversizedTipKeepsItsStartOnScreen() {
+        let huge = CGSize(width: 2000, height: 1200)
+        let o = HandsOffTipPlacement.origin(lockFrame: CGRect(x: 1398, y: 24, width: 90, height: 90), corner: .bottomRight,
+                                            tipSize: huge, screenFrame: screen)
+        XCTAssertEqual(o.x, 8)
+        XCTAssertEqual(o.y + huge.height, screen.maxY - 8, accuracy: 0.001)
+    }
+
+    func testTipOnASecondScreenStaysOnThatScreen() {
+        let second = CGRect(x: 1512, y: -200, width: 2560, height: 1440)
+        let lock = CGRect(x: 1536, y: -176, width: 90, height: 90)
+        let o = HandsOffTipPlacement.origin(lockFrame: lock, corner: .bottomLeft, tipSize: tip, screenFrame: second)
+        XCTAssertEqual(o, CGPoint(x: 1626 + HandsOffTipPlacement.gap, y: -176))
+    }
+
+    func testCornerCodesRoundTripInLockOriginOrder() {
+        XCTAssertEqual(HandsOffCorner.allCases.map(\.code), ["bl", "br", "tl", "tr"])
+        XCTAssertEqual(HandsOffCorner(code: "TR"), .topRight)
+        XCTAssertNil(HandsOffCorner(code: "middle"))
+    }
+
     // MARK: - Kill plan
 
     private let app: pid_t = 500, appGroup: pid_t = 500
@@ -229,5 +336,12 @@ final class HandsOffTakeoverTests: XCTestCase {
                        .handsOffStart(agent: "a", what: "b", ttl: 5, holder: 42))
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/hands-off/render?appearance=dark&out=/tmp/x.png"),
                        .testHandsOffRender(dark: true, out: "/tmp/x.png"))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/hands-off/hover"),
+                       .testHandsOffHover(corner: nil, screen: 0, leave: false))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/hands-off/hover?corner=tr&screen=1&leave=1"),
+                       .testHandsOffHover(corner: "tr", screen: 1, leave: true))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/hands-off/click?corner=bl&marker=/tmp/m&holder=9"),
+                       .testHandsOffClick(corner: "bl", screen: 0, marker: "/tmp/m", holder: 9))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/test/hands-off/click"), .unknown)
     }
 }

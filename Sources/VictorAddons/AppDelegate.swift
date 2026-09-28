@@ -461,6 +461,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 return "{\"ok\":\(ok),\"out\":\"\(out)\"}"
             }
         }
+        // 🔒 Hover and click on a lock without touching the real pointer —
+        // how the two-click takeover and the tip are checked while Victor is
+        // at the Mac.
+        tabletServer?.onTestHandsOffHover = { [weak self] code, screen, leave in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                guard let code else { return self.handsOff.tipStateJSON() }
+                guard let corner = HandsOffCorner(code: code),
+                      let index = self.handsOff.lockIndex(screen: screen, corner: corner) else {
+                    return "{\"ok\":false,\"reason\":\"no-such-lock\"}"
+                }
+                self.handsOff.lockHover(index: index, inside: !leave)
+                return self.handsOff.tipStateJSON()
+            }
+        }
+        tabletServer?.onTestHandsOffClick = { [weak self] code, screen, marker, holder in
+            MainActor.assumeIsolated {
+                guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }
+                if let holder, self.handsOff.holder?.holderPid != holder {
+                    return "{\"ok\":false,\"reason\":\"holder-mismatch\"}"
+                }
+                // Locks held by a `hands-off run` are someone's live automation:
+                // a test click must name that holder to take it over. Learned
+                // the hard way on 2026-09-28 — a sibling agent's run went up
+                // between the test's own `start` and its two clicks, and the
+                // test "took control" of that run instead of its own.
+                if holder == nil, self.handsOff.holder != nil {
+                    return "{\"ok\":false,\"reason\":\"held-by-a-run-pass-holder\"}"
+                }
+                guard let corner = HandsOffCorner(code: code),
+                      let index = self.handsOff.lockIndex(screen: screen, corner: corner) else {
+                    return "{\"ok\":false,\"reason\":\"no-such-lock\"}"
+                }
+                return self.handsOff.lockClicked(index: index, source: .test,
+                                                 markerURL: marker.map { URL(fileURLWithPath: $0) })
+            }
+        }
         tabletServer?.onHandsOffEnd = { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return "{\"ok\":false,\"reason\":\"app-gone\"}" }

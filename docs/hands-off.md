@@ -1,8 +1,9 @@
 # ✋🔒 Hands off — the frame an agent raises while it drives the GUI
-`HandsOffOverlay` + the pure `HandsOffSession`. Amber border on **every** screen,
-four semi-transparent 🔒 pulsing in the corners of every screen, plus a badge riding
-the cursor (`✋ codex — click pe Restart to Update`); on release the border turns green
-for 0.5s, fades over 0.25s and a `Tink` plays. Raised over the
+`HandsOffOverlay` + the pure `HandsOffSession`. Amber border on **every** screen and
+four semi-transparent 🔒 pulsing in the corners of every screen. **Who** drives and
+**what** it does (`✋ codex — click pe Restart to Update`) is read by **hovering a 🔒**
+— nothing else on screen says it since 28 Sep 2026 (see below). On release the border
+turns green for 0.5s, fades over 0.25s and a `Tink` plays. Raised over the
 existing HTTP door, so any agent — codex, claude, a shell script — uses the same two calls:
 
 ```sh
@@ -23,14 +24,54 @@ It starts the app if the door doesn't answer, and if it still doesn't it says so
 stderr instead of failing quietly — an agent that drives the mouse with no warning on
 screen is exactly the situation this exists to prevent.
 
+## 🔒 Hover to read, two clicks to take over (28 Sep 2026)
+Victor, 2026-09-28: *"modify the way it displays when the agent is working. On
+hovering on the locks in the corners, I should see the explanation about what happens
+right now. You shouldn't stick this badge of orange text on the bottom when you take
+over the control of my machine, but on hover, I should see that. And it should take
+two clicks on the locks to unlock the screen and interrupt the flow. Not one single
+click."*
+
+**No bottom pill.** The amber pill with the label, bottom centre of every screen, is
+gone: it covered the bottom of exactly what he was watching the agent do, for the whole
+run, to answer a question he asks only sometimes. Frame and locks are unchanged. (The
+pill had itself replaced a caption riding the cursor, which failed because an agent
+whips the pointer around — so "somewhere fixed" was right, "always on" was not.)
+
+**Hover = the explanation.** Pointer on a 🔒 → the same amber plate (26 pt semibold,
+white, 12 pt corners) fades in within 120 ms **beside that lock, inward from its
+corner** — right of a left lock, left of a right lock, bottom-aligned for the bottom
+locks, top-aligned for the top ones, then clamped into the screen
+(`HandsOffTipPlacement`, tested; capped at 45 % of the screen width, it wraps). Leaving
+the lock hides it after 300 ms of grace, so wobbling off the edge does not flicker.
+It is one `NSPanel`, non-activating, `ignoresMouseEvents = true`, never key: it can
+neither eat a click nor take a keystroke. The text is the session label — with no
+`what` that is just `✋ <agent>`, the line the pill showed.
+
+**Two clicks.** The first click on a lock only **arms** for 1.5 s and adds a second
+line to the tip: *Click again to take over*. A second click within the window on
+**any** lock (not only the same one — the two clicks are one decision, and the pointer
+may be jolted by the agent in between) is the takeover, exactly as below. A click
+after the window re-arms instead (`HandsOffLockClicks`, tested with an injected
+clock). Why: the corners are where a hand parks or flicks the pointer, and one stray
+click there was killing an agent mid-step. ⌃⌘⎋×2 is unchanged. During the red beat the
+tip, if it was up, turns red and says *✋ Victor took control — stopping the agent*;
+the keyboard path has no tip, only the red ✋ corners and the Basso.
+
+Checked headless, without moving the real pointer (`docs/testing.md`):
+`/test/hands-off/hover?corner=tr&screen=1` → tip visible, `leave=1` → gone;
+`/test/hands-off/click?corner=…&marker=<scratch>` once → `outcome:"armed"`, locks
+still up; twice → takeover, locks down.
+
 ## ✋ Victor takes control — click a 🔒 (26 Sep 2026)
+*(Since 28 Sep 2026 it takes **two** clicks — see above. The rest is unchanged.)*
 Victor, 2026-09-26: *"un mecanism prin care să pot întrerupe blocajul ecranului: un
 click pe cele patru lăcățele din colțuri, și să comunice agentului care ținea lacătele
 că am preluat controlul și să întrerupă ce făcea."* Until then the locks were one-way:
 the agent said "don't touch" and the only way out was to fight the pointer or find the
 right terminal for a Ctrl-C.
 
-**The gesture.** A **real** click on any of the four 🔒 on any screen — or **⌃⌘⎋ twice
+**The gesture.** A **real** click on any of the four 🔒 on any screen (two since 28 Sep) — or **⌃⌘⎋ twice
 within 1 s** (the mouse may be mid-drag by a synthetic event; the keyboard is not).
 Both are ignored when synthetic (source pid ≠ 0): the agent being stopped must not be
 able to press the stop button, and a synthetic click that happens to land in a corner
@@ -45,8 +86,8 @@ them in this order):
    `holderPid`, `childPid`, `message`;
 2. SIGUSR1 to the `hands-off run` wrapper, SIGTERM to its child's **process group**,
    SIGKILL 3 s later to whatever ignored it (logged);
-3. the locks drop at once (`/hands-off/state` → `active:false`), while border, caption
-   and corners turn **red with ✋** — "✋ Victor took control — stopping the agent" — for
+3. the locks drop at once (`/hands-off/state` → `active:false`), while border, the
+   hover tip (if up) and corners turn **red with ✋** — "✋ Victor took control — stopping the agent" — for
    2 s with a **Basso**, then fade. No green flash and no Tink: green means "the agent
    gave it back", which is not what happened. Clicks during the red beat are the same
    takeover (`HandsOffTakeoverMachine`), and `SyntheticInputWatch` may not re-raise the
@@ -82,7 +123,7 @@ hook or the auto-raise. A takeover then only drops the locks and writes the mark
 last takeover and exits **75 while it is younger than 60 s**, 0 otherwise.
 
 **The corners are no longer click-through.** Each 🔒 is now its own small panel
-(`HandsOffLockView`, `ignoresMouseEvents = false`); the frame and the caption stay
+(`HandsOffLockView`, `ignoresMouseEvents = false`); the frame (and the hover tip) stay
 click-through. The top two sit **below the menu bar** (`lockOrigins`, tested): on the
 notched retina the bar is 37 pt, and a lock 24 pt from the top would swallow an agent's
 click on the app menu. A synthetic click on a lock is absorbed and logged, not acted on.
@@ -90,7 +131,8 @@ click on the app menu. A synthetic click on a lock is absorbed and logged, not a
 Tests: `HandsOffTakeoverTests` (state machine, double press, kill plan, stamps, marker,
 lock placement, routes) and `./test-hands-off-takeover.sh` against the running app
 (the sleep is gone, exit 75, the stderr line, the marker, locks down, the 60 s refusal,
-`--after-takeover`). The preview of both states: `GET /test/hands-off/render`.
+`--after-takeover`). The preview of both states: `GET /test/hands-off/render` (since 28 Sep it draws the hover tip beside the lock —
+armed, with the hint — instead of the bottom pill).
 
 ## 🔒 The four corner locks (asked for 10 Sep 2026)
 The border alone says *something is happening*; the locks say **what Victor must not
