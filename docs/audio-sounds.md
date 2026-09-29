@@ -71,3 +71,13 @@ else.
 `setDefaultSystemOutput` / `builtInOutputName` added for the router — because
 `OutputRouter` and `SystemOutputVolume` still use it. The keep-alive's continuous-warm half went
 with the whip.
+
+## 🎚️ "From Walkie" watchdog (2026-09-29)
+
+`FromWalkieWatchdog` polls every **5 s**: if Walkie Talkie (`ro.victorrentea.wispr-relay`) is not
+running and the **"From Walkie"** device is on, it turns the device off. The device is a
+BlackHole-built pass-through (`../from-walkie`, box UID `FromWalkie_UID`) that Walkie plays into and
+Wispr Flow listens to; Walkie turns it on at launch and off at quit, and this covers the crash /
+`kill -9` path so Wispr falls back to its next microphone instead of sitting on a silent one.
+**One-way** (`FromWalkieWatchdogPolicy`, tested): it never turns the device on. The switch is the
+driver's `kAudioBoxPropertyAcquired` — no GUI, no sudo. Without the driver installed, a no-op.

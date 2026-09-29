@@ -83,6 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 🛰️ Keeps `claude remote-control` up in its tmux session — replaces the
     /// `ro.victorrentea.claude-rc` LaunchAgent, which is booted out and disabled.
     private var claudeRemoteControl: ClaudeRemoteControl?
+    private var fromWalkieWatchdog: FromWalkieWatchdog?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
@@ -1457,6 +1458,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestClaudeRemoteControl = { [weak claudeRemoteControl] in
             claudeRemoteControl?.stateJSON() ?? "{\"error\":\"claude rc unavailable\"}"
         }
+
+        // 🎚️ "From Walkie" off whenever Walkie Talkie is not running (5 s poll).
+        let fromWalkieWatchdog = FromWalkieWatchdog()
+        fromWalkieWatchdog.start()
+        self.fromWalkieWatchdog = fromWalkieWatchdog
 
         let portKiller = PortKiller()
         self.portKiller = portKiller
