@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Sep 29, 19:42"
+    static let BUILD_TIME = "Sep 29, 23:05"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -384,6 +384,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // WS status / join link — single unified item (state applied by refreshWsItem below)
         wsStatusItem = addItem("", action: nil)
+        // 📝 Generate Feedback Form, right under the Interact Link (2026-09-29,
+        // Victor) — both are things the room is shown, so they sit together.
+        // refreshWsItem hides it outright outside a session.
+        feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
         // 🔗 Display clipboard link ⧈ went to 👩🏻‍💻 Extras (2026-09-23, Victor),
         // and a line separates the room's link from the clipboard rows below.
         menu.addItem(.separator())
@@ -706,11 +710,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // on the monitor above the Retina. Next to Arrange Monitors because it
         // is the same kind of gesture: put windows where they belong, now.
         addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
-
-        // 📝 Feedback form, after Arrange Monitors (2026-09-23, Victor) — it is
-        // the last thing a training asks for, so it sits at the foot of the
-        // menu. refreshWsItem still hides it outright outside a session.
-        feedbackFormItem = addItem("📝 Create Feedback Form", action: #selector(publishFeedbackFormAction))
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
