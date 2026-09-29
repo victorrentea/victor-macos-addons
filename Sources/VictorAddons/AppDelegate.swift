@@ -147,6 +147,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
     private var zoomSharePrep: ZoomSharePrep?
+    /// 🎥 Layout Zoom runs here: it waits on Zoom opening panels, and a second
+    /// click while one is running must queue behind it, not race it.
+    private let zoomLayoutQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.zoom-layout",
+                                                qos: .userInitiated)
+    /// JSON of the last 🎥 run, for `/test/zoom-layout`. Main thread only.
+    private var lastZoomLayoutReport = "null"
     /// 🔍 Says which magnifier style is live, because ⌥⌘F changes it invisibly.
     private var zoomLensWatch: ZoomLensWatch?
     private var zoomLensFence: ZoomLensCursorFence?
@@ -1196,6 +1202,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // /test/zoom-join — what the Zoom join-preview watcher sees right now,
         // and a forced re-press of an open preview.
+        // /test/zoom-layout — 🎥 Layout Zoom headless: starts a run (unless
+        // ?run=0) and answers the previous run's report.
+        tabletServer?.onTestZoomLayout = { [weak self] run in
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            let last = self.lastZoomLayoutReport
+            if run { self.layoutZoom() }
+            return "{\"started\":\(run),\"last\":\(last)}"
+        }
         tabletServer?.onTestZoomJoin = { [weak self] in
             self?.zoomJoinAutoStart?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
@@ -1299,6 +1313,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         menuBarManager.onFixDisplayLayout = { [weak self] in
             self?.displayArrangementManager?.applyNow()
+        }
+        menuBarManager.onLayoutZoom = { [weak self] in
+            self?.layoutZoom()
         }
         menuBarManager.onMonitor = { [weak self] in
             self?.openTranscriptionMonitor()
@@ -2394,6 +2411,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard let mtime = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
         else { return .infinity }
         return max(0, Date().timeIntervalSince(mtime))
+    }
+
+    /// 🎥 Layout Zoom. Feedback is emoji-only, like 🔊's: the banner lands on
+    /// the Retina, which may be what the room is watching.
+    private func layoutZoom() {
+        zoomLayoutQueue.async { [weak self] in
+            let report = ZoomMeetingLayout.apply()
+            NSLog("🎥 Layout Zoom: \(report.json)")
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.lastZoomLayoutReport = report.json
+                switch report.outcome {
+                case .done:
+                    self.statusBanner?.showNow(text: "🎥✅", sound: nil, visibleDuration: 2.5)
+                case .zoomNotRunning, .noMeeting:
+                    self.statusBanner?.showNow(text: "🎥❓", sound: nil, visibleDuration: 4)
+                case .noDisplayAbove:
+                    self.statusBanner?.showNow(text: "🎥🖥️❓", sound: nil, visibleDuration: 4)
+                case .misplaced:
+                    self.statusBanner?.showNow(text: "🎥❌", sound: NSSound(named: NSSound.Name("Basso")),
+                                               visibleDuration: 6)
+                }
+            }
+        }
     }
 
     private func openTranscriptionMonitor() {

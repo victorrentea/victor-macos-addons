@@ -130,6 +130,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onOpenGmail: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onFixDisplayLayout: (() -> Void)?
+    var onLayoutZoom: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
     /// `≈80 %` / `— no TX` for the Transcribing row when the DJI is the input.
@@ -701,6 +702,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
+        // 🎥 Layout Zoom (2026-09-29) — meeting video + Participants over Chat
+        // on the monitor above the Retina. Next to Arrange Monitors because it
+        // is the same kind of gesture: put windows where they belong, now.
+        addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
+
         // 📝 Feedback form, after Arrange Monitors (2026-09-23, Victor) — it is
         // the last thing a training asks for, so it sits at the foot of the
         // menu. refreshWsItem still hides it outright outside a session.
@@ -1212,6 +1218,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func displayJoinLinkAction() {
         onDisplayJoinLink?()
+    }
+
+    @objc private func layoutZoomAction() {
+        onLayoutZoom?()
     }
 
     @objc private func fixDisplayLayoutAction() {

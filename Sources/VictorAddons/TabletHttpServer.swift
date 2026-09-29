@@ -120,6 +120,8 @@ case testTerminalFont
         case testZoomShare
         /// JSON snapshot of Zoom's join-preview dialog + a forced re-press of it.
         case testZoomJoin
+        /// 🎥 Layout Zoom: start a run (unless `run=0`) and return the last report.
+        case testZoomLayout(run: Bool)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -330,6 +332,10 @@ case testTerminalFont
     /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
     var onTestZoomShare: (() -> String)?
     var onTestZoomJoin: (() -> String)?
+    /// 🎥 Layout Zoom — starts a run in the background when the flag is true,
+    /// and answers the *previous* run's report right away (the run itself waits
+    /// on Zoom for seconds, far too long to hold the main thread for).
+    var onTestZoomLayout: ((Bool) -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -629,6 +635,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestZoomJoin == nil { statusCode = 503 }
+            case .testZoomLayout(let run):
+                contentType = "application/json"
+                body = self.onTestZoomLayout?(run) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestZoomLayout == nil { statusCode = 503 }
             case .testEmojiLayer:
                 contentType = "application/json"
                 body = EmojiKeyLayer.statusJSON()
@@ -996,6 +1006,8 @@ case testTerminalFont
             return .testZoomShare
         case "/test/zoom-join":
             return .testZoomJoin
+        case "/test/zoom-layout":
+            return .testZoomLayout(run: queryItems.first(where: { $0.name == "run" })?.value != "0")
         case "/test/emoji-layer":
             return .testEmojiLayer
         case "/test/emoji-layer/on":
