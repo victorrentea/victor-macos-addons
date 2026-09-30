@@ -34,6 +34,25 @@ final class PromptCapturePolicyTests: XCTestCase {
         XCTAssertNil(PromptCapturePolicy.normalize("\n  <task-notification>x"))
     }
 
+    // MARK: unwrapPastes
+
+    func testAPastedBlockLosesItsEnvelopeButKeepsItsText() {
+        // Exactly what Claude Code sent the hook on 2026-09-30 for
+        // "[Pasted text #1] pe gh 25".
+        let raw = "\n\n<pasted_content id=\"22fb\">\nInterview me.\nAsk one at a time.\n</pasted_content id=\"22fb\">\n\n pe gh 25"
+        XCTAssertEqual(PromptCapturePolicy.normalize(PromptCapturePolicy.unwrapPastes(raw)),
+                       "Interview me.\nAsk one at a time.\n\n pe gh 25")
+    }
+
+    func testEveryPasteInOnePromptIsUnwrapped() {
+        let raw = "compare\n\n<pasted_content id=\"a1\">\nfoo\n</pasted_content id=\"a1\">\n\nwith\n\n<pasted_content id=\"b2\">\nbar\n</pasted_content id=\"b2\">\n"
+        XCTAssertEqual(PromptCapturePolicy.unwrapPastes(raw), "compare\n\nfoo\n\nwith\n\nbar\n")
+    }
+
+    func testAPromptWithoutPastesIsUntouched() {
+        XCTAssertEqual(PromptCapturePolicy.unwrapPastes("fix <b>this</b>\n"), "fix <b>this</b>\n")
+    }
+
     func testARealPromptIsKeptTrimmedButOtherwiseVerbatim() {
         XCTAssertEqual(PromptCapturePolicy.normalize("  refactor this class  "), "refactor this class")
         XCTAssertEqual(PromptCapturePolicy.normalize("line one\nline two"), "line one\nline two")

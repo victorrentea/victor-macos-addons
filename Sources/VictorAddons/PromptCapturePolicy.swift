@@ -85,6 +85,19 @@ enum PromptCapturePolicy {
     /// so the row still says what it was.
     static let maxTextLength = 4000
 
+    /// Claude Code hands `UserPromptSubmit` the prompt with every paste
+    /// expanded *inside an envelope* — `<pasted_content id="22fb">…text…
+    /// </pasted_content id="22fb">` — which the room would then see verbatim,
+    /// tags and all. Drop the tags (and the newline each one owns), keep the
+    /// pasted text exactly as it was, and let `normalize` trim what is left.
+    static func unwrapPastes(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"<pasted_content(?: id="[^"]*")?>\n?"#,
+                                  with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\n?</pasted_content(?: id="[^"]*")?>"#,
+                                  with: "", options: .regularExpression)
+    }
+
     /// What the store records, already trimmed — or nil when there is nothing
     /// worth a row.
     static func normalize(_ text: String) -> String? {

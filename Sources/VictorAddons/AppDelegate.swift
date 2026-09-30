@@ -598,7 +598,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
             return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)"
         }
-        tabletServer?.onPromptCapture = { [weak self] prompt, source in
+        tabletServer?.onPromptCapture = { [weak self] rawPrompt, source in
+            let prompt = PromptCapturePolicy.unwrapPastes(rawPrompt)
             guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
             guard self.isSessionActive else {
                 return "{\"captured\":false,\"reason\":\"no-session\"}"

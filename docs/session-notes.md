@@ -41,6 +41,12 @@ through it; only *when* Victor decides changes.
 - **One block-list, two consumers.** `PromptCapturePolicy.blockedPrefixes` (today just
   `<task-notification>`) is now the single source `SessionNotesAppender` reads too —
   a text the pill refuses to offer must not turn up in the panel with a live Send button.
+- **Pastes arrive wrapped; the room gets them bare.** Claude Code hands `UserPromptSubmit`
+  every paste expanded inside `<pasted_content id="22fb">…</pasted_content id="22fb">`, and
+  until 2026-09-30 those tags went straight into the store, the pill and the room's Prompts
+  page. `PromptCapturePolicy.unwrapPastes` strips the tags (and the newline each owns) at the
+  top of `onPromptCapture`, before either consumer, so both see the text as Victor pasted it.
+  Fixed in the app rather than in the hook so a Copilot hook that ever does the same is covered too.
 - **Sending writes into *today's* notes**, because `writeNotes` only ever knows the current
   session folder. That is deliberate: a prompt from Monday sent on Wednesday is Wednesday's
   contribution to the room. With no session running there is no notes file at all, and the
