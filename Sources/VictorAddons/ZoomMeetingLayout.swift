@@ -167,16 +167,16 @@ final class ZoomMeetingLayout {
         // so if `usable` was too optimistic about the top edge the meeting
         // window says so, and the column is laid out from where it really is.
         var frames = ZoomMeetingLayoutPolicy.frames(in: usable)
-        AXWindows.setFrame(meeting, frames.meeting)
+        place(meeting, frames.meeting)
         if let got = AXWindows.frame(of: meeting), got.minY > usable.minY + 1 {
             let shift = got.minY - usable.minY
             usable = CGRect(x: usable.minX, y: got.minY, width: usable.width, height: usable.height - shift)
             report.notes.append("top pushed down \(Int(shift))pt")
             frames = ZoomMeetingLayoutPolicy.frames(in: usable)
-            AXWindows.setFrame(meeting, frames.meeting)
+            place(meeting, frames.meeting)
         }
-        if let participants { AXWindows.setFrame(participants, frames.participants) }
-        if let chat { AXWindows.setFrame(chat, frames.chat) }
+        if let participants { place(participants, frames.participants) }
+        if let chat { place(chat, frames.chat) }
 
         // Bring the three up together, panels last so they sit over the video
         // window's edge rather than under it.
@@ -199,6 +199,33 @@ final class ZoomMeetingLayout {
             if !misses.isEmpty { report.notes.append("off target: " + misses.joined(separator: ",")) }
         }
         return report
+    }
+
+    /// Move → resize → move, then once more if it did not land. `AXWindows.setFrame`
+    /// resizes first, which is right for a window staying on its screen but not
+    /// for this one: the meeting window starts on *another* display, and a size
+    /// bigger than that display is clamped there — on 2026-09-30 it stayed
+    /// 1400×788 instead of 1560×1055, video letterboxed in a corner of the
+    /// monitor. Moving it onto the target display first lets the size through;
+    /// the second move puts back an origin the resize nudged.
+    private static func place(_ window: AXUIElement, _ rect: CGRect) {
+        for attempt in 0..<2 {
+            if attempt > 0 { Thread.sleep(forTimeInterval: 0.3) }
+            setPosition(window, rect.origin)
+            var size = rect.size
+            if let value = AXValueCreate(.cgSize, &size) {
+                AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+            }
+            setPosition(window, rect.origin)
+            if close(AXWindows.frame(of: window), rect) { return }
+        }
+    }
+
+    private static func setPosition(_ window: AXUIElement, _ origin: CGPoint) {
+        var origin = origin
+        if let value = AXValueCreate(.cgPoint, &origin) {
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+        }
     }
 
     // MARK: - Panels
