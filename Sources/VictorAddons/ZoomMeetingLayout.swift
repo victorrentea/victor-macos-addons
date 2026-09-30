@@ -38,6 +38,16 @@ enum ZoomMeetingLayoutPolicy {
             .0
     }
 
+    /// Zoom names its menu items after the Cocoa action selector, **colon
+    /// included** — `onManageParticipants:`, `onChat:` (read live off Zoom
+    /// Workplace 6.6 on 2026-09-30). The first version compared against the
+    /// bare name, found no item, and so never opened a closed panel. Accepting
+    /// both spellings keeps it working if Zoom ever drops the colon.
+    static func menuIdentifier(_ raw: String?, is name: String) -> Bool {
+        guard let raw else { return false }
+        return raw == name || raw == name + ":"
+    }
+
     /// Meeting video on the left, taking everything but the column; the
     /// column split Participants (top) / Chat (bottom). All rounded to whole
     /// points, because Zoom rounds anyway and a half-point gap between the two
@@ -71,8 +81,8 @@ enum ZoomMeetingLayoutPolicy {
 /// AXWindow Subrole=AXStandardWindow Title="Zoom Meeting"      ← the video
 /// AXWindow Subrole=AXSystemDialog  Title="Participants (24)"  ← popped out
 /// AXWindow Subrole=AXSystemDialog  Title="Meeting chat"       ← popped out
-/// menu View → AXMenuItem id=onManageParticipants  "Show/Close participants"
-/// menu View → AXMenuItem id=onChat               "Show/Close chat"
+/// menu View → AXMenuItem id=onManageParticipants:  "Show/Close participants"
+/// menu View → AXMenuItem id=onChat:               "Show/Close chat"
 /// ```
 ///
 /// The two panels are only placeable as their **own** windows. A panel that is
@@ -246,7 +256,8 @@ final class ZoomMeetingLayout {
         // Menu bar → bar item → AXMenu → items. Three levels, no deeper.
         for top in children(bar as! AXUIElement) {
             for menu in children(top) {
-                for item in children(menu) where stringAttr(item, "AXIdentifier") == identifier {
+                for item in children(menu)
+                where ZoomMeetingLayoutPolicy.menuIdentifier(stringAttr(item, "AXIdentifier"), is: identifier) {
                     return item
                 }
             }

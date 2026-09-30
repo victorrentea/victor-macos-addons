@@ -49,4 +49,13 @@ final class ZoomMeetingLayoutPolicyTests: XCTestCase {
         XCTAssertEqual(f.participants.width, 300)
         XCTAssertEqual(f.meeting.width, 700)
     }
+
+    /// Zoom's View-menu items carry the selector name with its trailing colon;
+    /// missing that is why a closed panel was never opened.
+    func testMenuIdentifierMatchesTheSelectorSpelling() {
+        XCTAssertTrue(ZoomMeetingLayoutPolicy.menuIdentifier("onChat:", is: "onChat"))
+        XCTAssertTrue(ZoomMeetingLayoutPolicy.menuIdentifier("onChat", is: "onChat"))
+        XCTAssertFalse(ZoomMeetingLayoutPolicy.menuIdentifier("onChatX:", is: "onChat"))
+        XCTAssertFalse(ZoomMeetingLayoutPolicy.menuIdentifier(nil, is: "onChat"))
+    }
 }
