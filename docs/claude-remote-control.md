@@ -14,7 +14,7 @@ Code: `ClaudeRemoteControl.swift` (settings, policy, watcher), the row in
 | **default** | **on** — see below, it is not a preference |
 | **tick on** | start `claude-rc.sh` if the tmux session is down, then watch |
 | **tick off** | `tmux kill-session -t claude-rc`, stop watching |
-| **while ticked** | every **60 s**: session alive? → nothing. Dead? → start it |
+| **while ticked** | every **60 s**: session dead? → start it. Alive but **stale** (see Traps)? → kill + start, only with **no live phone sessions** |
 | **at app launch** | the same check runs **immediately**, not a minute later |
 | **proof** | `GET http://127.0.0.1:55123/test/claude-rc` |
 
@@ -98,6 +98,29 @@ the on state.
   `/test/claude-rc` says `alive:true`, read the pane —
   `tmux capture-pane -p -t claude-rc` — and look for `Connected · Capacity: N/32`.
   Missing banner ⇒ untick the row and tick it back (that kills and restarts).
+- **A Claude Code auto-update leaves the server alive and `Ready` but unable to
+  spawn sessions** (2026-09-30). The server started on 25 Sep on 2.1.282 and ran
+  five days; auto-update installed 2.1.283–2.1.285 and deleted
+  `~/.local/share/claude/versions/2.1.282`. The server spawns every phone session
+  from **its own** version path, so each one died with `Session failed: spawn
+  error: ENOENT … posix_spawn '…/versions/2.1.282'` while the pane kept saying
+  `Ready · Capacity: 0/32` and `has-session` kept saying alive. Restarting the
+  app does not help — the tmux server survives it on purpose.
+  **The tick now self-heals** (`ClaudeRemoteControlStaleness`, pure, tested). When
+  the session is alive it also reads the server's binary (`tmux list-panes -F
+  '#{pane_pid}'` → `proc_pidpath` → `…/versions/X`; `ps -o comm=` only says
+  `claude`, it prints argv[0]) and `readlink ~/.local/bin/claude`. **Stale** =
+  the server's binary is gone from disk, **or** its version differs from the
+  installed one (the early warning — a later update deletes the old one), **or**
+  the pane (`capture-pane -p -J`: `-J` joins the 80-column wrap) shows
+  `spawn error: ENOENT`. Stale → the toggle's own kill + start, **but never while
+  a phone session is live** (`Capacity: N/32` with N>0, or any child process of
+  the server): it logs and waits, and the first tick after the last session ends
+  heals it. The ENOENT case logs as an error, since no new session can start. A
+  self-heal restart is not retried within **10 min** of the previous one.
+  `/test/claude-rc` shows `serverVersion`, `installedVersion`,
+  `serverBinaryExists`, `paneSpawnENOENT`, `liveSessions`, `stale`,
+  `staleReason`, `lastRestartReason`.
 
 ## Seeing it
 
