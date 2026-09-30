@@ -8,9 +8,17 @@ import Foundation
 /// Turning it on is Walkie Talkie's job at launch — a watchdog that also switched it
 /// on would make "From Walkie" exist without the relay feeding it, which is the
 /// silent microphone this whole thing is there to prevent.
+///
+/// **Two misses in a row, not one** (2026-09-30): a restart through `relay-restart.sh` leaves
+/// ~1 s with no Walkie, and a single tick landing there switched the device off under the
+/// newcomer — the off/on blip that bounces Wispr to its next microphone and back, which
+/// Walkie's own quit deliberately avoids. The newcomer turns it on again at launch, but only
+/// after Wispr has already moved.
 enum FromWalkieWatchdogPolicy {
-    static func shouldTurnOff(walkieRunning: Bool, deviceOn: Bool) -> Bool {
-        deviceOn && !walkieRunning
+    static let missesToTurnOff = 2
+
+    static func shouldTurnOff(walkieRunning: Bool, deviceOn: Bool, missesInARow: Int = missesToTurnOff) -> Bool {
+        deviceOn && !walkieRunning && missesInARow >= missesToTurnOff
     }
 }
 
@@ -32,6 +40,7 @@ final class FromWalkieWatchdog {
 
     private let queue = DispatchQueue(label: "ro.victorrentea.from-walkie-watchdog")
     private var timer: DispatchSourceTimer?
+    private var misses = 0
 
     func start() {
         guard timer == nil else { return }
@@ -44,13 +53,39 @@ final class FromWalkieWatchdog {
 
     private func tick() {
         guard let box = Self.box() else { return }
-        let walkieRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: Self.walkieBundleID).isEmpty
-        guard FromWalkieWatchdogPolicy.shouldTurnOff(walkieRunning: walkieRunning, deviceOn: Self.isOn(box)) else { return }
+        let walkieRunning = Self.walkieRunning()
+        misses = walkieRunning ? 0 : misses + 1
+        guard FromWalkieWatchdogPolicy.shouldTurnOff(walkieRunning: walkieRunning, deviceOn: Self.isOn(box),
+                                                     missesInARow: misses) else { return }
         let err = Self.set(box, on: false)
         overlayInfo(err == noErr
             ? "🎚️ From Walkie off — Walkie Talkie is not running"
             : "🎚️ From Walkie: could not turn off (OSStatus \(err))")
     }
+
+    /// **The process table, not only `NSWorkspace`** (2026-09-30). This runs on a background
+    /// queue, and `NSRunningApplication`'s list is only refreshed while the main run loop spins:
+    /// read from here it answered *not running* for a Walkie that had been up for 10 and 23
+    /// minutes (19:50:09 and 20:18:49, pid alive, `lsappinfo` listing it as Foreground), and
+    /// From Walkie went off under it — Wispr fell back to the Elgato with no bridge. The kernel's
+    /// answer is never stale: any process whose executable is Walkie's counts.
+    static func walkieRunning() -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: walkieBundleID).isEmpty
+            || processRunning(executableSuffix: walkieExecutable)
+    }
+
+    static func processRunning(executableSuffix: String) -> Bool {
+        var pids = [pid_t](repeating: 0, count: 8192)
+        let n = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))  // PROC_PIDPATHINFO_MAXSIZE
+        for pid in pids.prefix(max(0, n)) where pid > 0 {
+            guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { continue }
+            if String(cString: path).hasSuffix(executableSuffix) { return true }
+        }
+        return false
+    }
+
+    static let walkieExecutable = "/Walkie Talkie.app/Contents/MacOS/Walkie Talkie"
 
     // MARK: - CoreAudio
 
