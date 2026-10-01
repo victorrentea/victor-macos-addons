@@ -392,7 +392,7 @@ final class KeymapOverlayTests: XCTestCase {
         // here whose effect is invisible on this Mac — both magnifier styles look
         // identical on screen, and only a screen share can tell them apart — which
         // is precisely why it needs a word on the sheet and a pill when pressed.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 34, 35, 32])
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 34, 35, 32])
         XCTAssertEqual(CommandControlShortcuts.labels[32], "lupă")
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
@@ -407,7 +407,8 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.labels[16], "copilot")
         XCTAssertNotEqual(CommandControlShortcuts.labels[16], CommandControlShortcuts.labels[8])
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
-        XCTAssertEqual(CommandControlShortcuts.labels[34], "trump")
+        XCTAssertEqual(CommandControlShortcuts.labels[31], "trump")
+        XCTAssertEqual(CommandControlShortcuts.labels[34], "xi")
         XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
         XCTAssertEqual(CommandControlShortcuts.labels[3], "focus")
         XCTAssertEqual(CommandControlShortcuts.labels[15], "SRL")
@@ -436,7 +437,8 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[40], "📕")  // K — the catalog
         XCTAssertEqual(CommandControlShortcuts.accents[3], "🎧")   // F — the focus mix
         XCTAssertEqual(CommandControlShortcuts.accents[46], "📤")  // M — it is sent, not drafted
-        XCTAssertEqual(CommandControlShortcuts.accents[34], "🐘")  // I — what "trump" puts on screen
+        XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
+        XCTAssertEqual(CommandControlShortcuts.accents[34], "🐼")  // I — what "xi" puts on screen
         XCTAssertEqual(CommandControlShortcuts.accents[35], "🤖")  // P — the marker the notes get
         XCTAssertEqual(CommandControlShortcuts.accents[12], "👋")  // Q — the wave, not P's 🤖
         XCTAssertEqual(CommandControlShortcuts.accents[16], "🐙")  // Y — whose agent it is

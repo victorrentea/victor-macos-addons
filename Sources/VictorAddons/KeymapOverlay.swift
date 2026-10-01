@@ -56,11 +56,15 @@ enum CommandControlShortcuts {
                          // not that you do. It took the letter from the old
                          // "todo" Gmail draft on 2026-09-08 — the two were the
                          // same gesture and the one that actually sends won.
-        34: "trump",     // I — 🐘 the elephant in the room, in the left half of
+        31: "trump",     // O — 🐘 the elephant in the room, in the left half of
                          // the screen. The word is the picture, not the key: the
-                         // letter is I because the ⌃⌥I panda is its twin, and a
+                         // letter is only "the Orange one" because T (Trump) is
+                         // the empty Terminal and E is the email paste, and a
                          // sheet that answered "elefant" would leave you hunting
                          // for the T you actually reached for.
+        34: "xi",        // I — 🐼 the panda, the elephant's twin from the right
+                         // half of the screen, on the key next to it. Named
+                         // after the man like "trump", for the same reason.
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
         // Google Doc, and the Docs mark says that faster than any word could.
         35: "prompt",    // P — the selection goes to the notes as an agent PROMPT,
@@ -144,7 +148,8 @@ enum CommandControlShortcuts {
                   // room's Prompts tab, so the sheet, the pill and the list all
                   // say the same word. S's 🚀 is the sibling: both launch the
                   // selection, this one lands on the participants' screens.
-        34: "🐘",  // I — the word names the man, the mark names what appears
+        31: "🐘",  // O — the word names the man, the mark names what appears
+        34: "🐼",  // I — same, for the twin
         12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
                   // is going to the room as a prompt", and the same mark on a key
                   // that only animates would blur the two apart at a glance.
@@ -1024,12 +1029,7 @@ final class KeymapOverlayController {
         let controlOption = EmojiKeyLayer.snapshot(.controlOption)
         images[.option] = renderer.render(outputs: option.bindings)
         images[.optionShift] = renderer.render(outputs: optionShift.bindings)
-        // ⌃⌥I is a shortcut, not an emoji: the 🐼 panda walks in from the right
-        // (`EventTapManager.onShowPanda`). It goes on the sheet anyway, drawn as
-        // the animal it summons, unless the map itself ever claims I.
-        var controlOptionOutputs = controlOption.bindings
-        if controlOptionOutputs[0x22] == nil { controlOptionOutputs[0x22] = "🐼" }
-        images[.controlOption] = renderer.render(outputs: controlOptionOutputs)
+        images[.controlOption] = renderer.render(outputs: controlOption.bindings)
         renderedGeneration = option.generation
         let elapsed = CFAbsoluteTimeGetCurrent() - started
         overlayInfo(String(format: "KeymapOverlay: drew %d ⌥ + %d ⌥⇧ + %d ⌃⌥ bindings in %.3fs",

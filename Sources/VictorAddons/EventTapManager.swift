@@ -57,16 +57,15 @@ class EventTapManager {
     var onPasteZoomLink: (() -> Void)?
     /// ⌘⌃E — paste Victor's email address.
     var onPasteEmail: (() -> Void)?
-    /// ⌘⌃I — 🐘 the elephant in the room, standing in the left half of the
-    /// screen. **I, the panda's letter** (2026-10-01, was ⌘⌃O "the orange one"):
-    /// the two animals are twins, so they share a key and differ only by the
-    /// modifier — ⌘⌃I walks the elephant in from the left, ⌃⌥I the panda from
-    /// the right.
+    /// ⌘⌃O — 🐘 the elephant in the room, standing in the left half of the
+    /// screen. **O for the orange one**: T (Trump) is the empty Terminal and E
+    /// is the email paste, and this key is worth neither of those; O is the one
+    /// letter this picture can claim that nothing else on the board wants.
     var onShowElephant: (() -> Void)?
-    /// ⌃⌥I — 🐼 the panda, the elephant's twin walking in from the RIGHT edge
-    /// into the right half of the screen. It lives on the ⌃⌥ board because
-    /// ⌘⌃ has no free letter it could claim; ⌃⌥I is not an emoji key, so the
-    /// emoji rewrite lets it fall through to this branch.
+    /// ⌘⌃I — 🐼 the panda, the elephant's twin walking in from the RIGHT edge
+    /// into the right half of the screen. It spent its first morning on ⌃⌥I
+    /// (2026-10-01); it moved next to the ⌘⌃O elephant so both animals live on
+    /// the same board, on neighbouring keys.
     var onShowPanda: (() -> Void)?
     /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
     var onPasteCompanyDetails: (() -> Void)?
@@ -641,7 +640,7 @@ private let VK_I: CGKeyCode = 0x22
         // Cmd+Ctrl+Y → the same terminal as ⌘⌃C, running `copilot` (suppress).
         // The two agents deserve the same gesture, so this is the C branch with
         // one word changed. Y because every letter of "copilot" is spoken for on
-        // this board (C is Claude, I the elephant, P the prompt, T the Terminal,
+        // this board (C is Claude, O the elephant, I the panda, P the prompt, T the Terminal,
         // L the calendar) and Y sits one key from T — the terminal keys stay
         // neighbours even when the letters have to be borrowed.
         if keyCode == VK_Y && hasCmd && hasCtrl && !hasOpt {
@@ -709,21 +708,19 @@ private let VK_I: CGKeyCode = 0x22
             return nil
         }
 
-        // Cmd+Ctrl+I → 🐘 elephant in the room (suppress). Two modifiers, like
+        // Cmd+Ctrl+O → 🐘 elephant in the room (suppress). Two modifiers, like
         // every other key on this board — the ⇧ it used to carry made it the
         // only shortcut here needing three, which is a shortcut you think about
-        // before pressing. It sat on O ("the orange one") until 2026-10-01 and
-        // moved to I so it shares a letter with its twin, the ⌃⌥I panda.
-        if keyCode == VK_I && hasCmd && hasCtrl && !hasOpt {
+        // before pressing. T and E, the two letters the picture actually wants,
+        // are the empty Terminal and the email paste; O is the orange one.
+        if keyCode == VK_O && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onShowElephant?() }
             return nil
         }
 
-        // Ctrl+Opt+I → 🐼 the panda walks in from the right (suppress). The
-        // emoji layer above sees ⌃⌥ first; I is not in its map, so the key
-        // reaches here. Should the map ever claim I, the emoji wins and this
-        // branch goes quiet — one meaning per key.
-        if keyCode == VK_I && hasCtrl && hasOpt && !hasCmd {
+        // Cmd+Ctrl+I → 🐼 the panda walks in from the right (suppress). I sits
+        // right next to the elephant's O, so the twins are one hand position.
+        if keyCode == VK_I && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onShowPanda?() }
             return nil
         }
