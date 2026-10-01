@@ -160,6 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomLensFence: ZoomLensCursorFence?
     /// 🔎 ⌥⇧+scroll — the full-screen zoom a screen share can see.
     private let shareZoom = ShareZoom()
+    private let shareZoomHint = ShareZoomHint()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
@@ -1804,6 +1805,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // from the watcher's next tick, so the key answers immediately.
         eventTap.onShareZoomScroll = { [weak self] delta, continuous in
             self?.shareZoom.scroll(delta: delta, continuous: continuous)
+        }
+        eventTap.onOptionScroll = { [weak self] in
+            self?.shareZoomHint.optionScrolled()
         }
         eventTap.onToggleZoomLens = { [weak self] in
             self?.zoomLensWatch?.toggle()

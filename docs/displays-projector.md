@@ -181,6 +181,33 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   plus `&x=&y=` (global Cocoa points) to pin the focus — the real cursor is then left
   alone.
 
+### ⚠️ ⌥+scroll during a share → "Use ⌥⇧↕ for Zoom" (`ShareZoomHint`, 2026-10-01)
+
+⌥+scroll is the macOS magnifier — the style a share never carries — and ⌥⇧+scroll is
+`ShareZoom`, which it does. One finger apart, so the habit wins mid-demo. While Zoom is
+sharing, every ⌥+scroll (⌥ alone, no ⇧/⌘/⌃) puts an orange **⚠️ Use ⌥⇧↕ for Zoom**
+pill beside the cursor, following it, gone 2.5 s after the last notch. The scroll
+itself is not touched: the local zoom still happens.
+
+- **Seen at the HID tap, not the session tap.** `AXVisualSupportAgent` (the magnifier)
+  holds an *active* `kCGHIDEventTap` and consumes a physical ⌥+scroll there, so the
+  main `EventTapManager` session tap never sees one. A second, scroll-only tap at
+  `.cghidEventTap` + `.headInsertEventTap` runs before the magnifier's (confirmed with
+  `CGGetEventTapList`: ours listed first) and always passes the event on. It is a
+  default (not listen-only) tap because listen-only needs Input Monitoring, which this
+  app does not hold; Accessibility covers the default one.
+- **"Is Zoom sharing?"** is read off Zoom's on-screen window names
+  (`CGWindowListCopyWindowInfo`, cached 1 s). Read from a live share on 2026-10-01
+  (Zoom Workplace 6.6): `zoom share toolbar window`, `zoom share statusbar window`
+  (layer 97), `Annotation - Zoom` + `zoom annotation entrypoint` (96), none of which
+  exist in a meeting without a share. ⚠️ The window list names the owner **`Zoom`**, not
+  the process name `zoom.us` — match by pid (`us.zoom.xos`), as `ZoomShareWindows` does.
+- **Verified live 2026-10-01**: an empty meeting started and shared through AX, a
+  synthetic ⌥+scroll → pill (191×31 by the cursor) + log line `⚠️ ⌥+scroll during a Zoom
+  share`; after **Stop share** the same scroll → nothing. The synthetic scroll proves the
+  path, not the ordering against the magnifier (it ignores synthetic scrolls): that half
+  rests on the tap list, and on the first real ⌥+scroll by hand.
+
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
 The table above is what **`screencapture` and ScreenCaptureKit** see. Zoom does not always

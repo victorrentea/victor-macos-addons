@@ -12,6 +12,22 @@ private let tapCallbackFunc: CGEventTapCallBack = { proxy, type, event, userInfo
     return manager.handleEvent(proxy: proxy, type: type, event: event)
 }
 
+/// ⚠️ ⌥+scroll is watched one level below everything else, at the HID tap: the
+/// macOS magnifier (`AXVisualSupportAgent`) consumes a physical ⌥+scroll in a HID
+/// tap of its own, so the session tap above never sees one. Head-inserted, so it
+/// runs before the magnifier's; it only looks and always passes the event on.
+private let optionScrollCallbackFunc: CGEventTapCallBack = { _, type, event, userInfo -> Unmanaged<CGEvent>? in
+    guard let ptr = userInfo else { return Unmanaged.passUnretained(event) }
+    let manager = Unmanaged<EventTapManager>.fromOpaque(ptr).takeUnretainedValue()
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let port = manager.optionScrollTapPort { CGEvent.tapEnable(tap: port, enable: true) }
+    } else if type == .scrollWheel,
+              event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]) == [.maskAlternate] {
+        DispatchQueue.main.async { manager.onOptionScroll?() }
+    }
+    return Unmanaged.passUnretained(event)
+}
+
 // MARK: - EventTapManager
 
 class EventTapManager {
@@ -80,6 +96,10 @@ class EventTapManager {
     /// (`ShareZoom`). Vertical delta after `ScrollReversal`, and whether it came
     /// from a trackpad (pixels) rather than a wheel (lines). Called on main.
     var onShareZoomScroll: ((Double, Bool) -> Void)?
+    /// ⚠️ ⌥+scroll (⌥ alone) — the macOS magnifier, which a share never carries.
+    /// Seen by its own HID tap (`optionScrollCallbackFunc`); the scroll still goes
+    /// through, `ShareZoomHint` decides whether to warn. Called on main.
+    var onOptionScroll: (() -> Void)?
     /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
     /// subject "Reminder". Nothing to confirm: it is already gone.
     var onSendClipboardReminder: (() -> Void)?
@@ -206,6 +226,7 @@ private let VK_I: CGKeyCode = 0x22
 
     // MARK: Tap reference (kept alive for re-enable on timeout)
     private var tapPort: CFMachPort?
+    fileprivate var optionScrollTapPort: CFMachPort?
     var isActive: Bool { tapPort != nil }
 
     // MARK: - Start
@@ -241,8 +262,20 @@ private let VK_I: CGKeyCode = 0x22
 
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
 
+        optionScrollTapPort = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(1 << CGEventType.scrollWheel.rawValue),
+            callback: optionScrollCallbackFunc,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        )
+        if optionScrollTapPort == nil { overlayError("EventTapManager: could not create the ⌥+scroll HID tap") }
+        let optionScrollSource = optionScrollTapPort.map { CFMachPortCreateRunLoopSource(kCFAllocatorDefault, $0, 0) }
+
         let thread = Thread {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+            if let optionScrollSource { CFRunLoopAddSource(CFRunLoopGetCurrent(), optionScrollSource, .commonModes) }
             CFRunLoopRun()
         }
         thread.name = "EventTapRunLoop"
