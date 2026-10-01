@@ -221,6 +221,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
 
+        ClaudeThemeSync.start()
+
         let keymapOverlay = KeymapOverlayController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
         keymapOverlayController = keymapOverlay
         keymapHoldCoordinator = KeymapHoldCoordinator(
