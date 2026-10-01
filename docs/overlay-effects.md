@@ -19,6 +19,11 @@ between this app and **Victor Effects**.
   Interact link** is `persistent` (2026-09-24, Victor's call) — no countdown, no
   bar, and opening the menu no longer hides it. It goes away only when the
   🟢 row is clicked again, the session ends, or `/link/hide` is called.
+  **The text fills the screen width** (2026-10-01): the font is scaled up *or*
+  down until the URL spans the screen minus a 16 pt gutter, the banner is
+  full-width and its height follows the text. Monospaced text scales linearly,
+  so one measurement at 100 pt gives the size. Capped at 15 % of the screen
+  height, so a short clipboard URL doesn't take over the room.
 - **`LocalWebSocketServer`** — the link to the training-assistant daemon on
   `/ws/__overlay__`: session lifecycle (`session_started`, `session_ended`,
   which enable/disable the join-link menu item), the 🔔 bell tab, the pdf

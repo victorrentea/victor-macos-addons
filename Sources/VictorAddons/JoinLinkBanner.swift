@@ -15,9 +15,12 @@ class JoinLinkBanner: NSPanel {
     private(set) var isPersistent = false
 
     private var targetScreen: NSScreen
-    private let bannerHeight: CGFloat = 120
     private let menuBarHeight: CGFloat = 25
-    private let horizontalPadding: CGFloat = 48
+    // The link fills the screen edge to edge: the font is scaled up (or down)
+    // until the text spans the width minus this gutter, and the banner's
+    // height follows the text.
+    private let horizontalPadding: CGFloat = 16
+    private let verticalPadding: CGFloat = 14
 
     // QR code panel
     private var qrPanel: NSPanel?
@@ -124,30 +127,31 @@ class JoinLinkBanner: NSPanel {
     /// - Parameter persistent: never expire — no countdown, no progress bar.
     func show(url: String, uppercaseLastSegment: Bool = false, persistent: Bool = false) {
         let trimmedUrl = url.trimmingCharacters(in: .whitespaces)
-        let maxWidth = targetScreen.frame.width - horizontalPadding * 2
+        let screenWidth = targetScreen.frame.width
+        let maxWidth = screenWidth - horizontalPadding * 2
+        // A short clipboard URL would otherwise grow to half the screen.
+        let maxFontSize = floor(targetScreen.frame.height * 0.15)
 
-        // Start at default font size; shrink if URL is too wide to fit
-        var fontSize: CGFloat = 76
+        // Monospaced text scales linearly with the font, so one measurement at a
+        // reference size gives the size that spans exactly `maxWidth`.
+        let referenceSize: CGFloat = 100
+        let measured = buildAttributedString(url: trimmedUrl, fontSize: referenceSize, uppercaseLastSegment: uppercaseLastSegment).size().width
+        let fontSize = measured > 0
+            ? min(maxFontSize, max(24, floor(referenceSize * maxWidth / measured)))
+            : 76
         urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize, uppercaseLastSegment: uppercaseLastSegment)
         urlLabel.sizeToFit()
-        if urlLabel.frame.width > maxWidth {
-            fontSize = max(24, floor(fontSize * maxWidth / urlLabel.frame.width))
-            urlLabel.attributedStringValue = buildAttributedString(url: trimmedUrl, fontSize: fontSize, uppercaseLastSegment: uppercaseLastSegment)
-            urlLabel.sizeToFit()
-        }
 
-        let fittedWidth = ceil(urlLabel.frame.width)
-        let bannerWidth = min(fittedWidth + horizontalPadding * 2, targetScreen.frame.width)
-        let bannerX = targetScreen.frame.origin.x + (targetScreen.frame.width - bannerWidth) / 2
+        let fittedWidth = min(ceil(urlLabel.frame.width), screenWidth)
+        let textHeight = ceil(urlLabel.frame.height)
+        let bannerHeight = textHeight + verticalPadding * 2
+        let bannerX = targetScreen.frame.origin.x
         let bannerY = targetScreen.frame.origin.y + targetScreen.frame.height - menuBarHeight - bannerHeight
 
-        let frame = NSRect(x: bannerX, y: bannerY, width: bannerWidth, height: bannerHeight)
+        let frame = NSRect(x: bannerX, y: bannerY, width: screenWidth, height: bannerHeight)
         self.setFrame(frame, display: false)
 
-        // Center label vertically within banner
-        let textHeight = ceil(urlLabel.frame.height)
-        let labelY = (bannerHeight - textHeight) / 2
-        urlLabel.frame = NSRect(x: horizontalPadding, y: labelY, width: fittedWidth, height: textHeight)
+        urlLabel.frame = NSRect(x: (screenWidth - fittedWidth) / 2, y: verticalPadding, width: fittedWidth, height: textHeight)
 
         self.alphaValue = 1.0
         self.orderFrontRegardless()
