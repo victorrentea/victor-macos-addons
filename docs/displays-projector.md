@@ -105,36 +105,57 @@ magnification is done **by this app, inside a window**, which is the one thing e
 capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 `victor-effects`), but full-screen and live:
 
-- **⌥⇧+scroll** zooms in/out on the display under the pointer; back to 1× removes
-  the window and stops the stream. The direction follows the ⌘-scroll terminal font
-  zoom (the delta is read after `ScrollReversal`), so the same wheel turned the same
-  way means "closer" for both. On another display, ⌥⇧+scroll moves the zoom there.
+- **⌥⇧+scroll** zooms in/out on the display under the pointer; back to 1× hides the
+  window. Positive delta *after* `ScrollReversal` = closer. The first build copied the
+  ⌘-scroll terminal font zoom's sign and came out backwards — that branch maps the
+  wheel to ⌘-/⌘= keystrokes, so its sign was never the one to copy. **One notch is
+  ×√1.15 ≈ 1.072** (1× → 2× in ten notches): the first build's ×1.15 was "pași prea
+  mari", halved in the log domain. The factor eases at 120 Hz and the easing starts
+  with the first visible frame, not with the gesture — eased while still invisible it
+  was over before anything was on screen. On another display, ⌥⇧+scroll moves the
+  zoom there.
+- **It pans the way the system magnifier is set up here** (`closeViewPanningMode = 1`,
+  "only when the pointer reaches an edge"): the picture stays put while the pointer
+  moves inside it and is dragged along only when the pointer pushes an edge; zooming
+  is about the pointer (`ShareZoomPolicy.rezoom` / `pan`). The first build kept the
+  pointer as the fixed point of the magnification instead, so the whole desktop slid
+  under every mouse move — "nu e aceeași experiență".
+- **Input is still never remapped.** Edge panning means the desktop point under the
+  real pointer is no longer drawn under it, so the **hardware cursor is hidden**
+  (`CGDisplayHideCursor` + the `SetsCursorInBackground` connection flag, the
+  `CropSelectionOverlay` technique) and a **copy of the system cursor's current shape**
+  (`NSCursor.currentSystem`, refreshed at 20 Hz), magnified by the same factor, is
+  drawn where that desktop point appears on the glass. A click lands on the real
+  pointer's point, which is exactly what the drawn cursor is over. The drawn cursor
+  lives in the window, so the share carries it. When the pointer leaves the zoomed
+  display the real cursor comes back.
 - **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
-  filtered with `excludingWindows: [our window]` — only ours, not the whole app, so
-  the banners and the hands-off locks stay in the picture. Frames are `IOSurface`s
-  set straight as the layer's `contents`; the zoom is just `contentsRect`, updated at
-  120 Hz from `NSEvent.mouseLocation`. The window is `.screenSaver` level, opaque,
-  click-through, on every Space, and invisible until the first frame lands.
-- **Input is never remapped.** The pointer is the **fixed point** of the
-  magnification (`ShareZoomPolicy.sourceRect`): the desktop pixel physically under
-  the cursor is drawn under the cursor, so a click on the click-through window lands
-  on what the picture shows. Moving the cursor pans the picture by `(1 − k)·d`; the
-  cursor at a screen edge shows that edge of the desktop.
-- **Not like the system magnifier**: the cursor itself is not enlarged (the hardware
-  cursor is drawn above every window); content lags the real screen by a frame or
-  two (capture → draw); macOS shows its screen-recording indicator while it runs. It
-  honours `closeViewSmoothImages` (off here → `.nearest`, crisp pixels).
-- **Measured 2026-10-01** via `GET /test/share-zoom?factor=3&x=&y=` on the ASUS:
-  `screencapture -D 2` — a capture client, i.e. what a share sees — returned the
-  magnified top-left corner, the right way up and with no recursion. Five synthetic
-  ⌥⇧ wheel notches took it to 2.01×, ten back turned it off.
-- ⚠️ **Not yet verified with a physical wheel.** The system magnifier owns ⌥+scroll
-  (`closeViewScrollWheelModifiersInt = 524288`, ⌥ alone) and eats it upstream of every
-  tap; whether it also eats ⌥⇧ is unknown, because it **ignores synthetic scroll
-  events altogether** (posted ⌥+scroll at the HID tap left `closeViewZoomFactor` at 1),
-  so only a real hand can answer it.
-- Test hook: `GET /test/share-zoom` (JSON snapshot), `?factor=N` (1 = off), plus
-  `&x=&y=` (global Cocoa points) to pin the focus instead of following the pointer.
+  filtered with `excludingWindows: [our panel]` — only ours, not the whole app, so the
+  banners and the hands-off locks stay in the picture. Frames are `IOSurface`s set
+  straight as the layer's `contents`; the zoom is just `contentsRect`. The panel is
+  `.screenSaver` level, opaque, click-through, on every Space, invisible until it has
+  a frame. It honours `closeViewSmoothImages` (off here → `.nearest`).
+- **Startup latency**, measured with `startupMs` in the test hook: the first build
+  took **~195 ms** from gesture to picture — ~100 ms for `SCShareableContent` (the
+  window list the filter needs) and ~95 ms for the stream's first frame. Now one
+  **`Stage` per display** (panel + filter) is built 3 s after launch and after every
+  display change — an ordered-out panel *is* listed by `SCShareableContent`, so the
+  filter can exclude it before it was ever shown — and the stream **lingers 10 s**
+  after a zoom-out. Cold: **78 ms**; zoom again within 10 s: **0 ms**.
+- **Not like the system magnifier**: content lags the real screen by a frame or two
+  (capture → draw); macOS shows its screen-recording indicator while the stream runs.
+- **Verified 2026-10-01** on the ASUS, with synthetic input: `screencapture -D 2` (a
+  capture client, i.e. what a share sees) shows the magnified picture the right way up
+  with no recursion; moving inside the slice left `contentsRect` untouched, pushing the
+  right edge dragged it along (x 0.25 → 0.50); the drawn cursor is where expected.
+- ⚠️ **Unverified**: (1) whether the system magnifier also eats ⌥⇧+scroll from a
+  physical wheel — it ignores synthetic scrolls altogether, so only a hand can answer
+  (the first hand did: it works); (2) whether Zoom draws its *own* remote cursor at the
+  real pointer while ours is hidden, which would show the far end two cursors.
+- Test hook: `GET /test/share-zoom` (JSON: active / visible / factor / contentsRect /
+  streaming / cursorHidden / prepared per display / startupMs), `?factor=N` (1 = off),
+  plus `&x=&y=` (global Cocoa points) to pin the focus — the real cursor is then left
+  alone.
 
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 

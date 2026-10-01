@@ -368,8 +368,9 @@ private let VK_I: CGKeyCode = 0x22
             // pre-transform rather than a feature bolted on beside the zoom.
             ScrollReversal.apply(to: event)
 
-            // 🔎 ⌥⇧+scroll → `ShareZoom`. Read after the reversal for the same
-            // reason as the ⌘ branch below: one wheel, one direction for "closer".
+            // 🔎 ⌥⇧+scroll → `ShareZoom`. Read after the reversal, so the
+            // direction stays put whether 🔄 Reverse Mouse Wheel is on or off
+            // only in the sense that it moves with every other scroll on this Mac.
             // ⇧ may already have turned the wheel into a horizontal scroll by the
             // time a session tap sees it, so whichever axis moved is the delta.
             let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])

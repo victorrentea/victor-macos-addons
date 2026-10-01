@@ -5,67 +5,99 @@ final class ShareZoomPolicyTests: XCTestCase {
 
     private let screen = CGSize(width: 1728, height: 1117)
 
-    /// The one property everything else hangs on: the desktop pixel under the
-    /// cursor is drawn under the cursor, so a click-through window clicks right.
-    func testThePointerIsTheFixedPointOfTheMagnification() {
-        for p in [CGPoint(x: 0, y: 0), CGPoint(x: 1728, y: 1117), CGPoint(x: 300, y: 900), CGPoint(x: 1500, y: 40)] {
-            for k in [1.5, 2.0, 7.3] as [CGFloat] {
-                let r = ShareZoomPolicy.sourceRect(screenSize: screen, pointer: p, factor: k)
-                let drawnAt = CGPoint(x: (p.x - r.minX) * k, y: (p.y - r.minY) * k)
-                XCTAssertEqual(drawnAt.x, p.x, accuracy: 0.001)
-                XCTAssertEqual(drawnAt.y, p.y, accuracy: 0.001)
-            }
-        }
+    // MARK: - The dial
+
+    /// Positive (after `ScrollReversal`) = closer. The first build had it backwards.
+    func testPositiveDeltaZoomsIn() {
+        XCTAssertGreaterThan(ShareZoomPolicy.step(1, delta: 1, continuous: false), 1)
+        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: -1, continuous: false), 2)
     }
 
-    func testTheSliceNeverLeavesTheScreen() {
-        for p in [CGPoint(x: -50, y: -50), CGPoint(x: 5000, y: 5000), CGPoint(x: 864, y: 558)] {
-            let r = ShareZoomPolicy.sourceRect(screenSize: screen, pointer: p, factor: 4)
-            XCTAssertGreaterThanOrEqual(r.minX, 0)
-            XCTAssertGreaterThanOrEqual(r.minY, 0)
-            XCTAssertLessThanOrEqual(r.maxX, screen.width + 0.001)
-            XCTAssertLessThanOrEqual(r.maxY, screen.height + 0.001)
-        }
-    }
-
-    func testAtTheCornerTheMatchingCornerOfTheDesktopIsInView() {
-        let r = ShareZoomPolicy.contentsRect(screenSize: screen, pointer: CGPoint(x: 1728, y: 1117), factor: 2)
-        XCTAssertEqual(r.maxX, 1, accuracy: 0.0001)
-        XCTAssertEqual(r.maxY, 1, accuracy: 0.0001)
-        XCTAssertEqual(r.width, 0.5, accuracy: 0.0001)
-    }
-
-    func testAtOneTimesTheWholeScreenIsShown() {
-        let r = ShareZoomPolicy.contentsRect(screenSize: screen, pointer: CGPoint(x: 400, y: 400), factor: 1)
-        XCTAssertEqual(r, CGRect(x: 0, y: 0, width: 1, height: 1))
-    }
-
-    /// Same direction as the ⌘-scroll terminal font zoom: negative = closer.
-    func testNegativeDeltaZoomsIn() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -1, continuous: false), 1.15, accuracy: 0.0001)
-        XCTAssertEqual(ShareZoomPolicy.step(2, delta: 1, continuous: false), 2 / 1.15, accuracy: 0.0001)
+    /// Steps halved (in the log domain): two notches now do what one did.
+    func testTwoNotchesMakeTheOldOneNotchStep() {
+        let two = ShareZoomPolicy.step(ShareZoomPolicy.step(1, delta: 1, continuous: false), delta: 1, continuous: false)
+        XCTAssertEqual(two, 1.15, accuracy: 0.0001)
     }
 
     func testOneFastSpinCountsForAtMostThreeNotches() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -10, continuous: false), pow(1.15, 3), accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 10, continuous: false),
+                       pow(ShareZoomPolicy.notchFactor, 3), accuracy: 0.0001)
     }
 
     func testTrackpadPixelsAccumulateIntoNotches() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -12, continuous: true), 1.15, accuracy: 0.0001)
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -3, continuous: true), pow(1.15, 0.25), accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 12, continuous: true), ShareZoomPolicy.notchFactor, accuracy: 0.0001)
     }
 
     func testTheDialStopsAtOneAndAtTheCeiling() {
-        XCTAssertEqual(ShareZoomPolicy.step(1.05, delta: 3, continuous: false), 1)
-        XCTAssertEqual(ShareZoomPolicy.step(9.9, delta: -3, continuous: false), ShareZoomPolicy.maxFactor)
+        XCTAssertEqual(ShareZoomPolicy.step(1.05, delta: -3, continuous: false), 1)
+        XCTAssertEqual(ShareZoomPolicy.step(9.9, delta: 3, continuous: false), ShareZoomPolicy.maxFactor)
+    }
+
+    func testScrollingBackAsFarAsInLandsOnExactlyOne() {
+        var f: CGFloat = 1
+        for _ in 0..<10 { f = ShareZoomPolicy.step(f, delta: 1, continuous: false) }
+        for _ in 0..<10 { f = ShareZoomPolicy.step(f, delta: -1, continuous: false) }
+        XCTAssertEqual(f, 1)
     }
 
     func testEasingLandsExactlyOnTheTarget() {
         var c: CGFloat = 1
-        for _ in 0..<60 { c = ShareZoomPolicy.ease(c, toward: 2) }
+        for _ in 0..<120 { c = ShareZoomPolicy.ease(c, toward: 2) }
         XCTAssertEqual(c, 2)
         XCTAssertFalse(ShareZoomPolicy.isOff(current: c, target: 2))
-        for _ in 0..<60 { c = ShareZoomPolicy.ease(c, toward: 1) }
+        for _ in 0..<120 { c = ShareZoomPolicy.ease(c, toward: 1) }
         XCTAssertTrue(ShareZoomPolicy.isOff(current: c, target: 1))
+    }
+
+    // MARK: - Zooming is about the pointer
+
+    func testZoomingKeepsThePointersSpotUnderThePointer() {
+        let p = CGPoint(x: 400, y: 900)
+        var o = CGPoint.zero
+        var k: CGFloat = 1
+        for next in [1.3, 2.0, 3.7, 2.2] as [CGFloat] {
+            o = ShareZoomPolicy.rezoom(origin: o, from: k, to: next, pointer: p, screenSize: screen)
+            k = next
+            let drawn = ShareZoomPolicy.cursorPoint(pointer: p, origin: o, factor: k)
+            XCTAssertEqual(drawn.x, p.x, accuracy: 0.001)
+            XCTAssertEqual(drawn.y, p.y, accuracy: 0.001)
+        }
+    }
+
+    // MARK: - Panning only at the edge
+
+    func testMovingInsideTheSliceDoesNotPan() {
+        let o = CGPoint(x: 300, y: 200)
+        let k: CGFloat = 2   // slice 864 × 558.5
+        for p in [CGPoint(x: 301, y: 201), CGPoint(x: 700, y: 500), CGPoint(x: 1163, y: 757)] {
+            XCTAssertEqual(ShareZoomPolicy.pan(origin: o, pointer: p, factor: k, screenSize: screen), o)
+        }
+    }
+
+    func testPushingAnEdgeDragsTheSliceAlong() {
+        let o = CGPoint(x: 300, y: 200)
+        let right = ShareZoomPolicy.pan(origin: o, pointer: CGPoint(x: 1200, y: 400), factor: 2, screenSize: screen)
+        XCTAssertEqual(right.x, 1200 - 864, accuracy: 0.001)
+        XCTAssertEqual(right.y, 200)
+        let left = ShareZoomPolicy.pan(origin: o, pointer: CGPoint(x: 250, y: 400), factor: 2, screenSize: screen)
+        XCTAssertEqual(left.x, 250)
+        // …and the drawn cursor sits on the glass's edge, not past it.
+        let drawn = ShareZoomPolicy.cursorPoint(pointer: CGPoint(x: 1200, y: 400), origin: right, factor: 2)
+        XCTAssertEqual(drawn.x, screen.width, accuracy: 0.001)
+    }
+
+    func testTheSliceNeverLeavesTheScreen() {
+        for p in [CGPoint(x: 0, y: 0), CGPoint(x: 1728, y: 1117)] {
+            let o = ShareZoomPolicy.pan(origin: CGPoint(x: 800, y: 500), pointer: p, factor: 4, screenSize: screen)
+            XCTAssertGreaterThanOrEqual(o.x, 0)
+            XCTAssertGreaterThanOrEqual(o.y, 0)
+            XCTAssertLessThanOrEqual(o.x + screen.width / 4, screen.width + 0.001)
+            XCTAssertLessThanOrEqual(o.y + screen.height / 4, screen.height + 0.001)
+        }
+    }
+
+    func testContentsRectIsTheSliceInUnitSpace() {
+        let r = ShareZoomPolicy.contentsRect(origin: CGPoint(x: 864, y: 0), factor: 2, screenSize: screen)
+        XCTAssertEqual(r, CGRect(x: 0.5, y: 0, width: 0.5, height: 0.5))
     }
 }
