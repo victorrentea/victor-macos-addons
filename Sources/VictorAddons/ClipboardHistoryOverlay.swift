@@ -363,7 +363,13 @@ final class ClipboardHistoryOverlay {
         // and the eye had to find the words again each time. A fixed box means
         // an image is always in the same place and text always starts at the
         // same point; only the content changes.
-        let box = bodyBox(on: screen)
+        // **Text gets half the height** (2026-10-01, Victor): a clip of words
+        // rarely fills a quarter of the screen, and the empty half under it
+        // was panel for nothing. Still one fixed size per kind, so walking
+        // text clips keeps the first line in place; only crossing between an
+        // image and text changes the frame.
+        let fullBox = bodyBox(on: screen)
+        let box = entry.isImage ? fullBox : NSSize(width: fullBox.width, height: (fullBox.height / 2).rounded())
         textIsTruncated = false
         let body: NSView = entry.isImage
             ? imageView(for: entry, in: box, screen: screen)
@@ -574,7 +580,7 @@ final class ClipboardHistoryOverlay {
     /// said nothing about there being more.
     ///
     /// **Behind the words, the icon of the app the text was copied from**, at
-    /// 30% and centred on the box (2026-09-22). It is the fact Flycut puts in
+    /// 15% and centred on the box (2026-09-22; 30% until 2026-10-01). It is the fact Flycut puts in
     /// its footer, in the only form that does not cost a glance: nothing about
     /// a watermark asks to be read, and by the time the eye has taken in two
     /// lines of a stack trace it already knows the clip came out of the
@@ -625,10 +631,11 @@ final class ClipboardHistoryOverlay {
                                              width: side, height: side))
         view.image = icon
         view.imageScaling = .scaleProportionallyUpOrDown
-        // Victor's number: 30% opaque. Enough to read the icon's silhouette and
-        // its colour, far enough back that a line of text crossing it is still
-        // the thing the eye lands on first.
-        view.alphaValue = 0.3
+        // Victor's number: 15% opaque (was 30% until 2026-10-01 — still too
+        // loud behind the words). Enough to read the icon's silhouette, far
+        // enough back that a line of text crossing it is the thing the eye
+        // lands on first.
+        view.alphaValue = 0.15
         return view
     }
 
