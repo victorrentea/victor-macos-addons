@@ -133,6 +133,16 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   and the factor compounded every tick (k, k², k³…) until the 20 Hz shape refresh reset
   it — the cursor pulsed small/big. `cursorFrame` in the test hook now reads 34×46
   (the 17×23 arrow at 2×) on every sample.
+  **The Dock gives the real cursor back**: on this Mac it sits on the left,
+  auto-hidden, and popping it out (or moving across its icons) made the real arrow
+  reappear beside the drawn one — Victor's screenshot, then reproduced on the retina's
+  left edge only (top/right/bottom and all four ASUS edges stayed clean). Hiding needs
+  **both** `NSCursor.hide()` and `CGDisplayHideCursor`, as the 💓 heartbeat does, and
+  the hide is **re-asserted at 4 Hz while the pointer is within 100 pt of any edge and
+  for 2 s after**; every hide is counted (`hideDepth`) and undone exactly that many
+  times when the zoom ends. Verifying this needs a ScreenCaptureKit capture with
+  `showsCursor = true` (it omits a hidden cursor — calibrated with a probe process that
+  hid it); `screencapture -C` draws the cursor even while it is hidden and lies.
 - **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
   filtered with `excludingWindows: [our panel]` — only ours, not the whole app, so the
   banners and the hands-off locks stay in the picture. Frames are `IOSurface`s set

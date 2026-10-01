@@ -99,7 +99,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var origin = CGPoint.zero
     /// The first frame has landed and the panel is showing.
     private var visible = false
-    private var cursorHidden = false
+    /// How many hides are outstanding (see `hideCursor`).
+    private var hideDepth = 0
+    private var cursorHidden: Bool { hideDepth > 0 }
+    /// Until when the hide is re-asserted, after the pointer touched a screen edge.
+    private var reassertUntil: CFAbsoluteTime = 0
     private var hotSpot = CGPoint.zero
     /// The system cursor's own size, in points. Kept here and never read back from
     /// the layer: the layer's bounds are the *magnified* size after the first frame,
@@ -180,7 +184,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "screenFrame":[\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width)),\(Int(frame.height))],\
         "contentsRect":[\(String(format: "%.4f,%.4f,%.4f,%.4f", rect.minX, rect.minY, rect.width, rect.height))],\
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
-        "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"prepared":{\(prepared)},\
+        "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"prepared":{\(prepared)},\
         "startupMs":\(lastStartupMs)}
         """
     }
@@ -345,17 +349,33 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Cursor
 
-    private func hideCursor() {
-        guard !cursorHidden else { return }
+    /// Hides the real cursor, or — when it is already hidden — hides it **once more**.
+    ///
+    /// The Dock gives it back: with the Dock on the left and auto-hidden, the pointer
+    /// touching the retina's left edge pops the Dock out and the real arrow reappears
+    /// beside the drawn one (2026-10-01, Victor's screenshot, then reproduced with a
+    /// ScreenCaptureKit `showsCursor` capture — `screencapture -C` is useless here, it
+    /// draws the cursor even while it is hidden). So after any edge contact the hide is
+    /// re-asserted a few times (`follow`). Every call is counted in `hideDepth` and
+    /// `restoreCursor` undoes exactly that many: the counters are per connection, and
+    /// an unbalanced extra hide would leave the arrow gone after the zoom.
+    ///
+    /// Both calls, as the 💓 heartbeat in victor-effects does: `CGDisplayHideCursor`
+    /// alone was not enough either.
+    private func hideCursor(again: Bool = false) {
+        guard hideDepth == 0 || again else { return }
         Self.armBackgroundCursorHiding()
+        NSCursor.hide()
         CGDisplayHideCursor(CGMainDisplayID())
-        cursorHidden = true
+        hideDepth += 1
     }
 
     private func restoreCursor() {
-        guard cursorHidden else { return }
-        CGDisplayShowCursor(CGMainDisplayID())
-        cursorHidden = false
+        while hideDepth > 0 {
+            NSCursor.unhide()
+            CGDisplayShowCursor(CGMainDisplayID())
+            hideDepth -= 1
+        }
     }
 
     /// `CGDisplayHideCursor` works only while the calling app is frontmost unless the
@@ -417,6 +437,18 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         s.image.contentsRect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
         if inside, pinnedFocus == nil {
             hideCursor()
+            // The edges are where the system UI lives (the auto-hidden Dock, the
+            // menu bar, hot corners), and the Dock popping out — or the pointer
+            // moving across its icons — shows the real cursor again. Re-hide at
+            // 4 Hz while the pointer is within a Dock's width of any edge, and for
+            // 2 s after it leaves.
+            let now = CFAbsoluteTimeGetCurrent()
+            let band: CGFloat = 100
+            if focus.x <= s.frame.minX + band || focus.x >= s.frame.maxX - band
+                || focus.y <= s.frame.minY + band || focus.y >= s.frame.maxY - band {
+                reassertUntil = now + 2
+            }
+            if now < reassertUntil, tickCount % 30 == 0 { hideCursor(again: true) }
             if tickCount % 6 == 1 { refreshCursorImage(s) }
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
