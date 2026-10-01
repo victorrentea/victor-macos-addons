@@ -158,6 +158,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 🔍 Says which magnifier style is live, because ⌥⌘F changes it invisibly.
     private var zoomLensWatch: ZoomLensWatch?
     private var zoomLensFence: ZoomLensCursorFence?
+    /// 🔎 ⌥⇧+scroll — the full-screen zoom a screen share can see.
+    private let shareZoom = ShareZoom()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
@@ -1216,6 +1218,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if run { self.layoutZoom() }
             return "{\"started\":\(run),\"last\":\(last)}"
         }
+        // /test/share-zoom?factor=3&x=&y= — 🔎 ShareZoom without the wheel;
+        // factor=1 turns it off, no factor just reports.
+        tabletServer?.onTestShareZoom = { [weak self] factor, x, y in
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            guard let factor else { return self.shareZoom.snapshotJSON() }
+            let focus = (x != nil && y != nil) ? CGPoint(x: x!, y: y!) : nil
+            return self.shareZoom.testSet(factor: CGFloat(factor), focus: focus)
+        }
         tabletServer?.onTestZoomJoin = { [weak self] in
             self?.zoomJoinAutoStart?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
@@ -1792,6 +1802,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // ⌘⌃U — flip the magnifier style. The pill comes from the toggle itself, not
         // from the watcher's next tick, so the key answers immediately.
+        eventTap.onShareZoomScroll = { [weak self] delta, continuous in
+            self?.shareZoom.scroll(delta: delta, continuous: continuous)
+        }
         eventTap.onToggleZoomLens = { [weak self] in
             self?.zoomLensWatch?.toggle()
         }

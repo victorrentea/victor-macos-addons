@@ -76,6 +76,10 @@ class EventTapManager {
     /// 🔍 ⌘⌃U — flip the screen magnifier between the style a screen share carries
     /// and the one it silently drops.
     var onToggleZoomLens: (() -> Void)?
+    /// 🔎 ⌥⇧+scroll — our own full-screen zoom, the one a Zoom share carries
+    /// (`ShareZoom`). Vertical delta after `ScrollReversal`, and whether it came
+    /// from a trackpad (pixels) rather than a wheel (lines). Called on main.
+    var onShareZoomScroll: ((Double, Bool) -> Void)?
     /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
     /// subject "Reminder". Nothing to confirm: it is already gone.
     var onSendClipboardReminder: (() -> Void)?
@@ -363,6 +367,27 @@ private let VK_I: CGKeyCode = 0x22
             // font zoom. That is the honest consequence of the reverser being a
             // pre-transform rather than a feature bolted on beside the zoom.
             ScrollReversal.apply(to: event)
+
+            // 🔎 ⌥⇧+scroll → `ShareZoom`. Read after the reversal for the same
+            // reason as the ⌘ branch below: one wheel, one direction for "closer".
+            // ⇧ may already have turned the wheel into a horizontal scroll by the
+            // time a session tap sees it, so whichever axis moved is the delta.
+            let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+            if zoomFlags == [.maskAlternate, .maskShift] {
+                let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+                let delta: Double
+                if continuous {
+                    let y = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
+                    delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2)
+                } else {
+                    let y = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
+                    delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
+                }
+                if delta != 0 {
+                    DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, continuous) }
+                }
+                return nil
+            }
 
             guard event.flags.contains(.maskCommand),
                   let front = currentFrontmost(),

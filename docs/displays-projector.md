@@ -97,6 +97,45 @@ fence. Synthetic input cannot test any of this: while the magnifier is zoomed, p
 **The lens geometry is lost on display changes**: after unplugging the projector it came
 back as a 90×90 square; refit with the prefs-write + engine-restart recipe above.
 
+### 🔎 The fifth path: our own zoom, in a window (`ShareZoom`, ⌥⇧+scroll, 2026-10-01)
+
+For the meetings where Zoom's unfiltered capture is not an option (another client,
+another machine's settings, a share of a single screen that filters anyway), the
+magnification is done **by this app, inside a window**, which is the one thing every
+capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
+`victor-effects`), but full-screen and live:
+
+- **⌥⇧+scroll** zooms in/out on the display under the pointer; back to 1× removes
+  the window and stops the stream. The direction follows the ⌘-scroll terminal font
+  zoom (the delta is read after `ScrollReversal`), so the same wheel turned the same
+  way means "closer" for both. On another display, ⌥⇧+scroll moves the zoom there.
+- **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
+  filtered with `excludingWindows: [our window]` — only ours, not the whole app, so
+  the banners and the hands-off locks stay in the picture. Frames are `IOSurface`s
+  set straight as the layer's `contents`; the zoom is just `contentsRect`, updated at
+  120 Hz from `NSEvent.mouseLocation`. The window is `.screenSaver` level, opaque,
+  click-through, on every Space, and invisible until the first frame lands.
+- **Input is never remapped.** The pointer is the **fixed point** of the
+  magnification (`ShareZoomPolicy.sourceRect`): the desktop pixel physically under
+  the cursor is drawn under the cursor, so a click on the click-through window lands
+  on what the picture shows. Moving the cursor pans the picture by `(1 − k)·d`; the
+  cursor at a screen edge shows that edge of the desktop.
+- **Not like the system magnifier**: the cursor itself is not enlarged (the hardware
+  cursor is drawn above every window); content lags the real screen by a frame or
+  two (capture → draw); macOS shows its screen-recording indicator while it runs. It
+  honours `closeViewSmoothImages` (off here → `.nearest`, crisp pixels).
+- **Measured 2026-10-01** via `GET /test/share-zoom?factor=3&x=&y=` on the ASUS:
+  `screencapture -D 2` — a capture client, i.e. what a share sees — returned the
+  magnified top-left corner, the right way up and with no recursion. Five synthetic
+  ⌥⇧ wheel notches took it to 2.01×, ten back turned it off.
+- ⚠️ **Not yet verified with a physical wheel.** The system magnifier owns ⌥+scroll
+  (`closeViewScrollWheelModifiersInt = 524288`, ⌥ alone) and eats it upstream of every
+  tap; whether it also eats ⌥⇧ is unknown, because it **ignores synthetic scroll
+  events altogether** (posted ⌥+scroll at the HID tap left `closeViewZoomFactor` at 1),
+  so only a real hand can answer it.
+- Test hook: `GET /test/share-zoom` (JSON snapshot), `?factor=N` (1 = off), plus
+  `&x=&y=` (global Cocoa points) to pin the focus instead of following the pointer.
+
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
 The table above is what **`screencapture` and ScreenCaptureKit** see. Zoom does not always

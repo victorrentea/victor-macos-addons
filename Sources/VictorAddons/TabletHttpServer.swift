@@ -122,6 +122,8 @@ case testTerminalFont
         case testZoomJoin
         /// 🎥 Layout Zoom: start a run (unless `run=0`) and return the last report.
         case testZoomLayout(run: Bool)
+        /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
+        case testShareZoom(factor: Double?, x: Double?, y: Double?)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -336,6 +338,8 @@ case testTerminalFont
     /// and answers the *previous* run's report right away (the run itself waits
     /// on Zoom for seconds, far too long to hold the main thread for).
     var onTestZoomLayout: ((Bool) -> String)?
+    /// 🔎 `ShareZoom` — factor (nil = just report), focus point in global Cocoa points.
+    var onTestShareZoom: ((Double?, Double?, Double?) -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -635,6 +639,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestZoomJoin == nil { statusCode = 503 }
+            case .testShareZoom(let factor, let x, let y):
+                contentType = "application/json"
+                body = self.onTestShareZoom?(factor, x, y) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestShareZoom == nil { statusCode = 503 }
             case .testZoomLayout(let run):
                 contentType = "application/json"
                 body = self.onTestZoomLayout?(run) ?? "{\"error\":\"unavailable\"}"
@@ -1007,6 +1015,9 @@ case testTerminalFont
             return .testZoomShare
         case "/test/zoom-join":
             return .testZoomJoin
+        case "/test/share-zoom":
+            func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
+            return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"))
         case "/test/zoom-layout":
             return .testZoomLayout(run: queryItems.first(where: { $0.name == "run" })?.value != "0")
         case "/test/emoji-layer":
