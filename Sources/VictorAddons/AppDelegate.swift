@@ -408,7 +408,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // stays pinned, with the ring draining on the tile, for exactly as
             // long as the clip is going to be up.
             guard let ms = VideoPlayer.shared.play(
-                id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start
+                id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start,
+                holdEndSeconds: entry.holdEndSeconds ?? 0
             ) else { return nil }
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
         }

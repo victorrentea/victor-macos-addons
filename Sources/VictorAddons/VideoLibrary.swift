@@ -19,6 +19,11 @@ enum VideoLibrary {
         /// videos that have no `img.youtube.com/vi/<id>` image; the tablet decodes
         /// it directly instead of fetching by id.
         let thumb: String?
+        /// Seconds the clip's **last frame** stays on screen when it runs out,
+        /// instead of the usual rewind-to-start. For a clip whose punchline is
+        /// the final frame (LGTM's "Looks Good To Me 💩"): rewinding takes the
+        /// joke off the projector the instant it lands. Absent = rewind.
+        let holdEndSeconds: Int?
     }
 
     /// Resolve the repo's `videos/` directory using the same root strategy as

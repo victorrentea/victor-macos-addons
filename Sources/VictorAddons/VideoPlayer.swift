@@ -34,7 +34,10 @@ import Foundation
 /// 3. **The end: rewind and pause.** At the last frame the player seeks back
 ///    to the snippet's start second and pauses — **SPACE replays** it, ESC or
 ///    the tablet closes it. A replay re-arms the auto-kill so it gets a full
-///    window of its own.
+///    window of its own. **Unless the clip asks to hold its end**
+///    (`holdEndSeconds` in the manifest): then the last frame stays up for that
+///    long — the auto-kill re-armed to it — because there the last frame *is*
+///    the punchline (LGTM).
 ///
 /// 4. **Subtitles, when a clip has them.** A `<name>.srt` sidecar is parsed
 ///    (`SRTSubtitles`) and drawn as an outlined caption over the picture —
@@ -68,6 +71,8 @@ final class VideoPlayer {
     /// (SPACE replays it) but nothing is playing, which for the tablet is over.
     private var atEndPaused = false
     private var startSeconds = 0
+    /// This play's `holdEndSeconds`: 0 = rewind at the end, as usual.
+    private var holdEndSeconds = 0
 
     /// Launch (or replace) the player at `startSeconds`, covering the Retina.
     /// Returns **how many milliseconds it is scheduled to run** — the shorter of
@@ -78,7 +83,7 @@ final class VideoPlayer {
     /// Main thread only (AVPlayer + NSWindow); every caller is an HTTP handler,
     /// which `TabletHttpServer` runs inside `DispatchQueue.main.sync`.
     @discardableResult
-    func play(id: String, fileURL: URL, startSeconds: Int) -> Int? {
+    func play(id: String, fileURL: URL, startSeconds: Int, holdEndSeconds: Int = 0) -> Int? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             overlayError("VideoPlayer: file not found: \(fileURL.path)")
             return nil
@@ -88,6 +93,7 @@ final class VideoPlayer {
 
         let start = max(0, startSeconds)
         self.startSeconds = start
+        self.holdEndSeconds = max(0, holdEndSeconds)
         let screen = Self.targetScreen()
         let item = AVPlayerItem(url: fileURL)
         let p = AVPlayer(playerItem: item)
@@ -259,12 +265,21 @@ final class VideoPlayer {
 
     /// The clip ran out: back to the start second and hold the frame, so SPACE
     /// replays it. Not `stop()`: the window stays up on purpose.
+    ///
+    /// A clip with `holdEndSeconds` keeps its **last** frame instead, for that
+    /// long: the auto-kill is re-armed from now, since the 60 s one was counted
+    /// from the start and would cut the hold short (LGTM ends at 58 s).
     private func reachedEnd() {
         guard let player else { return }
         player.pause()
+        atEndPaused = true
+        if holdEndSeconds > 0 {
+            scheduleAutoKill(after: TimeInterval(holdEndSeconds))
+            overlayInfo("VideoPlayer: clip ended — holding the last frame for \(holdEndSeconds)s (SPACE replays, ESC closes)")
+            return
+        }
         player.seek(to: CMTime(seconds: Double(startSeconds), preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
-        atEndPaused = true
         overlayInfo("VideoPlayer: clip ended — rewound to \(startSeconds)s and paused (SPACE replays)")
     }
 
@@ -281,17 +296,23 @@ final class VideoPlayer {
             activeSince = Date()
             activeDeadline = Date().addingTimeInterval(autoKillAfter)
             scheduleAutoKill()
+            if holdEndSeconds > 0 {
+                // Held on the last frame, not rewound: go back to the start first.
+                player.seek(to: CMTime(seconds: Double(startSeconds), preferredTimescale: 600),
+                            toleranceBefore: .zero, toleranceAfter: .zero) { [weak player] _ in player?.play() }
+                return
+            }
         }
         player.play()
     }
 
     // MARK: - Lifetime
 
-    private func scheduleAutoKill() {
+    private func scheduleAutoKill(after custom: TimeInterval? = nil) {
         autoKill?.cancel()
         autoKill = nil
         guard autoKillAfter > 0 else { return }
-        let after = autoKillAfter
+        let after = custom ?? autoKillAfter
         let work = DispatchWorkItem { [weak self] in
             self?.stop()
             overlayInfo("VideoPlayer: auto-closed player after \(Int(after))s")
