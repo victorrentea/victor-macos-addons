@@ -109,8 +109,9 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   window. Positive delta *after* `ScrollReversal` = closer. The first build copied the
   ⌘-scroll terminal font zoom's sign and came out backwards — that branch maps the
   wheel to ⌘-/⌘= keystrokes, so its sign was never the one to copy. **One notch is
-  ×√1.15 ≈ 1.072** (1× → 2× in ten notches): the first build's ×1.15 was "pași prea
-  mari", halved in the log domain. The factor eases at 120 Hz and the easing starts
+  ×⁴√1.15 ≈ 1.036** (1× → 2× in twenty notches): the first build's ×1.15 was "pași
+  prea mari", halved in the log domain, and then halved again the same evening. The
+  ceiling is **8×** (80 % of the first build's 10×). The factor eases at 120 Hz and the easing starts
   with the first visible frame, not with the gesture — eased while still invisible it
   was over before anything was on screen. On another display, ⌥⇧+scroll moves the
   zoom there.

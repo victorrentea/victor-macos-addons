@@ -8,16 +8,18 @@ import Foundation
 /// slice** plus the factor; the slice is always `screenSize / factor` big.
 enum ShareZoomPolicy {
 
-    /// Ceiling of the dial. macOS's own magnifier goes to 40×, but past ~10× a
-    /// retina shows a handful of characters and nobody on a call is helped by that.
-    static let maxFactor: CGFloat = 10
+    /// Ceiling of the dial: 8×, which is 80 % of the first build's 10× (Victor,
+    /// 2026-10-01). macOS's own magnifier goes to 40×, but past this a retina
+    /// shows a handful of characters and nobody on a call is helped by that.
+    static let maxFactor: CGFloat = 8
 
     /// One wheel notch is a **factor**, not an addend — the 🔍 Pink Panther glass's
     /// reasoning: a dial that adds a constant feels coarse at the bottom of its range
     /// and sluggish at the top. It was 1.15 for the first build and Victor found the
-    /// steps too big (2026-10-01, *"înjumătățește pașii"*): halved **in the log
-    /// domain**, √1.15, so two notches now do what one did — 1× → 2× is ten notches.
-    static let notchFactor: CGFloat = 1.15.squareRoot()
+    /// steps too big — twice on the same day (2026-10-01, *"înjumătățește pașii"*,
+    /// then *"make the zoom step smaller"*). Halved **in the log domain** both times:
+    /// ⁴√1.15 ≈ 1.036, so four notches now do what one did and 1× → 2× is twenty.
+    static let notchFactor: CGFloat = pow(1.15, 0.25)
 
     /// Trackpad pixels worth one notch. Continuous scrolls arrive in many small
     /// deltas; without this a two-finger flick crosses the whole range at once.
