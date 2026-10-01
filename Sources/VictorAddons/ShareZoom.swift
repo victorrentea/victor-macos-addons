@@ -101,6 +101,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var visible = false
     private var cursorHidden = false
     private var hotSpot = CGPoint.zero
+    /// The system cursor's own size, in points. Kept here and never read back from
+    /// the layer: the layer's bounds are the *magnified* size after the first frame,
+    /// and reading them back compounded the factor on every tick (k, k², k³…) until
+    /// the next shape refresh reset it — the cursor pulsed small/big (2026-10-01).
+    private var cursorSize = CGSize.zero
     /// A focus point pinned by `/test/share-zoom?x=&y=` (global Cocoa points), so the
     /// zoom can be exercised on the right-hand screen without taking the mouse. While
     /// pinned, the real cursor is left alone.
@@ -174,6 +179,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "screen":"\(active?.name ?? "")",\
         "screenFrame":[\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width)),\(Int(frame.height))],\
         "contentsRect":[\(String(format: "%.4f,%.4f,%.4f,%.4f", rect.minX, rect.minY, rect.width, rect.height))],\
+        "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"prepared":{\(prepared)},\
         "startupMs":\(lastStartupMs)}
         """
@@ -376,7 +382,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let sys = NSCursor.currentSystem,
               let cg = sys.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         s.cursor.contents = cg
-        s.cursor.bounds = CGRect(origin: .zero, size: sys.image.size)
+        cursorSize = sys.image.size
         hotSpot = sys.hotSpot
     }
 
@@ -414,7 +420,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             if tickCount % 6 == 1 { refreshCursorImage(s) }
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
-            let b = s.cursor.bounds.size
+            let b = cursorSize
             s.cursor.frame = CGRect(x: at.x - hotSpot.x * current,
                                     y: at.y - (b.height - hotSpot.y) * current,
                                     width: b.width * current, height: b.height * current)

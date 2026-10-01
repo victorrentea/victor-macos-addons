@@ -128,7 +128,11 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   drawn where that desktop point appears on the glass. A click lands on the real
   pointer's point, which is exactly what the drawn cursor is over. The drawn cursor
   lives in the window, so the share carries it. When the pointer leaves the zoomed
-  display the real cursor comes back.
+  display the real cursor comes back. Its base size is kept in a property, never read
+  back from the layer: the first build did, the layer already held the magnified size,
+  and the factor compounded every tick (k, k², k³…) until the 20 Hz shape refresh reset
+  it — the cursor pulsed small/big. `cursorFrame` in the test hook now reads 34×46
+  (the 17×23 arrow at 2×) on every sample.
 - **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
   filtered with `excludingWindows: [our panel]` — only ours, not the whole app, so the
   banners and the hands-off locks stay in the picture. Frames are `IOSurface`s set
