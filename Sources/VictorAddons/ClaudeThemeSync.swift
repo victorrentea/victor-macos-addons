@@ -15,6 +15,11 @@ import Foundation
 /// re-renders with it (measured on 2.1.286: under a second). So the global
 /// `theme` setting points at `custom:follow-macos`, and this writes that file's
 /// `base` as `dark` or `light` at launch and on each appearance change.
+///
+/// The theme alone is half the fix: `~/.claude/hooks/session-color.sh` paints
+/// every Claude tab in Terminal a fixed tint, and the light palette on the dark
+/// tint was just as unreadable as the reverse. So each sync also asks that hook
+/// to repaint the tinted tabs into the tint of the new appearance.
 enum ClaudeThemeSync {
     static let slug = "follow-macos"
 
@@ -41,8 +46,15 @@ enum ClaudeThemeSync {
         }
     }
 
+    static var tabPainter: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/hooks/session-color.sh")
+    }
+
     static func sync() {
-        let wanted = contents(isDark: DarkModeToggle.isDarkNow())
+        let isDark = DarkModeToggle.isDarkNow()
+        repaintTabs(isDark: isDark)
+        let wanted = contents(isDark: isDark)
         // Skip identical writes: each one makes every session reload its themes.
         if (try? String(contentsOf: themeFile, encoding: .utf8)) == wanted { return }
         do {
@@ -52,5 +64,18 @@ enum ClaudeThemeSync {
         } catch {
             overlayError("Claude theme sync failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Not gated on the theme file changing: at launch the file can already be
+    /// right while tabs born under the other appearance are still wrong.
+    /// Fire-and-forget — it is an AppleScript round trip over every tab.
+    static func repaintTabs(isDark: Bool) {
+        guard FileManager.default.isExecutableFile(atPath: tabPainter.path) else { return }
+        let p = Process()
+        p.executableURL = tabPainter
+        p.arguments = ["follow", isDark ? "dark" : "light"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
     }
 }
