@@ -16,6 +16,15 @@ import Foundation
 ///
 /// Auth: a shared token sent as the `X-Bridge-Token` header (kept out of the URL
 /// so it never lands in access logs). Reconnects every 5 s on drop/failure.
+///
+/// Liveness: a ping every 15 s, and a socket that does not pong within 10 s is
+/// dropped and redialled. Without it a socket can go dead without any callback
+/// firing: seen on 2026-10-01, the add-on logged "connected" and still held an
+/// established TCP flow to Railway a quarter of an hour later, while Railway
+/// answered every tablet request with `mac-offline` — a fresh `/ws/bridge/mac`
+/// connection, which kicks the previous Mac, did not even reach it. Nothing in
+/// the old code would ever have noticed, so the relay stayed down until the
+/// network itself dropped.
 final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
     private let baseURL: String        // e.g. "wss://interact.victorrentea.ro"
     private let token: String
@@ -24,9 +33,16 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
     private lazy var session: URLSession =
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     private var task: URLSessionWebSocketTask?
-    private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.railway-bridge", qos: .utility)
+    // userInitiated, not utility: every tablet press over the relay waits on this queue.
+    private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.railway-bridge", qos: .userInitiated)
     private var stopped = false
     private var reconnectScheduled = false
+    /// Bumped on every dial; a heartbeat armed for an older socket does nothing.
+    private var generation = 0
+    private var awaitingPong = false
+
+    private static let heartbeatInterval: TimeInterval = 15
+    private static let pongTimeout: TimeInterval = 10
 
     /// Fails (returns nil) when no token is configured — the bridge stays off
     /// rather than connecting unauthenticated.
@@ -59,23 +75,57 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
         req.setValue(token, forHTTPHeaderField: "X-Bridge-Token")
         let t = session.webSocketTask(with: req)
         task = t
+        generation += 1
+        awaitingPong = false
         t.resume()
-        receive()
+        receive(t)
+        scheduleHeartbeat(generation)
     }
 
-    private func receive() {
-        task?.receive { [weak self] result in
+    private func receive(_ t: URLSessionWebSocketTask) {
+        t.receive { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let message):
                 if case .string(let text) = message {
                     self.handleRequest(text)
                 }
-                self.receive()   // re-arm for the next frame
+                self.receive(t)   // re-arm for the next frame
             case .failure:
-                self.scheduleReconnect()
+                self.scheduleReconnect(for: t)
             }
         }
+    }
+
+    // MARK: - Heartbeat
+
+    private func scheduleHeartbeat(_ gen: Int) {
+        queue.asyncAfter(deadline: .now() + Self.heartbeatInterval) { [weak self] in
+            guard let self, !self.stopped, gen == self.generation, let t = self.task else { return }
+            self.awaitingPong = true
+            t.sendPing { [weak self] error in
+                self?.queue.async {
+                    guard let self, gen == self.generation else { return }
+                    self.awaitingPong = false
+                    if let error {
+                        self.drop(t, "ping failed (\(error.localizedDescription))")
+                    } else {
+                        self.scheduleHeartbeat(gen)
+                    }
+                }
+            }
+            self.queue.asyncAfter(deadline: .now() + Self.pongTimeout) { [weak self] in
+                guard let self, gen == self.generation, self.awaitingPong else { return }
+                self.drop(t, "no pong in \(Int(Self.pongTimeout)) s")
+            }
+        }
+    }
+
+    /// Runs on `queue`.
+    private func drop(_ t: URLSessionWebSocketTask, _ why: String) {
+        NSLog("[RailwayBridge] \(why) — dead socket, redialling")
+        t.cancel(with: .goingAway, reason: nil)
+        scheduleReconnect(for: t)
     }
 
     // MARK: - Request handling
@@ -124,9 +174,12 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
 
     // MARK: - Reconnect
 
-    private func scheduleReconnect() {
+    /// [t] is the socket that failed; a late callback from a socket already
+    /// replaced must not tear down the live one.
+    private func scheduleReconnect(for t: URLSessionTask) {
         queue.async { [weak self] in
             guard let self, !self.stopped, !self.reconnectScheduled else { return }
+            if let current = self.task, current !== t { return }
             self.reconnectScheduled = true
             self.task = nil
             self.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
@@ -147,7 +200,7 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         NSLog("[RailwayBridge] closed (code \(closeCode.rawValue)) — reconnecting")
-        scheduleReconnect()
+        scheduleReconnect(for: webSocketTask)
     }
 
     /// A rejected handshake (e.g. HTTP 403 when the token is missing/wrong on
@@ -157,6 +210,6 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
         if let error {
             NSLog("[RailwayBridge] connection failed (\(error.localizedDescription)) — check BRIDGE_TOKEN match; reconnecting")
         }
-        scheduleReconnect()
+        scheduleReconnect(for: task)
     }
 }
