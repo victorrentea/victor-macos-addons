@@ -40,6 +40,16 @@ bezel closes and the digit reaches the document.
 **Opening on clip #1 — the current clipboard — is deliberate**: it makes a quick
 double-tap of ⌘⇧V an ordinary paste, and every further V a step back in time.
 
+**The bezel appears half a second after ⌘⇧V, not on it** (2026-10-01,
+Victor: *"cu o mică întârziere de jumătate de secundă, ca să nu-ți apară în
+față dacă o apeși repede și să nu pâlpâie fereastra"*). A quick ⌘⇧V-and-let-go
+is that ordinary paste, and it used to flash a quarter-of-the-screen card and
+the wash for the ~100 ms the tap lasted. The gesture itself starts on the press
+— keys are claimed, letting go of ⌘ pastes — only the drawing waits
+(`ClipboardHistoryOverlay.revealDelay`). The 0.5 s counts from the opening
+press and further Vs do not reset it: a fast V V V shows up already on clip #4.
+The menu row and the test hook draw at once; nobody is tapping there.
+
 **Nothing is pasted when the bezel was opened from the menu row** (📋 *Clipboard
 History…*) or from `GET /test/clipboard-history`. There is no held ⌘ to let go
 of there, nothing is guaranteeing which window has focus, and a synthetic ⌘V

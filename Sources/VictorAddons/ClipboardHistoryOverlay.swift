@@ -113,6 +113,20 @@ final class ClipboardHistoryOverlay {
     /// Torn down in `close()` together with the bezel — the two are one piece of
     /// UI and must never be able to outlive each other.
     private var scrim: ScrimPanel?
+    /// The gesture is under way — keys are claimed, release-⌘ commits — which
+    /// is not the same as "the bezel is on screen": see `revealDelay`.
+    private var isOpen = false
+    /// Nil while the bezel is waiting out `revealDelay`; `render()` draws
+    /// nothing until it has fired.
+    private var pendingReveal: DispatchWorkItem?
+    /// **The hotkey bezel appears half a second after ⌘⇧V, not on it**
+    /// (2026-10-01, Victor). A quick ⌘⇧V-and-let-go is an ordinary paste of the
+    /// current clipboard (see `open`), and drawing a quarter-of-the-screen card
+    /// plus the wash for the 100 ms that tap lasts is a flash in the face that
+    /// says nothing. Measured from the opening press, not reset by later Vs: a
+    /// walk typed faster than that lands on the card already on its target.
+    /// The menu row and the test hook open at once — nobody is tapping there.
+    static let revealDelay: TimeInterval = 0.5
     private var entries: [ClipboardEntry] = []
     private var index = 0
     /// True when the overlay was opened by the hotkey, i.e. with a hand on ⌘⇧:
@@ -207,7 +221,7 @@ final class ClipboardHistoryOverlay {
         }
     }
 
-    var isShowing: Bool { panel != nil }
+    var isShowing: Bool { isOpen }
     /// Whether letting go of ⌘ finishes this bezel — true only for the one the
     /// hotkey opened. See `pastesOnCommit`.
     var commitsOnCommandRelease: Bool { pastesOnCommit }
@@ -227,7 +241,15 @@ final class ClipboardHistoryOverlay {
         // makes a double-tap of ⌘⇧V a plain paste: the first press shows you
         // what a ⌘V would have done, and every further V steps back in time.
         index = 0
-        render()
+        isOpen = true
+        guard pastes else { render(); return }
+        let reveal = DispatchWorkItem { [weak self] in
+            guard let self, self.isOpen else { return }
+            self.pendingReveal = nil
+            self.render()
+        }
+        pendingReveal = reveal
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealDelay, execute: reveal)
     }
 
     /// Step through the list. Wraps, because the list is short and a walk that
@@ -296,6 +318,9 @@ final class ClipboardHistoryOverlay {
     func cancel() { close() }
 
     func close() {
+        isOpen = false
+        pendingReveal?.cancel()
+        pendingReveal = nil
         panel?.orderOut(nil)
         panel = nil
         scrim?.orderOut(nil)
@@ -316,7 +341,7 @@ final class ClipboardHistoryOverlay {
     }
 
     private func render() {
-        guard entries.indices.contains(index) else { return }
+        guard pendingReveal == nil, entries.indices.contains(index) else { return }
         // Recomputed on every render, same as `bodyBox`'s screen and `entry`
         // itself — the cheapest way to make a theme flip land on the very next
         // press of V (the `init` observer covers the case where none comes).
