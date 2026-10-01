@@ -144,6 +144,15 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   times when the zoom ends. Verifying this needs a ScreenCaptureKit capture with
   `showsCursor = true` (it omits a hidden cursor — calibrated with a probe process that
   hid it); `screencapture -C` draws the cursor even while it is hidden and lies.
+- **Effects (`victor-effects`) need only the cursor.** Their overlay is at the
+  maximum window level, above this panel, so they are drawn unmagnified over the
+  zoomed picture — what they look like unzoomed — and screenshot effects photograph
+  the zoomed picture. What broke was anything drawn *at the cursor* (💓 heartbeat,
+  🔍 glass, whip…): it followed the hidden real pointer. `publishCursor` posts the
+  drawn cursor's global position as a distributed notification
+  `ro.victorrentea.share-zoom.cursor` (~30 Hz while it moves, 0.5 s keep-alive, empty
+  at the end); `VisibleCursor` over there uses it, stale after 1.5 s. Verified with a
+  listener: position at zoom start, keep-alives while resting, cleared at 1×.
 - **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
   filtered with `excludingWindows: [our panel]` — only ours, not the whole app, so the
   banners and the hands-off locks stay in the picture. Frames are `IOSurface`s set

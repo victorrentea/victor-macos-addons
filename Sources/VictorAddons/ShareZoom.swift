@@ -115,6 +115,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// pinned, the real cursor is left alone.
     private var pinnedFocus: CGPoint?
 
+    /// The drawn cursor's last published position (global Cocoa points) and when.
+    private var publishedCursor: CGPoint?
+    private var publishedAt: CFAbsoluteTime = 0
+
     private var framesShown = 0
     private var startedAt = CFAbsoluteTimeGetCurrent()
     private var lastStartupMs = 0
@@ -290,6 +294,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private func deactivate() {
         tick?.invalidate()
         tick = nil
+        publishCursor(nil)
         restoreCursor()
         active?.cursor.isHidden = true
         active?.panel.orderOut(nil)
@@ -435,6 +440,12 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         s.image.contentsRect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
+        if inside {
+            let drawnAt = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
+            publishCursor(CGPoint(x: s.frame.minX + drawnAt.x, y: s.frame.minY + drawnAt.y))
+        } else {
+            publishCursor(nil)
+        }
         if inside, pinnedFocus == nil {
             hideCursor()
             // The edges are where the system UI lives (the auto-hidden Dock, the
@@ -463,6 +474,42 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             s.cursor.isHidden = true
         }
         CATransaction.commit()
+    }
+
+    // MARK: - Telling victor-effects where the cursor is
+
+    /// Where the room sees the cursor, for the effects drawn at it (`VisibleCursor` in
+    /// victor-effects: the 💓 heartbeat's bulge, the 🔍 glass, the whip…). Those read
+    /// the *real* pointer, which under this zoom is somewhere else on the glass as soon
+    /// as the picture has panned. The effects window sits above this one (maximum window
+    /// level), so they are drawn unmagnified over the zoomed picture and need nothing
+    /// else — only this one point.
+    ///
+    /// A distributed notification, not HTTP: no reply is needed, it costs nothing when
+    /// the effects app is down, and neither app waits for the other. ~30 Hz while the
+    /// cursor moves, a 0.5 s keep-alive while it rests (the receiver treats 1.5 s of
+    /// silence as "zoom gone" — a crash must not leave effects pinned to a dead point),
+    /// and an empty one when the zoom ends or the pointer leaves the zoomed display.
+    static let cursorNotification = Notification.Name("ro.victorrentea.share-zoom.cursor")
+
+    private func publishCursor(_ point: CGPoint?) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if let point {
+            let moved = publishedCursor.map { hypot($0.x - point.x, $0.y - point.y) > 0.5 } ?? true
+            let due = now - publishedAt >= (moved ? 1.0 / 30 : 0.5)
+            guard due else { return }
+            publishedCursor = point
+            publishedAt = now
+            DistributedNotificationCenter.default().postNotificationName(
+                Self.cursorNotification, object: nil,
+                userInfo: ["x": Double(point.x), "y": Double(point.y)], deliverImmediately: true)
+        } else {
+            guard publishedCursor != nil else { return }
+            publishedCursor = nil
+            publishedAt = now
+            DistributedNotificationCenter.default().postNotificationName(
+                Self.cursorNotification, object: nil, userInfo: nil, deliverImmediately: true)
+        }
     }
 
     // MARK: - SCStreamOutput / SCStreamDelegate
