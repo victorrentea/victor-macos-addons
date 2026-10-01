@@ -8,8 +8,10 @@ import Cocoa
 /// failure Victor must notice *now*. So instead of the old gentle 5-minute "😶"
 /// pill that showed anytime, this shows a **big red banner the moment
 /// transcription goes stale during a presentation and keeps it on screen until
-/// transcription recovers or the presentation ends** — with a chime on
-/// appearance. Hovering snoozes it for the current stale episode (the pill sinks
+/// transcription recovers or the presentation ends**. It appears **silently**:
+/// the chime it used to play was removed on 2026-10-01 — the red banner is loud
+/// enough, and a Basso during a call is heard by the room. Hovering snoozes it
+/// for the current stale episode (the pill sinks
 /// straight down, the "put away" gesture); it re-arms once transcription
 /// recovers, the presentation ends, or transcription restarts.
 ///
@@ -29,7 +31,6 @@ final class SilentTranscriptionWarning {
     // meaningful to Victor and innocuous/cryptic to everyone else.
     private static let warningText = "😶😶😶"
     private static let warningColor = NSColor.systemRed.withAlphaComponent(0.85)
-    private static let chime = NSSound(named: NSSound.Name("Basso"))
 
     init(screensProvider: @escaping () -> [NSScreen]) {
         banner = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
@@ -90,7 +91,6 @@ final class SilentTranscriptionWarning {
 
     private func show() {
         overlayInfo("🔴 Aggressive silent-transcription warning shown (presenting)")
-        Self.chime?.play()
         // No hover-hint text (it'd be projected to the room too) and no
         // hover-countdown → the pill is persistent: it stays until transcription
         // recovers, the presentation ends, or Victor hovers to snooze. Hover-to-
