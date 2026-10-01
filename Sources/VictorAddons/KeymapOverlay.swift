@@ -1025,7 +1025,12 @@ final class KeymapOverlayController {
         let controlOption = EmojiKeyLayer.snapshot(.controlOption)
         images[.option] = renderer.render(outputs: option.bindings)
         images[.optionShift] = renderer.render(outputs: optionShift.bindings)
-        images[.controlOption] = renderer.render(outputs: controlOption.bindings)
+        // ⌃⌥I is a shortcut, not an emoji: the 🐼 panda walks in from the right
+        // (`EventTapManager.onShowPanda`). It goes on the sheet anyway, drawn as
+        // the animal it summons, unless the map itself ever claims I.
+        var controlOptionOutputs = controlOption.bindings
+        if controlOptionOutputs[0x22] == nil { controlOptionOutputs[0x22] = "🐼" }
+        images[.controlOption] = renderer.render(outputs: controlOptionOutputs)
         renderedGeneration = option.generation
         let elapsed = CFAbsoluteTimeGetCurrent() - started
         overlayInfo(String(format: "KeymapOverlay: drew %d ⌥ + %d ⌥⇧ + %d ⌃⌥ bindings in %.3fs",

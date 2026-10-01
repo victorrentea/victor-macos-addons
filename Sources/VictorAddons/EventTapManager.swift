@@ -62,6 +62,11 @@ class EventTapManager {
     /// is the email paste, and this key is worth neither of those; O is the one
     /// letter this picture can claim that nothing else on the board wants.
     var onShowElephant: (() -> Void)?
+    /// ⌃⌥I — 🐼 the panda, the elephant's twin walking in from the RIGHT edge
+    /// into the right half of the screen. It lives on the ⌃⌥ board because
+    /// ⌘⌃ has no free letter it could claim; ⌃⌥I is not an emoji key, so the
+    /// emoji rewrite lets it fall through to this branch.
+    var onShowPanda: (() -> Void)?
     /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
     var onPasteCompanyDetails: (() -> Void)?
     /// ⌘⌃N — open the "notes" Google Doc in Chrome.
@@ -131,6 +136,7 @@ class EventTapManager {
     private let VK_O: CGKeyCode = 0x1F
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
+private let VK_I: CGKeyCode = 0x22
     private let VK_ESCAPE: CGKeyCode = 0x35
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F4: CGKeyCode = 0x76
@@ -709,6 +715,15 @@ private let VK_F: CGKeyCode = 0x03
         // are the empty Terminal and the email paste; O is the orange one.
         if keyCode == VK_O && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onShowElephant?() }
+            return nil
+        }
+
+        // Ctrl+Opt+I → 🐼 the panda walks in from the right (suppress). The
+        // emoji layer above sees ⌃⌥ first; I is not in its map, so the key
+        // reaches here. Should the map ever claim I, the emoji wins and this
+        // branch goes quiet — one meaning per key.
+        if keyCode == VK_I && hasCtrl && hasOpt && !hasCmd {
+            DispatchQueue.global().async { [weak self] in self?.onShowPanda?() }
             return nil
         }
 

@@ -866,6 +866,7 @@ case testTerminalFont
         "/test/coffee", "/test/coffee/pop", "/test/iris",
         "/test/snow", "/test/snow/stop",
         "/test/elephant", "/test/elephant/stop",
+        "/test/panda", "/test/panda/stop",
         "/test/claude-peek", "/test/claude-peek/stop",
         "/test/minion", "/test/counter-strike",
         "/test/chainsaw", "/test/chainsaw/stop",

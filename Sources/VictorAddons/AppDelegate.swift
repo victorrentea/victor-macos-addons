@@ -1765,6 +1765,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // owns since the split — the key stays here, its pixels do not.
             EffectsProxy.fire("/effect/elephant")
         }
+        eventTap.onShowPanda = {
+            // Same as the elephant: drawn by Victor Effects, keyed here.
+            EffectsProxy.fire("/effect/panda")
+        }
         eventTap.onPasteCompanyDetails = {
             DispatchQueue.global(qos: .userInitiated).async { PasteSnippets.paste(PasteSnippets.companyDetails) }
         }
