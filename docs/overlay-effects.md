@@ -106,7 +106,7 @@ reported — a log line about a missed effect during a workshop is noise):
 | trigger | fires |
 |---|---|
 | participant emoji over the WS (`LocalWebSocketServer.onEmoji`) | `/effect/emoji?e=&count=&glow=` |
-| ⌘⌃O elephant | `/effect/elephant` |
+| ⌘⌃I elephant | `/effect/elephant` |
 | ⌃⌥I panda | `/effect/panda` |
 | ⌘⌃Q Claude mascot | `/effect/claude-peek` |
 | 🏁 `TrainingEndSequence` countdown | `/effect/progress-bar/<s>?rider=🏁`, `/effect/progress-bar/stop` |

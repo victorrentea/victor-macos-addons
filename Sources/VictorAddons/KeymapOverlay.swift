@@ -56,10 +56,9 @@ enum CommandControlShortcuts {
                          // not that you do. It took the letter from the old
                          // "todo" Gmail draft on 2026-09-08 — the two were the
                          // same gesture and the one that actually sends won.
-        31: "trump",     // O — 🐘 the elephant in the room, in the left half of
+        34: "trump",     // I — 🐘 the elephant in the room, in the left half of
                          // the screen. The word is the picture, not the key: the
-                         // letter is only "the Orange one" because T (Trump) is
-                         // the empty Terminal and E is the email paste, and a
+                         // letter is I because the ⌃⌥I panda is its twin, and a
                          // sheet that answered "elefant" would leave you hunting
                          // for the T you actually reached for.
         // N (key 45) is drawn from `artworkNames` below: it opens the "notes"
@@ -145,7 +144,7 @@ enum CommandControlShortcuts {
                   // room's Prompts tab, so the sheet, the pill and the list all
                   // say the same word. S's 🚀 is the sibling: both launch the
                   // selection, this one lands on the participants' screens.
-        31: "🐘",  // O — the word names the man, the mark names what appears
+        34: "🐘",  // I — the word names the man, the mark names what appears
         12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
                   // is going to the room as a prompt", and the same mark on a key
                   // that only animates would blur the two apart at a glance.
