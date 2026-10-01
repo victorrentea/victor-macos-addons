@@ -33,6 +33,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var chromeBridge: ChromeBridge?
     /// 🔊 Grabs the default output the moment the JBL speakers connect.
     private var outputRouter: OutputRouter?
+    /// 🔊 Connects every JBL box that is on, so the second one is a spare.
+    private var speakerReconnect: SpeakerReconnect?
     /// 🎙️ "Listening 🎤" pill when the mic Whisper records through changes.
     private var micSourceAnnouncer: MicSourceAnnouncer?
     /// 🎤 red sticky tab when the DJI receiver delivers only zeros (dead TX).
@@ -1679,6 +1681,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let router = OutputRouter()
         self.outputRouter = router
         router.start()
+
+        let reconnect = SpeakerReconnect()
+        self.speakerReconnect = reconnect
+        reconnect.start()
 
         let micAnnouncer = MicSourceAnnouncer(show: { [weak self] text in
             self?.statusBanner?.showNow(text: text, sound: nil, visibleDuration: MicSourceAnnouncer.hold)
