@@ -160,7 +160,11 @@ enum SessionNotesAppender {
     /// already on the participants' screens, so the row the 🤖 history panel
     /// shows for it a minute later reads "Sent" instead of offering to post it
     /// a second time.
-    static func offerPrompt(_ text: String, onAccepted: (() -> Void)? = nil) {
+    ///
+    /// `source` puts the agent's icon (Clawd / Copilot) in front of the words,
+    /// so a glance at the corner says whose prompt it was.
+    static func offerPrompt(_ text: String, source: PromptSource = .unknown,
+                            onAccepted: (() -> Void)? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if blockedPromptPrefixes.contains(where: { trimmed.hasPrefix($0) }) { return }
@@ -173,7 +177,9 @@ enum SessionNotesAppender {
         resultDismissWork?.cancel()
         resultDismissWork = nil
         pendingPrompt = trimmed
-        let display = formatPromptLabel(from: trimmed)
+        let icon = source.icon(height: promptIconHeight)
+        let display = formatPromptLabel(from: trimmed, hasIcon: icon != nil)
+        banner.icon = icon
         banner.onHover = { [weak banner] in
             guard let captured = pendingPrompt else { return }
             pendingPrompt = nil
@@ -220,9 +226,19 @@ enum SessionNotesAppender {
     /// is the only way a glance can tell them apart mid-workshop. No character
     /// cap: the banner box grows up to half the screen width and the label
     /// truncates with its own ellipsis only past that.
-    private static func formatPromptLabel(from text: String) -> String {
-        return Marker.agentPrompt.rawValue + " " + singleLine(text)
+    ///
+    /// With the agent's icon in front (2026-10-02, Victor: *"să afișezi o
+    /// iconiță mică în dreptul promptului … a cui a fost acel prompt"*) the 🤖
+    /// steps aside: Clawd or the Copilot face already says "an agent prompt",
+    /// and says which one. Only an unbadged hook keeps the 🤖.
+    private static func formatPromptLabel(from text: String, hasIcon: Bool) -> String {
+        return hasIcon ? singleLine(text) : Marker.agentPrompt.rawValue + " " + singleLine(text)
     }
+
+    /// The icon's drawn height inside the banner's 40 pt box — a touch shorter
+    /// than the 36 pt bold text it sits beside, so it reads as a mark, not a
+    /// headline.
+    private static let promptIconHeight: CGFloat = 34
 
     enum NotesError: Error { case noSession, noNotesFile }
 
@@ -352,6 +368,9 @@ enum SessionNotesAppender {
                 banner?.onHover = nil
                 banner?.dismissRisingFade()
             }
+            // Shared pill: the agent icon of an earlier prompt offer must not
+            // ride along on a paste of Victor's own.
+            banner.icon = nil
             banner.show(text: text, font: promptFont,
                         hoverCountdown: hoverActionDuration, hoverNudge: .down)
         }
@@ -370,6 +389,7 @@ enum SessionNotesAppender {
             pendingPrompt = nil
             banner.onHover = nil
             resultDismissWork?.cancel()
+            banner.icon = nil
             banner.show(text: text, font: promptFont)
             let work = DispatchWorkItem { [weak banner] in
                 resultDismissWork = nil

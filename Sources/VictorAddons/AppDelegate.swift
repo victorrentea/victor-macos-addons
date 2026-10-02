@@ -617,8 +617,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // 9.5 s offer pill. If the pill is hovered, `onAccepted` marks the
             // stored copy sent, so the 🤖 history panel shows it retired
             // instead of offering the room the same line twice.
-            let id = PromptCaptureStore.shared.record(prompt, source: PromptSource.parse(source))
-            SessionNotesAppender.offerPrompt(prompt, onAccepted: {
+            let agent = PromptSource.parse(source)
+            let id = PromptCaptureStore.shared.record(prompt, source: agent)
+            SessionNotesAppender.offerPrompt(prompt, source: agent, onAccepted: {
                 if let id { PromptCaptureStore.shared.markSent(id) }
             })
             return "{\"captured\":true,\"stored\":\(id != nil)}"
@@ -1093,6 +1094,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestBannerRise = { [weak self] mode in
             DispatchQueue.main.async {
                 guard let banner = self?.promptCaptureBanner else { return }
+                banner.icon = nil
                 if mode == "up" || mode == "down" || mode == "1" {
                     banner.onHover = { [weak banner] in banner?.dismissRisingFade() }
                     banner.onHoverCountdownExpired = { [weak banner] in banner?.dismissRisingFade() }

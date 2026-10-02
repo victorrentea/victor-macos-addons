@@ -34,6 +34,14 @@ through it; only *when* Victor decides changes.
   (`~/.claude/hooks/capture-prompt.sh`, `~/.copilot/hooks/capture-prompt.sh`) now append
   `?src=` to the same route; a hook that sends none still captures, just unbadged, so the
   parameter can never become a reason a prompt is lost.
+- **The offer pill wears the same face** (2026-10-02): the bottom-left pill puts the
+  agent's icon — Clawd or the Copilot mark, `PromptSource.icon`, read off the VS Code
+  extensions at runtime like the panel's — in front of the prompt, and drops the 🤖
+  then (the icon already says "an agent prompt", and which one). An unbadged hook, or
+  a missing icon file, keeps the 🤖. The banner is shared with the ⌘⌃S undo pill and
+  the result flashes, so those set `icon = nil`; and `show()` on an already-visible
+  pill re-applies the icon (`applyIcon`), so a Copilot prompt replacing a Claude one
+  does not keep Clawd. The notes line itself is unchanged: still `- 🤖 <text>`.
 - **`sent` is the whole state.** The pill's hover (`offerPrompt`'s new `onAccepted`) and
   the panel's Send button set the same flag, so a prompt that already reached the
   participants' Prompts tab shows a retired "Sent" button instead of offering the room

@@ -297,15 +297,13 @@ private final class PromptRowView: NSTableCellView {
     private let age = NSTextField(labelWithString: "")
     private let body = FittedLine()
 
-    /// The agent's own icon, read off the Mac at runtime — nothing brand-owned
-    /// is bundled. Claude from its app, Copilot from the extension VS Code
-    /// ships; nil falls back to `PromptSource.badge`.
+    /// The agent's own icon (`PromptSource.icon`); a missing one falls back
+    /// to `PromptSource.badge`.
     private static let icons: [PromptSource: NSImage] = {
         var out: [PromptSource: NSImage] = [:]
-        // Clawd, Claude Code's own mark — these prompts are Claude Code's.
-        if let clawd = ClaudeCodeIcon.image(height: 16) { out[.claude] = clawd }
-        let copilot = "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions/copilot/assets/copilot.png"
-        if let image = NSImage(contentsOfFile: copilot) { out[.copilot] = image }
+        for source in [PromptSource.claude, .copilot] {
+            if let image = source.icon(height: 16) { out[source] = image }
+        }
         return out
     }()
 

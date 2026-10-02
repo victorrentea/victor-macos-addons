@@ -186,6 +186,9 @@ final class BottomLeftBanner {
         let borderUp: CAShapeLayer
         let borderRight: CAShapeLayer
         let label: NSTextField
+        /// Built on every panel, hidden while `icon` is nil, so a pill that is
+        /// re-shown in place can gain, lose or swap its picture (`applyIcon`).
+        let iconView: NSImageView
         /// Kept so `updateText` can re-measure and resize the box to hug the
         /// new text (still capped at `maxWidthFraction` of this screen).
         let font: NSFont
@@ -203,8 +206,11 @@ final class BottomLeftBanner {
     /// says it faster, which is the whole argument for the icon column in the
     /// menu bar too.
     ///
-    /// Set before `show`; carried into every panel that show builds. Nil is the
-    /// old behaviour to the pixel: the inset it contributes is zero.
+    /// Set before `show`; carried into every panel that show builds, and into
+    /// the visible ones when `show` reuses them — a prompt from Copilot landing
+    /// on a pill still showing Claude's must not keep Claude's face. A bare
+    /// `updateText` leaves it alone. Nil is the old behaviour to the pixel: the
+    /// inset it contributes is zero.
     var icon: NSImage?
 
     /// The icon's box, and the gap between it and the text. Sized off the pill
@@ -336,6 +342,7 @@ final class BottomLeftBanner {
         let palette = Self.palette(isDark: Self.isDarkNow(), glassOnly: glassOnly)
         applyPalette(palette)
         if isVisible {
+            applyIcon()
             updateText(text)
             updateBackgroundColor(backgroundColor)
             applyArrow(hoverNudge)
@@ -366,6 +373,19 @@ final class BottomLeftBanner {
         hoverTintBase = palette.hoverTintBase
         for entry in panels {
             entry.label.textColor = palette.text
+        }
+    }
+
+    /// Put the current `icon` on the visible panels and shift the label past it
+    /// (or back). The width follows in the `updateText` that comes right after;
+    /// the label frame is set here because `resize` skips a width that did not
+    /// change, which is exactly the case of a pill already capped at max width.
+    private func applyIcon() {
+        for entry in panels {
+            entry.iconView.image = icon
+            entry.iconView.isHidden = icon == nil
+            entry.label.frame = Self.mainLabelFrame(pillWidth: entry.pill.frame.width,
+                                                    font: entry.font, iconInset: iconInset)
         }
     }
 
@@ -1131,16 +1151,15 @@ final class BottomLeftBanner {
         // Left of the text, vertically centred in the pill, and pinned to the
         // left edge so it does not drift when the pill resizes around a longer
         // sentence.
-        if let icon = icon {
-            let view = NSImageView(frame: NSRect(x: Style.leftPadding,
+        let iconView = NSImageView(frame: NSRect(x: Style.leftPadding,
                                                  y: (Style.boxHeight - Self.iconSize) / 2,
                                                  width: Self.iconSize, height: Self.iconSize))
-            view.image = icon
-            view.imageScaling = .scaleProportionallyUpOrDown
-            view.imageAlignment = .alignCenter
-            view.autoresizingMask = [.maxXMargin]
-            pill.addSubview(view)
-        }
+        iconView.image = icon
+        iconView.isHidden = icon == nil
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.imageAlignment = .alignCenter
+        iconView.autoresizingMask = [.maxXMargin]
+        pill.addSubview(iconView)
 
         // Progressive border: a transparent overlay view (topmost in the pill so
         // the strokes sit above the glass/tint/label) hosting the two orange
@@ -1168,7 +1187,7 @@ final class BottomLeftBanner {
         return PanelEntry(panel: panel, pill: pill, tint: tint, whitenTint: whitenTint,
                           arrow: arrow,
                           borderUp: borderUp, borderRight: borderRight,
-                          label: label,
+                          label: label, iconView: iconView,
                           font: font, screen: screen)
     }
 
