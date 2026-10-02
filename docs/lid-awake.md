@@ -7,8 +7,8 @@ update); `rc` is the sessions opened from the phone over remote control.
 `Always` (raw `always`) is new: it holds the lid open **whatever is running** —
 no Claude gate, no internet gate (`LidAwakePolicy.decide(always:)`). The 20%
 battery floor still stands it down, because an unwatched `SleepDisabled`
-drains the Mac to zero in the bag. Every redeploy that touched this set it to
-`Always` via `/test/lid-awake/mode/always`.
+drains the Mac to zero in the bag. From a script:
+`curl 127.0.0.1:55123/test/lid-awake/mode/always`.
 
 **Three states since 2026-09-21, in a submenu of their own** — `😴 Claude
 insomnia` with `Off`, `Interactive only` and `Background too`, Victor's shape.
