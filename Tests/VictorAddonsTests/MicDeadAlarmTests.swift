@@ -55,4 +55,8 @@ final class MicDeadAlarmTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/mic-dead?screens=all"), .testMicDead("all"))
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/mic-dead/state"), .testMicDeadState)
     }
+
+    func testBatteryNoticeIsTheIconAndThePercentOnly() {
+        XCTAssertEqual(DjiBatteryNotice.text(percent: 10), "🎤 10%")
+    }
 }

@@ -111,10 +111,14 @@ final class MicDeadAlarm {
 }
 
 /// 🎤 The DJI transmitter's battery, when it is low: the app's ordinary
-/// bottom-left notification for 5 s, `🎤 DJI TX battery ≈10 %`, each time the
+/// bottom-left notification for 5 s, `🎤 10%`, each time the
 /// reading changes while it is under 20 % (Victor: "să o afișezi din % în %
 /// pentru 5 sec când e sub 20 %"). On the receiver's 7-step gauge that is
 /// twice: level 6 (DJI's own warning) and level 7 (shutdown follows).
+///
+/// **The icon alone names the mic** (2026-10-02, Victor: *"nu mai scrie «DJI»
+/// … doar icon-ul lui … plus bateria"*): 🎤 is the DJI's glyph in `MicRoster`,
+/// and a percentage next to it can only be a battery.
 ///
 /// Shown through the app's shared `StatusBanner` (`show`), so it takes its
 /// turn with every other corner message instead of stacking on top of one.
@@ -124,7 +128,7 @@ final class DjiBatteryNotice {
 
     init(show: @escaping (String) -> Void) { self.show = show }
 
-    static func text(percent: Int) -> String { "🎤 DJI TX battery ≈\(percent) %" }
+    static func text(percent: Int) -> String { "🎤 \(percent)%" }
 
     func show(level: Int, percent: Int) {
         let text = Self.text(percent: percent)
