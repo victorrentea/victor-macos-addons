@@ -92,6 +92,33 @@ final class SleepChimeTests: XCTestCase {
                        "willSleep cannot make a sound — the audio device is already refusing to start")
     }
 
+    func testTheLidCloseHoldsTheSleepForTheToneThenLetsGo() throws {
+        // 2026-10-02: the tone moved to the lid-close edge. The order is the
+        // whole feature — flag up, tone, flag down, sleep — and a tone played
+        // after the flag drops is a tone racing the sleep it announces.
+        let src = try source("LidAwake.swift")
+        guard let start = src.range(of: "private func announceSleep()") else {
+            return XCTFail("LidAwake.announceSleep not found")
+        }
+        let body = String(src[start.upperBound...])
+        let steps = ["setSleepDisabled(true)", "SleepChime.sound()", "setSleepDisabled(false)", "sleepNow()"]
+        var cursor = body.startIndex
+        for step in steps {
+            guard let r = body.range(of: step, range: cursor..<body.endIndex) else {
+                return XCTFail("announceSleep must call \(step) after \(steps.prefix(while: { $0 != step }).joined(separator: ", "))")
+            }
+            cursor = r.upperBound
+        }
+    }
+
+    func testOnlyABatteryLidCloseSoundsTheSleepTone() throws {
+        // Victor, 2026-10-02: the sleep tone is for the bag. On AC a lid that
+        // sleeps the Mac stays silent.
+        let src = try source("LidAwake.swift")
+        XCTAssertTrue(src.contains("if !PowerMonitor.isOnAC() { announceSleep() }"),
+                      "the sleep tone must be gated on battery in announceLidClose")
+    }
+
     func testTheChimeBlocksRatherThanSchedulingItself() throws {
         let src = try source("SleepChime.swift")
         XCTAssertTrue(src.contains("Thread.sleep(forTimeInterval:"),

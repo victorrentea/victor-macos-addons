@@ -268,7 +268,7 @@ final class LidAwake {
     /// input that tells a release owed five last beats from a release nobody
     /// could have heard (lid open, on AC, or never beating at all).
     private var wasBeating = false
-    /// Set while `announceIfStayingUp`'s three beats are in the air, so a
+    /// Set while `announceLidClose`'s three beats are in the air, so a
     /// `.hold` tick landing among them does not put the mute back mid-way.
     private var announcing = false
     /// Set while the five last beats are in the air, so a tick landing in the
@@ -304,7 +304,7 @@ final class LidAwake {
     /// flight must not drop the lid guard.
     func startIfEnabled() {
         // The lid is watched whatever the mode: "a lid close always makes a
-        // sound" does not depend on 😴 being armed. See `announceIfStayingUp`.
+        // sound" does not depend on 😴 being armed. See `announceLidClose`.
         watchLid()
         guard LidAwakeSettings.isEnabled else { return }
         // `apply`, not `setMode`: re-arming must not write the mode back, or a
@@ -471,7 +471,7 @@ final class LidAwake {
     ///
     /// Installed once at launch and never removed: since the evening of
     /// 2026-09-23 it also serves the lid closes this feature is not holding —
-    /// see `announceIfStayingUp`.
+    /// see `announceLidClose`.
     private func watchLid() {
         guard lidNotifyPort == nil else { return }
         let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
@@ -493,7 +493,7 @@ final class LidAwake {
             lid.lidWasClosed = closed
             overlayInfo("LidAwake: lid \(closed ? "closed" : "opened")\(moved ? "" : " (again — a wake, not the lid)")")
             if LidAwakeSettings.isEnabled { lid.tick() }
-            if closed && moved { lid.announceIfStayingUp() }
+            if closed && moved { lid.announceLidClose() }
         }, me, &lidNotifier)
         guard kr == KERN_SUCCESS else {
             IONotificationPortDestroy(port)
@@ -503,26 +503,28 @@ final class LidAwake {
         lidNotifyPort = port
     }
 
-    /// **Every lid close makes a sound, on AC as much as on battery
-    /// (2026-09-23).** The pulse only runs on battery, so on the charger a shut
-    /// lid that stayed up — a Claude working, an external display (clamshell),
-    /// `SleepDisabled` set by hand — used to be silent, and silence is the one
-    /// answer that cannot be told apart from "asleep". Now the two outcomes
-    /// are the same everywhere:
+    /// **Every lid close makes a sound (2026-09-23, the sleep half 2026-10-02).**
+    /// The two outcomes:
     ///
-    /// - the Mac stays up → the three quick lub-dubs, here;
-    /// - the Mac sleeps → *nothing yet*: `SleepChime` on `willSleepNotification`
-    ///   was measured dead on 2026-09-23 (docs/lid-awake.md, "The door never opened").
+    /// - the Mac stays up → the three quick lub-dubs, here — on AC as much as
+    ///   on battery: a shut lid that stayed up on the charger (a Claude working,
+    ///   an external display, `SleepDisabled` set by hand) used to be silent,
+    ///   and silence cannot be told apart from "asleep";
+    /// - the Mac sleeps → the long tone, **on battery only** (`announceSleep`).
+    ///   On AC a sleeping lid stays silent: the charger is the desk, not the bag.
     ///
     /// Runs after the tick, so a lid close the pulse already answered (on
     /// battery, a Claude working: `.beat` plays the same three beats) is not
-    /// answered twice. The output is taken up for the three beats and put back
-    /// right after — this is one confirmation, not a pulse, so a muted desk Mac
-    /// is unmuted for two seconds and no longer.
-    private func announceIfStayingUp() {
+    /// answered twice, and neither is one the tick just turned into a 🫀
+    /// flatline — the flatline ends in the very tone `announceSleep` would play.
+    /// The output is taken up for the three beats and put back right after —
+    /// this is one confirmation, not a pulse, so a muted desk Mac is unmuted
+    /// for two seconds and no longer.
+    private func announceLidClose() {
+        if farewellInFlight { return }
         if let last = lastBeatAt, Date().timeIntervalSince(last) < 2 { return }
         guard Self.isSleepDisabled() || !Self.clamshellCausesSleep() else {
-            // macOS is about to sleep on this lid; the tone is SleepChime's.
+            if !PowerMonitor.isOnAC() { announceSleep() }
             return
         }
         overlayInfo("LidAwake: lid closed and the Mac stays up — three quick beats")
@@ -536,6 +538,42 @@ final class LidAwake {
             // A pulse that started meanwhile owns the boost now.
             if !self.wasBeating { self.boostForBeats(false) }
         }
+    }
+
+    /// **The long tone as the lid sleeps the Mac, on battery (2026-10-02).**
+    ///
+    /// *"Mereu există un semnal sonor când îl închid pe baterie … poate însemna
+    /// să-l ții puțin treaz."* `willSleep` was measured useless for this
+    /// (docs/lid-awake.md, "The door never opened": coreaudiod has stopped
+    /// starting output by then). This plays on the lid-close edge instead, with
+    /// the kernel flag raised for the length of the tone so the sleep waits for
+    /// it, then drops the flag and asks for the sleep itself — the same
+    /// tone-before-release order the 🫀 flatline uses.
+    ///
+    /// Runs on `queue` and blocks it (≤ `SleepChime.maxBlock`): no tick can
+    /// land in the middle and release or sleep the Mac under the tone.
+    /// `SleepChime.sound()` puts the volume and the mute back before it returns.
+    ///
+    /// **Unproven:** whether a flag raised *after* the close still catches a
+    /// sleep the kernel has already scheduled. If it does not, the tone races a
+    /// ~4 s lid-to-sleep gap; the log line below says which one won.
+    private func announceSleep() {
+        overlayInfo("LidAwake: lid closed on battery and the Mac is going to sleep — the long tone first")
+        let started = Date()
+        let raised = Self.setSleepDisabled(true)
+        if !raised {
+            overlayError("LidAwake: could not raise SleepDisabled — the tone races the sleep")
+        }
+        SleepChime.sound()
+        overlayInfo("LidAwake: sleep tone done in \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+        guard raised else { return }
+        // A flag left up here is a Mac that never sleeps in a bag — so a refusal
+        // is retried once and shouted about, not shrugged off.
+        if !Self.setSleepDisabled(false), !Self.setSleepDisabled(false) {
+            overlayError("LidAwake: SleepDisabled is stuck at 1 after the sleep tone — the lid will not sleep the Mac")
+            return
+        }
+        if Self.isLidClosed(), !PowerMonitor.isOnAC() { Self.sleepNow() }
     }
 
     // MARK: - The tick

@@ -788,18 +788,43 @@ inside one, so `announceIfStayingUp` decided "stays up" and played three beats
 into a Mac that had no audio (three more 15 s timeouts). The lid watcher now
 answers only a real open→closed transition (`lidWasClosed`).
 
-**Decided 2026-09-23: no sound on an ordinary sleep — case closed.** Offered
-the design below, Victor declined it ("fără beep la somn normal"). A lid close
-that sleeps the Mac stays silent; the three beats (stays up) and the 🫀 flatline
-(a hold ending) are the only lid sounds. Do not bring the chime back.
+**Decided 2026-09-23: no sound on an ordinary sleep** — reversed on
+2026-10-02, see the next section.
 
-The rejected design, kept so nobody re-derives it: the app
+The design that was rejected that night, kept so nobody re-derives it: the app
 has to own the lid-close sleep, the way the 🫀 flatline already does. Keep
 `SleepDisabled` up while the lid is open; on close, play the tone on an awake
 Mac, then drop the flag and `pmset sleepnow`. The cost is that a dead app then
 means a lid that does not sleep the Mac (hot bag), and that idle sleep with the
 lid open would have to be re-implemented here — so it needs a watchdog that
 clears the flag when the app is gone, and cannot be shipped unattended.
+
+## The tone is back, on battery, from the lid edge (2026-10-02)
+
+*"Mereu există un semnal sonor când îl închid pe baterie … poate însemna să-l
+ții puțin treaz."* Every lid close **on battery** now makes one of three sounds:
+
+| lid comes down on battery… | sound |
+|---|---|
+| a Claude working → the Mac stays up | three quick lub-dubs, then the pulse |
+| the last Claude finishes as it closes | 🫀 flatline (ends in the long tone) |
+| nothing holding it → the Mac sleeps | **the long tone** (`LidAwake.announceSleep`) |
+
+On AC the "stays up" three beats remain; a lid that sleeps the Mac on AC stays
+silent (Victor, same day).
+
+**The light variant, not the one above.** Nothing changes while the lid is
+open. On the open→closed edge, `announceSleep` raises `SleepDisabled`, plays
+`SleepChime.sound()` (≤ 3 s, volume/mute restored inside), drops the flag and
+calls `pmset sleepnow`. It runs on LidAwake's queue and blocks it, so no tick
+can release or sleep the Mac under the tone. The app-dies risk is a ~2 s window,
+not "for as long as the lid is open".
+
+**Unproven at commit time:** whether a flag raised *after* the close still
+vetoes a sleep the kernel has already scheduled (measured lid→sleep gap on
+battery: ~4.5 s). The log says which won: `sleep tone done in N s` followed by
+`pmset sleepnow`, against `pmset -g log`'s `Entering Sleep state` timestamp.
+If the sleep wins, the fallback is the full design above.
 
 ## The 20% floor
 

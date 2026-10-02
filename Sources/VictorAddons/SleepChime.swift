@@ -60,12 +60,14 @@ enum SleepChimePolicy {
 /// Silence now means something has actually gone wrong, which is the only
 /// thing a missing signal should ever mean.
 ///
-/// **It blocks the sleep, on purpose.** `NSWorkspace.willSleepNotification` is
-/// delivered *before* the machine goes down and the system waits for its
-/// observers to return, so the handler sounds the file and sits on the main
-/// thread until it has finished. `AddonSounds.play` cannot be used for this:
-/// it hops to the main queue with `async`, which here schedules the playback
-/// for after the handler has returned — i.e. for a Mac that is already asleep.
+/// **It blocks its caller until the tone has played, on purpose.** It used to
+/// run on `NSWorkspace.willSleepNotification`, which turned out to arrive after
+/// coreaudiod stops starting output (2026-09-23, docs/lid-awake.md). Since
+/// 2026-10-02 `LidAwake.announceSleep` calls it on the lid-close edge, on
+/// battery, with `SleepDisabled` raised — and drops the flag only once this
+/// returns, so the sleep waits for the tone. `AddonSounds.play` cannot be used
+/// for this: it hops to the main queue with `async`, which would let the
+/// caller release the sleep before the tone had started.
 ///
 /// **And it restores the audio before returning, not after.** The same trap
 /// `LidAwake.hold` documents: a mute put back on the line after the sleep is a
@@ -99,8 +101,8 @@ enum SleepChime {
     /// file can never turn closing the lid into a wait.
     static let maxBlock: TimeInterval = 3.0
 
-    /// Sound it. Call from `NSWorkspace.willSleepNotification`, on the main
-    /// thread, and let it block.
+    /// Sound it, blocking until done. Call from `LidAwake.announceSleep` with the
+    /// Mac held awake — never from `willSleepNotification` (see above).
     static func sound() {
         if let last = LidAwake.lastFarewellAt, Date().timeIntervalSince(last) < afterFarewellQuiet {
             overlayInfo("SleepChime: the flatline just ended in the tone — not repeating it")
