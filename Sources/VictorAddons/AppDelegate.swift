@@ -2273,8 +2273,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             targetGlobal: { [weak self] in self?.breakTimer.tokenTargetGlobal },
             onArrival: { [weak self] in
                 guard let self, self.breakTimer.isShowing else { return }
+                let outcome = self.breakTimer.coffeeMinute
+                guard outcome != .ignore else { return }
                 self.breakTimer.addSeconds(-60)
                 self.breakTimer.reactToMinuteRemoved()
+                if outcome == .subtractAndWin {
+                    // The coffees emptied the UNTIL BREAK watch: the effects
+                    // app cheers and turns the next cups into fireworks.
+                    overlayInfo("☕ −1 took UNTIL BREAK to zero → break won")
+                    EffectsProxy.fire("/effect/coffee/won")
+                }
             })
     }
 

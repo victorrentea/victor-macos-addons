@@ -55,6 +55,24 @@ enum BreakTimerModel {
     /// the only corner of the retina nothing else claims.
     static func opensTopLeft(title: String) -> Bool { title == untilBreakTitle }
 
+    /// What a ☕'s "−1" does when it lands on the watch.
+    enum CoffeeMinute: Equatable {
+        /// The watch is already at zero, gonging: there is no minute left to
+        /// take, and taking one would cancel the expiry and restart the gong.
+        case ignore
+        case subtract
+        /// The minute takes the "UNTIL BREAK" watch to zero: the room has
+        /// voted its break in, which is what the 🤠 yee-haw and the big
+        /// fireworks bursts in Victor Effects are for — and only this.
+        case subtractAndWin
+    }
+
+    static func coffeeMinute(title: String, remaining: Int) -> CoffeeMinute {
+        if remaining <= 0 { return .ignore }
+        if title == untilBreakTitle, remaining <= 60 { return .subtractAndWin }
+        return .subtract
+    }
+
     /// Format remaining seconds as `MM:SS`. Minutes are NOT capped at 59 — one
     /// hour shows `60:00` to keep the two-group "watch" look. Negative values
     /// clamp to `00:00`.

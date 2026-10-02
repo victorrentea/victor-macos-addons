@@ -871,7 +871,7 @@ case testTerminalFont
     /// `/test/focus-playlist` is deliberately absent: it is local.
     static let proxiedTestAliases: Set<String> = [
         "/test/sonar", "/test/beethoven", "/test/phoenix", "/test/money",
-        "/test/coffee", "/test/coffee/pop", "/test/iris",
+        "/test/coffee", "/test/coffee/pop", "/test/coffee/won", "/test/iris",
         "/test/snow", "/test/snow/stop",
         "/test/elephant", "/test/elephant/stop",
         "/test/panda", "/test/panda/stop",

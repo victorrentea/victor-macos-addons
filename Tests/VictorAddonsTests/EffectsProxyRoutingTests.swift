@@ -95,7 +95,7 @@ final class EffectsProxyRoutingTests: XCTestCase {
         // forwarded under the SAME spelling, which is why the effects app serves
         // them too instead of a renamed set.
         for path in ["/test/sonar", "/test/beethoven", "/test/phoenix", "/test/money",
-                     "/test/coffee", "/test/coffee/pop", "/test/iris",
+                     "/test/coffee", "/test/coffee/pop", "/test/coffee/won", "/test/iris",
                      "/test/snow", "/test/snow/stop",
                      "/test/elephant", "/test/elephant/stop",
                      "/test/panda", "/test/panda/stop",

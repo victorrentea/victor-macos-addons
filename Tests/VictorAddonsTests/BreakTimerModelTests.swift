@@ -153,4 +153,24 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertTrue(BreakTimerModel.opensTopLeft(title: BreakTimerModel.untilBreakTitle))
         XCTAssertFalse(BreakTimerModel.opensTopLeft(title: "BREAK"))
     }
+
+    func testTheMinuteThatEmptiesTheUntilBreakWatchWinsTheBreak() {
+        let until = BreakTimerModel.untilBreakTitle
+        XCTAssertEqual(BreakTimerModel.coffeeMinute(title: until, remaining: 61), .subtract)
+        XCTAssertEqual(BreakTimerModel.coffeeMinute(title: until, remaining: 60), .subtractAndWin)
+        // Under a minute left, the −1 cuts it short — that is still a win.
+        XCTAssertEqual(BreakTimerModel.coffeeMinute(title: until, remaining: 12), .subtractAndWin)
+    }
+
+    func testARealBreakIsNeverWonByCoffee() {
+        // Coffees during a menu-started break only shave it; the yee-haw is for
+        // the watch the room voted in.
+        XCTAssertEqual(BreakTimerModel.coffeeMinute(title: "BREAK", remaining: 30), .subtract)
+    }
+
+    func testAMinuteLandingOnAZeroWatchIsIgnored() {
+        // Already gonging: subtracting would cancel the expiry and restart it.
+        XCTAssertEqual(BreakTimerModel.coffeeMinute(title: BreakTimerModel.untilBreakTitle, remaining: 0), .ignore)
+        XCTAssertEqual(BreakTimerModel.coffeeMinute(title: "BREAK", remaining: 0), .ignore)
+    }
 }

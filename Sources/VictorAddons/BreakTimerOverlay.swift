@@ -67,6 +67,11 @@ final class BreakTimerController {
     /// disrupting a countdown that's already running).
     var isShowing: Bool { panel != nil }
 
+    /// What a landing ☕ "−1" does to the countdown on screen right now.
+    var coffeeMinute: BreakTimerModel.CoffeeMinute {
+        BreakTimerModel.coffeeMinute(title: titleText, remaining: remaining)
+    }
+
     // Fullscreen-on-idle: after `fullscreenIdleSeconds` of total inactivity the
     // panel fills the retina (a black "break screen"), every OTHER display goes
     // black, and the Mac is kept awake; any input restores everything.
