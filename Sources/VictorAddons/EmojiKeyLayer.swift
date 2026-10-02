@@ -334,7 +334,9 @@ enum EmojiKeyLayer {
     /// would both want B otherwise — and B's bug changed glyph the same day:
     /// 🐛 is a caterpillar, and the beetle 🪲 is what a bug looks like
     /// everywhere else the word is used. Same key, same meaning, a picture that
-    /// reads at keyboard size.
+    /// reads at keyboard size. The beetle lasted ten days: on 2026-10-02 the
+    /// ladybug 🐞 replaced it — still a bug, still a beetle, but one that reads
+    /// as friendly rather than as vermin.
     ///
     /// S for sheep (2026-09-22) — the same rule, on a letter this board could
     /// take freely: the only S bound anywhere near it is ⌘⌃S's note grab, and
@@ -350,7 +352,7 @@ enum EmojiKeyLayer {
           1: "🐑",   // S — sheep
           5: "🪿",   // G — goose
           8: "😂",   // C — crying laughter
-         11: "🪲",   // B — bug, the beetle rather than the caterpillar
+         11: "🐞",   // B — bug, the ladybug rather than the caterpillar or the beetle
          35: "🪂",   // P — parachute, off ⌥⇧8
          46: "✉️",   // M — mail
     ]
