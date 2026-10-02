@@ -2013,7 +2013,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Main thread, like the openers it replaced.
     /// One number per ⌘⌃F press, shared by the probe and the call behind it.
     /// Main thread only, like `startFocusPlaylist` itself.
-    static var focusPressCounter = 0
+    ///
+    /// **Seeded from the clock, not from 0** (2026-10-02). The extension's worker
+    /// remembers the presses it already handled (`claimed` in `focus-tab.js`)
+    /// and outlives this app: after a restart that did not also reload the
+    /// extension, a counter starting at 0 re-sent press 1, 2, 3… — all "already
+    /// handled", all dropped without a word, and ⌘⌃F did nothing.
+    static var focusPressCounter = Int(Date().timeIntervalSince1970 * 1000)
 
     func startFocusPlaylist() {
         let spec = AppDelegate.focusPlaylistTab
@@ -2028,6 +2034,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // read the second as a new one — see `ChromeBridge.focusOrOpen(press:)`.
         AppDelegate.focusPressCounter += 1
         let press = AppDelegate.focusPressCounter
+        overlayInfo("🎧 ⌘⌃F press \(press) → Chrome extension")
 
         chromeBridge?.focusOrOpen(spec, url: nil, on: .zero, press: press)
         FocusPlaylist.resolveRandomUrl { url in
