@@ -22,11 +22,17 @@ enum LidAwakeMode: String, CaseIterable {
     /// Those **and** sessions driven from the phone, which hold no
     /// `caffeinate` and are recognised by their transcript instead.
     case background
+    /// **Whatever is running** (2026-10-02, Victor: *"keeps the laptop on
+    /// whatever, even if Claude is running or not"*). No session gate and no
+    /// internet gate — only the 20% battery floor still lets it go, because a
+    /// flag nobody watches drains the Mac to zero in the bag.
+    case always
 
     /// Which of the two signals this mode is willing to stay awake for. Pure,
     /// so the table is a test rather than a walk through `UserDefaults`.
     var holdsInteractive: Bool { self != .off }
-    var holdsRemote: Bool { self == .background }
+    var holdsRemote: Bool { self == .background || self == .always }
+    var holdsRegardless: Bool { self == .always }
 }
 
 enum LidAwakeSettings {
@@ -393,6 +399,7 @@ final class LidAwake {
         let offlineFor = net.offlineFor()
         let action = LidAwakePolicy.decide(
             enabled: LidAwakeSettings.isEnabled,
+            always: LidAwakeSettings.mode.holdsRegardless,
             claudeWorking: !working.isEmpty,
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
@@ -565,7 +572,9 @@ final class LidAwake {
         // `caffeinate`, so without this the pids above would hold a bagged
         // laptop awake all night waiting for a Wi-Fi that is not coming back.
         let offlineFor = net.offlineFor()
-        let nowStalled = offlineFor >= LidAwakePolicy.offlineGrace
+        // `always` ignores the network, so there is no outage to announce.
+        let nowStalled = !LidAwakeSettings.mode.holdsRegardless
+            && offlineFor >= LidAwakePolicy.offlineGrace
         if nowStalled != stalled {
             if nowStalled {
                 overlayInfo("LidAwake: no internet for \(Int(offlineFor))s — "
@@ -578,6 +587,7 @@ final class LidAwake {
 
         let action = LidAwakePolicy.decide(
             enabled: LidAwakeSettings.isEnabled,
+            always: LidAwakeSettings.mode.holdsRegardless,
             claudeWorking: !working.isEmpty,
             lidClosed: Self.isLidClosed(),
             onAC: PowerMonitor.isOnAC(),
@@ -900,8 +910,9 @@ final class LidAwake {
                 // wakes up during the flatline with the link still down is the
                 // same parked turn we just decided not to hold the lid open
                 // for, so the offline gate is re-checked here too.
-                if !self.workingNow().isEmpty,
-                   self.net.offlineFor() < LidAwakePolicy.offlineGrace {
+                if LidAwakeSettings.mode.holdsRegardless
+                    || (!self.workingNow().isEmpty
+                        && self.net.offlineFor() < LidAwakePolicy.offlineGrace) {
                     overlayInfo("LidAwake: a Claude started again during the flatline — still holding")
                     return
                 }

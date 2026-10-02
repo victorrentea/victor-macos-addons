@@ -1,5 +1,15 @@
 # 😴 Claude insomnia (was 🔋 Claude prevents sleep)
 
+**Four states since 2026-10-02: `Off` / `Claude` / `Claude/rc` / `Always`.**
+The first three are the old `off` / `interactive` / `background` renamed (the
+raw values in `UserDefaults` did not move, so nobody's mode changes on an
+update); `rc` is the sessions opened from the phone over remote control.
+`Always` (raw `always`) is new: it holds the lid open **whatever is running** —
+no Claude gate, no internet gate (`LidAwakePolicy.decide(always:)`). The 20%
+battery floor still stands it down, because an unwatched `SleepDisabled`
+drains the Mac to zero in the bag. Every redeploy that touched this set it to
+`Always` via `/test/lid-awake/mode/always`.
+
 **Three states since 2026-09-21, in a submenu of their own** — `😴 Claude
 insomnia` with `Off`, `Interactive only` and `Background too`, Victor's shape.
 They are *ordered* (off ⊂ interactive ⊂ background), which is a picker rather

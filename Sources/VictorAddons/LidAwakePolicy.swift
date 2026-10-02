@@ -86,6 +86,7 @@ enum LidAwakePolicy {
     ///   caller and test on the pre-2026-09-15 behaviour.
     static func decide(
         enabled: Bool,
+        always: Bool = false,
         claudeWorking: Bool,
         lidClosed: Bool,
         onAC: Bool,
@@ -124,7 +125,8 @@ enum LidAwakePolicy {
         // for — a mid-flight `claude` loop is.
         let stalled = offlineFor >= offlineGrace
         let releaseSleeps = lidClosed && (!onAC || clamshellCausesSleep)
-        guard claudeWorking, !stalled else { return (holding && releaseSleeps) ? .farewell : .release }
+        // `always` holds whatever is (not) running, online or not.
+        guard always || (claudeWorking && !stalled) else { return (holding && releaseSleeps) ? .farewell : .release }
 
         return (lidClosed && !onAC) ? .beat : .hold
     }

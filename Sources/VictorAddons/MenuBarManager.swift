@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 1, 22:05"
+    static let BUILD_TIME = "Oct 1, 22:35"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -1016,20 +1016,22 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         static func label(_ mode: LidAwakeMode) -> String {
             switch mode {
             case .off: return "Off"
-            case .interactive: return "Interactive only"
-            case .background: return "Background too"
+            case .interactive: return "Claude"
+            case .background: return "Claude/rc"
+            case .always: return "Always"
             }
         }
 
-        /// The parent's short word for the mode (2026-09-22, Victor's):
-        /// `+background` because it is interactive *plus* the phone's
-        /// sessions. `Off` carried a 😴 for an hour and lost it (2026-09-23,
+        /// The parent's short word for the mode — the row's own label since
+        /// 2026-10-02 (Victor: Off / Claude / Claude/rc / Always; `rc` = the
+        /// sessions opened from the phone over remote control). `Off` carried a 😴 for an hour and lost it (2026-09-23,
         /// Victor: *"Off fără emoji după"*) — the row already starts with one.
         static func short(_ mode: LidAwakeMode) -> String {
             switch mode {
             case .off: return "Off"
-            case .interactive: return "interactive"
-            case .background: return "+background"
+            case .interactive: return "Claude"
+            case .background: return "Claude/rc"
+            case .always: return "Always"
             }
         }
 

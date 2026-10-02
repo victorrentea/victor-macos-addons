@@ -27,6 +27,26 @@ final class LidAwakePolicyTests: XCTestCase {
             .standDown)
     }
 
+    // MARK: - `always`: no Claude gate, no internet gate, only the floor
+
+    func testAlwaysHoldsWithNoClaudeWorkingAndNoInternet() {
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, always: true, claudeWorking: false,
+                                  lidClosed: true, onAC: false, battery: 80, offlineFor: 3600),
+            .beat)
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, always: true, claudeWorking: false,
+                                  lidClosed: false, onAC: true, battery: 80),
+            .hold)
+    }
+
+    func testAlwaysStillStandsDownAtTheFloor() {
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, always: true, claudeWorking: false,
+                                  lidClosed: true, onAC: false, battery: 10),
+            .standDown)
+    }
+
     // MARK: - When to make a sound
 
     func testOpenLidHoldsButStaysSilent() {

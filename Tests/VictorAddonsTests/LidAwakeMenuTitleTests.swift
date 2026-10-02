@@ -79,6 +79,13 @@ final class LidAwakeMenuTitleTests: XCTestCase {
         XCTAssertTrue(LidAwakeMode.background.holdsRemote)
     }
 
+    func testAlwaysHoldsEverythingAndThenSome() {
+        XCTAssertTrue(LidAwakeMode.always.holdsInteractive)
+        XCTAssertTrue(LidAwakeMode.always.holdsRemote)
+        XCTAssertTrue(LidAwakeMode.always.holdsRegardless)
+        XCTAssertFalse(LidAwakeMode.background.holdsRegardless)
+    }
+
     // MARK: - Nobody's lid guard changes underneath them
 
     func testAMacThatHadTheOldSwitchOnLandsInBackground() {
