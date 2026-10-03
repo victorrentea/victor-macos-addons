@@ -347,12 +347,17 @@ enum EmojiKeyLayer {
     /// — ⌃⌥M is bound to nothing here — and ⌥M's 🤪 keeps its key: the rule is
     /// a letter that means the word, not a letter reclaimed from a board that
     /// already works.
+    ///
+    /// W for war (2026-10-03): crossed swords. The Romanian *săbii* would want
+    /// S, which the sheep already holds, so the board falls back to the English
+    /// word — the same move A made for *autobuz*, in the other direction.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
           1: "🐑",   // S — sheep
           5: "🪿",   // G — goose
           8: "😂",   // C — crying laughter
          11: "🐞",   // B — bug, the ladybug rather than the caterpillar or the beetle
+         13: "⚔️",   // W — war, crossed swords
          35: "🪂",   // P — parachute, off ⌥⇧8
          46: "✉️",   // M — mail
     ]
