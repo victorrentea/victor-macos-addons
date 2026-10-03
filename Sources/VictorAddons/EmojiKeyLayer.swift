@@ -355,6 +355,9 @@ enum EmojiKeyLayer {
     /// 5 for tired (2026-10-03): the first digit on this board, and on purpose —
     /// ⌥5 is 😵‍💫, so ⌃⌥5 puts its exhausted sibling 🫩 on the same key rather
     /// than spending a letter. Two faces of one state, one key to remember.
+    ///
+    /// N for nor (2026-10-03) — the Romanian word, since "cloud" would want C,
+    /// which crying laughter already holds: the move A made for *autobuz*.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
           1: "🐑",   // S — sheep
@@ -364,6 +367,7 @@ enum EmojiKeyLayer {
          13: "⚔️",   // W — war, crossed swords
          23: "🫩",   // 5 — tired, the sibling of ⌥5's 😵‍💫
          35: "🪂",   // P — parachute, off ⌥⇧8
+         45: "☁️",   // N — nor, a cloud
          46: "✉️",   // M — mail
     ]
 

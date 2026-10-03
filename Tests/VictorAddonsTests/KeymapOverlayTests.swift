@@ -326,6 +326,8 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[8], "😂")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[46], "✉️")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[13], "⚔️")
+        // N for nor (cloud): C was taken by crying laughter.
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[45], "☁️")
         // 5 pairs with ⌥5: dizzy on ⌥, tired on ⌃⌥ — same key, sibling faces.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[23], "😵‍💫")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[23], "🫩")
