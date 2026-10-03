@@ -351,6 +351,10 @@ enum EmojiKeyLayer {
     /// W for war (2026-10-03): crossed swords. The Romanian *săbii* would want
     /// S, which the sheep already holds, so the board falls back to the English
     /// word — the same move A made for *autobuz*, in the other direction.
+    ///
+    /// 5 for tired (2026-10-03): the first digit on this board, and on purpose —
+    /// ⌥5 is 😵‍💫, so ⌃⌥5 puts its exhausted sibling 🫩 on the same key rather
+    /// than spending a letter. Two faces of one state, one key to remember.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
           1: "🐑",   // S — sheep
@@ -358,6 +362,7 @@ enum EmojiKeyLayer {
           8: "😂",   // C — crying laughter
          11: "🐞",   // B — bug, the ladybug rather than the caterpillar or the beetle
          13: "⚔️",   // W — war, crossed swords
+         23: "🫩",   // 5 — tired, the sibling of ⌥5's 😵‍💫
          35: "🪂",   // P — parachute, off ⌥⇧8
          46: "✉️",   // M — mail
     ]
