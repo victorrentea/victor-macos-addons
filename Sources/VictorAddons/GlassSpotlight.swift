@@ -44,7 +44,6 @@ final class GlassSpotlight {
     private var panel: SpotlightPanel?
     private var glass: NSVisualEffectView?
     private var decorations: CALayer?
-    private let outline = CAShapeLayer()
     private let legend = CATextLayer()
     private let legendPill = CALayer()
     private var screenFrame: CGRect = .zero
@@ -92,7 +91,6 @@ final class GlassSpotlight {
         tick()
         stopTimer()
         drag = nil
-        outline.isHidden = true
         legendPill.isHidden = true
         guard let box = hole, box.width >= Self.minimumSide, box.height >= Self.minimumSide else {
             if let previous = holeBeforeDrag {
@@ -135,7 +133,6 @@ final class GlassSpotlight {
             stopTimer()
             drag = nil
             ensurePanel(on: screen)
-            outline.isHidden = true
             legendPill.isHidden = true
             apply(hole: rect.intersection(screen.frame))
         } else if rect == nil {
@@ -233,19 +230,12 @@ final class GlassSpotlight {
         let deco = NSView(frame: root.bounds)
         deco.autoresizingMask = [.width, .height]
         deco.wantsLayer = true
-        let accent = CropSelectionStyle().accent
-        outline.fillColor = nil
-        outline.strokeColor = accent.withAlphaComponent(0.85).cgColor
-        outline.lineWidth = 2
-        outline.lineDashPattern = [6, 4]
-        outline.isHidden = true
         legendPill.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
         legendPill.cornerRadius = 6
         legendPill.isHidden = true
         legend.contentsScale = screen.backingScaleFactor
         legend.alignmentMode = .center
         legendPill.addSublayer(legend)
-        deco.layer?.addSublayer(outline)
         deco.layer?.addSublayer(legendPill)
         root.addSubview(deco)
 
@@ -265,7 +255,7 @@ final class GlassSpotlight {
         // A drawing-handler image, not a bitmap: `NSVisualEffectView` reads a
         // bitmap mask's pixels as backing pixels whatever size the `NSImage`
         // claims, so on Retina the mask came out at half size, pinned to the
-        // top-right — the hole up, right of and smaller than the dashed outline
+        // top-right — the hole up, right of and smaller than the drag
         // (2026-10-04). A handler is drawn at whatever density the view asks for.
         let size = screenFrame.size
         glass.maskImage = NSImage(size: size, flipped: false) { _ in
@@ -275,17 +265,14 @@ final class GlassSpotlight {
         }
     }
 
-    /// While the hand is on it: a dashed line on the box's real edge (the
-    /// feather alone makes the edge a guess) and the crop's own legend under it,
-    /// each key lit while held.
+    /// While the hand is on it: the crop's own legend under the box, each key lit
+    /// while held. No line on the edge — the cut-out is the frame (Victor,
+    /// 2026-10-04: *"nu ai nevoie de marginea punctată galbenă"*).
     private func renderDecorations(box: CGRect, moving: Bool, squaring: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         let local = box.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
-        outline.isHidden = false
-        outline.path = CGPath(rect: local.insetBy(dx: -1, dy: -1), transform: nil)
-        outline.lineWidth = moving ? 3 : 2
 
         let style = CropSelectionStyle()
         let font = NSFont.monospacedDigitSystemFont(ofSize: 15.6, weight: .semibold)
