@@ -227,6 +227,8 @@ final class EmojiPickerController: NSObject {
         if !trimmed.isEmpty {
             for (index, match) in catalog.explain(trimmed, entry).enumerated() {
                 if index > 0 { line.append(NSAttributedString(string: "  +  ", attributes: dim)) }
+                // A crowd synonym reads as "~word": near the meaning, not its name.
+                if match.source == .synonym { line.append(NSAttributedString(string: "~", attributes: dim)) }
                 for (offset, letter) in match.word.enumerated() {
                     let lit = match.matched.contains(offset)
                     line.append(NSAttributedString(string: String(letter), attributes: [
@@ -234,13 +236,11 @@ final class EmojiPickerController: NSObject {
                         .foregroundColor: lit ? EmojiPickerStyle.chord : NSColor.white,
                     ]))
                 }
-                let source: String
                 switch match.source {
-                case .name: source = "nume"
-                case .keyword: source = "cuvânt-cheie"
-                case .synonym: source = "sinonim"
+                case .name: line.append(NSAttributedString(string: " (nume)", attributes: dim))
+                case .keyword: line.append(NSAttributedString(string: " (cuvânt-cheie)", attributes: dim))
+                case .synonym: break
                 }
-                line.append(NSAttributedString(string: " (\(source))", attributes: dim))
             }
             line.append(NSAttributedString(string: "     ", attributes: dim))
         }
