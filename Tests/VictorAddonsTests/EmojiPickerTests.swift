@@ -88,6 +88,31 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(board.slot(for: "🔔").map { [$0.column, $0.row] }, [EmojiBoard.columns - 1, EmojiBoard.rows - 1])
     }
 
+    func testTextSymbolsLikeOneHalfAreFoundFirst() {
+        XCTAssertEqual(catalog.search("half").first?.emoji, "½")
+        XCTAssertEqual(catalog.search("jumatate").first?.emoji, "½")
+        XCTAssertTrue(catalog.search("1/2").prefix(6).contains { $0.emoji == "½" })
+        XCTAssertEqual(catalog.search("degree").first?.emoji, "°")
+        XCTAssertTrue(EmojiPickerPolicy.isTextSymbol("½"))
+        XCTAssertEqual(catalog.entry(for: "½")?.group, 7)
+    }
+
+    func testSearchResultsFillTheBoardFromTheCentreOutwards() {
+        let centre = (column: EmojiBoard.columns / 2, row: EmojiBoard.rows / 2)
+        let cells = EmojiBoard.cellsFromCentre
+        XCTAssertEqual(cells.count, EmojiBoard.columns * EmojiBoard.rows)
+        XCTAssertEqual([cells[0].column, cells[0].row], [centre.column, centre.row], "best match in the middle")
+        XCTAssertEqual([cells[1].column, cells[1].row], [centre.column + 1, centre.row], "the runner-up just right of it")
+        for cell in cells[1...4] {
+            XCTAssertEqual(abs(cell.column - centre.column) + abs(cell.row - centre.row), 1, "ranks 2-5: one arrow away")
+        }
+        let results = catalog.search("half")
+        let board = EmojiBoard.searchLayout(results)
+        XCTAssertEqual(board.slot(column: centre.column, row: centre.row)?.emoji, "½")
+        XCTAssertEqual(board.slots.count, min(results.count, cells.count))
+        XCTAssertEqual(EmojiBoard.searchLayout(Array(repeating: results[0], count: 400)).slots.count, cells.count, "only what fits")
+    }
+
     func testPlainArrowsAreSearchableDistinctFromTheBlueOnesAndDrawnAsText() {
         let plain = catalog.search("left arrow plain").map(\.emoji)
         XCTAssertTrue(plain.contains("←"))
@@ -259,14 +284,14 @@ final class EmojiPickerTests: XCTestCase {
             .init(emoji: "😀", count: 9, last: 10),
             .init(emoji: "🦒", count: 50, last: 600),
             .init(emoji: "🍑", count: 40, last: 600),
-            .init(emoji: "°", count: 30, last: 600),
+            .init(emoji: "𒑳", count: 30, last: 600),
             .init(emoji: "🧑🏾‍💻", count: 2, last: 600),
         ], catalog: catalog, keyed: ["🍑"])
         XCTAssertEqual(board.slot(for: "🦒"), giraffe, "already placed: untouched")
         XCTAssertEqual(board.slot(for: "😀").map { [$0.column, $0.row] }, [0, 0], "most used takes the anchor")
         XCTAssertEqual(board.slot(for: "😃").map { [$0.column, $0.row] }, [1, 0])
         XCTAssertNil(board.slot(for: "🍑"), "keyed")
-        XCTAssertNil(board.slot(for: "°"), "not an emoji the catalogue knows")
+        XCTAssertNil(board.slot(for: "𒑳"), "not an emoji the catalogue knows")
         XCTAssertNotNil(board.slot(for: "🧑‍💻"), "a skin-toned use counts for its base")
         XCTAssertLessThan(board.slot(for: "😀")!.lastUsed, Date(timeIntervalSince1970: 1_000_000), "older than any real pick")
     }

@@ -36,7 +36,7 @@ final class EmojiCatalog {
             overlayError("EmojiPicker: emoji-catalog.json missing or unreadable — the picker opens empty")
             return EmojiCatalog(groups: [], entries: [])
         }
-        return EmojiCatalog(groups: catalog.groups, entries: catalog.entries + plainArrows)
+        return EmojiCatalog(groups: catalog.groups, entries: catalog.entries + plainArrows + textSymbols)
     }()
 
     /// The arrows **without** the blue keycap (Victor, 2026-10-04: *"săgețile
@@ -64,10 +64,48 @@ final class EmojiCatalog {
         ("↺", "counterclockwise open circle arrow", "săgeată circulară în sens antiorar"),
         ("↻", "clockwise open circle arrow", "săgeată circulară în sens orar"),
     ].map { emoji, name, nameRo in
-        let keywords = "arrow plain line text refresh reload", keywordsRo = "săgeată simplă linie text reîncarcă"
-        return EmojiEntry(emoji: emoji, group: 7, name: name, nameRo: nameRo,
-                          nameWords: words(name + " " + nameRo), keywordWords: words(keywords + " " + keywordsRo),
-                          foldedName: fold(name))
+        symbol(emoji, name, nameRo, keywords: "arrow plain line text refresh reload săgeată simplă linie text reîncarcă")
+    }
+
+    /// Typographic symbols that are **not** emoji, so neither `emoji-test.txt`
+    /// nor CoreEmoji lists them — added by hand like the plain arrows (Victor,
+    /// 2026-10-04: "half" did not find ½ at all). The list is what Apple's
+    /// picker remembers him using (½ ° × µ … ⋯ · » ∑ ↷ ⓶) plus their obvious
+    /// siblings. Drawn in the system font (`EmojiPickerPolicy.isTextSymbol`).
+    static let textSymbols: [EmojiEntry] = [
+        ("½", "one half", "o jumătate", "fraction half 1 2 1/2 jumătate fracție"),
+        ("⅓", "one third", "o treime", "fraction third 1 3 1/3 treime fracție"),
+        ("⅔", "two thirds", "două treimi", "fraction thirds 2 3 2/3 treimi fracție"),
+        ("¼", "one quarter", "un sfert", "fraction quarter fourth 1 4 1/4 sfert fracție"),
+        ("¾", "three quarters", "trei sferturi", "fraction quarters 3 4 3/4 sferturi fracție"),
+        ("°", "degree", "grad", "degrees temperature celsius angle grade temperatură unghi"),
+        ("×", "multiplication sign", "semnul înmulțirii", "times multiply cross x ori înmulțit"),
+        ("÷", "division sign", "semnul împărțirii", "divide divided împărțit"),
+        ("±", "plus-minus sign", "plus-minus", "plus minus approximately aproximativ"),
+        ("≈", "almost equal to", "aproximativ egal", "approximately about roughly equal aproape egal"),
+        ("≠", "not equal to", "diferit de", "not equal different inegal diferit"),
+        ("≤", "less-than or equal to", "mai mic sau egal", "less equal lte mic egal"),
+        ("≥", "greater-than or equal to", "mai mare sau egal", "greater equal gte mare egal"),
+        ("∞", "infinity", "infinit", "infinite forever endless infinit"),
+        ("∑", "n-ary summation", "sumă", "sum sigma total sumă"),
+        ("µ", "micro sign", "micro", "micro mu micron"),
+        ("…", "horizontal ellipsis", "puncte de suspensie", "ellipsis dots three suspensie puncte"),
+        ("⋯", "midline horizontal ellipsis", "puncte de suspensie la mijloc", "ellipsis dots three middle suspensie puncte"),
+        ("·", "middle dot", "punct la mijloc", "dot middle bullet interpunct punct"),
+        ("•", "bullet", "buline", "bullet dot list punct listă"),
+        ("«", "left-pointing double angle quotation mark", "ghilimele unghiulare stânga", "guillemet quote quotation ghilimele"),
+        ("»", "right-pointing double angle quotation mark", "ghilimele unghiulare dreapta", "guillemet quote quotation ghilimele"),
+        ("–", "en dash", "linie de pauză scurtă", "dash hyphen range cratimă linie"),
+        ("—", "em dash", "linie de pauză", "dash long hyphen cratimă linie"),
+        ("✓", "check mark (plain)", "bifă (simplă)", "check tick done ok yes bifă gata"),
+        ("↷", "clockwise top semicircle arrow", "săgeată semicirculară în sens orar", "arrow redo clockwise săgeată refă"),
+        ("⓶", "double circled digit two", "cifra doi încercuită dublu", "two 2 circled number doi"),
+    ].map { emoji, name, nameRo, keywords in symbol(emoji, name, nameRo, keywords: keywords) }
+
+    private static func symbol(_ emoji: String, _ name: String, _ nameRo: String, keywords: String) -> EmojiEntry {
+        EmojiEntry(emoji: emoji, group: 7, name: name, nameRo: nameRo,
+                   nameWords: words(name + " " + nameRo), keywordWords: words(keywords),
+                   foldedName: fold(name))
     }
 
     init(groups: [String], entries: [EmojiEntry]) {
@@ -116,8 +154,10 @@ final class EmojiCatalog {
     /// work. Exact beats prefix beats fuzzy; name beats keyword beats extra
     /// synonym, so "cat" puts 🐈 ahead of every face that merely has a cat ear
     /// somewhere in its tags, and a typo never outranks a correct spelling.
-    /// Ties keep the catalog's order, which is Unicode's — the order everyone's
-    /// eye already knows.
+    /// Among equals, the shorter name wins: the query is more of what it is
+    /// called ("jumătate" is all of ½'s Romanian name, a fifth of 🕧's "ora
+    /// douăsprezece și jumătate"). Then the catalog's order, which is
+    /// Unicode's — the order everyone's eye already knows.
     func search(_ query: String, limit: Int = 200) -> [EmojiEntry] {
         let tokens = Self.words(query)
         guard !tokens.isEmpty else { return [] }
@@ -130,7 +170,7 @@ final class EmojiCatalog {
             costs[t][word] = value
             return value
         }
-        var scored: [(score: Int, index: Int)] = []
+        var scored: [(score: Int, length: Int, index: Int)] = []
         for (index, entry) in entries.enumerated() {
             var score = 0
             var matched = true
@@ -146,9 +186,9 @@ final class EmojiCatalog {
             guard matched else { continue }
             if entry.foldedName == whole { score -= 10 }
             else if entry.foldedName.hasPrefix(whole) { score -= 5 }
-            scored.append((score, index))
+            scored.append((score, entry.nameWords.count, index))
         }
-        scored.sort { $0.score != $1.score ? $0.score < $1.score : $0.index < $1.index }
+        scored.sort { ($0.score, $0.length, $0.index) < ($1.score, $1.length, $1.index) }
         return scored.prefix(limit).map { entries[$0.index] }
     }
 
@@ -570,6 +610,40 @@ extension EmojiBoard {
             guard let entry = catalog.entry(for: slot.emoji) else { continue }
             use(entry.emoji, region: Self.region(for: entry), at: slot.lastUsed)
         }
+    }
+}
+
+extension EmojiBoard {
+    /// The board's cells, centre first, then ring after ring outwards — where
+    /// search results go (Victor, 2026-10-04: *"matricea să se umple cu
+    /// rezultate … dispuse în jurul centrului, iar selecția să fie pe cel din
+    /// centru"*). The best match sits in the middle, already selected, and the
+    /// next best are one arrow away from it in every direction. Within a ring:
+    /// clockwise from the right, so rank 2 is just right of rank 1, reading
+    /// order. Cells are square on screen, so plain distance makes the rings
+    /// round.
+    static let cellsFromCentre: [(column: Int, row: Int)] = {
+        let centre = (column: Double(columns - 1) / 2, row: Double(rows - 1) / 2)
+        var cells: [(column: Int, row: Int, distance: Double, angle: Double)] = []
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let dx = Double(column) - centre.column, dy = Double(row) - centre.row
+                // atan2 with y pointing down: 0 = right, then down, left, up.
+                var angle = atan2(dy, dx)
+                if angle < -1e-9 { angle += 2 * .pi }
+                cells.append((column, row, dx * dx + dy * dy, angle))
+            }
+        }
+        cells.sort { abs($0.distance - $1.distance) > 1e-9 ? $0.distance < $1.distance : $0.angle < $1.angle }
+        return cells.map { ($0.column, $0.row) }
+    }()
+
+    /// Search results laid out from the centre outwards, best first. Only
+    /// what fits on the board; a board for showing, never saved.
+    static func searchLayout(_ results: [EmojiEntry]) -> EmojiBoard {
+        EmojiBoard(slots: zip(results, cellsFromCentre).map { entry, cell in
+            EmojiSlot(emoji: entry.emoji, column: cell.column, row: cell.row, lastUsed: .distantPast)
+        })
     }
 }
 

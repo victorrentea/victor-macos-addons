@@ -9,16 +9,17 @@ import AppKit
 /// the external one, so what the eye learns on one screen holds on the other.
 ///
 /// Three zones, top to bottom:
-/// - **search field + match strip.** Typing searches English and Romanian names
-///   and keywords; the matches line up *beside* the field, never in the grid,
-///   so the grid below does not jump around under the eye while you type. The
-///   strip may show a keyed emoji, with its chord printed under it — the one
-///   place it is allowed, because searching for an emoji you forgot is on a key
-///   is exactly when the chord is worth seeing.
+/// - **search field + hint.** Typing searches English and Romanian names and
+///   keywords; beside the field, what the keys do or how many matched.
 /// - **name line.** What the hovered / selected emoji is called, en · ro.
 /// - **the board.** Empty at first; every emoji you use lands on it and stays
 ///   in that cell forever (`EmojiBoard`), so it is a map learnt by position,
 ///   never scrolled. Nothing on a ⌥ / ⌥⇧ / ⌃⌥ key ever appears on it. Clickable.
+///   **While searching, the matches take the board over**, best in the centre
+///   and selected, the rest in rings around it (Victor, 2026-10-04 — it
+///   replaced a one-row strip beside the field, where ½ never made the cut);
+///   an empty field brings the saved board back. A keyed emoji may show up
+///   among the matches, with its chord printed under it.
 ///
 /// **Focus: it never takes it** (2026-10-04). Victor types emoji into
 /// ScreenBrush's text mode, and ScreenBrush drops out of text mode the moment
@@ -42,7 +43,7 @@ final class EmojiPickerController: NSObject {
     private let catalog: EmojiCatalog
     private var panel: EmojiPickerPanel?
     private var field: NSTextField?
-    private var strip: EmojiStripView?
+    private var hint: NSTextField?
     private var grid: EmojiBoardView?
     private var nameLine: NSTextField?
     private var keyed: [String: String] = [:]
@@ -167,12 +168,14 @@ final class EmojiPickerController: NSObject {
         field.frame = NSRect(x: 10 * s, y: (box.frame.height - fieldHeight) / 2, width: fieldWidth - 20 * s, height: fieldHeight)
         box.addSubview(field)
 
-        let stripX = box.frame.maxX + 10 * s
-        let strip = EmojiStripView(frame: NSRect(x: stripX, y: barY, width: W - stripX - pad, height: barHeight), scale: s)
-        strip.keyed = keyed
-        strip.onPick = { [weak self] entry in self?.pick(entry) }
-        strip.onFocus = { [weak self] entry in self?.showName(entry) }
-        root.addSubview(strip)
+        let hintX = box.frame.maxX + 16 * s
+        let hint = NSTextField(labelWithString: "")
+        hint.font = .systemFont(ofSize: 13 * s)
+        hint.textColor = EmojiPickerStyle.header
+        hint.lineBreakMode = .byTruncatingTail
+        let hintHeight = hint.intrinsicContentSize.height
+        hint.frame = NSRect(x: hintX, y: barY + (barHeight - hintHeight) / 2, width: W - hintX - pad, height: hintHeight)
+        root.addSubview(hint)
 
         // Name line under the bar.
         let nameHeight = 22 * s
@@ -190,6 +193,7 @@ final class EmojiPickerController: NSObject {
         EmojiBoardStore.board = board
         let grid = EmojiBoardView(frame: NSRect(x: pad / 2, y: pad / 2, width: W - pad, height: gridTop - pad / 2),
                                   board: board, catalog: catalog, scale: s)
+        grid.keyed = keyed
         grid.onPick = { [weak self] entry in self?.pick(entry) }
         grid.onFocus = { [weak self] entry in self?.showName(entry) }
         grid.onRemove = { [weak self] emoji in
@@ -203,10 +207,9 @@ final class EmojiPickerController: NSObject {
 
         self.panel = panel
         self.field = field
-        self.strip = strip
+        self.hint = hint
         self.grid = grid
         self.nameLine = nameLine
-        strip.hint = "scrie ca să cauți · ↵ inserează · ←→↑↓ alegi · esc"
         refreshQuery()
     }
 
@@ -251,23 +254,21 @@ final class EmojiPickerController: NSObject {
 
     func handle(_ key: EmojiPickerKey) {
         guard isVisible else { return }
-        let searching = !(strip?.results.isEmpty ?? true)
         switch key {
         case .escape, .passThrough:
             close()
         case .enter:
-            if searching, let entry = strip?.selectedEntry { pick(entry) }
-            else if query.trimmingCharacters(in: .whitespaces).isEmpty, let entry = grid?.selectedEntry { pick(entry) }
+            if let entry = grid?.selectedEntry { pick(entry) }
         case .backspace:
             if !query.isEmpty { query.removeLast(); refreshQuery() }
         case .left:
-            searching ? strip?.move(-1) : grid?.move(dx: -1, dy: 0)
+            grid?.move(dx: -1, dy: 0)
         case .right:
-            searching ? strip?.move(1) : grid?.move(dx: 1, dy: 0)
+            grid?.move(dx: 1, dy: 0)
         case .up:
-            if !searching { grid?.move(dx: 0, dy: -1) }
+            grid?.move(dx: 0, dy: -1)
         case .down:
-            if !searching { grid?.move(dx: 0, dy: 1) }
+            grid?.move(dx: 0, dy: 1)
         case .text(let typed):
             query += typed
             refreshQuery()
@@ -277,7 +278,7 @@ final class EmojiPickerController: NSObject {
     }
 
     private func refreshQuery() {
-        guard let field, let strip else { return }
+        guard let field, let hint, let grid else { return }
         let font = NSFont.systemFont(ofSize: 17 * scale)
         if query.isEmpty {
             field.attributedStringValue = NSAttributedString(string: "🔍 caută (en / ro)", attributes: [
@@ -291,9 +292,15 @@ final class EmojiPickerController: NSObject {
             field.attributedStringValue = text
         }
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        strip.query = trimmed
-        strip.results = trimmed.isEmpty ? [] : catalog.search(trimmed)
-        showName(trimmed.isEmpty ? grid?.selectedEntry : strip.selectedEntry)
+        let results = trimmed.isEmpty ? nil : catalog.search(trimmed, limit: EmojiBoard.columns * EmojiBoard.rows)
+        grid.results = results
+        switch results?.count {
+        case nil: hint.stringValue = "scrie ca să cauți · ↵ inserează · ←→↑↓ alegi · esc"
+        case 0: hint.stringValue = "nimic pentru „\(trimmed)”"
+        case 1: hint.stringValue = "1 potrivire"
+        case let count?: hint.stringValue = "\(count) potriviri · cea mai bună în centru"
+        }
+        showName(grid.selectedEntry)
     }
 
     private static func screenID(_ screen: NSScreen) -> CGDirectDisplayID? {
@@ -515,133 +522,31 @@ private final class EmojiPickerBackground: NSView {
     }
 }
 
-/// The search matches, one row beside the field.
-final class EmojiStripView: NSView {
-    private let s: CGFloat
-    var keyed: [String: String] = [:]
-    var onPick: ((EmojiEntry) -> Void)?
-    var onFocus: ((EmojiEntry?) -> Void)?
-    var hint = ""
-    var query = ""
-    var results: [EmojiEntry] = [] {
-        didSet { selected = 0; hovered = nil; needsDisplay = true }
-    }
-    private var selected = 0
-    private var hovered: Int?
-    private var pressed: Int?
-
-    init(frame: NSRect, scale: CGFloat) {
-        s = scale
-        super.init(frame: frame)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    private var cellWidth: CGFloat { 50 * s }
-    private var capacity: Int { max(1, Int(bounds.width / cellWidth)) }
-    private var shown: Int { min(results.count, capacity) }
-
-    var selectedEntry: EmojiEntry? { results.indices.contains(selected) ? results[selected] : nil }
-
-    func move(_ delta: Int) {
-        guard shown > 0 else { return }
-        selected = max(0, min(shown - 1, selected + delta))
-        needsDisplay = true
-        onFocus?(selectedEntry)
-    }
-
-    private func rect(at index: Int) -> NSRect {
-        NSRect(x: CGFloat(index) * cellWidth, y: 0, width: cellWidth, height: bounds.height).insetBy(dx: 2 * s, dy: 2 * s)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard !results.isEmpty else {
-            let text = query.isEmpty ? hint : "nimic pentru „\(query)”"
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13 * s), .foregroundColor: EmojiPickerStyle.header]
-            let size = (text as NSString).size(withAttributes: attributes)
-            (text as NSString).draw(at: NSPoint(x: 6 * s, y: (bounds.height - size.height) / 2), withAttributes: attributes)
-            return
-        }
-        // The last slot says how many more there are, when they don't all fit.
-        let overflow = results.count > capacity
-        let drawn = overflow ? capacity - 1 : shown
-        for index in 0..<drawn {
-            let cell = rect(at: index)
-            let ring: EmojiPickerStyle.Ring = index == pressed ? .press : (index == (hovered ?? selected) ? .hover : .none)
-            EmojiPickerStyle.drawTile(cell, filled: true, ring: ring, scale: s)
-            let entry = results[index]
-            if let chord = keyed[EmojiPickerPolicy.normalized(entry.emoji)] {
-                let top = NSRect(x: cell.minX, y: cell.minY + 14 * s, width: cell.width, height: cell.height - 14 * s)
-                EmojiPickerStyle.drawEmoji(entry.emoji, centeredIn: top, size: 26 * s)
-                let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 10 * s), .foregroundColor: EmojiPickerStyle.chord]
-                let size = (chord as NSString).size(withAttributes: attributes)
-                (chord as NSString).draw(at: NSPoint(x: cell.midX - size.width / 2, y: cell.minY + 2 * s), withAttributes: attributes)
-            } else {
-                EmojiPickerStyle.drawEmoji(entry.emoji, centeredIn: cell, size: 30 * s)
-            }
-        }
-        if overflow {
-            let more = "+\(results.count - drawn)"
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13 * s), .foregroundColor: EmojiPickerStyle.header]
-            let cell = rect(at: drawn)
-            let size = (more as NSString).size(withAttributes: attributes)
-            (more as NSString).draw(at: NSPoint(x: cell.midX - size.width / 2, y: cell.midY - size.height / 2), withAttributes: attributes)
-        }
-    }
-
-    private func index(at point: NSPoint) -> Int? {
-        let overflow = results.count > capacity
-        let drawn = overflow ? capacity - 1 : shown
-        let index = Int(point.x / cellWidth)
-        return index >= 0 && index < drawn ? index : nil
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        let hit = index(at: convert(event.locationInWindow, from: nil))
-        guard hit != hovered else { return }
-        hovered = hit
-        needsDisplay = true
-        onFocus?(hit.map { results[$0] } ?? selectedEntry)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hovered = nil
-        needsDisplay = true
-        onFocus?(selectedEntry)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        pressed = index(at: convert(event.locationInWindow, from: nil))
-        needsDisplay = true
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        let hit = index(at: convert(event.locationInWindow, from: nil))
-        defer { pressed = nil; needsDisplay = true }
-        if let hit, hit == pressed { onPick?(results[hit]) }
-    }
-}
-
 /// The board: `EmojiBoard.columns` × `rows` cells, drawn at whatever size the
 /// panel gives it (square cells, centred), every placed emoji in its own cell.
 final class EmojiBoardView: NSView {
     private let s: CGFloat
     private let catalog: EmojiCatalog
+    /// The saved board — what is shown whenever nothing is being searched.
     var board: EmojiBoard {
+        didSet { if results == nil { relayout(selecting: nil) } }
+    }
+    /// Search matches, best first; `nil` = no search, show `board`. While set,
+    /// they *are* the board: laid out from the centre outwards
+    /// (`EmojiBoard.searchLayout`), the best one selected in the middle.
+    /// Clearing the search brings the saved board back, on the last one used.
+    var results: [EmojiEntry]? {
         didSet {
-            entries = board.slots.map { catalog.entry(for: $0.emoji) }
-            selected = nil; hovered = nil; pressed = nil; disarm()
-            needsDisplay = true
+            guard results != nil || oldValue != nil else { return }
+            relayout(selecting: results == nil ? lastUsedIndex(board) : 0)
         }
     }
+    /// The emoji already on a key, chord by emoji. Only search results can be
+    /// keyed; they show the chord under them, since searching for one you
+    /// forgot is on a key is exactly when the chord is worth seeing.
+    var keyed: [String: String] = [:]
+    /// What is drawn and clicked: `board`, or the results laid out as one.
+    private var layout: EmojiBoard
     private var entries: [EmojiEntry?]
     var onPick: ((EmojiEntry) -> Void)?
     var onFocus: ((EmojiEntry?) -> Void)?
@@ -661,10 +566,28 @@ final class EmojiBoardView: NSView {
         s = scale
         self.catalog = catalog
         self.board = board
+        layout = board
         entries = board.slots.map { catalog.entry(for: $0.emoji) }
         super.init(frame: frame)
         // Start on the one used last: ↵ straight away repeats it.
-        selected = board.slots.indices.max { board.slots[$0].lastUsed < board.slots[$1].lastUsed }
+        selected = lastUsedIndex(board)
+    }
+
+    private func lastUsedIndex(_ board: EmojiBoard) -> Int? {
+        board.slots.indices.max { board.slots[$0].lastUsed < board.slots[$1].lastUsed }
+    }
+
+    private func relayout(selecting index: Int?) {
+        if let results {
+            layout = EmojiBoard.searchLayout(results)
+            entries = results.prefix(layout.slots.count).map { $0 }
+        } else {
+            layout = board
+            entries = board.slots.map { catalog.entry(for: $0.emoji) }
+        }
+        selected = index.flatMap { layout.slots.indices.contains($0) ? $0 : nil }
+        hovered = nil; pressed = nil; disarm()
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -683,7 +606,7 @@ final class EmojiBoardView: NSView {
     }
 
     private func rect(_ index: Int) -> NSRect {
-        rect(column: board.slots[index].column, row: board.slots[index].row)
+        rect(column: layout.slots[index].column, row: layout.slots[index].row)
     }
 
     var selectedEntry: EmojiEntry? { selected.flatMap { entries[$0] } }
@@ -693,11 +616,11 @@ final class EmojiBoardView: NSView {
     /// nothing. Off-axis distance costs double, so → stays on its row while
     /// the row has anything further right.
     func move(dx: Int, dy: Int) {
-        guard !board.slots.isEmpty else { return }
+        guard !layout.slots.isEmpty else { return }
         guard let current = selected else { select(0); return }
-        let from = board.slots[current]
-        let candidates = board.slots.indices.filter { index in
-            let slot = board.slots[index]
+        let from = layout.slots[current]
+        let candidates = layout.slots.indices.filter { index in
+            let slot = layout.slots[index]
             let along = (slot.column - from.column) * dx + (slot.row - from.row) * dy
             return along > 0
         }
@@ -706,7 +629,7 @@ final class EmojiBoardView: NSView {
     }
 
     private func cost(_ index: Int, from: EmojiSlot, dx: Int, dy: Int) -> Int {
-        let slot = board.slots[index]
+        let slot = layout.slots[index]
         let along = abs((slot.column - from.column) * dx + (slot.row - from.row) * dy)
         let across = abs((slot.column - from.column) * dy) + abs((slot.row - from.row) * dx)
         return along + 2 * across
@@ -721,7 +644,7 @@ final class EmojiBoardView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         // Every cell visible, empty ones darker: positions are the whole point
         // of this board, so the eye needs the lattice even where it's empty.
-        let occupied = Set(board.slots.map { $0.row * EmojiBoard.columns + $0.column })
+        let occupied = Set(layout.slots.map { $0.row * EmojiBoard.columns + $0.column })
         for row in 0..<EmojiBoard.rows {
             for column in 0..<EmojiBoard.columns where !occupied.contains(row * EmojiBoard.columns + column) {
                 let r = rect(column: column, row: row)
@@ -729,8 +652,8 @@ final class EmojiBoardView: NSView {
                 EmojiPickerStyle.drawTile(r, filled: false, ring: .none, scale: s)
             }
         }
-        if board.slots.isEmpty {
-            let text = "Aici apar emoji-urile pe care le folosești — fiecare rămâne unde aterizează.\nCaută sus și apasă ↵."
+        if layout.slots.isEmpty {
+            let text = results != nil ? "" : "Aici apar emoji-urile pe care le folosești — fiecare rămâne unde aterizează.\nCaută sus și apasă ↵."
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
             let attributes: [NSAttributedString.Key: Any] = [
@@ -743,14 +666,24 @@ final class EmojiBoardView: NSView {
         // 15% over the old 0.72 (Victor, 2026-10-04): the glyph now reaches the
         // tile's edge on the retina corner, with room to spare on the external.
         let size = cell * 0.83
-        for index in board.slots.indices {
+        for index in layout.slots.indices {
             let r = rect(index)
             guard r.intersects(dirtyRect) else { continue }
             let ring: EmojiPickerStyle.Ring = index == pressed ? .press : (index == (hovered ?? selected) ? .hover : .none)
             EmojiPickerStyle.drawTile(r, filled: true, ring: ring, scale: s)
-            EmojiPickerStyle.drawEmoji(board.slots[index].emoji, centeredIn: r, size: size)
+            let emoji = layout.slots[index].emoji
+            if results != nil, let chord = keyed[EmojiPickerPolicy.normalized(emoji)] {
+                let label = r.height * 0.26
+                let top = NSRect(x: r.minX, y: r.minY, width: r.width, height: r.height - label)
+                EmojiPickerStyle.drawEmoji(emoji, centeredIn: top, size: size * 0.7)
+                let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: label * 0.85), .foregroundColor: EmojiPickerStyle.chord]
+                let chordSize = (chord as NSString).size(withAttributes: attributes)
+                (chord as NSString).draw(at: NSPoint(x: r.midX - chordSize.width / 2, y: r.maxY - label - 3 * s), withAttributes: attributes)
+            } else {
+                EmojiPickerStyle.drawEmoji(emoji, centeredIn: r, size: size)
+            }
         }
-        if let armed = deleteArmed, board.slots.indices.contains(armed) {
+        if let armed = deleteArmed, layout.slots.indices.contains(armed) {
             let x = deleteRect(armed)
             NSColor(srgbRed: 1.0, green: 0.13, blue: 0.13, alpha: 1).setFill()
             NSBezierPath(ovalIn: x).fill()
@@ -780,7 +713,7 @@ final class EmojiBoardView: NSView {
     }
 
     private func index(at point: NSPoint) -> Int? {
-        board.slots.indices.first { rect($0).contains(point) }
+        layout.slots.indices.first { rect($0).contains(point) }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -800,7 +733,7 @@ final class EmojiBoardView: NSView {
         guard hit != hovered else { return }
         hovered = hit
         disarm()
-        if let hit {
+        if let hit, results == nil {
             deleteTimer = Timer.scheduledTimer(withTimeInterval: Self.deleteDelay, repeats: false) { [weak self] _ in
                 guard let self, self.hovered == hit else { return }
                 self.deleteArmed = hit
@@ -824,7 +757,7 @@ final class EmojiBoardView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if let armed = deleteArmed, deleteRect(armed).contains(point) {
-            let emoji = board.slots[armed].emoji
+            let emoji = layout.slots[armed].emoji
             disarm()
             onRemove?(emoji)
             return
