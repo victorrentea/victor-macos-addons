@@ -82,7 +82,7 @@ final class EmojiPickerTests: XCTestCase {
         board.use(catalog.entry(for: "🔄")!)
         board.use(catalog.entry(for: "💘")!)
         board.use(catalog.entry(for: "🔔")!)
-        XCTAssertEqual(board.slot(for: "⬇️").map { [$0.column, $0.row] }, [5, EmojiBoard.rows - 1], "its hand-laid cell")
+        XCTAssertEqual(board.slot(for: "⬇️").map { [$0.column, $0.row] }, [4, EmojiBoard.rows - 1], "its hand-laid cell")
         XCTAssertEqual(board.slot(for: "🔄").map { [$0.column, $0.row] }, [6, EmojiBoard.rows - 5])
         XCTAssertEqual(board.slot(for: "💘").map { [$0.column, $0.row] }, [0, 0], "a smiley-group heart: top left, arrow or not")
         XCTAssertEqual(board.slot(for: "🔔").map { [$0.column, $0.row] }, [EmojiBoard.columns - 1, EmojiBoard.rows - 1])
@@ -155,6 +155,18 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertTrue(EmojiCatalog.plainArrows.contains { $0.emoji == "↗\u{FE0E}" }, "↗ left ⌥⇧U for the board")
     }
 
+    func testGluingTheRosesMovesOnlyThePlacedArrows() {
+        let middle = EmojiBoard.rows - 2, t = Date(timeIntervalSince1970: 5)
+        var board = EmojiBoard(slots: [
+            EmojiSlot(emoji: "⬅️", column: 4, row: middle, lastUsed: t),
+            EmojiSlot(emoji: "➡️", column: 6, row: middle, lastUsed: t),
+            EmojiSlot(emoji: "🚗", column: 12, row: 0, lastUsed: t),
+        ])
+        board.relocateArrowBlock()
+        XCTAssertEqual(board.slots.map { [$0.column, $0.row] }, [[3, middle], [5, middle], [12, 0]])
+        XCTAssertNil(board.slot(for: "⬆️"), "one taken off by hand stays off")
+    }
+
     func testAKeyedArrowAlsoKeepsItsPlainTwinOffTheBoard() {
         let keyed = EmojiPickerPolicy.keyedEmoji([.optionShift: [32: "↖"]])
         var board = EmojiBoard()
@@ -174,13 +186,13 @@ final class EmojiPickerTests: XCTestCase {
         let bottom = EmojiBoard.rows - 1, middle = bottom - 1, top = bottom - 2
         // Blue rose centred on (5, middle): each arrow points away from the hole.
         XCTAssertEqual(["↖️", "⬆️", "⬅️", "➡️", "↙️", "⬇️", "↘️"].map(cell),
-                       [[4, top], [5, top], [4, middle], [6, middle], [4, bottom], [5, bottom], [6, bottom]])
+                       [[3, top], [4, top], [3, middle], [5, middle], [3, bottom], [4, bottom], [5, bottom]])
         XCTAssertEqual(["↖\u{FE0E}", "↑", "←", "→", "↙\u{FE0E}", "↓", "↘\u{FE0E}"].map(cell),
                        [[0, top], [1, top], [0, middle], [2, middle], [0, bottom], [1, bottom], [2, bottom]])
-        XCTAssertEqual(["👆", "👈", "👇"].map(cell), [[9, top], [8, middle], [9, bottom]])
+        XCTAssertEqual(["👆", "👈", "👇"].map(cell), [[8, top], [7, middle], [8, bottom]])
         XCTAssertNil(board.slot(column: 1, row: middle), "the plain rose's centre is empty")
-        XCTAssertTrue(EmojiBoard.isReserved(column: 5, row: middle), "and stays empty: the blue one's too")
-        XCTAssertTrue(EmojiBoard.isReserved(column: 3, row: middle), "the gap between roses")
+        XCTAssertTrue(EmojiBoard.isReserved(column: 4, row: middle), "and stays empty: the blue one's too")
+        XCTAssertTrue(EmojiBoard.isReserved(column: 6, row: middle), "the gap before the hands")
         XCTAssertEqual(cell("↔\u{FE0E}"), [8, bottom - 3])
         XCTAssertEqual(cell("↩\u{FE0E}"), [0, bottom - 4], "plain curved one right above its blue twin")
         XCTAssertEqual(cell("↩️"), [0, bottom - 3])
@@ -210,7 +222,7 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(cell("😃"), [1, 0])
         XCTAssertEqual(cell("🦒"), [EmojiBoard.columns - 1, 0], "moved with its corner")
         XCTAssertEqual(cell("🔔"), [EmojiBoard.columns - 1, EmojiBoard.rows - 1])
-        XCTAssertEqual(cell("⬇️"), [5, EmojiBoard.rows - 1], "arrows to their own corner")
+        XCTAssertEqual(cell("⬇️"), [4, EmojiBoard.rows - 1], "arrows to their own corner")
         XCTAssertEqual(cell("🍕"), [0, (EmojiBoard.rows - 1) / 2])
         XCTAssertEqual(board.slot(for: "😀")?.lastUsed, at)
     }
@@ -264,7 +276,8 @@ final class EmojiPickerTests: XCTestCase {
         let retina = NSRect(x: 0, y: 0, width: 1512, height: 982)
         let external = NSRect(x: 1512, y: 0, width: 1920, height: 1080)
         let alone = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [], mouseLocation: nil)
-        XCTAssertEqual(alone.scale, 1.3, "retina alone: 30% bigger")
+        XCTAssertEqual(alone.scale, 1.3 * 1.4, accuracy: 0.001, "retina alone: 30% bigger, then 40% for bigger tiles")
+        XCTAssertLessThanOrEqual(alone.frame.height, retina.height)
         XCTAssertEqual(alone.frame.maxX, retina.maxX)
         XCTAssertEqual(alone.frame.minY, retina.minY)
         let side = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [external], mouseLocation: NSPoint(x: 100, y: 100))
@@ -272,7 +285,7 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertGreaterThan(side.scale, 1.4)
         let mouseThere = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [external], mouseLocation: NSPoint(x: 2000, y: 500))
         XCTAssertTrue(retina.contains(mouseThere.frame), "never under the cursor")
-        XCTAssertEqual(mouseThere.scale, 1)
+        XCTAssertEqual(mouseThere.scale, 1.4, accuracy: 0.001, "tiles 40% bigger")
         XCTAssertEqual(alone.frame.width / mouseThere.frame.width, 1.3, accuracy: 0.01)
         XCTAssertEqual(alone.frame.height / mouseThere.frame.height, 1.3, accuracy: 0.01)
     }

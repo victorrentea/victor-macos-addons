@@ -494,7 +494,9 @@ struct EmojiBoard: Equatable {
     /// (later the same day: *"față de un centru gol … geografic să arate
     /// bine"*) — each arrow points away from the hole, so ↗ really is up and
     /// to the right of it. Three roses side by side, a free column between
-    /// them: the plain ones, the blue ones, the hands. Above them the curved
+    /// them: the plain ones, the blue ones, the hands. The plain and the blue
+    /// rose touch (Victor, 2026-10-04: *"lipește cele 2 zone de săgeți"*);
+    /// the hands keep one free column before them. Above them the curved
     /// and the media arrows, each plain one right above its blue twin. Top row
     /// first; the bottom row is the board's last. `""` is a hole: the roses'
     /// centres and the gaps between them. A keyed one (🔼 🔽 👉)
@@ -505,9 +507,9 @@ struct EmojiBoard: Equatable {
     static let arrowBlock: [[String]] = [
         ["↩\u{FE0E}", "↪\u{FE0E}", "⤴\u{FE0E}", "⤵\u{FE0E}", "↺", "↻", "🔄", "🔃", "⏪", "⏩", "⏫", "⏬", "🔁", "🔂", "🔀"],
         ["↩️", "↪️", "⤴️", "⤵️", "◀️", "▶️", "🔼", "🔽", "↔\u{FE0E}", "↕\u{FE0E}", "↔️", "↕️"],
-        ["↖\u{FE0E}", "↑", "↗\u{FE0E}", "", "↖️", "⬆️", "↗️", "", "", "👆", ""],
-        ["←", "", "→", "", "⬅️", "", "➡️", "", "👈", "", "👉"],
-        ["↙\u{FE0E}", "↓", "↘\u{FE0E}", "", "↙️", "⬇️", "↘️", "", "", "👇", ""],
+        ["↖\u{FE0E}", "↑", "↗\u{FE0E}", "↖️", "⬆️", "↗️", "", "", "👆", ""],
+        ["←", "", "→", "⬅️", "", "➡️", "", "👈", "", "👉"],
+        ["↙\u{FE0E}", "↓", "↘\u{FE0E}", "↙️", "⬇️", "↘️", "", "", "👇", ""],
     ]
 
     private static func blockRow(_ index: Int) -> Int { rows - arrowBlock.count + index }
@@ -681,6 +683,19 @@ extension EmojiBoard {
 }
 
 extension EmojiBoard {
+    /// The arrow block's layout changed: each arrow already on the board
+    /// moves to its new reserved cell, all at once (the targets are distinct,
+    /// and every one of them was reserved before too, so nothing else is in
+    /// the way). Arrows taken off by hand stay off; nothing else moves.
+    mutating func relocateArrowBlock() {
+        slots = slots.map { slot in
+            guard let cell = Self.reservedCell(for: slot.emoji), (cell.column, cell.row) != (slot.column, slot.row) else { return slot }
+            return EmojiSlot(emoji: slot.emoji, column: cell.column, row: cell.row, lastUsed: slot.lastUsed)
+        }
+    }
+}
+
+extension EmojiBoard {
     /// Lay out the arrow corner (`arrowBlock`), once. Its arrows leave wherever
     /// they had grown and take their fixed cells, keeping their "last used";
     /// whatever else sat on those cells is moved to the free cell nearest its
@@ -832,9 +847,10 @@ enum EmojiBoardStore {
     /// 20 × 10 board, 2 = 25 × 13 with the arrow corner, 3 = the arrow corner
     /// laid out by hand (`EmojiBoard.arrowBlock`), 4 = its compass roses,
     /// 5 = ↗ back in them once it left ⌥⇧U (plain and blue, into their
-    /// reserved cells; nothing else moves).
+    /// reserved cells; nothing else moves), 6 = the blue rose glued to the
+    /// plain one, the hands one column closer (`relocateArrowBlock`).
     static let layoutKey = "EmojiPicker.boardLayout"
-    static let layoutVersion = 5
+    static let layoutVersion = 6
 
     /// Lay a 20 × 10 board out again at 25 × 13 and drop the plain arrows and
     /// 🔄 into the new arrow corner. Once: from then on nothing moves.
@@ -848,11 +864,12 @@ enum EmojiBoardStore {
         }
         if version < 4 {
             current.arrangeArrowBlock(catalog: catalog, keyed: keyed)
-        } else {
+        } else if version < 5 {
             // Only ↗ is new: laying the whole block out again would bring back
             // arrows taken off it by hand.
             current.place(["↗\u{FE0E}", "↗️"].compactMap(catalog.entry(for:)), keyed: keyed)
         }
+        if version < 6 { current.relocateArrowBlock() }
         board = current
         UserDefaults.standard.set(layoutVersion, forKey: layoutKey)
         overlayInfo("EmojiPicker: arrow corner laid out by hand, \(current.slots.count) on the board")

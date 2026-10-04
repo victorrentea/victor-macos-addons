@@ -462,8 +462,11 @@ enum EmojiPickerPlacement {
         // Retina alone (no external to send it to): 30% bigger on both axes,
         // everything scaled together (Victor, 2026-10-04) — there is no other
         // screen to read it on, so it may take more of the slide.
-        let scale: CGFloat = externalFrames.isEmpty ? 1.3 : 1
-        let width = (max(retinaFrame.width * 0.45, 590) * scale).rounded()
+        // Then 40% bigger again, tiles and type alike (Victor, 2026-10-04:
+        // *"increase size of emoji buttons by 40%"*): more panel, same 25 × 13
+        // board, so nothing on it moves. Capped at the retina's width.
+        let scale: CGFloat = (externalFrames.isEmpty ? 1.3 : 1) * 1.4
+        let width = min((max(retinaFrame.width * 0.45, 590) * scale).rounded(), retinaFrame.width)
         // Exactly as tall as the board needs at this width: search bar and name
         // line (`chrome`) plus `rows` square cells — no dead band to waste the
         // corner on.
