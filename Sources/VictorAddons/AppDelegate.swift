@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var controlsVisible = false
     private var eventTapManager: EventTapManager?
     private var keymapOverlayController: KeymapOverlayController?
+    private var emojiPicker: EmojiPickerController?
     private var keymapHoldCoordinator: KeymapHoldCoordinator?
     private var keymapHoldWorkItem: DispatchWorkItem?
     private var transcriptPasteController: TranscriptPasteController?
@@ -229,6 +230,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         let keymapOverlay = KeymapOverlayController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
         keymapOverlayController = keymapOverlay
+        emojiPicker = EmojiPickerController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
         keymapHoldCoordinator = KeymapHoldCoordinator(
             delayProvider: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.screens.count) },
             schedule: { [weak self] delay, fire in
@@ -1171,6 +1173,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 📋 The ⌘⇧V bezel without the keyboard. `pastes: false` for the same
         // reason the menu row uses it, and one more: an agent testing this must
         // not be able to type a paste into whatever Victor has in front of him.
+        tabletServer?.onTestEmojiPicker = { [weak self] query in
+            DispatchQueue.main.async {
+                guard let picker = self?.emojiPicker else { return }
+                if let query { picker.show(); picker.search(query) } else { picker.toggle() }
+            }
+        }
         tabletServer?.onTestClipboardHistory = { [weak self] in
             DispatchQueue.main.async { self?.toggleClipboardHistoryWithoutKeyboard() }
         }
@@ -1775,6 +1783,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         eventTap.onCopySelectionToNotes = {
             DispatchQueue.global(qos: .userInitiated).async { SessionNotesAppender.copySelectionAndAppend() }
+        }
+        eventTap.onEmojiPicker = { [weak self] in
+            self?.emojiPicker?.toggle()
         }
         eventTap.onOpenCalendar = { [weak menuBarManager] in
             menuBarManager?.onOpenCalendar?()

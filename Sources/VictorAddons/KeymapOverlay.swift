@@ -735,6 +735,12 @@ final class KeymapOverlayRenderer {
         KeyDef(row: 3, x: 1130, width: 96, label: "/", code: 44),
     ]
 
+    /// The printed label of a physical key ("F", "5", ";"), for the emoji
+    /// picker to say which chord already types an emoji.
+    static func keyLabel(code: Int) -> String? {
+        keys.first { $0.code == code }?.label.uppercased()
+    }
+
     static func visibleBaseLabel(_ label: String) -> String {
         [";", "'", "\\", "[", "]"].contains(label) ? "" : label.uppercased()
     }

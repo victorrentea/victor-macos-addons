@@ -89,6 +89,9 @@ class EventTapManager {
     var onOpenNotesDoc: (() -> Void)?
     /// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
     var onOpenFocusPlaylist: (() -> Void)?
+    /// 😀 left ⌥ tapped twice — the emoji picker for every emoji not on a key
+    /// (`EmojiPickerController`).
+    var onEmojiPicker: (() -> Void)?
     /// 🔍 ⌘⌃U — flip the screen magnifier between the style a screen share carries
     /// and the one it silently drops.
     var onToggleZoomLens: (() -> Void)?
@@ -172,6 +175,8 @@ private let VK_I: CGKeyCode = 0x22
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F4: CGKeyCode = 0x76
     private let VK_F8: CGKeyCode = 0x64
+    /// 😀 left-⌥ double tap → emoji picker; lives on the tap thread only.
+    private var optionDoubleTap = OptionDoubleTap()
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
     private let MOUSE_BUTTON_4: Int64 = 3  // "back" side button — typed as Return (`BackButtonEnter`)
@@ -347,6 +352,16 @@ private let VK_I: CGKeyCode = 0x22
             let hasCmdFlag = flags.contains(.maskCommand)
             let hasCtrlFlag = flags.contains(.maskControl)
             let historyOpen = isClipboardHistoryOpen
+            // Never swallowed: ⌥ still has to reach apps as ⌥, the picker just
+            // listens for the rhythm.
+            if optionDoubleTap.flagsChanged(
+                keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode)),
+                optionDown: hasOpt,
+                optionAlone: hasOpt && !hasShift && !hasCmdFlag && !hasCtrlFlag,
+                at: ProcessInfo.processInfo.systemUptime
+            ) {
+                DispatchQueue.main.async { [weak self] in self?.onEmojiPicker?() }
+            }
             DispatchQueue.main.async { [weak self] in
                 self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag)
                 // Letting go of ⌘ is how ⌘⇧V ends — the same way it ends in
@@ -570,6 +585,7 @@ private let VK_I: CGKeyCode = 0x22
             return Unmanaged.passUnretained(event)
         }
 
+        optionDoubleTap.interrupt()
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
         let hasCmd   = flags.contains(.maskCommand)

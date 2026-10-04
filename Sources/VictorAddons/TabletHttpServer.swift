@@ -90,6 +90,7 @@ case testTerminalFont
         /// only way to look at it while an agent is working, since pressing the
         /// real shortcut means taking Victor's keyboard.
         case testClipboardHistory
+        case testEmojiPicker(String?)
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
         case testScreenshotMark(String?)
@@ -315,6 +316,10 @@ case testTerminalFont
     /// 📋 Open the clipboard-history bezel (clipboard-only mode — nothing is
     /// pasted, since no window asked for it).
     var onTestClipboardHistory: (() -> Void)?
+    /// 😀 Toggles the ⌥⌥ emoji picker, as the double tap would; `q=` opens it
+    /// with that already typed into the search, so the strip can be checked
+    /// without a keyboard.
+    var onTestEmojiPicker: ((String?) -> Void)?
     var onTestScreenshotMark: ((String?) -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestGroupPhotoBreakEnd: (() -> Void)?
@@ -619,6 +624,8 @@ case testTerminalFont
                 self.onTestScreenshotCrop?()
             case .testClipboardHistory:
                 self.onTestClipboardHistory?()
+            case .testEmojiPicker(let query):
+                self.onTestEmojiPicker?(query)
             case .testScreenshotMark(let at):
                 self.onTestScreenshotMark?(at)
             case .testGroupPhoto:
@@ -998,6 +1005,8 @@ case testTerminalFont
             return .testScreenshotCrop
         case "/test/clipboard-history":
             return .testClipboardHistory
+        case "/test/emoji-picker":
+            return .testEmojiPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/screenshot/mark":
             return .testScreenshotMark(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/group-photo":
