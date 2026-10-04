@@ -9,7 +9,7 @@ import VictorMacKit
 /// să fie cumva blurate, nu brusc trecute la glass."*
 ///
 /// **The gesture is the crop's**, and so is the code that reads it: ⌘ moves the
-/// box instead of resizing it, ⌃ holds it square, and the box never leaves the
+/// box instead of resizing it, and the box never leaves the
 /// screen the drag started on — `RegionDrag` in victor-mac-kit, the same value
 /// `CropSelectionOverlay` drives. Only the trigger differs: ⇧ has to be down when
 /// the wheel goes down, and from then on it is not needed any more.
@@ -31,6 +31,11 @@ final class GlassSpotlight {
 
     /// Feather, in points, *outside* the box: everything in the box stays sharp.
     static let feather: CGFloat = 40
+    /// How much of the blur shows at full strength. The effect view's radius is
+    /// not ours to set, so a lighter blur is a mask that is never fully opaque —
+    /// not `alphaValue` on the view, which made the glass vanish altogether (Victor,
+    /// 2026-10-04: *"poți face blurul un pic mai puțin intens?"*).
+    static let glassOpacity: CGFloat = 0.75
     /// Nothing smaller than this is a box — it is a click that slipped.
     private static let minimumSide: CGFloat = 6
 
@@ -154,7 +159,7 @@ final class GlassSpotlight {
     // MARK: - The loop
 
     /// Pushed positions draw on arrival; the timer is for what only it can see —
-    /// ⌘ and ⌃ going down or up while the mouse stands still, and Esc should
+    /// ⌘ going down or up while the mouse stands still, and Esc should
     /// the tap ever have stopped answering.
     private func startTimer() {
         guard timer == nil else { return }
@@ -173,10 +178,11 @@ final class GlassSpotlight {
         if CGEventSource.keyState(.combinedSessionState, key: 53) { dismiss(); return }
         let flags = NSEvent.modifierFlags
         let mouse = pushed ?? NSEvent.mouseLocation
-        let box = drag.update(mouse: mouse, command: flags.contains(.command), control: flags.contains(.control))
+        // No ⌃ square here, unlike the crop: Victor, 2026-10-04, *"n-am nevoie de square"*.
+        let box = drag.update(mouse: mouse, command: flags.contains(.command), control: false)
         self.drag = drag
         apply(hole: box)
-        renderDecorations(box: box, moving: drag.moving, squaring: drag.squaring)
+        renderDecorations(box: box, moving: drag.moving)
     }
 
     // MARK: - Drawing
@@ -230,8 +236,6 @@ final class GlassSpotlight {
         let deco = NSView(frame: root.bounds)
         deco.autoresizingMask = [.width, .height]
         deco.wantsLayer = true
-        legendPill.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        legendPill.cornerRadius = 6
         legendPill.isHidden = true
         legend.contentsScale = screen.backingScaleFactor
         legend.alignmentMode = .center
@@ -260,32 +264,30 @@ final class GlassSpotlight {
         let size = screenFrame.size
         glass.maskImage = NSImage(size: size, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            GlassSpotlightMask.draw(in: ctx, canvas: size, hole: local, feather: Self.feather)
+            GlassSpotlightMask.draw(in: ctx, canvas: size, hole: local, feather: Self.feather,
+                                    opacity: Self.glassOpacity)
             return true
         }
     }
 
-    /// While the hand is on it: the crop's own legend under the box, each key lit
-    /// while held. No line on the edge — the cut-out is the frame (Victor,
-    /// 2026-10-04: *"nu ai nevoie de marginea punctată galbenă"*).
-    private func renderDecorations(box: CGRect, moving: Bool, squaring: Bool) {
+    /// While the hand is on it: the crop's `⌘ move` under the box, brighter while
+    /// ⌘ is held. Straight on the glass, no plate behind it, and no line on the
+    /// edge — the cut-out is the frame (Victor, 2026-10-04: *"nu ai nevoie de
+    /// marginea punctată galbenă"*, *"deseneaz-o pe blur fără fundal negru, discret"*).
+    private func renderDecorations(box: CGRect, moving: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         let local = box.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
 
         let style = CropSelectionStyle()
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 15.6, weight: .semibold)
-        let text = NSMutableAttributedString()
-        for (word, lit) in [(style.movingSuffix, moving), (style.squareSuffix, squaring)] {
-            text.append(NSAttributedString(
-                string: (text.length == 0 ? "" : "   ") + word,
-                attributes: [.font: font, .foregroundColor: lit ? style.accent : NSColor(white: 1, alpha: 0.45)]))
-        }
+        let text = NSAttributedString(string: style.movingSuffix, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor(white: 1, alpha: moving ? 0.9 : 0.5)])
         legend.string = text
         let measured = text.size()
-        let size = CGSize(width: measured.width + 20, height: measured.height + 12)
-        legend.frame = CGRect(x: 0, y: 6, width: size.width, height: measured.height)
+        let size = CGSize(width: measured.width.rounded(.up), height: measured.height.rounded(.up))
+        legend.frame = CGRect(origin: .zero, size: size)
         let bounds = CGRect(origin: .zero, size: screenFrame.size)
         var y = local.minY - size.height - 8
         if y < 4 { y = min(local.maxY + 8, bounds.height - size.height - 4) }
@@ -325,10 +327,12 @@ enum GlassSpotlightMask {
         return ctx.makeImage()
     }
 
-    /// The mask's alpha into `ctx`, in points, `steps` rings across the feather.
-    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat, steps: Int = 64) {
+    /// The mask's alpha into `ctx`, in points, `steps` rings across the feather;
+    /// `opacity` is the alpha outside the feather.
+    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat,
+                     steps: Int = 64, opacity: CGFloat = 1) {
         ctx.setBlendMode(.copy)
-        ctx.setFillColor(gray: 0, alpha: 1)
+        ctx.setFillColor(gray: 0, alpha: opacity)
         ctx.fill(CGRect(origin: .zero, size: canvas))
         // Concentric rounded rects from the feather's outer edge in to the box,
         // each one *replacing* the alpha under it (`.copy`): one step a point,
@@ -336,7 +340,7 @@ enum GlassSpotlightMask {
         let steps = max(1, min(64, steps))
         for i in 0...steps {
             let f = CGFloat(steps - i) / CGFloat(steps)        // 1 at the outer edge → 0 at the box
-            let alpha = f * f * (3 - 2 * f)
+            let alpha = f * f * (3 - 2 * f) * opacity
             let rect = hole.insetBy(dx: -feather * f, dy: -feather * f)
             guard rect.width > 0, rect.height > 0 else { continue }
             let radius = min(feather * f, rect.width / 2, rect.height / 2)
