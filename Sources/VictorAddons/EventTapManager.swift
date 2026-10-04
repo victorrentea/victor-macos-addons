@@ -96,6 +96,13 @@ class EventTapManager {
     /// (`ShareZoom`). Vertical delta after `ScrollReversal`, and whether it came
     /// from a trackpad (pixels) rather than a wheel (lines). Called on main.
     var onShareZoomScroll: ((Double, Bool) -> Void)?
+    /// 🔦 ⇧ + wheel-drag — the glass spotlight (`GlassSpotlight`). Global CG
+    /// points, as the events carry them. All called on main.
+    var onGlassSpotlightBegin: ((CGPoint) -> Void)?
+    var onGlassSpotlightMove: ((CGPoint) -> Void)?
+    var onGlassSpotlightEnd: ((CGPoint) -> Void)?
+    /// Esc while the glass is up.
+    var onGlassSpotlightDismiss: (() -> Void)?
     /// ⚠️ ⌥+scroll (⌥ alone) — the macOS magnifier, which a share never carries.
     /// Seen by its own HID tap (`optionScrollCallbackFunc`); the scroll still goes
     /// through, `ShareZoomHint` decides whether to warn. Called on main.
@@ -169,6 +176,7 @@ private let VK_I: CGKeyCode = 0x22
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
     private let MOUSE_BUTTON_4: Int64 = 3  // "back" side button — typed as Return (`BackButtonEnter`)
     private let MOUSE_BUTTON_5: Int64 = 4  // "forward" side button — used by Wispr Flow push-to-talk
+    private let MOUSE_BUTTON_MIDDLE: Int64 = 2  // the wheel — ⇧ + drag is the 🔦 glass spotlight
 
     /// True between a back-button down we turned into a Return and its matching
     /// up, so that up can be swallowed too. Leaving the app underneath an
@@ -177,6 +185,26 @@ private let VK_I: CGKeyCode = 0x22
     /// Like `zoomAccumulator`, this lives only on the tap's run-loop thread
     /// (events are handled serially there), so it needs no lock.
     private var backButtonSwallowed = false
+
+    /// 🔦 A ⇧ + wheel press we took: its drags and its release are ours too,
+    /// whatever ⇧ does meanwhile (it need not stay down). Tap thread only.
+    private var spotlightDragging = false
+    /// The Esc press that took the glass down — its release is swallowed too.
+    private var spotlightEscSwallowed = false
+    /// Set from main whenever the glass goes up or down, read here on every Esc.
+    private let spotlightLock = NSLock()
+    private var spotlightUp = false
+
+    func setGlassSpotlightUp(_ up: Bool) {
+        spotlightLock.lock()
+        spotlightUp = up
+        spotlightLock.unlock()
+    }
+
+    private var isGlassSpotlightUp: Bool {
+        spotlightLock.lock(); defer { spotlightLock.unlock() }
+        return spotlightUp
+    }
 
     // MARK: Cmd+scroll → terminal font zoom
     /// Terminals where Cmd+scroll is turned into a font-size zoom (Cmd+= / Cmd+-).
@@ -243,6 +271,8 @@ private let VK_I: CGKeyCode = 0x22
             // Wheel×2 gesture): the back button is turned into a Return, and the
             // up half of a press we acted on has to be swallowed with the down.
             CGEventMask(1 << CGEventType.otherMouseUp.rawValue) |
+            // The 🔦 glass spotlight is the one wheel *drag* this app reads.
+            CGEventMask(1 << CGEventType.otherMouseDragged.rawValue) |
             CGEventMask(1 << CGEventType.scrollWheel.rawValue)
 
         let tap = CGEvent.tapCreate(
@@ -325,6 +355,38 @@ private let VK_I: CGKeyCode = 0x22
                 // the clip, let go.
                 if historyOpen && !hasCmdFlag { self?.onClipboardHistoryCommandReleased?() }
             }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // 🔦 ⇧ + wheel-drag → `GlassSpotlight`. ⇧ is read at the press only:
+        // from there the press, every drag and the release are ours, and ⇧ may
+        // be let go (Victor: *"să nu mai fie nevoie să apăs Shift în continuu"*).
+        // All three halves are swallowed — the app underneath must never see a
+        // middle-up it never saw a middle-down for. The cost is a ⇧-middle-click
+        // anywhere else on the machine. Walkie Talkie never competes for it: its
+        // wheel gestures all require a bare press.
+        if type == .otherMouseDown || type == .otherMouseDragged || type == .otherMouseUp,
+           event.getIntegerValueField(.mouseEventButtonNumber) == MOUSE_BUTTON_MIDDLE {
+            let at = event.location
+            if type == .otherMouseDown, event.flags.contains(.maskShift) {
+                spotlightDragging = true
+                DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightBegin?(at) }
+                return nil
+            }
+            if spotlightDragging {
+                if type == .otherMouseDragged {
+                    DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightMove?(at) }
+                } else if type == .otherMouseUp {
+                    spotlightDragging = false
+                    DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightEnd?(at) }
+                } else {
+                    // A second bare press while ours is still down: not ours.
+                    return Unmanaged.passUnretained(event)
+                }
+                return nil
+            }
+        }
+        if type == .otherMouseDragged {
             return Unmanaged.passUnretained(event)
         }
 
@@ -462,6 +524,25 @@ private let VK_I: CGKeyCode = 0x22
                 }
             }
             return nil  // eat the scroll so the terminal never scrolls
+        }
+
+        // 🔦 Esc takes the glass spotlight down, and goes no further — the
+        // crop's rule: the app underneath must not also abandon a prompt or
+        // close a dialog. Its release is eaten with it. ⌘/⌃/⌥ + Esc are left
+        // alone (⌃⌘⎋ is the hands-off takeover, ⌥⌘⎋ Force Quit).
+        if type == .keyDown || type == .keyUp,
+           CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_ESCAPE {
+            if type == .keyUp, spotlightEscSwallowed {
+                spotlightEscSwallowed = false
+                return nil
+            }
+            let chord = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate])
+            if type == .keyDown, chord.isEmpty, spotlightDragging || isGlassSpotlightUp {
+                spotlightEscSwallowed = true
+                spotlightDragging = false
+                DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightDismiss?() }
+                return nil
+            }
         }
 
         // Keyboard events

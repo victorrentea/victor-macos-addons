@@ -208,6 +208,45 @@ itself is not touched: the local zoom still happens.
   path, not the ordering against the magnifier (it ignores synthetic scrolls): that half
   rests on the tap list, and on the first real ⌥+scroll by hand.
 
+### 🔦 ⇧ + wheel-drag → glass everywhere but one box (`GlassSpotlight`, 2026-10-04)
+
+Victor, by mail: hold ⇧, drag with the wheel pressed, and everything on that screen
+except the box goes behind frosted glass; the box's edges melt into the glass rather
+than stopping at a line; Esc clears it. *"Copiază-ți controalele din modul în care tai
+crop"* — so it is the crop's gesture, read by the crop's code.
+
+- **The keys are `RegionDrag` in victor-mac-kit**, extracted from `CropSelectionOverlay`
+  the same day so both overlays drive one value: ⌘ moves the box instead of resizing
+  it, ⌃ holds it square, the box stays on the screen the drag began on. The legend
+  under the box is the crop's own strings (`CropSelectionStyle`), each key lit while
+  held. Only the trigger differs: **⇧ is read at the press and never again**, so it
+  can be let go as soon as the drag has started.
+- **The tap owns all three halves.** `EventTapManager` swallows the ⇧-middle press,
+  every drag and the release (the orphan-up rule), and pushes positions to main on
+  arrival — Walkie Talkie's lesson, a 60 Hz timer alone lets the box lag the hand.
+  The timer still runs during the drag for ⌘/⌃ changes with the mouse at rest. The
+  price: ⇧-middle-click does nothing anywhere else. Walkie Talkie never competes:
+  all of its wheel gestures need a bare press.
+- **After the release the glass stays** (click-through, everything under it still
+  works) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
+  alone. A new ⇧-wheel-drag replaces the box; one too small to be a box (< 6 pt, a
+  slipped click) keeps the previous one, or takes the glass down if there was none.
+- **The glass** is an `NSVisualEffectView` (`.behindWindow`, `.fullScreenUI`) whose
+  `maskImage` is `GlassSpotlightMask`: opaque, clear inside the box, and a smoothstep
+  ramp over **40 pt outside** it — so nothing inside the box is softened. One pixel a
+  point is enough for a mask whose every edge is a 40-point ramp; it is redrawn only
+  when the box moves. `GlassSpotlightMaskTests` reads the pixels back.
+- **Both zooms work by where the panel sits**: at `.screenSaver − 1`, just under
+  `ShareZoom`'s panel, so `ShareZoom`'s capture contains the glass and magnifies it
+  together with what the box frames — exactly what the macOS magnifier (⌥-scroll) does
+  to the whole framebuffer. The box is in desktop points in both cases, which is what
+  the pointer is in too (neither zoom remaps input), so its corner sits under the
+  cursor the room sees. A Zoom share carries it like any window.
+- **Why not victor-effects**: that repo is public and cannot depend on the private kit
+  the gesture lives in, and `ShareZoom` is in this process.
+- Headless: `GET /test/glass-spotlight?x=&y=&w=&h=` (global Cocoa points) puts a box
+  up, `?off=1` takes it down, no query reports.
+
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
 The table above is what **`screencapture` and ScreenCaptureKit** see. Zoom does not always

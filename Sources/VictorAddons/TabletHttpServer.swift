@@ -124,6 +124,8 @@ case testTerminalFont
         case testZoomLayout(run: Bool)
         /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
         case testShareZoom(factor: Double?, x: Double?, y: Double?)
+        /// 🔦 `GlassSpotlight`: a box (global Cocoa points), or off.
+        case testGlassSpotlight(rect: CGRect?, off: Bool)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -340,6 +342,8 @@ case testTerminalFont
     var onTestZoomLayout: ((Bool) -> String)?
     /// 🔎 `ShareZoom` — factor (nil = just report), focus point in global Cocoa points.
     var onTestShareZoom: ((Double?, Double?, Double?) -> String)?
+    /// 🔦 `GlassSpotlight` — box in global Cocoa points (nil = just report), or off.
+    var onTestGlassSpotlight: ((CGRect?, Bool) -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -643,6 +647,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestShareZoom?(factor, x, y) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestShareZoom == nil { statusCode = 503 }
+            case .testGlassSpotlight(let rect, let off):
+                contentType = "application/json"
+                body = self.onTestGlassSpotlight?(rect, off) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestGlassSpotlight == nil { statusCode = 503 }
             case .testZoomLayout(let run):
                 contentType = "application/json"
                 body = self.onTestZoomLayout?(run) ?? "{\"error\":\"unavailable\"}"
@@ -1018,6 +1026,11 @@ case testTerminalFont
         case "/test/share-zoom":
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
             return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"))
+        case "/test/glass-spotlight":
+            func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
+            let rect = num("x").flatMap { x in num("y").flatMap { y in num("w").flatMap { w in num("h").map { h in
+                CGRect(x: x, y: y, width: w, height: h) } } } }
+            return .testGlassSpotlight(rect: rect, off: queryItems.first(where: { $0.name == "off" })?.value == "1")
         case "/test/zoom-layout":
             return .testZoomLayout(run: queryItems.first(where: { $0.name == "run" })?.value != "0")
         case "/test/emoji-layer":

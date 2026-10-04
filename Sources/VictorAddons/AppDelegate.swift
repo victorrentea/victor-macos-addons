@@ -160,6 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomLensFence: ZoomLensCursorFence?
     /// 🔎 ⌥⇧+scroll — the full-screen zoom a screen share can see.
     private let shareZoom = ShareZoom()
+    private let glassSpotlight = GlassSpotlight()
     private let shareZoomHint = ShareZoomHint()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var breakReminderTimer: Timer?
@@ -1229,6 +1230,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let focus = (x != nil && y != nil) ? CGPoint(x: x!, y: y!) : nil
             return self.shareZoom.testSet(factor: CGFloat(factor), focus: focus)
         }
+        // /test/glass-spotlight?x=&y=&w=&h= — 🔦 a box without the mouse
+        // (global Cocoa points); ?off=1 takes it down; nothing just reports.
+        tabletServer?.onTestGlassSpotlight = { [weak self] rect, off in
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            if off { return self.glassSpotlight.testShow(nil) }
+            guard let rect else { return self.glassSpotlight.snapshotJSON() }
+            return self.glassSpotlight.testShow(rect)
+        }
         tabletServer?.onTestZoomJoin = { [weak self] in
             self?.zoomJoinAutoStart?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
@@ -1808,6 +1817,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onShareZoomScroll = { [weak self] delta, continuous in
             self?.shareZoom.scroll(delta: delta, continuous: continuous)
         }
+        // 🔦 ⇧ + wheel-drag: the glass spotlight. The tap asks back on every
+        // Esc whether the glass is up, so it is told each time that changes.
+        glassSpotlight.onShowingChanged = { [weak eventTap] up in eventTap?.setGlassSpotlightUp(up) }
+        eventTap.onGlassSpotlightBegin = { [weak self] at in self?.glassSpotlight.begin(atCG: at) }
+        eventTap.onGlassSpotlightMove = { [weak self] at in self?.glassSpotlight.moved(toCG: at) }
+        eventTap.onGlassSpotlightEnd = { [weak self] at in self?.glassSpotlight.end(atCG: at) }
+        eventTap.onGlassSpotlightDismiss = { [weak self] in self?.glassSpotlight.dismiss() }
         eventTap.onOptionScroll = { [weak self] in
             self?.shareZoomHint.optionScrolled()
         }
