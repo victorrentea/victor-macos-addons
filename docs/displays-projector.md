@@ -251,8 +251,13 @@ crop"* — so it is the crop's gesture, read by the crop's code.
     mask under 1 (`alphaValue` on the view made the glass vanish altogether). At 0.75
     the sharp text leaked through enough to read; Victor, the same day: *"blurează mai
     tare ce nu se vede, trebuie să fie greu de citit"*.
-- **Both zooms work by where the panel sits**: at `.screenSaver − 1`, just under
-  `ShareZoom`'s panel, so `ShareZoom`'s capture contains the glass and magnifies it
+- **ScreenBrush draws on top of the glass.** The panel sits at window level **28**, one
+  under ScreenBrush's canvas (**29**, read from `CGWindowListCopyWindowInfo`) — Victor
+  annotates what the box frames, and at the first level (`.screenSaver − 1`) the ink
+  went under the glass (2026-10-04). Still above the menu bar (24/25) and the Dock;
+  the price is that pop-up and context menus (101) now draw over the glass.
+- **Both zooms work by where the panel sits**: under `ShareZoom`'s `.screenSaver`
+  panel, so `ShareZoom`'s capture contains the glass and magnifies it
   together with what the box frames — exactly what the macOS magnifier (⌥-scroll) does
   to the whole framebuffer. The box is in desktop points in both cases, which is what
   the pointer is in too (neither zoom remaps input), so its corner sits under the

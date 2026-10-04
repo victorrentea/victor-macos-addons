@@ -18,7 +18,7 @@ import VictorMacKit
 /// public and cannot depend on the private kit the gesture lives in; and the
 /// zoom it most needs to agree with, `ShareZoom`, is in this process.
 ///
-/// **Both zooms, by where the window sits.** The panel is one level *under*
+/// **Both zooms, by where the window sits.** The panel is *under*
 /// `ShareZoom`'s (`.screenSaver`), so the live capture that zoom magnifies
 /// contains the glass and its hole — the box is magnified together with the
 /// thing it frames, exactly as macOS's own magnifier (⌥-scroll) magnifies the
@@ -29,6 +29,9 @@ import VictorMacKit
 /// Main thread only.
 final class GlassSpotlight {
 
+    /// One under ScreenBrush's drawing canvas, which sits at 29 (read from
+    /// `CGWindowListCopyWindowInfo`, 2026-10-04).
+    static let windowLevel = 28
     /// Feather, in points, *outside* the box: everything in the box stays sharp.
     static let feather: CGFloat = 40
     /// A drag puts the glass up only once its box covers this much of the screen,
@@ -220,10 +223,12 @@ final class GlassSpotlight {
         let panel = SpotlightPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                                    backing: .buffered, defer: false)
         panel.setFrame(screen.frame, display: false)
-        // One under `ShareZoom`'s `.screenSaver`, so that zoom magnifies the glass
-        // with everything else (see the type comment); above the menu bar, the
-        // Dock and pop-up menus, so the glass really is everything but the box.
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
+        // Under ScreenBrush's canvas (29), so the ink lands on top of the glass —
+        // Victor draws over what the box frames; above the menu bar (24/25) and
+        // the Dock, so the glass is still everything but the box. Far under
+        // `ShareZoom`'s `.screenSaver`, so that zoom magnifies the glass with
+        // everything else (see the type comment).
+        panel.level = NSWindow.Level(rawValue: GlassSpotlight.windowLevel)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
