@@ -733,7 +733,9 @@ final class EmojiBoardView: NSView {
             (text as NSString).draw(in: box, withAttributes: attributes)
             return
         }
-        let size = cell * 0.72
+        // 15% over the old 0.72 (Victor, 2026-10-04): the glyph now reaches the
+        // tile's edge on the retina corner, with room to spare on the external.
+        let size = cell * 0.83
         for index in board.slots.indices {
             let r = rect(index)
             guard r.intersects(dirtyRect) else { continue }
