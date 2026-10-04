@@ -105,13 +105,26 @@ final class EmojiPickerController: NSObject {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
         onOpenChanged?(false)
-        if let typing { Self.typeOnceModifiersAreUp(typing, attemptsLeft: 250) }
+        guard let typing else { return }
+        // Under the ⌃⇧ hold a keystroke would arrive as a ⌃⇧ chord, so first
+        // try to write the text straight into the focused text box — the
+        // emoji is there on the click, ⌃⇧ still down (Victor: "să nu fie
+        // nevoie să ridic Control Shift"). Only with no modifier held is the
+        // keystroke the better tool: it works in every app, AX does not.
+        if KeySimulator.heldModifiers().isEmpty {
+            Self.type(typing)
+        } else if FocusedTextInsertion.insert(typing) {
+            overlayInfo("EmojiPicker: inserted through Accessibility, modifiers still held")
+        } else {
+            overlayInfo("EmojiPicker: focused element refused AX insertion — typing once the modifiers are up")
+            Self.typeOnceModifiersAreUp(typing, attemptsLeft: 250)
+        }
     }
 
-    /// Typed only when no modifier is physically down. A pick made under the
-    /// ⌃⇧ hold would otherwise reach the app merged with the held keys — ⌃⇧
-    /// plus a character is a shortcut, not text — so the emoji lands the
-    /// moment ⌃⇧ are let go. Polled on main (20 ms, up to 5 s), never blocking.
+    /// The fallback when AX insertion is refused: typed only when no modifier
+    /// is physically down, since a pick made under the ⌃⇧ hold would otherwise
+    /// reach the app merged with the held keys — ⌃⇧ plus a character is a
+    /// shortcut, not text. Polled on main (20 ms, up to 5 s), never blocking.
     private static func typeOnceModifiersAreUp(_ text: String, attemptsLeft: Int) {
         guard !KeySimulator.heldModifiers().isEmpty, attemptsLeft > 0 else {
             type(text)
@@ -283,6 +296,45 @@ final class EmojiPickerController: NSObject {
 
     private static func screenID(_ screen: NSScreen) -> CGDirectDisplayID? {
         screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+}
+
+/// Puts text at the caret of whatever text box has focus, through the
+/// Accessibility API — no keystroke, so the modifiers physically held at the
+/// time cannot turn it into a shortcut. Setting `kAXSelectedText` replaces the
+/// selection (an empty one at the caret) the way typing would.
+///
+/// Verified rather than trusted: some elements report success and do nothing,
+/// so when the value is readable it must actually have changed; only an
+/// element whose value cannot be read at all is taken at its word. A `false`
+/// means "type it instead", never "it's done".
+enum FocusedTextInsertion {
+    private static let messagingTimeout: Float = 0.3
+
+    static func insert(_ text: String) -> Bool {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, messagingTimeout)
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return false }
+        let element = focused as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, messagingTimeout)
+
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &settable) == .success,
+              settable.boolValue else { return false }
+        let before = value(of: element)
+        guard AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success else {
+            return false
+        }
+        guard let before else { return true }
+        return value(of: element) != before
+    }
+
+    private static func value(of element: AXUIElement) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &ref) == .success else { return nil }
+        return ref as? String
     }
 }
 
