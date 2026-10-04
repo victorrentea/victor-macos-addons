@@ -97,6 +97,17 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(catalog.entry(for: "½")?.group, 7)
     }
 
+    func testTheExplanationLightsTheLettersThatMatched() {
+        let wedding = catalog.entry(for: "💒")!
+        XCTAssertEqual(catalog.explain("aff", wedding),
+                       [EmojiMatch(typed: "aff", word: "affection", source: .synonym, matched: [0, 1, 2])])
+        let typo = catalog.explain("afff", wedding).first!
+        XCTAssertEqual(typo.word, "affection")
+        XCTAssertEqual(typo.matched, [0, 1, 2], "the wrong 4th letter stays unlit")
+        XCTAssertEqual(EmojiFuzzy.matchedLetters("lfet", "left"), [0, 1, 2, 3], "a swap lights both")
+        XCTAssertEqual(catalog.explain("one half", catalog.entry(for: "½")!).map(\.source), [.name, .name])
+    }
+
     func testSearchResultsFillTheBoardFromTheCentreOutwards() {
         let centre = (column: EmojiBoard.columns / 2, row: EmojiBoard.rows / 2)
         let cells = EmojiBoard.cellsFromCentre
@@ -121,7 +132,7 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertTrue(EmojiPickerPolicy.isTextSymbol("↔\u{FE0E}"))
         XCTAssertFalse(EmojiPickerPolicy.isTextSymbol("↔️"))
         XCTAssertFalse(EmojiPickerPolicy.isTextSymbol("🔄"))
-        XCTAssertFalse(EmojiCatalog.plainArrows.contains { $0.emoji.hasPrefix("↗") }, "↗ is on ⌥⇧U")
+        XCTAssertTrue(EmojiCatalog.plainArrows.contains { $0.emoji == "↗\u{FE0E}" }, "↗ left ⌥⇧U for the board")
     }
 
     func testAKeyedArrowAlsoKeepsItsPlainTwinOffTheBoard() {

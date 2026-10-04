@@ -12,6 +12,9 @@ import AppKit
 /// - **search field + hint.** Typing searches English and Romanian names and
 ///   keywords; beside the field, what the keys do or how many matched.
 /// - **name line.** What the hovered / selected emoji is called, en · ro.
+///   While searching, its start (right under the box) says **why** that one
+///   matched: the word each typed word was found in, the matched letters in
+///   yellow, and whether it is the name, a keyword or a crowd synonym.
 /// - **the board.** Empty at first; every emoji you use lands on it and stays
 ///   in that cell forever (`EmojiBoard`), so it is a map learnt by position,
 ///   never scrolled. Nothing on a ⌥ / ⌥⇧ / ⌃⌥ key ever appears on it. Clickable.
@@ -184,6 +187,7 @@ final class EmojiPickerController: NSObject {
         nameLine.textColor = EmojiPickerStyle.dim
         nameLine.lineBreakMode = .byTruncatingTail
         nameLine.frame = NSRect(x: pad + 4 * s, y: barY - nameHeight - 2 * s, width: W - 2 * pad, height: nameHeight)
+        nameLine.allowsDefaultTighteningForTruncation = true
         root.addSubview(nameLine)
 
         // The board fills the rest.
@@ -214,11 +218,37 @@ final class EmojiPickerController: NSObject {
     }
 
     private func showName(_ entry: EmojiEntry?) {
-        guard let entry else { nameLine?.stringValue = ""; return }
+        guard let nameLine else { return }
+        guard let entry else { nameLine.stringValue = ""; return }
+        let font = NSFont.systemFont(ofSize: 13 * scale)
+        let dim: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: EmojiPickerStyle.dim]
+        let line = NSMutableAttributedString()
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            for (index, match) in catalog.explain(trimmed, entry).enumerated() {
+                if index > 0 { line.append(NSAttributedString(string: "  +  ", attributes: dim)) }
+                for (offset, letter) in match.word.enumerated() {
+                    let lit = match.matched.contains(offset)
+                    line.append(NSAttributedString(string: String(letter), attributes: [
+                        .font: lit ? NSFont.boldSystemFont(ofSize: 13 * scale) : font,
+                        .foregroundColor: lit ? EmojiPickerStyle.chord : NSColor.white,
+                    ]))
+                }
+                let source: String
+                switch match.source {
+                case .name: source = "nume"
+                case .keyword: source = "cuvânt-cheie"
+                case .synonym: source = "sinonim"
+                }
+                line.append(NSAttributedString(string: " (\(source))", attributes: dim))
+            }
+            line.append(NSAttributedString(string: "     ", attributes: dim))
+        }
         var text = "\(entry.emoji)  \(entry.name)"
         if !entry.nameRo.isEmpty, entry.nameRo != entry.name { text += "  ·  \(entry.nameRo)" }
         if let chord = keyed[EmojiPickerPolicy.normalized(entry.emoji)] { text += "    — e deja pe \(chord)" }
-        nameLine?.stringValue = text
+        line.append(NSAttributedString(string: text, attributes: dim))
+        nameLine.attributedStringValue = line
     }
 
     // MARK: - Picking
