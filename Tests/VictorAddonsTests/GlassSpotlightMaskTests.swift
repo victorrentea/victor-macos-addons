@@ -45,4 +45,11 @@ final class GlassSpotlightMaskTests: XCTestCase {
         XCTAssertEqual(image.width, 400)
         XCTAssertEqual(image.height, 300)
     }
+
+    /// The glass comes up only once the box covers 5% of its screen.
+    func testRevealsAtFivePercentOfTheScreen() {
+        let screen = CGRect(x: 1728, y: 37, width: 1920, height: 1080)   // 5% = 103 680 pt²
+        XCTAssertFalse(GlassSpotlight.reveals(CGRect(x: 0, y: 0, width: 400, height: 250), on: screen))
+        XCTAssertTrue(GlassSpotlight.reveals(CGRect(x: 0, y: 0, width: 432, height: 240), on: screen))
+    }
 }

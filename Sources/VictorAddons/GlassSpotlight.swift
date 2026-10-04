@@ -36,8 +36,15 @@ final class GlassSpotlight {
     /// not `alphaValue` on the view, which made the glass vanish altogether (Victor,
     /// 2026-10-04: *"poți face blurul un pic mai puțin intens?"*).
     static let glassOpacity: CGFloat = 0.75
-    /// Nothing smaller than this is a box — it is a click that slipped.
-    private static let minimumSide: CGFloat = 6
+    /// A drag puts the glass up only once its box covers this much of the screen,
+    /// and from then on keeps it up however small the box gets again — never the
+    /// whole screen blurred first and the box revealed from nothing (Victor,
+    /// 2026-10-04). A drag that never gets there changes nothing.
+    static let revealFraction: CGFloat = 0.05
+
+    static func reveals(_ box: CGRect, on screen: CGRect) -> Bool {
+        box.width * box.height >= revealFraction * screen.width * screen.height
+    }
 
     /// Called on every change of `isShowing`, so the event tap can tell whether
     /// Esc is ours.
@@ -55,6 +62,10 @@ final class GlassSpotlight {
 
     /// The drag under the hand, nil between drags.
     private var drag: RegionDrag?
+    /// The screen the drag began on, and whether its box has reached
+    /// `revealFraction` yet — until then the glass is left as the drag found it.
+    private var dragScreen: NSScreen?
+    private var revealed = false
     /// Where the tap last saw the pointer (global Cocoa). Preferred over
     /// `NSEvent.mouseLocation`, for the reason `CropSelectionOverlay.dragMoved`
     /// gives: the event's own position, not wherever a starved timer finds it.
@@ -76,7 +87,8 @@ final class GlassSpotlight {
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) })
                 ?? NSScreen.main else { return }
         holeBeforeDrag = screenFrame == screen.frame ? hole : nil
-        ensurePanel(on: screen)
+        dragScreen = screen
+        revealed = false
         drag = RegionDrag(anchor: p, within: screen.frame, controlArmed: true)
         pushed = p
         startTimer()
@@ -97,13 +109,9 @@ final class GlassSpotlight {
         stopTimer()
         drag = nil
         legendPill.isHidden = true
-        guard let box = hole, box.width >= Self.minimumSide, box.height >= Self.minimumSide else {
-            if let previous = holeBeforeDrag {
-                apply(hole: previous)
-                overlayInfo("🔦 glass spotlight: drag too small, previous box kept")
-            } else {
-                dismiss()
-            }
+        guard revealed, let box = hole else {
+            overlayInfo("🔦 glass spotlight: drag under \(Int(Self.revealFraction * 100))% of the screen, "
+                        + (holeBeforeDrag == nil ? "no glass" : "previous box kept"))
             return
         }
         overlayInfo("🔦 glass spotlight: \(Int(box.width))×\(Int(box.height)) at (\(Int(box.minX)),\(Int(box.minY)))")
@@ -181,6 +189,11 @@ final class GlassSpotlight {
         // No ⌃ square here, unlike the crop: Victor, 2026-10-04, *"n-am nevoie de square"*.
         let box = drag.update(mouse: mouse, command: flags.contains(.command), control: false)
         self.drag = drag
+        if !revealed {
+            guard let dragScreen, Self.reveals(box, on: dragScreen.frame) else { return }
+            revealed = true
+            ensurePanel(on: dragScreen)
+        }
         apply(hole: box)
         renderDecorations(box: box, moving: drag.moving)
     }

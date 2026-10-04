@@ -231,8 +231,12 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   all of its wheel gestures need a bare press.
 - **After the release the glass stays** (click-through, everything under it still
   works) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
-  alone. A new ⇧-wheel-drag replaces the box; one too small to be a box (< 6 pt, a
-  slipped click) keeps the previous one, or takes the glass down if there was none.
+  alone. A new ⇧-wheel-drag replaces the box.
+- **The glass comes up only once the box covers 5% of the screen** (`revealFraction`),
+  already cut — never the whole screen blurred first with the box opening out of
+  nothing. From then on it stays up for the rest of the drag, however small the box
+  gets again. A drag that never reaches 5% changes nothing: no glass if there was
+  none, the previous box if there was one (Victor, 2026-10-04).
 - **The glass** is an `NSVisualEffectView` (`.behindWindow`, `.fullScreenUI`) whose
   `maskImage` is `GlassSpotlightMask`: opaque, clear inside the box, and a smoothstep
   ramp over **40 pt outside** it — so nothing inside the box is softened. It is redrawn
