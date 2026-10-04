@@ -8,13 +8,13 @@ import AppKit
 /// small in the retina's bottom-right corner. Same layout in both, scaled up on
 /// the external one, so what the eye learns on one screen holds on the other.
 ///
-/// Three zones, top to bottom:
-/// - **search field + why.** Typing searches English and Romanian names and
-///   keywords; beside the small field, why the selected one matched.
-/// - **name line.** What the hovered / selected emoji is called, en · ro.
-///   **Why** it matched sits beside the field: the word each typed word was
-///   found in, the matched letters in yellow, and whether it is the name, a
-///   keyword or a crowd synonym (~).
+/// Two zones, top to bottom:
+/// - **search field + one line beside it.** Typing searches English and
+///   Romanian names and keywords. Right of the small field: **why** the
+///   selected one matched (the word each typed word was found in, matched
+///   letters in yellow, name / keyword / crowd synonym ~), then what the
+///   hovered / selected emoji is called, en · ro. Nothing sits between the
+///   bar and the board.
 /// - **the board.** Empty at first; every emoji you use lands on it and stays
 ///   in that cell forever (`EmojiBoard`), so it is a map learnt by position,
 ///   never scrolled. Nothing on a ⌥ / ⌥⇧ / ⌃⌥ key ever appears on it. Clickable.
@@ -48,7 +48,6 @@ final class EmojiPickerController: NSObject {
     private var field: NSTextField?
     private var hint: NSTextField?
     private var grid: EmojiBoardView?
-    private var nameLine: NSTextField?
     private var keyed: [String: String] = [:]
     private var query = ""
     private var memory = EmojiQueryMemory()
@@ -181,24 +180,14 @@ final class EmojiPickerController: NSObject {
         let hintX = box.frame.maxX + 16 * s
         let hint = NSTextField(labelWithString: "")
         hint.font = .systemFont(ofSize: 13 * s)
-        hint.textColor = EmojiPickerStyle.header
+        hint.textColor = EmojiPickerStyle.dim
         hint.lineBreakMode = .byTruncatingTail
         let hintHeight = hint.intrinsicContentSize.height
         hint.frame = NSRect(x: hintX, y: barY + (barHeight - hintHeight) / 2, width: W - hintX - pad, height: hintHeight)
         root.addSubview(hint)
 
-        // Name line under the bar.
-        let nameHeight = EmojiPickerPlacement.nameHeight * s
-        let nameLine = NSTextField(labelWithString: "")
-        nameLine.font = .systemFont(ofSize: 13 * s)
-        nameLine.textColor = EmojiPickerStyle.dim
-        nameLine.lineBreakMode = .byTruncatingTail
-        nameLine.frame = NSRect(x: pad + 4 * s, y: barY - nameHeight, width: W - 2 * pad, height: nameHeight)
-        nameLine.allowsDefaultTighteningForTruncation = true
-        root.addSubview(nameLine)
-
-        // The board fills the rest.
-        let gridTop = nameLine.frame.minY
+        // The board fills the rest, straight under the bar.
+        let gridTop = barY
         var board = EmojiBoardStore.boardSeedingOnce(catalog: catalog, keyed: Set(keyed.keys))
         board.removeKeyed(Set(keyed.keys))
         EmojiBoardStore.board = board
@@ -220,22 +209,20 @@ final class EmojiPickerController: NSObject {
         self.field = field
         self.hint = hint
         self.grid = grid
-        self.nameLine = nameLine
         refreshQuery()
     }
 
-    /// The name line says what the emoji is; while searching, the slot right
-    /// of the box says why it matched (Victor, 2026-10-04: the explanation
-    /// goes there, in place of the key hints and the match count).
+    /// The one line right of the box (Victor, 2026-10-04: nothing between the
+    /// box and the board): while searching, why the selected emoji matched,
+    /// then what it is called; otherwise just what it is called.
     private func showName(_ entry: EmojiEntry?) {
-        guard let nameLine, let hint else { return }
-        hint.stringValue = ""
-        guard let entry else { nameLine.stringValue = ""; return }
+        guard let hint else { return }
+        guard let entry else { hint.stringValue = ""; return }
         let font = NSFont.systemFont(ofSize: 13 * scale)
         let dim: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: EmojiPickerStyle.dim]
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let line = NSMutableAttributedString()
         if !trimmed.isEmpty {
-            let line = NSMutableAttributedString()
             for (index, match) in catalog.explain(trimmed, entry).enumerated() {
                 if index > 0 { line.append(NSAttributedString(string: "  +  ", attributes: dim)) }
                 // A crowd synonym reads as "~word": near the meaning, not its name.
@@ -259,12 +246,13 @@ final class EmojiPickerController: NSObject {
                     .font: font, .foregroundColor: EmojiPickerStyle.chord,
                 ]))
             }
-            hint.attributedStringValue = line
+            line.append(NSAttributedString(string: "     ", attributes: dim))
         }
         var text = "\(entry.emoji)  \(entry.name)"
         if !entry.nameRo.isEmpty, entry.nameRo != entry.name { text += "  ·  \(entry.nameRo)" }
         if let chord = keyed[EmojiPickerPolicy.normalized(entry.emoji)] { text += "    — e deja pe \(chord)" }
-        nameLine.attributedStringValue = NSAttributedString(string: text, attributes: dim)
+        line.append(NSAttributedString(string: text, attributes: dim))
+        hint.attributedStringValue = line
     }
 
     // MARK: - Picking
@@ -443,13 +431,12 @@ final class EmojiPickerHold {
 
 /// Where the picker goes and how big it is drawn there.
 enum EmojiPickerPlacement {
-    /// The plate's margin, the search bar's and the name line's heights, in
+    /// The plate's margin and the search bar's height, in
     /// points at scale 1 — shared with `EmojiPickerController.build`, so the
     /// corner is exactly as tall as what it holds.
     static let pad: CGFloat = 4
     static let barHeight: CGFloat = 40
-    static let nameHeight: CGFloat = 20
-    static var chrome: CGFloat { 2 * pad + barHeight + nameHeight }
+    static var chrome: CGFloat { 2 * pad + barHeight }
     /// The most of the retina's width, and of its height, the corner panel takes.
     static let maxShare: CGFloat = 0.5
 
