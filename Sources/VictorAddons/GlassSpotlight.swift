@@ -262,8 +262,17 @@ final class GlassSpotlight {
         guard let glass, maskedHole != box else { return }
         maskedHole = box
         let local = box.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
-        guard let mask = GlassSpotlightMask.image(canvas: screenFrame.size, hole: local, feather: Self.feather) else { return }
-        glass.maskImage = NSImage(cgImage: mask, size: screenFrame.size)
+        // A drawing-handler image, not a bitmap: `NSVisualEffectView` reads a
+        // bitmap mask's pixels as backing pixels whatever size the `NSImage`
+        // claims, so on Retina the mask came out at half size, pinned to the
+        // top-right — the hole up, right of and smaller than the dashed outline
+        // (2026-10-04). A handler is drawn at whatever density the view asks for.
+        let size = screenFrame.size
+        glass.maskImage = NSImage(size: size, flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            GlassSpotlightMask.draw(in: ctx, canvas: size, hole: local, feather: Self.feather)
+            return true
+        }
     }
 
     /// While the hand is on it: a dashed line on the box's real edge (the
@@ -316,8 +325,8 @@ private final class SpotlightPanel: NSPanel {
 /// ramp across `feather` points *outside* it. Pure, so it is tested by reading
 /// pixels back rather than by looking at a screen.
 enum GlassSpotlightMask {
-    /// An alpha-only image of `canvas` (points, y up), at `scale` pixels a point.
-    /// One point a pixel is plenty: every edge in it is a 40-point blur.
+    /// An alpha-only image of `canvas` (points, y up), at `scale` pixels a point —
+    /// what the tests read back; the glass itself draws straight into its mask.
     static func image(canvas: CGSize, hole: CGRect, feather: CGFloat, scale: CGFloat = 1) -> CGImage? {
         let width = max(1, Int((canvas.width * scale).rounded(.up)))
         let height = max(1, Int((canvas.height * scale).rounded(.up)))
@@ -325,13 +334,19 @@ enum GlassSpotlightMask {
                                   bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
                                   bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return nil }
         ctx.scaleBy(x: scale, y: scale)
+        draw(in: ctx, canvas: canvas, hole: hole, feather: feather, steps: Int(feather * scale))
+        return ctx.makeImage()
+    }
+
+    /// The mask's alpha into `ctx`, in points, `steps` rings across the feather.
+    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat, steps: Int = 64) {
         ctx.setBlendMode(.copy)
         ctx.setFillColor(gray: 0, alpha: 1)
         ctx.fill(CGRect(origin: .zero, size: canvas))
         // Concentric rounded rects from the feather's outer edge in to the box,
         // each one *replacing* the alpha under it (`.copy`): one step a point,
         // too fine to band. Smoothstep, so the ramp has no visible start or end.
-        let steps = max(1, min(64, Int(feather * scale)))
+        let steps = max(1, min(64, steps))
         for i in 0...steps {
             let f = CGFloat(steps - i) / CGFloat(steps)        // 1 at the outer edge → 0 at the box
             let alpha = f * f * (3 - 2 * f)
@@ -342,6 +357,5 @@ enum GlassSpotlightMask {
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
             ctx.fillPath()
         }
-        return ctx.makeImage()
     }
 }
