@@ -92,6 +92,13 @@ class EventTapManager {
     /// 😀 left ⌥ tapped twice — the emoji picker for every emoji not on a key
     /// (`EmojiPickerController`).
     var onEmojiPicker: (() -> Void)?
+    /// A keystroke for the open picker, already decoded.
+    var onEmojiPickerKey: ((EmojiPickerKey) -> Void)?
+    /// 😀 ⌃⇧ (and nothing else) went down / came up — `EmojiPickerHold`.
+    var onControlShiftHeld: ((Bool) -> Void)?
+    /// A key was pressed while ⌃⇧ were held: that hold was a shortcut.
+    var onKeyDownUnderControlShift: (() -> Void)?
+    private var controlShiftHeld = false
     /// 🔍 ⌘⌃U — flip the screen magnifier between the style a screen share carries
     /// and the one it silently drops.
     var onToggleZoomLens: (() -> Void)?
@@ -248,6 +255,22 @@ private let VK_I: CGKeyCode = 0x22
         clipboardHistoryLock.unlock()
     }
 
+    /// 😀 While the emoji picker is up, keystrokes go to it (it never takes
+    /// focus, so it cannot receive them itself — `EmojiPickerController`).
+    private let emojiPickerLock = NSLock()
+    private var emojiPickerOpen = false
+
+    func setEmojiPickerOpen(_ open: Bool) {
+        emojiPickerLock.lock()
+        emojiPickerOpen = open
+        emojiPickerLock.unlock()
+    }
+
+    private var isEmojiPickerOpen: Bool {
+        emojiPickerLock.lock(); defer { emojiPickerLock.unlock() }
+        return emojiPickerOpen
+    }
+
     private var isClipboardHistoryOpen: Bool {
         clipboardHistoryLock.lock(); defer { clipboardHistoryLock.unlock() }
         return clipboardHistoryOpen
@@ -361,6 +384,11 @@ private let VK_I: CGKeyCode = 0x22
                 at: ProcessInfo.processInfo.systemUptime
             ) {
                 DispatchQueue.main.async { [weak self] in self?.onEmojiPicker?() }
+            }
+            let controlShift = hasCtrlFlag && hasShift && !hasCmdFlag && !hasOpt
+            if controlShift != controlShiftHeld {
+                controlShiftHeld = controlShift
+                DispatchQueue.main.async { [weak self] in self?.onControlShiftHeld?(controlShift) }
             }
             DispatchQueue.main.async { [weak self] in
                 self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag)
@@ -586,6 +614,9 @@ private let VK_I: CGKeyCode = 0x22
         }
 
         optionDoubleTap.interrupt()
+        if controlShiftHeld {
+            DispatchQueue.main.async { [weak self] in self?.onKeyDownUnderControlShift?() }
+        }
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
         let hasCmd   = flags.contains(.maskCommand)
@@ -622,6 +653,19 @@ private let VK_I: CGKeyCode = 0x22
         if isClipboardHistoryOpen, let outcome = clipboardHistoryAction(for: keyCode) {
             DispatchQueue.main.async { [weak self] in outcome.run(self) }
             return outcome.swallows ? nil : Unmanaged.passUnretained(event)
+        }
+
+        // 😀 The emoji picker eats the keyboard while it is up — its search box
+        // is fed from here, since the picker never takes focus. A ⌘ or ⌃ chord
+        // still goes through (and closes it): that was a shortcut.
+        if isEmojiPickerOpen {
+            var length = 0
+            var units = [UniChar](repeating: 0, count: 8)
+            event.keyboardGetUnicodeString(maxStringLength: 8, actualStringLength: &length, unicodeString: &units)
+            let key = EmojiPickerKey.from(keyCode: Int(keyCode), characters: String(utf16CodeUnits: units, count: length),
+                                          command: hasCmd, control: hasCtrl, option: hasOpt)
+            DispatchQueue.main.async { [weak self] in self?.onEmojiPickerKey?(key) }
+            return key == .passThrough ? Unmanaged.passUnretained(event) : nil
         }
 
         // ⌥ joining a P already held as plain ⌃P (physically pressed in that

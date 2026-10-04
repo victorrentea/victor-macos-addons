@@ -376,3 +376,38 @@ struct OptionDoubleTap {
         lastTapAt = nil
     }
 }
+
+/// What a keystroke means to the open picker. The picker never takes the
+/// keyboard focus (see `EmojiPickerController`), so the event tap swallows
+/// keystrokes while it is up and hands them over as one of these.
+enum EmojiPickerKey: Equatable {
+    case escape, enter, backspace, left, right, up, down
+    case text(String)
+    /// Swallowed, does nothing (Tab, function keys, ⌥ chords).
+    case ignore
+    /// A ⌘ or ⌃ chord: a shortcut for the app underneath. It goes through
+    /// untouched and the picker closes — you reached for something else.
+    case passThrough
+
+    static func from(keyCode: Int, characters: String, command: Bool, control: Bool, option: Bool) -> EmojiPickerKey {
+        if command || control { return .passThrough }
+        switch keyCode {
+        case 53: return .escape
+        case 36, 76: return .enter
+        case 51: return .backspace
+        case 123: return .left
+        case 124: return .right
+        case 125: return .down
+        case 126: return .up
+        case 48: return .ignore
+        default: break
+        }
+        if option { return .ignore }
+        // Function keys arrive as private-use characters (0xF700…), control
+        // characters below space: neither belongs in a search box.
+        let printable = String(String.UnicodeScalarView(characters.unicodeScalars.filter {
+            $0.value >= 0x20 && $0.value != 0x7F && !(0xF700...0xF8FF).contains($0.value)
+        }))
+        return printable.isEmpty ? .ignore : .text(printable)
+    }
+}

@@ -20,17 +20,24 @@ import AppKit
 ///   in that cell forever (`EmojiBoard`), so it is a map learnt by position,
 ///   never scrolled. Nothing on a ⌥ / ⌥⇧ / ⌃⌥ key ever appears on it. Clickable.
 ///
-/// **Focus.** The text field needs the keyboard, so opening the picker
-/// **activates this app**, remembering which app was in front. A
-/// non-activating key panel was tried first (the Spotlight trick, so the app
-/// underneath never loses focus) and lost the keyboard to PowerPoint within
-/// 0.3 s of opening — whatever the active app does with its own windows takes
-/// key status straight back. On a pick, the remembered app is re-activated —
-/// its caret is where you left it, a text view keeps its selection across
-/// activation — and once it is frontmost again the emoji is typed there as one
-/// synthetic keystroke carrying the string (`keyboardSetUnicodeString`). Not
-/// pasted, so the clipboard and the ⌘⇧V history are left alone.
-final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelegate {
+/// **Focus: it never takes it** (2026-10-04). Victor types emoji into
+/// ScreenBrush's text mode, and ScreenBrush drops out of text mode the moment
+/// it stops being the active app — which the first version did on every open,
+/// by activating itself so its search box could have the keyboard. So the
+/// panel cannot become key and the app is never activated: while it is up,
+/// the event tap swallows each keystroke and hands it here
+/// (`EmojiPickerKey`), the way the ⌘⇧V bezel is driven, and a click on the
+/// non-activating panel does not move focus either. A pick types the emoji as
+/// one synthetic keystroke carrying the string (`keyboardSetUnicodeString`)
+/// into whatever still has focus — ScreenBrush's text box, a document's
+/// caret. Not pasted, so the clipboard and the ⌘⇧V history are left alone.
+/// (Before that: a key-taking non-activating panel lost the keyboard to
+/// PowerPoint in 0.3 s; activating fixed that and broke ScreenBrush.)
+///
+/// **Two ways in.** Left ⌥ ×2 opens it until a pick, Esc, a click outside or
+/// ⌥ ×2 again — the search lives here. **⌃⇧ held** opens it only while held,
+/// the soundboard's gesture: hold, click a tile, let go (`EmojiPickerHold`).
+final class EmojiPickerController: NSObject {
     private let retinaScreenProvider: () -> NSScreen
     private let catalog: EmojiCatalog
     private var panel: EmojiPickerPanel?
@@ -39,8 +46,12 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
     private var grid: EmojiBoardView?
     private var nameLine: NSTextField?
     private var keyed: [String: String] = [:]
-    private var closing = false
-    private var previousApp: NSRunningApplication?
+    private var query = ""
+    private var scale: CGFloat = 1
+    private var clickMonitor: Any?
+    /// Tells the event tap whether to route keystrokes here. Called with
+    /// false *before* a pick is typed, so the tap lets that keystroke through.
+    var onOpenChanged: ((Bool) -> Void)?
 
     init(retinaScreenProvider: @escaping () -> NSScreen, catalog: EmojiCatalog = .shared) {
         self.retinaScreenProvider = retinaScreenProvider
@@ -49,33 +60,35 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
 
     static let slideInDuration: TimeInterval = 0.20
 
-    var isVisible: Bool { panel?.isVisible == true }
+    var isVisible: Bool { panel != nil }
 
     func toggle() {
         isVisible ? close() : show()
     }
 
     func show() {
+        guard panel == nil else { return }
         keyed = EmojiPickerPolicy.liveKeyedEmoji()
+        query = ""
         let retina = retinaScreenProvider()
         let retinaID = Self.screenID(retina)
         let externals = NSScreen.screens.filter { Self.screenID($0) != retinaID }.map(\.frame)
         let placed = EmojiPickerPlacement.frame(retinaFrame: retina.frame, externalFrames: externals,
                                                 mouseLocation: NSEvent.mouseLocation)
         build(frame: placed.frame, scale: placed.scale)
-        closing = false
-        let front = NSWorkspace.shared.frontmostApplication
-        previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
-        NSApp.activate(ignoringOtherApps: true)
         guard let panel else { return }
+        onOpenChanged?(true)
+        // A click anywhere outside the panel dismisses it, like any popover.
+        // Clicks on the panel itself are local events and never reach this.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.close()
+        }
         // victor-effects' soundboard entrance: in from the right edge, fading
-        // in as it slides, 0.20 s ease-out. The field is focused before the
-        // slide starts, so typing during the animation is not lost.
+        // in as it slides, 0.20 s ease-out.
         let target = placed.frame
         panel.setFrame(target.offsetBy(dx: target.width, dy: 0), display: false)
         panel.alphaValue = 0
-        panel.makeKeyAndOrderFront(nil)
-        if let field { panel.makeFirstResponder(field) }
+        panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.slideInDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -85,40 +98,35 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
         overlayInfo("EmojiPicker: opened \(Int(placed.frame.width))×\(Int(placed.frame.height)) @\(placed.scale)x, \(keyed.count) keyed emoji hidden")
     }
 
-    /// `restoreFocus: false` is for a click on another app: you went there on
-    /// purpose, and dragging focus back to where you were would undo it.
-    func close(restoreFocus: Bool = true, then typing: String? = nil) {
-        guard !closing, let panel else { return }
-        closing = true
+    func close(then typing: String? = nil) {
+        guard let panel else { return }
         panel.orderOut(nil)
         self.panel = nil
-        let previous = previousApp
-        previousApp = nil
-        guard restoreFocus, let previous else { return }
-        previous.activate()
-        guard let typing else { return }
-        Self.typeWhenFrontmost(typing, in: previous, attemptsLeft: 25)
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
+        onOpenChanged?(false)
+        if let typing { Self.typeOnceModifiersAreUp(typing, attemptsLeft: 250) }
     }
 
-    /// Typed only once the app is frontmost again: posted any earlier, the
-    /// keystroke lands in this app, which is still active, and is lost.
-    private static func typeWhenFrontmost(_ text: String, in app: NSRunningApplication, attemptsLeft: Int) {
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier || attemptsLeft == 0 {
-            // One more beat for the app to make its window key after activating.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { type(text) }
+    /// Typed only when no modifier is physically down. A pick made under the
+    /// ⌃⇧ hold would otherwise reach the app merged with the held keys — ⌃⇧
+    /// plus a character is a shortcut, not text — so the emoji lands the
+    /// moment ⌃⇧ are let go. Polled on main (20 ms, up to 5 s), never blocking.
+    private static func typeOnceModifiersAreUp(_ text: String, attemptsLeft: Int) {
+        guard !KeySimulator.heldModifiers().isEmpty, attemptsLeft > 0 else {
+            type(text)
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-            typeWhenFrontmost(text, in: app, attemptsLeft: attemptsLeft - 1)
+            typeOnceModifiersAreUp(text, attemptsLeft: attemptsLeft - 1)
         }
     }
 
     // MARK: - Building
 
     private func build(frame: NSRect, scale s: CGFloat) {
-        panel?.orderOut(nil)
+        scale = s
         let panel = EmojiPickerPanel(frame: frame)
-        panel.delegate = self
         let W = frame.width, H = frame.height
         let pad = 12 * s
 
@@ -126,7 +134,7 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
         let root = EmojiPickerBackground(frame: NSRect(origin: .zero, size: frame.size), radius: s > 1 ? 0 : 18)
         panel.contentView = root
 
-        // Top bar: field on the left, matches to its right.
+        // Top bar: the search box on the left, matches to its right.
         let barHeight = 56 * s
         let barY = H - pad - barHeight
         let fieldWidth = min(max(W * 0.32, 190 * s), 320 * s)
@@ -136,18 +144,10 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
         box.layer?.cornerRadius = 9 * s
         root.addSubview(box)
 
-        let field = NSTextField(frame: .zero)
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.focusRingType = .none
+        // A label, not an editable field: the text comes from the event tap.
+        let field = NSTextField(labelWithString: "")
         field.font = .systemFont(ofSize: 17 * s)
-        field.textColor = .white
-        field.cell?.usesSingleLineMode = true
-        field.cell?.lineBreakMode = .byTruncatingHead
-        field.placeholderAttributedString = NSAttributedString(string: "🔍 caută (en / ro)", attributes: [
-            .foregroundColor: EmojiPickerStyle.dim, .font: NSFont.systemFont(ofSize: 17 * s),
-        ])
-        field.delegate = self
+        field.lineBreakMode = .byTruncatingHead
         let fieldHeight = field.intrinsicContentSize.height
         field.frame = NSRect(x: 10 * s, y: (box.frame.height - fieldHeight) / 2, width: fieldWidth - 20 * s, height: fieldHeight)
         box.addSubview(field)
@@ -192,7 +192,7 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
         self.grid = grid
         self.nameLine = nameLine
         strip.hint = "scrie ca să cauți · ↵ inserează · ←→↑↓ alegi · esc"
-        if let first = grid.selectedEntry { showName(first) }
+        refreshQuery()
     }
 
     private func showName(_ entry: EmojiEntry?) {
@@ -226,65 +226,111 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
         up.post(tap: .cghidEventTap)
     }
 
-    // MARK: - Field
+    // MARK: - Keyboard (from the event tap)
 
     /// What typing `query` would do — for the test hook.
-    func search(_ query: String) {
-        field?.stringValue = query
-        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+    func search(_ text: String) {
+        query = text
+        refreshQuery()
     }
 
-    func controlTextDidChange(_ obj: Notification) {
+    func handle(_ key: EmojiPickerKey) {
+        guard isVisible else { return }
+        let searching = !(strip?.results.isEmpty ?? true)
+        switch key {
+        case .escape, .passThrough:
+            close()
+        case .enter:
+            if searching, let entry = strip?.selectedEntry { pick(entry) }
+            else if query.trimmingCharacters(in: .whitespaces).isEmpty, let entry = grid?.selectedEntry { pick(entry) }
+        case .backspace:
+            if !query.isEmpty { query.removeLast(); refreshQuery() }
+        case .left:
+            searching ? strip?.move(-1) : grid?.move(dx: -1, dy: 0)
+        case .right:
+            searching ? strip?.move(1) : grid?.move(dx: 1, dy: 0)
+        case .up:
+            if !searching { grid?.move(dx: 0, dy: -1) }
+        case .down:
+            if !searching { grid?.move(dx: 0, dy: 1) }
+        case .text(let typed):
+            query += typed
+            refreshQuery()
+        case .ignore:
+            break
+        }
+    }
+
+    private func refreshQuery() {
         guard let field, let strip else { return }
-        let query = field.stringValue
+        let font = NSFont.systemFont(ofSize: 17 * scale)
+        if query.isEmpty {
+            field.attributedStringValue = NSAttributedString(string: "🔍 caută (en / ro)", attributes: [
+                .foregroundColor: EmojiPickerStyle.dim, .font: font,
+            ])
+        } else {
+            // A drawn caret: the label is not a real text field, but it should
+            // still read as one being typed into.
+            let text = NSMutableAttributedString(string: query, attributes: [.foregroundColor: NSColor.white, .font: font])
+            text.append(NSAttributedString(string: "▏", attributes: [.foregroundColor: EmojiPickerStyle.hoverRing, .font: font]))
+            field.attributedStringValue = text
+        }
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         strip.query = trimmed
         strip.results = trimmed.isEmpty ? [] : catalog.search(trimmed)
-        if trimmed.isEmpty {
-            showName(grid?.selectedEntry)
-        } else {
-            showName(strip.selectedEntry)
-        }
-    }
-
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        let searching = !(strip?.results.isEmpty ?? true)
-        switch selector {
-        case #selector(NSResponder.insertNewline(_:)):
-            if searching, let entry = strip?.selectedEntry { pick(entry) }
-            else if let entry = grid?.selectedEntry, field?.stringValue.trimmingCharacters(in: .whitespaces).isEmpty ?? true { pick(entry) }
-            return true
-        case #selector(NSResponder.cancelOperation(_:)):
-            close()
-            return true
-        case #selector(NSResponder.moveLeft(_:)):
-            searching ? strip?.move(-1) : grid?.move(dx: -1, dy: 0)
-            return true
-        case #selector(NSResponder.moveRight(_:)):
-            searching ? strip?.move(1) : grid?.move(dx: 1, dy: 0)
-            return true
-        case #selector(NSResponder.moveUp(_:)):
-            if !searching { grid?.move(dx: 0, dy: -1) }
-            return true
-        case #selector(NSResponder.moveDown(_:)):
-            if !searching { grid?.move(dx: 0, dy: 1) }
-            return true
-        default:
-            return false
-        }
-    }
-
-    // MARK: - Window
-
-    /// Clicking anywhere else dismisses it, like any popover — and leaves the
-    /// focus where the click put it.
-    func windowDidResignKey(_ notification: Notification) {
-        overlayInfo("EmojiPicker: lost key focus to \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?") — closing")
-        close(restoreFocus: false)
+        showName(trimmed.isEmpty ? grid?.selectedEntry : strip.selectedEntry)
     }
 
     private static func screenID(_ screen: NSScreen) -> CGDirectDisplayID? {
         screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+}
+
+/// ⌃⇧ held → the picker, for as long as it is held (Victor, 2026-10-04: *"poate
+/// să apară și la ctrl+shift ținute apăsat?"*) — the soundboard's hold-and-click.
+///
+/// Same patience as the ⌥ cheat-sheet (`KeymapHoldCoordinator.delay`): a ⌃⇧
+/// that is the start of a shortcut is over long before it, and any key pressed
+/// under it cancels — that hold was a shortcut, not a question. Letting go
+/// closes a picker this hold opened; one opened by ⌥ ×2 is not its to close.
+final class EmojiPickerHold {
+    private let delay: () -> TimeInterval
+    private let open: () -> Bool
+    private let close: () -> Void
+    private var pending: DispatchWorkItem?
+    private var spent = false
+    private(set) var openedByHold = false
+
+    /// `open` returns whether it actually opened (false when ⌥ ×2 already had).
+    init(delay: @escaping () -> TimeInterval, open: @escaping () -> Bool, close: @escaping () -> Void) {
+        self.delay = delay
+        self.open = open
+        self.close = close
+    }
+
+    func held(_ down: Bool) {
+        if down {
+            guard pending == nil, !openedByHold, !spent else { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pending = nil
+                self.openedByHold = self.open()
+            }
+            pending = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay(), execute: work)
+        } else {
+            pending?.cancel()
+            pending = nil
+            spent = false
+            if openedByHold { openedByHold = false; close() }
+        }
+    }
+
+    /// A key went down while ⌃⇧ were held.
+    func keyPressed() {
+        pending?.cancel()
+        pending = nil
+        spent = true
     }
 }
 
@@ -357,8 +403,8 @@ private enum EmojiPickerStyle {
     }
 }
 
-/// The panel takes the keyboard (the search field needs it) without making
-/// this app the active one — see `EmojiPickerController`.
+/// A panel that is clicked without ever taking focus — see
+/// `EmojiPickerController`.
 final class EmojiPickerPanel: NSPanel {
     init(frame: NSRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -373,7 +419,9 @@ final class EmojiPickerPanel: NSPanel {
         hidesOnDeactivate = false
     }
 
-    override var canBecomeKey: Bool { true }
+    /// Never key: the app underneath keeps the keyboard (and ScreenBrush its
+    /// text mode); keystrokes reach the picker through the event tap.
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 

@@ -22,6 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var eventTapManager: EventTapManager?
     private var keymapOverlayController: KeymapOverlayController?
     private var emojiPicker: EmojiPickerController?
+    private var emojiPickerHold: EmojiPickerHold?
     private var keymapHoldCoordinator: KeymapHoldCoordinator?
     private var keymapHoldWorkItem: DispatchWorkItem?
     private var transcriptPasteController: TranscriptPasteController?
@@ -1787,6 +1788,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onEmojiPicker = { [weak self] in
             self?.emojiPicker?.toggle()
         }
+        emojiPicker?.onOpenChanged = { [weak eventTap] open in eventTap?.setEmojiPickerOpen(open) }
+        eventTap.onEmojiPickerKey = { [weak self] key in self?.emojiPicker?.handle(key) }
+        let emojiHold = EmojiPickerHold(
+            delay: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.screens.count) },
+            open: { [weak self] in
+                guard let picker = self?.emojiPicker, !picker.isVisible else { return false }
+                picker.show()
+                return picker.isVisible
+            },
+            close: { [weak self] in self?.emojiPicker?.close() }
+        )
+        emojiPickerHold = emojiHold
+        eventTap.onControlShiftHeld = { held in emojiHold.held(held) }
+        eventTap.onKeyDownUnderControlShift = { emojiHold.keyPressed() }
         eventTap.onOpenCalendar = { [weak menuBarManager] in
             menuBarManager?.onOpenCalendar?()
         }

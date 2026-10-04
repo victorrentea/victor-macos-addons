@@ -179,4 +179,49 @@ final class EmojiPickerTests: XCTestCase {
         board.use("🥲", group: 0)
         XCTAssertEqual(board.slot(for: "🥲").map { [$0.column, $0.row] }, [0, 0], "the freed cell is reused")
     }
+
+    // MARK: - Keys from the event tap, ⌃⇧ hold
+
+    func testKeystrokesDecodeForTheSearchBox() {
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 0, characters: "a", command: false, control: false, option: false), .text("a"))
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 36, characters: "\r", command: false, control: false, option: false), .enter)
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 53, characters: "\u{1B}", command: false, control: false, option: false), .escape)
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 51, characters: "\u{7F}", command: false, control: false, option: false), .backspace)
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 9, characters: "v", command: true, control: false, option: false), .passThrough)
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 0, characters: "a", command: false, control: true, option: false), .passThrough)
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 0, characters: "å", command: false, control: false, option: true), .ignore)
+        XCTAssertEqual(EmojiPickerKey.from(keyCode: 122, characters: "\u{F704}", command: false, control: false, option: false), .ignore)
+    }
+
+    func testControlShiftHoldOpensAfterTheDelayAndClosesOnRelease() {
+        var opened = 0, closed = 0
+        let hold = EmojiPickerHold(delay: { 0.05 }, open: { opened += 1; return true }, close: { closed += 1 })
+        hold.held(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertEqual(opened, 1)
+        hold.held(false)
+        XCTAssertEqual(closed, 1)
+    }
+
+    func testAKeyUnderControlShiftMeansItWasAShortcut() {
+        var opened = 0
+        let hold = EmojiPickerHold(delay: { 0.05 }, open: { opened += 1; return true }, close: {})
+        hold.held(true)
+        hold.keyPressed()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertEqual(opened, 0)
+        hold.held(false)
+        hold.held(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertEqual(opened, 1, "a fresh hold works again")
+    }
+
+    func testReleaseDoesNotCloseAPickerTheHoldDidNotOpen() {
+        var closed = 0
+        let hold = EmojiPickerHold(delay: { 0.05 }, open: { false }, close: { closed += 1 })
+        hold.held(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        hold.held(false)
+        XCTAssertEqual(closed, 0)
+    }
 }
