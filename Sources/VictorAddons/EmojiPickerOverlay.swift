@@ -332,7 +332,7 @@ final class EmojiPickerController: NSObject {
         guard let field, let grid else { return }
         let font = NSFont.systemFont(ofSize: 17 * scale)
         if query.isEmpty {
-            field.attributedStringValue = NSAttributedString(string: "🔍 caută (en / ro)", attributes: [
+            field.attributedStringValue = NSAttributedString(string: "🔍 caută", attributes: [
                 .foregroundColor: EmojiPickerStyle.dim, .font: font,
             ])
         } else {
