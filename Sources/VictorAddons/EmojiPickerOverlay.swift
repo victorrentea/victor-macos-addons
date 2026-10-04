@@ -331,9 +331,9 @@ final class EmojiPickerController: NSObject {
             field.attributedStringValue = text
         }
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let results = trimmed.isEmpty ? nil
-            : memory.reorder(catalog.search(trimmed, limit: EmojiBoard.columns * EmojiBoard.rows), for: trimmed)
-        grid.results = results
+        let matches = trimmed.isEmpty ? [] : catalog.matches(trimmed, limit: EmojiBoard.columns * EmojiBoard.rows)
+        grid.opacity = Dictionary(matches.map { ($0.entry.emoji, $0.opacity) }, uniquingKeysWith: max)
+        grid.results = trimmed.isEmpty ? nil : memory.reorder(matches.map(\.entry), for: trimmed)
         showName(grid.selectedEntry)
     }
 
@@ -593,6 +593,9 @@ final class EmojiBoardView: NSView {
     /// keyed; they show the chord under them, since searching for one you
     /// forgot is on a key is exactly when the chord is worth seeing.
     var keyed: [String: String] = [:]
+    /// How opaque each search result is drawn, by emoji (`EmojiFuzzy.opacity`):
+    /// a typo match fades, so the eye goes to the sure ones first.
+    var opacity: [String: Double] = [:]
     /// What is drawn and clicked: `board`, or the results laid out as one.
     private var layout: EmojiBoard
     private var entries: [EmojiEntry?]
@@ -720,6 +723,12 @@ final class EmojiBoardView: NSView {
             let ring: EmojiPickerStyle.Ring = index == pressed ? .press : (index == (hovered ?? selected) ? .hover : .none)
             EmojiPickerStyle.drawTile(r, filled: true, ring: ring, scale: s)
             let emoji = layout.slots[index].emoji
+            // Only the glyph fades: the tile and its ring stay, so a faint
+            // result can still be seen selected.
+            let context = NSGraphicsContext.current?.cgContext
+            context?.saveGState()
+            if results != nil { context?.setAlpha(CGFloat(opacity[emoji] ?? 1)) }
+            defer { context?.restoreGState() }
             if results != nil, let chord = keyed[EmojiPickerPolicy.normalized(emoji)] {
                 let label = r.height * 0.26
                 let top = NSRect(x: r.minX, y: r.minY, width: r.width, height: r.height - label)

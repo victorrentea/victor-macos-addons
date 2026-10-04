@@ -36,6 +36,23 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(catalog.search("rose").first?.emoji, "🌹")
     }
 
+    func testOpacityFollowsHowSureTheMatchIs() {
+        func opacity(_ query: String, _ emoji: String) -> Double? {
+            catalog.matches(query).first { $0.entry.emoji == emoji }?.opacity
+        }
+        XCTAssertEqual(opacity("peach", "🍑"), 1, "its own name")
+        XCTAssertEqual(opacity("pea", "🍑"), 1, "the start of it, still being typed")
+        XCTAssertEqual(EmojiFuzzy.opacity(token: "aff", name: [EmojiFuzzy.noMatch], keyword: [EmojiFuzzy.noMatch], synonym: [1]), 0.8)
+        XCTAssertEqual(EmojiFuzzy.typoOpacity(edits: 1, letters: 8), 0.5)
+        XCTAssertEqual(EmojiFuzzy.typoOpacity(edits: 2, letters: 7), 0.2, accuracy: 1e-9)
+        XCTAssertLessThan(opacity("lfet", "⬅️")!, opacity("pizzaa", "🍕")!, "1 wrong in 4 fades more than 1 in 6")
+    }
+
+    func testTheFaintestResultsGoLast() {
+        let opacities = catalog.matches("smil").map(\.opacity)
+        XCTAssertEqual(opacities, opacities.sorted(by: >))
+    }
+
     func testFuzzyCostIsDamerauOnAPrefix() {
         XCTAssertEqual(EmojiFuzzy.prefixCost("left", "left"), 0)
         XCTAssertEqual(EmojiFuzzy.prefixCost("lef", "left"), 1)

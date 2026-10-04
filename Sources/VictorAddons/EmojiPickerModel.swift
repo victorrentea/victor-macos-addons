@@ -165,7 +165,17 @@ final class EmojiCatalog {
     /// called ("jumătate" is all of ½'s Romanian name, a fifth of 🕧's "ora
     /// douăsprezece și jumătate"). Then the catalog's order, which is
     /// Unicode's — the order everyone's eye already knows.
+    ///
+    /// How sure a match is decides how it is drawn and where it lands (Victor,
+    /// 2026-10-04: *"opace complet când conțin exact cuvântul … sinonime 80% …
+    /// typos 50%, progresiv, minim 20%"*): see `EmojiFuzzy.opacity`. The
+    /// surest come first, so the faintest end up on the board's rim.
     func search(_ query: String, limit: Int = 200) -> [EmojiEntry] {
+        matches(query, limit: limit).map(\.entry)
+    }
+
+    /// `search`, with the opacity each match is drawn at.
+    func matches(_ query: String, limit: Int = 200) -> [(entry: EmojiEntry, opacity: Double)] {
         let tokens = Self.words(query)
         guard !tokens.isEmpty else { return [] }
         let whole = Self.fold(query).trimmingCharacters(in: .whitespaces)
@@ -177,7 +187,7 @@ final class EmojiCatalog {
             costs[t][word] = value
             return value
         }
-        var scored: [(score: Int, length: Int, index: Int)] = []
+        var scored: [(opacity: Double, score: Int, length: Int, index: Int)] = []
         for (index, entry) in entries.enumerated() {
             var score = 0
             var matched = true
@@ -193,10 +203,16 @@ final class EmojiCatalog {
             guard matched else { continue }
             if entry.foldedName == whole { score -= 10 }
             else if entry.foldedName.hasPrefix(whole) { score -= 5 }
-            scored.append((score, entry.nameWords.count, index))
+            // The weakest typed word decides: "sad fsce" is only as sure as "fsce".
+            let opacity = tokens.indices.map { t in
+                EmojiFuzzy.opacity(token: tokens[t], name: entry.nameWords.map { cost(t, $0) },
+                                   keyword: entry.keywordWords.map { cost(t, $0) },
+                                   synonym: entry.extraWords.map { cost(t, $0) })
+            }.min() ?? 1
+            scored.append((opacity, score, entry.nameWords.count, index))
         }
-        scored.sort { ($0.score, $0.length, $0.index) < ($1.score, $1.length, $1.index) }
-        return scored.prefix(limit).map { entries[$0.index] }
+        scored.sort { (-$0.opacity, $0.score, $0.length, $0.index) < (-$1.opacity, $1.score, $1.length, $1.index) }
+        return scored.prefix(limit).map { (entries[$0.index], $0.opacity) }
     }
 
     /// Why `entry` matched `query`: for each typed word, the vocabulary word
@@ -277,6 +293,26 @@ enum EmojiFuzzy {
         guard budget > 0, word.count >= token.count - budget else { return noMatch }
         let edits = prefixDistance(Array(token.unicodeScalars), Array(word.unicodeScalars), budget: budget)
         return edits <= budget ? 4 + edits : noMatch
+    }
+
+    /// How opaque a match on `token` is drawn, from the `prefixCost`s it has
+    /// against the emoji's name, keyword and extra-synonym words; the best one
+    /// counts. Spelled right (whole word or its start) in the name or the
+    /// keywords: 1. Spelled right only in a crowd synonym: 0.8. Only with
+    /// typos: 0.5 down to 0.2, by the share of the typed letters that are
+    /// wrong — 1 in 8 or less is 0.5, 2 in 7 (the most `prefixCost` allows)
+    /// is 0.2, so "pizzaa" stays clear and "lfet" is barely there.
+    static func opacity(token: String, name: [Int], keyword: [Int], synonym: [Int]) -> Double {
+        if (name + keyword).contains(where: { $0 <= 1 }) { return 1 }
+        if synonym.contains(where: { $0 <= 1 }) { return 0.8 }
+        guard let cost = (name + keyword + synonym).min(), cost < noMatch else { return 0 }
+        return typoOpacity(edits: cost - 4, letters: token.count)
+    }
+
+    static func typoOpacity(edits: Int, letters: Int) -> Double {
+        let share = Double(edits) / Double(max(letters, 1))
+        let clear = 1.0 / 8, faint = 2.0 / 7
+        return min(0.5, max(0.2, 0.5 - 0.3 * (share - clear) / (faint - clear)))
     }
 
     /// The letters of `word` that `token` actually lands on: its first
