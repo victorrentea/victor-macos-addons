@@ -251,9 +251,71 @@ struct EmojiBoard: Equatable {
     }
 }
 
+/// What Apple's own emoji picker remembers — Victor used it for years before
+/// this board existed (*"dacă mai poți extrage din macOS și altele mai vechi
+/// folosite"*). `com.apple.EmojiPreferences` → `EMFDefaultsKey` →
+/// `EMFUsageHistoryKey` maps each emoji to the sequence numbers of its uses (a
+/// counter shared by every pick; 627 on 2026-10-04), so it gives both how
+/// often and how recently — more than `EMFRecentsKey`, which is only an order.
+enum MacEmojiHistory {
+    struct Use: Equatable {
+        let emoji: String
+        let count: Int
+        let last: Int
+    }
+
+    static func read() -> [Use] {
+        guard let root = CFPreferencesCopyAppValue("EMFDefaultsKey" as CFString, "com.apple.EmojiPreferences" as CFString) as? [String: Any],
+              let history = root["EMFUsageHistoryKey"] as? [String: [Int]] else { return [] }
+        return history.map { Use(emoji: $0.key, count: $0.value.count, last: $0.value.max() ?? 0) }
+    }
+}
+
+extension EmojiBoard {
+    static let importCap = 140
+
+    /// Seed the board from Apple's history, **once**. Most used first, ties to
+    /// the most recent, so the emoji he reaches for most get the cells nearest
+    /// their anchors — the prime spots — and the long tail lands further out.
+    /// Emoji already on the board stay exactly where they are (they are only
+    /// skipped), keyed ones and anything the catalogue can't draw (←, °, µ —
+    /// Apple's picker also hands out symbols) are left out, and at most
+    /// `importCap` cells are taken so the board still has room to grow.
+    ///
+    /// Imported emoji get a "last used" from Apple's sequence number, i.e. a
+    /// date in 1970: older than any real pick, so on a full board they are the
+    /// first to make room, oldest first.
+    mutating func importHistory(_ uses: [MacEmojiHistory.Use], catalog: EmojiCatalog, keyed: Set<String>) {
+        var added = 0
+        let ranked = uses.sorted { $0.count != $1.count ? $0.count > $1.count : $0.last > $1.last }
+        for item in ranked where added < Self.importCap {
+            guard let entry = catalog.entry(for: item.emoji),
+                  !keyed.contains(EmojiPickerPolicy.normalized(entry.emoji)),
+                  slot(for: entry.emoji) == nil,
+                  slots.count < Self.columns * Self.rows else { continue }
+            use(entry.emoji, group: entry.group, at: Date(timeIntervalSince1970: TimeInterval(item.last)))
+            added += 1
+        }
+    }
+}
+
 /// The board, in `UserDefaults`.
 enum EmojiBoardStore {
     static let defaultsKey = "EmojiPicker.board"
+
+    static let importedKey = "EmojiPicker.importedMacHistory"
+
+    /// The board as it should open: Apple's history folded in the first time.
+    static func boardSeedingOnce(catalog: EmojiCatalog, keyed: Set<String>) -> EmojiBoard {
+        var current = board
+        guard !UserDefaults.standard.bool(forKey: importedKey) else { return current }
+        let history = MacEmojiHistory.read()
+        current.importHistory(history, catalog: catalog, keyed: keyed)
+        board = current
+        UserDefaults.standard.set(true, forKey: importedKey)
+        overlayInfo("EmojiPicker: seeded the board from macOS history (\(history.count) emoji there, \(current.slots.count) on the board now)")
+        return current
+    }
 
     static var board: EmojiBoard {
         get {

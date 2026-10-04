@@ -133,4 +133,38 @@ final class EmojiPickerTests: XCTestCase {
         d = OptionDoubleTap()
         _ = tap(&d, at: 0); XCTAssertFalse(tap(&d, at: 0.2, alone: false), "⌥ with ⇧ or ⌘ held")
     }
+
+    // MARK: - Seeding from Apple's history
+
+    func testImportPutsTheMostUsedNearestTheAnchorAndKeepsWhatIsAlreadyThere() {
+        var board = EmojiBoard()
+        board.use("🦒", group: 2)
+        let giraffe = board.slot(for: "🦒")
+        board.importHistory([
+            .init(emoji: "😃", count: 1, last: 500),
+            .init(emoji: "😀", count: 9, last: 10),
+            .init(emoji: "🦒", count: 50, last: 600),
+            .init(emoji: "🍑", count: 40, last: 600),
+            .init(emoji: "←", count: 30, last: 600),
+            .init(emoji: "🧑🏾‍💻", count: 2, last: 600),
+        ], catalog: catalog, keyed: ["🍑"])
+        XCTAssertEqual(board.slot(for: "🦒"), giraffe, "already placed: untouched")
+        XCTAssertEqual(board.slot(for: "😀").map { [$0.column, $0.row] }, [0, 0], "most used takes the anchor")
+        XCTAssertEqual(board.slot(for: "😃").map { [$0.column, $0.row] }, [1, 0])
+        XCTAssertNil(board.slot(for: "🍑"), "keyed")
+        XCTAssertNil(board.slot(for: "←"), "not an emoji the catalogue knows")
+        XCTAssertNotNil(board.slot(for: "🧑‍💻"), "a skin-toned use counts for its base")
+        XCTAssertLessThan(board.slot(for: "😀")!.lastUsed, Date(timeIntervalSince1970: 1_000_000), "older than any real pick")
+    }
+
+    func testImportLeavesRoomToGrow() {
+        var board = EmojiBoard()
+        let uses = catalog.entries.prefix(300).enumerated().map { MacEmojiHistory.Use(emoji: $1.emoji, count: 1, last: $0) }
+        board.importHistory(uses, catalog: catalog, keyed: [])
+        XCTAssertEqual(board.slots.count, EmojiBoard.importCap)
+    }
+
+    func testReadsThisMacsHistoryWithoutCrashing() {
+        _ = MacEmojiHistory.read()
+    }
 }

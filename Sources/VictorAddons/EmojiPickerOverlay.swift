@@ -170,7 +170,7 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
 
         // The board fills the rest.
         let gridTop = nameLine.frame.minY - 4 * s
-        var board = EmojiBoardStore.board
+        var board = EmojiBoardStore.boardSeedingOnce(catalog: catalog, keyed: Set(keyed.keys))
         board.removeKeyed(Set(keyed.keys))
         EmojiBoardStore.board = board
         let grid = EmojiBoardView(frame: NSRect(x: pad / 2, y: pad / 2, width: W - pad, height: gridTop - pad / 2),
