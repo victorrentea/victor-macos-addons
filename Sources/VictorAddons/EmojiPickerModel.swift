@@ -360,34 +360,42 @@ struct EmojiBoard: Equatable {
     }
 
     /// The arrow corner is **laid out by hand**, not grown (Victor, 2026-10-04:
-    /// *"săgețile în colțul stânga jos să fie puse într-o ordine cu sens,
-    /// stânga dreapta sus jos … atât cele albastre cât și cele făcute din
-    /// linii, una lângă alta"*). Every group of four reads ← → ↑ ↓ (or the
-    /// diagonals ↖ ↗ ↙ ↘), and each plain arrow sits **right above** its blue
-    /// twin, so finding one finds the other. Top row first; the bottom row is
-    /// the board's last. A keyed one (↗ on ⌥⇧U, 🔼 🔽 👉) keeps its cell
-    /// empty — the hole is where it *would* be, and the order around it holds.
-    /// These cells are reserved: no other emoji ever lands in them, and on a
-    /// full board none of these is evicted.
+    /// *"săgețile în colțul stânga jos să fie puse într-o ordine cu sens"*).
+    /// The eight directions sit as **compass roses around an empty centre**
+    /// (later the same day: *"față de un centru gol … geografic să arate
+    /// bine"*) — each arrow points away from the hole, so ↗ really is up and
+    /// to the right of it. Three roses side by side, a free column between
+    /// them: the plain ones, the blue ones, the hands. Above them the curved
+    /// and the media arrows, each plain one right above its blue twin. Top row
+    /// first; the bottom row is the board's last. `""` is a hole: the roses'
+    /// centres and the gaps between them. A keyed one (↗ on ⌥⇧U, 🔼 🔽 👉)
+    /// keeps its cell empty — the hole is where it *would* be, and the shape
+    /// around it holds. Every cell of the block, holes included, is reserved:
+    /// no other emoji ever lands in one, and on a full board none of these is
+    /// evicted.
     static let arrowBlock: [[String]] = [
-        ["↩\u{FE0E}", "↪\u{FE0E}", "⤴\u{FE0E}", "⤵\u{FE0E}", "🔁", "🔂", "🔀"],
-        ["↩️", "↪️", "⤴️", "⤵️", "👈", "👉", "👆", "👇", "🔄", "🔃"],
-        ["◀️", "▶️", "🔼", "🔽", "⏪", "⏩", "⏫", "⏬", "↺", "↻"],
-        ["←", "→", "↑", "↓", "↖\u{FE0E}", "↗\u{FE0E}", "↙\u{FE0E}", "↘\u{FE0E}", "↔\u{FE0E}", "↕\u{FE0E}"],
-        ["⬅️", "➡️", "⬆️", "⬇️", "↖️", "↗️", "↙️", "↘️", "↔️", "↕️"],
+        ["↩\u{FE0E}", "↪\u{FE0E}", "⤴\u{FE0E}", "⤵\u{FE0E}", "↺", "↻", "🔄", "🔃", "⏪", "⏩", "⏫", "⏬", "🔁", "🔂", "🔀"],
+        ["↩️", "↪️", "⤴️", "⤵️", "◀️", "▶️", "🔼", "🔽", "↔\u{FE0E}", "↕\u{FE0E}", "↔️", "↕️"],
+        ["↖\u{FE0E}", "↑", "↗\u{FE0E}", "", "↖️", "⬆️", "↗️", "", "", "👆", ""],
+        ["←", "", "→", "", "⬅️", "", "➡️", "", "👈", "", "👉"],
+        ["↙\u{FE0E}", "↓", "↘\u{FE0E}", "", "↙️", "⬇️", "↘️", "", "", "👇", ""],
     ]
+
+    private static func blockRow(_ index: Int) -> Int { rows - arrowBlock.count + index }
 
     private static let arrowCells: [String: (column: Int, row: Int)] = {
         var cells: [String: (column: Int, row: Int)] = [:]
         for (index, line) in arrowBlock.enumerated() {
-            for (column, emoji) in line.enumerated() {
-                cells[EmojiPickerPolicy.normalized(emoji)] = (column, rows - arrowBlock.count + index)
+            for (column, emoji) in line.enumerated() where !emoji.isEmpty {
+                cells[EmojiPickerPolicy.normalized(emoji)] = (column, blockRow(index))
             }
         }
         return cells
     }()
 
-    private static let reservedCells = Set(arrowCells.values.map { $0.row * columns + $0.column })
+    private static let reservedCells: Set<Int> = Set(arrowBlock.enumerated().flatMap { index, line in
+        line.indices.map { blockRow(index) * columns + $0 }
+    })
 
     /// The cell set aside for this emoji in the arrow corner, if any.
     static func reservedCell(for emoji: String) -> (column: Int, row: Int)? {
@@ -552,7 +560,7 @@ extension EmojiBoard {
         let lastUsed = Dictionary(slots.map { (EmojiPickerPolicy.normalized($0.emoji), $0.lastUsed) }, uniquingKeysWith: max)
         let displaced = slots.filter { Self.reservedCell(for: $0.emoji) == nil && Self.isReserved(column: $0.column, row: $0.row) }
         slots.removeAll { Self.reservedCell(for: $0.emoji) != nil || Self.isReserved(column: $0.column, row: $0.row) }
-        for emoji in Self.arrowBlock.joined() {
+        for emoji in Self.arrowBlock.joined() where !emoji.isEmpty {
             guard let entry = catalog.entry(for: emoji) else { continue }
             let key = EmojiPickerPolicy.normalized(entry.emoji)
             guard !keyed.contains(key) else { continue }
@@ -573,9 +581,9 @@ enum EmojiBoardStore {
 
     /// Which board size the saved positions belong to: absent = the first
     /// 20 × 10 board, 2 = 25 × 13 with the arrow corner, 3 = the arrow corner
-    /// laid out by hand (`EmojiBoard.arrowBlock`).
+    /// laid out by hand (`EmojiBoard.arrowBlock`), 4 = its compass roses.
     static let layoutKey = "EmojiPicker.boardLayout"
-    static let layoutVersion = 3
+    static let layoutVersion = 4
 
     /// Lay a 20 × 10 board out again at 25 × 13 and drop the plain arrows and
     /// 🔄 into the new arrow corner. Once: from then on nothing moves.

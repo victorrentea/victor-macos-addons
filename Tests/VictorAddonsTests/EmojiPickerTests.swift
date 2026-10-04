@@ -82,8 +82,8 @@ final class EmojiPickerTests: XCTestCase {
         board.use(catalog.entry(for: "🔄")!)
         board.use(catalog.entry(for: "💘")!)
         board.use(catalog.entry(for: "🔔")!)
-        XCTAssertEqual(board.slot(for: "⬇️").map { [$0.column, $0.row] }, [3, EmojiBoard.rows - 1], "its hand-laid cell")
-        XCTAssertEqual(board.slot(for: "🔄").map { [$0.column, $0.row] }, [8, EmojiBoard.rows - 4])
+        XCTAssertEqual(board.slot(for: "⬇️").map { [$0.column, $0.row] }, [5, EmojiBoard.rows - 1], "its hand-laid cell")
+        XCTAssertEqual(board.slot(for: "🔄").map { [$0.column, $0.row] }, [6, EmojiBoard.rows - 5])
         XCTAssertEqual(board.slot(for: "💘").map { [$0.column, $0.row] }, [0, 0], "a smiley-group heart: top left, arrow or not")
         XCTAssertEqual(board.slot(for: "🔔").map { [$0.column, $0.row] }, [EmojiBoard.columns - 1, EmojiBoard.rows - 1])
     }
@@ -105,24 +105,32 @@ final class EmojiPickerTests: XCTestCase {
         board.place(EmojiCatalog.plainArrows, keyed: Set(keyed.keys))
         XCTAssertNil(board.slot(for: "↖\u{FE0E}"))
         XCTAssertEqual(board.slots.count, EmojiCatalog.plainArrows.count - 1)
-        XCTAssertTrue(board.slots.allSatisfy { $0.column < 10 && $0.row > EmojiBoard.rows / 2 }, "all in the bottom-left corner")
+        XCTAssertTrue(board.slots.allSatisfy { $0.column < 15 && $0.row > EmojiBoard.rows / 2 }, "all in the bottom-left corner")
     }
 
-    func testTheArrowCornerReadsLeftRightUpDownWithEachPlainOneAboveItsBlueTwin() {
+    func testTheArrowCornerIsCompassRosesAroundEmptyCentres() {
         var board = EmojiBoard(slots: [
             EmojiSlot(emoji: "⬅️", column: 0, row: 0, lastUsed: Date(timeIntervalSince1970: 42)),
-            EmojiSlot(emoji: "🚗", column: 2, row: EmojiBoard.rows - 1, lastUsed: Date(timeIntervalSince1970: 7)),
+            EmojiSlot(emoji: "🚗", column: 1, row: EmojiBoard.rows - 2, lastUsed: Date(timeIntervalSince1970: 7)),
         ])
         board.arrangeArrowBlock(catalog: catalog, keyed: ["👉", "🔼", "🔽", "↗", "↗\u{FE0E}"])
         func cell(_ e: String) -> [Int]? { board.slot(for: e).map { [$0.column, $0.row] } }
-        let bottom = EmojiBoard.rows - 1
-        XCTAssertEqual(["⬅️", "➡️", "⬆️", "⬇️"].map(cell), [[0, bottom], [1, bottom], [2, bottom], [3, bottom]])
-        XCTAssertEqual(["←", "→", "↑", "↓"].map(cell), [[0, bottom - 1], [1, bottom - 1], [2, bottom - 1], [3, bottom - 1]])
-        XCTAssertEqual(cell("↔\u{FE0E}"), [8, bottom - 1])
-        XCTAssertEqual(cell("↔️"), [8, bottom])
+        let bottom = EmojiBoard.rows - 1, middle = bottom - 1, top = bottom - 2
+        // Blue rose centred on (5, middle): each arrow points away from the hole.
+        XCTAssertEqual(["↖️", "⬆️", "⬅️", "➡️", "↙️", "⬇️", "↘️"].map(cell),
+                       [[4, top], [5, top], [4, middle], [6, middle], [4, bottom], [5, bottom], [6, bottom]])
+        XCTAssertEqual(["↖\u{FE0E}", "↑", "←", "→", "↙\u{FE0E}", "↓", "↘\u{FE0E}"].map(cell),
+                       [[0, top], [1, top], [0, middle], [2, middle], [0, bottom], [1, bottom], [2, bottom]])
+        XCTAssertEqual(["👆", "👈", "👇"].map(cell), [[9, top], [8, middle], [9, bottom]])
+        XCTAssertNil(board.slot(column: 1, row: middle), "the plain rose's centre is empty")
+        XCTAssertTrue(EmojiBoard.isReserved(column: 5, row: middle), "and stays empty: the blue one's too")
+        XCTAssertTrue(EmojiBoard.isReserved(column: 3, row: middle), "the gap between roses")
+        XCTAssertEqual(cell("↔\u{FE0E}"), [8, bottom - 3])
+        XCTAssertEqual(cell("↩\u{FE0E}"), [0, bottom - 4], "plain curved one right above its blue twin")
+        XCTAssertEqual(cell("↩️"), [0, bottom - 3])
         XCTAssertEqual(board.slot(for: "⬅️")?.lastUsed, Date(timeIntervalSince1970: 42), "it moved, its history did not")
-        XCTAssertNil(board.slot(for: "↗️"), "keyed: its cell stays empty")
-        XCTAssertNil(board.slot(column: 5, row: bottom))
+        XCTAssertNil(board.slot(for: "↗\u{FE0E}"), "keyed: its cell stays empty")
+        XCTAssertNil(board.slot(column: 2, row: top))
         XCTAssertNotNil(cell("🚗"), "what sat in the block moved out of it")
         XCTAssertFalse(EmojiBoard.isReserved(column: cell("🚗")![0], row: cell("🚗")![1]))
         board.use("🍕", group: 3)
@@ -146,7 +154,7 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(cell("😃"), [1, 0])
         XCTAssertEqual(cell("🦒"), [EmojiBoard.columns - 1, 0], "moved with its corner")
         XCTAssertEqual(cell("🔔"), [EmojiBoard.columns - 1, EmojiBoard.rows - 1])
-        XCTAssertEqual(cell("⬇️"), [3, EmojiBoard.rows - 1], "arrows to their own corner")
+        XCTAssertEqual(cell("⬇️"), [5, EmojiBoard.rows - 1], "arrows to their own corner")
         XCTAssertEqual(cell("🍕"), [0, (EmojiBoard.rows - 1) / 2])
         XCTAssertEqual(board.slot(for: "😀")?.lastUsed, at)
     }
@@ -200,7 +208,7 @@ final class EmojiPickerTests: XCTestCase {
         let retina = NSRect(x: 0, y: 0, width: 1512, height: 982)
         let external = NSRect(x: 1512, y: 0, width: 1920, height: 1080)
         let alone = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [], mouseLocation: nil)
-        XCTAssertEqual(alone.scale, 1)
+        XCTAssertEqual(alone.scale, 1.3, "retina alone: 30% bigger")
         XCTAssertEqual(alone.frame.maxX, retina.maxX)
         XCTAssertEqual(alone.frame.minY, retina.minY)
         let side = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [external], mouseLocation: NSPoint(x: 100, y: 100))
@@ -208,6 +216,9 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertGreaterThan(side.scale, 1.4)
         let mouseThere = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [external], mouseLocation: NSPoint(x: 2000, y: 500))
         XCTAssertTrue(retina.contains(mouseThere.frame), "never under the cursor")
+        XCTAssertEqual(mouseThere.scale, 1)
+        XCTAssertEqual(alone.frame.width / mouseThere.frame.width, 1.3, accuracy: 0.01)
+        XCTAssertEqual(alone.frame.height / mouseThere.frame.height, 1.3, accuracy: 0.01)
     }
 
     // MARK: - Left ⌥ double tap

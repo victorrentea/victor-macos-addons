@@ -143,8 +143,10 @@ final class EmojiPickerController: NSObject {
         let W = frame.width, H = frame.height
         let pad = 12 * s
 
-        // Full screen on an external (scale > 1): square edges, nothing to round.
-        let root = EmojiPickerBackground(frame: NSRect(origin: .zero, size: frame.size), radius: s > 1 ? 0 : 18)
+        // Full screen on an external: square edges, nothing to round. (Not
+        // `s > 1`: the retina corner is scaled too when it is the only screen.)
+        let fullScreen = NSScreen.screens.contains { $0.frame == frame }
+        let root = EmojiPickerBackground(frame: NSRect(origin: .zero, size: frame.size), radius: fullScreen ? 0 : 18 * s)
         panel.contentView = root
 
         // Top bar: the search box on the left, matches to its right.
@@ -392,8 +394,9 @@ enum EmojiPickerPlacement {
     /// place. On an external screen it takes the **whole screen**, like the
     /// cheat-sheet (Victor: "full screen, nu fereastră"), and everything —
     /// cells, fonts, spacing — grows by `scale` together. On the retina it
-    /// stays at 1× in the bottom-right corner, small enough to leave the
-    /// projected slide readable.
+    /// sits in the bottom-right corner, small enough to leave the projected
+    /// slide readable: 1× when an external is plugged in, 1.3× when the
+    /// retina is the only screen.
     ///
     /// The corner is 25% wider than it was (0.45 of the retina, was 0.36;
     /// Victor, 2026-10-04) at the same cell size, which is where the board's
@@ -405,14 +408,18 @@ enum EmojiPickerPlacement {
         if externalFrames.contains(target) {
             return (target, min(max(target.height / 620, 1), 2))
         }
-        let width = (max(retinaFrame.width * 0.45, 590)).rounded()
+        // Retina alone (no external to send it to): 30% bigger on both axes,
+        // everything scaled together (Victor, 2026-10-04) — there is no other
+        // screen to read it on, so it may take more of the slide.
+        let scale: CGFloat = externalFrames.isEmpty ? 1.3 : 1
+        let width = (max(retinaFrame.width * 0.45, 590) * scale).rounded()
         // Exactly as tall as the board needs at this width: search bar and name
         // line (`chrome`) plus `rows` square cells — no dead band to waste the
         // corner on.
-        let chrome: CGFloat = 108
-        let cell = (width - 12) / CGFloat(EmojiBoard.columns)
-        let height = (chrome + cell * CGFloat(EmojiBoard.rows)).rounded()
-        return (NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height), 1)
+        let chrome = 108 * scale
+        let cell = (width - 12 * scale) / CGFloat(EmojiBoard.columns)
+        let height = min((chrome + cell * CGFloat(EmojiBoard.rows)).rounded(), retinaFrame.height)
+        return (NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height), scale)
     }
 }
 
