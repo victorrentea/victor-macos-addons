@@ -430,9 +430,13 @@ struct EmojiSlot: Codable, Equatable {
 /// bigger — both mean more cells, so the board grew rather than the tiles
 /// merely shrinking. The old board was laid out again once
 /// (`EmojiBoardStore.migrate`), keeping each region's shape.
+///
+/// **23 × 12 since later that night**: 15% fewer cells (Victor: *"redu
+/// numărul căsuțelor cu 15%"*), same proportions, so each one is a little
+/// bigger in the same panel. Laid out again once more, the same way.
 struct EmojiBoard: Equatable {
-    static let columns = 25
-    static let rows = 13
+    static let columns = 23
+    static let rows = 12
 
     private(set) var slots: [EmojiSlot]
 
@@ -657,11 +661,13 @@ extension EmojiBoard {
     /// cluster comes out the same shape, just moved with its anchor. Emoji
     /// whose region itself moved (the arrows, the food) are replayed the same
     /// way around their new anchor. "Last used" travels with each one.
-    static func relaid(_ old: [EmojiSlot], columns oldColumns: Int, rows oldRows: Int, catalog: EmojiCatalog) -> EmojiBoard {
+    static func relaid(_ old: [EmojiSlot], columns oldColumns: Int, rows oldRows: Int, catalog: EmojiCatalog,
+                       hadArrowCorner: Bool = false) -> EmojiBoard {
         let placed = old.compactMap { slot -> (slot: EmojiSlot, entry: EmojiEntry, distance: Double)? in
             guard let entry = catalog.entry(for: slot.emoji) else { return nil }
-            // The old layout had no arrow corner: they grew with the Symbols.
-            let oldAnchor = anchor(region(group: entry.group), columns: oldColumns, rows: oldRows)
+            // The 20 × 10 layout had no arrow corner: they grew with the Symbols.
+            let oldRegion = hadArrowCorner ? region(for: entry) : region(group: entry.group)
+            let oldAnchor = anchor(oldRegion, columns: oldColumns, rows: oldRows)
             return (slot, entry, distance(column: slot.column, row: slot.row, to: oldAnchor))
         }
         var board = EmojiBoard()
@@ -727,7 +733,9 @@ extension EmojiBoard {
     /// order. Cells are square on screen, so plain distance makes the rings
     /// round.
     static let cellsFromCentre: [(column: Int, row: Int)] = {
-        let centre = (column: Double(columns - 1) / 2, row: Double(rows - 1) / 2)
+        // A real cell, so its four neighbours are exactly one arrow away
+        // even when a side has an even count (12 rows: one more above).
+        let centre = (column: Double(columns / 2), row: Double(rows / 2))
         var cells: [(column: Int, row: Int, distance: Double, angle: Double)] = []
         for row in 0..<rows {
             for column in 0..<columns {
@@ -848,9 +856,10 @@ enum EmojiBoardStore {
     /// laid out by hand (`EmojiBoard.arrowBlock`), 4 = its compass roses,
     /// 5 = ↗ back in them once it left ⌥⇧U (plain and blue, into their
     /// reserved cells; nothing else moves), 6 = the blue rose glued to the
-    /// plain one, the hands one column closer (`relocateArrowBlock`).
+    /// plain one, the hands one column closer (`relocateArrowBlock`), 7 =
+    /// 23 × 12, every region replayed from its old anchor (`relaid`).
     static let layoutKey = "EmojiPicker.boardLayout"
-    static let layoutVersion = 6
+    static let layoutVersion = 7
 
     /// Lay a 20 × 10 board out again at 25 × 13 and drop the plain arrows and
     /// 🔄 into the new arrow corner. Once: from then on nothing moves.
@@ -870,6 +879,14 @@ enum EmojiBoardStore {
             current.place(["↗\u{FE0E}", "↗️"].compactMap(catalog.entry(for:)), keyed: keyed)
         }
         if version < 6 { current.relocateArrowBlock() }
+        if version < 7 {
+            // Saved on 25 × 13 (versions 2–6; a 20 × 10 one was just relaid
+            // straight onto the new size above, so it is already right).
+            if version >= 2 {
+                current = EmojiBoard.relaid(current.slots, columns: 25, rows: 13, catalog: catalog, hadArrowCorner: true)
+            }
+            overlayInfo("EmojiPicker: board laid out again at \(EmojiBoard.columns)×\(EmojiBoard.rows), \(current.slots.count) on it")
+        }
         board = current
         UserDefaults.standard.set(layoutVersion, forKey: layoutKey)
         overlayInfo("EmojiPicker: arrow corner laid out by hand, \(current.slots.count) on the board")

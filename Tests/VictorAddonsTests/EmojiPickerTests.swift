@@ -155,6 +155,20 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertTrue(EmojiCatalog.plainArrows.contains { $0.emoji == "↗\u{FE0E}" }, "↗ left ⌥⇧U for the board")
     }
 
+    func testThe25By13BoardIsLaidOutOnTheSmallerOneCornersStayingCorners() {
+        let t = Date(timeIntervalSince1970: 5)
+        let board = EmojiBoard.relaid([
+            EmojiSlot(emoji: "😀", column: 0, row: 0, lastUsed: t),
+            EmojiSlot(emoji: "🐄", column: 24, row: 0, lastUsed: t),
+            EmojiSlot(emoji: "⬅️", column: 3, row: 11, lastUsed: t),
+            EmojiSlot(emoji: "🔔", column: 24, row: 12, lastUsed: t),
+        ], columns: 25, rows: 13, catalog: catalog, hadArrowCorner: true)
+        func cell(_ e: String) -> [Int]? { board.slot(for: e).map { [$0.column, $0.row] } }
+        let right = EmojiBoard.columns - 1, bottom = EmojiBoard.rows - 1
+        XCTAssertEqual([cell("😀"), cell("🐄"), cell("⬅️"), cell("🔔")], [[0, 0], [right, 0], [3, bottom - 1], [right, bottom]])
+        XCTAssertEqual(board.slot(for: "😀")?.lastUsed, t, "\"last used\" travels with it")
+    }
+
     func testGluingTheRosesMovesOnlyThePlacedArrows() {
         let middle = EmojiBoard.rows - 2, t = Date(timeIntervalSince1970: 5)
         var board = EmojiBoard(slots: [

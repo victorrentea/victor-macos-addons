@@ -9,12 +9,12 @@ import AppKit
 /// the external one, so what the eye learns on one screen holds on the other.
 ///
 /// Three zones, top to bottom:
-/// - **search field + hint.** Typing searches English and Romanian names and
-///   keywords; beside the field, what the keys do or how many matched.
+/// - **search field + why.** Typing searches English and Romanian names and
+///   keywords; beside the small field, why the selected one matched.
 /// - **name line.** What the hovered / selected emoji is called, en · ro.
-///   While searching, its start (right under the box) says **why** that one
-///   matched: the word each typed word was found in, the matched letters in
-///   yellow, and whether it is the name, a keyword or a crowd synonym.
+///   **Why** it matched sits beside the field: the word each typed word was
+///   found in, the matched letters in yellow, and whether it is the name, a
+///   keyword or a crowd synonym (~).
 /// - **the board.** Empty at first; every emoji you use lands on it and stays
 ///   in that cell forever (`EmojiBoard`), so it is a map learnt by position,
 ///   never scrolled. Nothing on a ⌥ / ⌥⇧ / ⌃⌥ key ever appears on it. Clickable.
@@ -147,19 +147,24 @@ final class EmojiPickerController: NSObject {
         scale = s
         let panel = EmojiPickerPanel(frame: frame)
         let W = frame.width, H = frame.height
-        let pad = 12 * s
+        // Tight margins (Victor, 2026-10-04: *"mai redu borderul"*): every
+        // point of the retina corner the plate keeps is one the tiles don't
+        // get. `EmojiPickerPlacement.chrome` must add up to the same.
+        let pad = EmojiPickerPlacement.pad * s
 
         // Full screen on an external: square edges, nothing to round. (Not
         // `s > 1`: the retina corner is scaled too when it is the only screen.)
         let fullScreen = NSScreen.screens.contains { $0.frame == frame }
-        let root = EmojiPickerBackground(frame: NSRect(origin: .zero, size: frame.size), radius: fullScreen ? 0 : 18 * s)
+        let root = EmojiPickerBackground(frame: NSRect(origin: .zero, size: frame.size), radius: fullScreen ? 0 : 8 * s)  // tight margins: a big radius would cut the corner tiles
         panel.contentView = root
 
         // Top bar: the search box on the left, matches to its right.
-        let barHeight = 56 * s
+        let barHeight = EmojiPickerPlacement.barHeight * s
         let barY = H - pad - barHeight
-        let fieldWidth = min(max(W * 0.32, 190 * s), 320 * s)
-        let box = NSView(frame: NSRect(x: pad, y: barY + (barHeight - 36 * s) / 2, width: fieldWidth, height: 36 * s))
+        // Small (Victor, 2026-10-04: *"fă căsuța text mică"*): a few words fit,
+        // and the match explanation beside it gets the room.
+        let fieldWidth = 150 * s
+        let box = NSView(frame: NSRect(x: pad, y: barY + (barHeight - 32 * s) / 2, width: fieldWidth, height: 32 * s))
         box.wantsLayer = true
         box.layer?.backgroundColor = EmojiPickerStyle.fieldBackground.cgColor
         box.layer?.cornerRadius = 9 * s
@@ -183,21 +188,21 @@ final class EmojiPickerController: NSObject {
         root.addSubview(hint)
 
         // Name line under the bar.
-        let nameHeight = 22 * s
+        let nameHeight = EmojiPickerPlacement.nameHeight * s
         let nameLine = NSTextField(labelWithString: "")
         nameLine.font = .systemFont(ofSize: 13 * s)
         nameLine.textColor = EmojiPickerStyle.dim
         nameLine.lineBreakMode = .byTruncatingTail
-        nameLine.frame = NSRect(x: pad + 4 * s, y: barY - nameHeight - 2 * s, width: W - 2 * pad, height: nameHeight)
+        nameLine.frame = NSRect(x: pad + 4 * s, y: barY - nameHeight, width: W - 2 * pad, height: nameHeight)
         nameLine.allowsDefaultTighteningForTruncation = true
         root.addSubview(nameLine)
 
         // The board fills the rest.
-        let gridTop = nameLine.frame.minY - 4 * s
+        let gridTop = nameLine.frame.minY
         var board = EmojiBoardStore.boardSeedingOnce(catalog: catalog, keyed: Set(keyed.keys))
         board.removeKeyed(Set(keyed.keys))
         EmojiBoardStore.board = board
-        let grid = EmojiBoardView(frame: NSRect(x: pad / 2, y: pad / 2, width: W - pad, height: gridTop - pad / 2),
+        let grid = EmojiBoardView(frame: NSRect(x: pad, y: pad, width: W - 2 * pad, height: gridTop - pad),
                                   board: board, catalog: catalog, scale: s)
         grid.keyed = keyed
         grid.onPick = { [weak self] entry in self?.pick(entry) }
@@ -219,14 +224,18 @@ final class EmojiPickerController: NSObject {
         refreshQuery()
     }
 
+    /// The name line says what the emoji is; while searching, the slot right
+    /// of the box says why it matched (Victor, 2026-10-04: the explanation
+    /// goes there, in place of the key hints and the match count).
     private func showName(_ entry: EmojiEntry?) {
-        guard let nameLine else { return }
+        guard let nameLine, let hint else { return }
+        hint.stringValue = ""
         guard let entry else { nameLine.stringValue = ""; return }
         let font = NSFont.systemFont(ofSize: 13 * scale)
         let dim: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: EmojiPickerStyle.dim]
-        let line = NSMutableAttributedString()
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty {
+            let line = NSMutableAttributedString()
             for (index, match) in catalog.explain(trimmed, entry).enumerated() {
                 if index > 0 { line.append(NSAttributedString(string: "  +  ", attributes: dim)) }
                 // A crowd synonym reads as "~word": near the meaning, not its name.
@@ -250,13 +259,12 @@ final class EmojiPickerController: NSObject {
                     .font: font, .foregroundColor: EmojiPickerStyle.chord,
                 ]))
             }
-            line.append(NSAttributedString(string: "     ", attributes: dim))
+            hint.attributedStringValue = line
         }
         var text = "\(entry.emoji)  \(entry.name)"
         if !entry.nameRo.isEmpty, entry.nameRo != entry.name { text += "  ·  \(entry.nameRo)" }
         if let chord = keyed[EmojiPickerPolicy.normalized(entry.emoji)] { text += "    — e deja pe \(chord)" }
-        line.append(NSAttributedString(string: text, attributes: dim))
-        nameLine.attributedStringValue = line
+        nameLine.attributedStringValue = NSAttributedString(string: text, attributes: dim)
     }
 
     // MARK: - Picking
@@ -321,7 +329,7 @@ final class EmojiPickerController: NSObject {
     }
 
     private func refreshQuery() {
-        guard let field, let hint, let grid else { return }
+        guard let field, let grid else { return }
         let font = NSFont.systemFont(ofSize: 17 * scale)
         if query.isEmpty {
             field.attributedStringValue = NSAttributedString(string: "🔍 caută (en / ro)", attributes: [
@@ -338,12 +346,6 @@ final class EmojiPickerController: NSObject {
         let results = trimmed.isEmpty ? nil
             : memory.reorder(catalog.search(trimmed, limit: EmojiBoard.columns * EmojiBoard.rows), for: trimmed)
         grid.results = results
-        switch results?.count {
-        case nil: hint.stringValue = "scrie ca să cauți · ↵ inserează · ←→↑↓ alegi · esc"
-        case 0: hint.stringValue = "nimic pentru „\(trimmed)”"
-        case 1: hint.stringValue = "1 potrivire"
-        case let count?: hint.stringValue = "\(count) potriviri · cea mai bună în centru"
-        }
         showName(grid.selectedEntry)
     }
 
@@ -441,6 +443,14 @@ final class EmojiPickerHold {
 
 /// Where the picker goes and how big it is drawn there.
 enum EmojiPickerPlacement {
+    /// The plate's margin, the search bar's and the name line's heights, in
+    /// points at scale 1 — shared with `EmojiPickerController.build`, so the
+    /// corner is exactly as tall as what it holds.
+    static let pad: CGFloat = 4
+    static let barHeight: CGFloat = 40
+    static let nameHeight: CGFloat = 20
+    static var chrome: CGFloat { 2 * pad + barHeight + nameHeight }
+
     /// The screen choice is the ⌥ cheat-sheet's, so both appear in the same
     /// place. On an external screen it takes the **whole screen**, like the
     /// cheat-sheet (Victor: "full screen, nu fereastră"), and everything —
@@ -451,8 +461,8 @@ enum EmojiPickerPlacement {
     ///
     /// The corner is 25% wider than it was (0.45 of the retina, was 0.36;
     /// Victor, 2026-10-04) at the same cell size, which is where the board's
-    /// five extra columns come from; on the external the same 25 × 13 board
-    /// fills the screen with cells ~23% smaller than the 20 × 10 ones.
+    /// five extra columns came from; on the external the same board fills the
+    /// screen.
     static func frame(retinaFrame: NSRect, externalFrames: [NSRect], mouseLocation: CGPoint?) -> (frame: NSRect, scale: CGFloat) {
         let target = KeymapOverlayPlacement.frame(retinaFrame: retinaFrame, externalFrames: externalFrames,
                                                   imageAspectRatio: 1, mouseLocation: mouseLocation)
@@ -463,15 +473,15 @@ enum EmojiPickerPlacement {
         // everything scaled together (Victor, 2026-10-04) — there is no other
         // screen to read it on, so it may take more of the slide.
         // Then 40% bigger again, tiles and type alike (Victor, 2026-10-04:
-        // *"increase size of emoji buttons by 40%"*): more panel, same 25 × 13
-        // board, so nothing on it moves. Capped at the retina's width.
+        // *"increase size of emoji buttons by 40%"*): more panel, same board,
+        // so nothing on it moves. Capped at the retina's width.
         let scale: CGFloat = (externalFrames.isEmpty ? 1.3 : 1) * 1.4
         let width = min((max(retinaFrame.width * 0.45, 590) * scale).rounded(), retinaFrame.width)
         // Exactly as tall as the board needs at this width: search bar and name
         // line (`chrome`) plus `rows` square cells — no dead band to waste the
         // corner on.
-        let chrome = 108 * scale
-        let cell = (width - 12 * scale) / CGFloat(EmojiBoard.columns)
+        let chrome = Self.chrome * scale
+        let cell = (width - 2 * pad * scale) / CGFloat(EmojiBoard.columns)
         let height = min((chrome + cell * CGFloat(EmojiBoard.rows)).rounded(), retinaFrame.height)
         return (NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height), scale)
     }
