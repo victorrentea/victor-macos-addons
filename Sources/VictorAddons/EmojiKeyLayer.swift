@@ -358,9 +358,12 @@ enum EmojiKeyLayer {
     ///
     /// N for nor (2026-10-03) — the Romanian word, since "cloud" would want C,
     /// which crying laughter already holds: the move A made for *autobuz*.
+    ///
+    /// F for fund (2026-10-04) — the Romanian word for the peach's other meaning.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
           1: "🐑",   // S — sheep
+          3: "🍑",   // F — fund, a peach
           5: "🪿",   // G — goose
           8: "😂",   // C — crying laughter
          11: "🐞",   // B — bug, the ladybug rather than the caterpillar or the beetle
