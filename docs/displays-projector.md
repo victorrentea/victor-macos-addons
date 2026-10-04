@@ -246,9 +246,11 @@ crop"* — so it is the crop's gesture, read by the crop's code.
     claims: on the Retina a 1× mask showed at half size pinned to the top-right corner
     (the hole up, right of and smaller than the drag), and a 2× bitmap did the same.
     Measured 2026-10-04 with three variants side by side; a `CALayer` mask also worked.
-  - **Lighter blur = a mask that is never fully opaque** (`glassOpacity`, 0.75): the
-    effect view's blur radius is not public API, and `alphaValue` on the view made the
-    glass vanish altogether.
+  - **The glass is fully opaque past the feather — tried lighter, went back.** The
+    effect view's blur radius is not public API, so "less intense" can only mean a
+    mask under 1 (`alphaValue` on the view made the glass vanish altogether). At 0.75
+    the sharp text leaked through enough to read; Victor, the same day: *"blurează mai
+    tare ce nu se vede, trebuie să fie greu de citit"*.
 - **Both zooms work by where the panel sits**: at `.screenSaver − 1`, just under
   `ShareZoom`'s panel, so `ShareZoom`'s capture contains the glass and magnifies it
   together with what the box frames — exactly what the macOS magnifier (⌥-scroll) does

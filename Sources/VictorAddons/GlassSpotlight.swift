@@ -31,11 +31,6 @@ final class GlassSpotlight {
 
     /// Feather, in points, *outside* the box: everything in the box stays sharp.
     static let feather: CGFloat = 40
-    /// How much of the blur shows at full strength. The effect view's radius is
-    /// not ours to set, so a lighter blur is a mask that is never fully opaque —
-    /// not `alphaValue` on the view, which made the glass vanish altogether (Victor,
-    /// 2026-10-04: *"poți face blurul un pic mai puțin intens?"*).
-    static let glassOpacity: CGFloat = 0.75
     /// A drag puts the glass up only once its box covers this much of the screen,
     /// and from then on keeps it up however small the box gets again — never the
     /// whole screen blurred first and the box revealed from nothing (Victor,
@@ -277,8 +272,7 @@ final class GlassSpotlight {
         let size = screenFrame.size
         glass.maskImage = NSImage(size: size, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            GlassSpotlightMask.draw(in: ctx, canvas: size, hole: local, feather: Self.feather,
-                                    opacity: Self.glassOpacity)
+            GlassSpotlightMask.draw(in: ctx, canvas: size, hole: local, feather: Self.feather)
             return true
         }
     }
@@ -340,12 +334,12 @@ enum GlassSpotlightMask {
         return ctx.makeImage()
     }
 
-    /// The mask's alpha into `ctx`, in points, `steps` rings across the feather;
-    /// `opacity` is the alpha outside the feather.
-    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat,
-                     steps: Int = 64, opacity: CGFloat = 1) {
+    /// The mask's alpha into `ctx`, in points, `steps` rings across the feather.
+    /// Opaque past the feather: a lighter glass (0.75, tried 2026-10-04) let the
+    /// sharp text through enough to read it — *"trebuie să fie greu de citit"*.
+    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat, steps: Int = 64) {
         ctx.setBlendMode(.copy)
-        ctx.setFillColor(gray: 0, alpha: opacity)
+        ctx.setFillColor(gray: 0, alpha: 1)
         ctx.fill(CGRect(origin: .zero, size: canvas))
         // Concentric rounded rects from the feather's outer edge in to the box,
         // each one *replacing* the alpha under it (`.copy`): one step a point,
@@ -353,7 +347,7 @@ enum GlassSpotlightMask {
         let steps = max(1, min(64, steps))
         for i in 0...steps {
             let f = CGFloat(steps - i) / CGFloat(steps)        // 1 at the outer edge → 0 at the box
-            let alpha = f * f * (3 - 2 * f) * opacity
+            let alpha = f * f * (3 - 2 * f)
             let rect = hole.insetBy(dx: -feather * f, dy: -feather * f)
             guard rect.width > 0, rect.height > 0 else { continue }
             let radius = min(feather * f, rect.width / 2, rect.height / 2)
