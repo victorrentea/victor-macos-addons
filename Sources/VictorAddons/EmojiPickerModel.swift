@@ -434,9 +434,13 @@ struct EmojiSlot: Codable, Equatable {
 /// **23 × 12 since later that night**: 15% fewer cells (Victor: *"redu
 /// numărul căsuțelor cu 15%"*), same proportions, so each one is a little
 /// bigger in the same panel. Laid out again once more, the same way.
+///
+/// **21 × 11** minutes later (*"mai elimină 2 coloane și 1 rând, păstrând
+/// dimensiunea ferestrei"*): the panel stays as big, so the cells grow
+/// again; both sides odd, so the search spiral has a true centre.
 struct EmojiBoard: Equatable {
-    static let columns = 23
-    static let rows = 12
+    static let columns = 21
+    static let rows = 11
 
     private(set) var slots: [EmojiSlot]
 
@@ -857,9 +861,10 @@ enum EmojiBoardStore {
     /// 5 = ↗ back in them once it left ⌥⇧U (plain and blue, into their
     /// reserved cells; nothing else moves), 6 = the blue rose glued to the
     /// plain one, the hands one column closer (`relocateArrowBlock`), 7 =
-    /// 23 × 12, every region replayed from its old anchor (`relaid`).
+    /// 23 × 12, every region replayed from its old anchor (`relaid`), 8 =
+    /// 21 × 11, the same way.
     static let layoutKey = "EmojiPicker.boardLayout"
-    static let layoutVersion = 7
+    static let layoutVersion = 8
 
     /// Lay a 20 × 10 board out again at 25 × 13 and drop the plain arrows and
     /// 🔄 into the new arrow corner. Once: from then on nothing moves.
@@ -879,11 +884,12 @@ enum EmojiBoardStore {
             current.place(["↗\u{FE0E}", "↗️"].compactMap(catalog.entry(for:)), keyed: keyed)
         }
         if version < 6 { current.relocateArrowBlock() }
-        if version < 7 {
-            // Saved on 25 × 13 (versions 2–6; a 20 × 10 one was just relaid
-            // straight onto the new size above, so it is already right).
+        if version < 8 {
+            // Saved on 25 × 13 (versions 2–6) or 23 × 12 (7) — a 20 × 10 one
+            // was just relaid straight onto the current size above.
             if version >= 2 {
-                current = EmojiBoard.relaid(current.slots, columns: 25, rows: 13, catalog: catalog, hadArrowCorner: true)
+                let old = version == 7 ? (columns: 23, rows: 12) : (columns: 25, rows: 13)
+                current = EmojiBoard.relaid(current.slots, columns: old.columns, rows: old.rows, catalog: catalog, hadArrowCorner: true)
             }
             overlayInfo("EmojiPicker: board laid out again at \(EmojiBoard.columns)×\(EmojiBoard.rows), \(current.slots.count) on it")
         }
