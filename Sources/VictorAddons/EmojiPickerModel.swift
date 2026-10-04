@@ -20,6 +20,10 @@ struct EmojiEntry: Equatable {
     fileprivate let keywordWords: [String]
     fileprivate var extraWords: [String] = []
     fileprivate let foldedName: String
+    /// The Romanian-only vocabulary words, folded → as written (with their
+    /// diacritics), so an explanation can say "jumătate 🇷🇴" rather than
+    /// "jumatate". A word both languages share ("text", "30") is not here.
+    fileprivate var romanian: [String: String] = [:]
 
     static func == (a: EmojiEntry, b: EmojiEntry) -> Bool { a.emoji == b.emoji }
 }
@@ -66,7 +70,7 @@ final class EmojiCatalog {
         ("↺", "counterclockwise open circle arrow", "săgeată circulară în sens antiorar"),
         ("↻", "clockwise open circle arrow", "săgeată circulară în sens orar"),
     ].map { emoji, name, nameRo in
-        symbol(emoji, name, nameRo, keywords: "arrow plain line text refresh reload săgeată simplă linie text reîncarcă")
+        symbol(emoji, name, nameRo, keywords: "arrow plain line text refresh reload", keywordsRo: "săgeată simplă linie text reîncarcă")
     }
 
     /// Typographic symbols that are **not** emoji, so neither `emoji-test.txt`
@@ -75,39 +79,39 @@ final class EmojiCatalog {
     /// picker remembers him using (½ ° × µ … ⋯ · » ∑ ↷ ⓶) plus their obvious
     /// siblings. Drawn in the system font (`EmojiPickerPolicy.isTextSymbol`).
     static let textSymbols: [EmojiEntry] = [
-        ("½", "one half", "o jumătate", "fraction half 1 2 1/2 jumătate fracție"),
-        ("⅓", "one third", "o treime", "fraction third 1 3 1/3 treime fracție"),
-        ("⅔", "two thirds", "două treimi", "fraction thirds 2 3 2/3 treimi fracție"),
-        ("¼", "one quarter", "un sfert", "fraction quarter fourth 1 4 1/4 sfert fracție"),
-        ("¾", "three quarters", "trei sferturi", "fraction quarters 3 4 3/4 sferturi fracție"),
-        ("°", "degree", "grad", "degrees temperature celsius angle grade temperatură unghi"),
-        ("×", "multiplication sign", "semnul înmulțirii", "times multiply cross x ori înmulțit"),
-        ("÷", "division sign", "semnul împărțirii", "divide divided împărțit"),
-        ("±", "plus-minus sign", "plus-minus", "plus minus approximately aproximativ"),
-        ("≈", "almost equal to", "aproximativ egal", "approximately about roughly equal aproape egal"),
-        ("≠", "not equal to", "diferit de", "not equal different inegal diferit"),
-        ("≤", "less-than or equal to", "mai mic sau egal", "less equal lte mic egal"),
-        ("≥", "greater-than or equal to", "mai mare sau egal", "greater equal gte mare egal"),
-        ("∞", "infinity", "infinit", "infinite forever endless infinit"),
-        ("∑", "n-ary summation", "sumă", "sum sigma total sumă"),
-        ("µ", "micro sign", "micro", "micro mu micron"),
-        ("…", "horizontal ellipsis", "puncte de suspensie", "ellipsis dots three suspensie puncte"),
-        ("⋯", "midline horizontal ellipsis", "puncte de suspensie la mijloc", "ellipsis dots three middle suspensie puncte"),
-        ("·", "middle dot", "punct la mijloc", "dot middle bullet interpunct punct"),
-        ("•", "bullet", "buline", "bullet dot list punct listă"),
-        ("«", "left-pointing double angle quotation mark", "ghilimele unghiulare stânga", "guillemet quote quotation ghilimele"),
-        ("»", "right-pointing double angle quotation mark", "ghilimele unghiulare dreapta", "guillemet quote quotation ghilimele"),
-        ("–", "en dash", "linie de pauză scurtă", "dash hyphen range cratimă linie"),
-        ("—", "em dash", "linie de pauză", "dash long hyphen cratimă linie"),
-        ("✓", "check mark (plain)", "bifă (simplă)", "check tick done ok yes bifă gata"),
-        ("↷", "clockwise top semicircle arrow", "săgeată semicirculară în sens orar", "arrow redo clockwise săgeată refă"),
-        ("⓶", "double circled digit two", "cifra doi încercuită dublu", "two 2 circled number doi"),
-    ].map { emoji, name, nameRo, keywords in symbol(emoji, name, nameRo, keywords: keywords) }
+        ("½", "one half", "o jumătate", "fraction half 1 2 1/2", "jumătate fracție"),
+        ("⅓", "one third", "o treime", "fraction third 1 3 1/3", "treime fracție"),
+        ("⅔", "two thirds", "două treimi", "fraction thirds 2 3 2/3", "treimi fracție"),
+        ("¼", "one quarter", "un sfert", "fraction quarter fourth 1 4 1/4", "sfert fracție"),
+        ("¾", "three quarters", "trei sferturi", "fraction quarters 3 4 3/4", "sferturi fracție"),
+        ("°", "degree", "grad", "degrees temperature celsius angle grade", "temperatură unghi"),
+        ("×", "multiplication sign", "semnul înmulțirii", "times multiply cross x", "ori înmulțit"),
+        ("÷", "division sign", "semnul împărțirii", "divide divided", "împărțit"),
+        ("±", "plus-minus sign", "plus-minus", "plus minus approximately", "aproximativ"),
+        ("≈", "almost equal to", "aproximativ egal", "approximately about roughly equal", "aproape egal"),
+        ("≠", "not equal to", "diferit de", "not equal different", "inegal diferit"),
+        ("≤", "less-than or equal to", "mai mic sau egal", "less equal lte", "mic egal"),
+        ("≥", "greater-than or equal to", "mai mare sau egal", "greater equal gte", "mare egal"),
+        ("∞", "infinity", "infinit", "infinite forever endless", "infinit"),
+        ("∑", "n-ary summation", "sumă", "sum sigma total", "sumă"),
+        ("µ", "micro sign", "micro", "micro mu micron", ""),
+        ("…", "horizontal ellipsis", "puncte de suspensie", "ellipsis dots three", "suspensie puncte"),
+        ("⋯", "midline horizontal ellipsis", "puncte de suspensie la mijloc", "ellipsis dots three middle", "suspensie puncte"),
+        ("·", "middle dot", "punct la mijloc", "dot middle bullet interpunct", "punct"),
+        ("•", "bullet", "buline", "bullet dot list", "punct listă"),
+        ("«", "left-pointing double angle quotation mark", "ghilimele unghiulare stânga", "guillemet quote quotation", "ghilimele"),
+        ("»", "right-pointing double angle quotation mark", "ghilimele unghiulare dreapta", "guillemet quote quotation", "ghilimele"),
+        ("–", "en dash", "linie de pauză scurtă", "dash hyphen range", "cratimă linie"),
+        ("—", "em dash", "linie de pauză", "dash long hyphen", "cratimă linie"),
+        ("✓", "check mark (plain)", "bifă (simplă)", "check tick done ok yes", "bifă gata"),
+        ("↷", "clockwise top semicircle arrow", "săgeată semicirculară în sens orar", "arrow redo clockwise", "săgeată refă"),
+        ("⓶", "double circled digit two", "cifra doi încercuită dublu", "two 2 circled number", "doi"),
+    ].map { symbol($0, $1, $2, keywords: $3, keywordsRo: $4) }
 
-    private static func symbol(_ emoji: String, _ name: String, _ nameRo: String, keywords: String) -> EmojiEntry {
+    private static func symbol(_ emoji: String, _ name: String, _ nameRo: String, keywords: String, keywordsRo: String) -> EmojiEntry {
         EmojiEntry(emoji: emoji, group: 7, name: name, nameRo: nameRo,
-                   nameWords: words(name + " " + nameRo), keywordWords: words(keywords),
-                   foldedName: fold(name))
+                   nameWords: words(name + " " + nameRo), keywordWords: words(keywords + " " + keywordsRo),
+                   foldedName: fold(name), romanian: romanian(nameRo + " " + keywordsRo, english: name + " " + keywords))
     }
 
     init(groups: [String], entries: [EmojiEntry]) {
@@ -134,7 +138,8 @@ final class EmojiCatalog {
                 nameWords: Self.words(name + " " + nameRo),
                 keywordWords: Self.words(keywords + " " + keywordsRo),
                 extraWords: Self.words(row.count > 6 ? row[6] as? String ?? "" : ""),
-                foldedName: Self.fold(name)
+                foldedName: Self.fold(name),
+                romanian: Self.romanian(nameRo + " " + keywordsRo, english: name + " " + keywords)
             ))
         }
         self.init(groups: groups, entries: entries)
@@ -210,9 +215,24 @@ final class EmojiCatalog {
                 }
             }
             guard let best else { return nil }
-            return EmojiMatch(typed: token, word: best.word, source: best.source,
-                              matched: EmojiFuzzy.matchedLetters(token, best.word))
+            let romanian = best.source == .synonym ? nil : entry.romanian[best.word]
+            return EmojiMatch(typed: token, word: romanian ?? best.word, source: best.source,
+                              matched: EmojiFuzzy.matchedLetters(token, best.word), romanian: romanian != nil)
         }
+    }
+
+    /// Folded → original for the words of `text` that `english` lacks. Only
+    /// spellings whose folding keeps the letter count, so the lit offsets
+    /// still land on the right letters.
+    static func romanian(_ text: String, english: String) -> [String: String] {
+        let shared = Set(words(english))
+        var out: [String: String] = [:]
+        for original in text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted) where !original.isEmpty {
+            let folded = fold(original)
+            guard !shared.contains(folded) else { continue }
+            out[folded] = folded.count == original.count ? original : folded
+        }
+        return out
     }
 
     static func fold(_ text: String) -> String {
@@ -230,11 +250,13 @@ final class EmojiCatalog {
 struct EmojiMatch: Equatable {
     enum Source { case name, keyword, synonym }
     let typed: String
-    /// Folded, as the search compares it: lower case, no diacritics.
+    /// Lower case; a Romanian word keeps its diacritics, an English one is
+    /// folded as the search compares it.
     let word: String
     let source: Source
     /// Offsets (in characters) of `word`'s letters the typed ones matched.
     let matched: Set<Int>
+    var romanian = false
 }
 
 /// How far a typed word is from a vocabulary word, for the search.

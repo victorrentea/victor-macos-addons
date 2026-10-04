@@ -106,6 +106,10 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(typo.matched, [0, 1, 2], "the wrong 4th letter stays unlit")
         XCTAssertEqual(EmojiFuzzy.matchedLetters("lfet", "left"), [0, 1, 2, 3], "a swap lights both")
         XCTAssertEqual(catalog.explain("one half", catalog.entry(for: "½")!).map(\.source), [.name, .name])
+        let half = catalog.explain("jumatate", catalog.entry(for: "½")!).first!
+        XCTAssertEqual([half.word, "\(half.romanian)"], ["jumătate", "true"], "Romanian, with its diacritics")
+        XCTAssertFalse(catalog.explain("aff", wedding).first!.romanian)
+        XCTAssertTrue(catalog.explain("nunta", wedding).first!.romanian)
     }
 
     func testSearchResultsFillTheBoardFromTheCentreOutwards() {

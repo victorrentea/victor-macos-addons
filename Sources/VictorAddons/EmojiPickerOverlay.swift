@@ -236,6 +236,7 @@ final class EmojiPickerController: NSObject {
                         .foregroundColor: lit ? EmojiPickerStyle.chord : NSColor.white,
                     ]))
                 }
+                if match.romanian { line.append(NSAttributedString(string: " 🇷🇴", attributes: dim)) }
                 switch match.source {
                 case .name: line.append(NSAttributedString(string: " (nume)", attributes: dim))
                 case .keyword: line.append(NSAttributedString(string: " (cuvânt-cheie)", attributes: dim))
