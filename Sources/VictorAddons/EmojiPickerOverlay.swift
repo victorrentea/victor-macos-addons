@@ -221,7 +221,7 @@ final class EmojiPickerController: NSObject {
     private func pick(_ entry: EmojiEntry) {
         if keyed[EmojiPickerPolicy.normalized(entry.emoji)] == nil {
             var board = EmojiBoardStore.board
-            board.use(entry.emoji, group: entry.group)
+            board.use(entry)
             EmojiBoardStore.board = board
         }
         close(then: entry.emoji)
@@ -394,13 +394,18 @@ enum EmojiPickerPlacement {
     /// cells, fonts, spacing — grows by `scale` together. On the retina it
     /// stays at 1× in the bottom-right corner, small enough to leave the
     /// projected slide readable.
+    ///
+    /// The corner is 25% wider than it was (0.45 of the retina, was 0.36;
+    /// Victor, 2026-10-04) at the same cell size, which is where the board's
+    /// five extra columns come from; on the external the same 25 × 13 board
+    /// fills the screen with cells ~23% smaller than the 20 × 10 ones.
     static func frame(retinaFrame: NSRect, externalFrames: [NSRect], mouseLocation: CGPoint?) -> (frame: NSRect, scale: CGFloat) {
         let target = KeymapOverlayPlacement.frame(retinaFrame: retinaFrame, externalFrames: externalFrames,
                                                   imageAspectRatio: 1, mouseLocation: mouseLocation)
         if externalFrames.contains(target) {
             return (target, min(max(target.height / 620, 1), 2))
         }
-        let width = (max(retinaFrame.width * 0.36, 470)).rounded()
+        let width = (max(retinaFrame.width * 0.45, 590)).rounded()
         // Exactly as tall as the board needs at this width: search bar and name
         // line (`chrome`) plus `rows` square cells — no dead band to waste the
         // corner on.
@@ -449,7 +454,10 @@ private enum EmojiPickerStyle {
     }
 
     static func drawEmoji(_ emoji: String, centeredIn rect: NSRect, size: CGFloat) {
-        let attributed = NSAttributedString(string: emoji, attributes: [.font: emojiFont(size)])
+        let attributes: [NSAttributedString.Key: Any] = EmojiPickerPolicy.isTextSymbol(emoji)
+            ? [.font: NSFont.systemFont(ofSize: size, weight: .semibold), .foregroundColor: NSColor.white]
+            : [.font: emojiFont(size)]
+        let attributed = NSAttributedString(string: emoji, attributes: attributes)
         let bounds = attributed.size()
         attributed.draw(at: NSPoint(x: rect.midX - bounds.width / 2, y: rect.midY - bounds.height / 2))
     }

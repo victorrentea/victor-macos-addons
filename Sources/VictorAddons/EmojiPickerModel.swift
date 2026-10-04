@@ -34,8 +34,35 @@ final class EmojiCatalog {
             overlayError("EmojiPicker: emoji-catalog.json missing or unreadable — the picker opens empty")
             return EmojiCatalog(groups: [], entries: [])
         }
-        return catalog
+        return EmojiCatalog(groups: catalog.groups, entries: catalog.entries + plainArrows)
     }()
+
+    /// The arrows **without** the blue keycap (Victor, 2026-10-04: *"săgețile
+    /// care n-au fundal albastru, doar linii în toate direcțiile"*). Not emoji —
+    /// Unicode's ← → ↑ ↓ never were, and the diagonals and ↔ ↕ only become the
+    /// blue tile with FE0F — so neither `emoji-test.txt` nor CoreEmoji lists
+    /// them, and they are added here by hand. The ones that *do* have an emoji
+    /// twin carry FE0E (text presentation), which both keeps them distinct from
+    /// that twin on the board and asks the app they land in for the plain glyph.
+    /// ↗ is missing on purpose: it is on ⌥⇧U, and a keyed one never sits here.
+    static let plainArrows: [EmojiEntry] = [
+        ("←", "left arrow (plain)", "săgeată stânga (simplă)"),
+        ("↑", "up arrow (plain)", "săgeată sus (simplă)"),
+        ("→", "right arrow (plain)", "săgeată dreapta (simplă)"),
+        ("↓", "down arrow (plain)", "săgeată jos (simplă)"),
+        ("↖\u{FE0E}", "up-left arrow (plain)", "săgeată stânga-sus (simplă)"),
+        ("↘\u{FE0E}", "down-right arrow (plain)", "săgeată dreapta-jos (simplă)"),
+        ("↙\u{FE0E}", "down-left arrow (plain)", "săgeată stânga-jos (simplă)"),
+        ("↔\u{FE0E}", "left-right arrow (plain)", "săgeată stânga-dreapta (simplă)"),
+        ("↕\u{FE0E}", "up-down arrow (plain)", "săgeată sus-jos (simplă)"),
+        ("↺", "counterclockwise open circle arrow", "săgeată circulară în sens antiorar"),
+        ("↻", "clockwise open circle arrow", "săgeată circulară în sens orar"),
+    ].map { emoji, name, nameRo in
+        let keywords = "arrow plain line text refresh reload", keywordsRo = "săgeată simplă linie text reîncarcă"
+        return EmojiEntry(emoji: emoji, group: 7, name: name, nameRo: nameRo,
+                          nameWords: words(name + " " + nameRo), keywordWords: words(keywords + " " + keywordsRo),
+                          foldedName: fold(name))
+    }
 
     init(groups: [String], entries: [EmojiEntry]) {
         self.groups = groups
@@ -138,10 +165,23 @@ enum EmojiPickerPolicy {
             for (code, text) in (layers[layer] ?? [:]).sorted(by: { $0.key < $1.key }) {
                 let key = normalized(text)
                 guard out[key] == nil else { continue }
-                out[key] = prefix(layer) + (KeymapOverlayRenderer.keyLabel(code: code) ?? "?")
+                let chord = prefix(layer) + (KeymapOverlayRenderer.keyLabel(code: code) ?? "?")
+                out[key] = chord
+                // A key typing ↗ also stands for the board's plain ↗︎ (FE0E):
+                // the same glyph, spelt the one way the board tells it apart
+                // from the blue ↗️.
+                if key.unicodeScalars.count == 1 { out[key + "\u{FE0E}"] = out[key + "\u{FE0E}"] ?? chord }
             }
         }
         return out
+    }
+
+    /// Drawn with the system font rather than Apple Color Emoji: the plain
+    /// arrows. In the emoji font ↔ comes out as the blue tile even without
+    /// FE0F, which is exactly what they are here to avoid.
+    static func isTextSymbol(_ text: String) -> Bool {
+        guard let first = text.unicodeScalars.first else { return false }
+        return text.unicodeScalars.contains("\u{FE0E}") || !first.properties.isEmoji
     }
 
     static func liveKeyedEmoji() -> [String: String] {
@@ -174,36 +214,79 @@ struct EmojiSlot: Codable, Equatable {
 /// moves**, so after a few days the hand goes to where the 🦒 lives without
 /// reading anything. Everything else is reached through the search.
 ///
-/// Where a newcomer lands: the free cell nearest to its group's anchor. Six
-/// anchors — the four corners plus the middle of the top and bottom edges —
-/// so the board grows inward from six seeds and a face never lands among
-/// the flags. Nothing already placed is ever shifted to make room; "recent
-/// first" orderings were rejected for exactly that reason, since an emoji that
-/// moves is one you have to look for again.
+/// Where a newcomer lands: the free cell nearest to its region's anchor.
+/// Seven anchors — the four corners, the middle of the top and bottom edges,
+/// and the middle of the left edge — so the board grows inward from seven
+/// seeds and a face never lands among the flags. Nothing already placed is
+/// ever shifted to make room; "recent first" orderings were rejected for
+/// exactly that reason, since an emoji that moves is one you have to look for
+/// again.
 ///
 /// The board has a **fixed** size in cells (`columns` × `rows`) and is drawn
 /// scaled to whatever panel it is in, so the 🦒 is in the same place on the
 /// retina corner and on the external screen.
+///
+/// **25 × 13 since 2026-10-04 evening** (was 20 × 10): Victor wanted the
+/// emoji a little smaller on the external screen and the retina corner 25%
+/// bigger — both mean more cells, so the board grew rather than the tiles
+/// merely shrinking. The old board was laid out again once
+/// (`EmojiBoardStore.migrate`), keeping each region's shape.
 struct EmojiBoard: Equatable {
-    static let columns = 20
-    static let rows = 10
+    static let columns = 25
+    static let rows = 13
 
     private(set) var slots: [EmojiSlot]
 
     init(slots: [EmojiSlot] = []) { self.slots = slots }
 
-    /// Where each catalog group grows from, in cell coordinates (row 0 is the
-    /// top). Nine Unicode groups over six anchors: the rarely used ones share.
-    static func anchor(forGroup group: Int) -> (column: Double, row: Double) {
-        let right = Double(columns - 1), bottom = Double(rows - 1), middle = right / 2
+    /// Where a kind of emoji grows from. Mostly Unicode's groups; the arrows
+    /// are carved out of Symbols into a corner of their own (Victor,
+    /// 2026-10-04: *"mută toate săgețile în colțul stânga jos … săgeți
+    /// folosesc des"*), which pushed Food up to the middle of the left edge.
+    enum Region: CaseIterable {
+        case smileys, people, animals, food, travel, objects, arrows
+    }
+
+    static func region(group: Int) -> Region {
         switch group {
-        case 0: return (0, 0)              // Smileys & Emotion — top left
-        case 1: return (middle, 0)         // People & Body — top middle
-        case 2: return (right, 0)          // Animals & Nature — top right
-        case 3: return (0, bottom)         // Food & Drink — bottom left
-        case 4, 5: return (middle, bottom) // Travel & Places, Activities — bottom middle
-        default: return (right, bottom)    // Objects, Symbols, Flags — bottom right
+        case 0: return .smileys
+        case 1: return .people
+        case 2: return .animals
+        case 3: return .food
+        case 4, 5: return .travel
+        default: return .objects
         }
+    }
+
+    static func region(for entry: EmojiEntry) -> Region {
+        // "arrow" / "arrows" in a Symbols name: ⬅️ ↩️ 🔄 🔝 and the plain ones —
+        // not 💘 or 🏹, which carry the word but live in other groups.
+        let isArrow = entry.group == 7 && EmojiCatalog.words(entry.name).contains { $0.hasPrefix("arrow") }
+        return isArrow ? .arrows : region(group: entry.group)
+    }
+
+    /// The anchor's cell coordinates (row 0 is the top) on a board of the
+    /// given size — parametrised so the 20 × 10 layout can still be read back
+    /// for the one-off migration.
+    static func anchor(_ region: Region, columns: Int = columns, rows: Int = rows) -> (column: Double, row: Double) {
+        let right = Double(columns - 1), bottom = Double(rows - 1)
+        let middle = right / 2, halfway = (bottom / 2).rounded(.down)
+        switch region {
+        case .smileys: return (0, 0)              // top left
+        case .people: return (middle, 0)          // top middle
+        case .animals: return (right, 0)          // top right
+        case .food: return (0, halfway)           // middle of the left edge
+        case .arrows: return (0, bottom)          // bottom left
+        case .travel: return (middle, bottom)     // Travel & Places, Activities — bottom middle
+        case .objects: return (right, bottom)     // Objects, Symbols, Flags — bottom right
+        }
+    }
+
+    /// Columns count slightly more than rows, so a corner fills as a flat
+    /// quarter-disc along its edge rather than diving down the side.
+    static func distance(column: Int, row: Int, to anchor: (column: Double, row: Double)) -> Double {
+        let dx = Double(column) - anchor.column, dy = (Double(row) - anchor.row) * 1.15
+        return dx * dx + dy * dy
     }
 
     func slot(for emoji: String) -> EmojiSlot? {
@@ -215,24 +298,29 @@ struct EmojiBoard: Equatable {
         slots.first { $0.column == column && $0.row == row }
     }
 
+    mutating func use(_ entry: EmojiEntry, at now: Date = Date()) {
+        use(entry.emoji, region: Self.region(for: entry), at: now)
+    }
+
+    mutating func use(_ emoji: String, group: Int, at now: Date = Date()) {
+        use(emoji, region: Self.region(group: group), at: now)
+    }
+
     /// Note a use. An emoji already on the board only gets its timestamp
     /// bumped — it does **not** move. A new one takes the free cell nearest its
     /// anchor; on a full board it takes the cell of the least recently used
     /// emoji (which leaves; nothing else moves).
-    mutating func use(_ emoji: String, group: Int, at now: Date = Date()) {
+    mutating func use(_ emoji: String, region: Region, at now: Date = Date()) {
         if let index = slots.firstIndex(where: { EmojiPickerPolicy.normalized($0.emoji) == EmojiPickerPolicy.normalized(emoji) }) {
             slots[index].lastUsed = now
             return
         }
         let taken = Set(slots.map { $0.row * Self.columns + $0.column })
-        let anchor = Self.anchor(forGroup: group)
+        let anchor = Self.anchor(region)
         var best: (column: Int, row: Int, distance: Double)?
         for row in 0..<Self.rows {
             for column in 0..<Self.columns where !taken.contains(row * Self.columns + column) {
-                // Columns count slightly more than rows, so a corner fills as a
-                // flat quarter-disc along its edge rather than diving down the side.
-                let dx = Double(column) - anchor.column, dy = (Double(row) - anchor.row) * 1.15
-                let distance = dx * dx + dy * dy
+                let distance = Self.distance(column: column, row: row, to: anchor)
                 if best == nil || distance < best!.distance { best = (column, row, distance) }
             }
         }
@@ -300,8 +388,42 @@ extension EmojiBoard {
                   !keyed.contains(EmojiPickerPolicy.normalized(entry.emoji)),
                   slot(for: entry.emoji) == nil,
                   slots.count < Self.columns * Self.rows else { continue }
-            use(entry.emoji, group: entry.group, at: Date(timeIntervalSince1970: TimeInterval(item.last)))
+            use(entry, at: Date(timeIntervalSince1970: TimeInterval(item.last)))
             added += 1
+        }
+    }
+}
+
+extension EmojiBoard {
+    /// A board saved at another size, laid out again on this one — the one
+    /// time positions are allowed to change, because the cells themselves did.
+    ///
+    /// Each region is replayed nearest-to-its-old-anchor first, so what sat in
+    /// a corner's prime cells takes the new corner's prime cells and the
+    /// cluster comes out the same shape, just moved with its anchor. Emoji
+    /// whose region itself moved (the arrows, the food) are replayed the same
+    /// way around their new anchor. "Last used" travels with each one.
+    static func relaid(_ old: [EmojiSlot], columns oldColumns: Int, rows oldRows: Int, catalog: EmojiCatalog) -> EmojiBoard {
+        let placed = old.compactMap { slot -> (slot: EmojiSlot, entry: EmojiEntry, distance: Double)? in
+            guard let entry = catalog.entry(for: slot.emoji) else { return nil }
+            // The old layout had no arrow corner: they grew with the Symbols.
+            let oldAnchor = anchor(region(group: entry.group), columns: oldColumns, rows: oldRows)
+            return (slot, entry, distance(column: slot.column, row: slot.row, to: oldAnchor))
+        }
+        var board = EmojiBoard()
+        for item in placed.sorted(by: { $0.distance < $1.distance }) {
+            board.use(item.entry.emoji, region: region(for: item.entry), at: item.slot.lastUsed)
+        }
+        return board
+    }
+
+    /// Put these on the board without a use — the plain arrows and 🔄 Victor
+    /// asked to find in the arrow corner from the start. Skipped when keyed or
+    /// already there. A 1970 "last used", like an import: on a full board
+    /// they make room before anything actually picked.
+    mutating func place(_ entries: [EmojiEntry], keyed: Set<String>) {
+        for entry in entries where !keyed.contains(EmojiPickerPolicy.normalized(entry.emoji)) && slot(for: entry.emoji) == nil {
+            use(entry, at: Date(timeIntervalSince1970: 0))
         }
     }
 }
@@ -312,8 +434,26 @@ enum EmojiBoardStore {
 
     static let importedKey = "EmojiPicker.importedMacHistory"
 
+    /// Which board size the saved positions belong to: absent = the first
+    /// 20 × 10 board, 2 = 25 × 13 with the arrow corner.
+    static let layoutKey = "EmojiPicker.boardLayout"
+    static let layoutVersion = 2
+
+    /// Lay a 20 × 10 board out again at 25 × 13 and drop the plain arrows and
+    /// 🔄 into the new arrow corner. Once: from then on nothing moves.
+    static func migrate(catalog: EmojiCatalog, keyed: Set<String>) {
+        guard UserDefaults.standard.integer(forKey: layoutKey) < layoutVersion else { return }
+        var current = EmojiBoard.relaid(board.slots, columns: 20, rows: 10, catalog: catalog)
+        let arrows = EmojiCatalog.plainArrows + [catalog.entry(for: "🔄")].compactMap { $0 }
+        current.place(arrows, keyed: keyed)
+        board = current
+        UserDefaults.standard.set(layoutVersion, forKey: layoutKey)
+        overlayInfo("EmojiPicker: board laid out again at \(EmojiBoard.columns)×\(EmojiBoard.rows), \(current.slots.count) on it")
+    }
+
     /// The board as it should open: Apple's history folded in the first time.
     static func boardSeedingOnce(catalog: EmojiCatalog, keyed: Set<String>) -> EmojiBoard {
+        migrate(catalog: catalog, keyed: keyed)
         var current = board
         guard !UserDefaults.standard.bool(forKey: importedKey) else { return current }
         let history = MacEmojiHistory.read()
