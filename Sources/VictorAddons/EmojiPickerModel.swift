@@ -244,6 +244,13 @@ struct EmojiBoard: Equatable {
         }
     }
 
+    /// Taken off by hand (the hover ✕). Its cell is free for the next
+    /// newcomer; nothing else moves. Picking it again later lands it afresh.
+    mutating func remove(_ emoji: String) {
+        let key = EmojiPickerPolicy.normalized(emoji)
+        slots.removeAll { EmojiPickerPolicy.normalized($0.emoji) == key }
+    }
+
     /// Emoji that have since been put on a key leave the board — the grid must
     /// never show one — and their cell is free again. Nothing else moves.
     mutating func removeKeyed(_ keyed: Set<String>) {

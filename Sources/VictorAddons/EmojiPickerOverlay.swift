@@ -177,6 +177,13 @@ final class EmojiPickerController: NSObject, NSTextFieldDelegate, NSWindowDelega
                                   board: board, catalog: catalog, scale: s)
         grid.onPick = { [weak self] entry in self?.pick(entry) }
         grid.onFocus = { [weak self] entry in self?.showName(entry) }
+        grid.onRemove = { [weak self] emoji in
+            var board = EmojiBoardStore.board
+            board.remove(emoji)
+            EmojiBoardStore.board = board
+            self?.grid?.board = board
+            self?.showName(self?.grid?.selectedEntry)
+        }
         root.addSubview(grid)
 
         self.panel = panel
@@ -512,16 +519,32 @@ final class EmojiStripView: NSView {
 /// panel gives it (square cells, centred), every placed emoji in its own cell.
 final class EmojiBoardView: NSView {
     private let s: CGFloat
-    private let board: EmojiBoard
-    private let entries: [EmojiEntry?]
+    private let catalog: EmojiCatalog
+    var board: EmojiBoard {
+        didSet {
+            entries = board.slots.map { catalog.entry(for: $0.emoji) }
+            selected = nil; hovered = nil; pressed = nil; disarm()
+            needsDisplay = true
+        }
+    }
+    private var entries: [EmojiEntry?]
     var onPick: ((EmojiEntry) -> Void)?
     var onFocus: ((EmojiEntry?) -> Void)?
+    /// The hover ✕ was clicked: take this emoji off the board.
+    var onRemove: ((String) -> Void)?
+    /// The tile showing its ✕, armed by resting on it (`deleteDelay`).
+    private var deleteArmed: Int?
+    private var deleteTimer: Timer?
+    /// Long enough that sweeping the mouse across the board never flashes a
+    /// row of ✕s; short enough to feel like a deliberate pause, not a wait.
+    static let deleteDelay: TimeInterval = 0.8
     private var selected: Int?
     private var hovered: Int?
     private var pressed: Int?
 
     init(frame: NSRect, board: EmojiBoard, catalog: EmojiCatalog, scale: CGFloat) {
         s = scale
+        self.catalog = catalog
         self.board = board
         entries = board.slots.map { catalog.entry(for: $0.emoji) }
         super.init(frame: frame)
@@ -610,6 +633,33 @@ final class EmojiBoardView: NSView {
             EmojiPickerStyle.drawTile(r, filled: true, ring: ring, scale: s)
             EmojiPickerStyle.drawEmoji(board.slots[index].emoji, centeredIn: r, size: size)
         }
+        if let armed = deleteArmed, board.slots.indices.contains(armed) {
+            let x = deleteRect(armed)
+            NSColor(srgbRed: 1.0, green: 0.13, blue: 0.13, alpha: 1).setFill()
+            NSBezierPath(ovalIn: x).fill()
+            let cross = NSBezierPath()
+            let inset = x.insetBy(dx: x.width * 0.3, dy: x.height * 0.3)
+            cross.move(to: NSPoint(x: inset.minX, y: inset.minY)); cross.line(to: NSPoint(x: inset.maxX, y: inset.maxY))
+            cross.move(to: NSPoint(x: inset.maxX, y: inset.minY)); cross.line(to: NSPoint(x: inset.minX, y: inset.maxY))
+            cross.lineWidth = max(1.5, x.width * 0.12)
+            cross.lineCapStyle = .round
+            NSColor.white.setStroke()
+            cross.stroke()
+        }
+    }
+
+    /// The ✕: a red disc on the tile's top-right corner, half outside it, so it
+    /// covers as little of the emoji as possible.
+    private func deleteRect(_ index: Int) -> NSRect {
+        let r = rect(index)
+        let d = r.width * 0.34
+        return NSRect(x: r.maxX - d * 0.8, y: r.minY - d * 0.2, width: d, height: d)
+    }
+
+    private func disarm() {
+        deleteTimer?.invalidate()
+        deleteTimer = nil
+        if deleteArmed != nil { deleteArmed = nil; needsDisplay = true }
     }
 
     private func index(at point: NSPoint) -> Int? {
@@ -625,23 +675,44 @@ final class EmojiBoardView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let hit = index(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        // Reaching for the ✕ crosses the tile's edge — the disc hangs half
+        // outside — and must not count as leaving the tile.
+        if let armed = deleteArmed, deleteRect(armed).contains(point) { return }
+        let hit = index(at: point)
         guard hit != hovered else { return }
         hovered = hit
+        disarm()
+        if let hit {
+            deleteTimer = Timer.scheduledTimer(withTimeInterval: Self.deleteDelay, repeats: false) { [weak self] _ in
+                guard let self, self.hovered == hit else { return }
+                self.deleteArmed = hit
+                self.needsDisplay = true
+            }
+        }
         needsDisplay = true
         onFocus?(hit.flatMap { entries[$0] } ?? selectedEntry)
     }
 
     override func mouseExited(with event: NSEvent) {
         hovered = nil
+        disarm()
         needsDisplay = true
         onFocus?(selectedEntry)
     }
 
     /// Red on the press, the pick on the release — over the same tile, as on
-    /// the soundboard; sliding off before letting go cancels.
+    /// the soundboard; sliding off before letting go cancels. A press on the
+    /// armed ✕ removes the emoji instead.
     override func mouseDown(with event: NSEvent) {
-        pressed = index(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        if let armed = deleteArmed, deleteRect(armed).contains(point) {
+            let emoji = board.slots[armed].emoji
+            disarm()
+            onRemove?(emoji)
+            return
+        }
+        pressed = index(at: point)
         needsDisplay = true
     }
 

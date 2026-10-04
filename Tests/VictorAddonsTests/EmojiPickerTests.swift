@@ -167,4 +167,16 @@ final class EmojiPickerTests: XCTestCase {
     func testReadsThisMacsHistoryWithoutCrashing() {
         _ = MacEmojiHistory.read()
     }
+
+    func testRemovingByHandFreesTheCellAndMovesNothingElse() {
+        var board = EmojiBoard()
+        board.use("😀", group: 0)
+        board.use("😃", group: 0)
+        let second = board.slot(for: "😃")
+        board.remove("😀")
+        XCTAssertNil(board.slot(for: "😀"))
+        XCTAssertEqual(board.slot(for: "😃"), second)
+        board.use("🥲", group: 0)
+        XCTAssertEqual(board.slot(for: "🥲").map { [$0.column, $0.row] }, [0, 0], "the freed cell is reused")
+    }
 }
