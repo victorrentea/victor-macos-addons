@@ -112,6 +112,22 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertTrue(catalog.explain("nunta", wedding).first!.romanian)
     }
 
+    func testWhatWasPickedForAQueryComesFirstNextTime() {
+        var memory = EmojiQueryMemory()
+        let mic = catalog.search("mic")
+        XCTAssertNotEqual(mic.first?.emoji, "🎙️", "not first on its own")
+        XCTAssertTrue(mic.contains { $0.emoji == "🎙️" })
+        memory.record(query: " Mic ", emoji: "🎙️", at: Date(timeIntervalSince1970: 10))
+        XCTAssertEqual(memory.reorder(mic, for: "mic").first?.emoji, "🎙️")
+        XCTAssertEqual(memory.reorder(catalog.search("mi"), for: "mi").first?.emoji, "🎙️", "on the way to \"mic\"")
+        XCTAssertNotEqual(memory.reorder(catalog.search("m"), for: "m").first?.emoji, "🎙️", "one letter lifts nothing")
+        XCTAssertEqual(memory.reorder(mic, for: "mic").count, mic.count, "a reorder, never a filter")
+        // Exact beats prefix; among exact, the most picked.
+        memory.record(query: "mi", emoji: "🎤", at: Date(timeIntervalSince1970: 20))
+        XCTAssertEqual(memory.reorder(catalog.search("mi"), for: "mi").prefix(2).map(\.emoji), ["🎤", "🎙️"])
+        XCTAssertEqual(memory.reason("mi", "🎙️")?.query, "mic")
+    }
+
     func testSearchResultsFillTheBoardFromTheCentreOutwards() {
         let centre = (column: EmojiBoard.columns / 2, row: EmojiBoard.rows / 2)
         let cells = EmojiBoard.cellsFromCentre

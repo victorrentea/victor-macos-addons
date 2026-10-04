@@ -736,6 +736,92 @@ extension EmojiBoard {
     }
 }
 
+/// What was picked for what was typed (Victor, 2026-10-04: *"să rețină ce am
+/// ales când am scris ce texte, să aibă precedență … ex: mic > 🎙️"*). A pick
+/// made from a search is remembered under the folded query; the next search
+/// for that same text puts it first, the board's centre. A query that is
+/// still on its way to a remembered one ("mi" towards "mic") lifts it too,
+/// just after the exact ones — from two letters on, so "m" alone does not
+/// reorder everything. Only among what the search found anyway, so the
+/// match explanation still holds; most picked first, then most recent.
+struct EmojiQueryMemory: Codable, Equatable {
+    struct Pick: Codable, Equatable {
+        var count: Int
+        var last: Date
+    }
+
+    /// Folded query → normalized emoji → its picks.
+    private(set) var picks: [String: [String: Pick]] = [:]
+
+    static let maxQueries = 500
+
+    static func key(_ query: String) -> String {
+        EmojiCatalog.words(query).joined(separator: " ")
+    }
+
+    mutating func record(query: String, emoji: String, at now: Date = Date()) {
+        let q = Self.key(query)
+        guard !q.isEmpty else { return }
+        let e = EmojiPickerPolicy.normalized(emoji)
+        var forQuery = picks[q] ?? [:]
+        forQuery[e] = Pick(count: (forQuery[e]?.count ?? 0) + 1, last: now)
+        picks[q] = forQuery
+        if picks.count > Self.maxQueries {
+            // Forget the query whose latest pick is the oldest.
+            let stalest = picks.min { a, b in
+                (a.value.values.map(\.last).max() ?? .distantPast) < (b.value.values.map(\.last).max() ?? .distantPast)
+            }
+            if let stalest { picks[stalest.key] = nil }
+        }
+    }
+
+    /// Why `emoji` is lifted for `query`, if it is: the remembered query and
+    /// its picks.
+    func reason(_ query: String, _ emoji: String) -> (query: String, pick: Pick)? {
+        let q = Self.key(query), e = EmojiPickerPolicy.normalized(emoji)
+        if let pick = picks[q]?[e] { return (q, pick) }
+        guard q.count >= 2 else { return nil }
+        return picks.filter { $0.key.hasPrefix(q) && $0.value[e] != nil }
+            .map { ($0.key, $0.value[e]!) }
+            .max { ($0.1.count, $0.1.last) < ($1.1.count, $1.1.last) }
+    }
+
+    /// `results` with the remembered picks moved to the front: exact query
+    /// first, then the ones it is a prefix of; the rest keep their order.
+    func reorder(_ results: [EmojiEntry], for query: String) -> [EmojiEntry] {
+        let q = Self.key(query)
+        guard !q.isEmpty, !picks.isEmpty else { return results }
+        func rank(_ entry: EmojiEntry) -> (tier: Int, count: Int, last: Date)? {
+            guard let found = reason(query, entry.emoji) else { return nil }
+            return (found.query == q ? 0 : 1, found.pick.count, found.pick.last)
+        }
+        let ranked = results.enumerated().compactMap { index, entry in rank(entry).map { (index, $0) } }
+        guard !ranked.isEmpty else { return results }
+        let lifted = ranked.sorted { a, b in
+            if a.1.tier != b.1.tier { return a.1.tier < b.1.tier }
+            if a.1.count != b.1.count { return a.1.count > b.1.count }
+            return a.1.last > b.1.last
+        }.map(\.0)
+        let liftedSet = Set(lifted)
+        return lifted.map { results[$0] } + results.indices.filter { !liftedSet.contains($0) }.map { results[$0] }
+    }
+}
+
+enum EmojiQueryMemoryStore {
+    static let defaultsKey = "EmojiPicker.queryPicks"
+
+    static var memory: EmojiQueryMemory {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+                  let memory = try? JSONDecoder().decode(EmojiQueryMemory.self, from: data) else { return EmojiQueryMemory() }
+            return memory
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) { UserDefaults.standard.set(data, forKey: defaultsKey) }
+        }
+    }
+}
+
 /// The board, in `UserDefaults`.
 enum EmojiBoardStore {
     static let defaultsKey = "EmojiPicker.board"

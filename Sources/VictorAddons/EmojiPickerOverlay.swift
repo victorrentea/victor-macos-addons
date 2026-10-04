@@ -51,6 +51,7 @@ final class EmojiPickerController: NSObject {
     private var nameLine: NSTextField?
     private var keyed: [String: String] = [:]
     private var query = ""
+    private var memory = EmojiQueryMemory()
     private var scale: CGFloat = 1
     private var clickMonitor: Any?
     /// Tells the event tap whether to route keystrokes here. Called with
@@ -73,6 +74,7 @@ final class EmojiPickerController: NSObject {
     func show() {
         guard panel == nil else { return }
         keyed = EmojiPickerPolicy.liveKeyedEmoji()
+        memory = EmojiQueryMemoryStore.memory
         query = ""
         let retina = retinaScreenProvider()
         let retinaID = Self.screenID(retina)
@@ -243,6 +245,11 @@ final class EmojiPickerController: NSObject {
                 case .synonym: break
                 }
             }
+            if let remembered = memory.reason(trimmed, entry.emoji) {
+                line.append(NSAttributedString(string: "  ·  ales de \(remembered.pick.count)× pentru „\(remembered.query)”", attributes: [
+                    .font: font, .foregroundColor: EmojiPickerStyle.chord,
+                ]))
+            }
             line.append(NSAttributedString(string: "     ", attributes: dim))
         }
         var text = "\(entry.emoji)  \(entry.name)"
@@ -255,6 +262,11 @@ final class EmojiPickerController: NSObject {
     // MARK: - Picking
 
     private func pick(_ entry: EmojiEntry) {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            memory.record(query: trimmed, emoji: entry.emoji)
+            EmojiQueryMemoryStore.memory = memory
+        }
         if keyed[EmojiPickerPolicy.normalized(entry.emoji)] == nil {
             var board = EmojiBoardStore.board
             board.use(entry)
@@ -323,7 +335,8 @@ final class EmojiPickerController: NSObject {
             field.attributedStringValue = text
         }
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let results = trimmed.isEmpty ? nil : catalog.search(trimmed, limit: EmojiBoard.columns * EmojiBoard.rows)
+        let results = trimmed.isEmpty ? nil
+            : memory.reorder(catalog.search(trimmed, limit: EmojiBoard.columns * EmojiBoard.rows), for: trimmed)
         grid.results = results
         switch results?.count {
         case nil: hint.stringValue = "scrie ca să cauți · ↵ inserează · ←→↑↓ alegi · esc"
