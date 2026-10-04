@@ -450,6 +450,8 @@ enum EmojiPickerPlacement {
     static let barHeight: CGFloat = 40
     static let nameHeight: CGFloat = 20
     static var chrome: CGFloat { 2 * pad + barHeight + nameHeight }
+    /// The most of the retina's width, and of its height, the corner panel takes.
+    static let maxShare: CGFloat = 0.5
 
     /// The screen choice is the ⌥ cheat-sheet's, so both appear in the same
     /// place. On an external screen it takes the **whole screen**, like the
@@ -471,18 +473,20 @@ enum EmojiPickerPlacement {
         }
         // Retina alone (no external to send it to): 30% bigger on both axes,
         // everything scaled together (Victor, 2026-10-04) — there is no other
-        // screen to read it on, so it may take more of the slide.
-        // Then 40% bigger again, tiles and type alike (Victor, 2026-10-04:
-        // *"increase size of emoji buttons by 40%"*): more panel, same board,
-        // so nothing on it moves. Capped at the retina's width.
-        let scale: CGFloat = (externalFrames.isEmpty ? 1.3 : 1) * 1.4
-        let width = min((max(retinaFrame.width * 0.45, 590) * scale).rounded(), retinaFrame.width)
-        // Exactly as tall as the board needs at this width: search bar and name
-        // line (`chrome`) plus `rows` square cells — no dead band to waste the
-        // corner on.
-        let chrome = Self.chrome * scale
-        let cell = (width - 2 * pad * scale) / CGFloat(EmojiBoard.columns)
-        let height = min((chrome + cell * CGFloat(EmojiBoard.rows)).rounded(), retinaFrame.height)
+        // screen to read it on, so it may take more of the slide. Then 40%
+        // bigger again, tiles and type alike (*"increase size of emoji buttons
+        // by 40%"*). Both **capped so the panel never takes more than half the
+        // retina's width or half its height** (later the same night: *"să nu
+        // treacă de 50% din h și 50% din w"*) — the scale shrinks as a whole,
+        // so the panel keeps its proportions rather than squashing the board.
+        let base = max(retinaFrame.width * 0.45, 590)
+        // At scale 1: search bar and name line (`chrome`) plus `rows` square
+        // cells — exactly as tall as the board needs, no dead band.
+        let baseHeight = Self.chrome + (base - 2 * pad) / CGFloat(EmojiBoard.columns) * CGFloat(EmojiBoard.rows)
+        let wanted: CGFloat = (externalFrames.isEmpty ? 1.3 : 1) * 1.4
+        let scale = min(wanted, retinaFrame.width * maxShare / base, retinaFrame.height * maxShare / baseHeight)
+        let width = (base * scale).rounded(.down)
+        let height = (baseHeight * scale).rounded(.down)
         return (NSRect(x: retinaFrame.maxX - width, y: retinaFrame.minY, width: width, height: height), scale)
     }
 }

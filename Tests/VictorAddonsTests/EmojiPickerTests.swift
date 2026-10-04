@@ -290,8 +290,9 @@ final class EmojiPickerTests: XCTestCase {
         let retina = NSRect(x: 0, y: 0, width: 1512, height: 982)
         let external = NSRect(x: 1512, y: 0, width: 1920, height: 1080)
         let alone = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [], mouseLocation: nil)
-        XCTAssertEqual(alone.scale, 1.3 * 1.4, accuracy: 0.001, "retina alone: 30% bigger, then 40% for bigger tiles")
-        XCTAssertLessThanOrEqual(alone.frame.height, retina.height)
+        XCTAssertLessThanOrEqual(alone.frame.width, retina.width / 2, "never more than half the retina's width")
+        XCTAssertLessThanOrEqual(alone.frame.height, retina.height / 2, "nor half its height")
+        XCTAssertGreaterThan(alone.scale, 1)
         XCTAssertEqual(alone.frame.maxX, retina.maxX)
         XCTAssertEqual(alone.frame.minY, retina.minY)
         let side = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [external], mouseLocation: NSPoint(x: 100, y: 100))
@@ -299,9 +300,11 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertGreaterThan(side.scale, 1.4)
         let mouseThere = EmojiPickerPlacement.frame(retinaFrame: retina, externalFrames: [external], mouseLocation: NSPoint(x: 2000, y: 500))
         XCTAssertTrue(retina.contains(mouseThere.frame), "never under the cursor")
-        XCTAssertEqual(mouseThere.scale, 1.4, accuracy: 0.001, "tiles 40% bigger")
-        XCTAssertEqual(alone.frame.width / mouseThere.frame.width, 1.3, accuracy: 0.01)
-        XCTAssertEqual(alone.frame.height / mouseThere.frame.height, 1.3, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(mouseThere.frame.width, retina.width / 2)
+        XCTAssertLessThanOrEqual(mouseThere.frame.height, retina.height / 2)
+        let small = EmojiPickerPlacement.frame(retinaFrame: NSRect(x: 0, y: 0, width: 1512, height: 700), externalFrames: [], mouseLocation: nil)
+        XCTAssertLessThanOrEqual(small.frame.height, 350, "a short screen: the height cap wins")
+        XCTAssertEqual(small.frame.width / small.frame.height, alone.frame.width / alone.frame.height, accuracy: 0.01, "same proportions")
     }
 
     // MARK: - Left ⌥ double tap
