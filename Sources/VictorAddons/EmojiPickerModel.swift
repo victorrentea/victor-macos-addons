@@ -14,9 +14,11 @@ struct EmojiEntry: Equatable {
     let group: Int
     let name: String
     let nameRo: String
-    /// Folded (case- and diacritic-insensitive) name words, then keyword words.
+    /// Folded (case- and diacritic-insensitive) name words, keyword words, then
+    /// the extra synonyms (emojilib, emojibase shortcodes, emojidb votes).
     fileprivate let nameWords: [String]
     fileprivate let keywordWords: [String]
+    fileprivate var extraWords: [String] = []
     fileprivate let foldedName: String
 
     static func == (a: EmojiEntry, b: EmojiEntry) -> Bool { a.emoji == b.emoji }
@@ -55,6 +57,10 @@ final class EmojiCatalog {
         ("↙\u{FE0E}", "down-left arrow (plain)", "săgeată stânga-jos (simplă)"),
         ("↔\u{FE0E}", "left-right arrow (plain)", "săgeată stânga-dreapta (simplă)"),
         ("↕\u{FE0E}", "up-down arrow (plain)", "săgeată sus-jos (simplă)"),
+        ("↩\u{FE0E}", "right arrow curving left (plain)", "săgeată dreapta curbată spre stânga (simplă)"),
+        ("↪\u{FE0E}", "left arrow curving right (plain)", "săgeată stânga curbată spre dreapta (simplă)"),
+        ("⤴\u{FE0E}", "right arrow curving up (plain)", "săgeată dreapta curbată în sus (simplă)"),
+        ("⤵\u{FE0E}", "right arrow curving down (plain)", "săgeată dreapta curbată în jos (simplă)"),
         ("↺", "counterclockwise open circle arrow", "săgeată circulară în sens antiorar"),
         ("↻", "clockwise open circle arrow", "săgeată circulară în sens orar"),
     ].map { emoji, name, nameRo in
@@ -87,6 +93,7 @@ final class EmojiCatalog {
                 emoji: emoji, group: group, name: name, nameRo: nameRo,
                 nameWords: Self.words(name + " " + nameRo),
                 keywordWords: Self.words(keywords + " " + keywordsRo),
+                extraWords: Self.words(row.count > 6 ? row[6] as? String ?? "" : ""),
                 foldedName: Self.fold(name)
             ))
         }
@@ -101,25 +108,40 @@ final class EmojiCatalog {
 
     /// Matches for what has been typed so far, best first.
     ///
-    /// Every word typed must be the *start* of some word of the emoji's names
-    /// or keywords — "sad fa" finds "sad face" while it is still being typed —
-    /// and an emoji whose own name starts with the query outranks one that
-    /// only carries it as a keyword, so "cat" puts 🐈 ahead of every face that
-    /// merely has a cat ear somewhere in its tags. Ties keep the catalog's
-    /// order, which is Unicode's — the order everyone's eye already knows.
+    /// Every word typed must be the *start* of some word of the emoji's names,
+    /// keywords or extra synonyms — "sad fa" finds "sad face" while it is still
+    /// being typed — or, from 4 letters on, *almost* the start of one: a typo or
+    /// two swapped letters still find it (Victor, 2026-10-04: *"Levenshtein
+    /// Distance, să suporte typo-uri și inversiuni"*), so "lfet" and "pizaa"
+    /// work. Exact beats prefix beats fuzzy; name beats keyword beats extra
+    /// synonym, so "cat" puts 🐈 ahead of every face that merely has a cat ear
+    /// somewhere in its tags, and a typo never outranks a correct spelling.
+    /// Ties keep the catalog's order, which is Unicode's — the order everyone's
+    /// eye already knows.
     func search(_ query: String, limit: Int = 200) -> [EmojiEntry] {
         let tokens = Self.words(query)
         guard !tokens.isEmpty else { return [] }
         let whole = Self.fold(query).trimmingCharacters(in: .whitespaces)
+        // One distance per distinct vocabulary word per token, not per emoji.
+        var costs = tokens.map { _ in [String: Int]() }
+        func cost(_ t: Int, _ word: String) -> Int {
+            if let known = costs[t][word] { return known }
+            let value = EmojiFuzzy.prefixCost(tokens[t], word)
+            costs[t][word] = value
+            return value
+        }
         var scored: [(score: Int, index: Int)] = []
         for (index, entry) in entries.enumerated() {
             var score = 0
             var matched = true
-            for token in tokens {
-                if entry.nameWords.contains(token) { score += 0 }
-                else if entry.nameWords.contains(where: { $0.hasPrefix(token) }) { score += 1 }
-                else if entry.keywordWords.contains(where: { $0.hasPrefix(token) }) { score += 3 }
-                else { matched = false; break }
+            for t in tokens.indices {
+                // name 0, keyword +3, extra +5 — then whatever the word itself costs.
+                var best = Int.max
+                for word in entry.nameWords { best = min(best, cost(t, word)) }
+                if best > 1 { for word in entry.keywordWords { best = min(best, 3 + cost(t, word)) } }
+                if best > 4 { for word in entry.extraWords { best = min(best, 5 + cost(t, word)) } }
+                guard best < EmojiFuzzy.noMatch else { matched = false; break }
+                score += best
             }
             guard matched else { continue }
             if entry.foldedName == whole { score -= 10 }
@@ -138,6 +160,54 @@ final class EmojiCatalog {
         fold(text)
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
+    }
+}
+
+/// How far a typed word is from a vocabulary word, for the search.
+enum EmojiFuzzy {
+    /// Bigger than any real cost: the word does not match at all.
+    static let noMatch = 1_000
+
+    /// 0 = the very word, 1 = a prefix of it, 4 + edits = a prefix of it with
+    /// that many typos, `noMatch` = too far. An edit is a wrong, missing or
+    /// extra letter, or two neighbours swapped ("lfet" → "left" is one edit:
+    /// Damerau-Levenshtein, the optimal-string-alignment variant). Allowed
+    /// edits grow with the word: none up to 3 letters (there "cat" ≈ "car" ≈
+    /// "hat" and fuzziness would be pure noise), 1 for 4-6, 2 from 7.
+    static func prefixCost(_ token: String, _ word: String) -> Int {
+        if word == token { return 0 }
+        if word.hasPrefix(token) { return 1 }
+        let budget = token.count >= 7 ? 2 : token.count >= 4 ? 1 : 0
+        guard budget > 0, word.count >= token.count - budget else { return noMatch }
+        let edits = prefixDistance(Array(token.unicodeScalars), Array(word.unicodeScalars), budget: budget)
+        return edits <= budget ? 4 + edits : noMatch
+    }
+
+    /// Fewest edits turning `a` into *some prefix* of `b` — the minimum of the
+    /// last row of the OSA table, since what follows the prefix is free while
+    /// the word is still being typed. Rows whose minimum already exceeds the
+    /// budget stop the scan early.
+    static func prefixDistance(_ a: [Unicode.Scalar], _ b: [Unicode.Scalar], budget: Int) -> Int {
+        let n = a.count, m = min(b.count, a.count + budget)
+        var previous2 = [Int](repeating: 0, count: m + 1)
+        var previous = Array(0...m)
+        var current = [Int](repeating: 0, count: m + 1)
+        for i in 1...n {
+            current[0] = i
+            var rowMin = i
+            for j in stride(from: 1, through: m, by: 1) {
+                let substitution = previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)
+                var value = min(substitution, previous[j] + 1, current[j - 1] + 1)
+                if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] {
+                    value = min(value, previous2[j - 2] + 1)
+                }
+                current[j] = value
+                rowMin = min(rowMin, value)
+            }
+            if rowMin > budget { return rowMin }
+            (previous2, previous, current) = (previous, current, previous2)
+        }
+        return previous.min() ?? n
     }
 }
 
@@ -289,6 +359,45 @@ struct EmojiBoard: Equatable {
         return dx * dx + dy * dy
     }
 
+    /// The arrow corner is **laid out by hand**, not grown (Victor, 2026-10-04:
+    /// *"săgețile în colțul stânga jos să fie puse într-o ordine cu sens,
+    /// stânga dreapta sus jos … atât cele albastre cât și cele făcute din
+    /// linii, una lângă alta"*). Every group of four reads ← → ↑ ↓ (or the
+    /// diagonals ↖ ↗ ↙ ↘), and each plain arrow sits **right above** its blue
+    /// twin, so finding one finds the other. Top row first; the bottom row is
+    /// the board's last. A keyed one (↗ on ⌥⇧U, 🔼 🔽 👉) keeps its cell
+    /// empty — the hole is where it *would* be, and the order around it holds.
+    /// These cells are reserved: no other emoji ever lands in them, and on a
+    /// full board none of these is evicted.
+    static let arrowBlock: [[String]] = [
+        ["↩\u{FE0E}", "↪\u{FE0E}", "⤴\u{FE0E}", "⤵\u{FE0E}", "🔁", "🔂", "🔀"],
+        ["↩️", "↪️", "⤴️", "⤵️", "👈", "👉", "👆", "👇", "🔄", "🔃"],
+        ["◀️", "▶️", "🔼", "🔽", "⏪", "⏩", "⏫", "⏬", "↺", "↻"],
+        ["←", "→", "↑", "↓", "↖\u{FE0E}", "↗\u{FE0E}", "↙\u{FE0E}", "↘\u{FE0E}", "↔\u{FE0E}", "↕\u{FE0E}"],
+        ["⬅️", "➡️", "⬆️", "⬇️", "↖️", "↗️", "↙️", "↘️", "↔️", "↕️"],
+    ]
+
+    private static let arrowCells: [String: (column: Int, row: Int)] = {
+        var cells: [String: (column: Int, row: Int)] = [:]
+        for (index, line) in arrowBlock.enumerated() {
+            for (column, emoji) in line.enumerated() {
+                cells[EmojiPickerPolicy.normalized(emoji)] = (column, rows - arrowBlock.count + index)
+            }
+        }
+        return cells
+    }()
+
+    private static let reservedCells = Set(arrowCells.values.map { $0.row * columns + $0.column })
+
+    /// The cell set aside for this emoji in the arrow corner, if any.
+    static func reservedCell(for emoji: String) -> (column: Int, row: Int)? {
+        arrowCells[EmojiPickerPolicy.normalized(emoji)]
+    }
+
+    static func isReserved(column: Int, row: Int) -> Bool {
+        reservedCells.contains(row * columns + column)
+    }
+
     func slot(for emoji: String) -> EmojiSlot? {
         let key = EmojiPickerPolicy.normalized(emoji)
         return slots.first { EmojiPickerPolicy.normalized($0.emoji) == key }
@@ -315,7 +424,12 @@ struct EmojiBoard: Equatable {
             slots[index].lastUsed = now
             return
         }
-        let taken = Set(slots.map { $0.row * Self.columns + $0.column })
+        if let cell = Self.reservedCell(for: emoji) {
+            slots.removeAll { $0.column == cell.column && $0.row == cell.row }
+            slots.append(EmojiSlot(emoji: emoji, column: cell.column, row: cell.row, lastUsed: now))
+            return
+        }
+        let taken = Set(slots.map { $0.row * Self.columns + $0.column }).union(Self.reservedCells)
         let anchor = Self.anchor(region)
         var best: (column: Int, row: Int, distance: Double)?
         for row in 0..<Self.rows {
@@ -326,7 +440,8 @@ struct EmojiBoard: Equatable {
         }
         if let best {
             slots.append(EmojiSlot(emoji: emoji, column: best.column, row: best.row, lastUsed: now))
-        } else if let oldest = slots.indices.min(by: { slots[$0].lastUsed < slots[$1].lastUsed }) {
+        } else if let oldest = slots.indices.filter({ !Self.isReserved(column: slots[$0].column, row: slots[$0].row) })
+                    .min(by: { slots[$0].lastUsed < slots[$1].lastUsed }) {
             let freed = slots.remove(at: oldest)
             slots.append(EmojiSlot(emoji: emoji, column: freed.column, row: freed.row, lastUsed: now))
         }
@@ -428,6 +543,28 @@ extension EmojiBoard {
     }
 }
 
+extension EmojiBoard {
+    /// Lay out the arrow corner (`arrowBlock`), once. Its arrows leave wherever
+    /// they had grown and take their fixed cells, keeping their "last used";
+    /// whatever else sat on those cells is moved to the free cell nearest its
+    /// own anchor — the one other time something is allowed to move.
+    mutating func arrangeArrowBlock(catalog: EmojiCatalog, keyed: Set<String>) {
+        let lastUsed = Dictionary(slots.map { (EmojiPickerPolicy.normalized($0.emoji), $0.lastUsed) }, uniquingKeysWith: max)
+        let displaced = slots.filter { Self.reservedCell(for: $0.emoji) == nil && Self.isReserved(column: $0.column, row: $0.row) }
+        slots.removeAll { Self.reservedCell(for: $0.emoji) != nil || Self.isReserved(column: $0.column, row: $0.row) }
+        for emoji in Self.arrowBlock.joined() {
+            guard let entry = catalog.entry(for: emoji) else { continue }
+            let key = EmojiPickerPolicy.normalized(entry.emoji)
+            guard !keyed.contains(key) else { continue }
+            use(entry.emoji, region: .arrows, at: lastUsed[key] ?? Date(timeIntervalSince1970: 0))
+        }
+        for slot in displaced {
+            guard let entry = catalog.entry(for: slot.emoji) else { continue }
+            use(entry.emoji, region: Self.region(for: entry), at: slot.lastUsed)
+        }
+    }
+}
+
 /// The board, in `UserDefaults`.
 enum EmojiBoardStore {
     static let defaultsKey = "EmojiPicker.board"
@@ -435,20 +572,25 @@ enum EmojiBoardStore {
     static let importedKey = "EmojiPicker.importedMacHistory"
 
     /// Which board size the saved positions belong to: absent = the first
-    /// 20 × 10 board, 2 = 25 × 13 with the arrow corner.
+    /// 20 × 10 board, 2 = 25 × 13 with the arrow corner, 3 = the arrow corner
+    /// laid out by hand (`EmojiBoard.arrowBlock`).
     static let layoutKey = "EmojiPicker.boardLayout"
-    static let layoutVersion = 2
+    static let layoutVersion = 3
 
     /// Lay a 20 × 10 board out again at 25 × 13 and drop the plain arrows and
     /// 🔄 into the new arrow corner. Once: from then on nothing moves.
     static func migrate(catalog: EmojiCatalog, keyed: Set<String>) {
-        guard UserDefaults.standard.integer(forKey: layoutKey) < layoutVersion else { return }
-        var current = EmojiBoard.relaid(board.slots, columns: 20, rows: 10, catalog: catalog)
-        let arrows = EmojiCatalog.plainArrows + [catalog.entry(for: "🔄")].compactMap { $0 }
-        current.place(arrows, keyed: keyed)
+        let version = UserDefaults.standard.integer(forKey: layoutKey)
+        guard version < layoutVersion else { return }
+        var current = board
+        if version < 2 {
+            current = EmojiBoard.relaid(current.slots, columns: 20, rows: 10, catalog: catalog)
+            overlayInfo("EmojiPicker: board laid out again at \(EmojiBoard.columns)×\(EmojiBoard.rows), \(current.slots.count) on it")
+        }
+        current.arrangeArrowBlock(catalog: catalog, keyed: keyed)
         board = current
         UserDefaults.standard.set(layoutVersion, forKey: layoutKey)
-        overlayInfo("EmojiPicker: board laid out again at \(EmojiBoard.columns)×\(EmojiBoard.rows), \(current.slots.count) on it")
+        overlayInfo("EmojiPicker: arrow corner laid out by hand, \(current.slots.count) on the board")
     }
 
     /// The board as it should open: Apple's history folded in the first time.
