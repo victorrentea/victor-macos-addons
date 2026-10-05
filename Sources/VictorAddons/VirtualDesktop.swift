@@ -141,7 +141,11 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     // capture): the first cut, a quarter wide and portrait 3:4, stood too tall.
     private static let faceWidthRatio: CGFloat = 1.0 / 3.0
     private static let faceAspect: CGFloat = 4.0 / 3.0
-    private static let fade: TimeInterval = 0.3
+    /// The corner-to-corner slide. Opacity is gone after the first 12 % of the way and
+    /// back only over the last 12 %, so the face seems to vanish, cross unseen and
+    /// arrive (Victor, 2026-10-05).
+    private static let slide: TimeInterval = 0.8
+    private static let slideFade: Double = 0.12
 
     /// Fired when the silhouette's window appears or goes, so `ShareZoom` stops
     /// (or resumes) filming it.
@@ -163,6 +167,9 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private let desktopLayer = CALayer()
     private let faceLayer = CALayer()
     private let silhouetteMask = CALayer()
+    /// The 20 % shadow, inside a panel spanning the Retina's bottom strip so it can
+    /// slide corner to corner like the face does.
+    private let shadowLayer = CALayer()
     private var retinaFrame = CGRect.zero
     private var faceSize = CGSize.zero
 
@@ -304,7 +311,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
     /// The presenter's 20 % shadow on the Retina — what Victor sees instead of himself.
     private func buildSilhouette() {
-        let panel = NSPanel(contentRect: faceFrame(.right, in: retinaFrame),
+        let strip = CGRect(x: retinaFrame.minX, y: retinaFrame.minY, width: retinaFrame.width, height: faceSize.height)
+        let panel = NSPanel(contentRect: strip,
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         // Above 🔎 ShareZoom (.screenSaver): the shadow marks where the face is on the
         // *shared* picture, which does not zoom.
@@ -317,15 +325,17 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-        let view = NSView(frame: NSRect(origin: .zero, size: faceSize))
+        let view = NSView(frame: NSRect(origin: .zero, size: strip.size))
         view.wantsLayer = true
-        let shadow = CALayer()
-        shadow.frame = view.bounds
+        let shadow = shadowLayer
+        shadow.frame = faceFrame(.right, in: view.bounds)
+        shadow.actions = Self.noAnimation
         shadow.backgroundColor = NSColor.black.cgColor
+        // The 20 % is the panel's, so the slide can animate this layer's opacity 1→0→1.
         // 20 %: enough to know where the face is, faint enough to read through (was 50 %).
-        shadow.opacity = 0.2
+        panel.alphaValue = 0.2
         // The keyed face's alpha *is* the silhouette: no second render.
-        silhouetteMask.frame = view.bounds
+        silhouetteMask.frame = shadow.bounds
         silhouetteMask.contentsGravity = .resizeAspect
         silhouetteMask.actions = Self.noAnimation
         shadow.mask = silhouetteMask
@@ -348,12 +358,18 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         }
         button.alphaValue = 0
         button.ignoresMouseEvents = true
-        button.setFrameOrigin(NSPoint(x: panel.frame.midX, y: panel.frame.midY))
+        button.setFrameOrigin(NSPoint(x: shadowFrame.midX, y: shadowFrame.midY))
         button.orderFrontRegardless()
         buttonPanel = button
 
         excludedWindowIDs = [CGWindowID(panel.windowNumber), CGWindowID(button.windowNumber)]
         onExclusionsChanged?()
+    }
+
+    /// The shadow's rectangle in global points (its final position, mid-slide too).
+    private var shadowFrame: CGRect {
+        guard let panel = silhouettePanel else { return .zero }
+        return shadowLayer.frame.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
     }
 
     private func faceFrame(_ corner: VirtualDesktopCornerPolicy.Corner, in screen: CGRect) -> CGRect {
@@ -366,10 +382,10 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private static let buttonSize: CGFloat = 44
 
     private func checkPointer() {
-        guard let panel = silhouettePanel else { return }
+        guard silhouettePanel != nil else { return }
         let mouse = NSEvent.mouseLocation
         let onButton = (buttonPanel.map { $0.alphaValue > 0 && $0.frame.contains(mouse) }) ?? false
-        let onShadow = onButton || shadowAlpha(at: mouse, in: panel.frame) > 0.5
+        let onShadow = onButton || shadowAlpha(at: mouse, in: shadowFrame) > 0.5
         let inHome = faceFrame(.right, in: retinaFrame).contains(mouse)
         let wasOffering = corners.offering
         let before = corners.corner
@@ -385,11 +401,12 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     }
 
     private func showButton(_ show: Bool) {
-        guard let button = buttonPanel, let panel = silhouettePanel else { return }
+        guard let button = buttonPanel else { return }
         if show {
-            let local = buttonCentre(in: panel.frame.size)
-            button.setFrameOrigin(NSPoint(x: panel.frame.minX + local.x - Self.buttonSize / 2,
-                                          y: panel.frame.minY + local.y - Self.buttonSize / 2))
+            let frame = shadowFrame
+            let local = buttonCentre(in: frame.size)
+            button.setFrameOrigin(NSPoint(x: frame.minX + local.x - Self.buttonSize / 2,
+                                          y: frame.minY + local.y - Self.buttonSize / 2))
         }
         button.ignoresMouseEvents = !show
         NSAnimationContext.runAnimationGroup { ctx in
@@ -453,34 +470,32 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
     private func move(to corner: VirtualDesktopCornerPolicy.Corner) {
         guard let screen = screenWindow, let panel = silhouettePanel else { return }
-        let screenBounds = CGRect(origin: .zero, size: screen.frame.size)
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = Self.fade
-            panel.animator().alphaValue = 0
-            fadeFace(to: 0)
-        }, completionHandler: { [weak self] in
-            guard let self else { return }
-            panel.setFrame(self.faceFrame(corner, in: self.retinaFrame), display: false)
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            self.faceLayer.frame = self.faceFrame(corner, in: screenBounds)
-            CATransaction.commit()
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = Self.fade
-                panel.animator().alphaValue = 1
-                self.fadeFace(to: 1)
-            }
-        })
+        Self.slide(faceLayer, to: faceFrame(corner, in: CGRect(origin: .zero, size: screen.frame.size)))
+        Self.slide(shadowLayer, to: faceFrame(corner, in: CGRect(origin: .zero, size: panel.frame.size)))
         overlayInfo("🪞 VirtualDesktop: presenter → \(corner)")
     }
 
-    private func fadeFace(to opacity: Float) {
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = faceLayer.presentation()?.opacity ?? faceLayer.opacity
-        fade.toValue = opacity
-        fade.duration = Self.fade
-        faceLayer.opacity = opacity
-        faceLayer.add(fade, forKey: "fade")
+    /// Glide `layer` to `frame`, invisible for all but the first and last 12 % of the way.
+    private static func slide(_ layer: CALayer, to frame: CGRect) {
+        let from = layer.presentation()?.position ?? layer.position
+        let to = CGPoint(x: frame.midX, y: frame.midY)
+        let travel = CABasicAnimation(keyPath: "position")
+        travel.fromValue = NSValue(point: from)
+        travel.toValue = NSValue(point: to)
+        // Linear, so 12 % of the time is 12 % of the way.
+        travel.timingFunction = CAMediaTimingFunction(name: .linear)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1, 0, 0, 1]
+        fade.keyTimes = [0, NSNumber(value: slideFade), NSNumber(value: 1 - slideFade), 1]
+        let group = CAAnimationGroup()
+        group.animations = [travel, fade]
+        group.duration = Self.slide
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.frame = frame
+        layer.opacity = 1
+        CATransaction.commit()
+        layer.add(group, forKey: "slide")
     }
 
     // MARK: - Camera → Vision mask → keyed, mirrored IOSurface

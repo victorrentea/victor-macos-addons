@@ -330,7 +330,9 @@ itself** — its pixels' alpha, read from the last keyed face, not the clip's re
 for **3 s** raises a **←** button on the head (top of the silhouette + 18 % of its
 height, at the head's centre column; the clip's centre when the 44 pt disc would not
 fit wholly on the shadow). It vanishes when the pointer leaves the shadow. A click
-moves the face bottom-left; it comes home **3 s after the pointer leaves the
+**slides** the face bottom-left (0.8 s, linear; opacity 1→0 over the first 12 % of the
+way and 0→1 over the last 12 %, so it vanishes, crosses unseen and arrives — the
+Retina shadow does the same, in a panel spanning the bottom strip); it comes home **3 s after the pointer leaves the
 bottom-right rectangle**. The button is a separate non-activating panel, always on
 screen at alpha 0 while hidden, so both captures exclude it by id — nobody on the
 call sees it. (First cut, same day: the pointer anywhere in the rectangle for 4 s
