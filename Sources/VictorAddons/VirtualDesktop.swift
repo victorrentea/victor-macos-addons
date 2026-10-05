@@ -62,8 +62,8 @@ struct VirtualDesktopCornerPolicy {
 ///
 /// - the **Retina, live**, through ScreenCaptureKit — every window on it, including
 ///   🔎 `ShareZoom`'s magnified picture, minus the silhouette below;
-/// - the **presenter**, segmented by Vision and keyed on the GPU, a quarter of the
-///   screen wide, bottom-right, mirrored.
+/// - the **presenter**, segmented by Vision and keyed on the GPU, a third of the
+///   screen wide (4:3), bottom-right, mirrored.
 ///
 /// On the Retina itself the presenter shows only as a **50 % black silhouette**, so
 /// Victor sees where his face covers the slides without watching himself. It sits
@@ -86,8 +86,10 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     static func isVirtual(_ id: CGDirectDisplayID) -> Bool { CGDisplayVendorNumber(id) == vendorID }
 
     private static let fps: Int32 = 30
-    private static let faceWidthRatio: CGFloat = 0.25
-    private static let faceAspect: CGFloat = 3.0 / 4.0
+    // A third of the width, landscape 4:3 (Victor, 2026-10-05, drawing the box over a
+    // capture): the first cut, a quarter wide and portrait 3:4, stood too tall.
+    private static let faceWidthRatio: CGFloat = 1.0 / 3.0
+    private static let faceAspect: CGFloat = 4.0 / 3.0
     private static let fade: TimeInterval = 0.3
 
     /// Fired when the silhouette's window appears or goes, so `ShareZoom` stops

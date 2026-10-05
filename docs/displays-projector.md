@@ -313,8 +313,9 @@ the size of the Retina, vendor `0xF00D`, and fills it with:
   included — with only the silhouette window excluded;
 - the **presenter**: Elgato frames scaled to 720p *by the output* (the device format is
   re-pinned, so a call's own feed is untouched), `VNGeneratePersonSegmentationRequest`
-  `.balanced`, keyed with `CIBlendWithMask`, centre-cropped 3:4, mirrored, a quarter of
-  the screen wide, flush bottom-right.
+  `.balanced`, keyed with `CIBlendWithMask`, centre-cropped **4:3**, mirrored, **a third of
+  the screen wide**, flush bottom-right (first cut was a quarter wide and portrait 3:4 —
+  too tall; Victor drew the box he wanted over a capture).
 
 In Teams/Zoom you share that screen. On the Retina Victor sees only a **50 % black
 silhouette** where the face is (the keyed face's IOSurface used as the mask of a black
