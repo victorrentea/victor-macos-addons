@@ -359,3 +359,8 @@ sharing, WindowServer swings 68–98 % on its own, so measure with Zoom closed.
   as an unknown projector and arms the presentation warning.
 - The screen appears in every share picker as one more "Desktop"; the pointer can
   wander onto it past the right-hand monitor.
+- **The Retina stream dies on its own** (2026-10-05 17:20, mid-training: "application
+  connection being interrupted", replayd). The invisible screen then keeps its last
+  frame — the call watched a frozen Gmail while the Retina moved on. A dead stream is
+  now always restarted (1, 2, 4… s, at most 30 s; reset on the first complete frame,
+  `captureRestartDelay`, tested); until a build has that, toggling the 🪞 row off/on unfreezes it.

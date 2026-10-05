@@ -179,6 +179,10 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
     private var session: AVCaptureSession?
     private var stream: SCStream?
+    /// What `startDesktopCapture` was last called with, so a dead stream can be reborn.
+    private var captureSource: (display: CGDirectDisplayID, width: Int, height: Int)?
+    /// Streams that died since the last complete frame (main thread) — the backoff.
+    private var captureFailures = 0
     private let screenQueue = DispatchQueue(label: "VirtualDesktop.screen", qos: .userInteractive)
     private let cameraQueue = DispatchQueue(label: "VirtualDesktop.camera", qos: .userInteractive)
     private lazy var ciContext = CIContext(mtlDevice: MTLCreateSystemDefaultDevice()!, options: [.cacheIntermediates: false])
@@ -222,6 +226,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
             self.buildScreenWindow(on: screen)
             self.buildSilhouette()
             self.startCamera()
+            self.captureSource = (retina.displayID, width, height)
+            self.captureFailures = 0
             self.startDesktopCapture(source: retina.displayID, width: width, height: height)
             self.hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.checkPointer() }
         }
@@ -232,6 +238,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         hoverTimer?.invalidate(); hoverTimer = nil
         stream?.stopCapture { _ in }
         stream = nil
+        captureSource = nil
         let session = self.session
         self.session = nil
         cameraQueue.async { session?.stopRunning() }
@@ -648,8 +655,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                 } catch {
                     overlayError("🪞 VirtualDesktop: \(error.localizedDescription)"); return
                 }
-                stream.startCapture { error in
-                    if let error { overlayError("🪞 VirtualDesktop: capture failed: \(error.localizedDescription)") }
+                stream.startCapture { [weak self] error in
+                    if let error { self?.captureDied(stream, "capture failed: \(error.localizedDescription)") }
                 }
                 self.stream = stream
             }
@@ -665,11 +672,36 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         DispatchQueue.main.async { [weak self] in
             guard let self, self.stream === stream else { return }
             self.desktopLayer.contents = surface
+            self.captureFailures = 0
         }
     }
 
+    /// Backoff before re-filming the Retina after the n-th death in a row: 1, 2, 4… s, at most 30.
+    static func captureRestartDelay(afterFailures n: Int) -> TimeInterval {
+        min(30, pow(2, Double(max(0, n - 1))))
+    }
+
+    /// The stream dies on its own — 2026-10-05 17:20, mid-training, "application
+    /// connection being interrupted" (replayd) — and the invisible screen kept its
+    /// last frame: the call watched a frozen Gmail while the Retina moved on. So a
+    /// dead stream is always restarted, with a backoff, for as long as we are on.
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        overlayError("🪞 VirtualDesktop: stream stopped: \(error.localizedDescription)")
+        captureDied(stream, "stream stopped: \(error.localizedDescription)")
+    }
+
+    private func captureDied(_ stream: SCStream, _ reason: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.stream === stream else { return }
+            self.stream = nil
+            self.captureFailures += 1
+            let delay = Self.captureRestartDelay(afterFailures: self.captureFailures)
+            overlayError("🪞 VirtualDesktop: \(reason) → restart in \(Int(delay)) s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.display != nil, self.stream == nil,
+                      let source = self.captureSource else { return }
+                self.startDesktopCapture(source: source.display, width: source.width, height: source.height)
+            }
+        }
     }
 }
 
