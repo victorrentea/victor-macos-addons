@@ -14,6 +14,43 @@ enum VirtualDesktopSettings {
     }
 }
 
+/// Turns 🪞 Virtual Desktop on when Zoom or Teams starts and off when the last of
+/// them quits — edge-triggered, so the menu tick overrides it until the next edge.
+final class VirtualDesktopAutoSwitch {
+    static let meetingApps: Set<String> = ["us.zoom.xos", "com.microsoft.teams", "com.microsoft.teams2"]
+
+    static func isMeetingApp(_ bundleID: String?) -> Bool {
+        bundleID.map(meetingApps.contains) ?? false
+    }
+
+    /// Called on the main queue with the new state, and once at `start()`.
+    var onChange: ((Bool) -> Void)?
+    private var running = false
+    private var observers: [NSObjectProtocol] = []
+
+    func start() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                guard Self.isMeetingApp(app?.bundleIdentifier) else { return }
+                self?.evaluate(force: false)
+            })
+        }
+        evaluate(force: true)
+    }
+
+    private func evaluate(force: Bool) {
+        let now = NSWorkspace.shared.runningApplications.contains {
+            Self.isMeetingApp($0.bundleIdentifier) && !$0.isTerminated
+        }
+        guard force || now != running else { return }
+        running = now
+        overlayInfo("🪞 VirtualDesktop: meeting app \(now ? "running" : "gone") → \(now ? "on" : "off")")
+        onChange?(now)
+    }
+}
+
 /// Which corner the presenter sits in, and when the pointer chases them out of it.
 /// Pure, so the timing is tested without a camera.
 ///

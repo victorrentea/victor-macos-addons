@@ -164,6 +164,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 🔎 ⌥⇧+scroll — the full-screen zoom a screen share can see.
     private let shareZoom = ShareZoom()
     private let virtualDesktop = VirtualDesktop()
+    private let virtualDesktopAutoSwitch = VirtualDesktopAutoSwitch()
     private let glassSpotlight = GlassSpotlight()
     private let shareZoomHint = ShareZoomHint()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
@@ -848,9 +849,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         shareZoom.alsoExcluded = { [weak self] in self?.virtualDesktop.excludedWindowIDs ?? [] }
         virtualDesktop.onExclusionsChanged = { [weak self] in self?.shareZoom.refreshExclusions() }
         menuBarManager.onToggleVirtualDesktop = { [weak self] enabled in self?.virtualDesktop.setEnabled(enabled) }
-        if VirtualDesktopSettings.isEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.virtualDesktop.setEnabled(true) }
+        virtualDesktopAutoSwitch.onChange = { [weak self] on in
+            VirtualDesktopSettings.isEnabled = on
+            self?.menuBarManager.setVirtualDesktopState(on)
+            self?.virtualDesktop.setEnabled(on)
         }
+        // A few seconds in, like ShareZoom's stages: not on the launch path.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.virtualDesktopAutoSwitch.start() }
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
         menuBarManager.onMenuTick = { [weak self] in
             guard let self, self.liveCaptions.isOn else { return }

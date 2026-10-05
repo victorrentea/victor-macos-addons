@@ -306,7 +306,10 @@ them. macOS's Presenter Overlay was not offered either. Teams never had it. A vi
 *display* needs nothing: the private `CGVirtualDisplay` (DeskPad, BetterDisplay),
 declared in `Sources/CGVirtualDisplayShim`.
 
-**What it does.** 👩🏻‍💻 Extra → 🪞 Virtual Desktop (default off) creates a 1x screen
+**What it does.** 🪞 Virtual Desktop — a **top-level** row next to 🎥 Layout Zoom —
+**turns itself on when Zoom or Teams starts and off when the last of them quits**
+(`VirtualDesktopAutoSwitch`, bundle ids `us.zoom.xos`, `com.microsoft.teams`, `…teams2`;
+edge-triggered, so a click on the row wins until the next start/quit). It creates a 1x screen
 the size of the Retina, vendor `0xF00D`, and fills it with:
 
 - the **Retina, live** through ScreenCaptureKit — 🔎 `ShareZoom`'s magnified picture

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 5, 13:53"
+    static let BUILD_TIME = "Oct 5, 13:57"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -402,12 +402,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the row it kept afterwards never answered the question it was left
         // with: a draft waiting in a Chrome window is the same note, unfinished.
         //
-        // 📝/🤖 The two clipboard→notes rows were promoted out of 👩🏻‍💻 Extra to
-        // land here instead, because this is the block that answers "what is on
-        // the clipboard and where does it go": onto the wall for the room, into
-        // Victor's inbox, into the session notes, onto the room's Prompts tab.
-        // In the submenu they were a feature hidden behind a hover.
-        let appendNotesItem = addItem("📝 Clipboard ↗ Notes", action: #selector(appendClipboardToNotesAction))
+        // 📝/🤖 The two clipboard→notes rows went back into 👩🏻‍💻 Extra on
+        // 2026-10-05 (Victor: "ascunde clipboard > notes și clipboard > prompt
+        // în Extras"): ⌘⌃V and ⌘⌃P are how they are reached, and the top level
+        // had grown long. They had been promoted here as the block answering
+        // "what is on the clipboard and where does it go".
+        let appendNotesItem = NSMenuItem(title: "📝 Clipboard ↗ Notes", action: #selector(appendClipboardToNotesAction), keyEquivalent: "")
+        appendNotesItem.target = self
         // ⌘⌃V since 2026-09-17, taken from the 🎙️ picker above — the append is
         // the everyday half of that pair, and ⌘⌃ is where this app's everyday
         // keys live (⌘⌃S is the same append for the selection). Advertised
@@ -428,7 +429,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // swallows ⌘⌃P before AppKit could match a menu equivalent, so the row
         // can never fire a second time — and the tooltip carries the one
         // difference between the two ways in.
-        let appendPromptItem = addItem("🤖 Clipboard ↗ Prompts", action: #selector(appendClipboardAsPromptAction))
+        let appendPromptItem = NSMenuItem(title: "🤖 Clipboard ↗ Prompts", action: #selector(appendClipboardAsPromptAction), keyEquivalent: "")
+        appendPromptItem.target = self
         appendPromptItem.keyEquivalent = "p"
         appendPromptItem.keyEquivalentModifierMask = [.command, .control]
         appendPromptItem.toolTip = "⌘⌃P does the same from the keyboard, with the selection when there is one."
@@ -559,9 +561,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
 
         // 🪞 Virtual Desktop — an invisible screen showing the Retina with Victor
-        // cut out bottom-right, for Teams/Zoom to share. In the menu because it is
-        // state with no key and nowhere else to show it, and it holds the camera
-        // while on. Default off.
+        // cut out bottom-right, for Teams/Zoom to share. Top level, next to 🎥
+        // Layout Zoom (added there below): it switches itself on when Zoom or
+        // Teams starts and off when the last of them quits
+        // (`VirtualDesktopAutoSwitch`), and a thing that acts on its own needs
+        // its state in sight. The tick overrides it until the next start/quit.
         virtualDesktopItem = NSMenuItem(title: "🪞 Virtual Desktop", action: #selector(toggleVirtualDesktopAction), keyEquivalent: "")
         virtualDesktopItem.target = self
         virtualDesktopItem.isEnabled = true
@@ -626,10 +630,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // mouse, and what keeps this Mac and Claude up. (The phone's hotspot
         // left for the top level on 2026-09-25.)
         let extraGroups: [[NSMenuItem]] = [
-            [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem],
+            [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem, appendNotesItem, appendPromptItem],
             [killItem],
             [emojiOverlayItem, commandOverlayItem],
-            [darkModeItem, zoomSharePrepItem, virtualDesktopItem, scrollReversalItem],
+            [darkModeItem, zoomSharePrepItem, scrollReversalItem],
             [homeAwakeItem, claudeRemoteControlItem],
         ]
         for (i, group) in extraGroups.enumerated() {
@@ -723,6 +727,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // on the monitor above the Retina. Next to Arrange Monitors because it
         // is the same kind of gesture: put windows where they belong, now.
         addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
+        menu.addItem(virtualDesktopItem)
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
@@ -1169,6 +1174,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// neighbour: `ZoomSharePrep` reads the setting on each of its own scans,
     /// so there is no second copy of the answer that could drift out of step
     /// with the tick.
+    /// The tick follows `VirtualDesktopAutoSwitch` too, not only clicks.
+    func setVirtualDesktopState(_ on: Bool) {
+        virtualDesktopItem?.state = on ? .on : .off
+    }
+
     @objc private func toggleVirtualDesktopAction() {
         let enabled = !VirtualDesktopSettings.isEnabled
         VirtualDesktopSettings.isEnabled = enabled

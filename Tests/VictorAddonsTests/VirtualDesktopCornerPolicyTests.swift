@@ -40,3 +40,17 @@ final class VirtualDesktopCornerPolicyTests: XCTestCase {
         XCTAssertEqual(p.update(inHome: false, now: 11), .right)
     }
 }
+
+final class VirtualDesktopAutoSwitchTests: XCTestCase {
+    func testZoomAndBothTeamsAreMeetingApps() {
+        XCTAssertTrue(VirtualDesktopAutoSwitch.isMeetingApp("us.zoom.xos"))
+        XCTAssertTrue(VirtualDesktopAutoSwitch.isMeetingApp("com.microsoft.teams2"))
+        XCTAssertTrue(VirtualDesktopAutoSwitch.isMeetingApp("com.microsoft.teams"))
+    }
+
+    func testHelpersAndOthersAreNot() {
+        XCTAssertFalse(VirtualDesktopAutoSwitch.isMeetingApp("us.zoom.CptHost"))
+        XCTAssertFalse(VirtualDesktopAutoSwitch.isMeetingApp("com.google.Chrome"))
+        XCTAssertFalse(VirtualDesktopAutoSwitch.isMeetingApp(nil))
+    }
+}

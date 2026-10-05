@@ -90,3 +90,8 @@ Why its own item rather than a row in 💬: the VM is invisible by construction 
 - **Detection** is a 5 s poll of the process table: `proc_listallpids` + `proc_name == "tart"` as the cheap filter, then `KERN_PROCARGS2` for argv **and** environment (same user, no entitlement, no subprocess). Only `tart run` counts — `list`/`stop`/`clone` are short-lived. The name parser skips the values of `--dir`, `--disk` & co., so `tart run --dir a:/x lab` is `lab`, not `a:/x`.
 - **Pinned near the clock on first appearance** (`NSStatusItem Preferred Position tartVM` = 230 pt from the right edge, written only if absent, so a ⌘-drag sticks). A new status item otherwise lands left of all the others, and on this Mac's crowded Retina bar that is under the notch: the first build's item was running and simply not on screen. The external monitors' menu bars are hidden, so the Retina is the only place it can be seen.
 - **Stop** runs `tart stop <name>` with the binary *and* the `TART_HOME` read from the running process. That second part is load-bearing: this Mac has `~/tart` (the lab's, set by the walkie scripts) and `/Volumes/Vic/tart`, and a stop under the wrong home answers `the specified VM "wt-lab" does not exist` — which is exactly what happened by hand the first time. If `tart stop` fails anyway, SIGINT to the `tart run` pid, which tart treats as a clean shutdown.
+
+**2026-10-05** — `📝 Clipboard ↗ Notes` and `🤖 Clipboard ↗ Prompts` went back into
+👩🏻‍💻 Extra (clipboard group): ⌘⌃V / ⌘⌃P are how they are reached and the top level
+had grown long. 🪞 Virtual Desktop took a top-level row next to 🎥 Layout Zoom, because
+it switches itself on with Zoom/Teams (see `docs/displays-projector.md`).
