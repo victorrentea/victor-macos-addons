@@ -360,6 +360,10 @@ enum EmojiKeyLayer {
     /// which crying laughter already holds: the move A made for *autobuz*.
     ///
     /// F for fund (2026-10-04) — the Romanian word for the peach's other meaning.
+    ///
+    /// > for an arrow (2026-10-05): the key already *draws* one, and ⌥⇧. is
+    /// ⇒, so ⌃⌥ puts the plain → on the same key. ⇧ is ignored on this board,
+    /// so ⌃⌥. and ⌃⌥> both type it.
     static let controlOptionSeed: [Int: String] = [
           0: "🚌",   // A — autobuz
           1: "🐑",   // S — sheep
@@ -372,6 +376,7 @@ enum EmojiKeyLayer {
          35: "🪂",   // P — parachute, off ⌥⇧8
          45: "☁️",   // N — nor, a cloud
          46: "✉️",   // M — mail
+         47: "→",    // > — an arrow, the plain sibling of ⌥⇧.'s ⇒
     ]
 
     static let optionSeed: [Int: String] = [

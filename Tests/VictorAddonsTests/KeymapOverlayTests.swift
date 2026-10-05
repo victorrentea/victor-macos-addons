@@ -333,6 +333,9 @@ final class KeymapOverlayTests: XCTestCase {
         // 5 pairs with ⌥5: dizzy on ⌥, tired on ⌃⌥ — same key, sibling faces.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[23], "😵‍💫")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[23], "🫩")
+        // > draws an arrow: → on ⌃⌥, its double ⇒ on ⌥⇧.
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[47], "→")
+        XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[47], "⇒")
         // ⌥M keeps its own 🤪: a free letter on the new board costs the old one
         // nothing.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[46], "🤪")
