@@ -813,9 +813,9 @@ private let VK_I: CGKeyCode = 0x22
             return nil
         }
 
-        // F3 → Window ▸ Fill on the focused window, by typing its own shortcut
-        // fn⌃F (suppress); a second F3 on the same window puts back the frame it
-        // had before (`WindowScreenMove.toggleFill`). Bare F3 for the same reason
+        // F3 → the focused window fills its screen's visible area (suppress); a
+        // second F3 on the same window puts back the frame it had before
+        // (`WindowScreenMove.toggleFill`). Bare F3 for the same reason
         // as F8: with standard function keys it is a real keyDown, not the
         // Mission Control media key.
         if keyCode == VK_F3 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {

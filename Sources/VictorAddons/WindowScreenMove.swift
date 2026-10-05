@@ -2,8 +2,8 @@ import AppKit
 import ApplicationServices
 
 /// ⌃⌥⌘ + arrow → the focused window takes that half of its own screen;
-/// fn⌃⌥⌘ + arrow → it jumps to the screen in that direction; F3 → Window ▸ Fill
-/// that a second F3 takes back.
+/// fn⌃⌥⌘ + arrow → it jumps to the screen in that direction; F3 → fills the
+/// screen's visible area, and a second F3 takes it back.
 ///
 /// All three work on the focused window of the frontmost app, over Accessibility —
 /// the same grant `TerminalTiler` already relies on. Every rectangle here is in
@@ -61,28 +61,34 @@ enum WindowScreenMove {
     /// which is how AX elements compare; a handful at most, so a list is enough.
     private static var beforeFill: [(window: AXUIElement, frame: CGRect)] = []
 
-    /// First F3 remembers the frame and fills; the next F3 on the same window puts
-    /// the remembered frame back. If the window already sits exactly where it was
-    /// remembered (put back by hand), the memory is stale and F3 fills again.
+    /// First F3 remembers the frame and fills the screen's visible area (menu
+    /// bar and Dock left alone — not macOS full screen); the next F3 on the same
+    /// window puts the remembered frame back. If the window already sits exactly
+    /// where it was remembered (put back by hand), the memory is stale and F3
+    /// fills again.
+    ///
+    /// The fill is our own AX resize, **not** macOS's Window ▸ Fill (fn⌃F), which
+    /// is what F3 used to type: VS Code and other Electron apps never answer that
+    /// shortcut (2026-10-05, *"F3 nu mi-a mers"* on a VS Code window).
     static func toggleFill() {
-        guard let window = focusedWindow(), let frame = AXWindows.frame(of: window) else {
-            KeySimulator.fillWindow()
-            return
-        }
+        guard let window = focusedWindow(), let frame = AXWindows.frame(of: window) else { return }
         lock.lock()
         let i = beforeFill.firstIndex { CFEqual($0.window, window) }
         let saved = i.map { beforeFill.remove(at: $0).frame }
-        if saved == nil || saved == frame {
+        let restore = saved != nil && saved != frame
+        if !restore {
             beforeFill.append((window, frame))
             if beforeFill.count > 20 { beforeFill.removeFirst() }
         }
         lock.unlock()
 
-        if let saved, saved != frame {
+        if restore, let saved {
             AXWindows.setFrame(window, saved)
-        } else {
-            KeySimulator.fillWindow()
+            return
         }
+        let screens = visibleScreens()
+        guard let src = WindowScreenMovePolicy.screenIndex(containing: frame, in: screens) else { return }
+        AXWindows.setFrame(window, screens[src])
     }
 
     // MARK: - Plumbing

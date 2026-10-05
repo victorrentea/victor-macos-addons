@@ -95,14 +95,6 @@ enum KeySimulator {
     static func cmdC() { chord(0x08, modifier: VK_COMMAND, flag: .maskCommand) }
     static func cmdZ() { chord(0x06, modifier: VK_COMMAND, flag: .maskCommand) }
 
-    /// fn⌃F — macOS's Window ▸ Fill (Sequoia tiling). fn has no key of its own
-    /// to press here: it is only the `.maskSecondaryFn` flag on the F, which is
-    /// how the menu's key equivalent recognises it. ⌃ goes down and up as a real
-    /// key, for the latching reason above.
-    static func fillWindow() {
-        chord(0x03, modifier: VK_CONTROL, flag: .maskControl, keyFlags: [.maskControl, .maskSecondaryFn])
-    }
-
     /// Cmd+= — terminal "Bigger" (increase font size). Key 0x18 = kVK_ANSI_Equal.
     static func zoomBigger()  { chord(0x18, modifier: VK_COMMAND, flag: .maskCommand) }
     /// Cmd+- — terminal "Smaller" (decrease font size). Key 0x1B = kVK_ANSI_Minus.
