@@ -229,6 +229,12 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   The timer still runs during the drag for ⌘ changes with the mouse at rest. The
   price: ⇧-middle-click does nothing anywhere else. Walkie Talkie never competes:
   all of its wheel gestures need a bare press.
+- **⌘ + wheel-drag moves the box already up** (Victor, 2026-10-05: *"dacă apăs Command
+  și … fac press down și drag de wheel din nou, pot să mut fereastra de transparență"*).
+  ⌘ is read at the press only, like ⇧: the whole drag is a ⌘ move held or not, from
+  wherever the press was, the box kept on its own screen (`RegionDrag.regrip` + the ⌘
+  move). The tap takes ⌘-middle only **while the glass is up**; with ⇧ also held, ⇧
+  wins and a new box is drawn.
 - **After the release the glass stays** (click-through, everything under it still
   works) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
   alone. A new ⇧-wheel-drag replaces the box.

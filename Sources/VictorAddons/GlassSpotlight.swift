@@ -13,6 +13,8 @@ import VictorMacKit
 /// screen the drag started on — `RegionDrag` in victor-mac-kit, the same value
 /// `CropSelectionOverlay` drives. Only the trigger differs: ⇧ has to be down when
 /// the wheel goes down, and from then on it is not needed any more.
+/// While the glass is up, ⌘ at the press instead of ⇧ grabs the box that is
+/// there and carries it, whatever the drag does (Victor, 2026-10-05).
 ///
 /// **Why here and not in victor-effects**, though it is an effect: that repo is
 /// public and cannot depend on the private kit the gesture lives in; and the
@@ -64,6 +66,9 @@ final class GlassSpotlight {
     /// `revealFraction` yet — until then the glass is left as the drag found it.
     private var dragScreen: NSScreen?
     private var revealed = false
+    /// This drag carries the box already up (⌘ at the press) rather than
+    /// drawing a new one: the whole drag is a ⌘ move, held or not.
+    private var grabbing = false
     /// Where the tap last saw the pointer (global Cocoa). Preferred over
     /// `NSEvent.mouseLocation`, for the reason `CropSelectionOverlay.dragMoved`
     /// gives: the event's own position, not wherever a starved timer finds it.
@@ -87,7 +92,26 @@ final class GlassSpotlight {
         holeBeforeDrag = screenFrame == screen.frame ? hole : nil
         dragScreen = screen
         revealed = false
+        grabbing = false
         drag = RegionDrag(anchor: p, within: screen.frame, controlArmed: true)
+        pushed = p
+        startTimer()
+        tick()
+    }
+
+    /// The wheel went down with ⌘ held while the glass is up: the box already
+    /// there follows the hand, kept on its own screen, from wherever the press
+    /// was. ⌘ may be let go once the drag has started, as ⇧ may for `begin`.
+    func grab(atCG point: CGPoint) {
+        guard isShowing, let box = hole else { return }
+        let p = Self.cocoa(point)
+        holeBeforeDrag = box
+        dragScreen = nil
+        revealed = true
+        grabbing = true
+        var drag = RegionDrag(anchor: box.origin, within: screenFrame, controlArmed: true)
+        drag.regrip(anchor: box.origin, free: CGPoint(x: box.maxX, y: box.maxY), mouse: p)
+        self.drag = drag
         pushed = p
         startTimer()
         tick()
@@ -106,6 +130,7 @@ final class GlassSpotlight {
         tick()
         stopTimer()
         drag = nil
+        grabbing = false
         legendPill.isHidden = true
         guard revealed, let box = hole else {
             overlayInfo("🔦 glass spotlight: drag under \(Int(Self.revealFraction * 100))% of the screen, "
@@ -185,7 +210,7 @@ final class GlassSpotlight {
         let flags = NSEvent.modifierFlags
         let mouse = pushed ?? NSEvent.mouseLocation
         // No ⌃ square here, unlike the crop: Victor, 2026-10-04, *"n-am nevoie de square"*.
-        let box = drag.update(mouse: mouse, command: flags.contains(.command), control: false)
+        let box = drag.update(mouse: mouse, command: grabbing || flags.contains(.command), control: false)
         self.drag = drag
         if !revealed {
             guard let dragScreen, Self.reveals(box, on: dragScreen.frame) else { return }

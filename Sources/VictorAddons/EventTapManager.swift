@@ -109,6 +109,9 @@ class EventTapManager {
     /// 🔦 ⇧ + wheel-drag — the glass spotlight (`GlassSpotlight`). Global CG
     /// points, as the events carry them. All called on main.
     var onGlassSpotlightBegin: ((CGPoint) -> Void)?
+    /// ⌘ + wheel-drag while the glass is up: the same drag moves the box
+    /// already there instead of drawing a new one.
+    var onGlassSpotlightGrab: ((CGPoint) -> Void)?
     var onGlassSpotlightMove: ((CGPoint) -> Void)?
     var onGlassSpotlightEnd: ((CGPoint) -> Void)?
     /// Esc while the glass is up.
@@ -419,7 +422,8 @@ private let VK_I: CGKeyCode = 0x22
             return Unmanaged.passUnretained(event)
         }
 
-        // 🔦 ⇧ + wheel-drag → `GlassSpotlight`. ⇧ is read at the press only:
+        // 🔦 ⇧ + wheel-drag → `GlassSpotlight`; ⌘ + wheel-drag moves the box
+        // already up. ⇧ is read at the press only:
         // from there the press, every drag and the release are ours, and ⇧ may
         // be let go (Victor: *"să nu mai fie nevoie să apăs Shift în continuu"*).
         // All three halves are swallowed — the app underneath must never see a
@@ -432,6 +436,15 @@ private let VK_I: CGKeyCode = 0x22
             if type == .otherMouseDown, event.flags.contains(.maskShift) {
                 spotlightDragging = true
                 DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightBegin?(at) }
+                return nil
+            }
+            // ⌘ (without ⇧) while the glass is up: grab the box that is there
+            // and carry it — Victor, 2026-10-05. Read at the press only, like ⇧,
+            // and ours only while there is glass: ⌘-middle-click is left alone
+            // everywhere else.
+            if type == .otherMouseDown, event.flags.contains(.maskCommand), isGlassSpotlightUp {
+                spotlightDragging = true
+                DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightGrab?(at) }
                 return nil
             }
             if spotlightDragging {
