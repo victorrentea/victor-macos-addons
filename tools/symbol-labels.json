@@ -1,0 +1,6758 @@
+{
+"¡": {
+"en": "inverted exclamation mark",
+"en_kw": "spanish exclamation inverted iexcl upside down",
+"ro": "semnul exclamării întors",
+"ro_kw": "exclamare întors spaniolă iexcl"
+},
+"¢": {
+"en": "cent sign",
+"en_kw": "cent cents usd dollar penny currency",
+"ro": "semnul cent",
+"ro_kw": "cent bănuț dolar monedă valută"
+},
+"£": {
+"en": "pound sign",
+"en_kw": "pound gbp sterling british uk currency",
+"ro": "semnul liră sterlină",
+"ro_kw": "liră sterlină gbp lira britanică monedă valută anglia"
+},
+"¥": {
+"en": "yen sign",
+"en_kw": "yen jpy yuan cny rmb japan china currency",
+"ro": "semnul yen",
+"ro_kw": "yen iene jpy yuan monedă valută japonia china"
+},
+"¦": {
+"en": "broken bar",
+"en_kw": "broken bar brvbar pipe vertical",
+"ro": "bară întreruptă",
+"ro_kw": "bară întreruptă verticală"
+},
+"§": {
+"en": "section sign",
+"en_kw": "section sign sect paragraph law",
+"ro": "semnul paragraf (secțiune)",
+"ro_kw": "secțiune paragraf articol lege sect"
+},
+"¨": {
+"en": "diaeresis",
+"en_kw": "diaeresis umlaut uml two dots",
+"ro": "tremă",
+"ro_kw": "tremă umlaut două puncte"
+},
+"ª": {
+"en": "feminine ordinal indicator",
+"en_kw": "ordinal feminine spanish portuguese a superscript",
+"ro": "indicator ordinal feminin",
+"ro_kw": "ordinal feminin a exponent spaniolă"
+},
+"«": {
+"en": "left guillemet",
+"en_kw": "guillemet laquo left double angle quote french",
+"ro": "ghilimele ascuțite stânga",
+"ro_kw": "ghilimele ascuțite stânga laquo franceze"
+},
+"¬": {
+"en": "negation",
+"en_kw": "not neg lnot negation logical",
+"ro": "negare",
+"ro_kw": "nu negare logic"
+},
+"¯": {
+"en": "macron",
+"en_kw": "macron overline bar long vowel",
+"ro": "macron",
+"ro_kw": "macron bară deasupra"
+},
+"°": {
+"en": "degree sign",
+"en_kw": "degree deg temperature angle",
+"ro": "semnul grad",
+"ro_kw": "grad temperatură unghi"
+},
+"±": {
+"en": "plus-minus",
+"en_kw": "plusmn plus minus pm tolerance",
+"ro": "plus-minus",
+"ro_kw": "plus minus toleranță"
+},
+"²": {
+"en": "superscript two",
+"en_kw": "superscript exponent power two 2 squared sup2",
+"ro": "exponent doi",
+"ro_kw": "exponent putere doi 2 la pătrat"
+},
+"³": {
+"en": "superscript three",
+"en_kw": "superscript exponent power three 3 cubed sup3",
+"ro": "exponent trei",
+"ro_kw": "exponent putere trei 3 la cub"
+},
+"´": {
+"en": "acute accent",
+"en_kw": "acute accent acute",
+"ro": "accent ascuțit",
+"ro_kw": "accent ascuțit"
+},
+"µ": {
+"en": "micro sign",
+"en_kw": "micro mu mikro prefix 10^-6 greek",
+"ro": "semnul micro",
+"ro_kw": "micro mu prefix mikro grecesc"
+},
+"¶": {
+"en": "pilcrow (paragraph mark)",
+"en_kw": "pilcrow paragraph para new line",
+"ro": "semn de paragraf",
+"ro_kw": "paragraf alineat pilcrow"
+},
+"¸": {
+"en": "cedilla",
+"en_kw": "cedilla cedil c",
+"ro": "sedilă",
+"ro_kw": "sedilă"
+},
+"¹": {
+"en": "superscript one",
+"en_kw": "superscript exponent power one 1 sup1",
+"ro": "exponent unu",
+"ro_kw": "exponent putere unu 1"
+},
+"º": {
+"en": "masculine ordinal indicator",
+"en_kw": "ordinal masculine spanish portuguese o superscript degree",
+"ro": "indicator ordinal masculin",
+"ro_kw": "ordinal masculin o exponent spaniolă"
+},
+"»": {
+"en": "right guillemet",
+"en_kw": "guillemet raquo right double angle quote french",
+"ro": "ghilimele ascuțite dreapta",
+"ro_kw": "ghilimele ascuțite dreapta raquo franceze"
+},
+"¼": {
+"en": "one quarter",
+"en_kw": "quarter 1/4 fraction frac14",
+"ro": "un sfert",
+"ro_kw": "sfert fracție 1/4"
+},
+"½": {
+"en": "one half",
+"en_kw": "half 1/2 fraction frac12",
+"ro": "o doime",
+"ro_kw": "jumătate doime fracție 1/2"
+},
+"¾": {
+"en": "three quarters",
+"en_kw": "three quarters 3/4 fraction frac34",
+"ro": "trei sferturi",
+"ro_kw": "trei sferturi fracție 3/4"
+},
+"¿": {
+"en": "inverted question mark",
+"en_kw": "spanish question inverted iquest upside down",
+"ro": "semnul întrebării întors",
+"ro_kw": "întrebare întors spaniolă iquest"
+},
+"×": {
+"en": "multiplication sign",
+"en_kw": "times multiply multiplication cross",
+"ro": "semnul înmulțirii",
+"ro_kw": "ori înmulțire înmulțit"
+},
+"÷": {
+"en": "division sign",
+"en_kw": "divide division obelus",
+"ro": "semnul împărțirii",
+"ro_kw": "împărțire împărțit"
+},
+"ˆ": {
+"en": "modifier letter circumflex",
+"en_kw": "circumflex caret hat modifier",
+"ro": "literă modificatoare circumflex",
+"ro_kw": "circumflex căciulă accent"
+},
+"ˇ": {
+"en": "caron",
+"en_kw": "caron hacek wedge check",
+"ro": "caron",
+"ro_kw": "caron háček pană"
+},
+"ˉ": {
+"en": "modifier letter macron",
+"en_kw": "modifier macron bar",
+"ro": "literă modificatoare macron",
+"ro_kw": "macron modificator"
+},
+"˘": {
+"en": "breve",
+"en_kw": "breve short vowel curve",
+"ro": "breve",
+"ro_kw": "breve vocală scurtă"
+},
+"˙": {
+"en": "dot above",
+"en_kw": "dot above overdot",
+"ro": "punct deasupra",
+"ro_kw": "punct deasupra"
+},
+"˚": {
+"en": "ring above",
+"en_kw": "ring above degree angstrom",
+"ro": "inel deasupra",
+"ro_kw": "inel deasupra grad"
+},
+"˛": {
+"en": "ogonek",
+"en_kw": "ogonek polish tail",
+"ro": "ogonek",
+"ro_kw": "ogonek poloneză"
+},
+"˝": {
+"en": "double acute accent",
+"en_kw": "double acute accent hungarian umlaut",
+"ro": "accent ascuțit dublu",
+"ro_kw": "accent ascuțit dublu maghiară"
+},
+"৲": {
+"en": "bengali rupee mark",
+"en_kw": "bengali rupee mark bangladesh india currency",
+"ro": "marcă rupie bengaleză",
+"ro_kw": "rupie bengaleză bangladesh monedă valută"
+},
+"৳": {
+"en": "bengali rupee sign (taka)",
+"en_kw": "taka bdt bengali rupee bangladesh currency",
+"ro": "semnul rupie bengaleză (taka)",
+"ro_kw": "taka bdt bengaleză bangladesh monedă valută"
+},
+"૱": {
+"en": "gujarati rupee sign",
+"en_kw": "gujarati rupee india currency",
+"ro": "semnul rupie gujarati",
+"ro_kw": "rupie gujarati india monedă valută"
+},
+"௹": {
+"en": "tamil rupee sign",
+"en_kw": "tamil rupee india sri lanka currency",
+"ro": "semnul rupie tamilă",
+"ro_kw": "rupie tamilă india monedă valută"
+},
+"฿": {
+"en": "thai baht sign",
+"en_kw": "baht thb thailand thai currency",
+"ro": "semnul baht thailandez",
+"ro_kw": "baht thb thailanda monedă valută"
+},
+"៛": {
+"en": "khmer riel sign",
+"en_kw": "riel khr cambodia khmer currency",
+"ro": "semnul riel khmer",
+"ro_kw": "riel khmer cambodgia khr monedă valută"
+},
+"‑": {
+"en": "non-breaking hyphen",
+"en_kw": "non-breaking hyphen minus dash",
+"ro": "cratimă nedespărțitoare",
+"ro_kw": "cratimă nedespărțitoare minus liniuță"
+},
+"‒": {
+"en": "figure dash",
+"en_kw": "figure dash number dash",
+"ro": "liniuță cifră",
+"ro_kw": "liniuță cifre interval"
+},
+"–": {
+"en": "en dash",
+"en_kw": "en dash ndash range hyphen",
+"ro": "linie de pauză en",
+"ro_kw": "linie pauză en ndash interval cratimă"
+},
+"—": {
+"en": "em dash",
+"en_kw": "em dash mdash long dash",
+"ro": "linie de dialog em",
+"ro_kw": "linie dialog em mdash liniuță lungă"
+},
+"‘": {
+"en": "left single quotation mark",
+"en_kw": "quote single left lsquo opening",
+"ro": "apostrof stânga",
+"ro_kw": "ghilimele simplu apostrof stânga lsquo"
+},
+"’": {
+"en": "right single quotation mark",
+"en_kw": "quote single right rsquo apostrophe closing",
+"ro": "apostrof dreapta",
+"ro_kw": "apostrof ghilimele simplu dreapta rsquo"
+},
+"‚": {
+"en": "single low-9 quote",
+"en_kw": "single low quote sbquo german",
+"ro": "ghilimele simple jos",
+"ro_kw": "ghilimele simple jos sbquo germană"
+},
+"‛": {
+"en": "single high-reversed-9 quote",
+"en_kw": "single quote reversed 9 high",
+"ro": "ghilimele simple 9 inversat sus",
+"ro_kw": "ghilimele simple 9 inversat sus"
+},
+"“": {
+"en": "left double quotation mark",
+"en_kw": "quote double left ldquo opening",
+"ro": "ghilimele stânga",
+"ro_kw": "ghilimele dublu stânga deschidere citat ldquo"
+},
+"”": {
+"en": "right double quotation mark",
+"en_kw": "quote double right rdquo closing",
+"ro": "ghilimele dreapta",
+"ro_kw": "ghilimele dublu dreapta închidere citat rdquo"
+},
+"„": {
+"en": "double low-9 quote",
+"en_kw": "double low quote bdquo german romanian opening",
+"ro": "ghilimele românești jos",
+"ro_kw": "ghilimele jos deschidere românești bdquo"
+},
+"‟": {
+"en": "double high-reversed-9 quote",
+"en_kw": "double quote reversed 9 high",
+"ro": "ghilimele duble 9 inversat sus",
+"ro_kw": "ghilimele duble 9 inversat sus"
+},
+"†": {
+"en": "dagger",
+"en_kw": "dagger obelisk footnote cross death",
+"ro": "cruciuliță",
+"ro_kw": "cruciuliță notă de subsol pumnal deces"
+},
+"‡": {
+"en": "double dagger",
+"en_kw": "double dagger diesis footnote",
+"ro": "cruciuliță dublă",
+"ro_kw": "cruciuliță dublă notă de subsol"
+},
+"•": {
+"en": "bullet",
+"en_kw": "bullet point list item dot bull",
+"ro": "buline",
+"ro_kw": "buline punct listă element"
+},
+"‣": {
+"en": "triangular bullet",
+"en_kw": "triangular bullet triangle list",
+"ro": "buline triunghiulară",
+"ro_kw": "buline triunghi listă"
+},
+"…": {
+"en": "horizontal ellipsis",
+"en_kw": "ellipsis hellip three dots dot dot dot",
+"ro": "puncte de suspensie",
+"ro_kw": "puncte suspensie trei puncte hellip"
+},
+"‰": {
+"en": "per mille sign",
+"en_kw": "permille per mille thousand percent promille",
+"ro": "semnul la mie (promilă)",
+"ro_kw": "promilă la mie procent mie"
+},
+"‱": {
+"en": "per ten thousand sign",
+"en_kw": "basis point bps per ten thousand permyriad",
+"ro": "semnul la zece mii",
+"ro_kw": "punct de bază la zece mii"
+},
+"′": {
+"en": "prime",
+"en_kw": "prime minutes feet derivative apostrophe",
+"ro": "prim",
+"ro_kw": "prim minute picioare derivată"
+},
+"″": {
+"en": "double prime",
+"en_kw": "double prime seconds inches",
+"ro": "dublu prim",
+"ro_kw": "secunde inci dublu prim"
+},
+"‹": {
+"en": "single left angle quote",
+"en_kw": "guillemet single left lsaquo angle quote",
+"ro": "ghilimele unghiulare simple stânga",
+"ro_kw": "ghilimele unghiulare simple stânga lsaquo"
+},
+"›": {
+"en": "single right angle quote",
+"en_kw": "guillemet single right rsaquo angle quote",
+"ro": "ghilimele unghiulare simple dreapta",
+"ro_kw": "ghilimele unghiulare simple dreapta rsaquo"
+},
+"※": {
+"en": "reference mark",
+"en_kw": "reference mark komejirushi japanese footnote",
+"ro": "semn de referință",
+"ro_kw": "semn referință notă japonez"
+},
+"‽": {
+"en": "interrobang",
+"en_kw": "interrobang question exclamation surprise",
+"ro": "interrobang",
+"ro_kw": "interrobang întrebare exclamare surprindere"
+},
+"‾": {
+"en": "overline",
+"en_kw": "overline overbar macron top line",
+"ro": "linie deasupra",
+"ro_kw": "linie deasupra overbar supraliniere"
+},
+"⁃": {
+"en": "hyphen bullet",
+"en_kw": "hyphen bullet dash list",
+"ro": "buline liniuță",
+"ro_kw": "buline liniuță cratimă listă"
+},
+"⁄": {
+"en": "fraction slash",
+"en_kw": "fraction slash stroke virgule frasl",
+"ro": "bară oblică de fracție",
+"ro_kw": "fracție bară oblică"
+},
+"⁇": {
+"en": "double question mark",
+"en_kw": "double question marks ??",
+"ro": "dublu semn al întrebării",
+"ro_kw": "două semne întrebare dublu"
+},
+"⁈": {
+"en": "question exclamation mark",
+"en_kw": "question exclamation ?! surprise",
+"ro": "întrebare și exclamare",
+"ro_kw": "întrebare exclamare ?! surprindere"
+},
+"⁊": {
+"en": "tironian sign et",
+"en_kw": "tironian et and ampersand irish",
+"ro": "semnul tironian et",
+"ro_kw": "tironian et și ampersand irlandeză"
+},
+"⁌": {
+"en": "black leftwards bullet",
+"en_kw": "black leftwards bullet arrow",
+"ro": "buline neagră spre stânga",
+"ro_kw": "buline neagră stânga săgeată"
+},
+"⁍": {
+"en": "black rightwards bullet",
+"en_kw": "black rightwards bullet arrow",
+"ro": "buline neagră spre dreapta",
+"ro_kw": "buline neagră dreapta săgeată"
+},
+"⁒": {
+"en": "commercial minus sign",
+"en_kw": "commercial minus sign percent discount",
+"ro": "semnul minus comercial",
+"ro_kw": "minus comercial semn procent reducere"
+},
+"⁰": {
+"en": "superscript zero",
+"en_kw": "superscript exponent power zero 0",
+"ro": "exponent zero",
+"ro_kw": "exponent putere zero 0"
+},
+"⁴": {
+"en": "superscript four",
+"en_kw": "superscript exponent power four 4",
+"ro": "exponent patru",
+"ro_kw": "exponent putere patru 4"
+},
+"⁵": {
+"en": "superscript five",
+"en_kw": "superscript exponent power five 5",
+"ro": "exponent cinci",
+"ro_kw": "exponent putere cinci 5"
+},
+"⁶": {
+"en": "superscript six",
+"en_kw": "superscript 6 power exponent small digit",
+"ro": "6 la exponent",
+"ro_kw": "exponent putere 6 șase cifră mică"
+},
+"⁷": {
+"en": "superscript seven",
+"en_kw": "superscript 7 power exponent small digit",
+"ro": "7 la exponent",
+"ro_kw": "exponent putere 7 șapte cifră mică"
+},
+"⁸": {
+"en": "superscript eight",
+"en_kw": "superscript 8 power exponent small digit",
+"ro": "8 la exponent",
+"ro_kw": "exponent putere 8 opt cifră mică"
+},
+"⁹": {
+"en": "superscript nine",
+"en_kw": "superscript 9 power exponent small digit",
+"ro": "9 la exponent",
+"ro_kw": "exponent putere 9 nouă cifră mică"
+},
+"⁺": {
+"en": "superscript plus",
+"en_kw": "superscript plus sign exponent positive ion charge",
+"ro": "plus ca exponent",
+"ro_kw": "plus exponent indice superior sarcină ion pozitiv"
+},
+"⁻": {
+"en": "superscript minus",
+"en_kw": "superscript minus exponent negative inverse ion charge",
+"ro": "minus ca exponent",
+"ro_kw": "minus exponent indice superior negativ invers sarcină"
+},
+"⁼": {
+"en": "superscript equals",
+"en_kw": "superscript equals sign exponent",
+"ro": "egal ca exponent",
+"ro_kw": "egal exponent indice superior"
+},
+"⁽": {
+"en": "superscript left parenthesis",
+"en_kw": "superscript left parenthesis open bracket exponent",
+"ro": "paranteză stângă ca exponent",
+"ro_kw": "paranteză stânga deschisă exponent indice superior"
+},
+"⁾": {
+"en": "superscript right parenthesis",
+"en_kw": "superscript right parenthesis close bracket exponent",
+"ro": "paranteză dreaptă ca exponent",
+"ro_kw": "paranteză dreapta închisă exponent indice superior"
+},
+"ⁿ": {
+"en": "superscript n",
+"en_kw": "superscript n exponent power nth",
+"ro": "n ca exponent",
+"ro_kw": "n exponent putere indice superior"
+},
+"₀": {
+"en": "subscript zero",
+"en_kw": "subscript 0 index chemistry small digit",
+"ro": "0 la indice",
+"ro_kw": "indice chimie 0 zero cifră mică"
+},
+"₁": {
+"en": "subscript one",
+"en_kw": "subscript 1 index chemistry small digit",
+"ro": "1 la indice",
+"ro_kw": "indice chimie 1 unu cifră mică"
+},
+"₂": {
+"en": "subscript two",
+"en_kw": "subscript 2 index chemistry small digit",
+"ro": "2 la indice",
+"ro_kw": "indice chimie 2 doi cifră mică"
+},
+"₃": {
+"en": "subscript three",
+"en_kw": "subscript 3 index chemistry small digit",
+"ro": "3 la indice",
+"ro_kw": "indice chimie 3 trei cifră mică"
+},
+"₄": {
+"en": "subscript four",
+"en_kw": "subscript 4 index chemistry small digit",
+"ro": "4 la indice",
+"ro_kw": "indice chimie 4 patru cifră mică"
+},
+"₅": {
+"en": "subscript five",
+"en_kw": "subscript 5 index chemistry small digit",
+"ro": "5 la indice",
+"ro_kw": "indice chimie 5 cinci cifră mică"
+},
+"₆": {
+"en": "subscript six",
+"en_kw": "subscript 6 index chemistry small digit",
+"ro": "6 la indice",
+"ro_kw": "indice chimie 6 șase cifră mică"
+},
+"₇": {
+"en": "subscript seven",
+"en_kw": "subscript 7 index chemistry small digit",
+"ro": "7 la indice",
+"ro_kw": "indice chimie 7 șapte cifră mică"
+},
+"₈": {
+"en": "subscript eight",
+"en_kw": "subscript 8 index chemistry small digit",
+"ro": "8 la indice",
+"ro_kw": "indice chimie 8 opt cifră mică"
+},
+"₉": {
+"en": "subscript nine",
+"en_kw": "subscript 9 index chemistry small digit",
+"ro": "9 la indice",
+"ro_kw": "indice chimie 9 nouă cifră mică"
+},
+"₊": {
+"en": "subscript plus",
+"en_kw": "subscript plus sign index",
+"ro": "plus ca indice",
+"ro_kw": "plus indice inferior"
+},
+"₋": {
+"en": "subscript minus",
+"en_kw": "subscript minus index",
+"ro": "minus ca indice",
+"ro_kw": "minus indice inferior"
+},
+"₌": {
+"en": "subscript equals",
+"en_kw": "subscript equals sign index",
+"ro": "egal ca indice",
+"ro_kw": "egal indice inferior"
+},
+"₍": {
+"en": "subscript left parenthesis",
+"en_kw": "subscript left parenthesis open bracket index",
+"ro": "paranteză stângă ca indice",
+"ro_kw": "paranteză stânga deschisă indice inferior"
+},
+"₎": {
+"en": "subscript right parenthesis",
+"en_kw": "subscript right parenthesis close bracket index",
+"ro": "paranteză dreaptă ca indice",
+"ro_kw": "paranteză dreapta închisă indice inferior"
+},
+"₠": {
+"en": "euro-currency sign",
+"en_kw": "ecu european currency unit old currency",
+"ro": "semnul euro-valută (ECU)",
+"ro_kw": "ecu unitate monetară europeană monedă veche valută"
+},
+"₡": {
+"en": "colon sign",
+"en_kw": "colon crc costa rica el salvador currency",
+"ro": "semnul colón",
+"ro_kw": "colón costa rica monedă valută"
+},
+"₢": {
+"en": "cruzeiro sign",
+"en_kw": "cruzeiro brazil old currency",
+"ro": "semnul cruzeiro",
+"ro_kw": "cruzeiro brazilia monedă veche valută"
+},
+"₣": {
+"en": "french franc sign",
+"en_kw": "franc french france frf currency",
+"ro": "semnul franc francez",
+"ro_kw": "franc francez franța frf monedă valută"
+},
+"₤": {
+"en": "lira sign",
+"en_kw": "lira pound italy turkey old currency",
+"ro": "semnul liră",
+"ro_kw": "liră lira italia monedă veche valută"
+},
+"₥": {
+"en": "mill sign",
+"en_kw": "mill mils thousandth dollar currency",
+"ro": "semnul mill",
+"ro_kw": "mill miime dolar monedă valută"
+},
+"₦": {
+"en": "naira sign",
+"en_kw": "naira ngn nigeria currency",
+"ro": "semnul naira",
+"ro_kw": "naira ngn nigeria monedă valută"
+},
+"₧": {
+"en": "peseta sign",
+"en_kw": "peseta spain esp old currency",
+"ro": "semnul peseta",
+"ro_kw": "peseta spania monedă veche valută"
+},
+"₨": {
+"en": "rupee sign",
+"en_kw": "rupee rs inr pkr lkr currency",
+"ro": "semnul rupie",
+"ro_kw": "rupie rs monedă valută pakistan sri lanka"
+},
+"₩": {
+"en": "won sign",
+"en_kw": "won krw korea korean currency",
+"ro": "semnul won",
+"ro_kw": "won krw coreea monedă valută"
+},
+"₪": {
+"en": "new sheqel sign",
+"en_kw": "shekel sheqel ils israel currency",
+"ro": "semnul șechel nou",
+"ro_kw": "șechel shekel ils israel monedă valută"
+},
+"₫": {
+"en": "dong sign",
+"en_kw": "dong vnd vietnam currency",
+"ro": "semnul dong",
+"ro_kw": "dong vnd vietnam monedă valută"
+},
+"€": {
+"en": "euro sign",
+"en_kw": "euro eur currency money europe",
+"ro": "semnul euro",
+"ro_kw": "euro eur monedă valută bani europa"
+},
+"₭": {
+"en": "kip sign",
+"en_kw": "kip lak laos currency",
+"ro": "semnul kip",
+"ro_kw": "kip laos lak monedă valută"
+},
+"₮": {
+"en": "tugrik sign",
+"en_kw": "tugrik tögrög mnt mongolia currency",
+"ro": "semnul tugrik",
+"ro_kw": "tugrik mongolia mnt monedă valută"
+},
+"₯": {
+"en": "drachma sign",
+"en_kw": "drachma greece grd old currency",
+"ro": "semnul drahmă",
+"ro_kw": "drahmă drachma grecia monedă veche valută"
+},
+"₰": {
+"en": "german penny sign",
+"en_kw": "pfennig penny german germany currency",
+"ro": "semnul pfennig german",
+"ro_kw": "pfennig german germania monedă veche valută"
+},
+"₱": {
+"en": "peso sign",
+"en_kw": "peso php philippines mexico currency",
+"ro": "semnul peso",
+"ro_kw": "peso php filipine mexic monedă valută"
+},
+"₲": {
+"en": "guarani sign",
+"en_kw": "guarani pyg paraguay currency",
+"ro": "semnul guarani",
+"ro_kw": "guarani paraguay pyg monedă valută"
+},
+"₳": {
+"en": "austral sign",
+"en_kw": "austral argentina old currency",
+"ro": "semnul austral",
+"ro_kw": "austral argentina monedă veche valută"
+},
+"₴": {
+"en": "hryvnia sign",
+"en_kw": "hryvnia uah ukraine currency",
+"ro": "semnul grivnă",
+"ro_kw": "grivnă hryvnia uah ucraina monedă valută"
+},
+"₵": {
+"en": "cedi sign",
+"en_kw": "cedi ghs ghana currency",
+"ro": "semnul cedi",
+"ro_kw": "cedi ghana ghs monedă valută"
+},
+"₶": {
+"en": "livre tournois sign",
+"en_kw": "livre tournois french old currency",
+"ro": "semnul livră tournois",
+"ro_kw": "livră tournois franța monedă veche valută"
+},
+"₷": {
+"en": "spesmilo sign",
+"en_kw": "spesmilo esperanto currency",
+"ro": "semnul spesmilo",
+"ro_kw": "spesmilo esperanto monedă valută"
+},
+"₸": {
+"en": "tenge sign",
+"en_kw": "tenge kzt kazakhstan currency",
+"ro": "semnul tenge",
+"ro_kw": "tenge kazahstan kzt monedă valută"
+},
+"₹": {
+"en": "indian rupee sign",
+"en_kw": "rupee inr india indian currency",
+"ro": "semnul rupie indiană",
+"ro_kw": "rupie indiană inr india monedă valută"
+},
+"₺": {
+"en": "turkish lira sign",
+"en_kw": "lira try turkey turkish currency",
+"ro": "semnul liră turcească",
+"ro_kw": "liră turcească try turcia monedă valută"
+},
+"₽": {
+"en": "ruble sign",
+"en_kw": "ruble rouble rub russia currency",
+"ro": "semnul rublă",
+"ro_kw": "rublă rub rusia monedă valută"
+},
+"℀": {
+"en": "account of",
+"en_kw": "account of a/c",
+"ro": "la contul (a/c)",
+"ro_kw": "la contul a/c cont"
+},
+"℁": {
+"en": "addressed to the subject",
+"en_kw": "addressed to the subject a/s",
+"ro": "adresat subiectului (a/s)",
+"ro_kw": "adresat subiectului a/s"
+},
+"ℂ": {
+"en": "double-struck capital c",
+"en_kw": "double-struck capital c complex numbers mathbb blackboard bold",
+"ro": "C dublu bară (numere complexe)",
+"ro_kw": "C dublu numere complexe mulțimea numerelor complexe"
+},
+"℃": {
+"en": "degree celsius",
+"en_kw": "celsius centigrade degree temperature",
+"ro": "grad Celsius",
+"ro_kw": "celsius grad temperatură centigrad"
+},
+"℅": {
+"en": "care of",
+"en_kw": "care of c/o address mail",
+"ro": "în grija (c/o)",
+"ro_kw": "în grija c/o adresă corespondență"
+},
+"℆": {
+"en": "cada una",
+"en_kw": "cada una c/u spanish each",
+"ro": "cada una (c/u)",
+"ro_kw": "cada una c/u fiecare spaniolă"
+},
+"ℇ": {
+"en": "euler constant",
+"en_kw": "euler constant e",
+"ro": "constanta lui Euler",
+"ro_kw": "euler constantă"
+},
+"℉": {
+"en": "degree fahrenheit",
+"en_kw": "fahrenheit degree temperature",
+"ro": "grad Fahrenheit",
+"ro_kw": "fahrenheit grad temperatură"
+},
+"ℊ": {
+"en": "script small g",
+"en_kw": "script small g calligraphic",
+"ro": "g mic caligrafic",
+"ro_kw": "g caligrafic literă mică"
+},
+"ℋ": {
+"en": "script capital h",
+"en_kw": "script capital h mathcal hamiltonian",
+"ro": "H caligrafic majuscul",
+"ro_kw": "H caligrafic majuscul hamiltonian"
+},
+"ℌ": {
+"en": "black-letter capital h",
+"en_kw": "fraktur gothic blackletter h hilbert space",
+"ro": "H majuscul gotic",
+"ro_kw": "gotic fraktur H majusculă spațiu hilbert"
+},
+"ℍ": {
+"en": "double-struck capital h",
+"en_kw": "double-struck capital h quaternions mathbb blackboard bold",
+"ro": "H dublu bară (cuaternioni)",
+"ro_kw": "H dublu cuaternioni"
+},
+"ℎ": {
+"en": "planck constant",
+"en_kw": "planck constant h physics quantum hbar",
+"ro": "constanta lui Planck",
+"ro_kw": "constanta Planck h fizică cuantică"
+},
+"ℏ": {
+"en": "h-bar planck constant",
+"en_kw": "hbar planck constant reduced quantum",
+"ro": "constanta Planck redusă",
+"ro_kw": "planck constantă redusă cuantică"
+},
+"ℐ": {
+"en": "script capital i",
+"en_kw": "script capital i mathcal imaginary part",
+"ro": "I caligrafic majuscul",
+"ro_kw": "I caligrafic majuscul parte imaginară"
+},
+"ℑ": {
+"en": "black-letter capital i (imaginary part)",
+"en_kw": "imaginary part im complex fraktur blackletter i",
+"ro": "I majuscul gotic (parte imaginară)",
+"ro_kw": "parte imaginară im complex fraktur I"
+},
+"ℒ": {
+"en": "script capital l",
+"en_kw": "script capital l mathcal laplace lagrangian",
+"ro": "L caligrafic majuscul",
+"ro_kw": "L caligrafic majuscul Laplace lagrangian"
+},
+"℔": {
+"en": "pound bar symbol (lb)",
+"en_kw": "lb pound weight bar libra",
+"ro": "simbol livră (lb)",
+"ro_kw": "lb livră greutate libra"
+},
+"ℕ": {
+"en": "double-struck capital n",
+"en_kw": "double-struck capital n natural numbers mathbb blackboard bold",
+"ro": "N dublu bară (numere naturale)",
+"ro_kw": "N dublu numere naturale mulțimea numerelor naturale"
+},
+"№": {
+"en": "numero sign",
+"en_kw": "numero number no nr numar",
+"ro": "semnul număr",
+"ro_kw": "număr numero nr nr."
+},
+"℗": {
+"en": "sound recording copyright",
+"en_kw": "phonogram copyright sound recording p circled record label",
+"ro": "drepturi de autor înregistrare audio",
+"ro_kw": "fonogramă drepturi autor înregistrare audio copyright p"
+},
+"ℙ": {
+"en": "double-struck capital p",
+"en_kw": "double-struck capital p primes probability mathbb blackboard bold",
+"ro": "P dublu bară (numere prime)",
+"ro_kw": "P dublu numere prime probabilitate"
+},
+"ℚ": {
+"en": "double-struck capital q",
+"en_kw": "double-struck capital q rational numbers mathbb blackboard bold",
+"ro": "Q dublu bară (numere raționale)",
+"ro_kw": "Q dublu numere raționale mulțimea numerelor raționale"
+},
+"ℛ": {
+"en": "script capital r",
+"en_kw": "script capital r mathcal riemann integral",
+"ro": "R caligrafic majuscul",
+"ro_kw": "R caligrafic majuscul Riemann integrală"
+},
+"ℜ": {
+"en": "black-letter capital r",
+"en_kw": "fraktur capital r real part gothic Re",
+"ro": "R gotic majuscul",
+"ro_kw": "R gotic majuscul fraktur parte reală"
+},
+"ℝ": {
+"en": "double-struck capital r",
+"en_kw": "double-struck capital r real numbers mathbb blackboard bold",
+"ro": "R dublu bară (numere reale)",
+"ro_kw": "R dublu numere reale mulțimea numerelor reale"
+},
+"℞": {
+"en": "prescription take",
+"en_kw": "rx prescription recipe pharmacy medicine",
+"ro": "rețetă (Rx)",
+"ro_kw": "rx rețetă farmacie medicament"
+},
+"℟": {
+"en": "response",
+"en_kw": "liturgy response R church",
+"ro": "răspuns liturgic",
+"ro_kw": "liturghie răspuns biserică R"
+},
+"℠": {
+"en": "service mark",
+"en_kw": "sm service mark trademark tm",
+"ro": "marcă de serviciu",
+"ro_kw": "marcă serviciu sm marcă comercială"
+},
+"℣": {
+"en": "versicle",
+"en_kw": "liturgy versicle V church",
+"ro": "versicul",
+"ro_kw": "liturghie versicul biserică V"
+},
+"ℤ": {
+"en": "double-struck capital z",
+"en_kw": "double-struck capital z integers mathbb blackboard bold",
+"ro": "Z dublu bară (numere întregi)",
+"ro_kw": "Z dublu numere întregi mulțimea numerelor întregi"
+},
+"℥": {
+"en": "ounce sign",
+"en_kw": "ounce oz weight",
+"ro": "semnul uncie",
+"ro_kw": "uncie oz greutate"
+},
+"Ω": {
+"en": "ohm sign",
+"en_kw": "ohm omega resistance electrical unit",
+"ro": "semnul ohm",
+"ro_kw": "ohm omega rezistență electrică unitate"
+},
+"ℨ": {
+"en": "black-letter capital z",
+"en_kw": "fraktur gothic blackletter z zeta integers",
+"ro": "Z majuscul gotic",
+"ro_kw": "gotic fraktur Z litera majusculă numere întregi"
+},
+"℩": {
+"en": "turned iota",
+"en_kw": "turned greek small letter iota description operator",
+"ro": "iota întors",
+"ro_kw": "iota grecesc întors operator descriere"
+},
+"ℬ": {
+"en": "script capital b",
+"en_kw": "script bernoulli b capital calligraphic",
+"ro": "B majuscul caligrafic",
+"ro_kw": "B caligrafic majusculă bernoulli"
+},
+"ℭ": {
+"en": "black-letter capital c",
+"en_kw": "fraktur capital c mathfrak gothic",
+"ro": "C gotic majuscul",
+"ro_kw": "C gotic majuscul fraktur"
+},
+"℮": {
+"en": "estimated sign",
+"en_kw": "estimated sign e-mark package volume",
+"ro": "semn estimat",
+"ro_kw": "estimat semn ambalaj volum"
+},
+"ℯ": {
+"en": "script small e",
+"en_kw": "script small e euler number exponential",
+"ro": "e caligrafic minuscul",
+"ro_kw": "e caligrafic minuscul numărul lui Euler exponențială"
+},
+"ℰ": {
+"en": "script capital e",
+"en_kw": "script capital e mathcal electromotive force",
+"ro": "E caligrafic majuscul",
+"ro_kw": "E caligrafic majuscul forță electromotoare"
+},
+"ℱ": {
+"en": "script capital f",
+"en_kw": "script capital f mathcal fourier transform",
+"ro": "F caligrafic majuscul",
+"ro_kw": "F caligrafic majuscul transformata Fourier"
+},
+"ℳ": {
+"en": "script capital m",
+"en_kw": "script m capital calligraphic mellin transform",
+"ro": "M majuscul caligrafic",
+"ro_kw": "M caligrafic majusculă transformata mellin"
+},
+"ℴ": {
+"en": "script small o",
+"en_kw": "script small o order",
+"ro": "o caligrafic minuscul",
+"ro_kw": "o caligrafic minuscul ordin"
+},
+"ℵ": {
+"en": "aleph",
+"en_kw": "aleph alef cardinal transfinite hebrew",
+"ro": "alef",
+"ro_kw": "alef cardinal transfinit"
+},
+"ℶ": {
+"en": "beth",
+"en_kw": "beth bet cardinal hebrew",
+"ro": "bet",
+"ro_kw": "bet cardinal"
+},
+"ℷ": {
+"en": "gimel",
+"en_kw": "gimel cardinal hebrew",
+"ro": "gimel",
+"ro_kw": "gimel cardinal"
+},
+"ℸ": {
+"en": "daleth",
+"en_kw": "daleth dalet cardinal hebrew",
+"ro": "dalet",
+"ro_kw": "dalet cardinal"
+},
+"ℽ": {
+"en": "double-struck small gamma",
+"en_kw": "double-struck small gamma mathbb euler constant",
+"ro": "gamma dublu bară minuscul",
+"ro_kw": "gamma dublu minusculă literă grecească"
+},
+"ℾ": {
+"en": "double-struck capital gamma",
+"en_kw": "double-struck capital gamma mathbb",
+"ro": "Gamma dublu bară majuscul",
+"ro_kw": "gamma dublu majusculă literă grecească"
+},
+"ℿ": {
+"en": "double-struck capital pi",
+"en_kw": "double-struck capital pi mathbb",
+"ro": "Pi dublu bară majuscul",
+"ro_kw": "pi dublu majusculă literă grecească"
+},
+"⅀": {
+"en": "double-struck summation",
+"en_kw": "double-struck n-ary summation sigma sum",
+"ro": "sumă dublu bară",
+"ro_kw": "sumă sigma sumare dublu"
+},
+"ⅅ": {
+"en": "double-struck italic capital d",
+"en_kw": "double-struck italic capital d differential",
+"ro": "D italic dublu bară majuscul",
+"ro_kw": "D italic dublu diferențială"
+},
+"ⅆ": {
+"en": "double-struck italic small d",
+"en_kw": "double-struck italic small d differential derivative dd",
+"ro": "d italic dublu bară minuscul",
+"ro_kw": "d italic dublu diferențială derivată"
+},
+"ⅇ": {
+"en": "double-struck italic small e",
+"en_kw": "double-struck italic small e euler number exponential",
+"ro": "e italic dublu bară minuscul",
+"ro_kw": "e italic dublu numărul lui Euler exponențială"
+},
+"ⅈ": {
+"en": "double-struck italic small i",
+"en_kw": "double-struck italic small i imaginary unit",
+"ro": "i italic dublu bară minuscul",
+"ro_kw": "i italic dublu unitate imaginară"
+},
+"ⅉ": {
+"en": "double-struck italic small j",
+"en_kw": "double-struck italic small j imaginary unit",
+"ro": "j italic dublu bară minuscul",
+"ro_kw": "j italic dublu unitate imaginară"
+},
+"⅋": {
+"en": "turned ampersand",
+"en_kw": "turned ampersand par linear logic",
+"ro": "și comercial întors",
+"ro_kw": "și comercial întors logică liniară"
+},
+"⅓": {
+"en": "one third",
+"en_kw": "third 1/3 fraction frac13",
+"ro": "o treime",
+"ro_kw": "treime fracție 1/3"
+},
+"⅔": {
+"en": "two thirds",
+"en_kw": "two thirds 2/3 fraction frac23",
+"ro": "două treimi",
+"ro_kw": "două treimi fracție 2/3"
+},
+"←": {
+"en": "left arrow",
+"en_kw": "arrow left leftarrow leftwards back",
+"ro": "săgeată stânga",
+"ro_kw": "săgeată stânga înapoi"
+},
+"↑": {
+"en": "up arrow",
+"en_kw": "arrow up uparrow upwards",
+"ro": "săgeată sus",
+"ro_kw": "săgeată sus"
+},
+"→": {
+"en": "right arrow",
+"en_kw": "arrow right rightarrow rightwards to next",
+"ro": "săgeată dreapta",
+"ro_kw": "săgeată dreapta următor"
+},
+"↓": {
+"en": "down arrow",
+"en_kw": "arrow down downarrow downwards",
+"ro": "săgeată jos",
+"ro_kw": "săgeată jos"
+},
+"↚": {
+"en": "arrow left crossed",
+"en_kw": "nleftarrow not arrow stroke negated arrow",
+"ro": "săgeată stânga barată",
+"ro_kw": "barată negată stânga nu săgeată"
+},
+"↛": {
+"en": "arrow right crossed",
+"en_kw": "nrightarrow not arrow stroke negated arrow",
+"ro": "săgeată dreapta barată",
+"ro_kw": "barată negată dreapta nu săgeată"
+},
+"↜": {
+"en": "wave arrow left",
+"en_kw": "leftwards wave wavy squiggle arrow",
+"ro": "săgeată ondulată stânga",
+"ro_kw": "ondulată stânga val săgeată"
+},
+"↝": {
+"en": "wave arrow right",
+"en_kw": "rightsquigarrow wavy wave rightwards arrow",
+"ro": "săgeată ondulată dreapta",
+"ro_kw": "ondulată dreapta val săgeată"
+},
+"↞": {
+"en": "two-headed arrow left",
+"en_kw": "twoheadleftarrow arrow",
+"ro": "săgeată cu două vârfuri stânga",
+"ro_kw": "două vârfuri stânga săgeată"
+},
+"↟": {
+"en": "two-headed arrow up",
+"en_kw": "twoheaduparrow arrow",
+"ro": "săgeată cu două vârfuri sus",
+"ro_kw": "două vârfuri sus săgeată"
+},
+"↠": {
+"en": "two-headed arrow right",
+"en_kw": "twoheadrightarrow surjective epimorphism arrow",
+"ro": "săgeată cu două vârfuri dreapta",
+"ro_kw": "două vârfuri dreapta surjectivă săgeată"
+},
+"↡": {
+"en": "two-headed arrow down",
+"en_kw": "twoheaddownarrow arrow",
+"ro": "săgeată cu două vârfuri jos",
+"ro_kw": "două vârfuri jos săgeată"
+},
+"↢": {
+"en": "arrow left with tail",
+"en_kw": "leftarrowtail tail arrow",
+"ro": "săgeată stânga cu coadă",
+"ro_kw": "coadă stânga săgeată"
+},
+"↣": {
+"en": "arrow right with tail",
+"en_kw": "rightarrowtail injective tail monomorphism arrow",
+"ro": "săgeată dreapta cu coadă",
+"ro_kw": "coadă dreapta injectivă săgeată"
+},
+"↤": {
+"en": "arrow left from bar",
+"en_kw": "mapsfrom leftwards from bar arrow",
+"ro": "săgeată stânga dinspre bară",
+"ro_kw": "dinspre bară stânga săgeată"
+},
+"↥": {
+"en": "arrow up from bar",
+"en_kw": "mapsup upwards from bar arrow",
+"ro": "săgeată sus dinspre bară",
+"ro_kw": "dinspre bară sus săgeată"
+},
+"↦": {
+"en": "arrow right from bar",
+"en_kw": "mapsto maps to function mapping lambda arrow",
+"ro": "săgeată dreapta dinspre bară",
+"ro_kw": "se mapează funcție aplicație dreapta bară săgeată"
+},
+"↧": {
+"en": "arrow down from bar",
+"en_kw": "mapsdown downwards from bar arrow",
+"ro": "săgeată jos dinspre bară",
+"ro_kw": "dinspre bară jos săgeată"
+},
+"↨": {
+"en": "up down arrow with base",
+"en_kw": "arrow up down base",
+"ro": "săgeată sus-jos cu bază",
+"ro_kw": "săgeată sus jos bază"
+},
+"↫": {
+"en": "arrow left with loop",
+"en_kw": "looparrowleft loop arrow",
+"ro": "săgeată stânga cu buclă",
+"ro_kw": "buclă stânga săgeată"
+},
+"↬": {
+"en": "arrow right with loop",
+"en_kw": "looparrowright loop rightwards arrow",
+"ro": "săgeată dreapta cu buclă",
+"ro_kw": "buclă dreapta săgeată"
+},
+"↭": {
+"en": "wave arrow left right",
+"en_kw": "leftrightsquigarrow wavy wave arrow",
+"ro": "săgeată ondulată bidirecțională",
+"ro_kw": "ondulată val bidirecțională săgeată"
+},
+"↮": {
+"en": "arrow left right crossed",
+"en_kw": "nleftrightarrow not stroke negated arrow",
+"ro": "săgeată bidirecțională barată",
+"ro_kw": "barată negată bidirecțională nu săgeată"
+},
+"↯": {
+"en": "zigzag arrow down",
+"en_kw": "downwards zigzag lightning contradiction electric arrow",
+"ro": "săgeată zigzag jos",
+"ro_kw": "zigzag jos fulger contradicție săgeată"
+},
+"↰": {
+"en": "up arrow tip left",
+"en_kw": "arrow up left tip",
+"ro": "săgeată sus cu vârf stânga",
+"ro_kw": "săgeată sus stânga vârf"
+},
+"↱": {
+"en": "up arrow tip right",
+"en_kw": "arrow up right tip",
+"ro": "săgeată sus cu vârf dreapta",
+"ro_kw": "săgeată sus dreapta vârf"
+},
+"↲": {
+"en": "down arrow tip left",
+"en_kw": "arrow down left tip return",
+"ro": "săgeată jos cu vârf stânga",
+"ro_kw": "săgeată jos stânga vârf"
+},
+"↳": {
+"en": "down arrow tip right",
+"en_kw": "arrow down right tip indent",
+"ro": "săgeată jos cu vârf dreapta",
+"ro_kw": "săgeată jos dreapta vârf indentare"
+},
+"↴": {
+"en": "right arrow corner down",
+"en_kw": "arrow right corner down turn",
+"ro": "săgeată dreapta cu colț în jos",
+"ro_kw": "săgeată dreapta colț jos cotitură"
+},
+"↵": {
+"en": "enter arrow",
+"en_kw": "enter return carriage newline arrow corner",
+"ro": "săgeată enter",
+"ro_kw": "enter return linie nouă săgeată colț"
+},
+"↶": {
+"en": "undo arrow anticlockwise",
+"en_kw": "undo arrow anticlockwise counterclockwise semicircle curve",
+"ro": "săgeată semicerc antiorar",
+"ro_kw": "anulare undo săgeată antiorar semicerc"
+},
+"↷": {
+"en": "redo arrow clockwise",
+"en_kw": "redo arrow clockwise semicircle curve",
+"ro": "săgeată semicerc orar",
+"ro_kw": "refacere redo săgeată orar semicerc"
+},
+"↸": {
+"en": "north west arrow to long bar",
+"en_kw": "north west arrow long bar home",
+"ro": "săgeată nord-vest către bară lungă",
+"ro_kw": "săgeată nord-vest bară lungă"
+},
+"↹": {
+"en": "arrows to bars left and right",
+"en_kw": "tab key tabulator leftwards arrow to bar over rightwards arrow",
+"ro": "săgeți spre bare stânga și dreapta",
+"ro_kw": "tab tabulator tastă săgeată"
+},
+"↺": {
+"en": "anticlockwise open circle arrow",
+"en_kw": "anticlockwise counterclockwise rotate reload undo circle arrow",
+"ro": "săgeată cerc deschis antiorar",
+"ro_kw": "antiorar rotire reîncărcare cerc săgeată"
+},
+"↻": {
+"en": "clockwise open circle arrow",
+"en_kw": "clockwise rotate reload refresh redo circle arrow",
+"ro": "săgeată cerc deschis orar",
+"ro_kw": "orar rotire reîncărcare reîmprospătare cerc săgeată"
+},
+"↼": {
+"en": "harpoon left barb up",
+"en_kw": "leftharpoonup harpoon barb up arrow",
+"ro": "harpon stânga cu vârful în sus",
+"ro_kw": "harpon stânga sus săgeată"
+},
+"↽": {
+"en": "harpoon left barb down",
+"en_kw": "leftharpoondown harpoon barb down arrow",
+"ro": "harpon stânga cu vârful în jos",
+"ro_kw": "harpon stânga jos săgeată"
+},
+"↾": {
+"en": "harpoon up barb right",
+"en_kw": "upharpoonright restriction harpoon arrow",
+"ro": "harpon sus cu vârful spre dreapta",
+"ro_kw": "harpon sus dreapta săgeată"
+},
+"↿": {
+"en": "harpoon up barb left",
+"en_kw": "upharpoonleft harpoon arrow",
+"ro": "harpon sus cu vârful spre stânga",
+"ro_kw": "harpon sus stânga săgeată"
+},
+"⇀": {
+"en": "harpoon right barb up",
+"en_kw": "rightharpoonup harpoon vector barb up arrow",
+"ro": "harpon dreapta cu vârful în sus",
+"ro_kw": "harpon vector dreapta sus săgeată"
+},
+"⇁": {
+"en": "harpoon right barb down",
+"en_kw": "rightharpoondown harpoon barb down arrow",
+"ro": "harpon dreapta cu vârful în jos",
+"ro_kw": "harpon dreapta jos săgeată"
+},
+"⇂": {
+"en": "harpoon down barb right",
+"en_kw": "downharpoonright harpoon arrow",
+"ro": "harpon jos cu vârful spre dreapta",
+"ro_kw": "harpon jos dreapta săgeată"
+},
+"⇃": {
+"en": "harpoon down barb left",
+"en_kw": "downharpoonleft harpoon arrow",
+"ro": "harpon jos cu vârful spre stânga",
+"ro_kw": "harpon jos stânga săgeată"
+},
+"⇄": {
+"en": "arrows right over left",
+"en_kw": "rightleftarrows swap exchange both directions arrow",
+"ro": "săgeți dreapta peste stânga",
+"ro_kw": "schimb ambele sensuri dreapta stânga săgeată"
+},
+"⇅": {
+"en": "up and down arrows",
+"en_kw": "arrow arrows up down swap exchange sort",
+"ro": "săgeți sus și jos",
+"ro_kw": "săgeată săgeți sus jos schimb sortare"
+},
+"⇆": {
+"en": "arrows left over right",
+"en_kw": "leftrightarrows swap exchange both directions arrow",
+"ro": "săgeți stânga peste dreapta",
+"ro_kw": "schimb ambele sensuri stânga dreapta săgeată"
+},
+"⇇": {
+"en": "two arrows left",
+"en_kw": "leftleftarrows paired double parallel arrow",
+"ro": "două săgeți stânga",
+"ro_kw": "două perechi paralele stânga săgeată"
+},
+"⇈": {
+"en": "two arrows up",
+"en_kw": "upuparrows paired double parallel arrow",
+"ro": "două săgeți sus",
+"ro_kw": "două perechi paralele sus săgeată"
+},
+"⇉": {
+"en": "two arrows right",
+"en_kw": "rightrightarrows paired double parallel arrow",
+"ro": "două săgeți dreapta",
+"ro_kw": "două perechi paralele dreapta săgeată"
+},
+"⇊": {
+"en": "two arrows down",
+"en_kw": "downdownarrows paired double parallel arrow",
+"ro": "două săgeți jos",
+"ro_kw": "două perechi paralele jos săgeată"
+},
+"⇋": {
+"en": "harpoons left over right",
+"en_kw": "leftrightharpoons equilibrium chemical reaction reversible arrow",
+"ro": "harpoane stânga peste dreapta",
+"ro_kw": "echilibru reacție chimică reversibilă harpoane săgeată"
+},
+"⇌": {
+"en": "harpoons right over left",
+"en_kw": "rightleftharpoons equilibrium chemical reaction reversible arrow",
+"ro": "harpoane dreapta peste stânga",
+"ro_kw": "echilibru reacție chimică reversibilă harpoane săgeată"
+},
+"⇍": {
+"en": "double arrow left crossed",
+"en_kw": "nLeftarrow not implied stroke arrow",
+"ro": "săgeată dublă stânga barată",
+"ro_kw": "barată dublă stânga nu săgeată"
+},
+"⇎": {
+"en": "double arrow left right crossed",
+"en_kw": "nLeftrightarrow not iff not equivalent stroke arrow",
+"ro": "săgeată dublă bidirecțională barată",
+"ro_kw": "nu echivalent barată dublă bidirecțională săgeată"
+},
+"⇏": {
+"en": "double arrow right crossed",
+"en_kw": "nRightarrow does not imply not implies stroke arrow",
+"ro": "săgeată dublă dreapta barată",
+"ro_kw": "nu implică barată dublă dreapta săgeată"
+},
+"⇐": {
+"en": "double arrow left",
+"en_kw": "leftarrow Leftarrow implied by double <=  arrow",
+"ro": "săgeată dublă stânga",
+"ro_kw": "implicat dublă stânga săgeată"
+},
+"⇑": {
+"en": "double arrow up",
+"en_kw": "uparrow Uparrow double arrow",
+"ro": "săgeată dublă sus",
+"ro_kw": "dublă sus săgeată"
+},
+"⇒": {
+"en": "double arrow right",
+"en_kw": "rightarrow Rightarrow implies then logical implication imply => double arrow",
+"ro": "săgeată dublă dreapta",
+"ro_kw": "implică rezultă atunci implicație logică dublă dreapta săgeată"
+},
+"⇓": {
+"en": "double arrow down",
+"en_kw": "downarrow Downarrow double arrow",
+"ro": "săgeată dublă jos",
+"ro_kw": "dublă jos săgeată"
+},
+"⇔": {
+"en": "double arrow left right",
+"en_kw": "Leftrightarrow iff if and only if equivalent logical equivalence double <=> arrow",
+"ro": "săgeată dublă bidirecțională",
+"ro_kw": "dacă și numai dacă echivalent echivalență logică dublă bidirecțională săgeată"
+},
+"⇕": {
+"en": "double arrow up down",
+"en_kw": "Updownarrow double vertical bidirectional arrow",
+"ro": "săgeată dublă sus-jos",
+"ro_kw": "dublă sus jos verticală bidirecțională săgeată"
+},
+"⇖": {
+"en": "north west double arrow",
+"en_kw": "arrow northwest diagonal up left double",
+"ro": "săgeată dublă spre nord-vest",
+"ro_kw": "săgeată diagonală sus stânga dublă"
+},
+"⇗": {
+"en": "north east double arrow",
+"en_kw": "arrow northeast diagonal up right double",
+"ro": "săgeată dublă spre nord-est",
+"ro_kw": "săgeată diagonală sus dreapta dublă"
+},
+"⇘": {
+"en": "south east double arrow",
+"en_kw": "arrow southeast diagonal down right double",
+"ro": "săgeată dublă spre sud-est",
+"ro_kw": "săgeată diagonală jos dreapta dublă"
+},
+"⇙": {
+"en": "south west double arrow",
+"en_kw": "arrow southwest diagonal down left double",
+"ro": "săgeată dublă spre sud-vest",
+"ro_kw": "săgeată diagonală jos stânga dublă"
+},
+"⇚": {
+"en": "triple arrow left",
+"en_kw": "Lleftarrow triple leftwards arrow",
+"ro": "săgeată triplă stânga",
+"ro_kw": "triplă stânga săgeată"
+},
+"⇛": {
+"en": "triple arrow right",
+"en_kw": "Rrightarrow triple rightwards arrow",
+"ro": "săgeată triplă dreapta",
+"ro_kw": "triplă dreapta săgeată"
+},
+"⇜": {
+"en": "squiggle arrow left",
+"en_kw": "leftwards squiggle zigzag arrow",
+"ro": "săgeată zigzagată stânga",
+"ro_kw": "zigzag stânga săgeată"
+},
+"⇝": {
+"en": "squiggle arrow right",
+"en_kw": "rightsquigarrow squiggle zigzag rightwards arrow",
+"ro": "săgeată zigzagată dreapta",
+"ro_kw": "zigzag dreapta săgeată"
+},
+"⇞": {
+"en": "page up",
+"en_kw": "page up key upwards arrow double stroke pgup",
+"ro": "page up",
+"ro_kw": "page up tastă săgeată sus pagină"
+},
+"⇟": {
+"en": "page down",
+"en_kw": "page down key downwards arrow double stroke pgdn",
+"ro": "page down",
+"ro_kw": "page down tastă săgeată jos pagină"
+},
+"⇠": {
+"en": "dashed left arrow",
+"en_kw": "arrow left dashed leftwards",
+"ro": "săgeată întreruptă stânga",
+"ro_kw": "săgeată întreruptă stânga"
+},
+"⇡": {
+"en": "dashed up arrow",
+"en_kw": "arrow up dashed upwards",
+"ro": "săgeată întreruptă sus",
+"ro_kw": "săgeată întreruptă sus"
+},
+"⇢": {
+"en": "dashed right arrow",
+"en_kw": "arrow right dashed rightwards",
+"ro": "săgeată întreruptă dreapta",
+"ro_kw": "săgeată întreruptă dreapta"
+},
+"⇣": {
+"en": "dashed down arrow",
+"en_kw": "arrow down dashed downwards",
+"ro": "săgeată întreruptă jos",
+"ro_kw": "săgeată întreruptă jos"
+},
+"⇤": {
+"en": "tab left arrow to bar",
+"en_kw": "backtab shift tab leftwards arrow bar",
+"ro": "săgeată stânga către bară",
+"ro_kw": "tab înapoi săgeată stânga bară"
+},
+"⇥": {
+"en": "tab right arrow to bar",
+"en_kw": "tab key rightwards arrow bar indent",
+"ro": "tab săgeată dreapta către bară",
+"ro_kw": "tab tastă săgeată dreapta bară indentare"
+},
+"⇦": {
+"en": "hollow arrow left",
+"en_kw": "white leftwards hollow empty outline arrow",
+"ro": "săgeată goală stânga",
+"ro_kw": "goală albă contur stânga săgeată"
+},
+"⇧": {
+"en": "shift",
+"en_kw": "shift key upwards hollow arrow up",
+"ro": "shift",
+"ro_kw": "shift tastă săgeată goală sus majuscule"
+},
+"⇨": {
+"en": "hollow arrow right",
+"en_kw": "white rightwards hollow empty outline arrow",
+"ro": "săgeată goală dreapta",
+"ro_kw": "goală albă contur dreapta săgeată"
+},
+"⇩": {
+"en": "hollow arrow down",
+"en_kw": "white downwards hollow empty outline arrow",
+"ro": "săgeată goală jos",
+"ro_kw": "goală albă contur jos săgeată"
+},
+"⇪": {
+"en": "caps lock",
+"en_kw": "caps lock key upwards hollow arrow bar capital",
+"ro": "caps lock",
+"ro_kw": "caps lock tastă săgeată sus majuscule"
+},
+"⇫": {
+"en": "hollow arrow up on pedestal",
+"en_kw": "upwards white arrow pedestal caps lock arrow",
+"ro": "săgeată goală sus pe piedestal",
+"ro_kw": "goală piedestal sus caps lock majuscule săgeată"
+},
+"⇬": {
+"en": "hollow arrow up on pedestal with bar",
+"en_kw": "upwards white arrow pedestal horizontal bar caps lock arrow",
+"ro": "săgeată goală sus pe piedestal cu bară",
+"ro_kw": "goală piedestal bară sus caps lock săgeată"
+},
+"⇭": {
+"en": "up arrow on pedestal with bar",
+"en_kw": "numeric lock upwards hollow arrow pedestal vertical bar",
+"ro": "săgeată sus pe piedestal cu bară",
+"ro_kw": "num lock săgeată sus piedestal"
+},
+"⇮": {
+"en": "hollow double arrow up",
+"en_kw": "upwards white double arrow arrow",
+"ro": "săgeată dublă goală sus",
+"ro_kw": "dublă goală albă sus săgeată"
+},
+"⇯": {
+"en": "hollow double arrow up on pedestal",
+"en_kw": "upwards white double arrow pedestal arrow",
+"ro": "săgeată dublă goală sus pe piedestal",
+"ro_kw": "dublă goală piedestal sus săgeată"
+},
+"⇰": {
+"en": "hollow arrow right from wall",
+"en_kw": "white rightwards from wall tab arrow",
+"ro": "săgeată goală dreapta dinspre perete",
+"ro_kw": "goală albă perete dreapta săgeată"
+},
+"⇱": {
+"en": "home arrow to corner nw",
+"en_kw": "home key north west arrow corner",
+"ro": "săgeată către colț nord-vest",
+"ro_kw": "home tastă săgeată colț nord-vest început"
+},
+"⇲": {
+"en": "end arrow to corner se",
+"en_kw": "end key south east arrow corner",
+"ro": "săgeată către colț sud-est",
+"ro_kw": "end tastă săgeată colț sud-est sfârșit"
+},
+"⇳": {
+"en": "hollow arrow up down",
+"en_kw": "up down white hollow empty arrow",
+"ro": "săgeată goală sus-jos",
+"ro_kw": "goală albă sus jos săgeată"
+},
+"⇴": {
+"en": "arrow right with small circle",
+"en_kw": "right arrow small circle arrow",
+"ro": "săgeată dreapta cu cerc mic",
+"ro_kw": "cerc mic dreapta săgeată"
+},
+"⇵": {
+"en": "down and up arrows",
+"en_kw": "arrow arrows down up swap sort",
+"ro": "săgeți jos și sus",
+"ro_kw": "săgeată săgeți jos sus schimb sortare"
+},
+"⇶": {
+"en": "three arrows right",
+"en_kw": "three rightwards arrows triple parallel arrow",
+"ro": "trei săgeți dreapta",
+"ro_kw": "trei dreapta paralele săgeată"
+},
+"⇷": {
+"en": "arrow left with vertical stroke",
+"en_kw": "nleftarrow vertical stroke arrow",
+"ro": "săgeată stânga cu bară verticală",
+"ro_kw": "bară verticală stânga săgeată"
+},
+"⇸": {
+"en": "arrow right with vertical stroke",
+"en_kw": "nrightarrow partial function vertical stroke arrow",
+"ro": "săgeată dreapta cu bară verticală",
+"ro_kw": "bară verticală funcție parțială dreapta săgeată"
+},
+"⇹": {
+"en": "arrow left right with vertical stroke",
+"en_kw": "left right arrow vertical stroke arrow",
+"ro": "săgeată bidirecțională cu bară verticală",
+"ro_kw": "bară verticală bidirecțională săgeată"
+},
+"⇺": {
+"en": "arrow left with double vertical stroke",
+"en_kw": "left arrow double vertical stroke arrow",
+"ro": "săgeată stânga cu două bare verticale",
+"ro_kw": "două bare verticale stânga săgeată"
+},
+"⇻": {
+"en": "arrow right with double vertical stroke",
+"en_kw": "right arrow double vertical stroke finite partial function arrow",
+"ro": "săgeată dreapta cu două bare verticale",
+"ro_kw": "două bare verticale dreapta săgeată"
+},
+"⇼": {
+"en": "left right arrow double vertical stroke",
+"en_kw": "left right arrow double vertical stroke arrow",
+"ro": "săgeată bidirecțională cu două bare verticale",
+"ro_kw": "bidirecțională două bare verticale săgeată"
+},
+"⇽": {
+"en": "open-headed arrow left",
+"en_kw": "open headed leftwards arrow",
+"ro": "săgeată cu vârf deschis stânga",
+"ro_kw": "vârf deschis stânga săgeată"
+},
+"⇾": {
+"en": "open-headed arrow right",
+"en_kw": "open headed rightwards arrow",
+"ro": "săgeată cu vârf deschis dreapta",
+"ro_kw": "vârf deschis dreapta săgeată"
+},
+"⇿": {
+"en": "open-headed arrow left right",
+"en_kw": "left right open headed arrow",
+"ro": "săgeată cu vârf deschis bidirecțională",
+"ro_kw": "vârf deschis bidirecțională săgeată"
+},
+"∀": {
+"en": "for all",
+"en_kw": "forall for all universal quantifier",
+"ro": "pentru orice",
+"ro_kw": "pentru orice cuantificator universal"
+},
+"∁": {
+"en": "complement",
+"en_kw": "complement set comp",
+"ro": "complement",
+"ro_kw": "complement mulțime"
+},
+"∂": {
+"en": "partial derivative",
+"en_kw": "partial differential derivative del",
+"ro": "derivată parțială",
+"ro_kw": "derivată parțială diferențială"
+},
+"∃": {
+"en": "there exists",
+"en_kw": "exists there exists existential quantifier",
+"ro": "există",
+"ro_kw": "există cuantificator existențial"
+},
+"∄": {
+"en": "there does not exist",
+"en_kw": "nexists not exists there does not exist",
+"ro": "nu există",
+"ro_kw": "nu există inexistent"
+},
+"∅": {
+"en": "empty set",
+"en_kw": "emptyset empty set null varnothing",
+"ro": "mulțimea vidă",
+"ro_kw": "mulțime vidă"
+},
+"∆": {
+"en": "increment",
+"en_kw": "increment delta change difference",
+"ro": "increment",
+"ro_kw": "increment delta schimbare diferență"
+},
+"∇": {
+"en": "nabla",
+"en_kw": "nabla del gradient",
+"ro": "nabla",
+"ro_kw": "nabla gradient"
+},
+"∈": {
+"en": "element of",
+"en_kw": "in element of member belongs",
+"ro": "element al",
+"ro_kw": "în element aparține mulțime"
+},
+"∉": {
+"en": "not an element of",
+"en_kw": "notin not element of not member",
+"ro": "nu aparține",
+"ro_kw": "nu aparține nu element mulțime"
+},
+"∊": {
+"en": "small element of",
+"en_kw": "in element of small member",
+"ro": "element al mic",
+"ro_kw": "element mic aparține"
+},
+"∋": {
+"en": "contains as member",
+"en_kw": "ni contains member owns",
+"ro": "conține ca element",
+"ro_kw": "conține element"
+},
+"∌": {
+"en": "does not contain as member",
+"en_kw": "notni not contain member",
+"ro": "nu conține ca element",
+"ro_kw": "nu conține element"
+},
+"∍": {
+"en": "small contains as member",
+"en_kw": "ni contains member small",
+"ro": "conține ca element mic",
+"ro_kw": "conține element mic"
+},
+"∎": {
+"en": "end of proof",
+"en_kw": "qed end proof halmos tombstone square",
+"ro": "sfârșitul demonstrației",
+"ro_kw": "qed sfârșit demonstrație dovadă pătrat"
+},
+"∏": {
+"en": "product",
+"en_kw": "prod product n-ary pi multiply",
+"ro": "produs (∏)",
+"ro_kw": "produs înmulțire pi mare"
+},
+"∐": {
+"en": "coproduct",
+"en_kw": "coprod coproduct n-ary category",
+"ro": "coprodus",
+"ro_kw": "coprodus categorii"
+},
+"∑": {
+"en": "summation",
+"en_kw": "sum summation sigma total add",
+"ro": "sumă (sigma)",
+"ro_kw": "sumă sigma total adunare"
+},
+"−": {
+"en": "minus sign",
+"en_kw": "minus subtract subtraction dash",
+"ro": "semnul minus",
+"ro_kw": "minus scădere scăzut"
+},
+"∓": {
+"en": "minus-plus",
+"en_kw": "mp minus plus mnplus",
+"ro": "minus-plus",
+"ro_kw": "minus plus"
+},
+"∔": {
+"en": "dot plus",
+"en_kw": "dot plus dotplus",
+"ro": "plus cu punct",
+"ro_kw": "plus cu punct"
+},
+"∕": {
+"en": "division slash",
+"en_kw": "division slash divide fraction",
+"ro": "bară de împărțire",
+"ro_kw": "împărțire bară oblică fracție"
+},
+"∖": {
+"en": "set minus",
+"en_kw": "setminus set minus difference backslash",
+"ro": "diferență de mulțimi",
+"ro_kw": "mulțime diferență minus"
+},
+"∗": {
+"en": "asterisk operator",
+"en_kw": "ast asterisk star operator multiply convolution",
+"ro": "operator asterisc",
+"ro_kw": "asterisc stea operator convoluție"
+},
+"∘": {
+"en": "ring operator",
+"en_kw": "circ ring compose composition function",
+"ro": "operator inel",
+"ro_kw": "inel compunere funcții cerc"
+},
+"∙": {
+"en": "bullet operator",
+"en_kw": "bullet operator dot product small",
+"ro": "operator punct",
+"ro_kw": "operator punct produs"
+},
+"√": {
+"en": "square root",
+"en_kw": "sqrt square root radical",
+"ro": "rădăcină pătrată",
+"ro_kw": "radical rădăcină pătrată"
+},
+"∛": {
+"en": "cube root",
+"en_kw": "cbrt cube root radical",
+"ro": "rădăcină cubică",
+"ro_kw": "radical rădăcină cubică"
+},
+"∜": {
+"en": "fourth root",
+"en_kw": "fourth root radical quartic",
+"ro": "rădăcină de ordin patru",
+"ro_kw": "radical rădăcină ordin patru"
+},
+"∝": {
+"en": "proportional to",
+"en_kw": "propto proportional",
+"ro": "proporțional cu",
+"ro_kw": "proporțional"
+},
+"∞": {
+"en": "infinity",
+"en_kw": "infty infinity endless",
+"ro": "infinit",
+"ro_kw": "infinit nesfârșit"
+},
+"∟": {
+"en": "right angle",
+"en_kw": "right angle 90 degrees geometry",
+"ro": "unghi drept",
+"ro_kw": "unghi drept 90 grade geometrie"
+},
+"∠": {
+"en": "angle",
+"en_kw": "angle geometry",
+"ro": "unghi",
+"ro_kw": "unghi geometrie"
+},
+"∡": {
+"en": "measured angle",
+"en_kw": "measuredangle measured angle geometry",
+"ro": "unghi măsurat",
+"ro_kw": "unghi măsurat geometrie"
+},
+"∢": {
+"en": "spherical angle",
+"en_kw": "sphericalangle spherical angle geometry",
+"ro": "unghi sferic",
+"ro_kw": "unghi sferic geometrie"
+},
+"∣": {
+"en": "divides",
+"en_kw": "mid divides divisor vertical bar number theory",
+"ro": "divide",
+"ro_kw": "divide divizor bară verticală"
+},
+"∤": {
+"en": "does not divide",
+"en_kw": "nmid not divide divisor",
+"ro": "nu divide",
+"ro_kw": "nu divide divizor"
+},
+"∥": {
+"en": "parallel to",
+"en_kw": "parallel parallel to lines geometry double bar",
+"ro": "paralel cu",
+"ro_kw": "paralel drepte geometrie"
+},
+"∦": {
+"en": "not parallel to",
+"en_kw": "nparallel not parallel lines",
+"ro": "neparalel cu",
+"ro_kw": "neparalel drepte"
+},
+"∧": {
+"en": "logical and",
+"en_kw": "land wedge and logical conjunction",
+"ro": "și logic",
+"ro_kw": "și logic conjuncție"
+},
+"∨": {
+"en": "logical or",
+"en_kw": "lor vee or logical disjunction",
+"ro": "sau logic",
+"ro_kw": "sau logic disjuncție"
+},
+"∩": {
+"en": "intersection",
+"en_kw": "cap intersection set and",
+"ro": "intersecție",
+"ro_kw": "intersecție mulțimi"
+},
+"∪": {
+"en": "union",
+"en_kw": "cup union set or",
+"ro": "reuniune",
+"ro_kw": "reuniune mulțimi"
+},
+"∫": {
+"en": "integral",
+"en_kw": "int integral calculus",
+"ro": "integrală",
+"ro_kw": "integrală calcul"
+},
+"∬": {
+"en": "double integral",
+"en_kw": "iint double integral calculus",
+"ro": "integrală dublă",
+"ro_kw": "integrală dublă calcul"
+},
+"∭": {
+"en": "triple integral",
+"en_kw": "iiint triple integral calculus",
+"ro": "integrală triplă",
+"ro_kw": "integrală triplă calcul"
+},
+"∮": {
+"en": "contour integral",
+"en_kw": "oint contour integral closed loop calculus",
+"ro": "integrală pe contur",
+"ro_kw": "integrală contur curbă închisă"
+},
+"∯": {
+"en": "surface integral",
+"en_kw": "oiint surface integral calculus",
+"ro": "integrală de suprafață",
+"ro_kw": "integrală suprafață"
+},
+"∰": {
+"en": "volume integral",
+"en_kw": "oiiint volume integral calculus",
+"ro": "integrală de volum",
+"ro_kw": "integrală volum"
+},
+"∱": {
+"en": "clockwise integral",
+"en_kw": "clockwise integral calculus",
+"ro": "integrală în sens orar",
+"ro_kw": "integrală sens orar"
+},
+"∲": {
+"en": "clockwise contour integral",
+"en_kw": "clockwise contour integral calculus",
+"ro": "integrală pe contur în sens orar",
+"ro_kw": "integrală contur sens orar"
+},
+"∳": {
+"en": "anticlockwise contour integral",
+"en_kw": "anticlockwise counterclockwise contour integral",
+"ro": "integrală pe contur în sens antiorar",
+"ro_kw": "integrală contur sens antiorar"
+},
+"∴": {
+"en": "therefore",
+"en_kw": "therefore thus hence so proof logic three dots",
+"ro": "prin urmare",
+"ro_kw": "prin urmare deci astfel dovadă logică trei puncte"
+},
+"∵": {
+"en": "because",
+"en_kw": "because since proof logic three dots",
+"ro": "deoarece",
+"ro_kw": "deoarece fiindcă pentru că dovadă logică"
+},
+"∶": {
+"en": "ratio",
+"en_kw": "ratio colon proportion",
+"ro": "raport",
+"ro_kw": "raport două puncte proporție"
+},
+"∷": {
+"en": "proportion",
+"en_kw": "proportion colon ratio",
+"ro": "proporție",
+"ro_kw": "proporție raport patru puncte"
+},
+"∸": {
+"en": "dot minus",
+"en_kw": "dotminus dot minus monus subtraction",
+"ro": "minus cu punct",
+"ro_kw": "minus punct scădere"
+},
+"∹": {
+"en": "excess",
+"en_kw": "excess difference",
+"ro": "exces",
+"ro_kw": "exces diferență"
+},
+"∺": {
+"en": "geometric proportion",
+"en_kw": "geometric proportion",
+"ro": "proporție geometrică",
+"ro_kw": "proporție geometrică"
+},
+"∻": {
+"en": "homothetic",
+"en_kw": "homothetic geometry",
+"ro": "omotetic",
+"ro_kw": "omotetic geometrie"
+},
+"∼": {
+"en": "tilde operator",
+"en_kw": "sim tilde similar operator approx",
+"ro": "operator tildă",
+"ro_kw": "tildă similar operator aproximativ"
+},
+"∽": {
+"en": "reversed tilde",
+"en_kw": "backsim reversed tilde similar",
+"ro": "tildă inversată",
+"ro_kw": "tildă inversată similar"
+},
+"∾": {
+"en": "inverted lazy s",
+"en_kw": "inverted lazy s sine similar",
+"ro": "s culcat inversat",
+"ro_kw": "s culcat inversat"
+},
+"∿": {
+"en": "sine wave",
+"en_kw": "sine wave sinusoid wave signal",
+"ro": "undă sinusoidală",
+"ro_kw": "sinusoidă undă semnal"
+},
+"≀": {
+"en": "wreath product",
+"en_kw": "wr wreath product group theory",
+"ro": "produs wreath",
+"ro_kw": "produs wreath grupuri"
+},
+"≁": {
+"en": "not tilde",
+"en_kw": "nsim not tilde not similar",
+"ro": "nu tildă",
+"ro_kw": "nu tildă nesimilar"
+},
+"≂": {
+"en": "minus tilde",
+"en_kw": "eqsim minus tilde",
+"ro": "minus tildă",
+"ro_kw": "minus tildă"
+},
+"≃": {
+"en": "asymptotically equal",
+"en_kw": "simeq asymptotically equal similar equal",
+"ro": "asimptotic egal",
+"ro_kw": "asimptotic egal similar"
+},
+"≄": {
+"en": "not asymptotically equal",
+"en_kw": "nsimeq not asymptotically equal",
+"ro": "nu e asimptotic egal",
+"ro_kw": "nu asimptotic egal"
+},
+"≅": {
+"en": "congruent, approximately equal",
+"en_kw": "cong congruent approximately equal isomorphic",
+"ro": "congruent, aproximativ egal",
+"ro_kw": "congruent aproximativ egal izomorf"
+},
+"≆": {
+"en": "approximately but not actually equal",
+"en_kw": "approximately not actually equal",
+"ro": "aproximativ dar nu egal",
+"ro_kw": "aproximativ dar nu egal"
+},
+"≇": {
+"en": "neither approximately nor actually equal",
+"en_kw": "ncong not congruent neither approximately nor equal",
+"ro": "nici aproximativ, nici egal",
+"ro_kw": "necongruent nici aproximativ nici egal"
+},
+"≈": {
+"en": "almost equal",
+"en_kw": "approx almost equal approximately about wavy equals",
+"ro": "aproape egal",
+"ro_kw": "aproape egal aproximativ aproximație ondulat"
+},
+"≉": {
+"en": "not almost equal",
+"en_kw": "napprox not almost equal not approximately",
+"ro": "nu e aproape egal",
+"ro_kw": "nu aproape egal neaproximativ"
+},
+"≊": {
+"en": "almost equal or equal",
+"en_kw": "approxeq almost equal or equal",
+"ro": "aproape egal sau egal",
+"ro_kw": "aproape egal sau egal"
+},
+"≋": {
+"en": "triple tilde",
+"en_kw": "triple tilde approx",
+"ro": "tildă triplă",
+"ro_kw": "tildă triplă"
+},
+"≌": {
+"en": "all equal",
+"en_kw": "backcong all equal reversed congruent",
+"ro": "toate egale",
+"ro_kw": "toate egale congruent inversat"
+},
+"≍": {
+"en": "equivalent to",
+"en_kw": "asymp equivalent to asymptotic",
+"ro": "echivalent cu",
+"ro_kw": "echivalent asimptotic"
+},
+"≎": {
+"en": "geometrically equivalent",
+"en_kw": "bumpeq geometrically equivalent",
+"ro": "echivalent geometric",
+"ro_kw": "echivalent geometric"
+},
+"≏": {
+"en": "difference between",
+"en_kw": "difference between bumpeq",
+"ro": "diferența dintre",
+"ro_kw": "diferența dintre"
+},
+"≐": {
+"en": "approaches the limit",
+"en_kw": "doteq approaches limit dot equal",
+"ro": "tinde către limită",
+"ro_kw": "tinde limită egal cu punct"
+},
+"≑": {
+"en": "geometrically equal",
+"en_kw": "doteqdot geometrically equal",
+"ro": "egal geometric",
+"ro_kw": "egal geometric"
+},
+"≒": {
+"en": "approximately equal or image of",
+"en_kw": "fallingdotseq approximately equal image",
+"ro": "aproximativ egal sau imaginea",
+"ro_kw": "aproximativ egal imagine"
+},
+"≓": {
+"en": "image of or approximately equal",
+"en_kw": "risingdotseq image approximately equal",
+"ro": "imaginea sau aproximativ egal",
+"ro_kw": "imagine aproximativ egal"
+},
+"≔": {
+"en": "colon equals",
+"en_kw": "coloneq colon equals assign assignment definition :=",
+"ro": "două puncte egal",
+"ro_kw": "atribuire definiție două puncte egal"
+},
+"≕": {
+"en": "equals colon",
+"en_kw": "eqcolon equals colon assign =:",
+"ro": "egal două puncte",
+"ro_kw": "egal două puncte atribuire"
+},
+"≖": {
+"en": "ring in equal",
+"en_kw": "eqcirc ring in equal",
+"ro": "inel în egal",
+"ro_kw": "inel în egal"
+},
+"≗": {
+"en": "ring equal",
+"en_kw": "circeq ring equal",
+"ro": "egal cu inel",
+"ro_kw": "egal inel"
+},
+"≘": {
+"en": "corresponds to",
+"en_kw": "corresponds to correspond",
+"ro": "corespunde cu",
+"ro_kw": "corespunde"
+},
+"≙": {
+"en": "estimates",
+"en_kw": "estimates wedge corresponds equals",
+"ro": "estimează",
+"ro_kw": "estimează corespunde"
+},
+"≚": {
+"en": "equiangular",
+"en_kw": "equiangular geometry",
+"ro": "echiunghiular",
+"ro_kw": "echiunghiular geometrie"
+},
+"≛": {
+"en": "star equals",
+"en_kw": "star equals starequal",
+"ro": "stea egal",
+"ro_kw": "stea egal"
+},
+"≜": {
+"en": "delta equal",
+"en_kw": "triangleq delta equal by definition",
+"ro": "egal delta",
+"ro_kw": "egal prin definiție delta"
+},
+"≝": {
+"en": "equal by definition",
+"en_kw": "eqdef equal by definition define",
+"ro": "egal prin definiție",
+"ro_kw": "egal prin definiție definiție"
+},
+"≞": {
+"en": "measured by",
+"en_kw": "measured by",
+"ro": "măsurat prin",
+"ro_kw": "măsurat prin"
+},
+"≟": {
+"en": "questioned equal",
+"en_kw": "questioned equal equal question",
+"ro": "egal cu semn de întrebare",
+"ro_kw": "egal întrebare"
+},
+"≠": {
+"en": "not equal",
+"en_kw": "ne neq not equal different inequality",
+"ro": "diferit",
+"ro_kw": "diferit nu este egal inegalitate"
+},
+"≡": {
+"en": "identical to",
+"en_kw": "equiv identical equivalent congruent three lines",
+"ro": "identic cu",
+"ro_kw": "identic echivalent congruent trei linii"
+},
+"≢": {
+"en": "not identical",
+"en_kw": "nequiv not identical not equivalent",
+"ro": "nu e identic",
+"ro_kw": "neidentic neechivalent"
+},
+"≣": {
+"en": "strictly equivalent",
+"en_kw": "strictly equivalent four lines",
+"ro": "strict echivalent",
+"ro_kw": "strict echivalent patru linii"
+},
+"≤": {
+"en": "less than or equal",
+"en_kw": "leq le less than or equal",
+"ro": "mai mic sau egal",
+"ro_kw": "mai mic egal"
+},
+"≥": {
+"en": "greater than or equal",
+"en_kw": "geq ge greater than or equal",
+"ro": "mai mare sau egal",
+"ro_kw": "mai mare egal"
+},
+"≦": {
+"en": "less than over equal",
+"en_kw": "leqq less than over equal",
+"ro": "mai mic peste egal",
+"ro_kw": "mai mic egal"
+},
+"≧": {
+"en": "greater than over equal",
+"en_kw": "geqq greater than over equal",
+"ro": "mai mare peste egal",
+"ro_kw": "mai mare egal"
+},
+"≨": {
+"en": "less than not equal",
+"en_kw": "lneqq less than not equal",
+"ro": "mai mic dar nu egal",
+"ro_kw": "mai mic nu egal"
+},
+"≩": {
+"en": "greater than not equal",
+"en_kw": "gneqq greater than not equal",
+"ro": "mai mare dar nu egal",
+"ro_kw": "mai mare nu egal"
+},
+"≪": {
+"en": "much less than",
+"en_kw": "ll much less than",
+"ro": "mult mai mic",
+"ro_kw": "mult mai mic"
+},
+"≫": {
+"en": "much greater than",
+"en_kw": "gg much greater than",
+"ro": "mult mai mare",
+"ro_kw": "mult mai mare"
+},
+"≬": {
+"en": "between",
+"en_kw": "between twixt",
+"ro": "între",
+"ro_kw": "între"
+},
+"≭": {
+"en": "not equivalent",
+"en_kw": "nasymp not equivalent to",
+"ro": "nu e echivalent",
+"ro_kw": "nu echivalent"
+},
+"≮": {
+"en": "not less than",
+"en_kw": "nless not less than",
+"ro": "nu mai mic decât",
+"ro_kw": "nu mai mic"
+},
+"≯": {
+"en": "not greater than",
+"en_kw": "ngtr not greater than",
+"ro": "nu mai mare decât",
+"ro_kw": "nu mai mare"
+},
+"≰": {
+"en": "neither less nor equal",
+"en_kw": "nleq not less than or equal",
+"ro": "nici mai mic nici egal",
+"ro_kw": "nu mai mic egal"
+},
+"≱": {
+"en": "neither greater nor equal",
+"en_kw": "ngeq not greater than or equal",
+"ro": "nici mai mare nici egal",
+"ro_kw": "nu mai mare egal"
+},
+"≲": {
+"en": "less than or equivalent",
+"en_kw": "lesssim less than equivalent",
+"ro": "mai mic sau echivalent",
+"ro_kw": "mai mic echivalent"
+},
+"≳": {
+"en": "greater than or equivalent",
+"en_kw": "gtrsim greater than equivalent",
+"ro": "mai mare sau echivalent",
+"ro_kw": "mai mare echivalent"
+},
+"≴": {
+"en": "neither less nor equivalent",
+"en_kw": "not less than equivalent",
+"ro": "nici mai mic nici echivalent",
+"ro_kw": "nu mai mic echivalent"
+},
+"≶": {
+"en": "less than or greater than",
+"en_kw": "lessgtr less greater",
+"ro": "mai mic sau mai mare",
+"ro_kw": "mai mic mai mare"
+},
+"≷": {
+"en": "greater than or less than",
+"en_kw": "gtrless greater less",
+"ro": "mai mare sau mai mic",
+"ro_kw": "mai mare mai mic"
+},
+"≸": {
+"en": "neither less nor greater",
+"en_kw": "not less greater",
+"ro": "nici mai mic nici mai mare",
+"ro_kw": "nu mai mic mai mare"
+},
+"≹": {
+"en": "neither greater nor less",
+"en_kw": "not greater less",
+"ro": "nici mai mare nici mai mic",
+"ro_kw": "nu mai mare mai mic"
+},
+"≺": {
+"en": "precedes",
+"en_kw": "prec precedes before order",
+"ro": "precedă",
+"ro_kw": "precedă înainte ordine"
+},
+"≻": {
+"en": "succeeds",
+"en_kw": "succ succeeds after order",
+"ro": "succedă",
+"ro_kw": "succedă după ordine"
+},
+"≼": {
+"en": "precedes or equal",
+"en_kw": "preceq precedes equal",
+"ro": "precedă sau egal",
+"ro_kw": "precedă egal"
+},
+"≽": {
+"en": "succeeds or equal",
+"en_kw": "succeq succeeds equal",
+"ro": "succedă sau egal",
+"ro_kw": "succedă egal"
+},
+"≾": {
+"en": "precedes or equivalent",
+"en_kw": "precsim precedes equivalent",
+"ro": "precedă sau echivalent",
+"ro_kw": "precedă echivalent"
+},
+"≿": {
+"en": "succeeds or equivalent",
+"en_kw": "succsim succeeds equivalent",
+"ro": "succedă sau echivalent",
+"ro_kw": "succedă echivalent"
+},
+"⊀": {
+"en": "does not precede",
+"en_kw": "nprec not precede order relation",
+"ro": "nu precede",
+"ro_kw": "nu precede ordine relație"
+},
+"⊁": {
+"en": "does not succeed",
+"en_kw": "nsucc not succeed order relation",
+"ro": "nu succedă",
+"ro_kw": "nu succedă ordine relație"
+},
+"⊂": {
+"en": "subset",
+"en_kw": "subset sub subset of",
+"ro": "submulțime",
+"ro_kw": "submulțime inclus"
+},
+"⊃": {
+"en": "superset",
+"en_kw": "superset sup supset",
+"ro": "supramulțime",
+"ro_kw": "supramulțime include"
+},
+"⊄": {
+"en": "not a subset",
+"en_kw": "nsubset not subset",
+"ro": "nu e submulțime",
+"ro_kw": "nu submulțime"
+},
+"⊅": {
+"en": "not a superset",
+"en_kw": "nsupset not superset",
+"ro": "nu e supramulțime",
+"ro_kw": "nu supramulțime"
+},
+"⊆": {
+"en": "subset or equal",
+"en_kw": "subseteq subset equal",
+"ro": "submulțime sau egală",
+"ro_kw": "submulțime egal inclus"
+},
+"⊇": {
+"en": "superset or equal",
+"en_kw": "supseteq superset equal",
+"ro": "supramulțime sau egală",
+"ro_kw": "supramulțime egal"
+},
+"⊈": {
+"en": "not subset or equal",
+"en_kw": "nsubseteq not subset equal",
+"ro": "nu e submulțime nici egală",
+"ro_kw": "nu submulțime egal"
+},
+"⊉": {
+"en": "not superset or equal",
+"en_kw": "nsupseteq not superset equal",
+"ro": "nu e supramulțime nici egală",
+"ro_kw": "nu supramulțime egal"
+},
+"⊊": {
+"en": "subset not equal",
+"en_kw": "subsetneq proper subset not equal",
+"ro": "submulțime strictă",
+"ro_kw": "submulțime strictă diferit"
+},
+"⊋": {
+"en": "superset not equal",
+"en_kw": "supsetneq proper superset not equal",
+"ro": "supramulțime strictă",
+"ro_kw": "supramulțime strictă diferit"
+},
+"⊌": {
+"en": "multiset",
+"en_kw": "multiset bag",
+"ro": "multimulțime",
+"ro_kw": "multimulțime"
+},
+"⊍": {
+"en": "multiset multiplication",
+"en_kw": "multiset multiplication",
+"ro": "înmulțire de multimulțimi",
+"ro_kw": "înmulțire multimulțime"
+},
+"⊎": {
+"en": "multiset union",
+"en_kw": "uplus multiset union disjoint union",
+"ro": "reuniune de multimulțimi",
+"ro_kw": "reuniune multimulțime reuniune disjunctă"
+},
+"⊏": {
+"en": "square image of",
+"en_kw": "sqsubset square image of subset",
+"ro": "imagine pătrată a",
+"ro_kw": "pătrat submulțime imagine"
+},
+"⊐": {
+"en": "square original of",
+"en_kw": "sqsupset square original of superset",
+"ro": "original pătrat al",
+"ro_kw": "pătrat supermulțime original"
+},
+"⊑": {
+"en": "square image or equal",
+"en_kw": "sqsubseteq square image of or equal subset",
+"ro": "imagine pătrată sau egal",
+"ro_kw": "pătrat submulțime egal"
+},
+"⊒": {
+"en": "square original or equal",
+"en_kw": "sqsupseteq square original of or equal superset",
+"ro": "original pătrat sau egal",
+"ro_kw": "pătrat supermulțime egal"
+},
+"⊓": {
+"en": "square cap",
+"en_kw": "sqcap square cap meet lattice intersection",
+"ro": "intersecție pătrată",
+"ro_kw": "intersecție pătrat latice"
+},
+"⊔": {
+"en": "square cup",
+"en_kw": "sqcup square cup join lattice union",
+"ro": "reuniune pătrată",
+"ro_kw": "reuniune pătrat latice"
+},
+"⊕": {
+"en": "circled plus",
+"en_kw": "oplus circled plus xor direct sum",
+"ro": "plus încercuit",
+"ro_kw": "plus încercuit xor sumă directă"
+},
+"⊖": {
+"en": "circled minus",
+"en_kw": "ominus circled minus",
+"ro": "minus încercuit",
+"ro_kw": "minus încercuit"
+},
+"⊗": {
+"en": "circled times",
+"en_kw": "otimes circled times tensor product",
+"ro": "ori încercuit",
+"ro_kw": "ori încercuit produs tensorial"
+},
+"⊘": {
+"en": "circled division slash",
+"en_kw": "oslash circled slash empty",
+"ro": "bară de împărțire încercuită",
+"ro_kw": "bară împărțire încercuită"
+},
+"⊙": {
+"en": "circled dot",
+"en_kw": "odot circled dot operator",
+"ro": "punct încercuit",
+"ro_kw": "punct încercuit operator"
+},
+"⊚": {
+"en": "circled ring",
+"en_kw": "circledcirc circled ring",
+"ro": "inel încercuit",
+"ro_kw": "inel încercuit"
+},
+"⊛": {
+"en": "circled asterisk",
+"en_kw": "circledast circled asterisk",
+"ro": "asterisc încercuit",
+"ro_kw": "asterisc încercuit"
+},
+"⊜": {
+"en": "circled equals",
+"en_kw": "circledequal circled equals",
+"ro": "egal încercuit",
+"ro_kw": "egal încercuit"
+},
+"⊝": {
+"en": "circled dash",
+"en_kw": "circleddash circled dash minus",
+"ro": "liniuță încercuită",
+"ro_kw": "liniuță încercuită minus"
+},
+"⊞": {
+"en": "squared plus",
+"en_kw": "boxplus squared plus",
+"ro": "plus în pătrat",
+"ro_kw": "plus pătrat"
+},
+"⊟": {
+"en": "squared minus",
+"en_kw": "boxminus squared minus",
+"ro": "minus în pătrat",
+"ro_kw": "minus pătrat"
+},
+"⊠": {
+"en": "squared times",
+"en_kw": "boxtimes squared times",
+"ro": "ori în pătrat",
+"ro_kw": "ori pătrat înmulțire"
+},
+"⊡": {
+"en": "squared dot",
+"en_kw": "boxdot squared dot",
+"ro": "punct în pătrat",
+"ro_kw": "punct pătrat"
+},
+"⊢": {
+"en": "right tack",
+"en_kw": "vdash right tack turnstile proves entails",
+"ro": "tachetă dreapta",
+"ro_kw": "tachetă dreapta demonstrează implică"
+},
+"⊣": {
+"en": "left tack",
+"en_kw": "dashv left tack turnstile",
+"ro": "tachetă stânga",
+"ro_kw": "tachetă stânga"
+},
+"⊤": {
+"en": "down tack",
+"en_kw": "top down tack true tautology",
+"ro": "tachetă jos",
+"ro_kw": "tachetă jos adevărat tautologie"
+},
+"⊥": {
+"en": "up tack",
+"en_kw": "bot perp up tack perpendicular false contradiction bottom",
+"ro": "tachetă sus, perpendicular",
+"ro_kw": "perpendicular fals contradicție tachetă sus"
+},
+"⊦": {
+"en": "assertion",
+"en_kw": "vdash assertion proves",
+"ro": "aserțiune",
+"ro_kw": "aserțiune demonstrează"
+},
+"⊧": {
+"en": "models",
+"en_kw": "models satisfies entails semantic",
+"ro": "modelează",
+"ro_kw": "modelează satisface implică"
+},
+"⊨": {
+"en": "true",
+"en_kw": "vDash true satisfies entails semantic",
+"ro": "adevărat (satisface)",
+"ro_kw": "adevărat satisface implică"
+},
+"⊩": {
+"en": "forces",
+"en_kw": "vVdash forces",
+"ro": "forțează",
+"ro_kw": "forțează"
+},
+"⊪": {
+"en": "triple vertical bar right turnstile",
+"en_kw": "Vvdash triple vertical bar turnstile",
+"ro": "turnichet dreapta cu trei bare",
+"ro_kw": "turnichet trei bare"
+},
+"⊫": {
+"en": "double vertical bar double turnstile",
+"en_kw": "VDash double turnstile",
+"ro": "turnichet dublu cu bară dublă",
+"ro_kw": "turnichet dublu"
+},
+"⊬": {
+"en": "does not prove",
+"en_kw": "nvdash not prove turnstile",
+"ro": "nu demonstrează",
+"ro_kw": "nu demonstrează turnichet"
+},
+"⊭": {
+"en": "not true",
+"en_kw": "nvDash not true not satisfy",
+"ro": "nu e adevărat",
+"ro_kw": "nu adevărat nu satisface"
+},
+"⊮": {
+"en": "does not force",
+"en_kw": "nVdash not force",
+"ro": "nu forțează",
+"ro_kw": "nu forțează"
+},
+"⊯": {
+"en": "not double turnstile",
+"en_kw": "nVDash negated double turnstile",
+"ro": "turnichet dublu negat",
+"ro_kw": "turnichet dublu negat"
+},
+"⊰": {
+"en": "precedes under relation",
+"en_kw": "prec precedes relation",
+"ro": "precedă sub relație",
+"ro_kw": "precedă relație"
+},
+"⊱": {
+"en": "succeeds under relation",
+"en_kw": "succ succeeds relation",
+"ro": "succedă sub relație",
+"ro_kw": "succedă relație"
+},
+"⊲": {
+"en": "normal subgroup of",
+"en_kw": "vartriangleleft normal subgroup triangle left",
+"ro": "subgrup normal al",
+"ro_kw": "subgrup normal triunghi stânga"
+},
+"⊳": {
+"en": "contains normal subgroup",
+"en_kw": "vartriangleright normal subgroup triangle right",
+"ro": "conține subgrup normal",
+"ro_kw": "conține subgrup normal triunghi dreapta"
+},
+"⊴": {
+"en": "normal subgroup or equal",
+"en_kw": "trianglelefteq normal subgroup equal",
+"ro": "subgrup normal sau egal",
+"ro_kw": "subgrup normal sau egal"
+},
+"⊵": {
+"en": "contains normal subgroup or equal",
+"en_kw": "trianglerighteq normal subgroup equal",
+"ro": "conține subgrup normal sau egal",
+"ro_kw": "conține subgrup normal sau egal"
+},
+"⊶": {
+"en": "original of",
+"en_kw": "original of",
+"ro": "originalul lui",
+"ro_kw": "original"
+},
+"⊷": {
+"en": "image of",
+"en_kw": "image of",
+"ro": "imaginea lui",
+"ro_kw": "imagine"
+},
+"⊸": {
+"en": "multimap",
+"en_kw": "multimap lollipop linear implication",
+"ro": "aplicație multiplă",
+"ro_kw": "aplicație multiplă implicație liniară"
+},
+"⊹": {
+"en": "hermitian conjugate matrix",
+"en_kw": "hermitian conjugate matrix dagger",
+"ro": "matrice hermitic conjugată",
+"ro_kw": "matrice conjugată hermitică"
+},
+"⊺": {
+"en": "intercalate",
+"en_kw": "intercal intercalate transpose",
+"ro": "intercalare",
+"ro_kw": "intercalare transpus"
+},
+"⊻": {
+"en": "xor",
+"en_kw": "xor veebar exclusive or logic",
+"ro": "xor (sau exclusiv)",
+"ro_kw": "xor sau exclusiv logică"
+},
+"⊼": {
+"en": "nand",
+"en_kw": "nand barwedge not and logic",
+"ro": "nand (și negat)",
+"ro_kw": "nand și negat logică"
+},
+"⊽": {
+"en": "nor",
+"en_kw": "nor barvee not or logic",
+"ro": "nor (sau negat)",
+"ro_kw": "nor sau negat logică"
+},
+"⊾": {
+"en": "right angle with arc",
+"en_kw": "right angle with arc measured",
+"ro": "unghi drept cu arc",
+"ro_kw": "unghi drept arc"
+},
+"⊿": {
+"en": "right triangle",
+"en_kw": "right triangle lltriangle geometry",
+"ro": "triunghi dreptunghic",
+"ro_kw": "triunghi dreptunghic geometrie"
+},
+"⋀": {
+"en": "n-ary logical and",
+"en_kw": "bigwedge and logical and wedge n-ary conjunction",
+"ro": "și logic (n-ar)",
+"ro_kw": "și logic conjuncție"
+},
+"⋁": {
+"en": "n-ary logical or",
+"en_kw": "bigvee or logical or vee n-ary disjunction",
+"ro": "sau logic (n-ar)",
+"ro_kw": "sau logic disjuncție"
+},
+"⋂": {
+"en": "n-ary intersection",
+"en_kw": "bigcap intersection n-ary sets",
+"ro": "intersecție (n-ară)",
+"ro_kw": "intersecție mulțimi"
+},
+"⋃": {
+"en": "n-ary union",
+"en_kw": "bigcup union n-ary sets",
+"ro": "reuniune (n-ară)",
+"ro_kw": "reuniune mulțimi"
+},
+"⋄": {
+"en": "diamond operator",
+"en_kw": "diamond operator lozenge",
+"ro": "operator romb",
+"ro_kw": "romb operator"
+},
+"⋅": {
+"en": "dot operator",
+"en_kw": "cdot dot operator multiply times middle dot",
+"ro": "punct de înmulțire",
+"ro_kw": "punct înmulțire ori"
+},
+"⋆": {
+"en": "star operator",
+"en_kw": "star operator star",
+"ro": "operator stea",
+"ro_kw": "stea operator"
+},
+"⋇": {
+"en": "division times",
+"en_kw": "divideontimes division times",
+"ro": "împărțire ori",
+"ro_kw": "împărțire ori"
+},
+"⋈": {
+"en": "bowtie, natural join",
+"en_kw": "bowtie join natural join sql database",
+"ro": "joncțiune naturală (papion)",
+"ro_kw": "join papion joncțiune sql bază de date"
+},
+"⋉": {
+"en": "left normal factor semidirect product",
+"en_kw": "ltimes left semidirect product group",
+"ro": "produs semidirect stânga",
+"ro_kw": "produs semidirect stânga grup"
+},
+"⋊": {
+"en": "right normal factor semidirect product",
+"en_kw": "rtimes right semidirect product group",
+"ro": "produs semidirect dreapta",
+"ro_kw": "produs semidirect dreapta grup"
+},
+"⋋": {
+"en": "left semidirect product",
+"en_kw": "leftthreetimes left semidirect product",
+"ro": "produs semidirect stânga",
+"ro_kw": "produs semidirect stânga"
+},
+"⋌": {
+"en": "right semidirect product",
+"en_kw": "rightthreetimes right semidirect product",
+"ro": "produs semidirect dreapta",
+"ro_kw": "produs semidirect dreapta"
+},
+"⋍": {
+"en": "reversed tilde equals",
+"en_kw": "backsimeq reversed tilde equals",
+"ro": "tildă inversată egal",
+"ro_kw": "tildă inversată egal"
+},
+"⋎": {
+"en": "curly logical or",
+"en_kw": "curlyvee curly or logical or",
+"ro": "sau logic ondulat",
+"ro_kw": "sau logic ondulat"
+},
+"⋏": {
+"en": "curly logical and",
+"en_kw": "curlywedge curly and logical and",
+"ro": "și logic ondulat",
+"ro_kw": "și logic ondulat"
+},
+"⋐": {
+"en": "double subset",
+"en_kw": "Subset double subset sets",
+"ro": "submulțime dublă",
+"ro_kw": "submulțime dublă mulțimi"
+},
+"⋑": {
+"en": "double superset",
+"en_kw": "Supset double superset sets",
+"ro": "supermulțime dublă",
+"ro_kw": "supermulțime dublă mulțimi"
+},
+"⋒": {
+"en": "double intersection",
+"en_kw": "Cap double intersection sets",
+"ro": "intersecție dublă",
+"ro_kw": "intersecție dublă mulțimi"
+},
+"⋓": {
+"en": "double union",
+"en_kw": "Cup double union sets",
+"ro": "reuniune dublă",
+"ro_kw": "reuniune dublă mulțimi"
+},
+"⋔": {
+"en": "pitchfork",
+"en_kw": "pitchfork transversal intersection",
+"ro": "furcă",
+"ro_kw": "furcă intersecție transversală"
+},
+"⋕": {
+"en": "equal and parallel",
+"en_kw": "eqparallel equal and parallel",
+"ro": "egal și paralel",
+"ro_kw": "egal paralel"
+},
+"⋖": {
+"en": "less-than with dot",
+"en_kw": "lessdot less than dot",
+"ro": "mai mic cu punct",
+"ro_kw": "mai mic punct"
+},
+"⋗": {
+"en": "greater-than with dot",
+"en_kw": "gtrdot greater than dot",
+"ro": "mai mare cu punct",
+"ro_kw": "mai mare punct"
+},
+"⋘": {
+"en": "very much less-than",
+"en_kw": "ll very much less than much",
+"ro": "mult mai mic decât",
+"ro_kw": "mult mai mic decât foarte"
+},
+"⋙": {
+"en": "very much greater-than",
+"en_kw": "gg very much greater than much",
+"ro": "mult mai mare decât",
+"ro_kw": "mult mai mare decât foarte"
+},
+"⋚": {
+"en": "less-than equal or greater-than",
+"en_kw": "lesseqgtr less equal greater",
+"ro": "mai mic, egal sau mai mare",
+"ro_kw": "mai mic egal mai mare"
+},
+"⋛": {
+"en": "greater-than equal or less-than",
+"en_kw": "gtreqless greater equal less",
+"ro": "mai mare, egal sau mai mic",
+"ro_kw": "mai mare egal mai mic"
+},
+"⋜": {
+"en": "equal or less-than",
+"en_kw": "eqslantless equal or less than",
+"ro": "egal sau mai mic",
+"ro_kw": "egal sau mai mic"
+},
+"⋝": {
+"en": "equal or greater-than",
+"en_kw": "eqslantgtr equal or greater than",
+"ro": "egal sau mai mare",
+"ro_kw": "egal sau mai mare"
+},
+"⋞": {
+"en": "equal or precedes",
+"en_kw": "curlyeqprec equal precedes",
+"ro": "egal sau precede",
+"ro_kw": "egal sau precede"
+},
+"⋟": {
+"en": "equal or succeeds",
+"en_kw": "curlyeqsucc equal succeeds",
+"ro": "egal sau succedă",
+"ro_kw": "egal sau succedă"
+},
+"⋠": {
+"en": "does not precede or equal",
+"en_kw": "npreceq not precede equal",
+"ro": "nu precede și nu e egal",
+"ro_kw": "nu precede egal"
+},
+"⋡": {
+"en": "does not succeed or equal",
+"en_kw": "nsucceq not succeed equal",
+"ro": "nu succedă și nu e egal",
+"ro_kw": "nu succedă egal"
+},
+"⋢": {
+"en": "not square image or equal",
+"en_kw": "nsqsubseteq not square subset equal",
+"ro": "nu e imagine pătrată sau egal",
+"ro_kw": "nu submulțime pătrat egal"
+},
+"⋣": {
+"en": "not square original or equal",
+"en_kw": "nsqsupseteq not square superset equal",
+"ro": "nu e original pătrat sau egal",
+"ro_kw": "nu supermulțime pătrat egal"
+},
+"⋤": {
+"en": "square image or not equal",
+"en_kw": "sqsubsetneq square image not equal",
+"ro": "imagine pătrată sau neegal",
+"ro_kw": "submulțime pătrat neegal"
+},
+"⋥": {
+"en": "square original or not equal",
+"en_kw": "sqsupsetneq square original not equal",
+"ro": "original pătrat sau neegal",
+"ro_kw": "supermulțime pătrat neegal"
+},
+"⋦": {
+"en": "less-than but not equivalent",
+"en_kw": "lnsim less than not equivalent",
+"ro": "mai mic dar neechivalent",
+"ro_kw": "mai mic neechivalent"
+},
+"⋧": {
+"en": "greater-than but not equivalent",
+"en_kw": "gnsim greater than not equivalent",
+"ro": "mai mare dar neechivalent",
+"ro_kw": "mai mare neechivalent"
+},
+"⋨": {
+"en": "precedes but not equivalent",
+"en_kw": "precnsim precedes not equivalent",
+"ro": "precede dar neechivalent",
+"ro_kw": "precede neechivalent"
+},
+"⋩": {
+"en": "succeeds but not equivalent",
+"en_kw": "succnsim succeeds not equivalent",
+"ro": "succedă dar neechivalent",
+"ro_kw": "succedă neechivalent"
+},
+"⋪": {
+"en": "not normal subgroup of",
+"en_kw": "ntriangleleft not normal subgroup",
+"ro": "nu e subgrup normal al",
+"ro_kw": "nu subgrup normal"
+},
+"⋫": {
+"en": "does not contain normal subgroup",
+"en_kw": "ntriangleright not contain normal subgroup",
+"ro": "nu conține subgrup normal",
+"ro_kw": "nu conține subgrup normal"
+},
+"⋬": {
+"en": "not normal subgroup or equal",
+"en_kw": "not normal subgroup equal ntrianglelefteq nvartriangleleft group theory",
+"ro": "nu este subgrup normal sau egal",
+"ro_kw": "nu subgrup normal egal grupuri teoria grupurilor"
+},
+"⋭": {
+"en": "does not contain normal subgroup or equal",
+"en_kw": "not contain normal subgroup equal ntrianglerighteq group theory",
+"ro": "nu conține subgrup normal sau egal",
+"ro_kw": "nu conține subgrup normal egal grupuri"
+},
+"⋮": {
+"en": "vertical ellipsis",
+"en_kw": "vdots dots ellipsis vertical three dots matrix continues",
+"ro": "puncte de suspensie verticale",
+"ro_kw": "puncte suspensie verticale trei puncte matrice continuare"
+},
+"⋯": {
+"en": "midline horizontal ellipsis",
+"en_kw": "cdots dots ellipsis horizontal centered three dots matrix",
+"ro": "puncte de suspensie pe linia mediană",
+"ro_kw": "puncte suspensie orizontale centrate trei puncte matrice"
+},
+"⋰": {
+"en": "up right diagonal ellipsis",
+"en_kw": "iddots dots ellipsis diagonal up right matrix",
+"ro": "puncte de suspensie diagonale dreapta sus",
+"ro_kw": "puncte suspensie diagonale dreapta sus matrice"
+},
+"⋱": {
+"en": "down right diagonal ellipsis",
+"en_kw": "ddots dots ellipsis diagonal down right matrix",
+"ro": "puncte de suspensie diagonale dreapta jos",
+"ro_kw": "puncte suspensie diagonale dreapta jos matrice"
+},
+"⋲": {
+"en": "element of with long stroke",
+"en_kw": "element of member in long horizontal stroke set membership",
+"ro": "aparține cu bară lungă",
+"ro_kw": "aparține element mulțime bară lungă apartenență"
+},
+"⋳": {
+"en": "element of with vertical bar at end of stroke",
+"en_kw": "element of member in vertical bar stroke set membership",
+"ro": "aparține cu bară verticală la capăt",
+"ro_kw": "aparține element mulțime bară verticală apartenență"
+},
+"⋴": {
+"en": "small element of with vertical bar at end of stroke",
+"en_kw": "small element of member in vertical bar set membership",
+"ro": "aparține mic cu bară verticală la capăt",
+"ro_kw": "aparține mic element mulțime bară verticală"
+},
+"⋵": {
+"en": "element of with dot above",
+"en_kw": "element of member in dot above set membership",
+"ro": "aparține cu punct deasupra",
+"ro_kw": "aparține element mulțime punct deasupra"
+},
+"⋶": {
+"en": "element of with overbar",
+"en_kw": "element of member in overbar set membership",
+"ro": "aparține cu bară deasupra",
+"ro_kw": "aparține element mulțime bară deasupra"
+},
+"⋷": {
+"en": "small element of with overbar",
+"en_kw": "small element of member in overbar set membership",
+"ro": "aparține mic cu bară deasupra",
+"ro_kw": "aparține mic element mulțime bară deasupra"
+},
+"⋸": {
+"en": "element of with underbar",
+"en_kw": "element of member in underbar set membership",
+"ro": "aparține cu bară dedesubt",
+"ro_kw": "aparține element mulțime bară dedesubt"
+},
+"⋹": {
+"en": "element of with two horizontal strokes",
+"en_kw": "element of member in two strokes set membership",
+"ro": "aparține cu două bare orizontale",
+"ro_kw": "aparține element mulțime două bare"
+},
+"⋺": {
+"en": "contains with long stroke",
+"en_kw": "contains owns ni long horizontal stroke set membership",
+"ro": "conține cu bară lungă",
+"ro_kw": "conține posedă mulțime bară lungă"
+},
+"⋻": {
+"en": "contains with vertical bar at end of stroke",
+"en_kw": "contains owns ni vertical bar stroke set",
+"ro": "conține cu bară verticală la capăt",
+"ro_kw": "conține mulțime bară verticală"
+},
+"⋼": {
+"en": "small contains with vertical bar at end of stroke",
+"en_kw": "small contains owns ni vertical bar set",
+"ro": "conține mic cu bară verticală la capăt",
+"ro_kw": "conține mic mulțime bară verticală"
+},
+"⋽": {
+"en": "contains with overbar",
+"en_kw": "contains owns ni overbar set",
+"ro": "conține cu bară deasupra",
+"ro_kw": "conține mulțime bară deasupra"
+},
+"⋾": {
+"en": "small contains with overbar",
+"en_kw": "small contains owns ni overbar set",
+"ro": "conține mic cu bară deasupra",
+"ro_kw": "conține mic mulțime bară deasupra"
+},
+"⋿": {
+"en": "z notation bag membership",
+"en_kw": "z notation bag membership multiset element",
+"ro": "apartenență la multiset (notația Z)",
+"ro_kw": "notația Z multiset apartenență element"
+},
+"⌀": {
+"en": "diameter sign",
+"en_kw": "diameter dia circle slash average",
+"ro": "semnul diametrului",
+"ro_kw": "diametru cerc"
+},
+"⌁": {
+"en": "electric arrow",
+"en_kw": "electric arrow lightning zigzag voltage",
+"ro": "săgeată electrică",
+"ro_kw": "săgeată electrică fulger tensiune curent"
+},
+"⌂": {
+"en": "house",
+"en_kw": "house home base",
+"ro": "casă",
+"ro_kw": "casă acasă"
+},
+"⌃": {
+"en": "control key",
+"en_kw": "control ctrl key up arrowhead caret",
+"ro": "tasta control",
+"ro_kw": "control ctrl tastă săgeată sus"
+},
+"⌄": {
+"en": "down arrowhead",
+"en_kw": "down arrowhead caret chevron",
+"ro": "vârf de săgeată în jos",
+"ro_kw": "vârf săgeată jos"
+},
+"⌅": {
+"en": "projective",
+"en_kw": "projective enter key",
+"ro": "proiectiv",
+"ro_kw": "proiectiv tastă enter"
+},
+"⌆": {
+"en": "perspective",
+"en_kw": "perspective",
+"ro": "perspectivă",
+"ro_kw": "perspectivă"
+},
+"⌇": {
+"en": "wavy line",
+"en_kw": "wavy line wave",
+"ro": "linie ondulată",
+"ro_kw": "linie ondulată undă"
+},
+"⌈": {
+"en": "left ceiling",
+"en_kw": "left ceiling lceil ceil round up",
+"ro": "rotunjire în sus stânga",
+"ro_kw": "rotunjire în sus plafon stânga lceil"
+},
+"⌉": {
+"en": "right ceiling",
+"en_kw": "right ceiling rceil ceil round up",
+"ro": "rotunjire în sus dreapta",
+"ro_kw": "rotunjire în sus plafon dreapta rceil"
+},
+"⌊": {
+"en": "left floor",
+"en_kw": "left floor lfloor floor round down",
+"ro": "rotunjire în jos stânga",
+"ro_kw": "rotunjire în jos podea stânga lfloor"
+},
+"⌋": {
+"en": "right floor",
+"en_kw": "right floor rfloor floor round down",
+"ro": "rotunjire în jos dreapta",
+"ro_kw": "rotunjire în jos podea dreapta rfloor"
+},
+"⌌": {
+"en": "bottom right crop",
+"en_kw": "bottom right crop mark corner registration",
+"ro": "colț decupare jos dreapta",
+"ro_kw": "decupare colț jos dreapta marcaj"
+},
+"⌍": {
+"en": "bottom left crop",
+"en_kw": "bottom left crop mark corner registration",
+"ro": "colț decupare jos stânga",
+"ro_kw": "decupare colț jos stânga marcaj"
+},
+"⌏": {
+"en": "top left crop",
+"en_kw": "top left crop mark corner registration",
+"ro": "colț decupare sus stânga",
+"ro_kw": "decupare colț sus stânga marcaj"
+},
+"⌐": {
+"en": "reversed not sign",
+"en_kw": "reversed not sign logic negation",
+"ro": "semnul not inversat",
+"ro_kw": "negație inversată logică semn not"
+},
+"⌑": {
+"en": "square lozenge",
+"en_kw": "square lozenge diamond shape",
+"ro": "romb pătrat",
+"ro_kw": "romb pătrat formă"
+},
+"⌒": {
+"en": "arc",
+"en_kw": "arc curve arch circle segment",
+"ro": "arc",
+"ro_kw": "arc curbă arcadă cerc"
+},
+"⌓": {
+"en": "circle segment",
+"en_kw": "segment circle geometry chord",
+"ro": "segment de cerc",
+"ro_kw": "segment cerc geometrie coardă"
+},
+"⌔": {
+"en": "circle sector",
+"en_kw": "sector circle pie slice geometry",
+"ro": "sector de cerc",
+"ro_kw": "sector cerc felie geometrie"
+},
+"⌕": {
+"en": "telephone recorder",
+"en_kw": "telephone recorder phone search",
+"ro": "înregistrator telefonic",
+"ro_kw": "telefon înregistrator căutare"
+},
+"⌖": {
+"en": "position indicator",
+"en_kw": "position indicator crosshair target reticle",
+"ro": "indicator de poziție",
+"ro_kw": "poziție țintă reticul cruce indicator"
+},
+"⌗": {
+"en": "viewdata square",
+"en_kw": "viewdata square hash number sign teletext",
+"ro": "pătrat viewdata",
+"ro_kw": "pătrat diez teletext viewdata"
+},
+"⌘": {
+"en": "command key",
+"en_kw": "cmd command apple clover mac key shortcut place of interest looped square",
+"ro": "tastă command",
+"ro_kw": "comandă tastă cmd apple shortcut scurtătură trifoi"
+},
+"⌙": {
+"en": "turned not sign",
+"en_kw": "turned not sign logic negation",
+"ro": "semnul not întors",
+"ro_kw": "negație întors logică semn not"
+},
+"⌜": {
+"en": "top left corner",
+"en_kw": "top left corner ulcorner quine corner",
+"ro": "colț sus stânga",
+"ro_kw": "colț sus stânga ulcorner"
+},
+"⌝": {
+"en": "top right corner",
+"en_kw": "top right corner urcorner quine corner",
+"ro": "colț sus dreapta",
+"ro_kw": "colț sus dreapta urcorner"
+},
+"⌞": {
+"en": "bottom left corner",
+"en_kw": "bottom left corner llcorner quine corner",
+"ro": "colț jos stânga",
+"ro_kw": "colț jos stânga llcorner"
+},
+"⌟": {
+"en": "bottom right corner",
+"en_kw": "bottom right corner lrcorner quine corner",
+"ro": "colț jos dreapta",
+"ro_kw": "colț jos dreapta lrcorner"
+},
+"⌢": {
+"en": "frown",
+"en_kw": "frown arc sad curve",
+"ro": "încruntat",
+"ro_kw": "încruntat arc trist curbă frown"
+},
+"⌣": {
+"en": "smile",
+"en_kw": "smile arc happy curve",
+"ro": "zâmbet",
+"ro_kw": "zâmbet arc vesel curbă smile"
+},
+"⌤": {
+"en": "enter key",
+"en_kw": "enter key mac keypad numpad return",
+"ro": "tastă enter",
+"ro_kw": "enter tastă tastatură numerică intrare"
+},
+"⌥": {
+"en": "option key",
+"en_kw": "opt option alt alternate key mac modifier",
+"ro": "tastă option",
+"ro_kw": "option alt tastă alternativă modificator"
+},
+"⌦": {
+"en": "forward delete key",
+"en_kw": "delete forward erase right del key",
+"ro": "tastă delete înainte",
+"ro_kw": "șterge ștergere înainte tastă del dreapta"
+},
+"⌧": {
+"en": "clear key",
+"en_kw": "clear x box rectangle numpad clear delete",
+"ro": "tastă clear",
+"ro_kw": "șterge curăță tastă clear dreptunghi"
+},
+"⌫": {
+"en": "delete backspace",
+"en_kw": "delete backspace erase to the left key",
+"ro": "șterge înapoi",
+"ro_kw": "șterge backspace tastă ștergere stânga"
+},
+"⌬": {
+"en": "benzene ring",
+"en_kw": "benzene ring chemistry hexagon aromatic",
+"ro": "inel de benzen",
+"ro_kw": "benzen inel chimie hexagon aromatic"
+},
+"⌭": {
+"en": "cylindricity",
+"en_kw": "cylindricity gd&t engineering tolerance",
+"ro": "cilindricitate",
+"ro_kw": "cilindricitate toleranță inginerie"
+},
+"⌮": {
+"en": "all around profile",
+"en_kw": "all around profile gd&t engineering",
+"ro": "profil peste tot",
+"ro_kw": "profil în jur inginerie toleranță"
+},
+"⌯": {
+"en": "symmetry",
+"en_kw": "symmetry gd&t engineering tolerance",
+"ro": "simetrie",
+"ro_kw": "simetrie toleranță inginerie"
+},
+"⌰": {
+"en": "total runout",
+"en_kw": "total runout gd&t engineering tolerance",
+"ro": "bătaie totală",
+"ro_kw": "bătaie totală toleranță inginerie"
+},
+"⌱": {
+"en": "dimension origin",
+"en_kw": "dimension origin engineering drawing",
+"ro": "origine cotă",
+"ro_kw": "origine cotă desen tehnic inginerie"
+},
+"⌲": {
+"en": "conical taper",
+"en_kw": "conical taper cone engineering",
+"ro": "conicitate",
+"ro_kw": "conicitate con inginerie"
+},
+"⌳": {
+"en": "slope",
+"en_kw": "slope incline gradient engineering",
+"ro": "pantă",
+"ro_kw": "pantă înclinare declivitate inginerie"
+},
+"⌴": {
+"en": "counterbore",
+"en_kw": "counterbore hole drilling engineering",
+"ro": "lamare",
+"ro_kw": "lamare gaură găurire inginerie"
+},
+"⌵": {
+"en": "countersink",
+"en_kw": "countersink hole drilling engineering",
+"ro": "teșire găură",
+"ro_kw": "teșire găură înfundare găurire inginerie"
+},
+"⍻": {
+"en": "not check mark",
+"en_kw": "not check mark apl invalid",
+"ro": "bifă tăiată",
+"ro_kw": "bifă negată apl invalid"
+},
+"⍼": {
+"en": "right angle with zigzag arrow",
+"en_kw": "right angle zigzag arrow azimuth angzarr",
+"ro": "unghi drept cu săgeată zigzag",
+"ro_kw": "unghi drept săgeată zigzag azimut"
+},
+"⍽": {
+"en": "open box",
+"en_kw": "open box shouldered visible space blank",
+"ro": "spațiu vizibil",
+"ro_kw": "spațiu vizibil casetă deschisă gol"
+},
+"⍾": {
+"en": "bell symbol",
+"en_kw": "bell symbol apl alert ring",
+"ro": "simbol clopoțel",
+"ro_kw": "clopoțel alertă sonerie apl"
+},
+"⍿": {
+"en": "vertical line with dot",
+"en_kw": "vertical line middle dot apl",
+"ro": "linie verticală cu punct",
+"ro_kw": "linie verticală punct mijloc apl"
+},
+"⎀": {
+"en": "insertion symbol",
+"en_kw": "insertion insert key ins",
+"ro": "simbol inserare",
+"ro_kw": "inserare inserție tastă insert ins"
+},
+"⎁": {
+"en": "continuous underline",
+"en_kw": "continuous underline underscore line",
+"ro": "subliniere continuă",
+"ro_kw": "subliniere continuă linie"
+},
+"⎂": {
+"en": "discontinuous underline",
+"en_kw": "discontinuous underline dashed line",
+"ro": "subliniere întreruptă",
+"ro_kw": "subliniere întreruptă linie punctată"
+},
+"⎃": {
+"en": "emphasis symbol",
+"en_kw": "emphasis symbol stress highlight",
+"ro": "simbol de accentuare",
+"ro_kw": "accentuare subliniere evidențiere simbol"
+},
+"⎄": {
+"en": "composition symbol",
+"en_kw": "composition symbol compose key",
+"ro": "simbol de compunere",
+"ro_kw": "compunere simbol tastă compose"
+},
+"⎅": {
+"en": "white square center line",
+"en_kw": "square vertical line center key",
+"ro": "pătrat cu linie verticală",
+"ro_kw": "pătrat linie verticală centru tastă"
+},
+"⎆": {
+"en": "enter symbol",
+"en_kw": "enter symbol return key",
+"ro": "simbol enter",
+"ro_kw": "enter simbol tastă return"
+},
+"⎇": {
+"en": "alternative key",
+"en_kw": "alt alternative key alternate option",
+"ro": "tastă alternativă",
+"ro_kw": "alt alternativă tastă opțiune"
+},
+"⎈": {
+"en": "helm symbol",
+"en_kw": "helm ship wheel control key ctrl steering",
+"ro": "simbol de cârmă",
+"ro_kw": "cârmă volan control ctrl tastă navă"
+},
+"⎉": {
+"en": "circled bar with notch",
+"en_kw": "circled horizontal bar notch",
+"ro": "bară cercuită cu crestătură",
+"ro_kw": "bară orizontală cerc crestătură"
+},
+"⎊": {
+"en": "circled triangle down",
+"en_kw": "circled triangle down",
+"ro": "triunghi cercuit în jos",
+"ro_kw": "triunghi cerc jos"
+},
+"⎋": {
+"en": "escape key",
+"en_kw": "esc escape key cancel exit mac",
+"ro": "tastă escape",
+"ro_kw": "escape tastă esc anulare ieșire"
+},
+"⎌": {
+"en": "undo symbol",
+"en_kw": "undo revert back cancel action",
+"ro": "simbol anulare",
+"ro_kw": "anulare undo revenire înapoi acțiune"
+},
+"⎍": {
+"en": "monostable symbol",
+"en_kw": "monostable symbol electronics timer pulse",
+"ro": "simbol monostabil",
+"ro_kw": "monostabil electronică puls temporizator"
+},
+"⎎": {
+"en": "hysteresis symbol",
+"en_kw": "hysteresis symbol electronics",
+"ro": "simbol histerezis",
+"ro_kw": "histerezis electronică simbol"
+},
+"⎏": {
+"en": "open-circuit output h",
+"en_kw": "open circuit output h type electronics",
+"ro": "ieșire circuit deschis h",
+"ro_kw": "ieșire circuit deschis electronică tip h"
+},
+"⎐": {
+"en": "open-circuit output l",
+"en_kw": "open circuit output l type electronics",
+"ro": "ieșire circuit deschis l",
+"ro_kw": "ieșire circuit deschis electronică tip l"
+},
+"⎑": {
+"en": "passive pull-down output",
+"en_kw": "passive pull down output electronics",
+"ro": "ieșire pull-down pasivă",
+"ro_kw": "ieșire pull-down pasivă electronică"
+},
+"⎒": {
+"en": "passive pull-up output",
+"en_kw": "passive pull up output electronics",
+"ro": "ieșire pull-up pasivă",
+"ro_kw": "ieșire pull-up pasivă electronică"
+},
+"⎓": {
+"en": "direct current",
+"en_kw": "direct current dc electricity",
+"ro": "curent continuu",
+"ro_kw": "curent continuu dc electricitate"
+},
+"⎔": {
+"en": "software function symbol",
+"en_kw": "software function symbol hexagon benzene",
+"ro": "simbol funcție software",
+"ro_kw": "funcție software simbol hexagon"
+},
+"⎖": {
+"en": "decimal separator key",
+"en_kw": "decimal separator key numpad comma point",
+"ro": "tastă separator zecimal",
+"ro_kw": "separator zecimal tastă virgulă punct"
+},
+"⎗": {
+"en": "previous page",
+"en_kw": "previous page back",
+"ro": "pagina anterioară",
+"ro_kw": "pagină anterioară înapoi precedentă"
+},
+"⎘": {
+"en": "next page",
+"en_kw": "next page forward",
+"ro": "pagina următoare",
+"ro_kw": "pagină următoare înainte"
+},
+"⎙": {
+"en": "print screen",
+"en_kw": "print screen prtsc prtscr screenshot capture",
+"ro": "print screen",
+"ro_kw": "captură ecran printscreen imprimare"
+},
+"⎚": {
+"en": "clear screen",
+"en_kw": "clear screen cls wipe",
+"ro": "șterge ecranul",
+"ro_kw": "curăță ecran șterge cls"
+},
+"⎯": {
+"en": "horizontal line extension",
+"en_kw": "horizontal line extension dash bar",
+"ro": "extensie de linie orizontală",
+"ro_kw": "linie orizontală extensie liniuță bară"
+},
+"⎴": {
+"en": "top square bracket",
+"en_kw": "top square bracket overbracket",
+"ro": "paranteză pătrată sus",
+"ro_kw": "paranteză pătrată sus overbracket"
+},
+"⎵": {
+"en": "bottom square bracket",
+"en_kw": "bottom square bracket underbracket space",
+"ro": "paranteză pătrată jos",
+"ro_kw": "paranteză pătrată jos underbracket spațiu"
+},
+"⎶": {
+"en": "brackets bottom over top",
+"en_kw": "bottom square bracket over top bracket bbrktbrk",
+"ro": "paranteze jos peste sus",
+"ro_kw": "paranteze pătrate jos sus"
+},
+"⎾": {
+"en": "dentistry top right",
+"en_kw": "dentistry symbol vertical top right tooth",
+"ro": "simbol dentar sus-dreapta",
+"ro_kw": "simbol dentar dinte"
+},
+"⎿": {
+"en": "dentistry bottom right",
+"en_kw": "dentistry symbol vertical bottom right tooth",
+"ro": "simbol dentar jos-dreapta",
+"ro_kw": "simbol dentar dinte"
+},
+"⏍": {
+"en": "square foot",
+"en_kw": "square foot area sqft",
+"ro": "picior pătrat",
+"ro_kw": "picior pătrat suprafață"
+},
+"⏎": {
+"en": "return symbol",
+"en_kw": "return enter key carriage newline",
+"ro": "simbol return",
+"ro_kw": "return enter tastă linie nouă"
+},
+"⏐": {
+"en": "vertical line extension",
+"en_kw": "vertical line extension bar",
+"ro": "prelungire de linie verticală",
+"ro_kw": "linie verticală prelungire bară"
+},
+"⏑": {
+"en": "metrical breve",
+"en_kw": "prosody short syllable poetry",
+"ro": "breve metric",
+"ro_kw": "prosodie silabă scurtă poezie metrică"
+},
+"⏒": {
+"en": "metrical long over short",
+"en_kw": "prosody poetry long short",
+"ro": "lung peste scurt metric",
+"ro_kw": "prosodie poezie lung scurt metrică"
+},
+"⏓": {
+"en": "metrical short over long",
+"en_kw": "prosody poetry short long",
+"ro": "scurt peste lung metric",
+"ro_kw": "prosodie poezie scurt lung metrică"
+},
+"⏔": {
+"en": "metrical long over two shorts",
+"en_kw": "prosody poetry long shorts",
+"ro": "lung peste două scurte metric",
+"ro_kw": "prosodie poezie lung scurte metrică"
+},
+"⏕": {
+"en": "metrical two shorts over long",
+"en_kw": "prosody poetry shorts long",
+"ro": "două scurte peste lung metric",
+"ro_kw": "prosodie poezie scurte lung metrică"
+},
+"⏖": {
+"en": "metrical two shorts joined",
+"en_kw": "prosody poetry shorts joined",
+"ro": "două scurte unite metric",
+"ro_kw": "prosodie poezie scurte unite metrică"
+},
+"⏗": {
+"en": "metrical triseme",
+"en_kw": "prosody poetry three morae",
+"ro": "triseme metric",
+"ro_kw": "prosodie poezie trei timpi metrică"
+},
+"⏘": {
+"en": "metrical tetraseme",
+"en_kw": "prosody poetry four morae",
+"ro": "tetraseme metric",
+"ro_kw": "prosodie poezie patru timpi metrică"
+},
+"⏙": {
+"en": "metrical pentaseme",
+"en_kw": "prosody poetry five morae",
+"ro": "pentaseme metric",
+"ro_kw": "prosodie poezie cinci timpi metrică"
+},
+"①": {
+"en": "circled one",
+"en_kw": "circled one 1 digit number",
+"ro": "unu încercuit",
+"ro_kw": "încercuit unu 1 cifră număr"
+},
+"②": {
+"en": "circled two",
+"en_kw": "circled two 2 digit number",
+"ro": "doi încercuit",
+"ro_kw": "încercuit doi 2 cifră număr"
+},
+"③": {
+"en": "circled three",
+"en_kw": "circled three 3 digit number",
+"ro": "trei încercuit",
+"ro_kw": "încercuit trei 3 cifră număr"
+},
+"④": {
+"en": "circled four",
+"en_kw": "circled four 4 digit number",
+"ro": "patru încercuit",
+"ro_kw": "încercuit patru 4 cifră număr"
+},
+"⑤": {
+"en": "circled five",
+"en_kw": "circled five 5 digit number",
+"ro": "cinci încercuit",
+"ro_kw": "încercuit cinci 5 cifră număr"
+},
+"⑥": {
+"en": "circled six",
+"en_kw": "circled six 6 digit number",
+"ro": "șase încercuit",
+"ro_kw": "încercuit șase 6 cifră număr"
+},
+"⑦": {
+"en": "circled seven",
+"en_kw": "circled seven 7 digit number",
+"ro": "șapte încercuit",
+"ro_kw": "încercuit șapte 7 cifră număr"
+},
+"⑧": {
+"en": "circled eight",
+"en_kw": "circled eight 8 digit number",
+"ro": "opt încercuit",
+"ro_kw": "încercuit opt 8 cifră număr"
+},
+"⑨": {
+"en": "circled nine",
+"en_kw": "circled nine 9 digit number",
+"ro": "nouă încercuit",
+"ro_kw": "încercuit nouă 9 cifră număr"
+},
+"⑩": {
+"en": "circled ten",
+"en_kw": "circled ten 10 digit number",
+"ro": "zece încercuit",
+"ro_kw": "încercuit zece 10 cifră număr"
+},
+"⒜": {
+"en": "letter a in parentheses",
+"en_kw": "a parenthesized letter bracket enclosed",
+"ro": "litera a între paranteze",
+"ro_kw": "a literă paranteze încadrată"
+},
+"⒝": {
+"en": "letter b in parentheses",
+"en_kw": "b parenthesized letter bracket enclosed",
+"ro": "litera b între paranteze",
+"ro_kw": "b literă paranteze încadrată"
+},
+"⒞": {
+"en": "letter c in parentheses",
+"en_kw": "c parenthesized letter bracket enclosed",
+"ro": "litera c între paranteze",
+"ro_kw": "c literă paranteze încadrată"
+},
+"⒟": {
+"en": "letter d in parentheses",
+"en_kw": "d parenthesized letter bracket enclosed",
+"ro": "litera d între paranteze",
+"ro_kw": "d literă paranteze încadrată"
+},
+"⒠": {
+"en": "letter e in parentheses",
+"en_kw": "e parenthesized letter bracket enclosed",
+"ro": "litera e între paranteze",
+"ro_kw": "e literă paranteze încadrată"
+},
+"⒡": {
+"en": "letter f in parentheses",
+"en_kw": "f parenthesized letter bracket enclosed",
+"ro": "litera f între paranteze",
+"ro_kw": "f literă paranteze încadrată"
+},
+"⒢": {
+"en": "letter g in parentheses",
+"en_kw": "g parenthesized letter bracket enclosed",
+"ro": "litera g între paranteze",
+"ro_kw": "g literă paranteze încadrată"
+},
+"⒣": {
+"en": "letter h in parentheses",
+"en_kw": "h parenthesized letter bracket enclosed",
+"ro": "litera h între paranteze",
+"ro_kw": "h literă paranteze încadrată"
+},
+"⒤": {
+"en": "letter i in parentheses",
+"en_kw": "i parenthesized letter bracket enclosed",
+"ro": "litera i între paranteze",
+"ro_kw": "i literă paranteze încadrată"
+},
+"⒥": {
+"en": "letter j in parentheses",
+"en_kw": "j parenthesized letter bracket enclosed",
+"ro": "litera j între paranteze",
+"ro_kw": "j literă paranteze încadrată"
+},
+"⒦": {
+"en": "letter k in parentheses",
+"en_kw": "k parenthesized letter bracket enclosed",
+"ro": "litera k între paranteze",
+"ro_kw": "k literă paranteze încadrată"
+},
+"⒧": {
+"en": "letter l in parentheses",
+"en_kw": "l parenthesized letter bracket enclosed",
+"ro": "litera l între paranteze",
+"ro_kw": "l literă paranteze încadrată"
+},
+"⒨": {
+"en": "letter m in parentheses",
+"en_kw": "m parenthesized letter bracket enclosed",
+"ro": "litera m între paranteze",
+"ro_kw": "m literă paranteze încadrată"
+},
+"⒩": {
+"en": "letter n in parentheses",
+"en_kw": "n parenthesized letter bracket enclosed",
+"ro": "litera n între paranteze",
+"ro_kw": "n literă paranteze încadrată"
+},
+"⒪": {
+"en": "letter o in parentheses",
+"en_kw": "o parenthesized letter bracket enclosed",
+"ro": "litera o între paranteze",
+"ro_kw": "o literă paranteze încadrată"
+},
+"⒫": {
+"en": "letter p in parentheses",
+"en_kw": "p parenthesized letter bracket enclosed",
+"ro": "litera p între paranteze",
+"ro_kw": "p literă paranteze încadrată"
+},
+"⒬": {
+"en": "letter q in parentheses",
+"en_kw": "q parenthesized letter bracket enclosed",
+"ro": "litera q între paranteze",
+"ro_kw": "q literă paranteze încadrată"
+},
+"⒭": {
+"en": "letter r in parentheses",
+"en_kw": "r parenthesized letter bracket enclosed",
+"ro": "litera r între paranteze",
+"ro_kw": "r literă paranteze încadrată"
+},
+"⒮": {
+"en": "letter s in parentheses",
+"en_kw": "s parenthesized letter bracket enclosed",
+"ro": "litera s între paranteze",
+"ro_kw": "s literă paranteze încadrată"
+},
+"⒯": {
+"en": "letter t in parentheses",
+"en_kw": "t parenthesized letter bracket enclosed",
+"ro": "litera t între paranteze",
+"ro_kw": "t literă paranteze încadrată"
+},
+"⒰": {
+"en": "letter u in parentheses",
+"en_kw": "u parenthesized letter bracket enclosed",
+"ro": "litera u între paranteze",
+"ro_kw": "u literă paranteze încadrată"
+},
+"⒱": {
+"en": "letter v in parentheses",
+"en_kw": "v parenthesized letter bracket enclosed",
+"ro": "litera v între paranteze",
+"ro_kw": "v literă paranteze încadrată"
+},
+"⒲": {
+"en": "letter w in parentheses",
+"en_kw": "w parenthesized letter bracket enclosed",
+"ro": "litera w între paranteze",
+"ro_kw": "w literă paranteze încadrată"
+},
+"⒳": {
+"en": "letter x in parentheses",
+"en_kw": "x parenthesized letter bracket enclosed",
+"ro": "litera x între paranteze",
+"ro_kw": "x literă paranteze încadrată"
+},
+"⒴": {
+"en": "letter y in parentheses",
+"en_kw": "y parenthesized letter bracket enclosed",
+"ro": "litera y între paranteze",
+"ro_kw": "y literă paranteze încadrată"
+},
+"⒵": {
+"en": "letter z in parentheses",
+"en_kw": "z parenthesized letter bracket enclosed",
+"ro": "litera z între paranteze",
+"ro_kw": "z literă paranteze încadrată"
+},
+"Ⓐ": {
+"en": "circled capital a",
+"en_kw": "a circled letter capital uppercase enclosed ring",
+"ro": "litera mare A încercuită",
+"ro_kw": "a literă mare majusculă încercuită cerc"
+},
+"Ⓑ": {
+"en": "circled capital b",
+"en_kw": "b circled letter capital uppercase enclosed ring",
+"ro": "litera mare B încercuită",
+"ro_kw": "b literă mare majusculă încercuită cerc"
+},
+"Ⓒ": {
+"en": "circled capital c",
+"en_kw": "c circled letter capital uppercase enclosed ring",
+"ro": "litera mare C încercuită",
+"ro_kw": "c literă mare majusculă încercuită cerc"
+},
+"Ⓓ": {
+"en": "circled capital d",
+"en_kw": "d circled letter capital uppercase enclosed ring",
+"ro": "litera mare D încercuită",
+"ro_kw": "d literă mare majusculă încercuită cerc"
+},
+"Ⓔ": {
+"en": "circled capital e",
+"en_kw": "e circled letter capital uppercase enclosed ring",
+"ro": "litera mare E încercuită",
+"ro_kw": "e literă mare majusculă încercuită cerc"
+},
+"Ⓕ": {
+"en": "circled capital f",
+"en_kw": "f circled letter capital uppercase enclosed ring",
+"ro": "litera mare F încercuită",
+"ro_kw": "f literă mare majusculă încercuită cerc"
+},
+"Ⓖ": {
+"en": "circled capital g",
+"en_kw": "g circled letter capital uppercase enclosed ring",
+"ro": "litera mare G încercuită",
+"ro_kw": "g literă mare majusculă încercuită cerc"
+},
+"Ⓗ": {
+"en": "circled capital h",
+"en_kw": "h circled letter capital uppercase enclosed ring",
+"ro": "litera mare H încercuită",
+"ro_kw": "h literă mare majusculă încercuită cerc"
+},
+"Ⓘ": {
+"en": "circled capital i",
+"en_kw": "i circled letter capital uppercase enclosed ring",
+"ro": "litera mare I încercuită",
+"ro_kw": "i literă mare majusculă încercuită cerc"
+},
+"Ⓙ": {
+"en": "circled capital j",
+"en_kw": "j circled letter capital uppercase enclosed ring",
+"ro": "litera mare J încercuită",
+"ro_kw": "j literă mare majusculă încercuită cerc"
+},
+"Ⓚ": {
+"en": "circled capital k",
+"en_kw": "k circled letter capital uppercase enclosed ring",
+"ro": "litera mare K încercuită",
+"ro_kw": "k literă mare majusculă încercuită cerc"
+},
+"Ⓛ": {
+"en": "circled capital l",
+"en_kw": "l circled letter capital uppercase enclosed ring",
+"ro": "litera mare L încercuită",
+"ro_kw": "l literă mare majusculă încercuită cerc"
+},
+"Ⓝ": {
+"en": "circled capital n",
+"en_kw": "n circled letter capital uppercase enclosed ring",
+"ro": "litera mare N încercuită",
+"ro_kw": "n literă mare majusculă încercuită cerc"
+},
+"Ⓞ": {
+"en": "circled capital o",
+"en_kw": "o circled letter capital uppercase enclosed ring",
+"ro": "litera mare O încercuită",
+"ro_kw": "o literă mare majusculă încercuită cerc"
+},
+"Ⓟ": {
+"en": "circled capital p",
+"en_kw": "p circled letter capital uppercase enclosed ring",
+"ro": "litera mare P încercuită",
+"ro_kw": "p literă mare majusculă încercuită cerc"
+},
+"Ⓠ": {
+"en": "circled capital q",
+"en_kw": "q circled letter capital uppercase enclosed ring",
+"ro": "litera mare Q încercuită",
+"ro_kw": "q literă mare majusculă încercuită cerc"
+},
+"Ⓡ": {
+"en": "circled capital r",
+"en_kw": "r circled letter capital uppercase enclosed ring",
+"ro": "litera mare R încercuită",
+"ro_kw": "r literă mare majusculă încercuită cerc"
+},
+"Ⓢ": {
+"en": "circled capital s",
+"en_kw": "s circled letter capital uppercase enclosed ring",
+"ro": "litera mare S încercuită",
+"ro_kw": "s literă mare majusculă încercuită cerc"
+},
+"Ⓣ": {
+"en": "circled capital t",
+"en_kw": "t circled letter capital uppercase enclosed ring",
+"ro": "litera mare T încercuită",
+"ro_kw": "t literă mare majusculă încercuită cerc"
+},
+"Ⓤ": {
+"en": "circled capital u",
+"en_kw": "u circled letter capital uppercase enclosed ring",
+"ro": "litera mare U încercuită",
+"ro_kw": "u literă mare majusculă încercuită cerc"
+},
+"Ⓥ": {
+"en": "circled capital v",
+"en_kw": "v circled letter capital uppercase enclosed ring",
+"ro": "litera mare V încercuită",
+"ro_kw": "v literă mare majusculă încercuită cerc"
+},
+"Ⓦ": {
+"en": "circled capital w",
+"en_kw": "w circled letter capital uppercase enclosed ring",
+"ro": "litera mare W încercuită",
+"ro_kw": "w literă mare majusculă încercuită cerc"
+},
+"Ⓧ": {
+"en": "circled capital x",
+"en_kw": "x circled letter capital uppercase enclosed ring",
+"ro": "litera mare X încercuită",
+"ro_kw": "x literă mare majusculă încercuită cerc"
+},
+"Ⓨ": {
+"en": "circled capital y",
+"en_kw": "y circled letter capital uppercase enclosed ring",
+"ro": "litera mare Y încercuită",
+"ro_kw": "y literă mare majusculă încercuită cerc"
+},
+"Ⓩ": {
+"en": "circled capital z",
+"en_kw": "z circled letter capital uppercase enclosed ring",
+"ro": "litera mare Z încercuită",
+"ro_kw": "z literă mare majusculă încercuită cerc"
+},
+"ⓐ": {
+"en": "circled a",
+"en_kw": "a circled letter small lowercase enclosed ring",
+"ro": "litera mică a încercuită",
+"ro_kw": "a literă mică minusculă încercuită cerc"
+},
+"ⓑ": {
+"en": "circled b",
+"en_kw": "b circled letter small lowercase enclosed ring",
+"ro": "litera mică b încercuită",
+"ro_kw": "b literă mică minusculă încercuită cerc"
+},
+"ⓒ": {
+"en": "circled c",
+"en_kw": "c circled letter small lowercase enclosed ring",
+"ro": "litera mică c încercuită",
+"ro_kw": "c literă mică minusculă încercuită cerc"
+},
+"ⓓ": {
+"en": "circled d",
+"en_kw": "d circled letter small lowercase enclosed ring",
+"ro": "litera mică d încercuită",
+"ro_kw": "d literă mică minusculă încercuită cerc"
+},
+"ⓔ": {
+"en": "circled e",
+"en_kw": "e circled letter small lowercase enclosed ring",
+"ro": "litera mică e încercuită",
+"ro_kw": "e literă mică minusculă încercuită cerc"
+},
+"ⓕ": {
+"en": "circled f",
+"en_kw": "f circled letter small lowercase enclosed ring",
+"ro": "litera mică f încercuită",
+"ro_kw": "f literă mică minusculă încercuită cerc"
+},
+"ⓖ": {
+"en": "circled g",
+"en_kw": "g circled letter small lowercase enclosed ring",
+"ro": "litera mică g încercuită",
+"ro_kw": "g literă mică minusculă încercuită cerc"
+},
+"ⓗ": {
+"en": "circled h",
+"en_kw": "h circled letter small lowercase enclosed ring",
+"ro": "litera mică h încercuită",
+"ro_kw": "h literă mică minusculă încercuită cerc"
+},
+"ⓘ": {
+"en": "circled i",
+"en_kw": "i circled letter small lowercase enclosed ring",
+"ro": "litera mică i încercuită",
+"ro_kw": "i literă mică minusculă încercuită cerc"
+},
+"ⓙ": {
+"en": "circled j",
+"en_kw": "j circled letter small lowercase enclosed ring",
+"ro": "litera mică j încercuită",
+"ro_kw": "j literă mică minusculă încercuită cerc"
+},
+"ⓚ": {
+"en": "circled k",
+"en_kw": "k circled letter small lowercase enclosed ring",
+"ro": "litera mică k încercuită",
+"ro_kw": "k literă mică minusculă încercuită cerc"
+},
+"ⓛ": {
+"en": "circled l",
+"en_kw": "l circled letter small lowercase enclosed ring",
+"ro": "litera mică l încercuită",
+"ro_kw": "l literă mică minusculă încercuită cerc"
+},
+"ⓜ": {
+"en": "circled m",
+"en_kw": "m circled letter small lowercase enclosed ring",
+"ro": "litera mică m încercuită",
+"ro_kw": "m literă mică minusculă încercuită cerc"
+},
+"ⓝ": {
+"en": "circled n",
+"en_kw": "n circled letter small lowercase enclosed ring",
+"ro": "litera mică n încercuită",
+"ro_kw": "n literă mică minusculă încercuită cerc"
+},
+"ⓞ": {
+"en": "circled o",
+"en_kw": "o circled letter small lowercase enclosed ring",
+"ro": "litera mică o încercuită",
+"ro_kw": "o literă mică minusculă încercuită cerc"
+},
+"ⓟ": {
+"en": "circled p",
+"en_kw": "p circled letter small lowercase enclosed ring",
+"ro": "litera mică p încercuită",
+"ro_kw": "p literă mică minusculă încercuită cerc"
+},
+"ⓠ": {
+"en": "circled q",
+"en_kw": "q circled letter small lowercase enclosed ring",
+"ro": "litera mică q încercuită",
+"ro_kw": "q literă mică minusculă încercuită cerc"
+},
+"ⓡ": {
+"en": "circled r",
+"en_kw": "r circled letter small lowercase enclosed ring",
+"ro": "litera mică r încercuită",
+"ro_kw": "r literă mică minusculă încercuită cerc"
+},
+"ⓢ": {
+"en": "circled s",
+"en_kw": "s circled letter small lowercase enclosed ring",
+"ro": "litera mică s încercuită",
+"ro_kw": "s literă mică minusculă încercuită cerc"
+},
+"ⓣ": {
+"en": "circled t",
+"en_kw": "t circled letter small lowercase enclosed ring",
+"ro": "litera mică t încercuită",
+"ro_kw": "t literă mică minusculă încercuită cerc"
+},
+"ⓤ": {
+"en": "circled u",
+"en_kw": "u circled letter small lowercase enclosed ring",
+"ro": "litera mică u încercuită",
+"ro_kw": "u literă mică minusculă încercuită cerc"
+},
+"ⓥ": {
+"en": "circled v",
+"en_kw": "v circled letter small lowercase enclosed ring",
+"ro": "litera mică v încercuită",
+"ro_kw": "v literă mică minusculă încercuită cerc"
+},
+"ⓦ": {
+"en": "circled w",
+"en_kw": "w circled letter small lowercase enclosed ring",
+"ro": "litera mică w încercuită",
+"ro_kw": "w literă mică minusculă încercuită cerc"
+},
+"ⓧ": {
+"en": "circled x",
+"en_kw": "x circled letter small lowercase enclosed ring",
+"ro": "litera mică x încercuită",
+"ro_kw": "x literă mică minusculă încercuită cerc"
+},
+"ⓨ": {
+"en": "circled y",
+"en_kw": "y circled letter small lowercase enclosed ring",
+"ro": "litera mică y încercuită",
+"ro_kw": "y literă mică minusculă încercuită cerc"
+},
+"ⓩ": {
+"en": "circled z",
+"en_kw": "z circled letter small lowercase enclosed ring",
+"ro": "litera mică z încercuită",
+"ro_kw": "z literă mică minusculă încercuită cerc"
+},
+"⓪": {
+"en": "circled zero",
+"en_kw": "circled zero 0 digit number",
+"ro": "zero încercuit",
+"ro_kw": "zero încercuit 0 cifră număr"
+},
+"■": {
+"en": "black square",
+"en_kw": "black filled square solid stop",
+"ro": "pătrat plin",
+"ro_kw": "pătrat plin negru umplut stop"
+},
+"□": {
+"en": "white square",
+"en_kw": "white hollow square empty outline box",
+"ro": "pătrat gol",
+"ro_kw": "pătrat gol alb contur casetă"
+},
+"▢": {
+"en": "rounded square hollow",
+"en_kw": "white square rounded corners outline checkbox",
+"ro": "pătrat gol rotunjit",
+"ro_kw": "alb pătrat colțuri rotunjite contur casetă"
+},
+"▣": {
+"en": "square with filled square inside",
+"en_kw": "white square black small square checkbox target",
+"ro": "pătrat cu pătrat umplut înăuntru",
+"ro_kw": "pătrat alb pătrat negru mic casetă țintă"
+},
+"▤": {
+"en": "square horizontal lines",
+"en_kw": "square horizontal fill hatch stripes",
+"ro": "pătrat linii orizontale",
+"ro_kw": "pătrat orizontal hașură dungi"
+},
+"▥": {
+"en": "square vertical lines",
+"en_kw": "square vertical fill hatch stripes",
+"ro": "pătrat linii verticale",
+"ro_kw": "pătrat vertical hașură dungi"
+},
+"▦": {
+"en": "square grid hatch",
+"en_kw": "square crosshatch orthogonal grid",
+"ro": "pătrat hașură grilă",
+"ro_kw": "pătrat hașură ortogonală grilă"
+},
+"▧": {
+"en": "square diagonal hatch down",
+"en_kw": "square diagonal fill upper left lower right hatch",
+"ro": "pătrat dungi diagonale jos",
+"ro_kw": "pătrat diagonale hașură stânga sus dreapta jos"
+},
+"▨": {
+"en": "square diagonal hatch up",
+"en_kw": "square diagonal fill upper right lower left hatch",
+"ro": "pătrat dungi diagonale sus",
+"ro_kw": "pătrat diagonale hașură dreapta sus stânga jos"
+},
+"▩": {
+"en": "square diagonal crosshatch",
+"en_kw": "square diagonal crosshatch hatch",
+"ro": "pătrat hașură oblică",
+"ro_kw": "pătrat hașură oblică încrucișată"
+},
+"▬": {
+"en": "filled rectangle",
+"en_kw": "black rectangle bar horizontal solid",
+"ro": "dreptunghi umplut",
+"ro_kw": "negru dreptunghi bară orizontal plin"
+},
+"▭": {
+"en": "hollow rectangle",
+"en_kw": "white rectangle outline empty",
+"ro": "dreptunghi gol",
+"ro_kw": "alb dreptunghi contur gol"
+},
+"▮": {
+"en": "filled vertical rectangle",
+"en_kw": "black vertical rectangle bar solid",
+"ro": "dreptunghi vertical umplut",
+"ro_kw": "negru dreptunghi vertical bară plin"
+},
+"▯": {
+"en": "hollow vertical rectangle",
+"en_kw": "white vertical rectangle outline empty",
+"ro": "dreptunghi vertical gol",
+"ro_kw": "alb dreptunghi vertical contur gol"
+},
+"▰": {
+"en": "filled parallelogram",
+"en_kw": "black parallelogram solid progress bar",
+"ro": "paralelogram umplut",
+"ro_kw": "negru paralelogram plin bară progres"
+},
+"▱": {
+"en": "hollow parallelogram",
+"en_kw": "white parallelogram outline empty progress bar",
+"ro": "paralelogram gol",
+"ro_kw": "alb paralelogram contur gol bară progres"
+},
+"▲": {
+"en": "up triangle filled",
+"en_kw": "triangle up filled black solid increase",
+"ro": "triunghi plin sus",
+"ro_kw": "triunghi sus plin negru creștere"
+},
+"△": {
+"en": "up triangle hollow",
+"en_kw": "triangle up white hollow outline delta",
+"ro": "triunghi gol sus",
+"ro_kw": "triunghi sus alb gol contur delta"
+},
+"▴": {
+"en": "small up triangle filled",
+"en_kw": "triangle up small filled black collapse caret",
+"ro": "triunghi mic plin sus",
+"ro_kw": "triunghi sus mic plin negru"
+},
+"▵": {
+"en": "small up triangle hollow",
+"en_kw": "triangle up small white hollow outline",
+"ro": "triunghi mic gol sus",
+"ro_kw": "triunghi sus mic alb gol"
+},
+"▷": {
+"en": "white right triangle",
+"en_kw": "white hollow triangle right play outline",
+"ro": "triunghi gol spre dreapta",
+"ro_kw": "triunghi gol alb dreapta play contur"
+},
+"▸": {
+"en": "small right triangle filled",
+"en_kw": "black small triangle right filled pointer collapsed",
+"ro": "triunghi mic plin spre dreapta",
+"ro_kw": "triunghi mic plin dreapta indicator restrâns"
+},
+"▹": {
+"en": "small right triangle hollow",
+"en_kw": "triangle right small white hollow outline bullet play",
+"ro": "triunghi mic gol dreapta",
+"ro_kw": "triunghi dreapta mic alb gol buline"
+},
+"►": {
+"en": "right pointer filled",
+"en_kw": "pointer right filled black play arrow bullet",
+"ro": "indicator plin dreapta",
+"ro_kw": "indicator dreapta plin negru săgeată buline"
+},
+"▻": {
+"en": "right pointer hollow",
+"en_kw": "pointer right hollow white outline play bullet",
+"ro": "indicator gol dreapta",
+"ro_kw": "indicator dreapta gol alb contur buline"
+},
+"▼": {
+"en": "down triangle filled",
+"en_kw": "triangle down filled black solid dropdown caret",
+"ro": "triunghi plin jos",
+"ro_kw": "triunghi jos plin negru derulare săgeată"
+},
+"▽": {
+"en": "down triangle hollow",
+"en_kw": "triangle down white hollow outline nabla",
+"ro": "triunghi gol jos",
+"ro_kw": "triunghi jos alb gol contur"
+},
+"▾": {
+"en": "small down triangle filled",
+"en_kw": "triangle down small filled black dropdown caret expand",
+"ro": "triunghi mic plin jos",
+"ro_kw": "triunghi jos mic plin negru derulare"
+},
+"▿": {
+"en": "small down triangle hollow",
+"en_kw": "triangle down small white hollow outline",
+"ro": "triunghi mic gol jos",
+"ro_kw": "triunghi jos mic alb gol"
+},
+"◁": {
+"en": "left triangle hollow",
+"en_kw": "triangle left white hollow outline back rewind",
+"ro": "triunghi gol stânga",
+"ro_kw": "triunghi stânga alb gol contur înapoi"
+},
+"◂": {
+"en": "small left triangle filled",
+"en_kw": "black left pointing small triangle arrow back",
+"ro": "triunghi mic umplut stânga",
+"ro_kw": "negru stânga săgeată înapoi triunghi mic"
+},
+"◃": {
+"en": "small left triangle hollow",
+"en_kw": "white left pointing small triangle outline",
+"ro": "triunghi mic gol stânga",
+"ro_kw": "alb stânga triunghi mic contur gol"
+},
+"◄": {
+"en": "left pointer filled",
+"en_kw": "black left pointing pointer arrow back rewind",
+"ro": "indicator umplut stânga",
+"ro_kw": "negru stânga săgeată indicator înapoi"
+},
+"◅": {
+"en": "left pointer hollow",
+"en_kw": "white left pointing pointer outline arrow",
+"ro": "indicator gol stânga",
+"ro_kw": "alb stânga indicator săgeată contur"
+},
+"◆": {
+"en": "black diamond",
+"en_kw": "black filled diamond rhombus solid",
+"ro": "romb plin",
+"ro_kw": "romb plin negru umplut"
+},
+"◇": {
+"en": "white diamond",
+"en_kw": "white hollow diamond rhombus outline",
+"ro": "romb gol",
+"ro_kw": "romb gol alb contur"
+},
+"◈": {
+"en": "diamond with filled diamond inside",
+"en_kw": "white diamond black small diamond",
+"ro": "romb cu romb umplut înăuntru",
+"ro_kw": "romb alb romb negru mic"
+},
+"◉": {
+"en": "fisheye",
+"en_kw": "fisheye circle filled center radio selected",
+"ro": "ochi de pește (cerc în cerc)",
+"ro_kw": "cerc umplut în interior radio selectat ochi de pește"
+},
+"◊": {
+"en": "lozenge",
+"en_kw": "diamond rhombus lozenge loz",
+"ro": "romb",
+"ro_kw": "romb diamant lozangă"
+},
+"○": {
+"en": "white circle",
+"en_kw": "white hollow circle empty outline",
+"ro": "cerc gol",
+"ro_kw": "cerc gol alb contur"
+},
+"◌": {
+"en": "dotted circle",
+"en_kw": "dashed circle placeholder combining base",
+"ro": "cerc punctat",
+"ro_kw": "cerc punctat întrerupt substituent"
+},
+"◍": {
+"en": "circle with vertical fill",
+"en_kw": "circle vertical stripes hatch",
+"ro": "cerc cu linii verticale",
+"ro_kw": "cerc dungi verticale hașură"
+},
+"◎": {
+"en": "bullseye",
+"en_kw": "bullseye target concentric circles double",
+"ro": "țintă (cercuri concentrice)",
+"ro_kw": "țintă cercuri concentrice dublu"
+},
+"●": {
+"en": "black circle",
+"en_kw": "black filled circle dot solid",
+"ro": "cerc plin",
+"ro_kw": "cerc plin negru umplut punct"
+},
+"◐": {
+"en": "circle left half filled",
+"en_kw": "half black circle left contrast",
+"ro": "cerc umplut jumătate stânga",
+"ro_kw": "jumătate cerc negru stânga contrast"
+},
+"◑": {
+"en": "circle right half filled",
+"en_kw": "half black circle right contrast",
+"ro": "cerc umplut jumătate dreapta",
+"ro_kw": "jumătate cerc negru dreapta contrast"
+},
+"◒": {
+"en": "circle lower half filled",
+"en_kw": "half black circle bottom lower",
+"ro": "cerc umplut jumătate jos",
+"ro_kw": "jumătate cerc negru jos inferior"
+},
+"◓": {
+"en": "circle upper half filled",
+"en_kw": "half black circle top upper",
+"ro": "cerc umplut jumătate sus",
+"ro_kw": "jumătate cerc negru sus superior"
+},
+"◔": {
+"en": "circle upper right quarter filled",
+"en_kw": "pie chart quarter progress clock",
+"ro": "cerc umplut sfert dreapta sus",
+"ro_kw": "diagramă sfert progres ceas"
+},
+"◕": {
+"en": "circle three quarters filled",
+"en_kw": "pie chart progress three quarters all but upper left",
+"ro": "cerc umplut trei sferturi",
+"ro_kw": "diagramă progres trei sferturi"
+},
+"◖": {
+"en": "left half filled circle",
+"en_kw": "left half black circle half moon",
+"ro": "semicerc umplut stânga",
+"ro_kw": "jumătate cerc negru stânga semilună"
+},
+"◗": {
+"en": "right half filled circle",
+"en_kw": "right half black circle half moon",
+"ro": "semicerc umplut dreapta",
+"ro_kw": "jumătate cerc negru dreapta semilună"
+},
+"◘": {
+"en": "inverse bullet",
+"en_kw": "inverse bullet black white",
+"ro": "buline inversată",
+"ro_kw": "buline inversată negru alb"
+},
+"◙": {
+"en": "square with hollow circle inside",
+"en_kw": "inverse white circle bullseye",
+"ro": "pătrat umplut cu cerc gol",
+"ro_kw": "cerc invers alb pătrat negru"
+},
+"◚": {
+"en": "upper half inverse white circle",
+"en_kw": "inverse circle upper half",
+"ro": "semicerc invers sus",
+"ro_kw": "cerc invers jumătate sus"
+},
+"◛": {
+"en": "lower half inverse white circle",
+"en_kw": "inverse circle lower half",
+"ro": "semicerc invers jos",
+"ro_kw": "cerc invers jumătate jos"
+},
+"◜": {
+"en": "arc upper left",
+"en_kw": "quadrant circular arc upper left corner",
+"ro": "arc stânga sus",
+"ro_kw": "arc de cerc sfert stânga sus colț"
+},
+"◝": {
+"en": "arc upper right",
+"en_kw": "quadrant circular arc upper right corner",
+"ro": "arc dreapta sus",
+"ro_kw": "arc de cerc sfert dreapta sus colț"
+},
+"◞": {
+"en": "arc lower right",
+"en_kw": "quadrant circular arc lower right corner",
+"ro": "arc dreapta jos",
+"ro_kw": "arc de cerc sfert dreapta jos colț"
+},
+"◟": {
+"en": "arc lower left",
+"en_kw": "quadrant circular arc lower left corner",
+"ro": "arc stânga jos",
+"ro_kw": "arc de cerc sfert stânga jos colț"
+},
+"◠": {
+"en": "upper half circle",
+"en_kw": "arc half circle top frown",
+"ro": "semicerc superior",
+"ro_kw": "semicerc arc sus"
+},
+"◡": {
+"en": "lower half circle",
+"en_kw": "arc half circle bottom smile",
+"ro": "semicerc inferior",
+"ro_kw": "semicerc arc jos zâmbet"
+},
+"◢": {
+"en": "filled triangle lower right",
+"en_kw": "black lower right triangle corner",
+"ro": "triunghi umplut dreapta jos",
+"ro_kw": "negru triunghi colț dreapta jos"
+},
+"◣": {
+"en": "filled triangle lower left",
+"en_kw": "black lower left triangle corner",
+"ro": "triunghi umplut stânga jos",
+"ro_kw": "negru triunghi colț stânga jos"
+},
+"◤": {
+"en": "filled triangle upper left",
+"en_kw": "black upper left triangle corner",
+"ro": "triunghi umplut stânga sus",
+"ro_kw": "negru triunghi colț stânga sus"
+},
+"◥": {
+"en": "filled triangle upper right",
+"en_kw": "black upper right triangle corner",
+"ro": "triunghi umplut dreapta sus",
+"ro_kw": "negru triunghi colț dreapta sus"
+},
+"◦": {
+"en": "white bullet",
+"en_kw": "white hollow bullet small circle sub list",
+"ro": "buline goală",
+"ro_kw": "buline goală cerc mic sublistă"
+},
+"◧": {
+"en": "square left half filled",
+"en_kw": "square left half black split panel",
+"ro": "pătrat umplut jumătate stânga",
+"ro_kw": "pătrat jumătate negru stânga panou"
+},
+"◨": {
+"en": "square right half filled",
+"en_kw": "square right half black split panel",
+"ro": "pătrat umplut jumătate dreapta",
+"ro_kw": "pătrat jumătate negru dreapta panou"
+},
+"◩": {
+"en": "square upper left diagonal half filled",
+"en_kw": "square diagonal half black upper left",
+"ro": "pătrat umplut diagonal stânga sus",
+"ro_kw": "pătrat jumătate diagonală negru stânga sus"
+},
+"◪": {
+"en": "square lower right diagonal half filled",
+"en_kw": "square diagonal half black lower right",
+"ro": "pătrat umplut diagonal dreapta jos",
+"ro_kw": "pătrat jumătate diagonală negru dreapta jos"
+},
+"◫": {
+"en": "square with vertical line",
+"en_kw": "white square vertical bisecting line split",
+"ro": "pătrat cu linie verticală",
+"ro_kw": "pătrat alb linie verticală despărțit"
+},
+"◬": {
+"en": "triangle with dot",
+"en_kw": "white up pointing triangle dot",
+"ro": "triunghi cu punct",
+"ro_kw": "triunghi alb punct sus"
+},
+"◭": {
+"en": "triangle left half filled",
+"en_kw": "up pointing triangle left half black",
+"ro": "triunghi umplut jumătate stânga",
+"ro_kw": "triunghi sus jumătate negru stânga"
+},
+"◮": {
+"en": "triangle right half filled",
+"en_kw": "up pointing triangle right half black",
+"ro": "triunghi umplut jumătate dreapta",
+"ro_kw": "triunghi sus jumătate negru dreapta"
+},
+"◯": {
+"en": "large hollow circle",
+"en_kw": "big circle white empty outline ring",
+"ro": "cerc gol mare",
+"ro_kw": "cerc mare alb gol contur inel"
+},
+"◰": {
+"en": "square upper left quarter",
+"en_kw": "white square upper left quadrant",
+"ro": "pătrat sfert stânga sus",
+"ro_kw": "pătrat alb sfert stânga sus"
+},
+"◱": {
+"en": "square lower left quarter",
+"en_kw": "white square lower left quadrant",
+"ro": "pătrat sfert stânga jos",
+"ro_kw": "pătrat alb sfert stânga jos"
+},
+"◲": {
+"en": "square lower right quarter",
+"en_kw": "white square lower right quadrant",
+"ro": "pătrat sfert dreapta jos",
+"ro_kw": "pătrat alb sfert dreapta jos"
+},
+"◳": {
+"en": "square upper right quarter",
+"en_kw": "white square upper right quadrant",
+"ro": "pătrat sfert dreapta sus",
+"ro_kw": "pătrat alb sfert dreapta sus"
+},
+"◴": {
+"en": "circle upper left quarter",
+"en_kw": "white circle upper left quadrant clock",
+"ro": "cerc sfert stânga sus",
+"ro_kw": "cerc alb sfert stânga sus ceas"
+},
+"◵": {
+"en": "circle lower left quarter",
+"en_kw": "white circle lower left quadrant clock",
+"ro": "cerc sfert stânga jos",
+"ro_kw": "cerc alb sfert stânga jos ceas"
+},
+"◶": {
+"en": "circle lower right quarter",
+"en_kw": "white circle lower right quadrant clock",
+"ro": "cerc sfert dreapta jos",
+"ro_kw": "cerc alb sfert dreapta jos ceas"
+},
+"◷": {
+"en": "circle upper right quarter",
+"en_kw": "white circle upper right quadrant clock",
+"ro": "cerc sfert dreapta sus",
+"ro_kw": "cerc alb sfert dreapta sus ceas"
+},
+"◸": {
+"en": "triangle upper left",
+"en_kw": "upper left triangle corner outline",
+"ro": "triunghi stânga sus",
+"ro_kw": "triunghi colț stânga sus contur"
+},
+"◹": {
+"en": "triangle upper right",
+"en_kw": "upper right triangle corner outline",
+"ro": "triunghi dreapta sus",
+"ro_kw": "triunghi colț dreapta sus contur"
+},
+"◺": {
+"en": "triangle lower left",
+"en_kw": "lower left triangle corner outline",
+"ro": "triunghi stânga jos",
+"ro_kw": "triunghi colț stânga jos contur"
+},
+"◿": {
+"en": "triangle lower right",
+"en_kw": "lower right triangle corner outline",
+"ro": "triunghi dreapta jos",
+"ro_kw": "triunghi colț dreapta jos contur"
+},
+"★": {
+"en": "star filled",
+"en_kw": "star black filled solid rating favorite",
+"ro": "stea neagră",
+"ro_kw": "stea neagră plină favorit rating"
+},
+"☆": {
+"en": "star hollow",
+"en_kw": "star white hollow outline empty rating favorite",
+"ro": "stea albă",
+"ro_kw": "stea albă goală contur favorit rating"
+},
+"☇": {
+"en": "lightning",
+"en_kw": "lightning bolt electric thunder",
+"ro": "fulger",
+"ro_kw": "fulger trăsnet electric"
+},
+"☈": {
+"en": "thunderstorm",
+"en_kw": "thunderstorm storm lightning thunder weather",
+"ro": "furtună cu tunete",
+"ro_kw": "furtună tunete fulger vreme"
+},
+"☉": {
+"en": "sun",
+"en_kw": "sun astronomy astrological sol circle dot",
+"ro": "soare",
+"ro_kw": "soare astronomie astrologie cerc punct"
+},
+"☊": {
+"en": "ascending node",
+"en_kw": "ascending node astronomy orbit",
+"ro": "nod ascendent",
+"ro_kw": "nod ascendent astronomie orbită"
+},
+"☋": {
+"en": "descending node",
+"en_kw": "descending node astronomy orbit",
+"ro": "nod descendent",
+"ro_kw": "nod descendent astronomie orbită"
+},
+"☌": {
+"en": "conjunction",
+"en_kw": "conjunction astronomy astrology aspect",
+"ro": "conjuncție",
+"ro_kw": "conjuncție astronomie astrologie aspect"
+},
+"☍": {
+"en": "opposition",
+"en_kw": "opposition astronomy astrology aspect",
+"ro": "opoziție",
+"ro_kw": "opoziție astronomie astrologie aspect"
+},
+"☏": {
+"en": "white telephone",
+"en_kw": "telephone phone white hollow call",
+"ro": "telefon alb",
+"ro_kw": "telefon alb gol apel"
+},
+"☐": {
+"en": "ballot box",
+"en_kw": "ballot box checkbox empty unchecked todo",
+"ro": "casetă de vot (bifă goală)",
+"ro_kw": "casetă bifă goală checkbox nebifat de făcut"
+},
+"☒": {
+"en": "ballot box with x",
+"en_kw": "ballot box x checkbox checked crossed",
+"ro": "casetă de vot cu X",
+"ro_kw": "casetă cu x bifă checkbox bifat marcat"
+},
+"☓": {
+"en": "saltire",
+"en_kw": "saltire x cross st andrew",
+"ro": "cruce în X",
+"ro_kw": "cruce x andrei"
+},
+"☖": {
+"en": "white shogi piece",
+"en_kw": "shogi japanese chess piece white",
+"ro": "piesă de shogi albă",
+"ro_kw": "shogi șah japonez piesă alb"
+},
+"☗": {
+"en": "black shogi piece",
+"en_kw": "shogi japanese chess piece black",
+"ro": "piesă de shogi neagră",
+"ro_kw": "shogi șah japonez piesă negru"
+},
+"☙": {
+"en": "reversed rotated floral heart",
+"en_kw": "floral heart reversed rotated hedera ornament",
+"ro": "inimă florală rotită inversat",
+"ro_kw": "inimă florală rotită inversat ornament"
+},
+"☚": {
+"en": "black hand pointing left",
+"en_kw": "black left pointing index hand finger manicule pointing filled arrow",
+"ro": "mână neagră cu degetul spre stânga",
+"ro_kw": "mână deget arătător stânga neagră plină săgeată"
+},
+"☛": {
+"en": "pointing hand right black",
+"en_kw": "hand finger pointing right index manicule black filled",
+"ro": "mână cu degetul spre dreapta neagră",
+"ro_kw": "mână deget arată dreapta negru"
+},
+"☜": {
+"en": "white hand pointing left",
+"en_kw": "white left pointing index hand finger manicule pointing arrow",
+"ro": "mână albă cu degetul spre stânga",
+"ro_kw": "mână deget arătător stânga albă săgeată"
+},
+"☞": {
+"en": "pointing hand right white",
+"en_kw": "hand finger pointing right index manicule white",
+"ro": "mână cu degetul spre dreapta albă",
+"ro_kw": "mână deget arată dreapta alb"
+},
+"☟": {
+"en": "white hand pointing down",
+"en_kw": "white down pointing index hand finger manicule pointing arrow",
+"ro": "mână albă cu degetul în jos",
+"ro_kw": "mână deget arătător jos albă săgeată"
+},
+"☡": {
+"en": "caution sign",
+"en_kw": "caution sign warning dangerous bend",
+"ro": "semn de avertizare",
+"ro_kw": "avertizare atenție pericol curbă"
+},
+"☤": {
+"en": "caduceus",
+"en_kw": "caduceus hermes medicine snakes staff",
+"ro": "caduceu",
+"ro_kw": "caduceu hermes medicină șerpi toiag"
+},
+"☥": {
+"en": "ankh",
+"en_kw": "ankh egypt egyptian life cross",
+"ro": "ankh",
+"ro_kw": "ankh egipt egiptean viață cruce"
+},
+"☧": {
+"en": "chi rho",
+"en_kw": "chi rho christian christogram",
+"ro": "chi rho",
+"ro_kw": "chi rho creștin hristogramă"
+},
+"☨": {
+"en": "cross of lorraine",
+"en_kw": "cross lorraine",
+"ro": "cruce lorenă",
+"ro_kw": "cruce lorena"
+},
+"☩": {
+"en": "cross of jerusalem",
+"en_kw": "cross jerusalem crusaders",
+"ro": "cruce din Ierusalim",
+"ro_kw": "cruce Ierusalim cruciade"
+},
+"☫": {
+"en": "farsi symbol",
+"en_kw": "farsi persian symbol iran bahai",
+"ro": "simbol farsi",
+"ro_kw": "farsi persan simbol iran"
+},
+"☬": {
+"en": "adi shakti",
+"en_kw": "adi shakti khanda sikh",
+"ro": "adi shakti",
+"ro_kw": "adi shakti khanda sikh"
+},
+"☭": {
+"en": "hammer and sickle",
+"en_kw": "hammer sickle communism soviet ussr",
+"ro": "secera și ciocanul",
+"ro_kw": "secera ciocan comunism sovietic urss"
+},
+"☻": {
+"en": "black smiling face",
+"en_kw": "smiley smile face happy black filled",
+"ro": "față zâmbitoare neagră",
+"ro_kw": "zâmbet față fericit negru plin"
+},
+"☼": {
+"en": "white sun with rays",
+"en_kw": "sun sunny rays light bright white day",
+"ro": "soare alb cu raze",
+"ro_kw": "soare însorit raze lumină zi"
+},
+"☽": {
+"en": "first quarter moon",
+"en_kw": "moon crescent first quarter night waxing",
+"ro": "lună în primul pătrar",
+"ro_kw": "lună semilună pătrar noapte"
+},
+"☾": {
+"en": "last quarter moon",
+"en_kw": "moon crescent last quarter night waning islam",
+"ro": "lună în ultimul pătrar",
+"ro_kw": "lună semilună pătrar noapte"
+},
+"☿": {
+"en": "mercury",
+"en_kw": "mercury planet astronomy astrology",
+"ro": "mercur",
+"ro_kw": "mercur planetă astronomie astrologie"
+},
+"♀": {
+"en": "female sign",
+"en_kw": "female woman venus gender sign",
+"ro": "semn feminin",
+"ro_kw": "femeie feminin venus gen semn"
+},
+"♁": {
+"en": "earth",
+"en_kw": "earth globe planet astronomy",
+"ro": "pământ",
+"ro_kw": "pământ glob planetă terra"
+},
+"♂": {
+"en": "male sign",
+"en_kw": "male man mars gender sign",
+"ro": "semn masculin",
+"ro_kw": "bărbat masculin marte gen semn"
+},
+"♃": {
+"en": "jupiter",
+"en_kw": "jupiter planet astronomy astrology",
+"ro": "jupiter",
+"ro_kw": "jupiter planetă astronomie astrologie"
+},
+"♄": {
+"en": "saturn",
+"en_kw": "saturn planet astronomy astrology",
+"ro": "saturn",
+"ro_kw": "saturn planetă astronomie astrologie"
+},
+"♅": {
+"en": "uranus",
+"en_kw": "uranus planet astronomy astrology",
+"ro": "uranus",
+"ro_kw": "uranus planetă astronomie astrologie"
+},
+"♆": {
+"en": "neptune",
+"en_kw": "neptune planet astronomy astrology trident",
+"ro": "neptun",
+"ro_kw": "neptun planetă astronomie astrologie trident"
+},
+"♇": {
+"en": "pluto",
+"en_kw": "pluto planet astronomy astrology",
+"ro": "pluto",
+"ro_kw": "pluto planetă astronomie astrologie"
+},
+"♔": {
+"en": "white chess king",
+"en_kw": "chess king royal white hollow outline game piece",
+"ro": "rege de șah alb",
+"ro_kw": "șah rege regal alb gol contur joc piesă"
+},
+"♕": {
+"en": "white chess queen",
+"en_kw": "chess queen royal white hollow outline game piece",
+"ro": "regină de șah alb",
+"ro_kw": "șah regină damă regală alb gol contur joc piesă"
+},
+"♖": {
+"en": "white chess rook",
+"en_kw": "chess rook castle tower white hollow outline game piece",
+"ro": "turn de șah alb",
+"ro_kw": "șah turn tură alb gol contur joc piesă"
+},
+"♗": {
+"en": "white chess bishop",
+"en_kw": "chess bishop white hollow outline game piece",
+"ro": "nebun de șah alb",
+"ro_kw": "șah nebun alb gol contur joc piesă"
+},
+"♘": {
+"en": "white chess knight",
+"en_kw": "chess knight horse white hollow outline game piece",
+"ro": "cal de șah alb",
+"ro_kw": "șah cal alb gol contur joc piesă"
+},
+"♙": {
+"en": "white chess pawn",
+"en_kw": "chess pawn white hollow outline game piece",
+"ro": "pion de șah alb",
+"ro_kw": "șah pion alb gol contur joc piesă"
+},
+"♚": {
+"en": "black chess king",
+"en_kw": "chess king royal black filled game piece",
+"ro": "rege de șah negru",
+"ro_kw": "șah rege regal negru plin joc piesă"
+},
+"♛": {
+"en": "black chess queen",
+"en_kw": "chess queen royal black filled game piece",
+"ro": "regină de șah negru",
+"ro_kw": "șah regină damă regală negru plin joc piesă"
+},
+"♜": {
+"en": "black chess rook",
+"en_kw": "chess rook castle tower black filled game piece",
+"ro": "turn de șah negru",
+"ro_kw": "șah turn tură negru plin joc piesă"
+},
+"♝": {
+"en": "black chess bishop",
+"en_kw": "chess bishop black filled game piece",
+"ro": "nebun de șah negru",
+"ro_kw": "șah nebun negru plin joc piesă"
+},
+"♞": {
+"en": "black chess knight",
+"en_kw": "chess knight horse black filled game piece",
+"ro": "cal de șah negru",
+"ro_kw": "șah cal negru plin joc piesă"
+},
+"♡": {
+"en": "white heart suit",
+"en_kw": "heart love suit cards white hollow outline empty",
+"ro": "inimă albă",
+"ro_kw": "alb gol contur inimă dragoste cărți joc roșu"
+},
+"♢": {
+"en": "white diamond suit",
+"en_kw": "diamond suit cards white hollow outline empty",
+"ro": "romb albă",
+"ro_kw": "alb gol contur romb caro cărți joc"
+},
+"♤": {
+"en": "white spade suit",
+"en_kw": "spade suit cards poker bridge white hollow outline empty",
+"ro": "pică albă",
+"ro_kw": "alb gol contur pică cărți joc poker"
+},
+"♧": {
+"en": "white club suit",
+"en_kw": "club clubs suit cards poker white hollow outline empty",
+"ro": "treflă albă",
+"ro_kw": "alb gol contur treflă cărți joc poker"
+},
+"♩": {
+"en": "quarter note",
+"en_kw": "music note crotchet quarter",
+"ro": "notă pătrime",
+"ro_kw": "notă muzicală pătrime optime muzică"
+},
+"♪": {
+"en": "eighth note",
+"en_kw": "music note quaver eighth song",
+"ro": "optime",
+"ro_kw": "notă muzicală optime muzică cântec"
+},
+"♫": {
+"en": "beamed eighth notes",
+"en_kw": "music notes quavers beamed song",
+"ro": "două optimi legate",
+"ro_kw": "note muzicale optimi legate muzică cântec"
+},
+"♬": {
+"en": "beamed sixteenth notes",
+"en_kw": "music notes semiquavers sixteenth beamed",
+"ro": "două șaisprezecimi legate",
+"ro_kw": "note muzicale șaisprezecimi legate muzică"
+},
+"♭": {
+"en": "flat",
+"en_kw": "music flat accidental b",
+"ro": "bemol",
+"ro_kw": "bemol muzică alterație"
+},
+"♮": {
+"en": "natural sign",
+"en_kw": "music natural accidental",
+"ro": "becar",
+"ro_kw": "becar muzică alterație"
+},
+"♯": {
+"en": "sharp",
+"en_kw": "music sharp accidental hash",
+"ro": "diez",
+"ro_kw": "diez muzică alterație"
+},
+"♰": {
+"en": "west syriac cross",
+"en_kw": "cross syriac west",
+"ro": "cruce siriacă de vest",
+"ro_kw": "cruce siriacă vest"
+},
+"♱": {
+"en": "east syriac cross",
+"en_kw": "cross syriac east",
+"ro": "cruce siriacă de est",
+"ro_kw": "cruce siriacă est"
+},
+"♲": {
+"en": "universal recycling symbol",
+"en_kw": "recycle recycling universal",
+"ro": "simbol universal de reciclare",
+"ro_kw": "reciclare simbol universal"
+},
+"♳": {
+"en": "recycling plastic type 1",
+"en_kw": "recycle recycling plastic 1 pet resin code",
+"ro": "reciclare plastic tip 1",
+"ro_kw": "reciclare plastic 1 pet cod rășină"
+},
+"♴": {
+"en": "recycling plastic type 2",
+"en_kw": "recycle recycling plastic 2 hdpe resin code",
+"ro": "reciclare plastic tip 2",
+"ro_kw": "reciclare plastic 2 hdpe cod rășină"
+},
+"♵": {
+"en": "recycling plastic type 3",
+"en_kw": "recycle recycling plastic 3 pvc resin code",
+"ro": "reciclare plastic tip 3",
+"ro_kw": "reciclare plastic 3 pvc cod rășină"
+},
+"♶": {
+"en": "recycling plastic type 4",
+"en_kw": "recycle recycling plastic 4 ldpe resin code",
+"ro": "reciclare plastic tip 4",
+"ro_kw": "reciclare plastic 4 ldpe cod rășină"
+},
+"♷": {
+"en": "recycling plastic type 5",
+"en_kw": "recycle recycling plastic 5 pp resin code",
+"ro": "reciclare plastic tip 5",
+"ro_kw": "reciclare plastic 5 pp cod rășină"
+},
+"♸": {
+"en": "recycling plastic type 6",
+"en_kw": "recycle recycling plastic 6 ps resin code",
+"ro": "reciclare plastic tip 6",
+"ro_kw": "reciclare plastic 6 ps cod rășină"
+},
+"♹": {
+"en": "recycling plastic type 7",
+"en_kw": "recycle recycling plastic 7 other plastics resin code",
+"ro": "reciclare plastic tip 7",
+"ro_kw": "reciclare plastic 7 alte plastice cod rășină"
+},
+"♺": {
+"en": "recycling symbol generic materials",
+"en_kw": "recycle generic materials",
+"ro": "reciclare materiale generice",
+"ro_kw": "reciclare materiale generice"
+},
+"♼": {
+"en": "recycled paper symbol",
+"en_kw": "recycled paper recycle",
+"ro": "simbol hârtie reciclată",
+"ro_kw": "hârtie reciclată reciclare"
+},
+"♽": {
+"en": "partially recycled paper symbol",
+"en_kw": "partially recycled paper",
+"ro": "simbol hârtie parțial reciclată",
+"ro_kw": "hârtie parțial reciclată"
+},
+"⚀": {
+"en": "die face 1",
+"en_kw": "die dice face one 1 game random",
+"ro": "zar fața 1",
+"ro_kw": "zar zaruri fața unu 1 joc noroc"
+},
+"⚁": {
+"en": "die face 2",
+"en_kw": "die dice face two 2 game random",
+"ro": "zar fața 2",
+"ro_kw": "zar zaruri fața doi 2 joc noroc"
+},
+"⚂": {
+"en": "die face 3",
+"en_kw": "die dice face three 3 game random",
+"ro": "zar fața 3",
+"ro_kw": "zar zaruri fața trei 3 joc noroc"
+},
+"⚃": {
+"en": "die face 4",
+"en_kw": "die dice face four 4 game random",
+"ro": "zar fața 4",
+"ro_kw": "zar zaruri fața patru 4 joc noroc"
+},
+"⚄": {
+"en": "die face 5",
+"en_kw": "die dice face five 5 game random",
+"ro": "zar fața 5",
+"ro_kw": "zar zaruri fața cinci 5 joc noroc"
+},
+"⚅": {
+"en": "die face 6",
+"en_kw": "die dice face six 6 game random",
+"ro": "zar fața 6",
+"ro_kw": "zar zaruri fața șase 6 joc noroc"
+},
+"⚆": {
+"en": "white circle with dot right",
+"en_kw": "circle white dot right",
+"ro": "cerc alb cu punct la dreapta",
+"ro_kw": "cerc alb punct dreapta"
+},
+"⚇": {
+"en": "white circle with two dots",
+"en_kw": "circle white dots two",
+"ro": "cerc alb cu două puncte",
+"ro_kw": "cerc alb puncte două"
+},
+"⚈": {
+"en": "black circle with white dot right",
+"en_kw": "circle black dot white right",
+"ro": "cerc negru cu punct alb la dreapta",
+"ro_kw": "cerc negru punct alb dreapta"
+},
+"⚉": {
+"en": "black circle with two white dots",
+"en_kw": "circle black dots two white",
+"ro": "cerc negru cu două puncte albe",
+"ro_kw": "cerc negru puncte două albe"
+},
+"⚐": {
+"en": "white flag",
+"en_kw": "flag white hollow surrender marker",
+"ro": "steag alb",
+"ro_kw": "steag alb gol capitulare marcaj"
+},
+"⚑": {
+"en": "black flag",
+"en_kw": "flag black filled marker",
+"ro": "steag negru",
+"ro_kw": "steag negru plin marcaj"
+},
+"⚘": {
+"en": "flower",
+"en_kw": "flower plant bloom",
+"ro": "floare",
+"ro_kw": "floare plantă înflorire"
+},
+"⚚": {
+"en": "staff of hermes",
+"en_kw": "hermes staff caduceus mercury",
+"ro": "toiagul lui Hermes",
+"ro_kw": "hermes toiag caduceu mercur"
+},
+"⚝": {
+"en": "outlined white star",
+"en_kw": "star outlined white hollow",
+"ro": "stea albă conturată",
+"ro_kw": "stea contur alb gol"
+},
+"⚢": {
+"en": "doubled female sign",
+"en_kw": "female doubled lesbian gender sign",
+"ro": "semn feminin dublu",
+"ro_kw": "feminin dublu lesbiană gen semn"
+},
+"⚣": {
+"en": "doubled male sign",
+"en_kw": "male doubled gay gender sign",
+"ro": "semn masculin dublu",
+"ro_kw": "masculin dublu gay gen semn"
+},
+"⚤": {
+"en": "interlocked female and male",
+"en_kw": "female male interlocked straight heterosexual gender",
+"ro": "semn feminin și masculin încrucișate",
+"ro_kw": "feminin masculin încrucișate heterosexual gen"
+},
+"⚦": {
+"en": "male with stroke sign",
+"en_kw": "male stroke transgender gender",
+"ro": "semn masculin cu bară",
+"ro_kw": "masculin bară transgen gen"
+},
+"⚨": {
+"en": "vertical male with stroke",
+"en_kw": "male vertical stroke gender",
+"ro": "semn masculin cu bară verticală",
+"ro_kw": "masculin bară verticală gen"
+},
+"⚩": {
+"en": "horizontal male with stroke",
+"en_kw": "male horizontal stroke gender",
+"ro": "semn masculin cu bară orizontală",
+"ro_kw": "masculin bară orizontală gen"
+},
+"⚬": {
+"en": "medium small white circle",
+"en_kw": "circle white hollow small bullet ring",
+"ro": "cerc alb mediu mic",
+"ro_kw": "cerc alb gol mic inel"
+},
+"⚭": {
+"en": "marriage symbol",
+"en_kw": "marriage married wedding rings",
+"ro": "simbol căsătorie",
+"ro_kw": "căsătorie căsătoriți nuntă verighete inele"
+},
+"⚮": {
+"en": "divorce symbol",
+"en_kw": "divorce divorced separation rings",
+"ro": "simbol divorț",
+"ro_kw": "divorț despărțire inele"
+},
+"⚯": {
+"en": "unmarried partnership",
+"en_kw": "unmarried partnership couple rings",
+"ro": "simbol concubinaj",
+"ro_kw": "concubinaj parteneriat cuplu inele"
+},
+"⚲": {
+"en": "neuter",
+"en_kw": "neuter gender asexual sign",
+"ro": "neutru",
+"ro_kw": "neutru gen semn"
+},
+"⛢": {
+"en": "astronomical uranus symbol",
+"en_kw": "uranus planet astronomy symbol",
+"ro": "simbol astronomic uranus",
+"ro_kw": "uranus planetă astronomie simbol"
+},
+"✁": {
+"en": "upper blade scissors",
+"en_kw": "scissors cut snip",
+"ro": "foarfecă cu lamă sus",
+"ro_kw": "foarfecă tăiere tăiat"
+},
+"✃": {
+"en": "lower blade scissors",
+"en_kw": "scissors cut snip",
+"ro": "foarfecă cu lamă jos",
+"ro_kw": "foarfecă tăiere tăiat"
+},
+"✄": {
+"en": "white scissors",
+"en_kw": "scissors cut snip white",
+"ro": "foarfecă albă",
+"ro_kw": "foarfecă tăiere tăiat alb"
+},
+"✆": {
+"en": "telephone location sign",
+"en_kw": "telephone phone location call",
+"ro": "semn locație telefon",
+"ro_kw": "telefon locație apel"
+},
+"✇": {
+"en": "tape drive",
+"en_kw": "tape drive backup storage",
+"ro": "unitate de bandă",
+"ro_kw": "bandă unitate backup stocare"
+},
+"✎": {
+"en": "lower right pencil",
+"en_kw": "pencil write edit draw",
+"ro": "creion în dreapta jos",
+"ro_kw": "creion scris editare desen"
+},
+"✐": {
+"en": "upper right pencil",
+"en_kw": "pencil write edit draw",
+"ro": "creion în dreapta sus",
+"ro_kw": "creion scris editare desen"
+},
+"✑": {
+"en": "white nib",
+"en_kw": "nib pen fountain write ink",
+"ro": "peniță albă",
+"ro_kw": "peniță stilou scris cerneală"
+},
+"✓": {
+"en": "check mark",
+"en_kw": "check tick checkmark yes ok done correct",
+"ro": "bifă",
+"ro_kw": "bifă verificat da corect gata"
+},
+"✕": {
+"en": "multiplication x",
+"en_kw": "x cross multiply multiplication close no",
+"ro": "X de înmulțire",
+"ro_kw": "x cruce înmulțire închide nu"
+},
+"✗": {
+"en": "ballot x",
+"en_kw": "x cross ballot no wrong incorrect",
+"ro": "X de vot",
+"ro_kw": "x cruce vot nu greșit"
+},
+"✘": {
+"en": "heavy ballot x",
+"en_kw": "x cross ballot heavy no wrong incorrect",
+"ro": "X de vot gros",
+"ro_kw": "x cruce vot gros nu greșit"
+},
+"✙": {
+"en": "outlined greek cross",
+"en_kw": "cross greek outlined plus",
+"ro": "cruce greacă conturată",
+"ro_kw": "cruce greacă contur plus"
+},
+"✚": {
+"en": "heavy greek cross",
+"en_kw": "cross greek heavy plus medical add",
+"ro": "cruce greacă îngroșată",
+"ro_kw": "cruce greacă îngroșată plus medical adăugare"
+},
+"✛": {
+"en": "open centre cross",
+"en_kw": "cross open centre plus",
+"ro": "cruce cu centru deschis",
+"ro_kw": "cruce centru deschis plus"
+},
+"✜": {
+"en": "heavy open centre cross",
+"en_kw": "cross open centre heavy plus",
+"ro": "cruce cu centru deschis îngroșată",
+"ro_kw": "cruce centru deschis îngroșată plus"
+},
+"✞": {
+"en": "shadowed white latin cross",
+"en_kw": "cross latin christian shadowed white church",
+"ro": "cruce latină albă cu umbră",
+"ro_kw": "cruce latină creștin umbră alb biserică"
+},
+"✟": {
+"en": "outlined latin cross",
+"en_kw": "cross latin christian outlined church",
+"ro": "cruce latină conturată",
+"ro_kw": "cruce latină creștin contur biserică"
+},
+"✠": {
+"en": "maltese cross",
+"en_kw": "cross maltese knights",
+"ro": "cruce malteză",
+"ro_kw": "cruce malteză cavaleri"
+},
+"✢": {
+"en": "four teardrop asterisk",
+"en_kw": "asterisk four teardrop spoked cross dingbat",
+"ro": "asterisc cu patru picături",
+"ro_kw": "asterisc patru picături cruce"
+},
+"✣": {
+"en": "four balloon asterisk",
+"en_kw": "asterisk four balloon spoked cross dingbat",
+"ro": "asterisc cu patru baloane",
+"ro_kw": "asterisc patru baloane cruce"
+},
+"✤": {
+"en": "heavy four balloon asterisk",
+"en_kw": "asterisk four balloon spoked heavy cross dingbat",
+"ro": "asterisc gros cu patru baloane",
+"ro_kw": "asterisc gros patru baloane cruce"
+},
+"✥": {
+"en": "four club asterisk",
+"en_kw": "asterisk four club spoked cross dingbat",
+"ro": "asterisc cu patru trifoi",
+"ro_kw": "asterisc patru treflă cruce"
+},
+"✦": {
+"en": "four-pointed star filled",
+"en_kw": "star four pointed black filled sparkle diamond",
+"ro": "stea neagră cu patru colțuri",
+"ro_kw": "stea patru colțuri neagră plină scânteie"
+},
+"✧": {
+"en": "four-pointed star hollow",
+"en_kw": "star four pointed white hollow outline sparkle",
+"ro": "stea albă cu patru colțuri",
+"ro_kw": "stea patru colțuri albă goală scânteie"
+},
+"✩": {
+"en": "outlined white star",
+"en_kw": "star outlined white stress hollow",
+"ro": "stea albă conturată",
+"ro_kw": "stea albă contur goală"
+},
+"✪": {
+"en": "circled star",
+"en_kw": "star circled white circle badge",
+"ro": "stea în cerc",
+"ro_kw": "stea cerc încercuită insignă"
+},
+"✫": {
+"en": "open centre black star",
+"en_kw": "star black open centre hollow center",
+"ro": "stea neagră cu centru gol",
+"ro_kw": "stea neagră centru gol"
+},
+"✬": {
+"en": "black centre white star",
+"en_kw": "star white black centre center",
+"ro": "stea albă cu centru negru",
+"ro_kw": "stea albă centru negru"
+},
+"✭": {
+"en": "outlined black star",
+"en_kw": "star outlined black",
+"ro": "stea neagră conturată",
+"ro_kw": "stea neagră contur"
+},
+"✮": {
+"en": "heavy outlined black star",
+"en_kw": "star heavy outlined black",
+"ro": "stea neagră groasă conturată",
+"ro_kw": "stea neagră groasă contur"
+},
+"✯": {
+"en": "pinwheel star",
+"en_kw": "star pinwheel dingbat spinning",
+"ro": "stea morișcă",
+"ro_kw": "stea morișcă vârtej"
+},
+"✰": {
+"en": "shadowed white star",
+"en_kw": "star shadowed white",
+"ro": "stea albă cu umbră",
+"ro_kw": "stea albă umbră"
+},
+"✱": {
+"en": "heavy asterisk",
+"en_kw": "asterisk heavy star footnote multiply",
+"ro": "asterisc gros",
+"ro_kw": "asterisc gros stea notă"
+},
+"✲": {
+"en": "open centre asterisk",
+"en_kw": "asterisk open centre hollow",
+"ro": "asterisc cu centru gol",
+"ro_kw": "asterisc centru gol"
+},
+"✵": {
+"en": "eight-pointed pinwheel star",
+"en_kw": "star eight pointed pinwheel",
+"ro": "stea morișcă cu opt colțuri",
+"ro_kw": "stea opt colțuri morișcă"
+},
+"✶": {
+"en": "six-pointed star",
+"en_kw": "star six pointed black sextile",
+"ro": "stea neagră cu șase colțuri",
+"ro_kw": "stea șase colțuri neagră"
+},
+"✷": {
+"en": "eight-pointed star",
+"en_kw": "star eight pointed rectilinear black",
+"ro": "stea cu opt colțuri",
+"ro_kw": "stea opt colțuri neagră"
+},
+"✸": {
+"en": "heavy eight-pointed star",
+"en_kw": "star eight pointed rectilinear black heavy",
+"ro": "stea groasă cu opt colțuri",
+"ro_kw": "stea opt colțuri neagră groasă"
+},
+"✹": {
+"en": "twelve-pointed star",
+"en_kw": "star twelve pointed black",
+"ro": "stea cu douăsprezece colțuri",
+"ro_kw": "stea douăsprezece colțuri neagră"
+},
+"✺": {
+"en": "sixteen-pointed asterisk",
+"en_kw": "asterisk sixteen pointed star burst",
+"ro": "asterisc cu șaisprezece colțuri",
+"ro_kw": "asterisc șaisprezece colțuri explozie"
+},
+"✻": {
+"en": "teardrop asterisk",
+"en_kw": "asterisk teardrop spoked dingbat star",
+"ro": "asterisc cu picături",
+"ro_kw": "asterisc picături stea"
+},
+"✼": {
+"en": "open centre teardrop asterisk",
+"en_kw": "asterisk teardrop open centre hollow",
+"ro": "asterisc cu picături și centru gol",
+"ro_kw": "asterisc picături centru gol"
+},
+"✽": {
+"en": "heavy teardrop asterisk",
+"en_kw": "asterisk teardrop spoked heavy dingbat",
+"ro": "asterisc gros cu picături",
+"ro_kw": "asterisc picături gros"
+},
+"✾": {
+"en": "six-petal florette",
+"en_kw": "florette flower six petalled black white",
+"ro": "floare cu șase petale",
+"ro_kw": "floare șase petale alb negru"
+},
+"✿": {
+"en": "black florette",
+"en_kw": "florette flower black filled",
+"ro": "floare neagră",
+"ro_kw": "floare neagră plină"
+},
+"❀": {
+"en": "white florette",
+"en_kw": "florette flower white hollow",
+"ro": "floare albă",
+"ro_kw": "floare albă goală"
+},
+"❁": {
+"en": "eight-petal outlined florette",
+"en_kw": "florette flower eight petalled outlined black",
+"ro": "floare cu opt petale conturată",
+"ro_kw": "floare opt petale contur"
+},
+"❂": {
+"en": "circled eight-pointed star",
+"en_kw": "star circled eight pointed open centre sun",
+"ro": "stea cu opt colțuri în cerc",
+"ro_kw": "stea opt colțuri cerc soare"
+},
+"❃": {
+"en": "heavy teardrop pinwheel asterisk",
+"en_kw": "asterisk teardrop pinwheel heavy",
+"ro": "asterisc morișcă gros cu picături",
+"ro_kw": "asterisc morișcă picături gros"
+},
+"❅": {
+"en": "tight trifoliate snowflake",
+"en_kw": "snowflake snow winter trifoliate",
+"ro": "fulg de zăpadă cu trei frunze",
+"ro_kw": "fulg zăpadă iarnă"
+},
+"❆": {
+"en": "heavy chevron snowflake",
+"en_kw": "snowflake snow winter chevron heavy",
+"ro": "fulg de zăpadă gros chevron",
+"ro_kw": "fulg zăpadă iarnă gros"
+},
+"❈": {
+"en": "heavy sparkle",
+"en_kw": "sparkle heavy shine glitter",
+"ro": "scânteie groasă",
+"ro_kw": "scânteie groasă strălucire"
+},
+"❉": {
+"en": "balloon asterisk",
+"en_kw": "asterisk balloon spoked dingbat",
+"ro": "asterisc cu baloane",
+"ro_kw": "asterisc baloane"
+},
+"❊": {
+"en": "eight teardrop propeller asterisk",
+"en_kw": "asterisk eight teardrop propeller spoked",
+"ro": "asterisc elice cu opt picături",
+"ro_kw": "asterisc elice opt picături"
+},
+"❋": {
+"en": "heavy eight propeller asterisk",
+"en_kw": "asterisk eight teardrop propeller heavy",
+"ro": "asterisc elice gros cu opt picături",
+"ro_kw": "asterisc elice opt picături gros"
+},
+"❍": {
+"en": "shadowed white circle",
+"en_kw": "circle shadowed white radio button",
+"ro": "cerc alb cu umbră",
+"ro_kw": "cerc alb umbră buton radio"
+},
+"❏": {
+"en": "white square shadow lower right",
+"en_kw": "square white shadow lower right box checkbox",
+"ro": "pătrat alb cu umbră jos-dreapta",
+"ro_kw": "pătrat alb umbră casetă"
+},
+"❐": {
+"en": "white square shadow upper right",
+"en_kw": "square white shadow upper right box copy",
+"ro": "pătrat alb cu umbră sus-dreapta",
+"ro_kw": "pătrat alb umbră casetă copiere"
+},
+"❑": {
+"en": "shadowed square lower right",
+"en_kw": "square shadowed white lower right box",
+"ro": "pătrat umbrit jos-dreapta",
+"ro_kw": "pătrat umbrit alb casetă"
+},
+"❒": {
+"en": "shadowed square upper right",
+"en_kw": "square shadowed white upper right box",
+"ro": "pătrat umbrit sus-dreapta",
+"ro_kw": "pătrat umbrit alb casetă"
+},
+"❖": {
+"en": "black diamond minus white x",
+"en_kw": "black diamond minus white x four diamonds ornament",
+"ro": "romb negru cu X alb",
+"ro_kw": "romb negru x alb ornament"
+},
+"❛": {
+"en": "heavy single turned comma quote",
+"en_kw": "heavy single quote ornament turned",
+"ro": "ghilimele simple groase întoarse",
+"ro_kw": "ghilimele simple groase întoarse ornament"
+},
+"❜": {
+"en": "heavy single comma quote",
+"en_kw": "heavy single quote ornament comma",
+"ro": "ghilimele simple groase",
+"ro_kw": "ghilimele simple groase ornament"
+},
+"❝": {
+"en": "heavy double turned comma quote",
+"en_kw": "heavy double quote ornament opening",
+"ro": "ghilimele duble groase întoarse",
+"ro_kw": "ghilimele duble groase întoarse ornament citat"
+},
+"❞": {
+"en": "heavy double comma quote",
+"en_kw": "heavy double quote ornament closing",
+"ro": "ghilimele duble groase",
+"ro_kw": "ghilimele duble groase ornament citat"
+},
+"❡": {
+"en": "curved stem paragraph ornament",
+"en_kw": "paragraph sign ornament curved stem pilcrow",
+"ro": "paragraf ornamental curbat",
+"ro_kw": "paragraf ornament curbat pilcrow"
+},
+"❢": {
+"en": "heavy exclamation ornament",
+"en_kw": "heavy exclamation mark ornament decorative",
+"ro": "exclamare ornamentală groasă",
+"ro_kw": "exclamare ornament decorativ gros"
+},
+"❥": {
+"en": "rotated heavy heart",
+"en_kw": "heart rotated heavy black bullet love",
+"ro": "inimă groasă rotită",
+"ro_kw": "inimă rotită groasă neagră dragoste"
+},
+"❦": {
+"en": "floral heart",
+"en_kw": "floral heart hedera ornament leaf fleuron",
+"ro": "inimă florală",
+"ro_kw": "inimă florală ornament frunză"
+},
+"❧": {
+"en": "rotated floral heart",
+"en_kw": "floral heart rotated hedera ornament leaf",
+"ro": "inimă florală rotită",
+"ro_kw": "inimă florală rotită ornament frunză"
+},
+"❨": {
+"en": "medium left parenthesis ornament",
+"en_kw": "parenthesis left ornament round bracket",
+"ro": "paranteză rotundă stânga ornament",
+"ro_kw": "paranteză rotundă stânga ornament"
+},
+"❩": {
+"en": "medium right parenthesis ornament",
+"en_kw": "parenthesis right ornament round bracket",
+"ro": "paranteză rotundă dreapta ornament",
+"ro_kw": "paranteză rotundă dreapta ornament"
+},
+"❪": {
+"en": "flattened left parenthesis ornament",
+"en_kw": "flattened parenthesis left ornament",
+"ro": "paranteză rotundă turtită stânga",
+"ro_kw": "paranteză turtită stânga ornament"
+},
+"❫": {
+"en": "flattened right parenthesis ornament",
+"en_kw": "flattened parenthesis right ornament",
+"ro": "paranteză rotundă turtită dreapta",
+"ro_kw": "paranteză turtită dreapta ornament"
+},
+"❬": {
+"en": "medium left angle bracket ornament",
+"en_kw": "angle bracket left ornament chevron",
+"ro": "paranteză unghiulară stânga ornament",
+"ro_kw": "paranteză unghiulară stânga ornament chevron"
+},
+"❭": {
+"en": "medium right angle bracket ornament",
+"en_kw": "angle bracket right ornament chevron",
+"ro": "paranteză unghiulară dreapta ornament",
+"ro_kw": "paranteză unghiulară dreapta ornament chevron"
+},
+"❮": {
+"en": "heavy left angle quote ornament",
+"en_kw": "heavy left angle chevron less than previous",
+"ro": "ghilimele unghiulare groase stânga",
+"ro_kw": "unghiular gros stânga săgeată anterior chevron"
+},
+"❯": {
+"en": "heavy right angle quote ornament",
+"en_kw": "heavy right angle chevron greater than next",
+"ro": "ghilimele unghiulare groase dreapta",
+"ro_kw": "unghiular gros dreapta săgeată următor chevron"
+},
+"❲": {
+"en": "light left tortoise shell ornament",
+"en_kw": "light tortoise shell bracket left ornament",
+"ro": "paranteză carapace subțire stânga",
+"ro_kw": "paranteză carapace subțire stânga ornament"
+},
+"❳": {
+"en": "light right tortoise shell ornament",
+"en_kw": "light tortoise shell bracket right ornament",
+"ro": "paranteză carapace subțire dreapta",
+"ro_kw": "paranteză carapace subțire dreapta ornament"
+},
+"❴": {
+"en": "left curly bracket ornament",
+"en_kw": "curly brace left ornament",
+"ro": "acoladă stânga ornament",
+"ro_kw": "acoladă stânga ornament"
+},
+"❵": {
+"en": "right curly bracket ornament",
+"en_kw": "curly brace right ornament",
+"ro": "acoladă dreapta ornament",
+"ro_kw": "acoladă dreapta ornament"
+},
+"❶": {
+"en": "black circled one",
+"en_kw": "circled black filled negative inverted one 1 digit number",
+"ro": "unu încercuit negru",
+"ro_kw": "încercuit negru plin inversat unu 1 cifră număr"
+},
+"❷": {
+"en": "black circled two",
+"en_kw": "circled black filled negative inverted two 2 digit number",
+"ro": "doi încercuit negru",
+"ro_kw": "încercuit negru plin inversat doi 2 cifră număr"
+},
+"❸": {
+"en": "black circled three",
+"en_kw": "circled black filled negative inverted three 3 digit number",
+"ro": "trei încercuit negru",
+"ro_kw": "încercuit negru plin inversat trei 3 cifră număr"
+},
+"❹": {
+"en": "black circled four",
+"en_kw": "circled black filled negative inverted four 4 digit number",
+"ro": "patru încercuit negru",
+"ro_kw": "încercuit negru plin inversat patru 4 cifră număr"
+},
+"❺": {
+"en": "black circled five",
+"en_kw": "circled black filled negative inverted five 5 digit number",
+"ro": "cinci încercuit negru",
+"ro_kw": "încercuit negru plin inversat cinci 5 cifră număr"
+},
+"❻": {
+"en": "black circled six",
+"en_kw": "circled black filled negative inverted six 6 digit number",
+"ro": "șase încercuit negru",
+"ro_kw": "încercuit negru plin inversat șase 6 cifră număr"
+},
+"❼": {
+"en": "black circled seven",
+"en_kw": "circled black filled negative inverted seven 7 digit number",
+"ro": "șapte încercuit negru",
+"ro_kw": "încercuit negru plin inversat șapte 7 cifră număr"
+},
+"❽": {
+"en": "black circled eight",
+"en_kw": "circled black filled negative inverted eight 8 digit number",
+"ro": "opt încercuit negru",
+"ro_kw": "încercuit negru plin inversat opt 8 cifră număr"
+},
+"❾": {
+"en": "black circled nine",
+"en_kw": "circled black filled negative inverted nine 9 digit number",
+"ro": "nouă încercuit negru",
+"ro_kw": "încercuit negru plin inversat nouă 9 cifră număr"
+},
+"❿": {
+"en": "black circled ten",
+"en_kw": "circled black filled negative inverted ten 10 digit number",
+"ro": "zece încercuit negru",
+"ro_kw": "încercuit negru plin inversat zece 10 cifră număr"
+},
+"➀": {
+"en": "circled sans-serif one",
+"en_kw": "circled sans-serif one 1 digit number",
+"ro": "unu încercuit sans-serif",
+"ro_kw": "încercuit sans-serif unu 1 cifră număr"
+},
+"➁": {
+"en": "circled sans-serif two",
+"en_kw": "circled sans-serif two 2 digit number",
+"ro": "doi încercuit sans-serif",
+"ro_kw": "încercuit sans-serif doi 2 cifră număr"
+},
+"➂": {
+"en": "circled sans-serif three",
+"en_kw": "circled sans-serif three 3 digit number",
+"ro": "trei încercuit sans-serif",
+"ro_kw": "încercuit sans-serif trei 3 cifră număr"
+},
+"➃": {
+"en": "circled sans-serif four",
+"en_kw": "circled sans-serif four 4 digit number",
+"ro": "patru încercuit sans-serif",
+"ro_kw": "încercuit sans-serif patru 4 cifră număr"
+},
+"➄": {
+"en": "circled sans-serif five",
+"en_kw": "circled sans-serif five 5 digit number",
+"ro": "cinci încercuit sans-serif",
+"ro_kw": "încercuit sans-serif cinci 5 cifră număr"
+},
+"➅": {
+"en": "circled sans-serif six",
+"en_kw": "circled sans-serif six 6 digit number",
+"ro": "șase încercuit sans-serif",
+"ro_kw": "încercuit sans-serif șase 6 cifră număr"
+},
+"➆": {
+"en": "circled sans-serif seven",
+"en_kw": "circled sans-serif seven 7 digit number",
+"ro": "șapte încercuit sans-serif",
+"ro_kw": "încercuit sans-serif șapte 7 cifră număr"
+},
+"➇": {
+"en": "circled sans-serif eight",
+"en_kw": "circled sans-serif eight 8 digit number",
+"ro": "opt încercuit sans-serif",
+"ro_kw": "încercuit sans-serif opt 8 cifră număr"
+},
+"➈": {
+"en": "circled sans-serif nine",
+"en_kw": "circled sans-serif nine 9 digit number",
+"ro": "nouă încercuit sans-serif",
+"ro_kw": "încercuit sans-serif nouă 9 cifră număr"
+},
+"➉": {
+"en": "circled sans-serif ten",
+"en_kw": "circled sans-serif ten 10 digit number",
+"ro": "zece încercuit sans-serif",
+"ro_kw": "încercuit sans-serif zece 10 cifră număr"
+},
+"➊": {
+"en": "black circled sans-serif one",
+"en_kw": "circled sans-serif black filled negative inverted one 1 digit number",
+"ro": "unu încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat unu 1 cifră număr"
+},
+"➋": {
+"en": "black circled sans-serif two",
+"en_kw": "circled sans-serif black filled negative inverted two 2 digit number",
+"ro": "doi încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat doi 2 cifră număr"
+},
+"➌": {
+"en": "black circled sans-serif three",
+"en_kw": "circled sans-serif black filled negative inverted three 3 digit number",
+"ro": "trei încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat trei 3 cifră număr"
+},
+"➍": {
+"en": "black circled sans-serif four",
+"en_kw": "circled sans-serif black filled negative inverted four 4 digit number",
+"ro": "patru încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat patru 4 cifră număr"
+},
+"➎": {
+"en": "black circled sans-serif five",
+"en_kw": "circled sans-serif black filled negative inverted five 5 digit number",
+"ro": "cinci încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat cinci 5 cifră număr"
+},
+"➏": {
+"en": "black circled sans-serif six",
+"en_kw": "circled sans-serif black filled negative inverted six 6 digit number",
+"ro": "șase încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat șase 6 cifră număr"
+},
+"➐": {
+"en": "black circled sans-serif seven",
+"en_kw": "circled sans-serif black filled negative inverted seven 7 digit number",
+"ro": "șapte încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat șapte 7 cifră număr"
+},
+"➑": {
+"en": "black circled sans-serif eight",
+"en_kw": "circled sans-serif black filled negative inverted eight 8 digit number",
+"ro": "opt încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat opt 8 cifră număr"
+},
+"➒": {
+"en": "black circled sans-serif nine",
+"en_kw": "circled sans-serif black filled negative inverted nine 9 digit number",
+"ro": "nouă încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat nouă 9 cifră număr"
+},
+"➓": {
+"en": "black circled sans-serif ten",
+"en_kw": "circled sans-serif black filled negative inverted ten 10 digit number",
+"ro": "zece încercuit negru sans-serif",
+"ro_kw": "încercuit sans-serif negru plin inversat zece 10 cifră număr"
+},
+"➔": {
+"en": "heavy wide-headed arrow right",
+"en_kw": "heavy wide headed rightwards dingbat bold thick arrow",
+"ro": "săgeată groasă cu vârf lat dreapta",
+"ro_kw": "groasă vârf lat dreapta săgeată"
+},
+"➘": {
+"en": "south east heavy arrow",
+"en_kw": "arrow southeast diagonal down right heavy bold",
+"ro": "săgeată îngroșată spre sud-est",
+"ro_kw": "săgeată diagonală jos dreapta îngroșată"
+},
+"➙": {
+"en": "heavy arrow right",
+"en_kw": "heavy rightwards dingbat bold thick arrow",
+"ro": "săgeată groasă dreapta",
+"ro_kw": "groasă dreapta săgeată"
+},
+"➚": {
+"en": "north east heavy arrow",
+"en_kw": "arrow northeast diagonal up right heavy bold trend up",
+"ro": "săgeată îngroșată spre nord-est",
+"ro_kw": "săgeată diagonală sus dreapta îngroșată creștere"
+},
+"➛": {
+"en": "drafting point arrow right",
+"en_kw": "drafting point rightwards dingbat arrow",
+"ro": "săgeată cu punct de desen dreapta",
+"ro_kw": "punct desen dreapta săgeată"
+},
+"➜": {
+"en": "heavy round-tipped arrow right",
+"en_kw": "heavy round tipped rightwards dingbat bold thick arrow",
+"ro": "săgeată groasă cu vârf rotunjit dreapta",
+"ro_kw": "groasă vârf rotunjit dreapta săgeată"
+},
+"➝": {
+"en": "triangle-headed arrow right",
+"en_kw": "triangle headed rightwards dingbat arrow",
+"ro": "săgeată cu vârf triunghiular dreapta",
+"ro_kw": "vârf triunghi dreapta săgeată"
+},
+"➞": {
+"en": "heavy triangle-headed arrow right",
+"en_kw": "heavy triangle headed rightwards dingbat bold arrow",
+"ro": "săgeată groasă cu vârf triunghiular dreapta",
+"ro_kw": "groasă vârf triunghi dreapta săgeată"
+},
+"➟": {
+"en": "dashed triangle-headed arrow right",
+"en_kw": "dashed triangle headed rightwards dingbat arrow",
+"ro": "săgeată punctată cu vârf triunghiular dreapta",
+"ro_kw": "punctată întreruptă vârf triunghi dreapta săgeată"
+},
+"➠": {
+"en": "heavy dashed triangle-headed arrow right",
+"en_kw": "heavy dashed triangle headed rightwards dingbat arrow",
+"ro": "săgeată groasă punctată cu vârf triunghiular dreapta",
+"ro_kw": "groasă punctată întreruptă vârf triunghi dreapta săgeată"
+},
+"➢": {
+"en": "arrowhead right top-lighted",
+"en_kw": "arrowhead right 3d top lighted bullet",
+"ro": "vârf de săgeată dreapta 3D sus",
+"ro_kw": "vârf săgeată dreapta 3D buline"
+},
+"➣": {
+"en": "arrowhead right bottom-lighted",
+"en_kw": "arrowhead right 3d bottom lighted bullet",
+"ro": "vârf de săgeată dreapta 3D jos",
+"ro_kw": "vârf săgeată dreapta 3D buline"
+},
+"➤": {
+"en": "arrowhead right black",
+"en_kw": "arrowhead right black arrow bullet next",
+"ro": "vârf de săgeată dreapta negru",
+"ro_kw": "vârf săgeată dreapta negru buline următor"
+},
+"➥": {
+"en": "heavy curved arrow down then right",
+"en_kw": "heavy black curved downwards rightwards dingbat turn arrow",
+"ro": "săgeată curbată groasă jos apoi dreapta",
+"ro_kw": "curbată groasă jos dreapta viraj săgeată"
+},
+"➦": {
+"en": "heavy curved arrow up then right",
+"en_kw": "heavy black curved upwards rightwards dingbat turn arrow",
+"ro": "săgeată curbată groasă sus apoi dreapta",
+"ro_kw": "curbată groasă sus dreapta viraj săgeată"
+},
+"➧": {
+"en": "squat black arrow right",
+"en_kw": "squat black rightwards dingbat filled arrow",
+"ro": "săgeată neagră turtită dreapta",
+"ro_kw": "neagră turtită plină dreapta săgeată"
+},
+"➨": {
+"en": "heavy concave-pointed arrow right",
+"en_kw": "heavy concave pointed black rightwards dingbat arrow",
+"ro": "săgeată groasă cu vârf concav dreapta",
+"ro_kw": "groasă vârf concav dreapta săgeată"
+},
+"➩": {
+"en": "right-shaded white arrow right",
+"en_kw": "right shaded white rightwards dingbat arrow",
+"ro": "săgeată albă umbrită dreapta (stânga)",
+"ro_kw": "albă umbrită dreapta săgeată"
+},
+"➪": {
+"en": "left-shaded white arrow right",
+"en_kw": "left shaded white rightwards dingbat arrow",
+"ro": "săgeată albă umbrită stânga, spre dreapta",
+"ro_kw": "albă umbrită stânga dreapta săgeată"
+},
+"➫": {
+"en": "back-tilted shadowed white arrow right",
+"en_kw": "back tilted shadowed white rightwards dingbat arrow",
+"ro": "săgeată albă cu umbră înclinată spre spate dreapta",
+"ro_kw": "albă umbră înclinată dreapta săgeată"
+},
+"➬": {
+"en": "front-tilted shadowed white arrow right",
+"en_kw": "front tilted shadowed white rightwards dingbat arrow",
+"ro": "săgeată albă cu umbră înclinată spre față dreapta",
+"ro_kw": "albă umbră înclinată dreapta săgeată"
+},
+"➭": {
+"en": "heavy lower-right shadowed white arrow right",
+"en_kw": "heavy lower right shadowed white rightwards dingbat arrow",
+"ro": "săgeată albă groasă cu umbră jos-dreapta",
+"ro_kw": "albă groasă umbră jos dreapta săgeată"
+},
+"➮": {
+"en": "heavy upper-right shadowed white arrow right",
+"en_kw": "heavy upper right shadowed white rightwards dingbat arrow",
+"ro": "săgeată albă groasă cu umbră sus-dreapta",
+"ro_kw": "albă groasă umbră sus dreapta săgeată"
+},
+"➯": {
+"en": "notched lower-right shadowed white arrow right",
+"en_kw": "notched lower right shadowed white rightwards dingbat arrow",
+"ro": "săgeată albă crestată cu umbră jos-dreapta",
+"ro_kw": "albă crestată umbră jos dreapta săgeată"
+},
+"➱": {
+"en": "notched upper-right shadowed white arrow right",
+"en_kw": "notched upper right shadowed white rightwards dingbat arrow",
+"ro": "săgeată albă crestată cu umbră sus-dreapta",
+"ro_kw": "albă crestată umbră sus dreapta săgeată"
+},
+"➲": {
+"en": "circled heavy white arrow right",
+"en_kw": "circled heavy white rightwards dingbat arrow",
+"ro": "săgeată albă groasă în cerc dreapta",
+"ro_kw": "cerc încercuită albă groasă dreapta săgeată"
+},
+"➳": {
+"en": "white-feathered arrow right",
+"en_kw": "white feathered rightwards dingbat arrow",
+"ro": "săgeată cu pene albe dreapta",
+"ro_kw": "pene albe dreapta săgeată"
+},
+"➴": {
+"en": "south east feathered arrow",
+"en_kw": "arrow southeast diagonal down right feathered fletched",
+"ro": "săgeată cu pene spre sud-est",
+"ro_kw": "săgeată diagonală jos dreapta pene"
+},
+"➵": {
+"en": "black-feathered arrow right",
+"en_kw": "black feathered rightwards dingbat filled arrow",
+"ro": "săgeată cu pene negre dreapta",
+"ro_kw": "pene negre dreapta săgeată"
+},
+"➶": {
+"en": "north east feathered arrow",
+"en_kw": "arrow northeast diagonal up right feathered fletched",
+"ro": "săgeată cu pene spre nord-est",
+"ro_kw": "săgeată diagonală sus dreapta pene"
+},
+"➷": {
+"en": "south east heavy feathered arrow",
+"en_kw": "arrow southeast diagonal down right heavy feathered fletched",
+"ro": "săgeată cu pene îngroșată spre sud-est",
+"ro_kw": "săgeată diagonală jos dreapta pene îngroșată"
+},
+"➸": {
+"en": "heavy black-feathered arrow right",
+"en_kw": "heavy black feathered rightwards dingbat arrow",
+"ro": "săgeată groasă cu pene negre dreapta",
+"ro_kw": "groasă pene negre dreapta săgeată"
+},
+"➹": {
+"en": "north east heavy feathered arrow",
+"en_kw": "arrow northeast diagonal up right heavy feathered fletched",
+"ro": "săgeată cu pene îngroșată spre nord-est",
+"ro_kw": "săgeată diagonală sus dreapta pene îngroșată"
+},
+"➺": {
+"en": "teardrop-barbed arrow right",
+"en_kw": "teardrop barbed rightwards dingbat arrow",
+"ro": "săgeată cu țepi în picătură dreapta",
+"ro_kw": "țepi picătură dreapta săgeată"
+},
+"➻": {
+"en": "heavy teardrop-shanked arrow right",
+"en_kw": "heavy teardrop shanked rightwards dingbat arrow",
+"ro": "săgeată groasă cu tijă în picătură dreapta",
+"ro_kw": "groasă picătură dreapta săgeată"
+},
+"➼": {
+"en": "wedge-tailed arrow right",
+"en_kw": "wedge tailed rightwards dingbat arrow",
+"ro": "săgeată cu coadă în pană dreapta",
+"ro_kw": "coadă pană dreapta săgeată"
+},
+"➽": {
+"en": "heavy wedge-tailed arrow right",
+"en_kw": "heavy wedge tailed rightwards dingbat arrow",
+"ro": "săgeată groasă cu coadă în pană dreapta",
+"ro_kw": "groasă coadă pană dreapta săgeată"
+},
+"➾": {
+"en": "open-outlined arrow right",
+"en_kw": "open outlined rightwards dingbat arrow",
+"ro": "săgeată cu contur deschis dreapta",
+"ro_kw": "contur deschis dreapta săgeată"
+},
+"⟨": {
+"en": "math left angle bracket",
+"en_kw": "langle bra angle bracket left inner product",
+"ro": "paranteză unghiulară matematică stânga",
+"ro_kw": "paranteză unghiulară stânga langle produs scalar"
+},
+"⟩": {
+"en": "math right angle bracket",
+"en_kw": "rangle ket angle bracket right inner product",
+"ro": "paranteză unghiulară matematică dreapta",
+"ro_kw": "paranteză unghiulară dreapta rangle produs scalar"
+},
+"⟪": {
+"en": "math left double angle bracket",
+"en_kw": "double angle bracket left llangle",
+"ro": "paranteză unghiulară dublă stânga",
+"ro_kw": "paranteză unghiulară dublă stânga"
+},
+"⟫": {
+"en": "math right double angle bracket",
+"en_kw": "double angle bracket right rrangle",
+"ro": "paranteză unghiulară dublă dreapta",
+"ro_kw": "paranteză unghiulară dublă dreapta"
+},
+"⟰": {
+"en": "quadruple arrow up",
+"en_kw": "upwards quadruple four arrow",
+"ro": "săgeată cvadruplă sus",
+"ro_kw": "cvadruplă patru sus săgeată"
+},
+"⟱": {
+"en": "quadruple arrow down",
+"en_kw": "downwards quadruple four arrow",
+"ro": "săgeată cvadruplă jos",
+"ro_kw": "cvadruplă patru jos săgeată"
+},
+"⟲": {
+"en": "anticlockwise gapped circle arrow",
+"en_kw": "anticlockwise counterclockwise rotate reload undo circle arrow gapped",
+"ro": "săgeată cerc întrerupt antiorar",
+"ro_kw": "antiorar rotire reîncărcare cerc săgeată"
+},
+"⟳": {
+"en": "clockwise gapped circle arrow",
+"en_kw": "clockwise rotate reload refresh redo circle arrow gapped",
+"ro": "săgeată cerc întrerupt orar",
+"ro_kw": "orar rotire reîncărcare reîmprospătare cerc săgeată"
+},
+"⟵": {
+"en": "long arrow left",
+"en_kw": "longleftarrow long leftwards arrow",
+"ro": "săgeată lungă stânga",
+"ro_kw": "lungă stânga săgeată"
+},
+"⟶": {
+"en": "long arrow right",
+"en_kw": "longrightarrow long rightwards to maps arrow",
+"ro": "săgeată lungă dreapta",
+"ro_kw": "lungă dreapta spre săgeată"
+},
+"⟷": {
+"en": "long arrow left right",
+"en_kw": "longleftrightarrow long bidirectional arrow",
+"ro": "săgeată lungă bidirecțională",
+"ro_kw": "lungă bidirecțională săgeată"
+},
+"⟸": {
+"en": "long double arrow left",
+"en_kw": "Longleftarrow long double implied by arrow",
+"ro": "săgeată dublă lungă stânga",
+"ro_kw": "lungă dublă stânga săgeată"
+},
+"⟹": {
+"en": "long double arrow right",
+"en_kw": "Longrightarrow implies long double implication then arrow",
+"ro": "săgeată dublă lungă dreapta",
+"ro_kw": "implică lungă dublă dreapta implicație săgeată"
+},
+"⟺": {
+"en": "long double arrow left right",
+"en_kw": "Longleftrightarrow iff if and only if long equivalent arrow",
+"ro": "săgeată dublă lungă bidirecțională",
+"ro_kw": "dacă și numai dacă echivalent lungă dublă săgeată"
+},
+"⟻": {
+"en": "long arrow left from bar",
+"en_kw": "longmapsfrom long leftwards bar arrow",
+"ro": "săgeată lungă stânga dinspre bară",
+"ro_kw": "lungă bară stânga săgeată"
+},
+"⟼": {
+"en": "long arrow right from bar",
+"en_kw": "longmapsto maps to long function mapping arrow",
+"ro": "săgeată lungă dreapta dinspre bară",
+"ro_kw": "se mapează lungă funcție aplicație bară săgeată"
+},
+"⟽": {
+"en": "long double arrow left from bar",
+"en_kw": "Longmapsfrom long double bar arrow",
+"ro": "săgeată dublă lungă stânga dinspre bară",
+"ro_kw": "lungă dublă bară stânga săgeată"
+},
+"⟾": {
+"en": "long double arrow right from bar",
+"en_kw": "Longmapsto long double bar maps arrow",
+"ro": "săgeată dublă lungă dreapta dinspre bară",
+"ro_kw": "lungă dublă bară dreapta săgeată"
+},
+"⟿": {
+"en": "long squiggle arrow right",
+"en_kw": "long squiggle rightwards zigzag arrow",
+"ro": "săgeată lungă zigzagată dreapta",
+"ro_kw": "lungă zigzag dreapta săgeată"
+},
+"⦿": {
+"en": "circled bullet",
+"en_kw": "circled bullet dot radio selected",
+"ro": "buline încercuită",
+"ro_kw": "buline încercuită punct radio selectat"
+},
+"⬀": {
+"en": "north east white arrow",
+"en_kw": "arrow northeast diagonal up right white hollow outline",
+"ro": "săgeată albă spre nord-est",
+"ro_kw": "săgeată diagonală sus dreapta alb gol contur"
+},
+"⬁": {
+"en": "north west white arrow",
+"en_kw": "arrow northwest diagonal up left white hollow outline",
+"ro": "săgeată albă spre nord-vest",
+"ro_kw": "săgeată diagonală sus stânga alb gol contur"
+},
+"⬂": {
+"en": "south east white arrow",
+"en_kw": "arrow southeast diagonal down right white hollow outline",
+"ro": "săgeată albă spre sud-est",
+"ro_kw": "săgeată diagonală jos dreapta alb gol contur"
+},
+"⬃": {
+"en": "south west white arrow",
+"en_kw": "arrow southwest diagonal down left white hollow outline",
+"ro": "săgeată albă spre sud-vest",
+"ro_kw": "săgeată diagonală jos stânga alb gol contur"
+},
+"⬄": {
+"en": "hollow arrow left right",
+"en_kw": "left right white hollow empty arrow",
+"ro": "săgeată goală bidirecțională",
+"ro_kw": "goală albă bidirecțională săgeată"
+},
+"⬈": {
+"en": "north east black arrow",
+"en_kw": "arrow northeast diagonal up right black filled solid",
+"ro": "săgeată neagră spre nord-est",
+"ro_kw": "săgeată diagonală sus dreapta negru plin"
+},
+"⬉": {
+"en": "north west black arrow",
+"en_kw": "arrow northwest diagonal up left black filled solid",
+"ro": "săgeată neagră spre nord-vest",
+"ro_kw": "săgeată diagonală sus stânga negru plin"
+},
+"⬊": {
+"en": "south east black arrow",
+"en_kw": "arrow southeast diagonal down right black filled solid",
+"ro": "săgeată neagră spre sud-est",
+"ro_kw": "săgeată diagonală jos dreapta negru plin"
+},
+"⬋": {
+"en": "south west black arrow",
+"en_kw": "arrow southwest diagonal down left black filled solid",
+"ro": "săgeată neagră spre sud-vest",
+"ro_kw": "săgeată diagonală jos stânga negru plin"
+},
+"⬌": {
+"en": "filled arrow left right",
+"en_kw": "left right black filled bold arrow",
+"ro": "săgeată plină bidirecțională",
+"ro_kw": "plină neagră bidirecțională săgeată"
+},
+"⬍": {
+"en": "filled arrow up down",
+"en_kw": "up down black filled bold arrow",
+"ro": "săgeată plină sus-jos",
+"ro_kw": "plină neagră sus jos săgeată"
+},
+"⸘": {
+"en": "inverted interrobang",
+"en_kw": "interrobang inverted question exclamation",
+"ro": "interrobang întors",
+"ro_kw": "interrobang întors întrebare exclamare"
+},
+"〄": {
+"en": "japanese industrial standard symbol",
+"en_kw": "jis japanese industrial standard",
+"ro": "simbol standard industrial japonez",
+"ro_kw": "jis standard industrial japonez"
+},
+"〈": {
+"en": "open angle bracket",
+"en_kw": "angle bracket left langle chevron",
+"ro": "paranteză ascuțită deschisă",
+"ro_kw": "paranteză ascuțită stânga deschisă"
+},
+"〉": {
+"en": "close angle bracket",
+"en_kw": "angle bracket right rangle chevron",
+"ro": "paranteză ascuțită închisă",
+"ro_kw": "paranteză ascuțită dreapta închisă"
+},
+"【": {
+"en": "left black lenticular bracket",
+"en_kw": "black lenticular bracket left cjk",
+"ro": "paranteză lenticulară neagră stânga",
+"ro_kw": "paranteză lenticulară neagră stânga cjk"
+},
+"】": {
+"en": "right black lenticular bracket",
+"en_kw": "black lenticular bracket right cjk",
+"ro": "paranteză lenticulară neagră dreapta",
+"ro_kw": "paranteză lenticulară neagră dreapta cjk"
+},
+"〒": {
+"en": "postal mark",
+"en_kw": "postal mark japan post office zip",
+"ro": "semn poștal",
+"ro_kw": "semn poștal japonia poștă cod poștal"
+},
+"〔": {
+"en": "left tortoise shell bracket",
+"en_kw": "tortoise shell bracket left cjk",
+"ro": "paranteză carapace stânga",
+"ro_kw": "paranteză carapace broască țestoasă stânga"
+},
+"〕": {
+"en": "right tortoise shell bracket",
+"en_kw": "tortoise shell bracket right cjk",
+"ro": "paranteză carapace dreapta",
+"ro_kw": "paranteză carapace broască țestoasă dreapta"
+},
+"〖": {
+"en": "left white lenticular bracket",
+"en_kw": "white hollow lenticular bracket left cjk",
+"ro": "paranteză lenticulară goală stânga",
+"ro_kw": "paranteză lenticulară goală stânga cjk"
+},
+"〗": {
+"en": "right white lenticular bracket",
+"en_kw": "white hollow lenticular bracket right cjk",
+"ro": "paranteză lenticulară goală dreapta",
+"ro_kw": "paranteză lenticulară goală dreapta cjk"
+},
+"〠": {
+"en": "postal mark face",
+"en_kw": "postal mark face japan smiley",
+"ro": "față semn poștal",
+"ro_kw": "față semn poștal japonia"
+},
+"〶": {
+"en": "circled postal mark",
+"en_kw": "circled postal mark japan post",
+"ro": "semn poștal încercuit",
+"ro_kw": "semn poștal încercuit japonia poștă"
+},
+"・": {
+"en": "katakana middle dot",
+"en_kw": "katakana middle dot japanese interpunct",
+"ro": "punct median katakana",
+"ro_kw": "punct median katakana japoneză"
+},
+"㉿": {
+"en": "korean standard symbol",
+"en_kw": "korean standard symbol ks",
+"ro": "simbol standard coreean",
+"ro_kw": "standard coreean ks"
+},
+"﷼": {
+"en": "rial sign",
+"en_kw": "rial riyal sar irr omr yemen iran saudi currency",
+"ro": "semnul rial",
+"ro_kw": "rial riyal iran arabia saudită monedă valută"
+},
+"﹅": {
+"en": "sesame dot",
+"en_kw": "sesame dot emphasis japanese bullet",
+"ro": "punct sesame",
+"ro_kw": "punct sesame accent japonez"
+},
+"﹆": {
+"en": "white sesame dot",
+"en_kw": "sesame dot white hollow emphasis japanese",
+"ro": "punct sesame alb",
+"ro_kw": "punct sesame alb gol accent"
+}
+}

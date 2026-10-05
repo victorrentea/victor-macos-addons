@@ -23,6 +23,19 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertTrue(catalog.search("zzzqqq").isEmpty)
     }
 
+    /// "eur" found 💶 and the castles but never €, which the Mac's own picker
+    /// does (Victor, 2026-10-05): symbols that are not emoji are searchable too.
+    func testSymbolsThatAreNotEmojiAreFound() {
+        let eur = catalog.search("eur").map(\.emoji)
+        XCTAssertTrue(eur.contains("€"), "euro sign")
+        XCTAssertTrue(eur.contains("₠"), "euro-currency sign")
+        XCTAssertTrue(eur.contains("💶"), "the emoji are still there")
+        XCTAssertTrue(catalog.search("command").prefix(5).contains { $0.emoji == "⌘" })
+        XCTAssertTrue(catalog.search("lira").contains { $0.emoji == "£" })
+        XCTAssertTrue(catalog.search("aparține").contains { $0.emoji == "∈" }, "Romanian too")
+        XCTAssertEqual(catalog.entries.filter { $0.emoji == "½" }.count, 1, "the hand-made ½ is not doubled")
+    }
+
     func testTyposAndSwappedLettersStillFind() {
         XCTAssertEqual(catalog.search("pizaa").first?.emoji, "🍕", "one wrong letter")
         XCTAssertEqual(catalog.search("paech").first?.emoji, "🍑", "two letters swapped")

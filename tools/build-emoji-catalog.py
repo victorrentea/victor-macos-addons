@@ -16,10 +16,20 @@ AppleName is the filter on purpose: emoji-test.txt is always a release ahead of
 the system font, and a cell that draws as a tofu box is worse than a missing one.
 Skin-tone variants are left out — the grid shows the base, as Apple's does.
 
+Then the symbols that are **not** emoji — €, ₠, ℃, ⌘, ★, ∈, ① — the ones the
+Mac's own picker finds for "eur" and ours did not (Victor, 2026-10-05). The set is
+Apple's Character Viewer default categories (CharacterPalette.app, read from this
+Mac) minus the blocks nobody types (APL, bracket pieces, control pictures, math
+alphanumerics, mahjong/cards, Byzantine music) and minus ASCII. Each is labelled
+by its Unicode name + CLDR en/ro, plus tools/symbol-labels.json: a friendly en/ro
+name and search words written by research agents for the ~70% CLDR leaves bare.
+A symbol missing from that file still ships, under its Unicode name.
+
 Run it after a macOS upgrade that adds emoji:  python3 tools/build-emoji-catalog.py
 """
 import json
 import pathlib
+import unicodedata
 import plistlib
 import subprocess
 import urllib.request
@@ -33,6 +43,28 @@ EMOJILIB = "https://raw.githubusercontent.com/muan/emojilib/main/dist/emoji-en-U
 EMOJIBASE = "https://cdn.jsdelivr.net/npm/emojibase-data@latest/en/{}.json"
 EMOJIDB = ROOT / "tools/emojidb-keywords.json"
 SKIN_TONES = {chr(c) for c in range(0x1F3FB, 0x1F400)}
+PALETTE = pathlib.Path("/System/Library/Input Methods/CharacterPalette.app/Contents/Resources")
+SYMBOL_LABELS = ROOT / "tools/symbol-labels.json"
+# Character Viewer's default Symbols categories, and per category the code point
+# ranges left out (DROP) or the only ones kept (KEEP).
+SYMBOL_CATEGORIES = [
+    "CurrencySymbols", "LetterlikeSymbols", "Punctuation", "Parentheses", "SignStandardSymbols",
+    "Bullets", "TechnicalSymbols", "MathematicalSymbols", "Arrows", "Pictographs", "Digits",
+    "MusicalSymbols", "GeometricalShapes", "EnclosedCharacters",
+]
+DROP = {
+    "Parentheses": [(0x239B, 0x23B3)],                                   # bracket pieces
+    "Bullets": [(0x1F7A1, 0x1F7D4)],                                     # geometric shapes extended
+    # APL, bracket and integral pieces, dentistry, electrical, control pictures, OCR, box drawing
+    "TechnicalSymbols": [(0x2320, 0x2321), (0x2336, 0x237A), (0x2395, 0x2395), (0x239B, 0x23B3), (0x23B7, 0x23BD),
+                         (0x23C0, 0x23CC), (0x23DA, 0x23E7), (0x2400, 0x2426), (0x2440, 0x244A),
+                         (0x2500, 0x257F)],
+    "MathematicalSymbols": [(0x2A00, 0x2AFF), (0x27C0, 0x27EF), (0x2980, 0x29FF), (0x1D400, 0x1D7FF), (0x2320, 0x23FF)],
+    "Arrows": [(0x2900, 0x297F), (0x1F800, 0x1F8FF)],
+    "Pictographs": [(0x1F000, 0x1F0FF)],                                 # mahjong, dominoes, cards
+    "MusicalSymbols": [(0x1D000, 0x1D2FF)],                              # Byzantine / Western musical
+}
+KEEP = {"GeometricalShapes": [(0x25A0, 0x25FF)], "EnclosedCharacters": [(0x2460, 0x24FF), (0x2776, 0x2793)]}
 
 
 def key(e: str) -> str:
@@ -94,6 +126,41 @@ def extras() -> dict:
     return out
 
 
+def symbols(have: set, notes: dict) -> list:
+    """(symbol, en name, ro name, en keywords, ro keywords) for every useful non-emoji symbol."""
+    labels = json.loads(SYMBOL_LABELS.read_text()) if SYMBOL_LABELS.exists() else {}
+
+    def chars(category: str) -> list:
+        data = plistlib.loads((PALETTE / f"Category-{category}.plist").read_bytes())["CVCategoryData"]
+        lists = [data["Data"]] if "Data" in data else [section["Data"] for section in data["DataArray"]]
+        return [chr(int(t, 16)) if t.startswith("0x") and len(t) > 2 else t
+                for text in lists for t in text.split(",") if t]
+
+    def within(ch: str, ranges: list) -> bool:
+        return any(a <= ord(ch[0]) <= b for a, b in ranges)
+
+    out, seen = [], set(have)
+    for category in SYMBOL_CATEGORIES:
+        for ch in chars(category):
+            ch = key(ch).replace("\ufe0e", "")
+            if len(ch) != 1 or ord(ch) < 0x80 or ch == "\u00ad" or ch in seen:
+                continue
+            if within(ch, DROP.get(category, [])) or (category in KEEP and not within(ch, KEEP[category])):
+                continue
+            seen.add(ch)
+            uname = unicodedata.name(ch, "").lower()
+            label = labels.get(ch, {})
+            cldr_en, cldr_ro = notes["en"].get(ch, {}), notes["ro"].get(ch, {})
+            out.append((
+                ch,
+                label.get("en") or " ".join(cldr_en.get("tts", [])) or uname,
+                label.get("ro") or " ".join(cldr_ro.get("tts", [])),
+                " ".join(cldr_en.get("default", []) + [label.get("en_kw", ""), uname]),
+                " ".join(cldr_ro.get("default", []) + [label.get("ro_kw", "")]),
+            ))
+    return out
+
+
 def main() -> None:
     names = {lang: apple_names(lang) for lang in ("en", "ro")}
     notes = {lang: cldr(lang) for lang in ("en", "ro")}
@@ -144,8 +211,12 @@ def main() -> None:
             extra(k, names["en"][k] + " " + kw("en")),
         ])
 
+    symbol_group = groups.index("Symbols")
+    found = symbols(seen, notes)
+    rows += [[ch, symbol_group, en, ro, kw_en, kw_ro, ""] for ch, en, ro, kw_en, kw_ro in found]
+
     OUT.write_text(json.dumps({"groups": groups, "emoji": rows}, ensure_ascii=False, separators=(",", ":")) + "\n")
-    print(f"{len(rows)} emoji in {len(groups)} groups -> {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB)")
+    print(f"{len(rows) - len(found)} emoji + {len(found)} symbols in {len(groups)} groups -> {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":

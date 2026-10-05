@@ -5,7 +5,9 @@ import Foundation
 ///
 /// Built offline by `tools/build-emoji-catalog.py` into `emoji-catalog.json`:
 /// Unicode's order and groups, Apple's own names (CoreEmoji's AppleName, which
-/// is also the filter for "this font can draw it"), CLDR keywords. Reading
+/// is also the filter for "this font can draw it"), CLDR keywords — then ~1000
+/// symbols that are not emoji (€ ₠ ℃ ⌘ ★ ∈ ①), from Character Viewer's own
+/// categories, since "eur" found 💶 but never € (Victor, 2026-10-05). Reading
 /// CoreEmoji live at runtime was the alternative — it is private framework
 /// data with no keyword-to-emoji map we can decode — so the join happens once,
 /// at build time, and the app only ever reads a file it shipped with.
@@ -24,6 +26,10 @@ struct EmojiEntry: Equatable {
     /// diacritics), so an explanation can say "jumătate 🇷🇴" rather than
     /// "jumatate". A word both languages share ("text", "30") is not here.
     fileprivate var romanian: [String: String] = [:]
+    /// A catalog symbol that is not emoji (€, ★, ∈): listed after every emoji
+    /// that matches as well, the way the Mac's picker shows emoji, then symbols.
+    /// The hand-made ones (½, °, the plain arrows) are not: Victor asked for those.
+    fileprivate var demoted = false
 
     static func == (a: EmojiEntry, b: EmojiEntry) -> Bool { a.emoji == b.emoji }
 }
@@ -40,7 +46,12 @@ final class EmojiCatalog {
             overlayError("EmojiPicker: emoji-catalog.json missing or unreadable — the picker opens empty")
             return EmojiCatalog(groups: [], entries: [])
         }
-        return EmojiCatalog(groups: catalog.groups, entries: catalog.entries + plainArrows + textSymbols)
+        // The hand-made ones win over the catalog's own row for the same
+        // character (½, °, ←): their Romanian wording was chosen, not generated.
+        let handMade = plainArrows + textSymbols
+        let handKeys = Set(handMade.map { EmojiPickerPolicy.normalized($0.emoji) })
+        let generated = catalog.entries.filter { !handKeys.contains(EmojiPickerPolicy.normalized($0.emoji)) }
+        return EmojiCatalog(groups: catalog.groups, entries: generated + handMade)
     }()
 
     /// The arrows **without** the blue keycap (Victor, 2026-10-04: *"săgețile
@@ -139,7 +150,8 @@ final class EmojiCatalog {
                 keywordWords: Self.words(keywords + " " + keywordsRo),
                 extraWords: Self.words(row.count > 6 ? row[6] as? String ?? "" : ""),
                 foldedName: Self.fold(name),
-                romanian: Self.romanian(nameRo + " " + keywordsRo, english: name + " " + keywords)
+                romanian: Self.romanian(nameRo + " " + keywordsRo, english: name + " " + keywords),
+                demoted: EmojiPickerPolicy.isTextSymbol(emoji)
             ))
         }
         self.init(groups: groups, entries: entries)
@@ -169,7 +181,8 @@ final class EmojiCatalog {
     /// How sure a match is decides how it is drawn and where it lands (Victor,
     /// 2026-10-04: *"opace complet când conțin exact cuvântul … sinonime 80% …
     /// typos 50%, progresiv, minim 20%"*): see `EmojiFuzzy.opacity`. The
-    /// surest come first, so the faintest end up on the board's rim.
+    /// surest come first, so the faintest end up on the board's rim. Within
+    /// each sureness, emoji before the catalog's text symbols (`demoted`).
     func search(_ query: String, limit: Int = 200) -> [EmojiEntry] {
         matches(query, limit: limit).map(\.entry)
     }
@@ -187,7 +200,7 @@ final class EmojiCatalog {
             costs[t][word] = value
             return value
         }
-        var scored: [(opacity: Double, score: Int, length: Int, index: Int)] = []
+        var scored: [(opacity: Double, score: Int, symbol: Int, length: Int, index: Int)] = []
         for (index, entry) in entries.enumerated() {
             var score = 0
             var matched = true
@@ -209,9 +222,13 @@ final class EmojiCatalog {
                                    keyword: entry.keywordWords.map { cost(t, $0) },
                                    synonym: entry.extraWords.map { cost(t, $0) })
             }.min() ?? 1
-            scored.append((opacity, score, entry.nameWords.count, index))
+            scored.append((opacity, score, entry.demoted ? 1 : 0, entry.nameWords.count, index))
         }
-        scored.sort { (-$0.opacity, $0.score, $0.length, $0.index) < (-$1.opacity, $1.score, $1.length, $1.index) }
+        // Emoji before the catalog's symbols of the same sureness: "arrow" is ⬅️ ➡️
+        // before ↛ ↚, whose names *start* with the word and would otherwise win.
+        scored.sort {
+            (-$0.opacity, $0.symbol, $0.score, $0.length, $0.index) < (-$1.opacity, $1.symbol, $1.score, $1.length, $1.index)
+        }
         return scored.prefix(limit).map { (entries[$0.index], $0.opacity) }
     }
 
