@@ -57,38 +57,54 @@ enum WindowScreenMove {
     // MARK: - F3 fill / restore
 
     private static let lock = NSLock()
-    /// The frame each window had just before F3 filled it. Matched with `CFEqual`,
-    /// which is how AX elements compare; a handful at most, so a list is enough.
-    private static var beforeFill: [(window: AXUIElement, frame: CGRect)] = []
+    /// The frame each window had just before F3 filled it, keyed by pid + the
+    /// window server's id. Not by the AX element: PowerPoint handed back an
+    /// element that no longer `CFEqual`ed the one remembered, so the second F3
+    /// found no memory and just filled again (2026-10-05, *"F3 nu mi-a resetat
+    /// fereastra"*).
+    private static var beforeFill: [(key: String, frame: CGRect)] = []
 
-    /// First F3 remembers the frame and fills the screen's visible area (menu
-    /// bar and Dock left alone — not macOS full screen); the next F3 on the same
-    /// window puts the remembered frame back. If the window already sits exactly
-    /// where it was remembered (put back by hand), the memory is stale and F3
-    /// fills again.
+    /// Behaves like a double-click on the title bar: a window that fills its
+    /// screen's visible area (menu bar and Dock left alone — not macOS full
+    /// screen) goes back to the frame it had before; any other window is
+    /// remembered and filled. The state is read off the window itself, so a
+    /// window moved by hand after F3 simply fills again.
     ///
     /// The fill is our own AX resize, **not** macOS's Window ▸ Fill (fn⌃F), which
     /// is what F3 used to type: VS Code and other Electron apps never answer that
     /// shortcut (2026-10-05, *"F3 nu mi-a mers"* on a VS Code window).
     static func toggleFill() {
-        guard let window = focusedWindow(), let frame = AXWindows.frame(of: window) else { return }
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let window = focusedWindow(pid), let frame = AXWindows.frame(of: window) else { return }
+        let screens = visibleScreens()
+        guard let src = WindowScreenMovePolicy.screenIndex(containing: frame, in: screens) else { return }
+        let screen = screens[src]
+        let key = windowKey(window, pid: pid)
+
         lock.lock()
-        let i = beforeFill.firstIndex { CFEqual($0.window, window) }
-        let saved = i.map { beforeFill.remove(at: $0).frame }
-        let restore = saved != nil && saved != frame
-        if !restore {
-            beforeFill.append((window, frame))
+        let saved = beforeFill.firstIndex { $0.key == key }.map { beforeFill.remove(at: $0).frame }
+        let filled = WindowScreenMovePolicy.fills(frame, screen)
+        if !filled {
+            beforeFill.append((key, frame))
             if beforeFill.count > 20 { beforeFill.removeFirst() }
         }
         lock.unlock()
 
-        if restore, let saved {
-            AXWindows.setFrame(window, saved)
-            return
+        if filled {
+            // Nothing remembered (filled by hand, or before this app started):
+            // a double-click would still shrink it, so shrink it.
+            AXWindows.setFrame(window, saved ?? WindowScreenMovePolicy.centred(in: screen))
+        } else {
+            AXWindows.setFrame(window, screen)
         }
-        let screens = visibleScreens()
-        guard let src = WindowScreenMovePolicy.screenIndex(containing: frame, in: screens) else { return }
-        AXWindows.setFrame(window, screens[src])
+    }
+
+    /// pid + `CGWindowID`; falls back to the element's hash when the private
+    /// call refuses (it never has, but a stale key only costs one extra fill).
+    private static func windowKey(_ window: AXUIElement, pid: pid_t) -> String {
+        var id: CGWindowID = 0
+        if _AXUIElementGetWindow(window, &id) == .success, id != 0 { return "\(pid):\(id)" }
+        return "\(pid):ax\(CFHash(window))"
     }
 
     // MARK: - Plumbing
@@ -98,6 +114,10 @@ enum WindowScreenMove {
     /// We are on a background queue here, not on the tap.
     private static func focusedWindow() -> AXUIElement? {
         guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        return focusedWindow(pid)
+    }
+
+    private static func focusedWindow(_ pid: pid_t) -> AXUIElement? {
         var raw: CFTypeRef?
         guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid),
                                             kAXFocusedWindowAttribute as CFString, &raw) == .success,
@@ -186,8 +206,29 @@ enum WindowScreenMovePolicy {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
+    /// Does the window fill the screen's visible area? Within 40 pt on every
+    /// edge: Terminal and friends resize in whole character cells, so a filled
+    /// window can stop a line short of the Dock.
+    static func fills(_ w: CGRect, _ s: CGRect) -> Bool {
+        let t: CGFloat = 40
+        return abs(w.minX - s.minX) <= t && abs(w.minY - s.minY) <= t
+            && abs(w.maxX - s.maxX) <= t && abs(w.maxY - s.maxY) <= t
+    }
+
+    /// Two thirds of the screen, centred: where an un-fill goes when nothing
+    /// was remembered.
+    static func centred(in s: CGRect) -> CGRect {
+        let w = (s.width * 2 / 3).rounded(), h = (s.height * 2 / 3).rounded()
+        return CGRect(x: (s.midX - w / 2).rounded(), y: (s.midY - h / 2).rounded(), width: w, height: h)
+    }
+
     private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
 }
+
+/// The window server's id behind an AX window element. Private, but stable since
+/// 10.x and what every window manager (Rectangle, yabai, AeroSpace) keys on.
+@_silgen_name("_AXUIElementGetWindow")
+private func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 private extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }

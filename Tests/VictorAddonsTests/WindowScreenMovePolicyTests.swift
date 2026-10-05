@@ -68,4 +68,19 @@ final class WindowScreenMovePolicyTests: XCTestCase {
         XCTAssertEqual(WindowScreenMove.Key(keyCode: 121), .screen(.down))
         XCTAssertNil(WindowScreenMove.Key(keyCode: 0))
     }
+
+    /// F3 reads "is it filled?" off the window, like a title-bar double-click.
+    func testFilledWithinACharacterCell() {
+        XCTAssertTrue(WindowScreenMovePolicy.fills(retina, retina))
+        XCTAssertTrue(WindowScreenMovePolicy.fills(CGRect(x: 0, y: 25, width: 1505, height: 940), retina))
+        XCTAssertFalse(WindowScreenMovePolicy.fills(CGRect(x: 0, y: 25, width: 756, height: 957), retina))
+        XCTAssertFalse(WindowScreenMovePolicy.fills(asus, retina))
+    }
+
+    func testUnfillWithoutMemoryShrinksToTheCentre() {
+        let c = WindowScreenMovePolicy.centred(in: retina)
+        XCTAssertTrue(retina.contains(c))
+        XCTAssertFalse(WindowScreenMovePolicy.fills(c, retina))
+        XCTAssertEqual(c.midX, retina.midX, accuracy: 1)
+    }
 }
