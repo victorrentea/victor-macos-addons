@@ -825,12 +825,15 @@ private let VK_I: CGKeyCode = 0x22
             return nil
         }
 
-        // ⌃⌥ + arrow → the focused window jumps to the screen in that direction
-        // (suppress). Not bare ⌥: ⌥←/⌥→ is word-jump everywhere. See `WindowScreenMove`.
-        if hasCtrl && hasOpt && !hasCmd && !hasShift,
-           let direction: WindowScreenMove.Direction = [123: .left, 124: .right, 126: .up, 125: .down][keyCode] {
+        // ⌃⌥⌘ + arrow → the focused window takes that half of its screen;
+        // fn⌃⌥⌘ + arrow → it jumps to the screen in that direction (suppress).
+        // fn turns the arrows into Home/End/PgUp/PgDn on the way in, which is the
+        // only way the two can be told apart: a bare arrow already carries the fn
+        // flag. Bare ⌃⌥ + arrow is left alone — it is Magnet's (halves), and
+        // ⌥←/⌥→ is word-jump. See `WindowScreenMove`.
+        if hasCtrl && hasOpt && hasCmd && !hasShift, let key = WindowScreenMove.Key(keyCode: Int(keyCode)) {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.global().async { WindowScreenMove.move(direction) }
+                DispatchQueue.global().async { WindowScreenMove.run(key) }
             }
             return nil
         }

@@ -1,17 +1,18 @@
 import AppKit
 import ApplicationServices
 
-/// ⌃⌥ + arrow → the focused window jumps to the screen in that direction, and
-/// F3 → Window ▸ Fill that a second F3 takes back.
+/// ⌃⌥⌘ + arrow → the focused window takes that half of its own screen;
+/// fn⌃⌥⌘ + arrow → it jumps to the screen in that direction; F3 → Window ▸ Fill
+/// that a second F3 takes back.
 ///
-/// Both work on the focused window of the frontmost app, over Accessibility —
+/// All three work on the focused window of the frontmost app, over Accessibility —
 /// the same grant `TerminalTiler` already relies on. Every rectangle here is in
 /// the global **top-left** point space AX speaks, so `NSScreen.visibleFrame` is
 /// flipped once on the way in and nothing else converts.
 ///
-/// **Why ⌃⌥ and not bare ⌥**: ⌥← / ⌥→ is word-jump in every text field and
-/// terminal on the Mac; a global ⌥-arrow would have taken that away all day.
-/// ⌃⌥ is the emoji layer's modifier, but the layer has nothing on the arrows.
+/// **Bare ⌃⌥ + arrow is Magnet's** (left/right/top/bottom half, running since
+/// login) and must fall through: this took it for a few hours on 2026-10-05 and
+/// Magnet went deaf. ⌘ on top is free in Magnet's active layout.
 ///
 /// The 🪞 Virtual Desktop's screen is skipped (`NSScreen.physical`): nobody sees
 /// it, so a window thrown there by an arrow would simply vanish.
@@ -19,14 +20,38 @@ enum WindowScreenMove {
 
     enum Direction { case left, right, up, down }
 
-    // MARK: - ⌃⌥ + arrow
+    /// What a ⌃⌥⌘ keystroke asks for. With fn held the arrows arrive as
+    /// Home / End / PgUp / PgDn — that keycode is what says "another screen".
+    enum Key: Equatable {
+        case half(Direction)
+        case screen(Direction)
 
-    static func move(_ direction: Direction) {
+        init?(keyCode: Int) {
+            switch keyCode {
+            case 123: self = .half(.left)
+            case 124: self = .half(.right)
+            case 126: self = .half(.up)
+            case 125: self = .half(.down)
+            case 115: self = .screen(.left)    // fn← = Home
+            case 119: self = .screen(.right)   // fn→ = End
+            case 116: self = .screen(.up)      // fn↑ = Page Up
+            case 121: self = .screen(.down)    // fn↓ = Page Down
+            default: return nil
+            }
+        }
+    }
+
+    static func run(_ key: Key) {
         guard let window = focusedWindow(), let frame = AXWindows.frame(of: window) else { return }
         let screens = visibleScreens()
-        guard let src = WindowScreenMovePolicy.screenIndex(containing: frame, in: screens),
-              let dst = WindowScreenMovePolicy.neighbour(of: src, direction, in: screens) else { return }
-        AXWindows.setFrame(window, WindowScreenMovePolicy.relocate(frame, from: screens[src], to: screens[dst]))
+        guard let src = WindowScreenMovePolicy.screenIndex(containing: frame, in: screens) else { return }
+        switch key {
+        case .half(let direction):
+            AXWindows.setFrame(window, WindowScreenMovePolicy.half(of: screens[src], direction))
+        case .screen(let direction):
+            guard let dst = WindowScreenMovePolicy.neighbour(of: src, direction, in: screens) else { return }
+            AXWindows.setFrame(window, WindowScreenMovePolicy.relocate(frame, from: screens[src], to: screens[dst]))
+        }
     }
 
     // MARK: - F3 fill / restore
@@ -127,6 +152,17 @@ enum WindowScreenMovePolicy {
             let oa = overlap(screens[a]) > 0, ob = overlap(screens[b]) > 0
             if oa != ob { return oa }
             return distance(screens[a].center, s.center) < distance(screens[b].center, s.center)
+        }
+    }
+
+    /// That half of the screen: ← the left one, ↑ the top one, and so on.
+    static func half(of s: CGRect, _ direction: WindowScreenMove.Direction) -> CGRect {
+        let w = (s.width / 2).rounded(), h = (s.height / 2).rounded()
+        switch direction {
+        case .left:  return CGRect(x: s.minX, y: s.minY, width: w, height: s.height)
+        case .right: return CGRect(x: s.maxX - w, y: s.minY, width: w, height: s.height)
+        case .up:    return CGRect(x: s.minX, y: s.minY, width: s.width, height: h)
+        case .down:  return CGRect(x: s.minX, y: s.maxY - h, width: s.width, height: h)
         }
     }
 
