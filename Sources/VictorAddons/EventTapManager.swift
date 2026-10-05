@@ -184,6 +184,8 @@ private let VK_I: CGKeyCode = 0x22
     private let VK_F8: CGKeyCode = 0x64
     /// 😀 left-⌥ double tap → emoji picker; lives on the tap thread only.
     private var optionDoubleTap = OptionDoubleTap()
+    /// The tap thread's run loop, so the second-⌥-held check runs there too.
+    private var tapRunLoop: CFRunLoop?
 
     // MARK: Mouse button numbers (CGEvent uses 0-indexed buttonNumber)
     private let MOUSE_BUTTON_4: Int64 = 3  // "back" side button — typed as Return (`BackButtonEnter`)
@@ -331,7 +333,8 @@ private let VK_I: CGKeyCode = 0x22
         if optionScrollTapPort == nil { overlayError("EventTapManager: could not create the ⌥+scroll HID tap") }
         let optionScrollSource = optionScrollTapPort.map { CFMachPortCreateRunLoopSource(kCFAllocatorDefault, $0, 0) }
 
-        let thread = Thread {
+        let thread = Thread { [weak self] in
+            self?.tapRunLoop = CFRunLoopGetCurrent()
             CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
             if let optionScrollSource { CFRunLoopAddSource(CFRunLoopGetCurrent(), optionScrollSource, .commonModes) }
             CFRunLoopRun()
@@ -356,6 +359,19 @@ private let VK_I: CGKeyCode = 0x22
     }
 
     // MARK: - Internal event handler (called from C callback)
+
+    /// The second ⌥ of a double tap, still held: ask again in
+    /// `OptionDoubleTap.secondHoldFire` whether it is down and alone.
+    private func scheduleOptionHoldCheck() {
+        guard let runLoop = tapRunLoop else { return }
+        let fireAt = CFAbsoluteTimeGetCurrent() + OptionDoubleTap.secondHoldFire
+        let timer = CFRunLoopTimerCreateWithHandler(kCFAllocatorDefault, fireAt, 0, 0, 0) { [weak self] _ in
+            guard let self,
+                  self.optionDoubleTap.secondPressHeld(at: ProcessInfo.processInfo.systemUptime) else { return }
+            DispatchQueue.main.async { [weak self] in self?.onEmojiPicker?() }
+        }
+        CFRunLoopAddTimer(runLoop, timer, .commonModes)
+    }
 
     func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent?) -> Unmanaged<CGEvent>? {
         // Re-enable tap if disabled by system timeout
@@ -384,6 +400,8 @@ private let VK_I: CGKeyCode = 0x22
                 at: ProcessInfo.processInfo.systemUptime
             ) {
                 DispatchQueue.main.async { [weak self] in self?.onEmojiPicker?() }
+            } else if optionDoubleTap.isSecondPressDown {
+                scheduleOptionHoldCheck()
             }
             let controlShift = hasCtrlFlag && hasShift && !hasCmdFlag && !hasOpt
             if controlShift != controlShiftHeld {

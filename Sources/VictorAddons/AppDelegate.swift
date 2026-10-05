@@ -1816,6 +1816,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         eventTap.onEmojiPicker = { [weak self] in
             self?.emojiPicker?.toggle()
+            // A second ⌥ still held has the ⌥ cheat-sheet's timer running too.
+            if self?.emojiPicker?.isVisible == true { self?.keymapHoldCoordinator?.reset() }
         }
         emojiPicker?.onOpenChanged = { [weak eventTap] open in eventTap?.setEmojiPickerOpen(open) }
         eventTap.onEmojiPickerKey = { [weak self] key in self?.emojiPicker?.handle(key) }
@@ -1906,7 +1908,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
-            guard let sheet = KeymapHoldCoordinator.sheet(option: option, shift: shift,
+            guard self?.emojiPicker?.isVisible != true,
+                  let sheet = KeymapHoldCoordinator.sheet(option: option, shift: shift,
                                                           command: command, control: control),
                   KeymapOverlaySettings.allows(sheet) else {
                 self?.keymapHoldCoordinator?.reset()

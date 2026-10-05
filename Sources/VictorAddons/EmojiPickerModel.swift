@@ -968,10 +968,18 @@ enum EmojiBoardStore {
 /// cheat-sheet's gesture, 0.3 s on a multi-monitor desk). Any other key, any
 /// other modifier, or the right ⌥ breaks the sequence, so ⌥-typing an emoji
 /// twice in a row — ⌥ down, key, ⌥ up — never counts.
+///
+/// **The second ⌥ does not have to come back up** (Victor, 2026-10-05: "I
+/// sometimes forget to let go of ⌥ the second time"). Held alone for
+/// `secondHoldFire`, it counts as the tap it was meant to be — the tap asks
+/// for that check (`secondPressHeld`) on a timer. It is shorter than the
+/// cheat-sheet's 0.3 s on purpose, so the picker wins that race and the
+/// sheet never flashes up first.
 struct OptionDoubleTap {
     static let leftOptionKeyCode = 58
     static let maxHold: TimeInterval = 0.35
     static let maxGap: TimeInterval = 0.45
+    static let secondHoldFire: TimeInterval = 0.25
 
     private var downAt: TimeInterval?
     private var lastTapAt: TimeInterval?
@@ -991,6 +999,22 @@ struct OptionDoubleTap {
         }
         lastTapAt = time
         return false
+    }
+
+    /// ⌥ is down alone right after a tap — the press that would complete the
+    /// gesture, worth a `secondPressHeld` check `secondHoldFire` from now.
+    var isSecondPressDown: Bool {
+        guard let down = downAt, let last = lastTapAt else { return false }
+        return down - last <= Self.maxGap
+    }
+
+    /// True when that second press is still down, alone, `secondHoldFire`
+    /// after it began: the double tap whose ⌥ was never let go. A check left
+    /// over from an earlier press finds a younger `downAt` and does nothing.
+    mutating func secondPressHeld(at time: TimeInterval) -> Bool {
+        guard isSecondPressDown, let down = downAt, time - down >= Self.secondHoldFire else { return false }
+        interrupt()
+        return true
     }
 
     /// A key was pressed: whatever ⌥ was doing, it was not a tap.
