@@ -34,7 +34,7 @@ final class VirtualDesktopCornerPolicyTests: XCTestCase {
         XCTAssertTrue(p.offering)
     }
 
-    func testClickMovesLeftAndItComesHome3sAfterLeavingTheRectangle() {
+    func testClickMovesLeftAndItComesHome15sAfterLeavingTheRectangle() {
         var p = VirtualDesktopCornerPolicy()
         p.update(onShadow: true, inHome: true, now: 0)
         p.update(onShadow: true, inHome: true, now: 3)
@@ -44,9 +44,9 @@ final class VirtualDesktopCornerPolicyTests: XCTestCase {
         p.update(onShadow: false, inHome: true, now: 10)
         XCTAssertEqual(p.corner, .left, "still working in the corner")
         p.update(onShadow: false, inHome: false, now: 11)
-        p.update(onShadow: false, inHome: false, now: 13.9)
+        p.update(onShadow: false, inHome: false, now: 25.9)
         XCTAssertEqual(p.corner, .left)
-        p.update(onShadow: false, inHome: false, now: 14)
+        p.update(onShadow: false, inHome: false, now: 26)
         XCTAssertEqual(p.corner, .right)
     }
 
@@ -56,9 +56,9 @@ final class VirtualDesktopCornerPolicyTests: XCTestCase {
         p.update(onShadow: false, inHome: false, now: 0)
         p.update(onShadow: false, inHome: true, now: 2)
         p.update(onShadow: false, inHome: false, now: 3)
-        p.update(onShadow: false, inHome: false, now: 5.9)
+        p.update(onShadow: false, inHome: false, now: 17.9)
         XCTAssertEqual(p.corner, .left)
-        p.update(onShadow: false, inHome: false, now: 6)
+        p.update(onShadow: false, inHome: false, now: 18)
         XCTAssertEqual(p.corner, .right)
     }
 }

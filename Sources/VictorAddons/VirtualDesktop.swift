@@ -65,7 +65,9 @@ struct VirtualDesktopCornerPolicy {
     enum Corner: Equatable { case right, left }
 
     static let offerAfter: TimeInterval = 3
-    static let returnAfter: TimeInterval = 3
+    /// 15 s, not 3: the face kept coming back while Victor was still working in that
+    /// corner, between two glances elsewhere.
+    static let returnAfter: TimeInterval = 15
 
     private(set) var corner: Corner = .right
     private(set) var offering = false
@@ -112,8 +114,8 @@ struct VirtualDesktopCornerPolicy {
 ///
 /// - the **Retina, live**, through ScreenCaptureKit — every window on it, including
 ///   🔎 `ShareZoom`'s magnified picture, minus the silhouette below;
-/// - the **presenter**, segmented by Vision and keyed on the GPU, a third of the
-///   screen wide (4:3), bottom-right, mirrored.
+/// - the **presenter**, segmented by Vision and keyed on the GPU, the whole camera
+///   frame (16:9), 35 % of the screen high, bottom-right, mirrored.
 ///
 /// On the Retina itself the presenter shows only as a **20 % black silhouette**, so
 /// Victor sees where his face covers the slides without watching himself. It sits
@@ -137,10 +139,12 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     static func isVirtual(_ id: CGDirectDisplayID) -> Bool { CGDisplayVendorNumber(id) == vendorID }
 
     private static let fps: Int32 = 30
-    // A third of the width, landscape 4:3 (Victor, 2026-10-05, drawing the box over a
-    // capture): the first cut, a quarter wide and portrait 3:4, stood too tall.
-    private static let faceWidthRatio: CGFloat = 1.0 / 3.0
-    private static let faceAspect: CGFloat = 4.0 / 3.0
+    // The **whole camera frame**, uncropped, 16:9 like the Elgato's 720p output, and
+    // 35 % of the screen height — 10 % lower than the 4:3 cut before it (a third of
+    // the width, 4:3, which itself replaced a quarter-wide portrait 3:4). Victor,
+    // 2026-10-05: "o vreau integrală, exact cum o văd pe cameră".
+    private static let faceHeightRatio: CGFloat = 0.35
+    private static let faceAspect: CGFloat = 16.0 / 9.0
     /// The corner-to-corner slide. Opacity is gone after the first 12 % of the way and
     /// back only over the last 12 %, so the face seems to vanish, cross unseen and
     /// arrive (Victor, 2026-10-05).
@@ -207,11 +211,11 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         let width = Int(retina.frame.width), height = Int(retina.frame.height)
         guard let display = makeDisplay(width: width, height: height) else { return }
         self.display = display
-        let faceWidth = (CGFloat(width) * Self.faceWidthRatio).rounded()
-        faceSize = CGSize(width: faceWidth, height: (faceWidth / Self.faceAspect).rounded())
+        let faceHeight = (CGFloat(height) * Self.faceHeightRatio).rounded()
+        faceSize = CGSize(width: (faceHeight * Self.faceAspect).rounded(), height: faceHeight)
         renderSize = faceSize
         corners = VirtualDesktopCornerPolicy()
-        overlayInfo("🪞 VirtualDesktop: screen \(display.displayID) \(width)x\(height), presenter \(Int(faceWidth))x\(Int(faceSize.height))")
+        overlayInfo("🪞 VirtualDesktop: screen \(display.displayID) \(width)x\(height), presenter \(Int(faceSize.width))x\(Int(faceSize.height))")
 
         waitForScreen(display.displayID) { [weak self] screen in
             guard let self, self.display === display else { return }
@@ -557,7 +561,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         guard (try? handler.perform([segmentation])) != nil,
               let mask = segmentation.results?.first?.pixelBuffer else { return }
 
-        // Centre crop to the presenter's aspect, mirrored, scaled to the layer.
+        // The whole frame (the aspect matches the camera's, so the crop is a no-op),
+        // mirrored, scaled to the layer.
         let image = CIImage(cvPixelBuffer: camera)
         let full = image.extent
         let cropWidth = min(full.width, full.height * Self.faceAspect)
