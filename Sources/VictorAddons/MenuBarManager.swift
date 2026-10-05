@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 5, 13:59"
+    static let BUILD_TIME = "Oct 5, 18:18"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -623,6 +623,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         darkModeItem.isEnabled = true
         darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
 
+        // 🪟 Window placement (`WindowScreenMove`, 2026-10-05) — legend rows
+        // only, greyed (no action): the keys act on the window in front, and a
+        // click from this menu would have no arrow to say which way. Victor
+        // asked for them here (*"fă noile shortcuturi vizibile în Extras"*) once
+        // Magnet, which used to own the gesture, was uninstalled. The shortcut
+        // is in the title because a key equivalent can show one arrow, not four,
+        // and has no glyph for fn.
+        let windowHalfItem = NSMenuItem(title: "🪟 Window → half of screen    ⌃⌥⌘ ←→↑↓", action: nil, keyEquivalent: "")
+        let windowScreenItem = NSMenuItem(title: "🪟 Window → next screen    fn⌃⌥⌘ ←→↑↓", action: nil, keyEquivalent: "")
+        let windowFillItem = NSMenuItem(title: "🪟 Fill window ↔ restore    F3", action: nil, keyEquivalent: "")
+
         // **The Extras, grouped** (2026-09-23, Victor: *"grupează logic intrările
         // din Extras … cu ---- între"*). Built above in the order each was
         // written; added here in the order they are read — what the clipboard
@@ -634,6 +645,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [killItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
+            [windowHalfItem, windowScreenItem, windowFillItem],
             [homeAwakeItem, claudeRemoteControlItem],
         ]
         for (i, group) in extraGroups.enumerated() {

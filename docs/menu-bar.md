@@ -95,3 +95,7 @@ Why its own item rather than a row in 💬: the VM is invisible by construction 
 👩🏻‍💻 Extra (clipboard group): ⌘⌃V / ⌘⌃P are how they are reached and the top level
 had grown long. 🪞 Virtual Desktop took a top-level row next to 🎥 Layout Zoom, because
 it switches itself on with Zoom/Teams (see `docs/displays-projector.md`).
+
+## 🪟 Window placement legend (2026-10-05)
+
+Three greyed rows in 👩🏻‍💻 Extras — `⌃⌥⌘ ←→↑↓` half of screen, `fn⌃⌥⌘ ←→↑↓` next screen, `F3` fill ↔ restore — an exception to "the menu is not a second cheat-sheet", asked for by Victor once Magnet (which used to own the gesture) was uninstalled: no hold-to-see sheet covers ⌃⌥⌘, so this is the only place they are written down. No action: a click from the menu would have no arrow to say which way. The shortcut sits in the title because a key equivalent shows one arrow, not four, and has no fn glyph. Details in `hotkeys-launchers.md`.
