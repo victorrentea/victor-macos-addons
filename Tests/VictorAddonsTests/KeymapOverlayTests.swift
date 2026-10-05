@@ -314,10 +314,14 @@ final class KeymapOverlayTests: XCTestCase {
 
     func testControlOptionLayerTypesTheGooseOnG() {
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[5], "🪿")
-        // ⌥8 gave its goose up to 🗑️ (2026-10-05), which came off ⌥⇧7 to make
-        // room for 🔒 there — so the goose now lives only on ⌃⌥G.
+        // ⌥8 gave its goose up to 🗑️ (2026-10-05), which came off ⌥⇧7 — so
+        // the goose now lives only on ⌃⌥G. ⌥⇧7 holds 🤞, right under ⌥7's 🎲;
+        // 🔒 moved to ⌥⇧L, ⌥L took 👍 and ⌥K took 👑.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[28], "🗑️")
-        XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[26], "🔒")
+        XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[26], "🤞")
+        XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[37], "🔒")
+        XCTAssertEqual(EmojiKeyLayer.optionSeed[37], "👍")
+        XCTAssertEqual(EmojiKeyLayer.optionSeed[40], "👑")
         XCTAssertEqual(
             EmojiKeyLayer.seeds.values.flatMap { $0.values }.filter { $0 == "🪿" }.count, 1,
             "🪿 lives on exactly one key"
