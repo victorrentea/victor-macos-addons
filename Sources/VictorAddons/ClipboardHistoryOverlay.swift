@@ -407,6 +407,9 @@ final class ClipboardHistoryOverlay {
         content.addSubview(body)
         content.addSubview(status)
         if entry.isImage {
+            // Start BiRefNet while the walk is still going, so the ✂️ click
+            // finds it loaded. A no-op once it is up. See `BackgroundRemovalServer`.
+            BackgroundRemovalServer.shared.prewarm()
             // Anchored to the **box**, not the picture (2026-09-26, Victor):
             // the buttons sit in the same corner of the panel for every image,
             // so the hand finds them without looking where this one ended.
@@ -549,7 +552,7 @@ final class ClipboardHistoryOverlay {
         let pastes = pastesOnCommit
         let button = actionButton(symbol: "scissors", text: pastes ? "Paste w/o bg" : "Copy w/o bg",
                                   rightEdge: other.minX - 16, bottom: other.minY)
-        button.toolTip = "Remove the background (on-device, Apple Vision) and \(pastes ? "paste" : "copy") the result"
+        button.toolTip = "Remove the background (on-device, BiRefNet) and \(pastes ? "paste" : "copy") the result"
         button.onClick = { [weak self] in
             guard let self else { return }
             // Read before `close()`, for the reason `commit()` gives.
@@ -568,13 +571,13 @@ final class ClipboardHistoryOverlay {
     nonisolated static func cutOutAndPlace(_ entry: ClipboardEntry, pasteInto target: ClipboardPasteTarget.Snapshot?) {
         DispatchQueue.global(qos: .userInitiated).async {
             let started = Date()
-            guard let png = BackgroundRemoval.cutOut(imageAt: ClipboardHistoryStore.shared.fullURL(for: entry)) else {
+            guard let (png, engine) = BackgroundRemoval.cutOut(imageAt: ClipboardHistoryStore.shared.fullURL(for: entry)) else {
                 overlayError("✂️ no subject found in that image — nothing \(target == nil ? "copied" : "pasted")")
                 DispatchQueue.main.async { NSSound(named: "Funk")?.play() }
                 return
             }
             ClipboardHistoryStore.shared.placeNew(png: png)
-            let took = String(format: "%.1f s", Date().timeIntervalSince(started))
+            let took = String(format: "%.1f s, %@", Date().timeIntervalSince(started), engine.rawValue)
             guard let target else {
                 overlayInfo("✂️ image w/o bg → clipboard (\(took))")
                 return

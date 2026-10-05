@@ -1,0 +1,16 @@
+[project]
+name = "bg-remove"
+version = "0"
+requires-python = "==3.12.*"
+# Pinned: BiRefNet ships its model code through `trust_remote_code`, and an
+# unpinned torch/transformers bump is the most likely way for it to break.
+dependencies = [
+    "torch==2.14.1",
+    "torchvision==0.29.1",
+    "transformers==5.18.0",
+    "timm==1.0.30",
+    "kornia==0.8.3",
+    "einops==0.8.2",
+    "pillow==12.3.0",
+    "numpy==2.5.3",
+]

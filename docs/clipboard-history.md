@@ -127,24 +127,39 @@ keyboard.
 
 An image clip carries three buttons in the box's bottom-right corner: `Paste w/o
 bg`, `Preview`, `Downloads`. The first (2026-10-05, Victor: *"în cmd-shift-v un
-buton nou: paste w/o bg"*) cuts the subject out with **Apple Vision's on-device
-subject lift** (`BackgroundRemoval`, `VNGenerateForegroundInstanceMaskRequest`,
-the model behind Preview's "Remove Background") and pastes the PNG-with-alpha
+buton nou: paste w/o bg"*) cuts the subject out and pastes the PNG-with-alpha
 into the app the walk was aimed at, through the same `waitForModifiersReleased`
 + ⌘V/⌃V choice as `commit()`. Opened from the menu it reads `Copy w/o bg` and
 stops at the clipboard.
 
-- **The cut-out is a new clip, the original stays** (`placeNew`), so a bad cut
-  is one V away. Its pasteboard write is tagged like `place()`'s: the poller
-  does not record it twice nor push it on the ⌃V stack, whose pop would race
-  the paste.
-- **Vision, not BiRefNet.** Measured on the same 680×640 photo: Vision 0.4 s, no
-  dependencies; BiRefNet (`rembg`, the `video-remove-bg` skill) cleaner — it
-  dropped a curtain Vision kept as a second subject and left no white halo on
-  fine edges — but a Python venv and a cold start of up to a minute. Every
-  instance Vision finds is kept, on the original canvas size.
-- **No subject → nothing pasted**, a `Funk` and an error pill (a screenshot of
-  an editor has no foreground to lift).
+- **BiRefNet on the GPU, with edge bleed** (`bg-remove/cutout_server.py`, driven
+  by `BackgroundRemovalServer`). Six engines were run on the same two pictures —
+  Apple Vision, BiRefNet general and lite, ISNet, U²-Net, BRIA RMBG-2.0 — and
+  Victor's verdict on the zoomed edges: *"birefnet-general-bleed e clar
+  superior"*. Vision (the first version, same day) had a soft edge ~3× as wide,
+  kept a curtain as a second subject, and is now only the fallback when the
+  sidecar cannot answer; the info pill names the engine that ran.
+- **The dark rim was not the model.** All six copy the *original* pixel into the
+  semi-transparent edge, background included: a drawing on black came out with
+  a dark outline on any light page (Victor's acacia, 2026-10-05). The sidecar
+  re-colours every not-quite-solid pixel from the solid foreground next to it
+  (a push-pull pyramid of alpha-weighted averages); alpha is left alone.
+- **Speed, measured on the M1 Max** (1561×1008): onnxruntime CPU 11 s
+  (`birefnet-general`) / 6 s (lite); the CoreML provider had not finished
+  compiling the graph after 10 minutes; **PyTorch MPS fp16 0.6 s** warm, ~1 s with
+  bleed and PNG. Cold: ~5 s to load + ~4 s for MPS's first-inference kernel
+  compile — paid at start-up, not on the click.
+- **Warm only while it is used.** The bezel calls `prewarm()` whenever it shows an
+  image, so the walk to the right clip pays for the load; the process exits after
+  30 minutes without a request. Torch and the weights are a few GB of memory.
+- **Pinned**: the Python deps in `bg-remove/pyproject.toml`, and the Hub commit of
+  `ZhengPeng7/BiRefNet` (its model code arrives through `trust_remote_code`).
+  `uv run --project bg-remove` builds the venv on first use. Its stderr goes to
+  `/tmp/victor-bg-remove.log`.
+- **The cut-out is a new clip, the original stays** (`placeNew`), so a bad cut is
+  one V away. Its pasteboard write is tagged like `place()`'s: the poller does
+  not record it twice nor push it on the ⌃V stack, whose pop would race the paste.
+- **No subject → nothing pasted**, a `Funk` and an error pill.
 
 ## Where the pixels live
 
@@ -244,7 +259,8 @@ save) are swept on every capture; nothing else would ever reclaim them.
 | `ClipboardHistoryPolicy.swift` | `ClipboardEntry` + the pure rules (insert/dedup/cap, the two ceilings, the age caption, the text preview) |
 | `ClipboardHistoryStore.swift` | disk, thumbnails, fingerprints, the index, `place()` |
 | `ClipboardHistoryOverlay.swift` | the bezel and its geometry, the image buttons |
-| `BackgroundRemoval.swift` | ✂️ Vision subject lift → PNG with alpha |
+| `BackgroundRemoval.swift` | ✂️ BiRefNet sidecar client (`BackgroundRemovalServer`) + the Vision fallback |
+| `bg-remove/cutout_server.py` | ✂️ BiRefNet on MPS + edge bleed, JSON lines over stdin/stdout |
 | `ClipboardPasteKeystroke.swift` | ⌘V or ⌃V, and the AX read of the window it is about to land in |
 | `EventTapManager.swift` | ⌘⇧V, the key routing while it is up, the ⌘-release |
 | `ClipboardStackManager.swift` | the shared poll that feeds it |
