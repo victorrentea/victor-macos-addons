@@ -80,6 +80,8 @@ enum TartVMPolicy {
 /// to SIGINT on the `tart run` process, which tart handles as a clean shutdown.
 final class TartVMIndicator: NSObject, NSMenuDelegate {
     static let pollInterval: TimeInterval = 5
+    static let autosaveName = "tartVM"
+    static let preferredPosition = 230
 
     private let queue = DispatchQueue(label: "ro.victorrentea.tart-vm-indicator", qos: .utility)
     private var timer: DispatchSourceTimer?
@@ -111,7 +113,18 @@ final class TartVMIndicator: NSObject, NSMenuDelegate {
             return
         }
         if statusItem == nil {
+            // A new status item lands **left** of every existing one, and on this
+            // Mac's crowded bar that is under the notch — measured 2026-10-05, the
+            // first build's item was simply not on screen. So the first appearance
+            // is pinned near the clock (points from the right edge; Battery sits at
+            // 157); a ⌘-drag afterwards overwrites the key and sticks.
+            let positionKey = "NSStatusItem Preferred Position \(Self.autosaveName)"
+            if UserDefaults.standard.object(forKey: positionKey) == nil {
+                UserDefaults.standard.set(Self.preferredPosition, forKey: positionKey)
+            }
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.autosaveName = Self.autosaveName
+            item.isVisible = true
             let menu = NSMenu()
             menu.delegate = self
             item.menu = menu
