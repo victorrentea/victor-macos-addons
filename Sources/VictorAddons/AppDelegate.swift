@@ -88,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// `ro.victorrentea.claude-rc` LaunchAgent, which is booted out and disabled.
     private var claudeRemoteControl: ClaudeRemoteControl?
     private var fromWalkieWatchdog: FromWalkieWatchdog?
+    private var tartVMIndicator: TartVMIndicator?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
@@ -1517,6 +1518,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let fromWalkieWatchdog = FromWalkieWatchdog()
         fromWalkieWatchdog.start()
         self.fromWalkieWatchdog = fromWalkieWatchdog
+
+        // 🖥️ Its own menu bar item, only while a tart VM is running, with a Stop row.
+        let tartVMIndicator = TartVMIndicator()
+        tartVMIndicator.start()
+        self.tartVMIndicator = tartVMIndicator
 
         let portKiller = PortKiller()
         self.portKiller = portKiller
