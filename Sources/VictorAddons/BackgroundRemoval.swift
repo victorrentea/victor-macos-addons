@@ -31,8 +31,9 @@ enum BackgroundRemoval {
     }
 
     /// PNG with alpha, or nil when Vision saw no subject at all (a screenshot
-    /// of a text editor, a flat diagram). Every instance it finds is kept, on
-    /// the original canvas size. No edge bleed: this is the fallback.
+    /// of a text editor, a flat diagram). Every instance it finds is kept,
+    /// cropped to their extent like the BiRefNet path. No edge bleed: this is
+    /// the fallback.
     static func visionCutOut(imageAt url: URL) -> Data? {
         // The package still targets an older macOS; this Mac is on 15.
         guard #available(macOS 14, *) else { return nil }
@@ -46,7 +47,7 @@ enum BackgroundRemoval {
                   !observation.allInstances.isEmpty else { return nil }
             let masked = try observation.generateMaskedImage(ofInstances: observation.allInstances,
                                                              from: handler,
-                                                             croppedToInstancesExtent: false)
+                                                             croppedToInstancesExtent: true)
             return CIContext().pngRepresentation(of: CIImage(cvPixelBuffer: masked),
                                                  format: .RGBA8,
                                                  colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)

@@ -144,6 +144,12 @@ stops at the clipboard.
   a dark outline on any light page (Victor's acacia, 2026-10-05). The sidecar
   re-colours every not-quite-solid pixel from the solid foreground next to it
   (a push-pull pyramid of alpha-weighted averages); alpha is left alone.
+- **Trimmed to the subject** (2026-10-05, Victor: *"crop the resulting image to
+  only the useful pixels"*). The cut-out used to keep the original canvas, so a
+  subject in a corner pasted with a screenful of transparent margin. The sidecar
+  crops to the bounding box of alpha > 8/255 (the faint haze a model leaves
+  where the background was does not count); Vision does the same with
+  `croppedToInstancesExtent`.
 - **Speed, measured on the M1 Max** (1561×1008): onnxruntime CPU 11 s
   (`birefnet-general`) / 6 s (lite); the CoreML provider had not finished
   compiling the graph after 10 minutes; **PyTorch MPS fp16 0.6 s** warm, ~1 s with

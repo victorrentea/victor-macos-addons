@@ -59,6 +59,17 @@ def bleed(rgb, alpha, solid=0.95):
     return out if w.any() else rgb
 
 
+def trim(rgba, visible=8):
+    """Crop to the bounding box of the pixels that are actually there: the
+    cut-out sits on the original canvas, and a subject in a corner pasted
+    with a screenful of transparent margin around it. `visible` (of 255)
+    ignores the faint haze a model leaves where the background was."""
+    ys, xs = np.nonzero(rgba[..., 3] > visible)
+    if ys.size == 0:
+        return rgba
+    return rgba[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+
+
 def main():
     started = time.time()
     device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -84,8 +95,8 @@ def main():
                 pred = F.interpolate(pred, size=(image.height, image.width), mode="bilinear", align_corners=False)
             alpha = pred[0, 0].clamp(0, 1).cpu().numpy()
             rgb = np.asarray(image).astype(np.float32) / 255
-            out = np.dstack([bleed(rgb, alpha), alpha])
-            Image.fromarray((out * 255).round().astype(np.uint8), "RGBA").save(req["out"])
+            out = (np.dstack([bleed(rgb, alpha), alpha]) * 255).round().astype(np.uint8)
+            Image.fromarray(trim(out), "RGBA").save(req["out"])
             say({"ok": True, "ms": int((time.time() - t) * 1000)})
         except Exception as e:  # one bad image must not kill the warm model
             say({"ok": False, "error": f"{type(e).__name__}: {e}"})
