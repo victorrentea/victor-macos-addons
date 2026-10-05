@@ -98,6 +98,30 @@ enum PromptCapturePolicy {
                                   with: "", options: .regularExpression)
     }
 
+    /// Agent sessions whose prompts go to the notes **on their own**: the pill
+    /// still shows, but its countdown running out sends instead of dropping,
+    /// and a click (or a 2 s hover) is what holds a prompt back. These are the
+    /// demo projects — every prompt typed there is typed *for* the room, and
+    /// remembering to hover mid-sentence was the step that kept being missed
+    /// (2026-10-05, Victor: *"Uit mereu să dau send"*). Paths relative to home.
+    static let autoSendFolders = ["workspace/petclinic"]
+
+    /// Whether a prompt typed in an agent session sitting in `cwd` sends
+    /// itself. The folder itself or anything inside it — never a sibling that
+    /// merely starts with the same name (`petclinic-main`, `petclinic-clone`
+    /// are other checkouts, not the demo). No `cwd` (an older hook) = no.
+    static func autoSends(cwd: String?,
+                          home: String = NSHomeDirectory(),
+                          folders: [String] = autoSendFolders) -> Bool {
+        guard let cwd, !cwd.isEmpty else { return false }
+        let path = URL(fileURLWithPath: cwd).standardizedFileURL.path
+        return folders.contains { folder in
+            let root = URL(fileURLWithPath: home).appendingPathComponent(folder)
+                .standardizedFileURL.path
+            return path == root || path.hasPrefix(root + "/")
+        }
+    }
+
     /// What the store records, already trimmed — or nil when there is nothing
     /// worth a row.
     static func normalize(_ text: String) -> String? {

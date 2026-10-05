@@ -152,4 +152,30 @@ final class PromptCapturePolicyTests: XCTestCase {
             XCTAssertNil(PromptCapturePolicy.normalize(prefix + " whatever follows"))
         }
     }
+
+    // MARK: - auto-send folders (2026-10-05)
+
+    func testThePetclinicSessionSendsOnItsOwn() {
+        XCTAssertTrue(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace/petclinic", home: "/Users/v"))
+        XCTAssertTrue(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace/petclinic/", home: "/Users/v"))
+    }
+
+    func testASessionInsideThePetclinicTreeSendsToo() {
+        XCTAssertTrue(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace/petclinic/petclinic-frontend",
+                                                    home: "/Users/v"))
+    }
+
+    /// The petclinic-* checkouts share the prefix but are other branches, not the demo.
+    func testASiblingCheckoutWithTheSamePrefixDoesNot() {
+        XCTAssertFalse(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace/petclinic-main", home: "/Users/v"))
+        XCTAssertFalse(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace/petclinic-pr-visit-has-vet",
+                                                     home: "/Users/v"))
+    }
+
+    func testAnyOtherFolderOrNoFolderStillAsks() {
+        XCTAssertFalse(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace/victor-macos-addons", home: "/Users/v"))
+        XCTAssertFalse(PromptCapturePolicy.autoSends(cwd: "/Users/v/workspace", home: "/Users/v"))
+        XCTAssertFalse(PromptCapturePolicy.autoSends(cwd: nil, home: "/Users/v"))
+        XCTAssertFalse(PromptCapturePolicy.autoSends(cwd: "", home: "/Users/v"))
+    }
 }

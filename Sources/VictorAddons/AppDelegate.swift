@@ -613,7 +613,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
             return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)"
         }
-        tabletServer?.onPromptCapture = { [weak self] rawPrompt, source in
+        tabletServer?.onPromptCapture = { [weak self] rawPrompt, source, cwd in
             let prompt = PromptCapturePolicy.unwrapPastes(rawPrompt)
             guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
             guard self.isSessionActive else {
@@ -626,10 +626,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // instead of offering the room the same line twice.
             let agent = PromptSource.parse(source)
             let id = PromptCaptureStore.shared.record(prompt, source: agent)
-            SessionNotesAppender.offerPrompt(prompt, source: agent, onAccepted: {
+            // A demo-project session (petclinic) flips the pill: it sends on
+            // its own unless clicked — see `PromptCapturePolicy.autoSends`.
+            let autoSend = PromptCapturePolicy.autoSends(cwd: cwd)
+            SessionNotesAppender.offerPrompt(prompt, source: agent, autoSend: autoSend, onAccepted: {
                 if let id { PromptCaptureStore.shared.markSent(id) }
             })
-            return "{\"captured\":true,\"stored\":\(id != nil)}"
+            return "{\"captured\":true,\"stored\":\(id != nil),\"autoSend\":\(autoSend)}"
         }
         // Test hook: open the 🤖 panel (optionally on an emptied list) without
         // reaching for the menu — see docs/testing.md.

@@ -195,8 +195,10 @@ case testTerminalFont
         case testScreenLockSimulate(Bool)
         /// A prompt the human just submitted to an agent, forwarded by the
         /// capture hook. `source` is the hook's `?src=` ("claude"/"copilot");
-        /// an older hook that sends none still captures, unbadged.
-        case promptCapture(source: String?)
+        /// an older hook that sends none still captures, unbadged. `cwd` is
+        /// the agent session's folder (`?cwd=`), which decides whether the
+        /// prompt goes to the notes on its own (`PromptCapturePolicy.autoSends`).
+        case promptCapture(source: String?, cwd: String?)
         /// Open the 🤖 prompt-history panel (test hook): `?clear=1` empties
         /// the week's list first, `?close=1` puts the panel away instead —
         /// the only way to check the panel without leaving it on a screen the
@@ -390,7 +392,7 @@ case testTerminalFont
     var onTestScreenLockSimulate: ((Bool) -> String)?
     /// Receives the prompt body; returns JSON describing whether it was captured.
     /// (prompt text, `?src=` value) -> JSON answer for the hook.
-    var onPromptCapture: ((String, String?) -> String)?
+    var onPromptCapture: ((String, String?, String?) -> String)?
     /// Open the 🤖 prompt-history panel — (clear the list first, close it instead).
     var onTestPromptHistory: ((Bool, Bool) -> String)?
     /// Receives the IntelliJ plugin's open-file JSON body; returns JSON describing whether it was accepted.
@@ -743,9 +745,9 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestScreenLockSimulate?(locked) ?? "{\"error\":\"screen lock monitor unavailable\"}"
                 if self.onTestScreenLockSimulate == nil { statusCode = 503 }
-            case .promptCapture(let source):
+            case .promptCapture(let source, let cwd):
                 contentType = "application/json"
-                body = self.onPromptCapture?(requestBody, source) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
+                body = self.onPromptCapture?(requestBody, source, cwd) ?? "{\"captured\":false,\"reason\":\"handler-missing\"}"
             case .testPromptHistory(let clear, let close):
                 contentType = "application/json"
                 body = self.onTestPromptHistory?(clear, close) ?? "{\"ok\":false,\"reason\":\"handler-missing\"}"
@@ -1093,7 +1095,8 @@ case testTerminalFont
         case "/test/memory-pressure":
             return .testMemoryPressure
         case "/training/prompt-capture":
-            return .promptCapture(source: queryItems.first(where: { $0.name == "src" })?.value)
+            return .promptCapture(source: queryItems.first(where: { $0.name == "src" })?.value,
+                                  cwd: queryItems.first(where: { $0.name == "cwd" })?.value)
         case "/test/prompt-history":
             return .testPromptHistory(clear: queryItems.first(where: { $0.name == "clear" })?.value == "1",
                                       close: queryItems.first(where: { $0.name == "close" })?.value == "1")

@@ -163,7 +163,16 @@ enum SessionNotesAppender {
     ///
     /// `source` puts the agent's icon (Clawd / Copilot) in front of the words,
     /// so a glance at the corner says whose prompt it was.
+    ///
+    /// `autoSend` flips the pill's default (2026-10-05, for the demo project's
+    /// sessions — `PromptCapturePolicy.autoSends`): the countdown running out
+    /// SENDS, and a click — or the usual 2 s moving hover — holds the prompt
+    /// back. The arrow points down and the pill drifts down under the cursor,
+    /// the same face as the paste pill's undo, because hovering now cancels.
+    /// Nothing is written until the countdown ends, so a held-back prompt never
+    /// reaches the participants' Prompts tab at all — not even for 9 s.
     static func offerPrompt(_ text: String, source: PromptSource = .unknown,
+                            autoSend: Bool = false,
                             onAccepted: (() -> Void)? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -180,6 +189,29 @@ enum SessionNotesAppender {
         let icon = source.icon(height: promptIconHeight)
         let display = formatPromptLabel(from: trimmed, hasIcon: icon != nil)
         banner.icon = icon
+        if autoSend {
+            // Click / hover = keep it out of the notes; it sinks, like any drop.
+            banner.onHover = { [weak banner] in
+                guard pendingPrompt == trimmed else { return }
+                pendingPrompt = nil
+                banner?.dismissSinking()
+            }
+            // The window closed un-touched = Victor let it go → it goes.
+            banner.onHoverCountdownExpired = { [weak banner] in
+                guard pendingPrompt == trimmed else { return }
+                pendingPrompt = nil
+                do {
+                    _ = try writeNotes(trimmed, marker: .agentPrompt)
+                    onAccepted?()
+                    banner?.dismissRisingFade()
+                } catch {
+                    reportWriteFailure(error)
+                }
+            }
+            banner.show(text: display, font: promptFont,
+                        hoverCountdown: hoverActionDuration, hoverNudge: .down)
+            return
+        }
         banner.onHover = { [weak banner] in
             guard let captured = pendingPrompt else { return }
             pendingPrompt = nil

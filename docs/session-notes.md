@@ -66,6 +66,27 @@ through it; only *when* Victor decides changes.
 
 Test hook: `GET /test/prompt-history` (`?clear=1` empties the week first) — see `testing.md`.
 
+## 🤖 Demo-project prompts send themselves (2026-10-05)
+
+Victor: *"Uit mereu să dau send."* Prompts typed in the demo project are typed *for* the
+room, and the hover-to-commit pill lost most of them mid-sentence. So for an agent session
+sitting in **`~/workspace/petclinic`** (or anything under it — never the `petclinic-*`
+sibling checkouts, which share the prefix but are other branches) the pill's default flips:
+
+- **Countdown runs out un-touched → sent** (rising fade, row marked Sent in the panel).
+- **Left-click, or the usual 2 s moving hover → held back** (sinks). Right-click sends now.
+  The arrow points down and the pill drifts down under the cursor — the paste pill's undo face,
+  because hovering now cancels.
+- **Nothing is written until the countdown ends**, so a held-back prompt never reaches the
+  participants' Prompts tab, not even for the 9.5 s (unlike the paste pill, which writes first
+  and truncates on undo — the room's page polls the notes file).
+- Every other folder keeps hover-to-commit.
+
+The hooks append `&cwd=<session folder>` (`.cwd` from the hook JSON, `$PWD` as fallback) to
+`/training/prompt-capture`; `PromptCapturePolicy.autoSends(cwd:)` decides, against
+`autoSendFolders` (home-relative). An older hook with no `cwd` keeps the old pill. The route's
+answer carries `"autoSend":true|false`.
+
 **Notes banner — the pill carries the notes marker (2026-08-14).** Both bottom-left notes pills now open with the very emoji their line will carry in the notes file, straight off `SessionNotesAppender.Marker` (one source, so the two can't drift): an **intercepted agent prompt** shows as `🤖 <text>` and an **intercepted / hand-sent text** as `📋 <text>` — the latter replacing the word `Pasted:`, since the mark is recognised faster than the word and it is the same mark the reader will meet again in the notes list a moment later. Previously the prompt pill had no prefix at all and the paste pill spelled its verb out, so at a glance the two flows were the one thing the pill didn't say — which is exactly what the markers were introduced to disambiguate in the file itself.
 
 **Notes banner — outcome-flavored exits (2026-06):** Every *interactive* bottom-left pill ends one of two ways, and the exit animation tells the user **which**, so the gesture and the feedback match:
