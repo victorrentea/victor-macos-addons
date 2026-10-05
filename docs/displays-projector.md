@@ -317,8 +317,8 @@ the size of the Retina, vendor `0xF00D`, and fills it with:
   the screen wide**, flush bottom-right (first cut was a quarter wide and portrait 3:4 —
   too tall; Victor drew the box he wanted over a capture).
 
-In Teams/Zoom you share that screen. On the Retina Victor sees only a **50 % black
-silhouette** where the face is (the keyed face's IOSurface used as the mask of a black
+In Teams/Zoom you share that screen. On the Retina Victor sees only a **20 % black
+silhouette** (50 % at first — too dark to read through) where the face is (the keyed face's IOSurface used as the mask of a black
 layer — no second render), at `.screenSaver + 1`, above `ShareZoom`, which is told to
 exclude it (`ShareZoom.alsoExcluded`) so it is not magnified underneath.
 

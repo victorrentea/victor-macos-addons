@@ -65,7 +65,7 @@ struct VirtualDesktopCornerPolicy {
 /// - the **presenter**, segmented by Vision and keyed on the GPU, a third of the
 ///   screen wide (4:3), bottom-right, mirrored.
 ///
-/// On the Retina itself the presenter shows only as a **50 % black silhouette**, so
+/// On the Retina itself the presenter shows only as a **20 % black silhouette**, so
 /// Victor sees where his face covers the slides without watching himself. It sits
 /// above `ShareZoom` and is excluded from both captures. Pointer parked on it 4 s ⇒
 /// the face moves bottom-left (`VirtualDesktopCornerPolicy`).
@@ -243,7 +243,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         screenWindow = window
     }
 
-    /// The presenter's 50 % shadow on the Retina — what Victor sees instead of himself.
+    /// The presenter's 20 % shadow on the Retina — what Victor sees instead of himself.
     private func buildSilhouette() {
         let panel = NSPanel(contentRect: faceFrame(.right, in: retinaFrame),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -263,7 +263,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         let shadow = CALayer()
         shadow.frame = view.bounds
         shadow.backgroundColor = NSColor.black.cgColor
-        shadow.opacity = 0.5
+        // 20 %: enough to know where the face is, faint enough to read through (was 50 %).
+        shadow.opacity = 0.2
         // The keyed face's alpha *is* the silhouette: no second render.
         silhouetteMask.frame = view.bounds
         silhouetteMask.contentsGravity = .resizeAspect
