@@ -103,8 +103,17 @@ log = _Log()
 # ── Config ───────────────────────────────────────────────────────────────────
 _ME_SPEAKER = os.environ.get("WHISPER_ME_SPEAKER", "Victor")
 _AUD_SPEAKER = os.environ.get("WHISPER_AUDIENCE_SPEAKER", "Audience")
+# Turbo fine-tuned (LoRA, fused) on 9.3 h of Victor's own dictations, trained in
+# ~/workspace/voice-distill and installed where Walkie Talkie picks it up too.
+# Held out: WER 20.4 → 15.3 %, vocab-term recall 79 → 98 %, same speed. It never
+# heard the audience, but FLEURS-ro (other speakers) improved too, 10.9 → 9.7,
+# so both channels use it. Missing folder = the stock model, as before.
+_LORA_MODEL = Path.home() / ".walkie-talkie/models/whisper-turbo-victor"
 _MODEL_BALANCED = os.environ.get(
-    "WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo"
+    "WHISPER_MODEL",
+    str(_LORA_MODEL)
+    if (_LORA_MODEL / "weights.safetensors").exists()
+    else "mlx-community/whisper-large-v3-turbo",
 )
 _MODEL_FAST = os.environ.get("WHISPER_MODEL_FAST", _MODEL_BALANCED)
 # 12 s chunks with 2 s overlap, and both numbers are measured rather than felt.
