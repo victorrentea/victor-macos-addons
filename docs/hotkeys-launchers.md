@@ -62,3 +62,10 @@ focus playlist, L is the calendar. The sheet says `lupă` rather than naming a m
 what it has to answer at a glance is "which key is the magnifier" — a label naming the
 style you land in would have to change on every press.
 
+
+## 🪟 ⌃⌥ + arrow — window to the next screen; F3 fill ↔ restore (`WindowScreenMove`, 2026-10-05)
+
+- **⌃⌥ ← → ↑ ↓** sends the focused window (frontmost app, over AX) to the screen in that direction. Not bare ⌥: ⌥←/⌥→ is word-jump in every text field and terminal, so a global ⌥-arrow would cost that all day. ⌃⌥ is the emoji board's modifier, but the board has nothing on the arrows, so the two never meet.
+- **Which screen is "that way"** (`WindowScreenMovePolicy.neighbour`): one whose centre lies past the source's centre in that direction; among those, one sharing an edge with the source beats one that is merely diagonal, then the nearest. Nothing that way → nothing happens.
+- **Where it lands** (`relocate`): proportionally inside the target's `visibleFrame` — a left half stays a left half, a quarter a quarter, a filled window fills — then clamped so it never overhangs. The 🪞 Virtual Desktop's screen is skipped (`NSScreen.physical`): nobody sees it, so a window thrown there would vanish.
+- **F3** still types macOS's own Window ▸ Fill (fn⌃F), but first remembers the window's frame; **a second F3 on the same window puts that frame back**. If the window was meanwhile put back to exactly that frame by hand, the memory is stale and F3 fills again. Autorepeat is ignored on both keys.

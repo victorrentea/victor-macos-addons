@@ -814,10 +814,24 @@ private let VK_I: CGKeyCode = 0x22
         }
 
         // F3 → Window ▸ Fill on the focused window, by typing its own shortcut
-        // fn⌃F (suppress). Bare F3 for the same reason as F8: with standard
-        // function keys it is a real keyDown, not the Mission Control media key.
+        // fn⌃F (suppress); a second F3 on the same window puts back the frame it
+        // had before (`WindowScreenMove.toggleFill`). Bare F3 for the same reason
+        // as F8: with standard function keys it is a real keyDown, not the
+        // Mission Control media key.
         if keyCode == VK_F3 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
-            DispatchQueue.global().async { KeySimulator.fillWindow() }
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.global().async { WindowScreenMove.toggleFill() }
+            }
+            return nil
+        }
+
+        // ⌃⌥ + arrow → the focused window jumps to the screen in that direction
+        // (suppress). Not bare ⌥: ⌥←/⌥→ is word-jump everywhere. See `WindowScreenMove`.
+        if hasCtrl && hasOpt && !hasCmd && !hasShift,
+           let direction: WindowScreenMove.Direction = [123: .left, 124: .right, 126: .up, 125: .down][keyCode] {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.global().async { WindowScreenMove.move(direction) }
+            }
             return nil
         }
 
