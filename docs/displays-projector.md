@@ -338,6 +338,14 @@ screen at alpha 0 while hidden, so both captures exclude it by id — nobody on 
 call sees it. (First cut, same day: the pointer anywhere in the rectangle for 4 s
 moved the face on its own — it jumped while Victor was merely reading under it.)
 
+**No overlay lands on it.** Every overlay picks its screens from `NSScreen.physical`
+(`PhysicalScreens.swift`), the CoreGraphics lists (terminal tiling, Layout Zoom, the
+lens cursor fence) from `physicalDisplayIDs`. The day it went live the keymap, the
+banners and the break timer all drew on the invisible screen too — broadcast to the
+call, never seen by Victor. Only `VirtualDesktop`, `ShareZoom` and the
+`screencapture -D` numbering read the raw list; `PhysicalScreensConventionTests` fails
+on any other `NSScreen.screens`.
+
 **Cost** (2026-10-05, prototype, Zoom closed, two on/off alternations of 20 s):
 WindowServer 45–48 % → 48–49 % (the invisible screen is nearly free); the process
 ~27 % of one core and ~150 MB, nearly all of it the segmentation at 30 fps. With Zoom

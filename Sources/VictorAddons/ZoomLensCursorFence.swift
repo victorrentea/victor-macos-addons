@@ -255,7 +255,7 @@ final class ZoomLensCursorFence {
         var ids = [CGDirectDisplayID](repeating: 0, count: 16)
         var n: UInt32 = 0
         guard CGGetActiveDisplayList(16, &ids, &n) == .success else { return [] }
-        return ids.prefix(Int(n))
+        return physicalDisplayIDs(ids.prefix(Int(n)))
             .filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
             .map { CGDisplayBounds($0) }
     }

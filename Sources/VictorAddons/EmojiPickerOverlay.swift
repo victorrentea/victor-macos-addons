@@ -77,7 +77,7 @@ final class EmojiPickerController: NSObject {
         query = ""
         let retina = retinaScreenProvider()
         let retinaID = Self.screenID(retina)
-        let externals = NSScreen.screens.filter { Self.screenID($0) != retinaID }.map(\.frame)
+        let externals = NSScreen.physical.filter { Self.screenID($0) != retinaID }.map(\.frame)
         let placed = EmojiPickerPlacement.frame(retinaFrame: retina.frame, externalFrames: externals,
                                                 mouseLocation: NSEvent.mouseLocation)
         build(frame: placed.frame, scale: placed.scale)
@@ -153,7 +153,7 @@ final class EmojiPickerController: NSObject {
 
         // Full screen on an external: square edges, nothing to round. (Not
         // `s > 1`: the retina corner is scaled too when it is the only screen.)
-        let fullScreen = NSScreen.screens.contains { $0.frame == frame }
+        let fullScreen = NSScreen.physical.contains { $0.frame == frame }
         let root = EmojiPickerBackground(frame: NSRect(origin: .zero, size: frame.size), radius: fullScreen ? 0 : 8 * s)  // tight margins: a big radius would cut the corner tiles
         panel.contentView = root
 

@@ -228,7 +228,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             overlayInfo("Notifications: granted=\(granted) err=\(String(describing: err))")
         }
 
-        guard !NSScreen.screens.isEmpty else { fatalError("No screens available") }
+        guard !NSScreen.physical.isEmpty else { fatalError("No screens available") }
 
         ClaudeThemeSync.start()
 
@@ -236,7 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         keymapOverlayController = keymapOverlay
         emojiPicker = EmojiPickerController(retinaScreenProvider: { AppDelegate.findRetinaScreen() })
         keymapHoldCoordinator = KeymapHoldCoordinator(
-            delayProvider: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.screens.count) },
+            delayProvider: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.physical.count) },
             schedule: { [weak self] delay, fire in
                 self?.keymapHoldWorkItem?.cancel()
                 let work = DispatchWorkItem(block: fire)
@@ -728,8 +728,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestMicDead = { [weak self] screens in
             guard let self else { return "{}" }
             let provider: () -> [NSScreen] = screens == "all"
-                ? { NSScreen.screens }
-                : { NSScreen.screens.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") } }
+                ? { NSScreen.physical }
+                : { NSScreen.physical.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") } }
             self.micDeadAlarm.raise(since: Date(), screens: provider)
             return self.micDeadAlarm.stateJSON()
         }
@@ -749,8 +749,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestDjiEvent = { [weak self] kind, level, screens in
             guard let self else { return "{}" }
             let provider: () -> [NSScreen] = screens == "all"
-                ? { NSScreen.screens }
-                : { NSScreen.screens.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") } }
+                ? { NSScreen.physical }
+                : { NSScreen.physical.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") } }
             switch kind {
             case "battery":
                 let lvl = level ?? 6
@@ -1015,7 +1015,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // 📶 Roaming allowance under 15% on a roaming day → a red pill that stays
         // until hovered, once a day. The phone counts; see docs/roaming-warning.md.
-        let roamingWarning = RoamingWarning(screensProvider: { NSScreen.screens })
+        let roamingWarning = RoamingWarning(screensProvider: { NSScreen.physical })
         let phoneRoaming = PhoneRoamingMonitor()
         phoneRoaming.onReading = { [weak roamingWarning] r in roamingWarning?.update(r) }
         roamingWarning.start()
@@ -1401,16 +1401,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: AppDelegate.findRetinaScreen())
-        statusBanner = StatusBanner(screensProvider: { NSScreen.screens })
-        silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.screens })
-        bellCard = BellCard(screensProvider: { NSScreen.screens })
-        fxCard = FxCard(screensProvider: { NSScreen.screens })
-        promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.screens }, hoverable: true)
+        statusBanner = StatusBanner(screensProvider: { NSScreen.physical })
+        silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.physical })
+        bellCard = BellCard(screensProvider: { NSScreen.physical })
+        fxCard = FxCard(screensProvider: { NSScreen.physical })
+        promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.physical }, hoverable: true)
         SessionNotesAppender.promptBanner = promptCaptureBanner
-        summaryReminder = SummaryReminder(screensProvider: { NSScreen.screens })
+        summaryReminder = SummaryReminder(screensProvider: { NSScreen.physical })
         summaryReminder?.start()
         feedbackFormReminder = FeedbackFormReminder(
-            screensProvider: { NSScreen.screens },
+            screensProvider: { NSScreen.physical },
             isSessionActive: { [weak self] in self?.isSessionActive ?? false },
             isLastDayOfSet: { [weak self] in
                 FeedbackFormPolicy.mayOffer(lastDay: self?.sessionLastDay,
@@ -1810,7 +1810,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         emojiPicker?.onOpenChanged = { [weak eventTap] open in eventTap?.setEmojiPickerOpen(open) }
         eventTap.onEmojiPickerKey = { [weak self] key in self?.emojiPicker?.handle(key) }
         let emojiHold = EmojiPickerHold(
-            delay: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.screens.count) },
+            delay: { KeymapHoldCoordinator.delay(monitorCount: NSScreen.physical.count) },
             open: { [weak self] in
                 guard let picker = self?.emojiPicker, !picker.isVisible else { return false }
                 picker.show()
@@ -2651,7 +2651,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// have always used. Main-thread only — it samples `NSEvent.mouseLocation`.
     static func screenUnderMouse() -> NSScreen {
         let mouse = NSEvent.mouseLocation
-        return NSScreen.screens.first { $0.frame.contains(mouse) }
+        return NSScreen.physical.first { $0.frame.contains(mouse) }
             ?? NSScreen.main
             ?? findRetinaScreen()
     }
@@ -2659,7 +2659,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Always resolve the laptop's retina display when (re-)showing the banner,
     /// in case external monitors were connected/disconnected after launch.
     static func findRetinaScreen() -> NSScreen {
-        let screens = NSScreen.screens
+        let screens = NSScreen.physical
         if let s = screens.first(where: { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
             return CGDisplayIsBuiltin(id) != 0

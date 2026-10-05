@@ -735,6 +735,6 @@ final class ClipboardHistoryOverlay {
     /// copied is not always something the room should read.
     private func screenUnderCursor() -> NSScreen {
         let mouse = NSEvent.mouseLocation
-        return NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
+        return NSScreen.physical.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.physical[0]
     }
 }

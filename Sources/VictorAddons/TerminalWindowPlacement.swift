@@ -87,7 +87,7 @@ enum TerminalWindowPlacement {
     /// mirroring the Retina is not a second desk to put a window on, it is the
     /// Retina again.
     static func currentScreens() -> [ScreenBox] {
-        NSScreen.screens.compactMap { screen in
+        NSScreen.physical.compactMap { screen in
             guard let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
                 // No display id: treat it as external rather than lose the screen.
                 return ScreenBox(frame: screen.frame, visibleFrame: screen.visibleFrame, isBuiltin: false)

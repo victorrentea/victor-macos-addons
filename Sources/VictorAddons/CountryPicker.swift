@@ -123,7 +123,7 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         guard let panel else { return }
         let h = contentHeight()
         var origin = NSPoint(x: flagRect.minX, y: flagRect.minY - 4 - h)   // top edge under the flag
-        if let scr = NSScreen.screens.first(where: { $0.frame.intersects(flagRect) }) ?? NSScreen.main {
+        if let scr = NSScreen.physical.first(where: { $0.frame.intersects(flagRect) }) ?? NSScreen.main {
             let vis = scr.visibleFrame
             origin.x = min(max(vis.minX + 4, origin.x), vis.maxX - width - 4)
             if origin.y < vis.minY + 4 { origin.y = flagRect.maxY + 4 }     // flip below→above if no room

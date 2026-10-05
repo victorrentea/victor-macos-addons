@@ -113,7 +113,7 @@ final class ScreenBlackout {
     }
 
     private func buildPanels(fadeIn: TimeInterval) {
-        for screen in NSScreen.screens {
+        for screen in NSScreen.physical {
             let p = NSPanel(contentRect: screen.frame,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)

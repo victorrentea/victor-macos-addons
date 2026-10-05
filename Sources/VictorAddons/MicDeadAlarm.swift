@@ -31,7 +31,7 @@ final class MicDeadAlarm {
     private(set) var silentSince: Date?
     private var shownText: String?
 
-    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens },
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
          sound: @escaping () -> Void = { NSSound(named: NSSound.Name("Basso"))?.play() }) {
         self.screensProvider = screensProvider
         self.sound = sound

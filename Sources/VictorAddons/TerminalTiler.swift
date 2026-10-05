@@ -131,7 +131,7 @@ enum TerminalTiler {
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetActiveDisplayList(count, &ids, &count)
         let usableByID = usableRects()
-        return ids.map {
+        return physicalDisplayIDs(ids.prefix(Int(count))).map {
             let b = CGDisplayBounds($0)
             let bounds = Rect(x: Int(b.origin.x), y: Int(b.origin.y),
                               w: Int(b.size.width), h: Int(b.size.height))
@@ -148,7 +148,7 @@ enum TerminalTiler {
             guard let primary = NSScreen.screens.first else { return [:] }
             let top = primary.frame.maxY
             var out: [CGDirectDisplayID: Rect] = [:]
-            for screen in NSScreen.screens {
+            for screen in NSScreen.physical {
                 guard let number = screen.deviceDescription[
                     NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { continue }
                 let v = screen.visibleFrame

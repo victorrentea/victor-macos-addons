@@ -240,7 +240,7 @@ enum ScreenshotManager {
     /// position so the captured frame always contains the cursor that `-C` will draw.
     private static func activeDisplay() -> (number: Int, screen: NSScreen?) {
         let mouse = NSEvent.mouseLocation  // Cocoa coords: bottom-left origin
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else {
+        guard let screen = NSScreen.physical.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else {
             return (1, NSScreen.main)
         }
         return (displayNumber(for: screen), screen)

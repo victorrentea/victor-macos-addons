@@ -521,7 +521,7 @@ final class HandsOffOverlay {
     // MARK: - Frame
 
     private func buildFrames() {
-        for (screenIndex, screen) in NSScreen.screens.enumerated() {
+        for (screenIndex, screen) in NSScreen.physical.enumerated() {
             let panel = NSPanel(contentRect: screen.frame,
                                 styleMask: [.borderless, .nonactivatingPanel],
                                 backing: .buffered, defer: false)

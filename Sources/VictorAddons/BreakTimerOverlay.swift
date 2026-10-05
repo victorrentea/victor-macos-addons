@@ -538,7 +538,7 @@ final class BreakTimerController {
     private func blackoutOtherScreens(except retina: NSScreen) {
         removeBlackoutPanels()                       // safety: never stack covers
         let retinaID = Self.displayID(of: retina)
-        for screen in NSScreen.screens where Self.displayID(of: screen) != retinaID {
+        for screen in NSScreen.physical where Self.displayID(of: screen) != retinaID {
             let p = NSPanel(contentRect: screen.frame,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)

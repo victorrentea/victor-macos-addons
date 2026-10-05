@@ -156,7 +156,7 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         panel.setFrame(frame, display: false)
         self.panel = panel
 
-        let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = NSScreen.physical.first { $0.frame.intersects(frame) } ?? NSScreen.main ?? NSScreen.physical[0]
         let scrim = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         scrim.isOpaque = false
@@ -206,9 +206,9 @@ final class PromptHistoryPanel: NSObject, NSTableViewDataSource, NSTableViewDele
     /// tool Victor reads, and the built-in display is what the room sees.
     private func frameCentredUnderMouse(width: CGFloat, height: CGFloat) -> NSRect {
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
+        let screen = NSScreen.physical.first(where: { NSMouseInRect(mouse, $0.frame, false) })
             ?? NSScreen.main
-            ?? NSScreen.screens[0]
+            ?? NSScreen.physical[0]
         let visible = screen.visibleFrame
         return NSRect(x: visible.midX - width / 2,
                       y: visible.midY - height / 2,

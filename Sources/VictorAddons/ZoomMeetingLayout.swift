@@ -341,7 +341,7 @@ final class ZoomMeetingLayout {
         CGGetActiveDisplayList(0, nil, &count)
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetActiveDisplayList(count, &ids, &count)
-        let online = ids.filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
+        let online = physicalDisplayIDs(ids).filter { CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }
         guard let builtIn = online.first(where: { CGDisplayIsBuiltin($0) != 0 }) else { return nil }
         return ZoomMeetingLayoutPolicy.displayAbove(CGDisplayBounds(builtIn),
                                                     among: online.filter { $0 != builtIn }.map(CGDisplayBounds))
@@ -352,7 +352,7 @@ final class ZoomMeetingLayout {
     /// Dock parked on that screen) taken out. **Main thread only.**
     private static func usableArea(ofDisplayBounds bounds: CGRect) -> CGRect? {
         guard let primaryHeight = NSScreen.screens.first?.frame.height else { return nil }
-        let screen = NSScreen.screens.first { s in
+        let screen = NSScreen.physical.first { s in
             let f = s.frame
             return abs(f.minX - bounds.minX) < 1 && abs((primaryHeight - f.maxY) - bounds.minY) < 1
         }

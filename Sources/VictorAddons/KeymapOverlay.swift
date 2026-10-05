@@ -961,7 +961,7 @@ final class KeymapOverlayController {
     private static let retryDelays: [TimeInterval] = [2, 5, 15, 60, 300]
     private var retryIndex = 0
 
-    init(retinaScreenProvider: @escaping () -> NSScreen, screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens }) {
+    init(retinaScreenProvider: @escaping () -> NSScreen, screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical }) {
         self.retinaScreenProvider = retinaScreenProvider
         self.screensProvider = screensProvider
         // The ⌘⌃ sheet is a static map of this app's own shortcuts, so it is

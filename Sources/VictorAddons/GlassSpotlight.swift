@@ -82,7 +82,7 @@ final class GlassSpotlight {
     /// event carries them.
     func begin(atCG point: CGPoint) {
         let p = Self.cocoa(point)
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) })
+        guard let screen = NSScreen.physical.first(where: { NSMouseInRect(p, $0.frame, false) })
                 ?? NSScreen.main else { return }
         holeBeforeDrag = screenFrame == screen.frame ? hole : nil
         dragScreen = screen
@@ -140,7 +140,7 @@ final class GlassSpotlight {
     /// Put a box up without the mouse — global Cocoa rect — or take it down.
     func testShow(_ rect: CGRect?) -> String {
         if let rect,
-           let screen = NSScreen.screens.first(where: { NSMouseInRect(CGPoint(x: rect.midX, y: rect.midY), $0.frame, false) }) {
+           let screen = NSScreen.physical.first(where: { NSMouseInRect(CGPoint(x: rect.midX, y: rect.midY), $0.frame, false) }) {
             stopTimer()
             drag = nil
             ensurePanel(on: screen)

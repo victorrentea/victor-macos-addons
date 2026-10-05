@@ -6,10 +6,10 @@ enum ScreenCaptureFlash {
 
     /// The built-in (Retina) display, falling back to the main screen.
     static var builtInScreen: NSScreen? {
-        NSScreen.screens.first { screen in
+        NSScreen.physical.first { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
             return CGDisplayIsBuiltin(id) != 0
-        } ?? NSScreen.main ?? NSScreen.screens.first
+        } ?? NSScreen.main ?? NSScreen.physical.first
     }
 
     /// Take every live border down immediately. Called before an interactive
@@ -146,7 +146,7 @@ enum ScreenCaptureFlash {
     /// `point` is in global Cocoa coordinates.
     static func markCursor(at point: NSPoint, duration: CFTimeInterval = 0.6) {
         guard !isSuppressed else { return }
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
+        guard let screen = NSScreen.physical.first(where: { NSMouseInRect(point, $0.frame, false) })
                 ?? NSScreen.main else { return }
 
         let panel = NSPanel(contentRect: screen.frame,

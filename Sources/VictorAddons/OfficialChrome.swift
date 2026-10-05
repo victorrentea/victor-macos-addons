@@ -213,8 +213,8 @@ enum OfficialChrome {
     /// origin, y down), measured from the top of the primary display. The same
     /// flip `TerminalWindowPlacement` documents for AppleScript bounds.
     static func topLeftRect(of rect: CGRect) -> CGRect {
-        let primary = (NSScreen.screens.first { $0.frame.origin == .zero }
-            ?? NSScreen.main ?? NSScreen.screens[0]).frame
+        let primary = (NSScreen.physical.first { $0.frame.origin == .zero }
+            ?? NSScreen.main ?? NSScreen.physical[0]).frame
         return CGRect(x: rect.minX, y: primary.maxY - rect.maxY,
                       width: rect.width, height: rect.height)
     }
@@ -255,7 +255,7 @@ enum OfficialChrome {
             return "{\"pid\":\(pid),\"userDataDir\":\"\(escape(dir))\",\"official\":\(pid == official)}"
         }
         let wins = windows().map { w -> String in
-            let screen = NSScreen.screens.first {
+            let screen = NSScreen.physical.first {
                 topLeftRect(of: $0.frame).contains(CGPoint(x: w.frame.midX, y: w.frame.midY))
             }
             return "{\"x\":\(Int(w.frame.minX)),\"y\":\(Int(w.frame.minY))," +

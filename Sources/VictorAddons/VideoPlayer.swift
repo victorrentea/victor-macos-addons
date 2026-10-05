@@ -213,7 +213,7 @@ final class VideoPlayer {
     /// `NSScreen.main` / `screens[0]` follow the **primary** display, which at a
     /// venue is deliberately the ASUS (see `DisplayArrangementManager`).
     static func targetScreen() -> NSScreen {
-        let screens = NSScreen.screens
+        let screens = NSScreen.physical
         let candidates = screens.map { s in
             ScreenCandidate(
                 isBuiltIn: (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
