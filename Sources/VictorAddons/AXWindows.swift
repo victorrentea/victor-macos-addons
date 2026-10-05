@@ -84,15 +84,18 @@ enum AXWindows {
 
     static func setFrame(_ window: AXUIElement, _ rect: CGRect) {
         var size = rect.size
-        if let value = AXValueCreate(.cgSize, &size) {
-            AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
-        }
-        // Position after size: a window pinned near a screen edge can be nudged by
-        // the resize, and the origin is the half we can restore exactly.
         var origin = rect.origin
-        if let value = AXValueCreate(.cgPoint, &origin) {
-            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
-        }
+        guard let sizeValue = AXValueCreate(.cgSize, &size),
+              let originValue = AXValueCreate(.cgPoint, &origin) else { return }
+        // Size, position, size again. Position after size: a window pinned near a
+        // screen edge can be nudged by the resize, and the origin is the half we
+        // can restore exactly. Size once more because macOS clamps a resize to
+        // the room left below the window's *current* origin: F3 on a window at
+        // y=300 filled only 780 of 1055 pt, and the second F3 then saw "not
+        // filled" and filled again instead of restoring (2026-10-05).
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, originValue)
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
     }
 
     static func value<T>(of el: AXUIElement, _ attr: String,
