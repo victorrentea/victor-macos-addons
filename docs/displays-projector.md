@@ -325,9 +325,16 @@ silhouette** (50 % at first — too dark to read through) where the face is (the
 layer — no second render), at `.screenSaver + 1`, above `ShareZoom`, which is told to
 exclude it (`ShareZoom.alsoExcluded`) so it is not magnified underneath.
 
-**Corner** (`VirtualDesktopCornerPolicy`, tested): pointer parked on the home
-(bottom-right) rectangle for **4 s** → face fades to bottom-left; pointer away from the
-home rectangle for **3 s** → back.
+**Corner** (`VirtualDesktopCornerPolicy`, tested): the pointer resting **on the shadow
+itself** — its pixels' alpha, read from the last keyed face, not the clip's rectangle —
+for **3 s** raises a **←** button on the head (top of the silhouette + 18 % of its
+height, at the head's centre column; the clip's centre when the 44 pt disc would not
+fit wholly on the shadow). It vanishes when the pointer leaves the shadow. A click
+moves the face bottom-left; it comes home **3 s after the pointer leaves the
+bottom-right rectangle**. The button is a separate non-activating panel, always on
+screen at alpha 0 while hidden, so both captures exclude it by id — nobody on the
+call sees it. (First cut, same day: the pointer anywhere in the rectangle for 4 s
+moved the face on its own — it jumped while Victor was merely reading under it.)
 
 **Cost** (2026-10-05, prototype, Zoom closed, two on/off alternations of 20 s):
 WindowServer 45–48 % → 48–49 % (the invisible screen is nearly free); the process

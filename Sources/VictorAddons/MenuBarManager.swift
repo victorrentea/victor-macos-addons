@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 5, 13:57"
+    static let BUILD_TIME = "Oct 5, 13:59"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -570,7 +570,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         virtualDesktopItem.target = self
         virtualDesktopItem.isEnabled = true
         virtualDesktopItem.state = VirtualDesktopSettings.isEnabled ? .on : .off
-        virtualDesktopItem.toolTip = "An invisible screen with the Retina and you cut out bottom-right. Share that screen in Teams/Zoom. On the Retina you see only your faint 20% shadow; park the pointer on it 4 s and you move left."
+        virtualDesktopItem.toolTip = "An invisible screen with the Retina and you cut out bottom-right. Share that screen in Teams/Zoom. On the Retina you see only your faint 20% shadow; rest the pointer on it 3 s for a ← that moves you left."
 
         // 🛰️ Claude RC in background — the `claude remote-control` server the
         // phone opens sessions against, kept alive in a detached tmux session.

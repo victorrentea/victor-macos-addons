@@ -51,41 +51,54 @@ final class VirtualDesktopAutoSwitch {
     }
 }
 
-/// Which corner the presenter sits in, and when the pointer chases them out of it.
+/// Which corner the presenter sits in, and when Victor is offered to move it.
 /// Pure, so the timing is tested without a camera.
 ///
-/// - The pointer **parked on the face for 4 s** sends it to the bottom-left corner:
-///   Victor is working under it.
-/// - Once it is there, the pointer **away from the bottom-right corner for 3 s**
+/// - The pointer resting **on the shadow itself** (not merely inside its rectangle)
+///   for **3 s** raises a ← button on the shadow (`offering`); it goes away as soon
+///   as the pointer leaves the shadow. Nothing moves on its own: Victor clicks it
+///   (`chooseLeft`). An automatic move after 4 s (the first cut) jumped while he
+///   was merely reading under his face.
+/// - Once left, the pointer **away from the bottom-right rectangle for 3 s**
 ///   brings it home.
 struct VirtualDesktopCornerPolicy {
     enum Corner: Equatable { case right, left }
 
-    static let leaveAfter: TimeInterval = 4
+    static let offerAfter: TimeInterval = 3
     static let returnAfter: TimeInterval = 3
 
     private(set) var corner: Corner = .right
-    private var parkedSince: TimeInterval?
+    private(set) var offering = false
+    private var restingSince: TimeInterval?
     private var awaySince: TimeInterval?
 
-    /// `inHome`: the pointer is inside the bottom-right rectangle the face occupies
-    /// when it is at home. Returns the corner the face should be in now.
-    mutating func update(inHome: Bool, now: TimeInterval) -> Corner {
+    /// `onShadow`: the pointer is over the silhouette's opaque pixels (or the button).
+    /// `inHome`: the pointer is inside the bottom-right rectangle the clip occupies.
+    mutating func update(onShadow: Bool, inHome: Bool, now: TimeInterval) {
         switch corner {
         case .right:
             awaySince = nil
-            guard inHome else { parkedSince = nil; break }
-            let since = parkedSince ?? now
-            parkedSince = since
-            if now - since >= Self.leaveAfter { corner = .left; parkedSince = nil }
+            guard onShadow else { restingSince = nil; offering = false; return }
+            let since = restingSince ?? now
+            restingSince = since
+            if now - since >= Self.offerAfter { offering = true }
         case .left:
-            parkedSince = nil
-            guard !inHome else { awaySince = nil; break }
+            restingSince = nil
+            offering = false
+            guard !inHome else { awaySince = nil; return }
             let since = awaySince ?? now
             awaySince = since
             if now - since >= Self.returnAfter { corner = .right; awaySince = nil }
         }
-        return corner
+    }
+
+    /// The ← button was clicked.
+    mutating func chooseLeft() {
+        guard corner == .right else { return }
+        corner = .left
+        offering = false
+        restingSince = nil
+        awaySince = nil
     }
 }
 
@@ -104,8 +117,9 @@ struct VirtualDesktopCornerPolicy {
 ///
 /// On the Retina itself the presenter shows only as a **20 % black silhouette**, so
 /// Victor sees where his face covers the slides without watching himself. It sits
-/// above `ShareZoom` and is excluded from both captures. Pointer parked on it 4 s ⇒
-/// the face moves bottom-left (`VirtualDesktopCornerPolicy`).
+/// above `ShareZoom` and is excluded from both captures. Pointer resting on it 3 s ⇒
+/// a ← button on the head, visible only to Victor, moves the face bottom-left
+/// (`VirtualDesktopCornerPolicy`).
 ///
 /// **Cost** (measured 2026-10-05, Zoom closed, two on/off alternations):
 /// WindowServer +~3 % (45–48 → 48–49 %); the segmentation itself ~27 % of one core
@@ -140,6 +154,12 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private var display: CGVirtualDisplay?
     private var screenWindow: NSWindow?
     private var silhouettePanel: NSPanel?
+    /// The ← offered on the shadow (`VirtualDesktopCornerPolicy.offering`). Always on
+    /// screen at alpha 0 while hidden, so both captures can exclude it by id.
+    private var buttonPanel: NSPanel?
+    /// The keyed face last shown (main thread): its alpha is the shadow, read for the
+    /// pointer test and to find the head.
+    private var shownFace: CVPixelBuffer?
     private let desktopLayer = CALayer()
     private let faceLayer = CALayer()
     private let silhouetteMask = CALayer()
@@ -206,6 +226,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         cameraQueue.async { session?.stopRunning() }
         screenWindow?.orderOut(nil); screenWindow = nil
         silhouettePanel?.orderOut(nil); silhouettePanel = nil
+        buttonPanel?.orderOut(nil); buttonPanel = nil
+        shownFace = nil
         excludedWindowIDs = []
         onExclusionsChanged?()
         facePool = nil
@@ -311,7 +333,26 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         panel.contentView = view
         panel.orderFrontRegardless()
         silhouettePanel = panel
-        excludedWindowIDs = [CGWindowID(panel.windowNumber)]
+
+        let button = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.buttonSize, height: Self.buttonSize),
+                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        button.level = NSWindow.Level(rawValue: panel.level.rawValue + 1)
+        button.isOpaque = false
+        button.backgroundColor = .clear
+        button.hasShadow = false
+        button.hidesOnDeactivate = false
+        button.isReleasedWhenClosed = false
+        button.collectionBehavior = panel.collectionBehavior
+        button.contentView = ArrowButtonView(frame: NSRect(x: 0, y: 0, width: Self.buttonSize, height: Self.buttonSize)) { [weak self] in
+            self?.leftClicked()
+        }
+        button.alphaValue = 0
+        button.ignoresMouseEvents = true
+        button.setFrameOrigin(NSPoint(x: panel.frame.midX, y: panel.frame.midY))
+        button.orderFrontRegardless()
+        buttonPanel = button
+
+        excludedWindowIDs = [CGWindowID(panel.windowNumber), CGWindowID(button.windowNumber)]
         onExclusionsChanged?()
     }
 
@@ -322,11 +363,92 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
     // MARK: - Pointer → corner
 
+    private static let buttonSize: CGFloat = 44
+
     private func checkPointer() {
+        guard let panel = silhouettePanel else { return }
+        let mouse = NSEvent.mouseLocation
+        let onButton = (buttonPanel.map { $0.alphaValue > 0 && $0.frame.contains(mouse) }) ?? false
+        let onShadow = onButton || shadowAlpha(at: mouse, in: panel.frame) > 0.5
+        let inHome = faceFrame(.right, in: retinaFrame).contains(mouse)
+        let wasOffering = corners.offering
         let before = corners.corner
-        let inHome = faceFrame(.right, in: retinaFrame).contains(NSEvent.mouseLocation)
-        let now = corners.update(inHome: inHome, now: CFAbsoluteTimeGetCurrent())
-        if now != before { move(to: now) }
+        corners.update(onShadow: onShadow, inHome: inHome, now: CFAbsoluteTimeGetCurrent())
+        if corners.offering != wasOffering { showButton(corners.offering) }
+        if corners.corner != before { move(to: corners.corner) }
+    }
+
+    private func leftClicked() {
+        corners.chooseLeft()
+        showButton(false)
+        move(to: corners.corner)
+    }
+
+    private func showButton(_ show: Bool) {
+        guard let button = buttonPanel, let panel = silhouettePanel else { return }
+        if show {
+            let local = buttonCentre(in: panel.frame.size)
+            button.setFrameOrigin(NSPoint(x: panel.frame.minX + local.x - Self.buttonSize / 2,
+                                          y: panel.frame.minY + local.y - Self.buttonSize / 2))
+        }
+        button.ignoresMouseEvents = !show
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            button.animator().alphaValue = show ? 1 : 0
+        }
+    }
+
+    /// Alpha of the shadow under a global point, 0…1; 0 outside the panel.
+    private func shadowAlpha(at point: NSPoint, in frame: CGRect) -> CGFloat {
+        guard frame.contains(point), let face = shownFace else { return 0 }
+        let local = CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)
+        return Self.alpha(of: face, x: local.x * CGFloat(CVPixelBufferGetWidth(face)) / frame.width,
+                          row: (frame.height - local.y) * CGFloat(CVPixelBufferGetHeight(face)) / frame.height)
+    }
+
+    /// Where the ← goes, in panel points (origin bottom-left): on the head when the
+    /// whole button fits on the shadow there, otherwise the clip's centre.
+    private func buttonCentre(in size: CGSize) -> CGPoint {
+        let fallback = CGPoint(x: size.width / 2, y: size.height / 2)
+        guard let face = shownFace else { return fallback }
+        let width = CVPixelBufferGetWidth(face), height = CVPixelBufferGetHeight(face)
+        // Top of the head: the first row with a few opaque pixels.
+        var top: Int?
+        for row in stride(from: 0, to: height, by: 2) {
+            var opaque = 0
+            for x in stride(from: 0, to: width, by: 2) where Self.alpha(of: face, x: CGFloat(x), row: CGFloat(row)) > 0.5 {
+                opaque += 1
+            }
+            if opaque >= 4 { top = row; break }
+        }
+        guard let top else { return fallback }
+        // The head's centre column, over the band just below its top.
+        var xs: [Int] = []
+        for row in stride(from: top, to: min(height, top + height / 8), by: 2) {
+            for x in stride(from: 0, to: width, by: 2) where Self.alpha(of: face, x: CGFloat(x), row: CGFloat(row)) > 0.5 {
+                xs.append(x)
+            }
+        }
+        guard !xs.isEmpty else { return fallback }
+        let cx = CGFloat(xs.reduce(0, +)) / CGFloat(xs.count)
+        let cRow = CGFloat(top) + CGFloat(height) * 0.18
+        let r = Self.buttonSize / 2 * CGFloat(width) / size.width
+        let fits = [(0, 0), (r, 0), (-r, 0), (0, r), (0, -r)].allSatisfy {
+            Self.alpha(of: face, x: cx + $0.0, row: cRow + $0.1) > 0.5
+        }
+        guard fits else { return fallback }
+        return CGPoint(x: cx * size.width / CGFloat(width), y: size.height - cRow * size.height / CGFloat(height))
+    }
+
+    /// Alpha of one BGRA pixel, 0…1 (0 out of bounds).
+    private static func alpha(of buffer: CVPixelBuffer, x: CGFloat, row: CGFloat) -> CGFloat {
+        let ix = Int(x), iy = Int(row)
+        guard ix >= 0, iy >= 0, ix < CVPixelBufferGetWidth(buffer), iy < CVPixelBufferGetHeight(buffer) else { return 0 }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return 0 }
+        let byte = base.load(fromByteOffset: iy * CVPixelBufferGetBytesPerRow(buffer) + ix * 4 + 3, as: UInt8.self)
+        return CGFloat(byte) / 255
     }
 
     private func move(to corner: VirtualDesktopCornerPolicy.Corner) {
@@ -445,6 +567,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
             guard let self, self.display != nil else { return }
             self.faceLayer.contents = surface
             self.silhouetteMask.contents = surface
+            self.shownFace = out
         }
     }
 
@@ -469,7 +592,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     // MARK: - Retina → IOSurface straight into a layer
 
     private func startDesktopCapture(source: CGDirectDisplayID, width: Int, height: Int, attempt: Int = 0) {
-        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { [weak self] content, error in
+        // onScreenWindowsOnly: false — the ← button sits at alpha 0 until offered.
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { [weak self] content, error in
             DispatchQueue.main.async {
                 guard let self, self.display != nil else { return }
                 let excluded = Set(self.excludedWindowIDs)
@@ -477,7 +601,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                 // virtual screen appears.
                 guard let content,
                       let retina = content.displays.first(where: { $0.displayID == source }),
-                      content.windows.contains(where: { excluded.contains($0.windowID) }) || attempt >= 10 else {
+                      excluded.isSubset(of: Set(content.windows.map(\.windowID))) || attempt >= 10 else {
                     if attempt < 10 {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             self.startDesktopCapture(source: source, width: width, height: height, attempt: attempt + 1)
@@ -487,7 +611,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                     }
                     return
                 }
-                // Exclude the silhouette only, not the whole app: 🔎 ShareZoom, the
+                // Exclude the silhouette and its ← only, not the whole app: 🔎 ShareZoom, the
                 // banners and the break overlay belong in the picture.
                 let silhouette = content.windows.filter { excluded.contains($0.windowID) }
                 let config = SCStreamConfiguration()
@@ -532,5 +656,33 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 private extension NSScreen {
     var displayID: CGDirectDisplayID {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    }
+}
+
+/// The ← on the shadow: a dark disc with a white arrow, clickable without
+/// activating Victor Addons (the panel is non-activating, the view takes first mouse).
+private final class ArrowButtonView: NSView {
+    private let action: () -> Void
+
+    init(frame: NSRect, action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: frame)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) { action() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.withAlphaComponent(0.6).setFill()
+        NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).fill()
+        let arrow = NSAttributedString(string: "←", attributes: [
+            .font: NSFont.systemFont(ofSize: bounds.height * 0.55, weight: .bold),
+            .foregroundColor: NSColor.white,
+        ])
+        let size = arrow.size()
+        arrow.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
     }
 }

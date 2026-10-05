@@ -3,41 +3,63 @@ import XCTest
 
 final class VirtualDesktopCornerPolicyTests: XCTestCase {
 
-    func testPointerParkedFourSecondsSendsTheFaceLeft() {
+    func testResting3sOnTheShadowOffersTheButtonButMovesNothing() {
         var p = VirtualDesktopCornerPolicy()
-        XCTAssertEqual(p.update(inHome: true, now: 0), .right)
-        XCTAssertEqual(p.update(inHome: true, now: 3.9), .right)
-        XCTAssertEqual(p.update(inHome: true, now: 4.0), .left)
+        p.update(onShadow: true, inHome: true, now: 0)
+        p.update(onShadow: true, inHome: true, now: 2.9)
+        XCTAssertFalse(p.offering)
+        p.update(onShadow: true, inHome: true, now: 3)
+        XCTAssertTrue(p.offering)
+        p.update(onShadow: true, inHome: true, now: 60)
+        XCTAssertEqual(p.corner, .right, "never moves on its own")
     }
 
-    func testLeavingBeforeFourSecondsRestartsTheCount() {
+    func testInsideTheRectangleButOffTheShadowOffersNothing() {
         var p = VirtualDesktopCornerPolicy()
-        _ = p.update(inHome: true, now: 0)
-        _ = p.update(inHome: false, now: 3)
-        XCTAssertEqual(p.update(inHome: true, now: 3.5), .right)
-        XCTAssertEqual(p.update(inHome: true, now: 7.4), .right)
-        XCTAssertEqual(p.update(inHome: true, now: 7.5), .left)
+        p.update(onShadow: false, inHome: true, now: 0)
+        p.update(onShadow: false, inHome: true, now: 10)
+        XCTAssertFalse(p.offering)
     }
 
-    func testFaceComesHomeThreeSecondsAfterThePointerLeavesTheCorner() {
+    func testLeavingTheShadowHidesTheButtonAndRestartsTheCount() {
         var p = VirtualDesktopCornerPolicy()
-        _ = p.update(inHome: true, now: 0)
-        _ = p.update(inHome: true, now: 4)
-        XCTAssertEqual(p.update(inHome: true, now: 10), .left, "still working in the corner")
-        XCTAssertEqual(p.update(inHome: false, now: 11), .left)
-        XCTAssertEqual(p.update(inHome: false, now: 13.9), .left)
-        XCTAssertEqual(p.update(inHome: false, now: 14), .right)
+        p.update(onShadow: true, inHome: true, now: 0)
+        p.update(onShadow: true, inHome: true, now: 3)
+        p.update(onShadow: false, inHome: true, now: 4)
+        XCTAssertFalse(p.offering)
+        p.update(onShadow: true, inHome: true, now: 5)
+        p.update(onShadow: true, inHome: true, now: 7.9)
+        XCTAssertFalse(p.offering)
+        p.update(onShadow: true, inHome: true, now: 8)
+        XCTAssertTrue(p.offering)
     }
 
-    func testComingBackToTheCornerCancelsTheReturn() {
+    func testClickMovesLeftAndItComesHome3sAfterLeavingTheRectangle() {
         var p = VirtualDesktopCornerPolicy()
-        _ = p.update(inHome: true, now: 0)
-        _ = p.update(inHome: true, now: 4)
-        _ = p.update(inHome: false, now: 5)
-        _ = p.update(inHome: true, now: 7)
-        XCTAssertEqual(p.update(inHome: false, now: 8), .left)
-        XCTAssertEqual(p.update(inHome: false, now: 10.9), .left)
-        XCTAssertEqual(p.update(inHome: false, now: 11), .right)
+        p.update(onShadow: true, inHome: true, now: 0)
+        p.update(onShadow: true, inHome: true, now: 3)
+        p.chooseLeft()
+        XCTAssertEqual(p.corner, .left)
+        XCTAssertFalse(p.offering)
+        p.update(onShadow: false, inHome: true, now: 10)
+        XCTAssertEqual(p.corner, .left, "still working in the corner")
+        p.update(onShadow: false, inHome: false, now: 11)
+        p.update(onShadow: false, inHome: false, now: 13.9)
+        XCTAssertEqual(p.corner, .left)
+        p.update(onShadow: false, inHome: false, now: 14)
+        XCTAssertEqual(p.corner, .right)
+    }
+
+    func testComingBackToTheRectangleCancelsTheReturn() {
+        var p = VirtualDesktopCornerPolicy()
+        p.chooseLeft()
+        p.update(onShadow: false, inHome: false, now: 0)
+        p.update(onShadow: false, inHome: true, now: 2)
+        p.update(onShadow: false, inHome: false, now: 3)
+        p.update(onShadow: false, inHome: false, now: 5.9)
+        XCTAssertEqual(p.corner, .left)
+        p.update(onShadow: false, inHome: false, now: 6)
+        XCTAssertEqual(p.corner, .right)
     }
 }
 
