@@ -314,9 +314,14 @@ final class KeymapOverlayTests: XCTestCase {
 
     func testControlOptionLayerTypesTheGooseOnG() {
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[5], "🪿")
-        // ⌥8 keeps its own goose — the new board adds a letter that means the
-        // word, it does not move the digit that already worked.
-        XCTAssertEqual(EmojiKeyLayer.optionSeed[28], "🪿")
+        // ⌥8 gave its goose up to 🗑️ (2026-10-05), which came off ⌥⇧7 to make
+        // room for 🔒 there — so the goose now lives only on ⌃⌥G.
+        XCTAssertEqual(EmojiKeyLayer.optionSeed[28], "🗑️")
+        XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[26], "🔒")
+        XCTAssertEqual(
+            EmojiKeyLayer.seeds.values.flatMap { $0.values }.filter { $0 == "🪿" }.count, 1,
+            "🪿 lives on exactly one key"
+        )
         // B for bug, P for parachute, C for crying laughter, A for autobuz,
         // S for sheep, M for mail, W for war — letters that mean the word.
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[11], "🐞")
@@ -339,8 +344,8 @@ final class KeymapOverlayTests: XCTestCase {
         // ⌥M keeps its own 🤪: a free letter on the new board costs the old one
         // nothing.
         XCTAssertEqual(EmojiKeyLayer.optionSeed[46], "🤪")
-        // 🪂 *moved* off ⌥⇧8 rather than being duplicated: unlike ⌥8's goose,
-        // that digit was not muscle memory anybody had built.
+        // 🪂 *moved* off ⌥⇧8 rather than being duplicated: that digit was not
+        // muscle memory anybody had built.
         XCTAssertNil(EmojiKeyLayer.optionShiftSeed[28])
         XCTAssertEqual(
             EmojiKeyLayer.seeds.values.flatMap { $0.values }.filter { $0 == "🪂" }.count, 1,
