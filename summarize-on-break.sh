@@ -122,7 +122,12 @@ cd "$HOME" || true
 # --strict-mcp-config + empty config: break-delta only reads the transcript and
 # writes Discussion.md, so skip loading the claude.ai connectors (serena,
 # codegraph, playwright, …) — they're pure startup overhead + context bloat here.
+# --settings sandbox: the transcript is whatever the room said into the mic, so
+# this unattended run's Bash is sandboxed (writes only to the session folder and
+# /tmp, network only to an allowlist) and settings/hooks are not editable.
+SANDBOX="$HOME/workspace/victor-skills-private/skills/training-summarizer/sandbox.settings.json"
 env -u ANTHROPIC_API_KEY "$CLAUDE" -p "$PROMPT" --model opus --dangerously-skip-permissions \
+  --settings "$SANDBOX" \
   --strict-mcp-config --mcp-config '{"mcpServers":{}}'
 STATUS=$?
 

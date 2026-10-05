@@ -100,7 +100,10 @@ final class SummaryReminder {
         // AppleScript string — so the prompt must contain no quote of either
         // kind. It doesn't, and a slash-command is all claude needs to load the
         // skill's own instructions.
-        let command = "cd '\(cwd)' && env -u ANTHROPIC_API_KEY claude '\(Self.prompt)'"
+        // --settings: the summarizer reads an untrusted transcript, so its Bash
+        // runs sandboxed (see sandbox.settings.json in the skill).
+        let sandbox = "\(NSHomeDirectory())/workspace/victor-skills-private/skills/training-summarizer/sandbox.settings.json"
+        let command = "cd '\(cwd)' && env -u ANTHROPIC_API_KEY claude --settings '\(sandbox)' '\(Self.prompt)'"
         let osa = """
         tell application "Terminal"
             activate
