@@ -321,7 +321,8 @@ final class DisplayArrangementManager {
         guard count > 0 else { return [] }
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetOnlineDisplayList(count, &ids, &count)
-        return Array(ids.prefix(Int(count)))
+        // 🪞 VirtualDesktop's invisible screen is ours, not a venue projector.
+        return Array(ids.prefix(Int(count))).filter { !VirtualDesktop.isVirtual($0) }
     }
 
     /// Cache-backed so a mirror slave (no `NSScreen`) still reports its name.

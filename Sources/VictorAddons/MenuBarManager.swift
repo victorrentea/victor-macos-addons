@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 4, 16:43"
+    static let BUILD_TIME = "Oct 5, 13:34"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -30,6 +30,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
+    private(set) var virtualDesktopItem: NSMenuItem!
     private(set) var claudeRemoteControlItem: NSMenuItem!
     private(set) var lidAwakeItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
@@ -109,6 +110,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     /// 🎬 Live subtitles, clicked. One switch, both ways.
     var onToggleLiveCaptions: (() -> Void)?
+    /// 🪞 Virtual Desktop ticked/unticked; the handler starts or stops it.
+    var onToggleVirtualDesktop: ((Bool) -> Void)?
 
     /// Once a second while the menu is open — for rows whose title is a clock.
     var onMenuTick: (() -> Void)?
@@ -555,6 +558,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         zoomSharePrepItem.isEnabled = true
         zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
 
+        // 🪞 Virtual Desktop — an invisible screen showing the Retina with Victor
+        // cut out bottom-right, for Teams/Zoom to share. In the menu because it is
+        // state with no key and nowhere else to show it, and it holds the camera
+        // while on. Default off.
+        virtualDesktopItem = NSMenuItem(title: "🪞 Virtual Desktop", action: #selector(toggleVirtualDesktopAction), keyEquivalent: "")
+        virtualDesktopItem.target = self
+        virtualDesktopItem.isEnabled = true
+        virtualDesktopItem.state = VirtualDesktopSettings.isEnabled ? .on : .off
+        virtualDesktopItem.toolTip = "An invisible screen with the Retina and you cut out bottom-right. Share that screen in Teams/Zoom. On the Retina you see only your 50% shadow; park the pointer on it 4 s and you move left."
+
         // 🛰️ Claude RC in background — the `claude remote-control` server the
         // phone opens sessions against, kept alive in a detached tmux session.
         // It is in the menu for the reason 🔊 above it is: it *acts on its own*,
@@ -616,7 +629,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem],
             [killItem],
             [emojiOverlayItem, commandOverlayItem],
-            [darkModeItem, zoomSharePrepItem, scrollReversalItem],
+            [darkModeItem, zoomSharePrepItem, virtualDesktopItem, scrollReversalItem],
             [homeAwakeItem, claudeRemoteControlItem],
         ]
         for (i, group) in extraGroups.enumerated() {
@@ -1156,6 +1169,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// neighbour: `ZoomSharePrep` reads the setting on each of its own scans,
     /// so there is no second copy of the answer that could drift out of step
     /// with the tick.
+    @objc private func toggleVirtualDesktopAction() {
+        let enabled = !VirtualDesktopSettings.isEnabled
+        VirtualDesktopSettings.isEnabled = enabled
+        virtualDesktopItem.state = enabled ? .on : .off
+        onToggleVirtualDesktop?(enabled)
+    }
+
     @objc private func toggleZoomSharePrepAction() {
         let enabled = !ZoomSharePrepSettings.isEnabled
         ZoomSharePrepSettings.isEnabled = enabled

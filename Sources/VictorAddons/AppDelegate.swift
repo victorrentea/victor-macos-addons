@@ -163,6 +163,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomLensFence: ZoomLensCursorFence?
     /// 🔎 ⌥⇧+scroll — the full-screen zoom a screen share can see.
     private let shareZoom = ShareZoom()
+    private let virtualDesktop = VirtualDesktop()
     private let glassSpotlight = GlassSpotlight()
     private let shareZoomHint = ShareZoomHint()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
@@ -842,6 +843,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         liveCaptions.onSwitched = { [weak self] on in
             self?.statusBanner?.showNow(text: on ? "🎬 Subtitles ON" : "🎬 Subtitles OFF",
                                         sound: nil, visibleDuration: 4)
+        }
+        // 🪞 Virtual Desktop: its silhouette sits above 🔎 ShareZoom, which must not film it.
+        shareZoom.alsoExcluded = { [weak self] in self?.virtualDesktop.excludedWindowIDs ?? [] }
+        virtualDesktop.onExclusionsChanged = { [weak self] in self?.shareZoom.refreshExclusions() }
+        menuBarManager.onToggleVirtualDesktop = { [weak self] enabled in self?.virtualDesktop.setEnabled(enabled) }
+        if VirtualDesktopSettings.isEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.virtualDesktop.setEnabled(true) }
         }
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
         menuBarManager.onMenuTick = { [weak self] in

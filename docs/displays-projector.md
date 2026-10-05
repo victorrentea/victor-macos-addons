@@ -295,3 +295,45 @@ to the whole screen — i.e. visually the full-screen magnifier he has always us
 Zoom's unfiltered capture mode, which is what actually carries it. ⌘⌃U and the pill remain
 the way to see and change which style is live.
 
+
+## 🪞 Virtual Desktop — the presenter cut out over the desktop, on an invisible screen (`VirtualDesktop`)
+
+**Why (2026-10-05).** Zoom 7.1.9 hid its screen-share *presenter layouts* ("In front
+of content") — the strings are still in the app, the web setting "Screen Sharing
+Presenter View" is on at account and user level, yet no picker, toolbar or menu shows
+them. macOS's Presenter Overlay was not offered either. Teams never had it. A virtual
+*camera* needs a signed CMIO system extension (the $99 Developer Program). A virtual
+*display* needs nothing: the private `CGVirtualDisplay` (DeskPad, BetterDisplay),
+declared in `Sources/CGVirtualDisplayShim`.
+
+**What it does.** 👩🏻‍💻 Extra → 🪞 Virtual Desktop (default off) creates a 1x screen
+the size of the Retina, vendor `0xF00D`, and fills it with:
+
+- the **Retina, live** through ScreenCaptureKit — 🔎 `ShareZoom`'s magnified picture
+  included — with only the silhouette window excluded;
+- the **presenter**: Elgato frames scaled to 720p *by the output* (the device format is
+  re-pinned, so a call's own feed is untouched), `VNGeneratePersonSegmentationRequest`
+  `.balanced`, keyed with `CIBlendWithMask`, centre-cropped 3:4, mirrored, a quarter of
+  the screen wide, flush bottom-right.
+
+In Teams/Zoom you share that screen. On the Retina Victor sees only a **50 % black
+silhouette** where the face is (the keyed face's IOSurface used as the mask of a black
+layer — no second render), at `.screenSaver + 1`, above `ShareZoom`, which is told to
+exclude it (`ShareZoom.alsoExcluded`) so it is not magnified underneath.
+
+**Corner** (`VirtualDesktopCornerPolicy`, tested): pointer parked on the home
+(bottom-right) rectangle for **4 s** → face fades to bottom-left; pointer away from the
+home rectangle for **3 s** → back.
+
+**Cost** (2026-10-05, prototype, Zoom closed, two on/off alternations of 20 s):
+WindowServer 45–48 % → 48–49 % (the invisible screen is nearly free); the process
+~27 % of one core and ~150 MB, nearly all of it the segmentation at 30 fps. With Zoom
+sharing, WindowServer swings 68–98 % on its own, so measure with Zoom closed.
+
+**Gotchas**
+- `NSWindow(contentRect:…, screen:)` takes the rect **relative to that screen**:
+  passing `screen.frame` put the first prototype's window on the Retina.
+- `DisplayArrangementManager` filters vendor `0xF00D` out, or the virtual screen reads
+  as an unknown projector and arms the presentation warning.
+- The screen appears in every share picker as one more "Desktop"; the pointer can
+  wander onto it past the right-hand monitor.

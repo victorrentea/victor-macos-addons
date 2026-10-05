@@ -126,6 +126,15 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
     var isActive: Bool { active != nil }
 
+    /// Windows another feature puts **above** this zoom, which the zoom must not film
+    /// or they would show twice, once magnified: 🪞 `VirtualDesktop`'s silhouette.
+    var alsoExcluded: () -> [CGWindowID] = { [] }
+
+    /// Rebuild the filters after `alsoExcluded` changed. Takes effect on the next zoom.
+    func refreshExclusions() {
+        prepareStages()
+    }
+
     override init() {
         super.init()
         // A display plugged, unplugged or rearranged invalidates every frame and
@@ -222,8 +231,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                     // Exclude *this* panel only, not the whole app: the banners, the
                     // hands-off locks and the break overlay belong in the picture.
                     let own = content.windows.filter { $0.windowID == CGWindowID(s.panel.windowNumber) }
+                    let above = Set(self.alsoExcluded())
+                    let others = content.windows.filter { above.contains($0.windowID) }
                     s.excludesOwnWindow = !own.isEmpty
-                    s.filter = SCContentFilter(display: display, excludingWindows: own)
+                    s.filter = SCContentFilter(display: display, excludingWindows: own + others)
                 }
                 done?()
             }
