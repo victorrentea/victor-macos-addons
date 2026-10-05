@@ -256,6 +256,22 @@ final class ClipboardHistoryStore {
         return true
     }
 
+    /// **A picture the app made itself** (the ✂️ cut-out) onto the pasteboard
+    /// and into the history as clip #1 — next to the original, not over it,
+    /// so a cut that went wrong is one ⌘⇧V V away from undone. Tagged like
+    /// `place()`'s write, so the poller does not record it a second time nor
+    /// push it on the ⌃V image stack, whose pop could race the paste.
+    func placeNew(png: Data) {
+        PasteboardGate.sync { pb in
+            pb.clearContents()
+            pb.setData(png, forType: .png)
+            lock.lock()
+            ignoredChangeCount = pb.changeCount
+            lock.unlock()
+        }
+        record(png: png)
+    }
+
     /// Drop one clip and its files — the ⌫ key in the overlay, and the recovery
     /// path when an image's file has vanished under us.
     func remove(_ entry: ClipboardEntry) {

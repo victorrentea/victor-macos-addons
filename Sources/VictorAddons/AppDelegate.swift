@@ -1197,6 +1197,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestClipboardHistory = { [weak self] in
             DispatchQueue.main.async { self?.toggleClipboardHistoryWithoutKeyboard() }
         }
+        tabletServer?.onTestClipboardCutout = {
+            guard let entry = ClipboardHistoryStore.shared.snapshot.first(where: { $0.isImage }) else {
+                overlayError("✂️ no image in the clipboard history")
+                return
+            }
+            ClipboardHistoryOverlay.cutOutAndPlace(entry, pasteInto: nil)
+        }
         // `at=x,y` in global Cocoa points, so a test can aim the mark at a screen
         // without dragging the pointer out from under whoever is using it.
         tabletServer?.onTestScreenshotMark = { at in

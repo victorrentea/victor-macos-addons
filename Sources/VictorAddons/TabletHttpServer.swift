@@ -90,6 +90,9 @@ case testTerminalFont
         /// only way to look at it while an agent is working, since pressing the
         /// real shortcut means taking Victor's keyboard.
         case testClipboardHistory
+        /// ✂️ The bezel's `Paste w/o bg` on the newest image clip, clipboard only
+        /// — never pasted, for the same reason `testClipboardHistory` never is.
+        case testClipboardCutout
         case testEmojiPicker(String?)
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
@@ -316,6 +319,7 @@ case testTerminalFont
     /// 📋 Open the clipboard-history bezel (clipboard-only mode — nothing is
     /// pasted, since no window asked for it).
     var onTestClipboardHistory: (() -> Void)?
+    var onTestClipboardCutout: (() -> Void)?
     /// 😀 Toggles the ⌥⌥ emoji picker, as the double tap would; `q=` opens it
     /// with that already typed into the search, so the strip can be checked
     /// without a keyboard.
@@ -624,6 +628,8 @@ case testTerminalFont
                 self.onTestScreenshotCrop?()
             case .testClipboardHistory:
                 self.onTestClipboardHistory?()
+            case .testClipboardCutout:
+                self.onTestClipboardCutout?()
             case .testEmojiPicker(let query):
                 self.onTestEmojiPicker?(query)
             case .testScreenshotMark(let at):
@@ -1005,6 +1011,8 @@ case testTerminalFont
             return .testScreenshotCrop
         case "/test/clipboard-history":
             return .testClipboardHistory
+        case "/test/clipboard-cutout":
+            return .testClipboardCutout
         case "/test/emoji-picker":
             return .testEmojiPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/screenshot/mark":

@@ -123,6 +123,29 @@ while Victor types sees an empty screen and concludes it is broken. One line per
 press, and the only way to answer "it did not appear" without taking his
 keyboard.
 
+## ✂️ Paste w/o bg
+
+An image clip carries three buttons in the box's bottom-right corner: `Paste w/o
+bg`, `Preview`, `Downloads`. The first (2026-10-05, Victor: *"în cmd-shift-v un
+buton nou: paste w/o bg"*) cuts the subject out with **Apple Vision's on-device
+subject lift** (`BackgroundRemoval`, `VNGenerateForegroundInstanceMaskRequest`,
+the model behind Preview's "Remove Background") and pastes the PNG-with-alpha
+into the app the walk was aimed at, through the same `waitForModifiersReleased`
++ ⌘V/⌃V choice as `commit()`. Opened from the menu it reads `Copy w/o bg` and
+stops at the clipboard.
+
+- **The cut-out is a new clip, the original stays** (`placeNew`), so a bad cut
+  is one V away. Its pasteboard write is tagged like `place()`'s: the poller
+  does not record it twice nor push it on the ⌃V stack, whose pop would race
+  the paste.
+- **Vision, not BiRefNet.** Measured on the same 680×640 photo: Vision 0.4 s, no
+  dependencies; BiRefNet (`rembg`, the `video-remove-bg` skill) cleaner — it
+  dropped a curtain Vision kept as a second subject and left no white halo on
+  fine edges — but a Python venv and a cold start of up to a minute. Every
+  instance Vision finds is kept, on the original canvas size.
+- **No subject → nothing pasted**, a `Funk` and an error pill (a screenshot of
+  an editor has no foreground to lift).
+
 ## Where the pixels live
 
 `~/Library/Caches/ro.victorrentea.macos-addons/clipboard-history/`
@@ -220,7 +243,8 @@ save) are swept on every capture; nothing else would ever reclaim them.
 |---|---|
 | `ClipboardHistoryPolicy.swift` | `ClipboardEntry` + the pure rules (insert/dedup/cap, the two ceilings, the age caption, the text preview) |
 | `ClipboardHistoryStore.swift` | disk, thumbnails, fingerprints, the index, `place()` |
-| `ClipboardHistoryOverlay.swift` | the bezel and its geometry |
+| `ClipboardHistoryOverlay.swift` | the bezel and its geometry, the image buttons |
+| `BackgroundRemoval.swift` | ✂️ Vision subject lift → PNG with alpha |
 | `ClipboardPasteKeystroke.swift` | ⌘V or ⌃V, and the AX read of the window it is about to land in |
 | `EventTapManager.swift` | ⌘⇧V, the key routing while it is up, the ⌘-release |
 | `ClipboardStackManager.swift` | the shared poll that feeds it |
