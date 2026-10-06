@@ -357,7 +357,9 @@ enum EmojiKeyLayer {
     /// than spending a letter. Two faces of one state, one key to remember.
     ///
     /// N for nor (2026-10-03) — the Romanian word, since "cloud" would want C,
-    /// which crying laughter already holds: the move A made for *autobuz*.
+    /// which crying laughter already held: the move A made for *autobuz*. It
+    /// lasted three days: on 2026-10-06 the cloud took C itself and crying
+    /// laughter moved to L (for LOL); N is free again on this board.
     ///
     /// F for fund (2026-10-04) — the Romanian word for the peach's other meaning.
     ///
@@ -369,12 +371,12 @@ enum EmojiKeyLayer {
           1: "🐑",   // S — sheep
           3: "🍑",   // F — fund, a peach
           5: "🪿",   // G — goose
-          8: "😂",   // C — crying laughter
+          8: "☁️",   // C — cloud, off ⌃⌥N (2026-10-06)
          11: "🐞",   // B — bug, the ladybug rather than the caterpillar or the beetle
          13: "⚔️",   // W — war, crossed swords
          23: "🫩",   // 5 — tired, the sibling of ⌥5's 😵‍💫
          35: "🪂",   // P — parachute, off ⌥⇧8
-         45: "☁️",   // N — nor, a cloud
+         37: "😂",   // L — LOL, crying laughter, off ⌃⌥C (2026-10-06)
          46: "✉️",   // M — mail
          47: "→",    // > — an arrow, the plain sibling of ⌥⇧.'s ⇒
     ]
@@ -410,7 +412,7 @@ enum EmojiKeyLayer {
          32: "🦄",
          33: "ă",
          34: "🤷‍♂️",
-         35: "🙏",
+         35: "🧑‍💻",
          37: "👍",
          38: "🤣",
          39: "ț",
@@ -451,14 +453,13 @@ enum EmojiKeyLayer {
          31: "👀",
          33: "Ă",
          34: "♾️",
-         35: "🧑‍💻",
+         35: "🙏",
          37: "🔒",
          39: "Ț",
          40: "👑",
          41: "Ș",
          42: "Â",
          43: "∈",
-         45: "🥷",
          46: "💸",
          47: "⇒",
     ]

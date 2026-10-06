@@ -322,21 +322,26 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[37], "🔒")
         XCTAssertEqual(EmojiKeyLayer.optionSeed[37], "👍")
         XCTAssertEqual(EmojiKeyLayer.optionSeed[40], "👑")
+        // ⌥P and ⌥⇧P swapped on 2026-10-06: the programmer on the plain key.
+        XCTAssertEqual(EmojiKeyLayer.optionSeed[35], "🧑‍💻")
+        XCTAssertEqual(EmojiKeyLayer.optionShiftSeed[35], "🙏")
         XCTAssertEqual(
             EmojiKeyLayer.seeds.values.flatMap { $0.values }.filter { $0 == "🪿" }.count, 1,
             "🪿 lives on exactly one key"
         )
-        // B for bug, P for parachute, C for crying laughter, A for autobuz,
+        // B for bug, P for parachute, L for LOL, A for autobuz,
         // S for sheep, M for mail, W for war — letters that mean the word.
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[11], "🐞")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[1], "🐑")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[0], "🚌")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[35], "🪂")
-        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[8], "😂")
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[37], "😂")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[46], "✉️")
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[13], "⚔️")
-        // N for nor (cloud): C was taken by crying laughter.
-        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[45], "☁️")
+        // C for cloud (2026-10-06): off ⌃⌥N, which is free again, as is ⌥⇧N.
+        XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[8], "☁️")
+        XCTAssertNil(EmojiKeyLayer.controlOptionSeed[45])
+        XCTAssertNil(EmojiKeyLayer.optionShiftSeed[45])
         // F for fund (peach).
         XCTAssertEqual(EmojiKeyLayer.controlOptionSeed[3], "🍑")
         // 5 pairs with ⌥5: dizzy on ⌥, tired on ⌃⌥ — same key, sibling faces.
