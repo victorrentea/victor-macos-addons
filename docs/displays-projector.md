@@ -257,6 +257,16 @@ crop"* — so it is the crop's gesture, read by the crop's code.
     mask under 1 (`alphaValue` on the view made the glass vanish altogether). At 0.75
     the sharp text leaked through enough to read; Victor, the same day: *"blurează mai
     tare ce nu se vede, trebuie să fie greu de citit"*.
+- **Frosted, not just blurred** (Victor, 2026-10-06: *"acum îmi pare blur"*; he chose
+  bathroom glass over reeded glass and over real refraction through a live capture).
+  Over the blur sits a `frost` layer, cut by the **same** feathered mask
+  (`GlassSpotlightMask.image` at 1× as a `CALayer` mask, redrawn with the hole): a white
+  tint (`frostTint` 0.14), black/white grain one noise pixel a point (`grainAlpha` 0.07,
+  drawn once per panel) and a top-left → bottom-right sheen with one brighter diagonal
+  streak. Around the box, halfway across the feather, a **rim** lit from the top-left:
+  a 1.5 pt line plus a faint 7 pt glow, each a gradient shown through a stroked path.
+  The blur itself is unchanged. Apple's Liquid Glass (`NSGlassEffectView`) is macOS 26
+  only; this Mac is on 15.
 - **ScreenBrush draws on top of the glass.** The panel sits at window level **28**, one
   under ScreenBrush's canvas (**29**, read from `CGWindowListCopyWindowInfo`) — Victor
   annotates what the box frames, and at the first level (`.screenSaver − 1`) the ink
