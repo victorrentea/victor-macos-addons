@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private let trainingEnd = TrainingEndSequence()
     private var menuBarManager: MenuBarManager!
     private let breakTimer = BreakTimerController()  // ☕️ Break countdown watch overlay
+    private let stopwatch = BreakTimerController(mode: .stopwatch)  // ⏱️ Timer: the same watch, counting up
     private let serverURL: String
     /// Vestige of the outbound WebSocket this app used to open to the Railway
     /// daemon. That code is gone (the daemon connects to *us* over
@@ -1190,6 +1191,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestBreakState = { [weak self] in
             self?.breakTimer.stateJSON() ?? "{\"error\":\"break timer unavailable\"}"
         }
+        // /test/stopwatch/{start,pause,close,state} — the ⏱️ Timer, headless.
+        // Same main-thread situation as the pair above; each answers the state after.
+        tabletServer?.onTestStopwatch = { [weak self] action in
+            guard let sw = self?.stopwatch else { return "{\"error\":\"stopwatch unavailable\"}" }
+            switch action {
+            case "start": sw.startStopwatch()
+            case "pause": sw.togglePause()
+            case "close": sw.close()
+            case "state": break
+            default: return "{\"error\":\"unknown action \(action)\"}"
+            }
+            return sw.stateJSON()
+        }
         tabletServer?.onTestScreenshotCrop = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() } }
         // 📋 The ⌘⇧V bezel without the keyboard. `pastes: false` for the same
         // reason the menu row uses it, and one more: an agent testing this must
@@ -1560,8 +1574,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onPickCountry = { [weak self] country in
             DispatchQueue.main.async { self?.breakTimer.selectCountry(country) }
         }
-        // Resume an in-progress break after a redeploy/restart.
-        DispatchQueue.main.async { [weak self] in self?.breakTimer.resumeIfNeeded() }
+        menuBarManager.onStopwatch = { [weak self] in
+            DispatchQueue.main.async { self?.stopwatch.startStopwatch() }
+        }
+        // Resume an in-progress break (and a running ⏱️ Timer) after a redeploy/restart.
+        DispatchQueue.main.async { [weak self] in
+            self?.breakTimer.resumeIfNeeded()
+            self?.stopwatch.resumeIfNeeded()
+        }
 
         menuBarManager.setup()
         // Start from a not-running UI; the controller flips it on once Whisper

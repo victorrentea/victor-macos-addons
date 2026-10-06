@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 5, 19:14"
+    static let BUILD_TIME = "Oct 6, 21:07"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -150,6 +150,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// 📋 Open the ⌘⇧V clipboard-history bezel from the menu.
     var onClipboardHistory: (() -> Void)?
     var onBreak: ((Int) -> Void)?
+    /// ⏱️ Timer — (re)start the count-up stopwatch from zero.
+    var onStopwatch: (() -> Void)?
     /// A country picked from the 🌍 submenu — persists the day-scoped selection and
     /// repaints a showing Break overlay in that timezone.
     var onPickCountry: ((BreakCountry) -> Void)?
@@ -242,6 +244,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             item.representedObject = minutes
             breakSubmenu.addItem(item)
         }
+        // ⏱️ Timer, under a line (2026-10-06, Victor): the same watch counting UP
+        // from zero, to measure how long something took. It lives with the breaks
+        // because it IS the break watch — same drag, resize, zoom, ⏸ and ✕.
+        breakSubmenu.addItem(.separator())
+        let stopwatchItem = NSMenuItem(title: "⏱️ Timer", action: #selector(stopwatchAction), keyEquivalent: "")
+        stopwatchItem.target = self
+        stopwatchItem.isEnabled = true
+        breakSubmenu.addItem(stopwatchItem)
         menu.addItem(breakItem)
 
         // 🌍 Where I am this week — the same day-scoped country the Break overlay
@@ -1503,6 +1513,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func breakAction(_ sender: NSMenuItem) {
         guard let minutes = sender.representedObject as? Int else { return }
         onBreak?(minutes)
+    }
+
+    @objc private func stopwatchAction() {
+        onStopwatch?()
     }
 
     @objc private func pickCountryAction(_ sender: NSMenuItem) {

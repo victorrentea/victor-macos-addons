@@ -83,6 +83,29 @@ enum BreakTimerModel {
         return String(format: "%02d:%02d", minutes, secs)
     }
 
+    /// Title of the count-up ⏱️ Timer (stopwatch) the ☕️ Break submenu opens.
+    static let stopwatchTitle = "TIMER"
+
+    /// Format the stopwatch's elapsed seconds for the 4-digit watch face:
+    /// `MM:SS` up to 99:59, then `HH:MM` — the face only has four digit cells,
+    /// and past 100 minutes the seconds are not what anyone is timing any more.
+    static func formatElapsed(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        if total < 100 * 60 { return format(remaining: total) }
+        let hours = min(99, total / 3600)
+        return String(format: "%02d:%02d", hours, (total % 3600) / 60)
+    }
+
+    /// A wall-clock moment as 24-hour `HH:mm` in the given timezone (the
+    /// stopwatch's "since HH:mm" line).
+    static func clockLabel(_ date: Date, timeZone: TimeZone) -> String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = timeZone
+        df.dateFormat = "HH:mm"
+        return df.string(from: date)
+    }
+
     /// The wall-clock moment the countdown reaches zero: `now + remaining`.
     static func finishDate(now: Date, remaining seconds: Int) -> Date {
         now.addingTimeInterval(TimeInterval(max(0, seconds)))

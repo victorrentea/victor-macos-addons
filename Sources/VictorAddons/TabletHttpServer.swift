@@ -71,6 +71,8 @@ case testTerminalFont
         case testBreakState
         /// Open the country picker on the Break overlay, optionally pre-filtered (test hook).
         case testBreakPicker(String?)
+        /// ⏱️ Timer: start / pause / close / state — answers the resulting state (test hook).
+        case testStopwatch(String)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
         case testTile
         /// 🎙️ Open the transcript picker — same action as ⌘⌃V (test hook). Not
@@ -312,6 +314,7 @@ case testTerminalFont
     var onTestBreakPicker: ((String?) -> Void)?
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
+    var onTestStopwatch: ((String) -> String)?
     var onTestTile: (() -> Void)?
     var onTestTranscriptPicker: ((String?, Int?) -> Void)?
     var onTestScreenshotCrop: (() -> Void)?
@@ -618,6 +621,9 @@ case testTerminalFont
                 body = self.onTestBreakState?() ?? "{\"error\":\"break timer unavailable\"}"
             case .testBreakPicker(let q):
                 self.onTestBreakPicker?(q)
+            case .testStopwatch(let action):
+                contentType = "application/json"
+                body = self.onTestStopwatch?(action) ?? "{\"error\":\"stopwatch unavailable\"}"
             case .testTile:
                 self.onTestTile?()
             case .testTranscriptPicker(let at, let pick):
@@ -997,6 +1003,8 @@ case testTerminalFont
             return .testBreakState
         case "/test/break/picker":
             return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
+        case let p where p.hasPrefix("/test/stopwatch/"):
+            return .testStopwatch(String(p.dropFirst("/test/stopwatch/".count)))
         case "/test/tile":
             return .testTile
         case "/test/transcript-picker":

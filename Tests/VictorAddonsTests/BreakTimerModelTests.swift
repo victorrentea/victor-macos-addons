@@ -38,6 +38,22 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertEqual(BreakTimerModel.format(remaining: -5), "00:00")
     }
 
+    // MARK: - formatElapsed (⏱️ stopwatch)
+
+    func testElapsedStartsAtZero() {
+        XCTAssertEqual(BreakTimerModel.formatElapsed(0), "00:00")
+    }
+
+    func testElapsedIsMinutesSecondsUpTo99_59() {
+        XCTAssertEqual(BreakTimerModel.formatElapsed(83), "01:23")
+        XCTAssertEqual(BreakTimerModel.formatElapsed(100 * 60 - 1), "99:59")
+    }
+
+    func testElapsedSwitchesToHoursMinutesFrom100Minutes() {
+        XCTAssertEqual(BreakTimerModel.formatElapsed(100 * 60), "01:40")
+        XCTAssertEqual(BreakTimerModel.formatElapsed(5 * 3600 + 7 * 60 + 30), "05:07")
+    }
+
     // MARK: - finishDate(now:remaining:)
 
     func testFinishDateAddsRemaining() {

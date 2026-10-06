@@ -32,10 +32,28 @@ final class BreakTimerController {
     /// a full second early).
     private static let gongStrikePeak: Double = 1.02
 
+    /// `.countdown` is the ☕️ Break watch. `.stopwatch` is the ⏱️ Timer from the
+    /// same submenu: the same panel, digits, ⏸/✕, drag, corner-resize and
+    /// wheel-zoom, but counting UP from zero — and with none of a break's
+    /// consequences: no gong, no fullscreen break screen, no post-close blackout,
+    /// no "Resumed" clock, no country pick. A separate instance, so a stopwatch
+    /// and a break can be on screen at the same time.
+    enum Mode { case countdown, stopwatch }
+    private let mode: Mode
+    private var isStopwatch: Bool { mode == .stopwatch }
+
+    init(mode: Mode = .countdown) { self.mode = mode }
+
+    /// A fresh stopwatch opens at half the break watch's size: it times something
+    /// Victor is doing, it is not a notice to the room.
+    private static let stopwatchScale: CGFloat = 0.5
+
     private var panel: BreakTimerPanel?
     private var view: BreakTimerView?
 
-    private var remaining = 0                  // seconds
+    private var remaining = 0                  // seconds left — or, for the stopwatch, seconds elapsed
+    /// When the stopwatch was (re)started from zero — its "since HH:mm" line.
+    private var startedAt = Date()
     private var paused = false
     private var timer: Timer?
     private var blinkTimer: Timer?            // drives the expiry blink
@@ -61,7 +79,7 @@ final class BreakTimerController {
 
     /// The corner this countdown belongs in, straight off its (already persisted)
     /// title — no extra state to keep in sync across a redeploy.
-    private var opensTopLeft: Bool { BreakTimerModel.opensTopLeft(title: titleText) }
+    private var opensTopLeft: Bool { isStopwatch || BreakTimerModel.opensTopLeft(title: titleText) }
 
     /// Whether a break overlay is currently on screen (used to avoid a ☕ click
     /// disrupting a countdown that's already running).
@@ -155,6 +173,27 @@ final class BreakTimerController {
         panel?.orderFrontRegardless()
         if isFresh, let origin = zoomFrom { animateZoomIn(from: origin) }
 
+        startTicking()
+        startActivityMonitor()
+        refresh()
+        persist()
+    }
+
+    /// (Re)start the ⏱️ stopwatch from 00:00. A re-click while it is up resets it
+    /// in place, the way re-clicking a break duration does.
+    func startStopwatch() {
+        guard isStopwatch else { return }
+        epoch += 1
+        remaining = 0
+        paused = false
+        startedAt = Date()
+        titleText = BreakTimerModel.stopwatchTitle
+        nextFreshScale = Self.stopwatchScale
+        let view = ensureWindow()
+        view.titleText = titleText
+        view.setDigitsVisible(true)
+        panel?.alphaValue = 1
+        panel?.orderFrontRegardless()
         startTicking()
         startActivityMonitor()
         refresh()
@@ -301,6 +340,11 @@ final class BreakTimerController {
     /// which during a workshop is the wall in front of the room.
     func stateJSON() -> String {
         guard panel != nil else { return "{\"showing\":false}" }
+        if isStopwatch {
+            return "{\"showing\":true,\"paused\":\(paused),\"elapsed\":\(remaining)," +
+                   "\"digits\":\"\(BreakTimerModel.formatElapsed(remaining))\"," +
+                   "\"since\":\"\(BreakTimerModel.clockLabel(startedAt, timeZone: .current))\"}"
+        }
         let finish = BreakTimerModel.finishLabel(now: Date(), remaining: remaining,
                                                  timeZone: selectedCountry.timeZone)
         return "{\"showing\":true,\"paused\":\(paused),\"remaining\":\(remaining)," +
@@ -315,7 +359,7 @@ final class BreakTimerController {
         // A real break was showing → (re)start the "resumed" clock. An "UNTIL BREAK"
         // countdown is excluded: it measures the time TO the pause, so its close
         // must leave "Resumed Xm ago" anchored on the last actual break.
-        if wasShowing && BreakTimerModel.endsABreak(title: titleText) { onEnded?() }
+        if wasShowing && !isStopwatch && BreakTimerModel.endsABreak(title: titleText) { onEnded?() }
         AddonSounds.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
@@ -347,7 +391,7 @@ final class BreakTimerController {
         // desktop between the two blacks). The one exception: an expiry that
         // found Victor already working at the Mac (`skipBlackoutOnClose`) —
         // there is no empty room to protect.
-        if wasShowing && !skipBlackoutOnClose {
+        if wasShowing && !skipBlackoutOnClose && !isStopwatch {
             ScreenBlackout.shared.show(fadeIn: wasFullscreen ? 0 : 0.35)
         }
         skipBlackoutOnClose = false
@@ -360,8 +404,26 @@ final class BreakTimerController {
     private static let kTitle = "BreakTimer.title"
     private static let kScale = "BreakTimer.scale"
 
+    // The stopwatch keeps its own keys: it may run alongside a break. Running, it
+    // stores the moment it would have read 00:00 (`zeroAt`), so a restart resumes
+    // it with the time it was away counted in; paused, the frozen elapsed seconds.
+    private static let kSwZeroAt = "Stopwatch.zeroAt"
+    private static let kSwPausedElapsed = "Stopwatch.pausedElapsed"
+    private static let kSwStartedAt = "Stopwatch.startedAt"
+
     private func persist() {
         let d = UserDefaults.standard
+        if isStopwatch {
+            d.set(startedAt, forKey: Self.kSwStartedAt)
+            if paused {
+                d.removeObject(forKey: Self.kSwZeroAt)
+                d.set(remaining, forKey: Self.kSwPausedElapsed)
+            } else {
+                d.set(Date().addingTimeInterval(TimeInterval(-remaining)), forKey: Self.kSwZeroAt)
+                d.removeObject(forKey: Self.kSwPausedElapsed)
+            }
+            return
+        }
         d.set(titleText, forKey: Self.kTitle)
         d.set(Double(nextFreshScale), forKey: Self.kScale)
         if paused {
@@ -374,6 +436,12 @@ final class BreakTimerController {
     }
 
     private func clearPersisted() {
+        if isStopwatch {
+            for k in [Self.kSwZeroAt, Self.kSwPausedElapsed, Self.kSwStartedAt] {
+                UserDefaults.standard.removeObject(forKey: k)
+            }
+            return
+        }
         UserDefaults.standard.removeObject(forKey: Self.kFinishAt)
         UserDefaults.standard.removeObject(forKey: Self.kPausedRemaining)
         UserDefaults.standard.removeObject(forKey: Self.kTitle)
@@ -383,6 +451,29 @@ final class BreakTimerController {
     /// On launch, resume a countdown that was running/paused when the app quit.
     func resumeIfNeeded() {
         let d = UserDefaults.standard
+        if isStopwatch {
+            let elapsed: Int
+            if d.object(forKey: Self.kSwPausedElapsed) != nil {
+                elapsed = d.integer(forKey: Self.kSwPausedElapsed)
+                paused = true
+            } else if let zeroAt = d.object(forKey: Self.kSwZeroAt) as? Date {
+                elapsed = max(0, Int(-zeroAt.timeIntervalSinceNow.rounded()))
+                paused = false
+            } else { return }
+            remaining = elapsed
+            startedAt = d.object(forKey: Self.kSwStartedAt) as? Date ?? Date()
+            titleText = BreakTimerModel.stopwatchTitle
+            nextFreshScale = Self.stopwatchScale
+            let v = ensureWindow()
+            v.titleText = titleText
+            v.setDigitsVisible(true)
+            panel?.alphaValue = 1
+            panel?.orderFrontRegardless()
+            startTicking()
+            startActivityMonitor()
+            refresh()
+            return
+        }
         if d.object(forKey: Self.kPausedRemaining) != nil {
             let rem = d.integer(forKey: Self.kPausedRemaining)
             if rem > 0 { resume(remaining: rem, paused: true) } else { clearPersisted() }
@@ -478,6 +569,13 @@ final class BreakTimerController {
     }
 
     private func activityTick() {
+        // The stopwatch is not a break: it never becomes the fullscreen break
+        // screen, it only peeks on hover.
+        if isStopwatch {
+            let hovering = panel?.frame.contains(NSEvent.mouseLocation) ?? false
+            setBackgroundOpaque(!hovering)
+            return
+        }
         // --- Fullscreen "break screen" on total inactivity AND transcript silence ---
         // Any input restores it; so does speech starting to land in the transcript
         // (Victor is still talking to the room even if he isn't typing).
@@ -629,8 +727,11 @@ final class BreakTimerController {
         view.onClose = { [weak self] in self?.close() }
         view.onTogglePause = { [weak self] in self?.togglePause() }
         view.onAdd = { [weak self] m in self?.addMinutes(m) }
-        view.selectedCountryTZ = selectedCountry.tz
-        view.onSelectCountry = { [weak self] c in self?.selectCountry(c) }
+        view.isStopwatch = isStopwatch
+        if !isStopwatch {
+            view.selectedCountryTZ = selectedCountry.tz
+            view.onSelectCountry = { [weak self] c in self?.selectCountry(c) }
+        }
         container.addSubview(view)
 
         panel.contentView = container
@@ -648,6 +749,12 @@ final class BreakTimerController {
     }
 
     private func tick() {
+        if isStopwatch {
+            guard !paused else { return }
+            remaining += 1
+            refresh()
+            return
+        }
         // Paused: the digits stand still, but `now` doesn't — redraw so the finish
         // time keeps advancing second by second while the break is held.
         guard !paused else { refresh(); return }
@@ -667,6 +774,12 @@ final class BreakTimerController {
 
     private func refresh() {
         guard let view else { return }
+        if isStopwatch {
+            view.update(digits: BreakTimerModel.formatElapsed(remaining),
+                        finishText: BreakTimerModel.clockLabel(startedAt, timeZone: .current),
+                        flag: "", paused: paused)
+            return
+        }
         // Always `now + remaining`, paused or not: the countdown owes the room a
         // duration, and the clock time it lands on is whatever the wall clock says
         // when it is finally released.
@@ -816,6 +929,11 @@ final class BreakTimerView: NSView {
     var titleText = "BREAK" {
         didSet { colonLayer.fillColor = lit.cgColor; needsDisplay = true }
     }
+    /// The ⏱️ count-up Timer: green, "since HH:mm" with no flag, and that line is
+    /// not a country-picker button.
+    var isStopwatch = false {
+        didSet { colonLayer.fillColor = lit.cgColor; needsDisplay = true }
+    }
 
     // Country dropdown: the finish line's flag is a click target. The hit rect is
     // recomputed each draw; picking from the dropdown calls back out.
@@ -840,8 +958,11 @@ final class BreakTimerView: NSView {
     // finish line, brackets, buttons — so it can never be mistaken for a real
     // break. A menu-started break stays entirely red.
     private static let untilBreakLit = NSColor(calibratedRed: 1.0, green: 0.584, blue: 0.0, alpha: 1.0)
+    // The ⏱️ stopwatch is GREEN: it counts up, it is not a break of any kind.
+    private static let stopwatchLit = NSColor(calibratedRed: 0.18, green: 0.85, blue: 0.36, alpha: 1.0)
     private var lit: NSColor {
-        titleText == BreakTimerModel.untilBreakTitle ? Self.untilBreakLit : Self.breakLit
+        if isStopwatch { return Self.stopwatchLit }
+        return titleText == BreakTimerModel.untilBreakTitle ? Self.untilBreakLit : Self.breakLit
     }
 
     // The colon dots live on their own layer so they can pulse gently (1.0↔0.5
@@ -1333,8 +1454,9 @@ final class BreakTimerView: NSView {
             // flag at the end. The shared shadow (set when the line is drawn) gives
             // the flag the same even halo as the text — no baked outline.
             let m = NSMutableAttributedString()
-            m.append(NSAttributedString(string: "until \(time)",
+            m.append(NSAttributedString(string: "\(isStopwatch ? "since" : "until") \(time)",
                                         attributes: [.font: timeFont, .foregroundColor: color]))
+            if flag.isEmpty { return m }        // the stopwatch's line has no country
             // Half a space between the time and the flag (−50% from a full space).
             let spaceAdv = (" " as NSString).size(withAttributes: [.font: timeFont]).width
             m.append(NSAttributedString(string: " ", attributes: [.font: timeFont, .kern: -spaceAdv / 2]))
@@ -1504,7 +1626,7 @@ final class BreakTimerView: NSView {
             dragMode = .button(kind)
             pressedButton = kind
             needsDisplay = true
-        } else if flagRect.contains(p) {
+        } else if !isStopwatch && flagRect.contains(p) {
             dragMode = .none
             showCountryPicker()
             return
