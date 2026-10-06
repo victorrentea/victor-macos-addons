@@ -407,18 +407,13 @@ final class ClipboardHistoryOverlay {
         content.addSubview(body)
         content.addSubview(status)
         if entry.isImage {
-            // Start BiRefNet while the walk is still going, so the ✂️ click
-            // finds it loaded. A no-op once it is up. See `BackgroundRemovalServer`.
-            BackgroundRemovalServer.shared.prewarm()
             // Anchored to the **box**, not the picture (2026-09-26, Victor):
             // the buttons sit in the same corner of the panel for every image,
             // so the hand finds them without looking where this one ended.
             let boxFrame = NSRect(x: pad, y: height - pad - box.height, width: box.width, height: box.height)
             let download = downloadButton(for: entry, over: boxFrame)
             content.addSubview(download)
-            let preview = previewButton(for: entry, leftOf: download.frame)
-            content.addSubview(preview)
-            content.addSubview(cutOutButton(for: entry, leftOf: preview.frame))
+            content.addSubview(previewButton(for: entry, leftOf: download.frame))
         }
 
         let panel = self.panel ?? BezelPanel()
@@ -540,56 +535,6 @@ final class ClipboardHistoryOverlay {
             }
         }
         return button
-    }
-
-    /// **`Paste w/o bg`, left of `Preview`** (2026-10-05, Victor: *"în cmd-shift-v
-    /// un buton nou: paste w/o bg"*) — this clip with its background cut away
-    /// (`BackgroundRemoval`), pasted where the walk was aimed, the same way
-    /// releasing ⌘ would have pasted the original. Opened from the menu there
-    /// is nobody to paste into, so the label says `Copy` and it stops at the
-    /// clipboard — the same split `commit()` makes.
-    private func cutOutButton(for entry: ClipboardEntry, leftOf other: NSRect) -> ClickButton {
-        let pastes = pastesOnCommit
-        let button = actionButton(symbol: "scissors", text: pastes ? "Paste w/o bg" : "Copy w/o bg",
-                                  rightEdge: other.minX - 16, bottom: other.minY)
-        button.toolTip = "Remove the background (on-device, BiRefNet) and \(pastes ? "paste" : "copy") the result"
-        button.onClick = { [weak self] in
-            guard let self else { return }
-            // Read before `close()`, for the reason `commit()` gives.
-            let target = ClipboardPasteTarget.current()
-            self.close()
-            self.onClosedByClick?()
-            Self.cutOutAndPlace(entry, pasteInto: pastes ? target : nil)
-        }
-        return button
-    }
-
-    /// Cut the background out of an image clip, put the result on the clipboard
-    /// as a new clip, and — given a target — paste it there. Also the body of
-    /// `GET /test/clipboard-cutout`, which passes no target: an agent must never
-    /// type a ⌘V into whatever Victor has in front of him.
-    nonisolated static func cutOutAndPlace(_ entry: ClipboardEntry, pasteInto target: ClipboardPasteTarget.Snapshot?) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let started = Date()
-            guard let (png, engine) = BackgroundRemoval.cutOut(imageAt: ClipboardHistoryStore.shared.fullURL(for: entry)) else {
-                overlayError("✂️ no subject found in that image — nothing \(target == nil ? "copied" : "pasted")")
-                DispatchQueue.main.async { NSSound(named: "Funk")?.play() }
-                return
-            }
-            ClipboardHistoryStore.shared.placeNew(png: png)
-            let took = String(format: "%.1f s, %@", Date().timeIntervalSince(started), engine.rawValue)
-            guard let target else {
-                overlayInfo("✂️ image w/o bg → clipboard (\(took))")
-                return
-            }
-            overlayInfo("✂️ image w/o bg → pasted (\(took))")
-            // Same two guards as `commit()`: wait for the hand to leave ⌘⇧, and
-            // ⌃V instead of ⌘V for a Claude Code prompt.
-            KeySimulator.waitForModifiersReleased()
-            ClipboardPasteKeystroke.choose(isImage: true,
-                                           frontmostBundleID: target.bundleID,
-                                           focusedWindowTitle: target.focusedWindowTitle).post()
-        }
     }
 
     /// One of the image's action buttons: an SF Symbol and a few words on one
