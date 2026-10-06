@@ -112,6 +112,9 @@ class EventTapManager {
     /// ⌘ + wheel-drag while the glass is up: the same drag moves the box
     /// already there instead of drawing a new one.
     var onGlassSpotlightGrab: ((CGPoint) -> Void)?
+    /// A bare wheel press on a corner of the box while the glass is up: that
+    /// corner is dragged again.
+    var onGlassSpotlightResume: ((CGPoint) -> Void)?
     var onGlassSpotlightMove: ((CGPoint) -> Void)?
     var onGlassSpotlightEnd: ((CGPoint) -> Void)?
     /// Esc while the glass is up.
@@ -211,6 +214,21 @@ private let VK_I: CGKeyCode = 0x22
     /// Set from main whenever the glass goes up or down, read here on every Esc.
     private let spotlightLock = NSLock()
     private var spotlightUp = false
+    /// The box on the glass, global CG coordinates — set from main.
+    private var spotlightHole: CGRect?
+
+    func setGlassSpotlightHole(_ hole: CGRect?) {
+        spotlightLock.lock()
+        spotlightHole = hole
+        spotlightLock.unlock()
+    }
+
+    /// The glass is up and `point` is within reach of a corner of its box.
+    private func isOnGlassSpotlightCorner(_ point: CGPoint) -> Bool {
+        spotlightLock.lock(); defer { spotlightLock.unlock() }
+        guard spotlightUp, let hole = spotlightHole else { return false }
+        return GlassSpotlightCorners.corner(of: hole, near: point, reach: GlassSpotlight.cornerReach) != nil
+    }
 
     func setGlassSpotlightUp(_ up: Bool) {
         spotlightLock.lock()
@@ -445,6 +463,16 @@ private let VK_I: CGKeyCode = 0x22
             if type == .otherMouseDown, event.flags.contains(.maskCommand), isGlassSpotlightUp {
                 spotlightDragging = true
                 DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightGrab?(at) }
+                return nil
+            }
+            // A bare press on a corner of the box, while the glass is up:
+            // that corner again (Victor, 2026-10-06). Only on a corner, so a
+            // bare wheel press anywhere else — Walkie Talkie's — is untouched.
+            if type == .otherMouseDown, !spotlightDragging,
+               event.flags.intersection([.maskShift, .maskCommand, .maskControl, .maskAlternate]).isEmpty,
+               isOnGlassSpotlightCorner(at) {
+                spotlightDragging = true
+                DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightResume?(at) }
                 return nil
             }
             if spotlightDragging {

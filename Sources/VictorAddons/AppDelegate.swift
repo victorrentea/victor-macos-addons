@@ -1878,7 +1878,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // Esc whether the glass is up, so it is told each time that changes.
         glassSpotlight.onShowingChanged = { [weak eventTap] up in eventTap?.setGlassSpotlightUp(up) }
         eventTap.onGlassSpotlightBegin = { [weak self] at in self?.glassSpotlight.begin(atCG: at) }
+        glassSpotlight.onHoleChanged = { [weak eventTap] hole in eventTap?.setGlassSpotlightHole(hole) }
         eventTap.onGlassSpotlightGrab = { [weak self] at in self?.glassSpotlight.grab(atCG: at) }
+        eventTap.onGlassSpotlightResume = { [weak self] at in self?.glassSpotlight.resume(atCG: at) }
         eventTap.onGlassSpotlightMove = { [weak self] at in self?.glassSpotlight.moved(toCG: at) }
         eventTap.onGlassSpotlightEnd = { [weak self] at in self?.glassSpotlight.end(atCG: at) }
         eventTap.onGlassSpotlightDismiss = { [weak self] in self?.glassSpotlight.dismiss() }

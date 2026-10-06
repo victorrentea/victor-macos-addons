@@ -42,9 +42,18 @@ final class GlassSpotlight {
     /// 2026-10-04). A drag that never gets there changes nothing.
     static let revealFraction: CGFloat = 0.05
 
+    /// How close to a corner of the box a bare wheel press has to land to pick
+    /// that corner up again — inside the box or out on the feather, either way.
+    static let cornerReach: CGFloat = 60
+
     static func reveals(_ box: CGRect, on screen: CGRect) -> Bool {
         box.width * box.height >= revealFraction * screen.width * screen.height
     }
+
+    /// The box on the glass, in global **CG** coordinates (y down, as events
+    /// carry them), nil when there is none — so the tap can tell whether a bare
+    /// wheel press landed on one of its corners.
+    var onHoleChanged: ((CGRect?) -> Void)?
 
     /// Called on every change of `isShowing`, so the event tap can tell whether
     /// Esc is ours.
@@ -75,7 +84,9 @@ final class GlassSpotlight {
     private var pushed: NSPoint?
     /// The box on the glass right now (global Cocoa), and the one before this
     /// drag began — a drag too small to be a box puts that one back.
-    private var hole: CGRect?
+    private var hole: CGRect? {
+        didSet { if hole != oldValue { onHoleChanged?(hole.map(Self.cg)) } }
+    }
     private var holeBeforeDrag: CGRect?
     private var maskedHole: CGRect?
     private var timer: Timer?
@@ -111,6 +122,30 @@ final class GlassSpotlight {
         grabbing = true
         var drag = RegionDrag(anchor: box.origin, within: screenFrame, controlArmed: true)
         drag.regrip(anchor: box.origin, free: CGPoint(x: box.maxX, y: box.maxY), mouse: p)
+        self.drag = drag
+        pushed = p
+        startTimer()
+        tick()
+    }
+
+    /// A bare wheel press on a corner of the box already up (the tap checked
+    /// it is within `cornerReach`): the drag left off there resumes — that
+    /// corner follows the hand, the opposite one stays, and ⌘ held at any point
+    /// carries the whole box, as in the drag that drew it (Victor, 2026-10-06:
+    /// *"let's resume what we were cropping"*).
+    func resume(atCG point: CGPoint) {
+        let p = Self.cocoa(point)
+        guard isShowing, let box = hole,
+              let corner = GlassSpotlightCorners.corner(of: box, near: p, reach: .greatestFiniteMagnitude) else { return }
+        holeBeforeDrag = box
+        dragScreen = nil
+        revealed = true
+        grabbing = false
+        // The press need not be exactly on the corner: the offset is kept, so
+        // nothing jumps at the press.
+        var drag = RegionDrag(anchor: GlassSpotlightCorners.opposite(corner, in: box), within: screenFrame,
+                              controlArmed: true)
+        drag.regrip(anchor: GlassSpotlightCorners.opposite(corner, in: box), free: corner, mouse: p)
         self.drag = drag
         pushed = p
         startTimer()
@@ -338,6 +373,11 @@ final class GlassSpotlight {
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         return NSPoint(x: cg.x, y: top - cg.y)
     }
+
+    private static func cg(_ rect: CGRect) -> CGRect {
+        let top = NSScreen.screens.first?.frame.maxY ?? 0
+        return CGRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
+    }
 }
 
 /// Plain glass: the effect view's own behind-window blur, turned down until text
@@ -394,6 +434,24 @@ private final class SpotlightPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
+/// Which corner of the box a press picks up. Pure, and indifferent to which
+/// way y points, so the tap (CG) and the spotlight (Cocoa) share it.
+enum GlassSpotlightCorners {
+    /// The corner of `box` nearest `point`, if it is within `reach` of it.
+    static func corner(of box: CGRect, near point: CGPoint, reach: CGFloat) -> CGPoint? {
+        let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
+                       CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.maxX, y: box.maxY)]
+        let nearest = corners.min { hypot($0.x - point.x, $0.y - point.y) < hypot($1.x - point.x, $1.y - point.y) }!
+        return hypot(nearest.x - point.x, nearest.y - point.y) <= reach ? nearest : nil
+    }
+
+    /// The corner across the box from `corner`: the one that stays put.
+    static func opposite(_ corner: CGPoint, in box: CGRect) -> CGPoint {
+        CGPoint(x: corner.x == box.minX ? box.maxX : box.minX,
+                y: corner.y == box.minY ? box.maxY : box.minY)
+    }
 }
 
 /// The glass's alpha: opaque everywhere, clear inside the box, and a smooth

@@ -235,6 +235,20 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   wherever the press was, the box kept on its own screen (`RegionDrag.regrip` + the ⌘
   move). The tap takes ⌘-middle only **while the glass is up**; with ⇧ also held, ⇧
   wins and a new box is drawn.
+- **A bare wheel press on a corner of the box resumes the drag** (Victor, 2026-10-06:
+  *"capture the press down of my wheel and move my mouse in the corner of the box so that
+  I can continue resizing it, optionally hitting Command to move it as well … let's resume
+  what we were cropping"*). Within `cornerReach` (60 pt, inside the box or out on the
+  feather) of a corner, with no modifier and the glass up, the tap takes the press, its
+  drags and its release: that corner follows the hand, the opposite one stays, and ⌘ held
+  at any moment carries the whole box exactly as in the drag that drew it. The press need
+  not be exactly on the corner — the offset is kept (`RegionDrag.regrip`), so nothing
+  jumps. **Only on a corner**, so a bare wheel press anywhere else — Walkie Talkie's area
+  crop during a dictation, a middle-click closing a tab — goes through untouched. The tap
+  knows the box from `GlassSpotlight.onHoleChanged` (global CG, under `spotlightLock`);
+  `GlassSpotlightCorners` is the pure half, tested. Verified 2026-10-06 with a posted
+  middle drag: corner (1100, 300) → +100, −83 gave exactly the expected box, and a press
+  in the middle of the box changed nothing.
 - **After the release the glass stays** (click-through, everything under it still
   works) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
   alone. A new ⇧-wheel-drag replaces the box.
