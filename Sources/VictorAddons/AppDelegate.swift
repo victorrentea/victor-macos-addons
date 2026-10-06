@@ -769,8 +769,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             case "link-lost":
                 overlayInfo("🎤 test hook: simulating a link loss (the next two lines are not the receiver)")
                 self.handleDjiReceiverEvent(.linkLost(since: Date(), lastLevel: level), screens: provider)
+            case "link-back":
+                overlayInfo("🎤 test hook: simulating the transmitter linking again")
+                self.handleDjiReceiverEvent(.linkBack)
             default:
-                return "{\"error\":\"kind is battery or link-lost\"}"
+                return "{\"error\":\"kind is battery, link-lost or link-back\"}"
             }
             return self.djiReceiver.stateJSON()
         }
