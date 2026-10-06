@@ -299,13 +299,17 @@ final class GlassSpotlight {
         let corner = GlassSpotlightCorners.corner(of: box, near: p, reach: Self.cornerReach, inside: Self.cornerInside)
         let inBox = corner == nil && box.contains(p)
         if panel.ignoresMouseEvents != inBox { panel.ignoresMouseEvents = inBox }
-        if let corner {
-            if NSEvent.modifierFlags.contains(.command) {
-                cursors.show(.move)
-            } else {
-                // The corner's diagonal: bottom-left and top-right are ↗↙ (Cocoa, y up).
-                cursors.show((corner.x == box.minX) == (corner.y == box.minY) ? .resizeNESW : .resizeNWSE)
-            }
+        // ⌘ held = a wheel drag from anywhere moves the box (the tap takes ⌘-middle
+        // while the glass is up), so the four arrows show everywhere, the box
+        // included — the invitation to press the wheel (Victor, 2026-10-06). The
+        // box stays click-through, so ⌘-click still reaches the app under it; that
+        // app may put its own cursor back on a move, and the next tick re-sets ours.
+        let flags = NSEvent.modifierFlags.intersection([.command, .shift, .control, .option])
+        if flags == .command {
+            cursors.show(.move)
+        } else if let corner {
+            // The corner's diagonal: bottom-left and top-right are ↗↙ (Cocoa, y up).
+            cursors.show((corner.x == box.minX) == (corner.y == box.minY) ? .resizeNESW : .resizeNWSE)
         } else if inBox {
             cursors.release()   // the app under the box draws its own
         } else {

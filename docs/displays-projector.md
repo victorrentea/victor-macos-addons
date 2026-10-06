@@ -260,7 +260,12 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   pull down command, the move"*). On a corner zone: the diagonal `NSCursor.frameResize`
   for that corner (macOS 15; crosshair before), or a four-arrow move cursor drawn from the
   SF Symbol while ⌘ is down. The same during a wheel drag, following the free corner. On
-  the glass: the arrow. In the box: hands back to the app underneath. **The way out of
+  the glass: the arrow. In the box: hands back to the app underneath. **⌘ alone held
+  anywhere on that screen — glass, corner or box — shows the four arrows** (Victor,
+  2026-10-06: *"if I hold down command, that should show the move … that invites me to
+  hold my wheel down to move it"*), since a ⌘ + wheel-drag from anywhere moves the box.
+  The box stays click-through even then, so ⌘-click still reaches the app under it; that
+  app may put its own cursor back on a mouse-move, and the next 60 Hz tick re-sets ours. **The way out of
   "a background app can't set the cursor"** is the window server's private
   `SetsCursorInBackground` connection property (`GlassSpotlightCursors`). Measured: without
   it, `NSCursor.set()` from this accessory app left Terminal's I-beam on screen; with it,
