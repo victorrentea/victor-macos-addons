@@ -227,7 +227,8 @@ private let VK_I: CGKeyCode = 0x22
     private func isOnGlassSpotlightCorner(_ point: CGPoint) -> Bool {
         spotlightLock.lock(); defer { spotlightLock.unlock() }
         guard spotlightUp, let hole = spotlightHole else { return false }
-        return GlassSpotlightCorners.corner(of: hole, near: point, reach: GlassSpotlight.cornerReach) != nil
+        return GlassSpotlightCorners.corner(of: hole, near: point, reach: GlassSpotlight.cornerReach,
+                                            inside: GlassSpotlight.cornerInside) != nil
     }
 
     func setGlassSpotlightUp(_ up: Bool) {

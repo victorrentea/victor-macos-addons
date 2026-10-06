@@ -249,8 +249,28 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   `GlassSpotlightCorners` is the pure half, tested. Verified 2026-10-06 with a posted
   middle drag: corner (1100, 300) → +100, −83 gave exactly the expected box, and a press
   in the middle of the box changed nothing.
-- **After the release the glass stays** (click-through, everything under it still
-  works) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
+- **The glass takes every click; the box lets them through** (Victor, 2026-10-06:
+  *"the masked area shouldn't be clickable at all"*). Until then the panel was
+  click-through everywhere. Now `ignoresMouseEvents` is false and a 60 Hz `hover` while the
+  glass is up flips it to true only while the pointer is in the box (minus the corner
+  zones). A click or scroll on the glass lands on a non-activating panel that can't become
+  key, so it does nothing. Verified with a test window under the glass counting posted
+  clicks: 2 on the glass and 1 on a corner never arrived, 2 in the box did.
+- **The cursor says what the wheel will do** (same day: *"a resizing diagonal … and when I
+  pull down command, the move"*). On a corner zone: the diagonal `NSCursor.frameResize`
+  for that corner (macOS 15; crosshair before), or a four-arrow move cursor drawn from the
+  SF Symbol while ⌘ is down. The same during a wheel drag, following the free corner. On
+  the glass: the arrow. In the box: hands back to the app underneath. **The way out of
+  "a background app can't set the cursor"** is the window server's private
+  `SetsCursorInBackground` connection property (`GlassSpotlightCursors`). Measured: without
+  it, `NSCursor.set()` from this accessory app left Terminal's I-beam on screen; with it,
+  the resize cursor showed. It holds because nobody else is setting the cursor at that
+  moment: over the glass the panel takes the mouse, so the app beneath gets no mouse-moved;
+  during a wheel drag the tap swallows the drags. If the property ever stops working,
+  the cursor just stays whatever the app underneath set. The corner zone reaches 60 pt
+  around a corner but only **16 pt into the box** (`cornerInside`), so the box itself
+  stays clickable almost to its corners.
+- **After the release the glass stays** (since 2026-10-06 it takes clicks — see below) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
   alone. A new ⇧-wheel-drag replaces the box.
 - **The glass comes up only once the box covers 5% of the screen** (`revealFraction`),
   already cut — never the whole screen blurred first with the box opening out of

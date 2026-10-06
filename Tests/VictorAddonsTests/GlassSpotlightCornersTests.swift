@@ -18,6 +18,17 @@ final class GlassSpotlightCornersTests: XCTestCase {
         XCTAssertNil(GlassSpotlightCorners.corner(of: box, near: CGPoint(x: 300, y: 350), reach: 60))
     }
 
+    func testACornerZoneReachesOnlyALittleIntoTheBox() {
+        // 30 pt in from the corner, 14 pt in from each edge: still the corner.
+        XCTAssertEqual(GlassSpotlightCorners.corner(of: box, near: CGPoint(x: 114, y: 214), reach: 60, inside: 16),
+                       CGPoint(x: 100, y: 200))
+        // 30 pt in from each edge: the box's, clickable.
+        XCTAssertNil(GlassSpotlightCorners.corner(of: box, near: CGPoint(x: 130, y: 230), reach: 60, inside: 16))
+        // Outside, the full reach.
+        XCTAssertEqual(GlassSpotlightCorners.corner(of: box, near: CGPoint(x: 60, y: 170), reach: 60, inside: 16),
+                       CGPoint(x: 100, y: 200))
+    }
+
     func testTheOppositeCornerStaysPut() {
         XCTAssertEqual(GlassSpotlightCorners.opposite(CGPoint(x: 500, y: 500), in: box), CGPoint(x: 100, y: 200))
         XCTAssertEqual(GlassSpotlightCorners.opposite(CGPoint(x: 100, y: 500), in: box), CGPoint(x: 500, y: 200))

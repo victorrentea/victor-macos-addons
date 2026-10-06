@@ -45,6 +45,9 @@ final class GlassSpotlight {
     /// How close to a corner of the box a bare wheel press has to land to pick
     /// that corner up again — inside the box or out on the feather, either way.
     static let cornerReach: CGFloat = 60
+    /// …but no deeper than this into the box, which stays clickable: a corner
+    /// zone is the glass's, and the glass takes no clicks.
+    static let cornerInside: CGFloat = 16
 
     static func reveals(_ box: CGRect, on screen: CGRect) -> Bool {
         box.width * box.height >= revealFraction * screen.width * screen.height
@@ -90,6 +93,11 @@ final class GlassSpotlight {
     private var holeBeforeDrag: CGRect?
     private var maskedHole: CGRect?
     private var timer: Timer?
+    /// While the glass is up and no drag is on: where the pointer is decides
+    /// whether the panel takes the click (glass, corners) or lets it through
+    /// (the box), and which cursor shows.
+    private var hoverTimer: Timer?
+    private let cursors = GlassSpotlightCursors()
     private var fadeGeneration = 0
 
     // MARK: - Driven by the event tap
@@ -167,6 +175,7 @@ final class GlassSpotlight {
         drag = nil
         grabbing = false
         legendPill.isHidden = true
+        if !isShowing { cursors.release() }   // with the glass up, `hover` takes the cursor back
         guard revealed, let box = hole else {
             overlayInfo("🔦 glass spotlight: drag under \(Int(Self.revealFraction * 100))% of the screen, "
                         + (holeBeforeDrag == nil ? "no glass" : "previous box kept"))
@@ -183,6 +192,7 @@ final class GlassSpotlight {
         holeBeforeDrag = nil
         guard let panel, isShowing else { return }
         isShowing = false
+        stopHover()
         fadeGeneration += 1
         let generation = fadeGeneration
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -247,6 +257,13 @@ final class GlassSpotlight {
         // No ⌃ square here, unlike the crop: Victor, 2026-10-04, *"n-am nevoie de square"*.
         let box = drag.update(mouse: mouse, command: grabbing || flags.contains(.command), control: false)
         self.drag = drag
+        if drag.moving {
+            cursors.show(.move)
+        } else {
+            let free = drag.freeCorner(for: mouse)
+            // Cocoa y is up: a free corner up-right or down-left of the anchor is the ↗↙ diagonal.
+            cursors.show((free.x - drag.anchor.x) * (free.y - drag.anchor.y) > 0 ? .resizeNESW : .resizeNWSE)
+        }
         if !revealed {
             guard let dragScreen, Self.reveals(box, on: dragScreen.frame) else { return }
             revealed = true
@@ -254,6 +271,46 @@ final class GlassSpotlight {
         }
         apply(hole: box)
         renderDecorations(box: box, moving: drag.moving)
+    }
+
+    // MARK: - Hover: clicks and cursor while the glass is up
+
+    private func startHover() {
+        guard hoverTimer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.hover() }
+        RunLoop.main.add(t, forMode: .common)
+        hoverTimer = t
+    }
+
+    private func stopHover() {
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        panel?.ignoresMouseEvents = true
+        cursors.release()
+    }
+
+    private func hover() {
+        guard drag == nil, let panel, let box = hole else { return }
+        let p = NSEvent.mouseLocation
+        guard NSMouseInRect(p, screenFrame, false) else {
+            cursors.release()
+            return
+        }
+        let corner = GlassSpotlightCorners.corner(of: box, near: p, reach: Self.cornerReach, inside: Self.cornerInside)
+        let inBox = corner == nil && box.contains(p)
+        if panel.ignoresMouseEvents != inBox { panel.ignoresMouseEvents = inBox }
+        if let corner {
+            if NSEvent.modifierFlags.contains(.command) {
+                cursors.show(.move)
+            } else {
+                // The corner's diagonal: bottom-left and top-right are ↗↙ (Cocoa, y up).
+                cursors.show((corner.x == box.minX) == (corner.y == box.minY) ? .resizeNESW : .resizeNWSE)
+            }
+        } else if inBox {
+            cursors.release()   // the app under the box draws its own
+        } else {
+            cursors.show(.arrow)
+        }
     }
 
     // MARK: - Drawing
@@ -275,6 +332,7 @@ final class GlassSpotlight {
                 panel.animator().alphaValue = 1
             }
             isShowing = true
+            startHover()
         }
     }
 
@@ -292,8 +350,11 @@ final class GlassSpotlight {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        // Click-through: the glass is to look at, the work goes on under it.
-        panel.ignoresMouseEvents = true
+        // The glass takes every click and scroll — nothing under it is reachable
+        // (Victor, 2026-10-06: *"the masked area shouldn't be clickable at all"*);
+        // `hover` makes the panel click-through only while the pointer is in the
+        // box. Non-activating and never key, so a click on the glass does nothing.
+        panel.ignoresMouseEvents = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
@@ -439,8 +500,11 @@ private final class SpotlightPanel: NSPanel {
 /// Which corner of the box a press picks up. Pure, and indifferent to which
 /// way y points, so the tap (CG) and the spotlight (Cocoa) share it.
 enum GlassSpotlightCorners {
-    /// The corner of `box` nearest `point`, if it is within `reach` of it.
-    static func corner(of box: CGRect, near point: CGPoint, reach: CGFloat) -> CGPoint? {
+    /// The corner of `box` nearest `point`, if it is within `reach` of it and
+    /// no deeper than `inside` into the box.
+    static func corner(of box: CGRect, near point: CGPoint, reach: CGFloat,
+                       inside: CGFloat = .greatestFiniteMagnitude) -> CGPoint? {
+        if box.insetBy(dx: inside, dy: inside).contains(point) { return nil }
         let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
                        CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.maxX, y: box.maxY)]
         let nearest = corners.min { hypot($0.x - point.x, $0.y - point.y) < hypot($1.x - point.x, $1.y - point.y) }!
@@ -453,6 +517,85 @@ enum GlassSpotlightCorners {
                 y: corner.y == box.minY ? box.maxY : box.minY)
     }
 }
+
+/// The cursor over the glass, set from a background app.
+///
+/// **The way out of "a background app cannot set the cursor"** is the window
+/// server's `SetsCursorInBackground` connection property (private; what
+/// cursor-changing utilities use). Measured 2026-10-06: without it,
+/// `NSCursor.set()` from this accessory app left Terminal's I-beam on screen;
+/// with it, the resize cursor showed. If the call ever fails the cursor simply
+/// stays whatever the app underneath set.
+///
+/// It holds because nothing else is setting the cursor at the same time: over
+/// the glass the panel takes the mouse, so the app under it gets no mouse-moved
+/// to answer with its own; during a wheel drag the tap swallows the drags.
+final class GlassSpotlightCursors {
+    enum Shape { case arrow, resizeNWSE, resizeNESW, move }
+
+    private var shown: Shape?
+    private static let enabled: Bool = {
+        let cid = _CGSDefaultConnection()
+        return CGSSetConnectionProperty(cid, cid, "SetsCursorInBackground" as CFString, kCFBooleanTrue) == 0
+    }()
+
+    func show(_ shape: Shape) {
+        guard Self.enabled else { return }
+        // Set every tick, not only on a change: an app under the box may have
+        // put its own back since.
+        shown = shape
+        Self.cursor(shape).set()
+    }
+
+    /// Stop drawing ours; the next app the pointer moves over sets its own.
+    func release() {
+        guard shown != nil else { return }
+        shown = nil
+        NSCursor.arrow.set()
+    }
+
+    private static func cursor(_ shape: Shape) -> NSCursor {
+        switch shape {
+        case .arrow: return .arrow
+        case .move: return move
+        case .resizeNWSE:
+            if #available(macOS 15, *) { return NSCursor.frameResize(position: .topLeft, directions: .all) }
+            return .crosshair
+        case .resizeNESW:
+            if #available(macOS 15, *) { return NSCursor.frameResize(position: .topRight, directions: .all) }
+            return .crosshair
+        }
+    }
+
+    /// Four arrows — AppKit has no public move cursor. Black on a white halo,
+    /// the same look as the system's own resize cursors.
+    private static let move: NSCursor = {
+        let side: CGFloat = 24
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            func symbol(_ weight: NSFont.Weight, _ points: CGFloat, _ color: NSColor) -> NSImage? {
+                let config = NSImage.SymbolConfiguration(pointSize: points, weight: weight)
+                    .applying(.init(paletteColors: [color]))
+                return NSImage(systemSymbolName: "arrow.up.and.down.and.arrow.left.and.right",
+                               accessibilityDescription: nil)?.withSymbolConfiguration(config)
+            }
+            for (image, inset) in [(symbol(.black, 19, .white), 0.0), (symbol(.semibold, 15, .black), 2.5)] {
+                guard let image else { continue }
+                let r = rect.insetBy(dx: inset, dy: inset)
+                let size = image.size
+                let scale = min(r.width / size.width, r.height / size.height)
+                let draw = CGSize(width: size.width * scale, height: size.height * scale)
+                image.draw(in: CGRect(x: r.midX - draw.width / 2, y: r.midY - draw.height / 2,
+                                      width: draw.width, height: draw.height))
+            }
+            return true
+        }
+        return NSCursor(image: image, hotSpot: NSPoint(x: side / 2, y: side / 2))
+    }()
+}
+
+@_silgen_name("_CGSDefaultConnection") private func _CGSDefaultConnection() -> Int32
+@_silgen_name("CGSSetConnectionProperty")
+private func CGSSetConnectionProperty(_ cid: Int32, _ target: Int32, _ key: CFString, _ value: CFTypeRef) -> Int32
 
 /// The glass's alpha: opaque everywhere, clear inside the box, and a smooth
 /// ramp across `feather` points *outside* it. Pure, so it is tested by reading
