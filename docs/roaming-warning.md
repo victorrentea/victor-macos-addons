@@ -1,7 +1,8 @@
 # 📶 Roaming allowance warning
 
 Asked for 25 Sep 2026: the roaming plan is **13 703 MB a month, reset on the
-2nd**. On a day the phone has been roaming and **under 15%** of it is left, a
+2nd** (editable on the phone since 6 Oct 2026). On a day the phone has been
+roaming and **under 10%** of it is left (15% until 6 Oct 2026), a
 red bottom-left pill says `📶 Roaming: 1.8 GB left (12%)` and **stays until
 hovered** (the moving dwell from `HoverMotionGate`; the pill then sinks). The
 dismissal holds for the rest of that day only (`roaming.warning.dismissed.day`
@@ -13,8 +14,9 @@ condition.
 
 The **phone** does. `RoamingUsage.kt` in `victor-phone-addons` already summed
 roaming traffic for its card (`NetworkStatsManager`, `ROAMING_YES` buckets, all
-UIDs, since the reset day). The ceiling (`LIMIT_BYTES`), the reset day and the
-15% threshold (`LOW_FRACTION`) live there too, and travel with every reading.
+UIDs, since the reset day). The ceiling (the card's "Monthly plan" row), the reset
+day and the 10% threshold (`LOW_FRACTION`) live there too, and travel with every
+reading as `limit` and `lowFraction`, so changing them needs no Mac release.
 The Mac only decides *whether to show it now* (`RoamingWarningPolicy`, unit-tested):
 
 - the reading says `low`: roaming today (`today > 0` or `roamingNow`) **and**
