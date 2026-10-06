@@ -711,7 +711,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.trainingEnd.noteVoice()
         }
         // The DJI transmitter died and the receiver is streaming zeros
-        // (`dead_input.py`). Sticky until clicked — see `MicDeadAlarm`.
+        // (`dead_input.py`). Up until clicked or the audio is back — see `MicDeadAlarm`.
         whisperManager.onDigitalSilence = { [weak self] since in
             guard let self else { return }
             // The receiver's link byte is the real signal; the zeros are only a

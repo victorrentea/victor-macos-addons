@@ -125,7 +125,7 @@ struct DjiReceiverPolicy {
     /// din % în % pentru 5 sec când e sub 20 %"). On a 7-step gauge that is
     /// levels 6 and 7.
     static let lowPercent = 20
-    /// How long "no transmitter linked" must last before the sticky alarm.
+    /// How long "no transmitter linked" must last before the red alarm.
     /// A transmitter re-links in a second or two after a radio hiccup; a dead
     /// one never does. 5 s is far past the first and costs nothing on the
     /// second — the alarm's own text carries the moment it began.
@@ -136,7 +136,7 @@ struct DjiReceiverPolicy {
         case lowBattery(unit: Int, level: Int, percent: Int)
         /// Every level change, for the log (the only place the raw level goes).
         case levelChanged(unit: Int, level: Int, charging: Bool)
-        /// Link lost for longer than the grace: raise the sticky alarm.
+        /// Link lost for longer than the grace: raise the red alarm.
         /// `lastLevel` is the last gauge seen before it went, to word the alarm.
         case linkLost(since: Date, lastLevel: Int?)
         case linkBack

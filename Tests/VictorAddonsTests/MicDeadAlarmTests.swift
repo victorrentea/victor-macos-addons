@@ -3,8 +3,12 @@ import XCTest
 @testable import VictorAddons
 
 /// The 🎤 dead-transmitter alarm's state rules, headless: no screens means no
-/// panels, which leaves exactly the logic — sticky, first time wins, click clears.
+/// panels, which leaves exactly the logic — first time wins, a click or the
+/// transmitter coming back clears it.
 final class MicDeadAlarmTests: XCTestCase {
+
+    /// `BottomLeftBanner.show` reads `NSApp`'s appearance, nil under `swift test`.
+    override func setUp() { _ = NSApplication.shared }
 
     private func alarm() -> MicDeadAlarm { MicDeadAlarm(screensProvider: { [] }, sound: {}) }
 
@@ -16,11 +20,20 @@ final class MicDeadAlarmTests: XCTestCase {
         XCTAssertEqual(a.silentSince, since)
     }
 
-    func testAudioComingBackDoesNotTakeItDown() {
+    func testAudioComingBackTakesItDown() {
         let a = alarm()
         a.raise(since: Date())
         a.audioResumed()
-        XCTAssertTrue(a.isRaised, "sticky: only Victor's click clears it")
+        XCTAssertFalse(a.isRaised, "the transmitter is back: the pill hides by itself")
+        let second = Date(timeIntervalSince1970: 1_790_003_600)
+        a.raise(since: second)
+        XCTAssertEqual(a.silentSince, second, "and the next loss raises it again")
+    }
+
+    func testAudioComingBackWithNoAlarmUpIsHarmless() {
+        let a = alarm()
+        a.audioResumed()
+        XCTAssertFalse(a.isRaised)
     }
 
     func testASecondReportKeepsTheFirstTime() {

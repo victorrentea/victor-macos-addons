@@ -12,10 +12,12 @@ import Cocoa
 /// **The app's own notification**, `BottomLeftBanner` — the same corner pill
 /// as every other message here (Victor: *"notificarea trebuie dată din macOS
 /// Addons în stilul ei, overlay stânga jos"*), tinted red like the roaming
-/// warning. **Sticky and click-only** (`clickOnly`): it does not leave when the
-/// transmitter comes back — minutes missing from the transcript are worth
-/// knowing even after the battery was swapped — and, unlike the roaming pill,
-/// a hover does not dismiss it: only a deliberate click (left or right).
+/// warning. **Click-only** (`clickOnly`): unlike the roaming pill, a hover does
+/// not dismiss it — only a deliberate click (left or right) — **or the
+/// transmitter coming back** (2026-10-06, Victor: *"stays there even if I
+/// reconnect another DJI Mini or the same one. It should auto hide."*; until
+/// then it stayed up after the link was back, so the minutes missing would be
+/// noticed). Any transmitter counts: the receiver's link byte, not one TX.
 /// Re-arming is the sources' job: each reports a dead run once, and again only
 /// after the audio / link came back and went again.
 final class MicDeadAlarm {
@@ -88,7 +90,7 @@ final class MicDeadAlarm {
         sound()
     }
 
-    /// Victor has seen it. The only way the pill leaves.
+    /// Victor has seen it, or the transmitter is back (`audioResumed`).
     func acknowledge(by how: String) {
         guard let since = silentSince else { return }
         overlayInfo("🎤 alarm dismissed (\(how)); it said: \(shownText ?? Self.text(since: since))")
@@ -98,9 +100,10 @@ final class MicDeadAlarm {
         banner = nil
     }
 
-    /// Audio / link is back. Logged only — the pill stays (see the type doc).
+    /// Audio / link is back: the pill leaves by itself (see the type doc).
     func audioResumed() {
-        overlayInfo("🎤 DJI is back" + (isRaised ? " — alarm stays up until clicked" : ""))
+        overlayInfo("🎤 DJI is back" + (isRaised ? " — taking the alarm down" : ""))
+        acknowledge(by: "DJI back")
     }
 
     func stateJSON() -> String {
