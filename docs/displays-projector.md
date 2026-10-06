@@ -252,21 +252,29 @@ crop"* — so it is the crop's gesture, read by the crop's code.
     claims: on the Retina a 1× mask showed at half size pinned to the top-right corner
     (the hole up, right of and smaller than the drag), and a 2× bitmap did the same.
     Measured 2026-10-04 with three variants side by side; a `CALayer` mask also worked.
-  - **The glass is fully opaque past the feather — tried lighter, went back.** The
-    effect view's blur radius is not public API, so "less intense" can only mean a
+  - **The glass is fully opaque past the feather — tried lighter, went back.** (Lighter
+    is now done by the radius, see below.) The effect view's blur radius is not public API, so "less intense" can only mean a
     mask under 1 (`alphaValue` on the view made the glass vanish altogether). At 0.75
     the sharp text leaked through enough to read; Victor, the same day: *"blurează mai
     tare ce nu se vede, trebuie să fie greu de citit"*.
-- **Frosted, not just blurred** (Victor, 2026-10-06: *"acum îmi pare blur"*; he chose
-  bathroom glass over reeded glass and over real refraction through a live capture).
-  Over the blur sits a `frost` layer, cut by the **same** feathered mask
-  (`GlassSpotlightMask.image` at 1× as a `CALayer` mask, redrawn with the hole): a white
-  tint (`frostTint` 0.14), black/white grain one noise pixel a point (`grainAlpha` 0.07,
-  drawn once per panel) and a top-left → bottom-right sheen with one brighter diagonal
-  streak. Around the box, halfway across the feather, a **rim** lit from the top-left:
-  a 1.5 pt line plus a faint 7 pt glow, each a gradient shown through a stroked path.
-  The blur itself is unchanged. Apple's Liquid Glass (`NSGlassEffectView`) is macOS 26
-  only; this Mac is on 15.
+- **Plain glass, readable with effort** (Victor, 2026-10-06). A frosted version came
+  first the same morning — white tint, grain, a diagonal sheen and a lit rim around the
+  box — and lasted an hour: *"it's like sand … just plain glass, more transparent and
+  without any border … the text should be barely readable. Still readable, but
+  harder."* What does that is `PlainGlassView`, an `NSVisualEffectView` that tunes the
+  layers AppKit builds inside it, by name and key path (private, measured on macOS 15):
+  - the `CABackdropLayer` named `backdrop` carries a `gaussianBlur` filter at **30 pt**;
+    `filters.gaussianBlur.inputRadius` on the *layer* sets it (setting it on the filter
+    object returned by `filters` does nothing — a copy). Now **3**.
+  - its `scale` is **⅛** stock: the backdrop samples at an eighth of the resolution,
+    which a 30 pt blur hides and a 3 pt one turns into blocks. Now **½**.
+  - `fill` (50% grey) and `tone` (lighten blend) are the material's tint — hidden.
+  Compared side by side at r 1.5 / 2 / 2.5 / 3 / 4 / 6 × scale ⅛ / ½ / 1: r 3 at ½ is the
+  one where a line of terminal text can still be made out, slowly. The tuning is
+  reapplied on `updateLayer` and after each mask change, since AppKit may rebuild those
+  layers. If a macOS update renames them nothing throws: the glass just goes back to
+  the heavy grey blur. The 40 pt feather is unchanged, and at this radius its
+  crossfade no longer shows a sharp double image (the reason 0.75 alpha failed).
 - **ScreenBrush draws on top of the glass.** The panel sits at window level **28**, one
   under ScreenBrush's canvas (**29**, read from `CGWindowListCopyWindowInfo`) — Victor
   annotates what the box frames, and at the first level (`.screenSaver − 1`) the ink

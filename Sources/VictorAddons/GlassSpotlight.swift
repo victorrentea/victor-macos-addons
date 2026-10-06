@@ -2,7 +2,7 @@ import AppKit
 import QuartzCore
 import VictorMacKit
 
-/// 🔦 ⇧ + wheel-drag — **frosted glass over the whole screen except one box**,
+/// 🔦 ⇧ + wheel-drag — **plain glass over the whole screen except one box**,
 /// whose edges melt into the glass instead of stopping at a line. Esc takes it
 /// away. Victor, 2026-10-04: *"să las vizibilă doar acea zonă din ecran …
 /// restul de zone din ecran să fie cu efect de glass, iar marginile zonei mele
@@ -54,17 +54,7 @@ final class GlassSpotlight {
     }
 
     private var panel: SpotlightPanel?
-    private var glass: NSVisualEffectView?
-    /// What turns the blur into frosted glass: a milky tint, grain and a sheen,
-    /// cut by the same feathered hole as the blur (`frostMask`).
-    private let frost = CALayer()
-    private let frostMask = CALayer()
-    /// The glass's cut edge around the box: lit from the top-left, a fine line
-    /// plus a soft glow, each a gradient shown through a stroked path.
-    private let rim = CAGradientLayer()
-    private let rimLine = CAShapeLayer()
-    private let rimGlow = CAGradientLayer()
-    private let rimGlowLine = CAShapeLayer()
+    private var glass: PlainGlassView?
     private var decorations: CALayer?
     private let legend = CATextLayer()
     private let legendPill = CALayer()
@@ -274,34 +264,12 @@ final class GlassSpotlight {
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
         let root = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
-        let glass = NSVisualEffectView(frame: root.bounds)
+        let glass = PlainGlassView(frame: root.bounds)
         glass.autoresizingMask = [.width, .height]
         glass.blendingMode = .behindWindow
         glass.material = .fullScreenUI
         glass.state = .active
         root.addSubview(glass)
-
-        // Frosted, not just blurred (Victor, 2026-10-06: *"acum îmi pare blur"*):
-        // bathroom glass is milky, grainy and catches the light.
-        let frostView = NSView(frame: root.bounds)
-        frostView.autoresizingMask = [.width, .height]
-        frostView.wantsLayer = true
-        buildFrost(size: screen.frame.size)
-        frostView.layer?.addSublayer(frost)
-        for (gradient, line) in [(rimGlow, rimGlowLine), (rim, rimLine)] {
-            gradient.colors = [NSColor(white: 1, alpha: 0.85).cgColor, NSColor(white: 1, alpha: 0.12).cgColor]
-            gradient.startPoint = CGPoint(x: 0, y: 1)   // top-left (layers are y-up here)
-            gradient.endPoint = CGPoint(x: 1, y: 0)
-            line.fillColor = nil
-            line.strokeColor = NSColor.white.cgColor
-            gradient.mask = line
-            gradient.isHidden = true
-            frostView.layer?.addSublayer(gradient)
-        }
-        rimLine.lineWidth = 1.5
-        rimGlowLine.lineWidth = 7
-        rimGlow.opacity = 0.18
-        root.addSubview(frostView)
 
         let deco = NSView(frame: root.bounds)
         deco.autoresizingMask = [.width, .height]
@@ -320,83 +288,12 @@ final class GlassSpotlight {
         maskedHole = nil
     }
 
-    static let frostTint: CGFloat = 0.14
-    static let grainAlpha: CGFloat = 0.07
-
-    /// Tint, grain and sheen, the size of the screen, drawn once per panel.
-    private func buildFrost(size: CGSize) {
-        frost.frame = CGRect(origin: .zero, size: size)
-        frost.sublayers?.forEach { $0.removeFromSuperlayer() }
-
-        let tint = CALayer()
-        tint.frame = frost.bounds
-        tint.backgroundColor = NSColor(white: 1, alpha: Self.frostTint).cgColor
-        frost.addSublayer(tint)
-
-        // Grain: one point per noise pixel, so on the Retina a grain is 2×2 —
-        // visible as texture, too fine to read as a pattern.
-        let grain = CALayer()
-        grain.frame = frost.bounds
-        grain.contents = Self.noise(size: size)
-        grain.contentsGravity = .resize
-        grain.magnificationFilter = .nearest
-        grain.opacity = Float(Self.grainAlpha / 0.5)
-        frost.addSublayer(grain)
-
-        // Sheen: light falling across the pane from the top-left, with one
-        // brighter diagonal streak — what says "a surface" rather than "out of focus".
-        let sheen = CAGradientLayer()
-        sheen.frame = frost.bounds
-        sheen.startPoint = CGPoint(x: 0, y: 1)
-        sheen.endPoint = CGPoint(x: 1, y: 0)
-        sheen.colors = [0.16, 0.04, 0.0, 0.10, 0.0, 0.0, 0.05].map { NSColor(white: 1, alpha: $0).cgColor }
-        sheen.locations = [0, 0.28, 0.40, 0.46, 0.52, 0.80, 1]
-        frost.addSublayer(sheen)
-
-        frostMask.contentsGravity = .resize
-        frostMask.frame = frost.bounds
-        frost.mask = frostMask
-    }
-
-    /// Black and white noise with alpha ½ — the layer's opacity sets the strength.
-    private static func noise(size: CGSize) -> CGImage? {
-        let width = max(1, Int(size.width)), height = max(1, Int(size.height))
-        var pixels = [UInt8](repeating: 0, count: width * height * 2)
-        var rng = SystemRandomNumberGenerator()
-        for i in stride(from: 0, to: pixels.count, by: 2) {
-            pixels[i] = UInt8.random(in: 0...255, using: &rng) > 127 ? 255 : 0
-            pixels[i + 1] = UInt8.random(in: 0...127, using: &rng)
-        }
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 16,
-                       bytesPerRow: width * 2, space: CGColorSpaceCreateDeviceGray(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-    }
-
     /// Cut `box` (global Cocoa) out of the glass.
     private func apply(hole box: CGRect) {
         hole = box
         guard let glass, maskedHole != box else { return }
         maskedHole = box
         let local = box.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        // The frost's own hole: the same feathered mask, at 1× — the ramp is
-        // 40 pt of smooth gradient, nothing a Retina pixel would sharpen.
-        frostMask.contents = GlassSpotlightMask.image(canvas: screenFrame.size, hole: local, feather: Self.feather)
-        // The rim sits halfway across the feather, where the glass is half there.
-        let edge = local.insetBy(dx: -Self.feather / 2, dy: -Self.feather / 2)
-        let radius = min(Self.feather / 2, edge.width / 2, edge.height / 2)
-        for (gradient, line) in [(rimGlow, rimGlowLine), (rim, rimLine)] {
-            let pad = line.lineWidth
-            gradient.frame = edge.insetBy(dx: -pad, dy: -pad)
-            line.frame = gradient.bounds
-            line.path = CGPath(roundedRect: CGRect(origin: CGPoint(x: pad, y: pad), size: edge.size),
-                               cornerWidth: radius, cornerHeight: radius, transform: nil)
-            gradient.isHidden = false
-        }
-        CATransaction.commit()
         // A drawing-handler image, not a bitmap: `NSVisualEffectView` reads a
         // bitmap mask's pixels as backing pixels whatever size the `NSImage`
         // claims, so on Retina the mask came out at half size, pinned to the
@@ -408,6 +305,7 @@ final class GlassSpotlight {
             GlassSpotlightMask.draw(in: ctx, canvas: size, hole: local, feather: Self.feather)
             return true
         }
+        glass.tune()
     }
 
     /// While the hand is on it: the crop's `⌘ move` under the box, brighter while
@@ -439,6 +337,54 @@ final class GlassSpotlight {
     private static func cocoa(_ cg: CGPoint) -> NSPoint {
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         return NSPoint(x: cg.x, y: top - cg.y)
+    }
+}
+
+/// Plain glass: the effect view's own behind-window blur, turned down until text
+/// is still readable but takes effort, with the material's grey layers hidden.
+/// Victor, 2026-10-06, after a frosted version (tint + grain + lit rim): *"it's
+/// like sand … just plain glass, more transparent and without any border … the
+/// text should be barely readable. Still readable, but harder."*
+///
+/// **Private, and degrades to the stock look.** The radius is the `gaussianBlur`
+/// filter on the `CABackdropLayer` AppKit builds inside the view (30 pt stock),
+/// set by key path; `scale` is how coarsely the backdrop samples (⅛ stock,
+/// which turns a small radius into blocks). `fill` (50% grey) and `tone` are the
+/// material's tint. Measured side by side 2026-10-06 on this Mac (macOS 15) at
+/// r 1.5–6 × scale ⅛–1: r 3 at ½ is the "readable with effort" one. Should a
+/// macOS update rename any of these, nothing throws — the glass just goes back
+/// to the heavy grey blur.
+final class PlainGlassView: NSVisualEffectView {
+    static let blurRadius: Double = 3
+    static let backdropScale: Double = 0.5
+
+    override func updateLayer() {
+        super.updateLayer()
+        tune()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        tune()
+    }
+
+    /// Idempotent; AppKit may rebuild the material's layers (appearance change,
+    /// a new screen), so it is reapplied whenever the view redraws.
+    func tune() {
+        func walk(_ layer: CALayer) {
+            if layer.name == "fill" || layer.name == "tone" { layer.isHidden = true }
+            if layer.name == "backdrop",
+               (layer.filters ?? []).contains(where: { ($0 as? NSObject)?.value(forKey: "name") as? String == "gaussianBlur" }) {
+                layer.setValue(Self.blurRadius, forKeyPath: "filters.gaussianBlur.inputRadius")
+                layer.setValue(Self.backdropScale, forKey: "scale")
+            }
+            layer.sublayers?.forEach(walk)
+        }
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        walk(layer)
+        CATransaction.commit()
     }
 }
 
