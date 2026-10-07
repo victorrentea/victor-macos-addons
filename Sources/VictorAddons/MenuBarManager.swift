@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 6, 21:07"
+    static let BUILD_TIME = "Oct 7, 10:48"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -50,6 +50,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var voiceCorpusMinutes: Double = 0
     private(set) var wsStatusItem: NSMenuItem!
     private var memoryPressureItem: NSMenuItem!
+    private var clipboardLinkItem: NSMenuItem!
     private var feedbackFormItem: NSMenuItem!
     private var killSubmenu: NSMenu!
     private var portHistory: [Int] = []
@@ -123,6 +124,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// True while the Interact link banner is up — shown as a ✓ on its row.
     var isJoinLinkShown: (() -> Bool)?
     var onDisplayClipboardLink: (() -> Void)?
+    /// True while the banner shows a clipboard link — the row stays up to take it down.
+    var isClipboardLinkShown: (() -> Bool)?
     /// 📤 Mail the clipboard to Victor, subject "Reminder" — the ⌘⌃P key's row.
     var onSendReminderMail: (() -> Void)?
     /// 📝 Ask Chrome to clone, rename and publish this session's feedback form.
@@ -401,8 +404,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Victor) — both are things the room is shown, so they sit together.
         // refreshWsItem hides it outright outside a session.
         feedbackFormItem = addItem("📝 Generate Feedback Form", action: #selector(publishFeedbackFormAction))
-        // 🔗 Display clipboard link ⧈ went to 👩🏻‍💻 Extras (2026-09-23, Victor),
-        // and a line separates the room's link from the clipboard rows below.
+        // 🔗 Display clipboard link ⧈ is back on the top level (2026-10-07,
+        // Victor: copied a link, couldn't find the row in 👩🏻‍💻 Extras), but only
+        // while the clipboard holds an http(s) link or the banner shows one —
+        // refreshClipboardLinkItem hides it otherwise.
+        clipboardLinkItem = addItem("🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction))
+        clipboardLinkItem.isHidden = true
+        // A line separates the room's links from the clipboard rows below.
         menu.addItem(.separator())
         // 📤 Mail clipboard to myself lives in 👩🏻‍💻 Extras since 2026-09-23
         // (Victor) — ⌘⌃M is how it is reached, the row is only its legend.
@@ -483,10 +491,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // port, 📬 Check Inbox, 📸 Screenshot, 📤 Mail clipboard — rows reached
         // by their keys or once a day, which the top level no longer spends a
         // line on.
-        let clipboardLinkItem = NSMenuItem(title: "🔗 Display clipboard link ⧈", action: #selector(displayClipboardLinkAction), keyEquivalent: "")
-        clipboardLinkItem.target = self
-        clipboardLinkItem.isEnabled = true
-
         // The key is only advertised — the event tap swallows ⌘⌃M before AppKit
         // could match a menu equivalent, so the row cannot fire the send twice.
         let reminderMailItem = NSMenuItem(title: "📤 Mail clipboard to myself", action: #selector(sendReminderMailAction), keyEquivalent: "m")
@@ -651,7 +655,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // mouse, and what keeps this Mac and Claude up. (The phone's hotspot
         // left for the top level on 2026-09-25.)
         let extraGroups: [[NSMenuItem]] = [
-            [historyItem, reminderMailItem, clipboardLinkItem, screenshotItem, appendNotesItem, appendPromptItem],
+            [historyItem, reminderMailItem, screenshotItem, appendNotesItem, appendPromptItem],
             [killItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
@@ -838,6 +842,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // open, so this is the one moment it has to be right.
         updateTranscribeTitle()
         refreshWsItem()
+        refreshClipboardLinkItem()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
             // Lets a "checking…" click resolve to its real result without the
@@ -1541,6 +1546,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         sessionActive = enabled
         refreshWsItem()
         refreshMenuIcon()
+    }
+
+    private func refreshClipboardLinkItem() {
+        let shown = isClipboardLinkShown?() ?? false
+        let text = PasteboardGate.sync { $0.string(forType: .string) }?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isLink = !text.contains(where: \.isNewline)
+            && ["http", "https"].contains(URL(string: text)?.scheme?.lowercased() ?? "")
+        clipboardLinkItem.isHidden = !(isLink || shown)
+        clipboardLinkItem.title = "🔗 Display clipboard link ⧈" + (shown ? "  ✓" : "")
     }
 
     private func refreshWsItem() {

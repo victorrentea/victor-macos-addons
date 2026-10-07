@@ -1450,6 +1450,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarManager.onDisplayClipboardLink = { [weak self] in
             self?.displayClipboardLinkBanner()
         }
+        menuBarManager.isClipboardLinkShown = { [weak self] in
+            guard let banner = self?.joinLinkBanner else { return false }
+            return banner.bannerIsVisible && !banner.isPersistent
+        }
         // Same path as ⌘⌃M and GET /test/reminder — off the main thread, since
         // the pasteboard read and any JPEG re-encode happen inline.
         menuBarManager.onSendReminderMail = { [weak self] in
