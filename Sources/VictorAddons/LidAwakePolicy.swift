@@ -84,6 +84,8 @@ enum LidAwakePolicy {
     ///   know" — missing evidence is never an outage, the same way an unreadable
     ///   battery is never a stand-down. Defaulting it keeps every existing
     ///   caller and test on the pre-2026-09-15 behaviour.
+    /// - Parameter floorEnabled: the "Sleep under 20%" checkbox. `false` means
+    ///   no stand-down at any charge; defaulting it keeps the floor.
     static func decide(
         enabled: Bool,
         always: Bool = false,
@@ -94,6 +96,7 @@ enum LidAwakePolicy {
         holding: Bool = false,
         clamshellCausesSleep: Bool = false,
         offlineFor: TimeInterval = 0,
+        floorEnabled: Bool = true,
         floor: Int = batteryFloorPercent,
         offlineGrace: TimeInterval = offlineGrace
     ) -> Action {
@@ -103,7 +106,10 @@ enum LidAwakePolicy {
         // beat, so the tick that stands down does not also sound like a healthy
         // pulse. It does not apply on AC: at 4% and plugged in the number is
         // going up, and cutting the flag there would sleep the Mac for nothing.
-        if !onAC, let battery, battery < floor { return .standDown }
+        // "Sleep under 20%" unticked (2026-10-07) takes the floor away
+        // entirely: the flag then rides the battery down to macOS's own
+        // emergency sleep.
+        if floorEnabled, !onAC, let battery, battery < floor { return .standDown }
 
         // The last Claude finished. If we were holding a shut lid on battery,
         // this release sleeps the Mac, so it is announced before it happens;

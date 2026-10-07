@@ -191,6 +191,20 @@ final class LidAwakePolicyTests: XCTestCase {
             .standDown)
     }
 
+    func testSleepUnderTwentyUntickedTakesTheFloorAway() {
+        // The checkbox (2026-10-07): unticked, 19% with a Claude working under
+        // a shut lid keeps beating instead of standing down…
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: true, lidClosed: true, onAC: false,
+                                  battery: 19, floorEnabled: false),
+            .beat)
+        // …and with nothing working it is the ordinary goodbye, not the hard stop.
+        XCTAssertEqual(
+            LidAwakePolicy.decide(enabled: true, claudeWorking: false, lidClosed: true, onAC: false,
+                                  battery: 3, holding: true, floorEnabled: false),
+            .farewell)
+    }
+
     func testFloorDoesNotApplyOnAC() {
         // Plugged in at 4%: the number is going up, and cutting the flag here
         // would sleep the Mac for no reason.

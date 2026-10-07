@@ -1,5 +1,21 @@
 # 😴 Claude insomnia (was 🔋 Claude prevents sleep)
 
+**2026-10-07: live counts, the "Sleep under 20%" checkbox, and the floor now
+ends in the flatline.** That night at 19% the floor stood down in a bag with
+only its three Bassos (the log: `battery 19% below floor` → `pmset sleepnow`
+1.3 s later), and Victor never heard it — *"trebuia să se audă că moare"*. The
+stand-down now plays the three Bassos **and then the 🫀 flatline**, output taken
+up if the lid is shut, and disarms only after the flatline ends
+(`farewellInFlight` keeps a tick from starting a second goodbye).
+The submenu rows carry live counts read on `menuWillOpen`
+(`ClaudeActivity.liveCounts`): `Claude (N)` = Claude sessions alive on this Mac,
+`Claude /rc (M)` = those spawned by the `claude remote-control` host (an
+ancestor whose argv[1] is `remote-control`). Below a separator, **`Sleep under
+20%`** (`LidAwakeSettings.sleepsUnderFloor`, key `LidAwake.sleepUnderFloor`,
+default on) turns the floor off entirely — `LidAwakePolicy.decide(floorEnabled:)`;
+unticked, only macOS's own ~2–3% emergency sleep is left. `GET
+/test/lid-awake/state` reports it as `sleeps_under_floor`.
+
 **Four states since 2026-10-02: `Off` / `Claude` / `Claude/rc` / `Always`.**
 The first three are the old `off` / `interactive` / `background` renamed (the
 raw values in `UserDefaults` did not move, so nobody's mode changes on an
@@ -859,6 +875,8 @@ the row and lets the closed lid sleep the Mac the ordinary way.
   release. Three `Basso` beeps say "this was the floor", which is
   distinguishable from silence ("the Mac died").
 - 20 exactly still runs — "sub 20%" means below.
+- **Optional since 2026-10-07**: the `Sleep under 20%` checkbox in the submenu.
+- **It ends in the flatline since 2026-10-07**: Bassos, then 🫀, then the sleep.
 - **An unreadable battery is not a stand-down.** A failed read is not evidence of
   a low charge, and taking the machine down mid-flight on a missing number is the
   worse of the two mistakes.

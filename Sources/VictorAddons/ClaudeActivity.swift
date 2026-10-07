@@ -309,6 +309,52 @@ enum ClaudeActivity {
             now: Date())
     }
 
+    /// **How many sessions are alive, split by who drives them** — the two
+    /// numbers on the 😴 Insomnia rows (2026-10-07, Victor: `Claude (N)`,
+    /// `Claude /rc (M)`). Alive, not working: a session parked at its prompt
+    /// counts. Read when the menu opens, never polled.
+    struct LiveCounts: Equatable {
+        var claude = 0
+        /// Sessions spawned by the `claude remote-control` host — the ones
+        /// opened from the phone.
+        var rc = 0
+    }
+
+    static func liveCounts() -> LiveCounts {
+        let parents = Dictionary(processTable().map { ($0.pid, $0.ppid) }, uniquingKeysWith: { a, _ in a })
+        return liveCounts(in: sessionPresence(),
+                          executablePath: executablePath(of:),
+                          parent: { parents[$0] },
+                          firstArgument: firstArgument(of:))
+    }
+
+    /// A presence file outlives a crash, so a session only counts while its pid
+    /// is still a `claude` binary. It is `rc` when an ancestor (a couple of
+    /// levels up, in case a wrapper ever appears) is `claude remote-control`;
+    /// everything else — terminals, `claude -p` agents like 📬 Flux — is `claude`.
+    static func liveCounts(
+        in sessions: [SessionPresence],
+        executablePath: (Int32) -> String?,
+        parent: (Int32) -> Int32?,
+        firstArgument: (Int32) -> String?
+    ) -> LiveCounts {
+        var counts = LiveCounts()
+        for session in sessions {
+            guard let path = executablePath(session.pid), isClaudeExecutable(path: path) else { continue }
+            var pid = session.pid
+            var underHost = false
+            for _ in 0..<3 {
+                guard let up = parent(pid), up > 1 else { break }
+                if firstArgument(up) == remoteControlSubcommand { underHost = true; break }
+                pid = up
+            }
+            if underHost { counts.rc += 1 } else { counts.claude += 1 }
+        }
+        return counts
+    }
+
+    static let remoteControlSubcommand = "remote-control"
+
     /// When a session's transcript was last written, and what its last line
     /// says the session is doing.
     static func transcriptSignal(for session: SessionPresence) -> (modified: Date, state: TranscriptState)? {

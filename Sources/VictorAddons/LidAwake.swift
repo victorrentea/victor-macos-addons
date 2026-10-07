@@ -59,6 +59,18 @@ enum LidAwakeSettings {
         return legacyEnabled ? .background : .off
     }
 
+    /// **"Sleep under 20%"** (2026-10-07, Victor), the checkbox under the
+    /// modes: whether the battery floor stands the feature down at all.
+    /// **Default on** — a key that was never written is the floor as it always
+    /// was. Off, the flag stays up below 20% too, and only macOS's own
+    /// emergency sleep at ~2–3% is left to catch a drained bag.
+    static let sleepUnderFloorKey = "LidAwake.sleepUnderFloor"
+
+    static var sleepsUnderFloor: Bool {
+        get { UserDefaults.standard.object(forKey: sleepUnderFloorKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: sleepUnderFloorKey) }
+    }
+
     /// Sessions someone is typing at, recognised by their `caffeinate`.
     static var interactiveIsEnabled: Bool { mode.holdsInteractive }
 
@@ -366,7 +378,8 @@ final class LidAwake {
             return false
         }
         holding = true
-        overlayInfo("LidAwake armed — watching for working Claude sessions with internet, floor \(LidAwakePolicy.batteryFloorPercent)%")
+        overlayInfo("LidAwake armed — watching for working Claude sessions with internet, "
+            + (LidAwakeSettings.sleepsUnderFloor ? "floor \(LidAwakePolicy.batteryFloorPercent)%" : "no battery floor"))
         // Before the first tick: the offline clock has to be running (and
         // starting from now) before anything can ask how long it has been.
         net.start()
@@ -406,7 +419,8 @@ final class LidAwake {
             battery: battery,
             holding: holding,
             clamshellCausesSleep: Self.clamshellCausesSleep(),
-            offlineFor: offlineFor)
+            offlineFor: offlineFor,
+            floorEnabled: LidAwakeSettings.sleepsUnderFloor)
         return "{\"enabled\":\(LidAwakeSettings.isEnabled),"
             + "\"mode\":\"\(LidAwakeSettings.mode.rawValue)\","
             + "\"holding\":\(holding),"
@@ -415,6 +429,7 @@ final class LidAwake {
             + "\"clamshell_causes_sleep\":\(Self.clamshellCausesSleep()),"
             + "\"on_ac\":\(PowerMonitor.isOnAC()),"
             + "\"battery\":\(battery.map(String.init) ?? "null"),"
+            + "\"sleeps_under_floor\":\(LidAwakeSettings.sleepsUnderFloor),"
             + "\"working\":[\(working.map(String.init).joined(separator: ","))],"
             + "\"offline_for\":\(Int(offlineFor)),"
             + "\"offline_grace\":\(Int(LidAwakePolicy.offlineGrace)),"
@@ -633,7 +648,8 @@ final class LidAwake {
             battery: battery,
             holding: holding,
             clamshellCausesSleep: Self.clamshellCausesSleep(),
-            offlineFor: offlineFor)
+            offlineFor: offlineFor,
+            floorEnabled: LidAwakeSettings.sleepsUnderFloor)
 
         switch action {
         case .beat:
@@ -677,22 +693,38 @@ final class LidAwake {
         case .standDown:
             let pct = battery ?? -1
             wasBeating = false
-            overlayInfo("LidAwake: battery \(pct)% below floor — letting the lid sleep the Mac")
-            // Three beeps, then silence: the pattern says "this was the floor",
-            // not "the Mac died", which is what a plain stop would have sounded
-            // like from inside a closed bag.
+            // A tick (or a lid notification) landing inside the six seconds
+            // below sees the same battery and would start a second goodbye.
+            guard !farewellInFlight else { return }
+            farewellInFlight = true
+            overlayInfo("LidAwake: battery \(pct)% below floor — three Bassos and the flatline, then the lid sleeps the Mac")
+            // **Three Bassos, then the 🫀 flatline** (2026-10-07). The Bassos
+            // alone went unheard: at 19% on the night of 2026-10-07 the Mac
+            // went down in a bag with Victor never noticing — *"trebuia să se
+            // audă că moare"*. The Bassos still say "this was the battery";
+            // the flatline says, in the one sound the bag already knows,
+            // "and now it is going down". The output is taken up only under a
+            // shut lid, the same rule as the pulse: at the desk the goodbye
+            // goes out at whatever the slider says.
+            if Self.isLidClosed() { boostForBeats(true) }
             for i in 0..<3 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.25) { [weak self] in
                     self?.beep(named: "Basso")
                 }
             }
-            // The disarm waits for the beeps rather than racing them: it is
-            // `setEnabled(false)` that puts the volume back, and these three
-            // Bassos are the last thing the bag ever says — they have to go out
-            // at the volume the beats were going out at.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.setEnabled(false, announce: false)
-                self?.onAutoDisabled?(pct)
+                self?.lastBeats()
+            }
+            // The disarm waits for the flatline rather than racing it: it is
+            // `setEnabled(false)` that puts the volume back and asks for the
+            // sleep, and the flatline is the last thing the bag ever says.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 + Self.farewellLength + 0.2) { [weak self] in
+                guard let self else { return }
+                self.farewellPlayer = nil
+                LidAwake.lastFarewellAt = Date()
+                self.queue.async { self.farewellInFlight = false }
+                self.setEnabled(false, announce: false)
+                self.onAutoDisabled?(pct)
             }
             return
         }

@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 7, 10:48"
+    static let BUILD_TIME = "Oct 7, 22:04"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -35,6 +35,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var lidAwakeItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     private(set) var lidAwakeModeItems: [LidAwakeMode: NSMenuItem] = [:]
+    /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
+    private(set) var lidAwakeFloorItem: NSMenuItem!
     private(set) var homeAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
@@ -736,6 +738,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             lidAwakeSubmenu.addItem(item)
             lidAwakeModeItems[mode] = item
         }
+        // **"Sleep under 20%"** (2026-10-07, Victor): whether the battery
+        // floor stands the feature down at all. A checkbox rather than a mode —
+        // it applies to every mode alike — and native-ticked for the same
+        // reason the modes are: this submenu's check column is its own.
+        lidAwakeSubmenu.addItem(.separator())
+        lidAwakeFloorItem = NSMenuItem(title: LidAwakeMenu.floorLabel,
+                                       action: #selector(toggleLidAwakeFloorAction), keyEquivalent: "")
+        lidAwakeFloorItem.target = self
+        lidAwakeFloorItem.isEnabled = true
+        lidAwakeFloorItem.state = LidAwakeSettings.sleepsUnderFloor ? .on : .off
+        lidAwakeSubmenu.addItem(lidAwakeFloorItem)
         lidAwakeItem.submenu = lidAwakeSubmenu
         menu.addItem(lidAwakeItem)
         menu.addItem(hotspotFallbackItem)
@@ -843,6 +856,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         updateTranscribeTitle()
         refreshWsItem()
         refreshClipboardLinkItem()
+        refreshLidAwakeCounts()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
             // Lets a "checking…" click resolve to its real result without the
@@ -1062,10 +1076,25 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             switch mode {
             case .off: return "Off"
             case .interactive: return "Claude"
-            case .background: return "Claude/rc"
+            case .background: return "Claude /rc"
             case .always: return "Always"
             }
         }
+
+        /// The row with the live count in round brackets (2026-10-07, Victor):
+        /// `Claude (5)` = sessions alive on this Mac, `Claude /rc (1)` = the
+        /// ones the remote-control host is driving. `nil` counts — before the
+        /// menu has ever been opened — leave the bare words.
+        static func label(_ mode: LidAwakeMode, counts: ClaudeActivity.LiveCounts?) -> String {
+            guard let counts else { return label(mode) }
+            switch mode {
+            case .interactive: return "\(label(mode)) (\(counts.claude))"
+            case .background: return "\(label(mode)) (\(counts.rc))"
+            case .off, .always: return label(mode)
+            }
+        }
+
+        static let floorLabel = "Sleep under \(LidAwakePolicy.batteryFloorPercent)%"
 
         /// The parent's short word for the mode — the row's own label since
         /// 2026-10-02 (Victor: Off / Claude / Claude/rc / Always; `rc` = the
@@ -1075,7 +1104,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             switch mode {
             case .off: return "Off"
             case .interactive: return "Claude"
-            case .background: return "Claude/rc"
+            case .background: return "Claude /rc"
             case .always: return "Always"
             }
         }
@@ -1239,6 +1268,24 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// so the rows stop claiming the Mac is being held awake.
     func setLidAwakeTick(_ on: Bool) {
         refreshLidAwakeMode(on ? LidAwakeSettings.mode : .off)
+    }
+
+    /// The live counts on the `Claude` and `Claude /rc` rows, read as the 💬
+    /// menu opens — the submenu is only ever seen from inside it.
+    func refreshLidAwakeCounts() {
+        let counts = ClaudeActivity.liveCounts()
+        for (mode, item) in lidAwakeModeItems {
+            item.title = LidAwakeMenu.label(mode, counts: counts)
+        }
+        lidAwakeFloorItem?.state = LidAwakeSettings.sleepsUnderFloor ? .on : .off
+    }
+
+    /// "Sleep under 20%". Read by the next tick; nothing to arm or disarm.
+    @objc private func toggleLidAwakeFloorAction() {
+        LidAwakeSettings.sleepsUnderFloor.toggle()
+        lidAwakeFloorItem.state = LidAwakeSettings.sleepsUnderFloor ? .on : .off
+        overlayInfo("LidAwake: sleep under \(LidAwakePolicy.batteryFloorPercent)% "
+            + (LidAwakeSettings.sleepsUnderFloor ? "on" : "off — no battery floor"))
     }
 
     /// Move the tick and repaint the parent row.
