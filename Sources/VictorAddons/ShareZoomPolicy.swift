@@ -36,11 +36,17 @@ enum ShareZoomPolicy {
     /// came out backwards (Victor, 2026-10-01: *"l-ai făcut pe dos"*) — that branch
     /// maps the wheel to ⌘- / ⌘= keystrokes, not to "towards the screen", so its
     /// sign was never the one to copy.
+    ///
+    /// A **trackpad** delta counts the other way. `ScrollReversal` leaves continuous
+    /// scrolls alone, so they arrive in natural-scrolling sign: two fingers up is
+    /// negative. The system magnifier (⌥+scroll) zooms in on fingers up; using the
+    /// wheel's sign made ⌥⇧ do the opposite (Victor, 2026-10-07: *"inverse ca
+    /// accessibility"*).
     static func step(_ factor: CGFloat, delta: Double, continuous: Bool) -> CGFloat {
         guard delta != 0 else { return factor }
         let notches: CGFloat
         if continuous {
-            notches = CGFloat(delta) / pixelsPerNotch
+            notches = -CGFloat(delta) / pixelsPerNotch
         } else {
             let n = min(abs(CGFloat(delta)), maxNotchesPerEvent)
             notches = delta > 0 ? n : -n

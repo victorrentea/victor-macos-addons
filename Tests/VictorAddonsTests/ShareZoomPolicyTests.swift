@@ -30,7 +30,9 @@ final class ShareZoomPolicyTests: XCTestCase {
     }
 
     func testTrackpadPixelsAccumulateIntoNotches() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 12, continuous: true), ShareZoomPolicy.notchFactor, accuracy: 0.0001)
+        // Fingers up = negative (natural scrolling) = closer, like ⌥+scroll.
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -12, continuous: true), ShareZoomPolicy.notchFactor, accuracy: 0.0001)
+        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: 12, continuous: true), 2)
     }
 
     func testTheDialStopsAtOneAndAtTheCeiling() {
