@@ -83,19 +83,19 @@ enum DjiReceiverProtocol {
     }
 
     /// What the menu's `🎙️ Transcribing: 🎤 DJI` row appends, or nil for
-    /// nothing: `≈80 %` (one per linked transmitter, `≈80 % / ≈40 %` for two),
+    /// nothing: `80 %` (one per linked transmitter, `80 % / 40 %` for two),
     /// `— no TX` when the receiver says none is linked. Nil when the status
     /// stream is not live — a stale number is worse than none.
     static func menuSuffix(_ status: Status?, live: Bool) -> String? {
         guard live, let status else { return nil }
         guard status.anyLinked else { return "— no TX" }
-        let pcts = status.transmitters.compactMap { percent(level: $0.level) }.map { "≈\($0) %" }
+        let pcts = status.transmitters.compactMap { percent(level: $0.level) }.map { "\($0) %" }
         return pcts.isEmpty ? nil : pcts.joined(separator: " / ")
     }
 
     /// The gauge as an approximate percentage. **A 7-step level, not a
     /// measurement**: the receiver never says more than this, so every value
-    /// here is shown as `≈NN %`, and the raw level goes to the log beside it.
+    /// here is shown as `NN %` (no `≈` since 2026-10-07), and the raw level goes to the log beside it.
     ///
     /// Mapping (the one dji-mic-battery-tray uses for the same gauge,
     /// <https://github.com/chenleshu/dji-mic-battery-tray>): the five green

@@ -48,12 +48,12 @@ final class DjiReceiverProtocolTests: XCTestCase {
 
     func testMenuSuffix() {
         let one = DjiReceiverProtocol.decodeStatus(oneTx)
-        XCTAssertEqual(DjiReceiverProtocol.menuSuffix(one, live: true), "≈100 %")
+        XCTAssertEqual(DjiReceiverProtocol.menuSuffix(one, live: true), "100 %")
         XCTAssertNil(DjiReceiverProtocol.menuSuffix(one, live: false), "stale: say nothing")
         XCTAssertEqual(DjiReceiverProtocol.menuSuffix(.init(linkedMask: 0, transmitters: []), live: true), "— no TX")
         XCTAssertEqual(DjiReceiverProtocol.menuSuffix(.init(linkedMask: 3, transmitters: [
             .init(unit: 1, level: 2, charging: false), .init(unit: 2, level: 4, charging: false)]), live: true),
-                       "≈80 % / ≈40 %")
+                       "80 % / 40 %")
         XCTAssertNil(DjiReceiverProtocol.menuSuffix(nil, live: true))
     }
 

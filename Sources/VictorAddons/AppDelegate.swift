@@ -2445,7 +2445,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                                         screens: (() -> [NSScreen])? = nil) {
         switch event {
         case .levelChanged(let unit, let level, let charging):
-            let pct = DjiReceiverProtocol.percent(level: level).map { "≈\($0) %" } ?? "unknown"
+            let pct = DjiReceiverProtocol.percent(level: level).map { "\($0) %" } ?? "unknown"
             overlayInfo("🎤 DJI TX\(unit) battery level \(level)/7 (\(pct))\(charging ? ", charging" : "")")
         case .lowBattery(_, let level, let percent):
             djiBatteryNotice.show(level: level, percent: percent)

@@ -139,7 +139,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onLayoutZoom: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
-    /// `≈80 %` / `— no TX` for the Transcribing row when the DJI is the input.
+    /// `80 %` / `— no TX` for the Transcribing row when the DJI is the input.
     var djiMenuSuffix: (() -> String?)?
     var onMenuOpened: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
@@ -1855,7 +1855,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             // `Last 1m summary`, which is 💬 now.
             let mic = MicRoster.byGlyph(transcribeSource)
             // The DJI's transmitter battery rides after its name (2026-09-26,
-            // `🎙️ Transcribing: 🎤 DJI ≈80 %`, or `— no TX`), only while the
+            // `🎙️ Transcribing: 🎤 DJI 80 %`, or `— no TX`), only while the
             // receiver's USB status is live; other microphones get nothing.
             let dji = mic?.id == "rx" ? djiMenuSuffix?().map { " \($0)" } ?? "" : ""
             transcribeItem.title = raw + "🎙️ Transcribing" + (mic.map { ": \($0.glyph) \($0.short)" } ?? "") + dji
