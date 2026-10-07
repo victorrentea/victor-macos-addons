@@ -48,6 +48,22 @@ final class LidAwakeAudioWiringTests: XCTestCase {
         XCTAssertFalse(restore.isEmpty)
     }
 
+    func testEveryLidShutSoundIsPinnedToTheBuiltInSpeaker() throws {
+        // 2026-10-07: the pulse beat 18 times into Bluetooth headphones lying on
+        // the desk. Every player in these files has to name the Mac's own
+        // speaker (`PulseOutput`), or it follows the default output again.
+        for file in ["LidAwake.swift", "SleepChime.swift"] {
+            let src = try source(file)
+            func count(_ needle: String) -> Int { src.components(separatedBy: needle).count - 1 }
+            XCTAssertEqual(count("AVAudioPlayer(contentsOf:"), count("currentDevice = "),
+                           "\(file): every AVAudioPlayer must set currentDevice to PulseOutput.uid()")
+            XCTAssertEqual(count("NSSound(named:"), count("playbackDeviceIdentifier = PulseOutput.uid()"),
+                           "\(file): every NSSound must set playbackDeviceIdentifier to PulseOutput.uid()")
+            XCTAssertFalse(src.contains("otherAppPlayingOutput()"),
+                           "\(file): the veto is PulseOutput.otherAppPlaying() — music on the headphones cannot be raised by boosting the speaker")
+        }
+    }
+
     // MARK: - What counts as "something else is playing"
 
     func testThePermanentlyOpenPlumbingIsNotTheMusic() {

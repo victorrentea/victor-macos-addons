@@ -115,7 +115,9 @@ enum SleepChime {
 
         let decision = SleepChimePolicy.boost(
             lidClosed: LidAwake.isLidClosed(),
-            otherAppPlaying: SystemAudioActivity.otherAppPlayingOutput())
+            otherAppPlaying: PulseOutput.otherAppPlaying())
+        // The Mac's own speaker, like the pulse it ends (`PulseOutput`).
+        let device = PulseOutput.device()
 
         var volumeToRestore: Float?
         var remuteOnTheWayOut = false
@@ -129,29 +131,32 @@ enum SleepChime {
             // The mute first, for the reason `LidAwake.liftMute` gives: a level
             // parked at 100% on a muted Mac is 100% of silence, and a muted
             // lid-close is the ordinary one.
-            if SystemOutputVolume.isMuted() == true, SystemOutputVolume.setMuted(false) {
+            if SystemOutputVolume.isMuted(device: device) == true, SystemOutputVolume.setMuted(false, device: device) {
                 remuteOnTheWayOut = true
             }
-            if let current = SystemOutputVolume.get(), current < chimeSystemVolume {
+            if let current = SystemOutputVolume.get(device: device), current < chimeSystemVolume {
                 volumeToRestore = current
-                SystemOutputVolume.set(chimeSystemVolume)
+                SystemOutputVolume.set(chimeSystemVolume, device: device)
             }
         }
 
         // Undone before the handler returns, whatever happens to the playback —
         // including the `catch` below.
         defer {
-            if let volumeToRestore { SystemOutputVolume.set(volumeToRestore) }
-            if remuteOnTheWayOut { SystemOutputVolume.setMuted(true) }
+            if let volumeToRestore { SystemOutputVolume.set(volumeToRestore, device: device) }
+            if remuteOnTheWayOut { SystemOutputVolume.setMuted(true, device: device) }
         }
 
         // A Bluetooth amp that has gone to sleep swallows the first half second,
         // which for a 1.5 s door is the half with the sound in it.
-        let warmUp = AddonSounds.shared.currentBluetoothCompensation
+        // Only when the tone still goes to the default output: the built-in
+        // speaker never sleeps.
+        let warmUp = device == nil ? AddonSounds.shared.currentBluetoothCompensation : 0
         if warmUp > 0 { BluetoothOutput.playWakeTone(seconds: warmUp) }
 
         do {
             let player = try AVAudioPlayer(contentsOf: url)
+            player.currentDevice = PulseOutput.uid()
             player.volume = 1.0
             player.currentTime = toneStart
             player.prepareToPlay()

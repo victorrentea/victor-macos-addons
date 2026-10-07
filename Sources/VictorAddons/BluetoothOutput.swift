@@ -204,7 +204,29 @@ enum BluetoothOutput {
     /// name: "MacBook Pro Speakers" is a localised string, and the built-in
     /// output is the only device that answers `kAudioDeviceTransportTypeBuiltIn`.
     static func builtInOutputName() -> String? {
-        outputDevices().first { transportType($0.id) == kAudioDeviceTransportTypeBuiltIn }?.name
+        builtInOutput()?.name
+    }
+
+    /// The same device by id — what `LidAwake` pins its pulse to.
+    static func builtInOutputID() -> AudioDeviceID? {
+        builtInOutput()?.id
+    }
+
+    private static func builtInOutput() -> OutputDevice? {
+        outputDevices().first { transportType($0.id) == kAudioDeviceTransportTypeBuiltIn }
+    }
+
+    /// CoreAudio's persistent UID for a device — the string `AVAudioPlayer.currentDevice`
+    /// and `NSSound.playbackDeviceIdentifier` take.
+    static func deviceUID(_ id: AudioDeviceID) -> String? {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        var uid: Unmanaged<CFString>?
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &uid) == noErr else { return nil }
+        return uid?.takeRetainedValue() as String?
     }
 
     private static func transportType(_ id: AudioDeviceID) -> UInt32 {

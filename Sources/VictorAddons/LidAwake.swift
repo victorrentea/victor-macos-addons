@@ -379,7 +379,7 @@ final class LidAwake {
             // lifted once the pulse actually starts (lid shut, on battery),
             // never at the desk, so a muted Mac swallows this beat and the
             // silence would otherwise read as a broken sound path.
-            if SystemOutputVolume.isMuted() == true {
+            if SystemOutputVolume.isMuted(device: PulseOutput.device()) == true {
                 overlayInfo("LidAwake: the Mac is muted — this beat is inaudible; the pulse unmutes by itself once the lid is shut")
             }
         }
@@ -422,10 +422,11 @@ final class LidAwake {
             + "\"beats\":\(beatCount),"
             + "\"last_beat_ago\":\(lastBeatAt.map { String(Int(Date().timeIntervalSince($0))) } ?? "null"),"
             + "\"boost_refused\":\(boostRefused),"
-            + "\"other_app_playing\":\"\(SystemAudioActivity.otherAppPlayingOutput() ?? "")\","
+            + "\"pulse_device\":\"\(PulseOutput.name())\","
+            + "\"other_app_playing\":\"\(PulseOutput.otherAppPlaying() ?? "")\","
             + "\"beat_sound\":\"\(AddonSounds.shared.soundURL(for: Self.beatFile)?.path ?? "MISSING")\","
             + "\"boosted\":\(volumeBeforeBeats != nil),"
-            + "\"muted\":\(SystemOutputVolume.isMuted().map(String.init) ?? "null"),"
+            + "\"muted\":\(SystemOutputVolume.isMuted(device: PulseOutput.device()).map(String.init) ?? "null"),"
             + "\"mute_lifted\":\(muteBeforeBeats == true),"
             + "\"next_action\":\"\(action)\"}"
     }
@@ -785,7 +786,7 @@ final class LidAwake {
     private func boostForBeats(_ wanted: Bool) {
         if wanted {
             // Never raise the volume onto something that is already playing.
-            if let playing = SystemAudioActivity.otherAppPlayingOutput() {
+            if let playing = PulseOutput.otherAppPlaying() {
                 if !boostRefused {
                     boostRefused = true
                     overlayInfo("LidAwake: \(playing) is playing — leaving the output volume where it is")
@@ -800,18 +801,18 @@ final class LidAwake {
             // that goes up halfway through a pulse takes the whole proof with
             // it, where a volume nudged mid-pulse only makes it quieter.
             liftMute()
-            guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get() else { return }
+            guard volumeBeforeBeats == nil, let current = SystemOutputVolume.get(device: PulseOutput.device()) else { return }
             volumeBeforeBeats = current
             guard current < Self.beatSystemVolume else { return }
-            SystemOutputVolume.set(Self.beatSystemVolume)
-            overlayInfo("LidAwake: output \(Int((current * 100).rounded()))% → \(Int(Self.beatSystemVolume * 100))% so the heartbeat carries")
+            SystemOutputVolume.set(Self.beatSystemVolume, device: PulseOutput.device())
+            overlayInfo("LidAwake: \(PulseOutput.name()) \(Int((current * 100).rounded()))% → \(Int(Self.beatSystemVolume * 100))% so the heartbeat carries")
         } else {
             boostRefused = false
             restoreMute()
             guard let previous = volumeBeforeBeats else { return }
             volumeBeforeBeats = nil
-            SystemOutputVolume.set(previous)
-            overlayInfo("LidAwake: output back to \(Int((previous * 100).rounded()))%")
+            SystemOutputVolume.set(previous, device: PulseOutput.device())
+            overlayInfo("LidAwake: \(PulseOutput.name()) back to \(Int((previous * 100).rounded()))%")
         }
     }
 
@@ -828,7 +829,7 @@ final class LidAwake {
     /// happened not to have muted is not a proof.
     ///
     /// **It follows the same refusal as the volume**: this is only ever reached
-    /// after `otherAppPlayingOutput()` came back empty, because unmuting a Mac
+    /// after `PulseOutput.otherAppPlaying()` came back empty, because unmuting a Mac
     /// with a stream open is the same violence as taking it to 100% — the
     /// difference between them is a slider, and both end with the playlist in
     /// the room.
@@ -841,8 +842,8 @@ final class LidAwake {
     /// reports a dead Mac. The cost is one CoreAudio property read every ten
     /// seconds.
     private func liftMute() {
-        guard SystemOutputVolume.isMuted() == true else { return }
-        guard SystemOutputVolume.setMuted(false) else {
+        guard SystemOutputVolume.isMuted(device: PulseOutput.device()) == true else { return }
+        guard SystemOutputVolume.setMuted(false, device: PulseOutput.device()) else {
             if muteBeforeBeats != true {
                 overlayError("LidAwake: the output is muted and the device refused to unmute — the pulse cannot be heard")
             }
@@ -860,7 +861,7 @@ final class LidAwake {
     private func restoreMute() {
         guard muteBeforeBeats == true else { return }
         muteBeforeBeats = nil
-        SystemOutputVolume.setMuted(true)
+        SystemOutputVolume.setMuted(true, device: PulseOutput.device())
         overlayInfo("LidAwake: output muted again — it wakes up as quiet as it went in")
     }
 
@@ -892,6 +893,10 @@ final class LidAwake {
             }
 
             player.stop()
+            // Pinned per beat, not once: the built-in speaker's UID does not
+            // move, but a player built before it was readable would otherwise
+            // stay on the default output for hours (`PulseOutput`).
+            if let uid = PulseOutput.uid(), player.currentDevice != uid { player.currentDevice = uid }
             player.currentTime = Self.beatStart
             player.volume = Self.beepVolume
             player.play()
@@ -1004,6 +1009,7 @@ final class LidAwake {
             // is deallocated the moment this closure returns and the sound
             // never arrives.
             self.farewellPlayer = player
+            player.currentDevice = PulseOutput.uid()
             player.volume = Self.farewellVolume
             player.play()
         }
@@ -1028,6 +1034,7 @@ final class LidAwake {
             // ignores `play()`, which would silently swallow the second beat —
             // and here a swallowed beat reads as a Mac that has gone to sleep.
             guard let sound = NSSound(named: NSSound.Name(name)) else { return }
+            sound.playbackDeviceIdentifier = PulseOutput.uid()
             sound.volume = volume
             sound.play()
         }

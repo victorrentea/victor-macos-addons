@@ -586,8 +586,30 @@ which is the music-mute path. A device that exposes no settable `VolumeScalar`
 (some aggregates, some interfaces) is left alone and the beats play at whatever
 the machine is set to; the master element is tried first, then channels 1 and 2.
 Arming still plays one beat, which is now a check that the sound *exists* rather
-than a check of the level. And none of this helps if the JBLs hold the default
-output and are out of range.
+than a check of the level.
+
+### Out of the Mac's own speaker, whatever the default output is (2026-10-07)
+
+The paragraph above is history: **the beat, the flatline and the sleep tone go
+to the built-in speaker** (`PulseOutput`), and the boost and the mute lift are
+applied to *that* device, not the default. On 2026-10-07 the default output was
+the Sony WH-1000XM3; the lid went down, `/test/lid-awake/state` said `beats: 18`
+and Victor heard nothing — the pulse was beating into headphones lying on the
+desk. A proof for a bag has to come out of the machine in the bag. Victor's
+call: built-in speaker, with Bluetooth connected or not.
+
+- Pinned per player: `AVAudioPlayer.currentDevice` / `NSSound.playbackDeviceIdentifier`
+  = the built-in device's UID, found by transport (`BluetoothOutput.builtInOutputID`).
+  `LidAwakeAudioWiringTests` counts that every player in `LidAwake.swift` and
+  `SleepChime.swift` is pinned.
+- **The veto follows the device.** Other apps play to the default output, so
+  with the headphones as default nothing they play can be raised by taking the
+  speaker to 100% — `PulseOutput.otherAppPlaying()` is `nil` then, and the
+  boost always happens. With the built-in speaker as default it is the old
+  rule, unchanged.
+- The sleep tone skips its Bluetooth warm-up when pinned: the speaker never sleeps.
+- `/test/lid-awake/state` gains `pulse_device`; `muted` and `other_app_playing`
+  now describe that device.
 
 ## The flatline (2026-09-09)
 

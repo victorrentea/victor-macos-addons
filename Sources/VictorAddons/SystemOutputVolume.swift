@@ -22,6 +22,10 @@ import Foundation
 /// elements 1 and 2, so both are tried, in that order — and `nil`/`false` come
 /// back when neither works, which the caller must treat as "leave the volume
 /// alone" rather than as silence.
+///
+/// **Every call takes an optional `device`** (2026-10-07): `nil` is the default
+/// output, as before; `LidAwake` passes the built-in speaker, which its pulse is
+/// pinned to whatever the default output is (`PulseOutput`).
 enum SystemOutputVolume {
 
     /// The device the system default output points at, or `nil` if it cannot be read.
@@ -39,8 +43,8 @@ enum SystemOutputVolume {
     }
 
     /// Current output volume as 0…1, or `nil` when the device has no readable one.
-    static func get() -> Float? {
-        guard let device = defaultOutputDevice() else { return nil }
+    static func get(device chosen: AudioDeviceID? = nil) -> Float? {
+        guard let device = chosen ?? defaultOutputDevice() else { return nil }
         for element in elements {
             var addr = address(element)
             guard AudioObjectHasProperty(device, &addr) else { continue }
@@ -55,8 +59,8 @@ enum SystemOutputVolume {
 
     /// Set the output volume, clamped to 0…1. Returns whether anything took.
     @discardableResult
-    static func set(_ volume: Float) -> Bool {
-        guard let device = defaultOutputDevice() else { return false }
+    static func set(_ volume: Float, device chosen: AudioDeviceID? = nil) -> Bool {
+        guard let device = chosen ?? defaultOutputDevice() else { return false }
         var wanted = min(1, max(0, volume))
         var wrote = false
         for element in elements {
@@ -84,8 +88,8 @@ enum SystemOutputVolume {
     /// `VolumeScalar` it had before, so `get()` answering `0.6` says nothing
     /// about whether a sound will be heard. `LidAwake` parking the output at
     /// 100% on a muted Mac is 100% of silence.
-    static func isMuted() -> Bool? {
-        guard let device = defaultOutputDevice() else { return nil }
+    static func isMuted(device chosen: AudioDeviceID? = nil) -> Bool? {
+        guard let device = chosen ?? defaultOutputDevice() else { return nil }
         for element in elements {
             var addr = muteAddress(element)
             guard AudioObjectHasProperty(device, &addr) else { continue }
@@ -101,8 +105,8 @@ enum SystemOutputVolume {
     /// Mute or unmute the default output. Returns whether anything took — the
     /// same "leave it alone" contract as `set`.
     @discardableResult
-    static func setMuted(_ muted: Bool) -> Bool {
-        guard let device = defaultOutputDevice() else { return false }
+    static func setMuted(_ muted: Bool, device chosen: AudioDeviceID? = nil) -> Bool {
+        guard let device = chosen ?? defaultOutputDevice() else { return false }
         var wanted: UInt32 = muted ? 1 : 0
         var wrote = false
         for element in elements {
