@@ -35,6 +35,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
+    private var wiredLinkItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -615,6 +616,16 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
 
+        // 🔌 Wired status (2026-10-08, Victor: replaces the Ethernet Menubar
+        // status item). A readout, repainted on every menu open
+        // (`refreshDynamicItems`); the click opens Network settings, which is
+        // also what keeps it from being drawn dimmed like a disabled row.
+        wiredLinkItem = NSMenuItem(title: WiredLinkPolicy.title(WiredLink.current()),
+                                   action: #selector(openNetworkSettingsAction), keyEquivalent: "")
+        wiredLinkItem.target = self
+        wiredLinkItem.isEnabled = true
+        wiredLinkItem.toolTip = "Is the Ethernet cable (dongle or dock) giving this Mac a network? Click for Network settings."
+
         // Dark Mode (⌘⌃⌥D) — a checkbox like every other row in here
         // (2026-09-14). It toggles a state, and a toggle that does not tick
         // reads as an action, which is what makes you click it just to find out
@@ -656,6 +667,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
             [windowHalfItem, windowScreenItem, windowFillItem],
             [homeAwakeItem, claudeRemoteControlItem],
+            [wiredLinkItem],
         ]
         for (i, group) in extraGroups.enumerated() {
             if i > 0 { extraSubmenu.addItem(.separator()) }
@@ -821,6 +833,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu.addItem(portItem)
 
         darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
+        wiredLinkItem.title = WiredLinkPolicy.title(WiredLink.current())
 
         updateTranscribeTitle()
         updateTailItem()
@@ -1125,6 +1138,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// not "holding right now" — same contract as 🔋 next door, where a ticked
     /// row with nothing working is the honest state. Which of the two it is at
     /// this instant is in `GET /test/home-awake` (`at_home`, `holding`).
+    @objc private func openNetworkSettingsAction() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension")!)
+    }
+
     @objc private func toggleHomeAwakeAction() {
         let enabled = !HomeAwakeSettings.isEnabled
         homeAwakeItem.state = enabled ? .on : .off

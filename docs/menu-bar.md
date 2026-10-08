@@ -99,3 +99,15 @@ it switches itself on with Zoom/Teams (see `docs/displays-projector.md`).
 ## 🪟 Window placement legend (2026-10-05)
 
 Three greyed rows in 👩🏻‍💻 Extras — `⌃⌥⌘ ←→↑↓` half of screen, `fn⌃⌥⌘ ←→↑↓` next screen, `F3` fill ↔ restore — an exception to "the menu is not a second cheat-sheet", asked for by Victor once Magnet (which used to own the gesture) was uninstalled: no hold-to-see sheet covers ⌃⌥⌘, so this is the only place they are written down. No action: a click from the menu would have no arrow to say which way. The shortcut sits in the title because a key equivalent shows one arrow, not four, and has no fn glyph. Details in `hotkeys-launchers.md`.
+
+## 🔌 Wired status (2026-10-08)
+
+The last row of 👩🏻‍💻 Extras answers one question — *is the cable giving this Mac a network?* — and replaces **Ethernet Menubar** (`com.victorlobe.Ethernet-Menubar`), a third-party status item that spent a menu-bar slot on it. `WiredLink` + `WiredLinkPolicy`:
+
+- `🟢 Wired: connected · 192.168.1.23` — link up and a routable IPv4.
+- `🟡 Wired: cable in, no IP` — link up, no address yet; a **169.254.x.x** self-assigned address counts here, because it means DHCP never answered.
+- `⚪️ Wired: not connected` — cable out or no adapter. The two are not told apart: on Apple Silicon the Ethernet-type ports exist with nothing plugged, so "no adapter" cannot be read reliably.
+
+**What is a cable**: SystemConfiguration's ports of type Ethernet, minus `Thunderbolt N` (the Thunderbolt Bridge members, up only on a Mac-to-Mac cable) and `Ethernet Adapter (enN)` (the `anpi` placeholders present on every boot). Link and address come from the dynamic store (`State:/Network/Interface/<bsd>/Link` and `/IPv4`, what `scutil` shows) — no shell-out.
+
+Read in `menuNeedsUpdate`, never polled: the row is only seen with the menu open. A click opens Network settings, which is also what keeps it from being drawn dimmed like a disabled readout.
