@@ -1276,7 +1276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.displayArrangementManager?.forceApplyAndSnapshot()
                 ?? "{\"error\":\"display manager unavailable\"}"
         }
-        // /test/asus-side?side=left|right — the 🖥️ ASUS submenu without a click;
+        // /test/asus-side?side=left|right — the 🖥️ ASUS left / right rows without a click;
         // no `side` only reads. Already on main, like /test/projector.
         tabletServer?.onTestAsusSide = { [weak self] side in
             guard let mgr = self?.displayArrangementManager else { return "{\"error\":\"display manager unavailable\"}" }

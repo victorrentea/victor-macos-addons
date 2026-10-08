@@ -36,10 +36,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
     private var wiredLinkItem: NSMenuItem!
-    /// 🖥️ ASUS ◀ / ▶ — shown only while the ASUS is plugged in.
-    private var asusSideItem: NSMenuItem!
+    /// 🖥️ ASUS left / right — two top-level rows, shown only while the ASUS is plugged in.
     private var asusLeftItem: NSMenuItem!
     private var asusRightItem: NSMenuItem!
+    /// 🎥 Layout Zoom — shown only while Zoom is running.
+    private var layoutZoomItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -704,25 +705,22 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
-        // 🖥️ ASUS (2026-10-08) — flip the travel monitor to the other side of
-        // the Retina without opening System Settings › Displays. Remembered, so
-        // the next plug-in lands it there too. Hidden while no ASUS is attached.
-        asusSideItem = NSMenuItem(title: "🖥️ ASUS", action: nil, keyEquivalent: "")
-        let asusSubmenu = NSMenu()
-        asusLeftItem = NSMenuItem(title: "◀ Left of the Retina", action: #selector(placeAsusLeftAction), keyEquivalent: "")
-        asusRightItem = NSMenuItem(title: "Right of the Retina ▶", action: #selector(placeAsusRightAction), keyEquivalent: "")
-        for item in [asusLeftItem!, asusRightItem!] {
-            item.target = self
-            asusSubmenu.addItem(item)
-        }
-        asusSideItem.submenu = asusSubmenu
-        menu.addItem(asusSideItem)
+        // 🖥️ ASUS left / ASUS right (2026-10-08) — flip the travel monitor to
+        // the other side of the Retina without opening System Settings ›
+        // Displays. Remembered, so the next plug-in lands it there too. Two
+        // top-level rows, not a submenu: there are only ever two choices, and a
+        // submenu for two rows is one hover too many. Hidden while no ASUS is
+        // attached.
+        asusLeftItem = addItem("🖥️ ASUS left", action: #selector(placeAsusLeftAction))
+        asusRightItem = addItem("🖥️ ASUS right", action: #selector(placeAsusRightAction))
         refreshAsusSideItem()
 
         // 🎥 Layout Zoom (2026-09-29) — meeting video + Participants over Chat
         // on the monitor above the Retina. Next to Arrange Monitors because it
         // is the same kind of gesture: put windows where they belong, now.
-        addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
+        // Hidden while Zoom is not running (2026-10-08): there is nothing to lay out.
+        layoutZoomItem = addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
+        refreshLayoutZoomItem()
         menu.addItem(virtualDesktopItem)
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
@@ -813,6 +811,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         updateTranscribeTitle()
         refreshWsItem()
         refreshAsusSideItem()
+        refreshLayoutZoomItem()
         refreshClipboardLinkItem()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
@@ -1193,13 +1192,19 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// can differ from the remembered side after a hand-made re-layout.
     private func refreshAsusSideItem() {
         let state = asusState?() ?? .absent
-        asusSideItem.isHidden = state == .absent
         let mirrored = state == .mirrored
-        asusLeftItem.isEnabled = !mirrored
-        asusRightItem.isEnabled = !mirrored
+        for item in [asusLeftItem!, asusRightItem!] {
+            item.isHidden = state == .absent
+            item.isEnabled = !mirrored
+            item.toolTip = mirrored ? "The ASUS is mirroring — 🖥️ Arrange Monitors first" : nil
+        }
         asusLeftItem.state = state == .at(.left) ? .on : .off
         asusRightItem.state = state == .at(.right) ? .on : .off
-        asusSideItem.toolTip = mirrored ? "The ASUS is mirroring — 🖥️ Arrange Monitors first" : nil
+    }
+
+    private func refreshLayoutZoomItem() {
+        layoutZoomItem.isHidden = !NSWorkspace.shared.runningApplications
+            .contains { $0.bundleIdentifier == "us.zoom.xos" }
     }
 
 

@@ -264,7 +264,7 @@ final class DisplayArrangementManager {
 
     // MARK: - 🖥️ ASUS side
 
-    /// What the 🖥️ ASUS submenu shows when it opens.
+    /// What the 🖥️ ASUS left / right rows show when the menu opens.
     func asusState() -> AsusSide.State {
         let d = resolveDisplays()
         guard let asus = d.asus else { return .absent }
@@ -536,7 +536,7 @@ final class DisplayArrangementManager {
         // the actual point width being extended next to.
         let retinaPointWidth = Int32(displays.retina.flatMap { CGDisplayCopyDisplayMode($0)?.width } ?? 1920)
 
-        // The ASUS goes on the side Victor last picked in the 🖥️ ASUS submenu.
+        // The ASUS goes on the side Victor last picked in the 🖥️ ASUS left / right rows.
         let side = AsusSide.preferred
         var rightEdge: Int32 = 0
         if scene.projector, let asus = displays.asus, let retina = displays.retina {

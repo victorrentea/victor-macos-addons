@@ -3,7 +3,7 @@ import Foundation
 
 /// Which side of the Retina the ASUS travel monitor sits on — a fact about the
 /// desk, not about the venue, so it is remembered across plug-ins and every
-/// automatic arrangement honours it (the 🖥️ ASUS submenu sets it, 2026-10-08).
+/// automatic arrangement honours it (the 🖥️ ASUS left / right rows set it, 2026-10-08).
 /// Default `.right`, which is what the arrangement always did before.
 enum AsusSide: String {
     case left, right
@@ -21,7 +21,7 @@ enum AsusSide: String {
         asus.midX < retina.midX ? .left : .right
     }
 
-    /// What the ASUS submenu reads: no ASUS, an ASUS caught in a mirror set (no
+    /// What the ASUS rows read: no ASUS, an ASUS caught in a mirror set (no
     /// side to speak of), or an ASUS sitting on one side.
     enum State: Equatable {
         case absent
