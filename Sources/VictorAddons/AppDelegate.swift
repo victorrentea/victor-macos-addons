@@ -112,6 +112,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// that says when it is nearly gone.
     private var phoneRoaming: PhoneRoamingMonitor?
     private var roamingWarning: RoamingWarning?
+    /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
+    private var checkInWatch: CheckInMailWatch?
     private var memoryPressure: MemoryPressureMonitor?
     /// 🔒 Mac screen locked → the tablet goes into standby (dim, no thumbnails).
     private var screenLock: ScreenLockMonitor?
@@ -1039,6 +1041,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 phoneRoaming.pollNow()
             }
             return phoneRoaming.diagnosticsJSON
+        }
+        // ✈️ An airline mailed "check-in is open" → an orange pill that stays
+        // until clicked; the click opens that mail. Hourly, via gmail-cli; see
+        // docs/checkin-alarm.md.
+        let checkInAlarm = CheckInAlarm(openURL: { [weak self] url in
+            DispatchQueue.main.async { self?.openUrlInChrome(url, target: .screenUnderMouse) }
+        })
+        let checkInWatch = CheckInMailWatch(alarm: checkInAlarm)
+        checkInAlarm.restore()
+        checkInWatch.start()
+        self.checkInWatch = checkInWatch
+        tabletServer?.onTestCheckIn = { [weak checkInWatch, weak checkInAlarm] sub in
+            guard let checkInWatch, let checkInAlarm else { return "{\"error\":\"check-in watch unavailable\"}" }
+            // The route switch already runs on the main thread (`respond`'s main.sync).
+            if sub == "/poll" {
+                checkInWatch.pollNow()
+            } else if sub.hasPrefix("/simulate") {
+                let external: () -> [NSScreen] = {
+                    NSScreen.physical.filter { !$0.localizedName.localizedCaseInsensitiveContains("built-in") }
+                }
+                let hit = CheckInMailPolicy.Hit(
+                    threadId: "test-\(Int(Date().timeIntervalSince1970))", unread: true, from: "Ryanair",
+                    email: "service@service.ryanairemail.com",
+                    subject: "ABC123 | Check in online for your flight to Otopeni", date: nil)
+                checkInAlarm.raise([hit], screens: sub == "/simulate/all" ? nil : external)
+            } else if sub == "/clear" {
+                checkInAlarm.clearAll()
+            }
+            return checkInWatch.diagnosticsJSON
         }
         // 🟥 Memory pressure → the menu bar icon flashes on a red plate. The
         // trigger is the *compressor*, not the swap file — see

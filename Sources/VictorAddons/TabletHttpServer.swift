@@ -179,6 +179,10 @@ case testTerminalFont
         /// fakes a roaming day with that much left; `/test/roaming/reset-dismissal`
         /// forgets today's dismissal. The payload is the part after `/test/roaming`.
         case testRoaming(String)
+        /// ✈️ check-in mail alarm: `/test/checkin` is the state, `/poll` asks
+        /// Gmail now, `/simulate` raises a fake pill off the retina
+        /// (`/simulate/all` on every screen), `/clear` empties the queue.
+        case testCheckIn(String)
         /// JSON snapshot of the 🔒 screen-lock mirror the tablet uses to go into
         /// standby: whether the Mac reports itself locked right now (test hook).
         case testMemoryPressure
@@ -372,6 +376,8 @@ case testTerminalFont
     var onTestPhoneBatterySimulate: ((Int) -> String)?
     /// 📶 roaming warning hooks; the argument is the sub-path (see `.testRoaming`).
     var onTestRoaming: ((String) -> String)?
+    /// ✈️ check-in alarm hooks; the argument is the sub-path (see `.testCheckIn`).
+    var onTestCheckIn: ((String) -> String)?
     /// Read-only JSON snapshot of the 🟥 memory-pressure watch.
     var onTestMemoryPressure: (() -> String)?
     /// Force the red plate on (`1`), off (`0`) or back to measured (`auto`).
@@ -696,6 +702,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestRoaming?(sub) ?? "{\"error\":\"roaming monitor unavailable\"}"
                 if self.onTestRoaming == nil { statusCode = 503 }
+            case .testCheckIn(let sub):
+                contentType = "application/json"
+                body = self.onTestCheckIn?(sub) ?? "{\"error\":\"check-in watch unavailable\"}"
+                if self.onTestCheckIn == nil { statusCode = 503 }
             case .testMemoryPressure:
                 contentType = "application/json"
                 body = self.onTestMemoryPressure?() ?? "{\"error\":\"memory pressure monitor unavailable\"}"
@@ -1150,6 +1160,9 @@ case testTerminalFont
             }
             if pathOnly == "/test/roaming" || pathOnly.hasPrefix("/test/roaming/") {
                 return .testRoaming(String(pathOnly.dropFirst("/test/roaming".count)))
+            }
+            if pathOnly == "/test/checkin" || pathOnly.hasPrefix("/test/checkin/") {
+                return .testCheckIn(String(pathOnly.dropFirst("/test/checkin".count)))
             }
             if pathOnly.hasPrefix("/test/phone-battery/simulate/") {
                 let suffix = String(pathOnly.dropFirst("/test/phone-battery/simulate/".count))
