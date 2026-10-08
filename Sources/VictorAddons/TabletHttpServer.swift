@@ -113,6 +113,8 @@ case testTerminalFont
         /// Force-apply the projector/standard display arrangement now and return
         /// a JSON snapshot of the detected displays + applied scene (test hook).
         case testProjector
+        /// 🖥️ Put the ASUS left/right of the Retina (nil = just read), JSON back.
+        case testAsusSide(AsusSide?)
         /// JSON snapshot of the presenting state (meeting / unknown display).
         case testPresentation
         /// JSON snapshot of Zoom's share picker + a forced re-prepare of it.
@@ -336,6 +338,7 @@ case testTerminalFont
     var onTestLiveCaptionsSay: ((String?, String?) -> String)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
     var onTestProjector: (() -> String)?
+    var onTestAsusSide: ((AsusSide?) -> String)?
     /// JSON snapshot of the presenting state + display classification.
     var onTestPresentation: (() -> String)?
     /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
@@ -619,6 +622,10 @@ case testTerminalFont
                 if self.onTestProjector == nil {
                     statusCode = 503
                 }
+            case .testAsusSide(let side):
+                contentType = "application/json"
+                body = self.onTestAsusSide?(side) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestAsusSide == nil { statusCode = 503 }
             case .testPresentation:
                 contentType = "application/json"
                 body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
@@ -1005,6 +1012,8 @@ case testTerminalFont
             return .testLiveCaptions(raw != "0" && raw.lowercased() != "false")
         case "/test/projector":
             return .testProjector
+        case "/test/asus-side":
+            return .testAsusSide(queryItems.first(where: { $0.name == "side" })?.value.flatMap(AsusSide.init))
         case "/test/presentation":
             return .testPresentation
         case "/test/zoom-share":

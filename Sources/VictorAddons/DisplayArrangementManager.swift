@@ -262,6 +262,58 @@ final class DisplayArrangementManager {
         DispatchQueue.main.async { [weak self] in self?.evaluateAndApply(force: true) }
     }
 
+    // MARK: - 🖥️ ASUS side
+
+    /// What the 🖥️ ASUS submenu shows when it opens.
+    func asusState() -> AsusSide.State {
+        let d = resolveDisplays()
+        guard let asus = d.asus else { return .absent }
+        guard let retina = d.retina, CGDisplayIsInMirrorSet(asus) == 0 else { return .mirrored }
+        return .at(AsusSide.current(asus: CGDisplayBounds(asus), retina: CGDisplayBounds(retina)))
+    }
+
+    /// Put the ASUS on `side` of the Retina **now**, and remember it for every
+    /// later automatic arrangement. Only origins move — no modes, no mirrors —
+    /// and whichever of the two is main stays main, so it is the same gesture at
+    /// home (Retina main), at a venue (ASUS main) and next to the home monitors.
+    /// Returns the banner it showed. Main queue only.
+    @discardableResult
+    func placeAsus(_ side: AsusSide) -> String {
+        AsusSide.preferred = side
+        let banner = moveAsus(side)
+        onArrangementApplied?(banner)
+        return banner
+    }
+
+    private func moveAsus(_ side: AsusSide) -> String {
+        let d = resolveDisplays()
+        guard let asus = d.asus, let retina = d.retina else { return "🖥️ no ASUS connected" }
+        guard CGDisplayIsInMirrorSet(asus) == 0 else { return "🖥️ ASUS is mirroring — use Arrange Monitors" }
+        let move = AsusSide.move(to: side,
+                                 asus: CGDisplayBounds(asus),
+                                 retina: CGDisplayBounds(retina),
+                                 asusIsMain: CGMainDisplayID() == asus)
+
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
+            overlayError("CGBeginDisplayConfiguration failed — ASUS not moved")
+            return "🖥️ ASUS not moved"
+        }
+        isApplying = true
+        switch move {
+        case .asus(let p):   CGConfigureDisplayOrigin(config, asus, Int32(p.x), Int32(p.y))
+        case .retina(let p): CGConfigureDisplayOrigin(config, retina, Int32(p.x), Int32(p.y))
+        }
+        let result = CGCompleteDisplayConfiguration(config, .permanently)
+        scheduleApplyingReset()
+        guard result == .success else {
+            overlayError("CGCompleteDisplayConfiguration failed (\(result.rawValue)) — ASUS not moved")
+            return "🖥️ ASUS not moved"
+        }
+        overlayInfo("ASUS placed \(side.rawValue) of the Retina (\(move))")
+        return side == .left ? "🖥️ ◀ ASUS left" : "🖥️ ASUS right ▶"
+    }
+
     /// Force-apply now, then return a JSON snapshot of the resulting state.
     /// Backs `/test/projector`. Must be called on the main queue (the HTTP
     /// handler wraps it in `DispatchQueue.main.sync`).
@@ -295,6 +347,7 @@ final class DisplayArrangementManager {
             + "\"scene\":\"\(s.projector ? "projector" : "standard")\","
             + "\"retinaMode\":\(retinaModeStr),"
             + "\"retina1080Available\":\(has1080),"
+            + "\"asusSide\":\"\(AsusSide.preferred.rawValue)\","
             + "\"registered\":\(reconfigureRegistered)"
             + "}"
     }
@@ -442,6 +495,7 @@ final class DisplayArrangementManager {
             if let asus = displays.asus {
                 if CGDisplayIsInMirrorSet(asus) != 0 { return "the ASUS is still mirroring" }
                 if CGMainDisplayID() != asus { return "the ASUS is not the main display" }
+                if let wrong = asusOnWrongSide(asus: asus, retina: retina) { return wrong }
             }
         } else {
             if CGDisplayIsInMirrorSet(retina) != 0 { return "the Retina is still in a mirror set" }
@@ -449,8 +503,16 @@ final class DisplayArrangementManager {
             if let asus = displays.asus, CGDisplayIsInMirrorSet(asus) != 0 {
                 return "the ASUS is still mirroring"
             }
+            if let asus = displays.asus, let wrong = asusOnWrongSide(asus: asus, retina: retina) {
+                return wrong
+            }
         }
         return nil
+    }
+
+    private func asusOnWrongSide(asus: CGDirectDisplayID, retina: CGDirectDisplayID) -> String? {
+        let side = AsusSide.current(asus: CGDisplayBounds(asus), retina: CGDisplayBounds(retina))
+        return side == AsusSide.preferred ? nil : "the ASUS is on the \(side.rawValue), not the \(AsusSide.preferred.rawValue)"
     }
 
     /// Keep swallowing our own reconfiguration callbacks briefly after the last
@@ -474,17 +536,30 @@ final class DisplayArrangementManager {
         // the actual point width being extended next to.
         let retinaPointWidth = Int32(displays.retina.flatMap { CGDisplayCopyDisplayMode($0)?.width } ?? 1920)
 
+        // The ASUS goes on the side Victor last picked in the 🖥️ ASUS submenu.
+        let side = AsusSide.preferred
         var rightEdge: Int32 = 0
         if scene.projector, let asus = displays.asus, let retina = displays.retina {
+            let asusWidth = Int32(CGDisplayCopyDisplayMode(asus)?.width ?? 1920)
             CGConfigureDisplayOrigin(config, asus, 0, 0)                   // (0,0) ⇒ main
-            CGConfigureDisplayOrigin(config, retina, -retinaPointWidth, 0) // to ASUS's left
-            rightEdge = Int32(CGDisplayCopyDisplayMode(asus)?.width ?? 1920)
+            if side == .right {
+                CGConfigureDisplayOrigin(config, retina, -retinaPointWidth, 0) // to ASUS's left
+                rightEdge = asusWidth
+            } else {
+                CGConfigureDisplayOrigin(config, retina, asusWidth, 0)         // to ASUS's right
+                rightEdge = asusWidth + retinaPointWidth
+            }
         } else if let retina = displays.retina {
             CGConfigureDisplayOrigin(config, retina, 0, 0)                 // Retina main
             rightEdge = retinaPointWidth
             if let asus = displays.asus {
-                CGConfigureDisplayOrigin(config, asus, retinaPointWidth, 0) // extended right
-                rightEdge += Int32(CGDisplayCopyDisplayMode(asus)?.width ?? 1920)
+                let asusWidth = Int32(CGDisplayCopyDisplayMode(asus)?.width ?? 1920)
+                if side == .right {
+                    CGConfigureDisplayOrigin(config, asus, retinaPointWidth, 0) // extended right
+                    rightEdge += asusWidth
+                } else {
+                    CGConfigureDisplayOrigin(config, asus, -asusWidth, 0)       // extended left
+                }
             }
         }
         // Any further unknown external (a second venue screen) is parked to the
@@ -534,7 +609,7 @@ final class DisplayArrangementManager {
             // projector appeared, breaking that mirror leaves it there. Pin it
             // back to its native mode so it isn't primary at 800×600.
             if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
-            return "🖥️ mirror + ASUS primary (Retina 1080p left)"
+            return "🖥️ mirror + ASUS primary (Retina 1080p \(AsusSide.preferred == .right ? "left" : "right"))"
         } else {
             return "🖥️ mirrored (Retina 1080p)"
         }
@@ -562,7 +637,7 @@ final class DisplayArrangementManager {
             // Same guard as the projector path: restore the ASUS's native mode so
             // a mirror-break fallback (800×600) never survives into the layout.
             if let m = bestMode(asus) { CGConfigureDisplayWithDisplayMode(config, asus, m, nil) }
-            return "🖥️ Retina main + ASUS right"
+            return "🖥️ Retina main + ASUS \(AsusSide.preferred.rawValue)"
         }
         return "🖥️ Retina only"
     }

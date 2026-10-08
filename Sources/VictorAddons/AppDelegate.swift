@@ -1276,6 +1276,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.displayArrangementManager?.forceApplyAndSnapshot()
                 ?? "{\"error\":\"display manager unavailable\"}"
         }
+        // /test/asus-side?side=left|right — the 🖥️ ASUS submenu without a click;
+        // no `side` only reads. Already on main, like /test/projector.
+        tabletServer?.onTestAsusSide = { [weak self] side in
+            guard let mgr = self?.displayArrangementManager else { return "{\"error\":\"display manager unavailable\"}" }
+            let banner = side.map { mgr.placeAsus($0) }
+            let state: String
+            switch mgr.asusState() {
+            case .absent: state = "absent"
+            case .mirrored: state = "mirrored"
+            case .at(let s): state = s.rawValue
+            }
+            return "{\"state\":\"\(state)\",\"preferred\":\"\(AsusSide.preferred.rawValue)\""
+                + (banner.map { ",\"banner\":\"\($0)\"" } ?? "") + "}"
+        }
         // /test/presentation — JSON snapshot of the presenting state + detection.
         tabletServer?.onTestPresentation = { [weak self] in
             self?.presentationSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
@@ -1407,6 +1421,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         menuBarManager.onFixDisplayLayout = { [weak self] in
             self?.displayArrangementManager?.applyNow()
+        }
+        menuBarManager.asusState = { [weak self] in
+            self?.displayArrangementManager?.asusState() ?? .absent
+        }
+        menuBarManager.onPlaceAsus = { [weak self] side in
+            self?.displayArrangementManager?.placeAsus(side)
         }
         menuBarManager.onLayoutZoom = { [weak self] in
             self?.layoutZoom()

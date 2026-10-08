@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 8, 09:39"
+    static let BUILD_TIME = "Oct 8, 12:29"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -36,6 +36,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
     private var wiredLinkItem: NSMenuItem!
+    /// 🖥️ ASUS ◀ / ▶ — shown only while the ASUS is plugged in.
+    private var asusSideItem: NSMenuItem!
+    private var asusLeftItem: NSMenuItem!
+    private var asusRightItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
@@ -136,6 +140,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onOpenGmail: (() -> Void)?
     var onTileTerminals: (() -> Void)?
     var onFixDisplayLayout: (() -> Void)?
+    var asusState: (() -> AsusSide.State)?
+    var onPlaceAsus: ((AsusSide) -> Void)?
     var onLayoutZoom: (() -> Void)?
     var onPickSource: ((String) -> Void)?
     var onTailPreview: (() -> String?)?
@@ -698,6 +704,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
+        // 🖥️ ASUS (2026-10-08) — flip the travel monitor to the other side of
+        // the Retina without opening System Settings › Displays. Remembered, so
+        // the next plug-in lands it there too. Hidden while no ASUS is attached.
+        asusSideItem = NSMenuItem(title: "🖥️ ASUS", action: nil, keyEquivalent: "")
+        let asusSubmenu = NSMenu()
+        asusLeftItem = NSMenuItem(title: "◀ Left of the Retina", action: #selector(placeAsusLeftAction), keyEquivalent: "")
+        asusRightItem = NSMenuItem(title: "Right of the Retina ▶", action: #selector(placeAsusRightAction), keyEquivalent: "")
+        for item in [asusLeftItem!, asusRightItem!] {
+            item.target = self
+            asusSubmenu.addItem(item)
+        }
+        asusSideItem.submenu = asusSubmenu
+        menu.addItem(asusSideItem)
+        refreshAsusSideItem()
+
         // 🎥 Layout Zoom (2026-09-29) — meeting video + Participants over Chat
         // on the monitor above the Retina. Next to Arrange Monitors because it
         // is the same kind of gesture: put windows where they belong, now.
@@ -791,6 +812,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // open, so this is the one moment it has to be right.
         updateTranscribeTitle()
         refreshWsItem()
+        refreshAsusSideItem()
         refreshClipboardLinkItem()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
@@ -1162,6 +1184,22 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func fixDisplayLayoutAction() {
         onFixDisplayLayout?()
+    }
+
+    @objc private func placeAsusLeftAction() { onPlaceAsus?(.left) }
+    @objc private func placeAsusRightAction() { onPlaceAsus?(.right) }
+
+    /// Read live on every open: the tick is where the ASUS actually is, which
+    /// can differ from the remembered side after a hand-made re-layout.
+    private func refreshAsusSideItem() {
+        let state = asusState?() ?? .absent
+        asusSideItem.isHidden = state == .absent
+        let mirrored = state == .mirrored
+        asusLeftItem.isEnabled = !mirrored
+        asusRightItem.isEnabled = !mirrored
+        asusLeftItem.state = state == .at(.left) ? .on : .off
+        asusRightItem.state = state == .at(.right) ? .on : .off
+        asusSideItem.toolTip = mirrored ? "The ASUS is mirroring — 🖥️ Arrange Monitors first" : nil
     }
 
 
