@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 8, 12:29"
+    static let BUILD_TIME = "Oct 8, 15:38"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -705,14 +705,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
-        // 🖥️ ASUS left / ASUS right (2026-10-08) — flip the travel monitor to
+        // ◀️ ASUS left / ASUS ▶️ right (2026-10-08) — flip the travel monitor to
         // the other side of the Retina without opening System Settings ›
-        // Displays. Remembered, so the next plug-in lands it there too. Two
-        // top-level rows, not a submenu: there are only ever two choices, and a
-        // submenu for two rows is one hover too many. Hidden while no ASUS is
-        // attached.
-        asusLeftItem = addItem("🖥️ ASUS left", action: #selector(placeAsusLeftAction))
-        asusRightItem = addItem("🖥️ ASUS right", action: #selector(placeAsusRightAction))
+        // Displays. Remembered, so the next plug-in lands it there too. Only
+        // the move that would change something is shown, with the arrow on the
+        // side the ASUS goes to; neither while it is absent or mirroring.
+        asusLeftItem = addItem("◀️ ASUS left", action: #selector(placeAsusLeftAction))
+        asusRightItem = addItem("ASUS ▶️ right", action: #selector(placeAsusRightAction))
         refreshAsusSideItem()
 
         // 🎥 Layout Zoom (2026-09-29) — meeting video + Participants over Chat
@@ -1188,18 +1187,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func placeAsusLeftAction() { onPlaceAsus?(.left) }
     @objc private func placeAsusRightAction() { onPlaceAsus?(.right) }
 
-    /// Read live on every open: the tick is where the ASUS actually is, which
-    /// can differ from the remembered side after a hand-made re-layout.
+    /// Read live on every open: the side is where the ASUS actually is, which
+    /// can differ from the remembered one after a hand-made re-layout.
     private func refreshAsusSideItem() {
         let state = asusState?() ?? .absent
-        let mirrored = state == .mirrored
-        for item in [asusLeftItem!, asusRightItem!] {
-            item.isHidden = state == .absent
-            item.isEnabled = !mirrored
-            item.toolTip = mirrored ? "The ASUS is mirroring — 🖥️ Arrange Monitors first" : nil
-        }
-        asusLeftItem.state = state == .at(.left) ? .on : .off
-        asusRightItem.state = state == .at(.right) ? .on : .off
+        asusLeftItem.isHidden = state != .at(.right)
+        asusRightItem.isHidden = state != .at(.left)
     }
 
     private func refreshLayoutZoomItem() {
