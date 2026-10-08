@@ -83,7 +83,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Fires the 16:30 / 17:00 "Feedback form?" offer (see FeedbackFormReminder).
     private var feedbackFormReminder: FeedbackFormReminder?
     private var powerMonitor: PowerMonitor?
-    private var lidAwake: LidAwake?
     private var homeAwake: HomeAwake?
     /// 🛰️ Keeps `claude remote-control` up in its tmux session — replaces the
     /// `ro.victorrentea.claude-rc` LaunchAgent, which is booted out and disabled.
@@ -1314,13 +1313,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if let rms = probe.rms { payload["rms"] = rms }
             if let peak = probe.peak { payload["peak"] = peak }
             if let playing = probe.playing { payload["playing"] = playing }
-            // The other answer to "is anything playing": the one LidAwake's
-            // volume boost consults, which needs no loopback device and so
-            // works in a bag. Reported next to the RMS rather than instead of
-            // it, because they can legitimately disagree — an app that has an
-            // output stream open but is pushing silence reads as playing here
-            // and as silent there.
-            payload["other_app_playing"] = SystemAudioActivity.otherAppPlayingOutput() ?? ""
             if !probe.deviceFound {
                 payload["error"] = "device not found"
             } else if probe.rms == nil {
@@ -1497,38 +1489,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 self?.keymapHoldCoordinator?.reset()
             }
         }
-        // 🔋 Awake Lid Closed. Re-armed on launch when it was left on, so the
-        // rebuild loop (`pkill` + `open`) cannot silently drop the lid guard in
-        // the middle of a flight.
-        let lid = LidAwake()
-        lid.onAutoDisabled = { [weak self] pct in
-            self?.menuBarManager.setLidAwakeTick(false)
-            self?.statusBanner?.showOnPresence(text: "🔋 \(pct)% — lid may sleep",
-                                               sound: StatusBannerSound.stop)
-        }
-        menuBarManager.onLidAwakeModeChanged = { mode in
-            lid.setMode(mode)
-        }
-        lid.startIfEnabled()
-        self.lidAwake = lid
-        tabletServer?.onTestLidAwakeState = { [weak lid] in lid?.stateJSON() ?? "{}" }
-        tabletServer?.onTestLidAwakeFlatline = { [weak lid] in lid?.playFlatlineForTest() }
-        tabletServer?.onTestSleepChime = { SleepChime.sound() }
-        // Setting the mode from the test hook goes through the same call the
-        // menu uses, and then repaints the rows — a mode the menu disagrees
-        // with is exactly the lie the tick is there to prevent.
-        tabletServer?.onTestLidAwakeMode = { [weak self, weak lid] raw in
-            guard let lid, let mode = LidAwakeMode(rawValue: raw) else {
-                return "{\"error\":\"unknown mode\"}"
-            }
-            let applied = lid.setMode(mode)
-            DispatchQueue.main.async { self?.menuBarManager.refreshLidAwakeMode(applied ? mode : .off) }
-            return lid.stateJSON()
-        }
-
-        // 🏠 Home Wi-Fi keeps the screen on. Its neighbour above holds a kernel
-        // flag through sudo; this one holds an ordinary display-sleep assertion
-        // in-process, so there is nothing to re-arm defensively and nothing that
+        // 🏠 Home Wi-Fi keeps the screen on. Victor Insomnia (its own app since
+        // 2026-10-08) holds a kernel flag through sudo; this one holds an
+        // ordinary display-sleep assertion in-process, so there is nothing to re-arm defensively and nothing that
         // can survive the app. Default on — see HomeAwakeSettings.
         let homeAwake = HomeAwake()
         menuBarManager.onHomeAwakeEnabledChanged = { enabled in
@@ -1732,7 +1695,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.coreAudioManager = audioManager
         let bridge = ChromeBridge()
         self.chromeBridge = bridge
-        SystemAudioActivity.chromeTabAudible = { [weak bridge] in bridge?.anyTabAudible() }
+        tabletServer?.onChromeAudible = { [weak bridge] in bridge?.anyTabAudible() }
         bridge.start()
         audioManager.onDictationActiveChanged = { [weak bridge] active in
             bridge?.setActive(active)

@@ -38,23 +38,18 @@ is a gong that will one day not ring. So this app keeps a thin player of its own
 and its own `Resources/sounds` symlink into the tablet's assets (dereferenced
 into the bundle by `build-app.sh`).
 
-Four callers, and only four:
+Two callers, and only two:
 
 - **`BreakTimerOverlay`** — the ☕️ break gong: two full strikes at expiry, and
   the interrupt when the watch is closed mid-strike (`stopOverlapping` with
   `fade: 0`, because closing the watch means silence *now*).
-- **`LidAwake`** — 💓 `13_heartbeat.mp3` and 🫀 `15_flatline.mp3`.
 - **`TrainingEndSequence`** — 🏁 `82_over_and_out.mp3`.
-- **`SleepChime`** — 🚪 `25_dark_door.mp3`, the one sound here that does **not**
-  go through `AddonSounds.play`. It is played from
-  `NSWorkspace.willSleepNotification` with its own `AVAudioPlayer` on the main
-  thread, and blocks there until the file has finished: `play` hops to the main
-  queue with `async`, which at that moment schedules the playback for after the
-  handler returns — i.e. onto a Mac that is already asleep. It borrows
-  `soundURL(for:)` and `currentBluetoothCompensation` and nothing else. See
-  [docs/lid-awake.md](lid-awake.md) for why it exists.
 
-`AddonSounds` deliberately keeps **only** what those four need: `soundURL(for:)`,
+The 💓 heartbeat, the 🫀 flatline and the 🚪 sleep tone left on 2026-10-08 with
+😴 insomnia, now its own app (`victor-insomnia`), which reads the two mp3s from
+`~/.victor-insomnia/sounds/`.
+
+`AddonSounds` deliberately keeps **only** what those two need: `soundURL(for:)`,
 `soundDuration`, `play`, `playOverlapping`, `stopOverlapping`, and
 `currentBluetoothCompensation` — read from `sound-timing.json`'s
 `macBluetoothCompensationMs` as a **file default** (`fileCompensationSeconds`),

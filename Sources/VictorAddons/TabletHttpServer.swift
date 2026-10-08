@@ -41,10 +41,6 @@ class TabletHttpServer {
         case testState
 case testTerminalFont
         case testAudioPlaying
-        case testLidAwakeState
-        case testLidAwakeFlatline
-    /// Sound the 🚪 sleep chime without sleeping the Mac — see docs/testing.md.
-    case testSleepChime
     /// Raise the 🎤 DJI dead-transmitter alarm — see docs/testing.md.
     case testMicDead(String?)
     case testMicDeadState
@@ -53,12 +49,12 @@ case testTerminalFont
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
     case testMenuOpen(closeAfter: Double, appearance: String?)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
-    /// Pick a 😴 mode without the mouse — see docs/testing.md.
-    case testLidAwakeMode(String)
         case testHomeAwake
         /// What the 🛰️ row claims and what tmux says — see docs/testing.md.
         case testClaudeRemoteControl
-        case testClaudeActivity
+        /// Is any Chrome tab audible? Asked by Victor Insomnia before it takes the
+        /// output up for its lid-shut heartbeat — this app owns the extension's socket.
+        case chromeAudible
         case testWisprRecording
         /// Start/reset the Break countdown overlay for N minutes (test hook).
         case testBreakStart(Int)
@@ -294,19 +290,14 @@ case testTerminalFont
     var onTestTranscriptionStart: (() -> Void)?
     var onTestState: (() -> String)?
     var onTestAudioPlaying: (() -> String)?
-    var onTestLidAwakeState: (() -> String)?
-    var onTestLidAwakeFlatline: (() -> Void)?
-    var onTestSleepChime: (() -> Void)?
     var onTestMicDead: ((String?) -> String)?
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
     var onTestMenuOpen: ((Double, String?) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
-    /// Returns the state JSON after the switch, so one call both sets and
-    /// proves it.
-    var onTestLidAwakeMode: ((String) -> String)?
     var onTestHomeAwake: (() -> String)?
     var onTestClaudeRemoteControl: (() -> String)?
+    var onChromeAudible: (() -> Bool?)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
     var onTestBreakUntil: (() -> Void)?
@@ -545,13 +536,6 @@ case testTerminalFont
                 if self.onTestAudioPlaying == nil {
                     statusCode = 503
                 }
-            case .testLidAwakeState:
-                contentType = "application/json"
-                body = self.onTestLidAwakeState?() ?? "{\"error\":\"lid awake unavailable\"}"
-            case .testLidAwakeFlatline:
-                self.onTestLidAwakeFlatline?()
-            case .testSleepChime:
-                self.onTestSleepChime?()
             case .testMicDead(let screens):
                 contentType = "application/json"
                 body = self.onTestMicDead?(screens) ?? "{\"error\":\"mic alarm unavailable\"}"
@@ -572,35 +556,18 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestMicDeadState?() ?? "{\"error\":\"mic alarm unavailable\"}"
                 if self.onTestMicDeadState == nil { statusCode = 503 }
-            case .testLidAwakeMode(let mode):
-                contentType = "application/json"
-                body = self.onTestLidAwakeMode?(mode) ?? "{\"error\":\"lid awake unavailable\"}"
-                if self.onTestLidAwakeMode == nil { statusCode = 503 }
             case .testHomeAwake:
                 contentType = "application/json"
                 body = self.onTestHomeAwake?() ?? "{\"error\":\"home awake unavailable\"}"
                 if self.onTestHomeAwake == nil { statusCode = 503 }
+            case .chromeAudible:
+                contentType = "application/json"
+                let audible = self.onChromeAudible?() ?? nil
+                body = "{\"audible\":\(audible.map(String.init) ?? "null")}"
             case .testClaudeRemoteControl:
                 contentType = "application/json"
                 body = self.onTestClaudeRemoteControl?() ?? "{\"error\":\"claude rc unavailable\"}"
                 if self.onTestClaudeRemoteControl == nil { statusCode = 503 }
-            case .testClaudeActivity:
-                contentType = "application/json"
-                let working = ClaudeActivity.workingSessions()
-                let helpers = ClaudeActivity.processTable()
-                    .filter { $0.name == "caffeinate" }
-                    .map(\.ppid)
-                    .compactMap { pid -> String? in
-                        guard let kind = ClaudeActivity.helperKind(of: pid) else { return nil }
-                        return "\(pid):\(kind)"
-                    }
-                // Remote sessions are named apart from the rest: they are the
-                // half with no `caffeinate`, so "working but not here" is the
-                // first thing to check when the two disagree.
-                let remote = ClaudeActivity.remoteWorkingSessions()
-                body = "{\"working\":[\(working.map(String.init).joined(separator: ","))],"
-                    + "\"remote\":[\(remote.map(String.init).joined(separator: ","))],"
-                    + "\"skipped_helpers\":[\(helpers.map { "\"\($0)\"" }.joined(separator: ","))]}"
             case .testWisprRecording:
                 contentType = "application/json"
                 body = self.onTestWisprRecording?() ?? "{\"error\":\"wispr probe unavailable\"}"
@@ -965,14 +932,6 @@ case testTerminalFont
             return .testState
         case "/test/audio/playing":
             return .testAudioPlaying
-        case "/test/lid-awake/state":
-            return .testLidAwakeState
-        case let p where p.hasPrefix("/test/lid-awake/mode/"):
-            return .testLidAwakeMode(String(p.dropFirst("/test/lid-awake/mode/".count)))
-        case "/test/lid-awake/flatline":
-            return .testLidAwakeFlatline
-        case "/test/sleep-chime":
-            return .testSleepChime
         case "/test/mic-dead":
             return .testMicDead(queryItems.first(where: { $0.name == "screens" })?.value)
         case "/test/mic-dead/state":
@@ -989,10 +948,10 @@ case testTerminalFont
                                  screens: queryItems.first(where: { $0.name == "screens" })?.value)
         case "/test/home-awake":
             return .testHomeAwake
+        case "/chrome/audible":
+            return .chromeAudible
         case "/test/claude-rc":
             return .testClaudeRemoteControl
-        case "/test/claude-activity":
-            return .testClaudeActivity
         case "/test/wispr/recording":
             return .testWisprRecording
         case "/test/break/close":

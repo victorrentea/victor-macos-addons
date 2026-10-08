@@ -5,12 +5,12 @@ import Foundation
 /// soundboard, every desktop effect and their `SoundManager` live in the
 /// separate Victor Effects app.
 ///
-/// Three callers, all of them things that must ring even when the effects app
+/// Two callers, both of them things that must ring even when the effects app
 /// is stopped:
 ///   - `BreakTimerOverlay` — the ☕️ break gong (two full strikes at expiry, and
 ///     the interrupt when the watch is closed mid-strike);
-///   - `LidAwake` — 💓 `13_heartbeat.mp3` and 🫀 `15_flatline.mp3`;
 ///   - `TrainingEndSequence` — 🏁 `82_over_and_out.mp3`.
+/// (The 💓 heartbeat and 🫀 flatline left with 😴 insomnia for `victor-insomnia`.)
 ///
 /// Going over HTTP for these was rejected: "the break is over" must be audible
 /// whatever else is running, and a gong that depends on a second process is a

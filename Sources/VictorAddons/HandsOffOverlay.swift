@@ -1,4 +1,5 @@
 import AppKit
+import IOKit
 
 /// "Hands off the keyboard" — the amber frame an agent raises around every
 /// screen while it is driving the mouse and keyboard, plus four pulsing 🔒 in
@@ -115,13 +116,22 @@ final class HandsOffOverlay {
     /// Se taie doar **sunetul**, și doar cu capacul închis. Rama chihlimbarie,
     /// lacătele și badge-ul rămân neatinse pe orice ecran extern: contractul e
     /// vizual, iar ăsta nu se negociază. Iar cât lucrează un agent cu capacul
-    /// închis, `LidAwake` bate oricum la fiecare 10 secunde — deci tăcerea asta
+    /// închis, Victor Insomnia bate oricum la fiecare 10 secunde — deci tăcerea asta
     /// nu lasă mașina fără nicio dovadă că e ocupată, doar scoate al doilea
     /// sunet care spunea același lucru.
     /// `nonisolated`: e o funcție pură, fără stare, iar testele o cheamă din
     /// afara actorului principal.
     nonisolated static func shouldChime(silent: Bool, lidClosed: Bool) -> Bool {
         !silent && !lidClosed
+    }
+
+    /// `AppleClamshellState` pe `IOPMrootDomain` — capacul e închis.
+    private static func isLidClosed() -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        return IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? Bool ?? false
     }
 
     var isActive: Bool { session != nil }
@@ -223,7 +233,7 @@ final class HandsOffOverlay {
         lockClicks.reset()
         hideTip(after: 0)
         flashFreeAndDismiss()
-        if Self.shouldChime(silent: silent, lidClosed: LidAwake.isLidClosed()) { releaseChime?.play() }
+        if Self.shouldChime(silent: silent, lidClosed: Self.isLidClosed()) { releaseChime?.play() }
         overlayInfo(expired ? "Hands off: released by watchdog"
                             : (wasAuto ? "Hands off: synthetic input stopped" : "Hands off: released"))
     }

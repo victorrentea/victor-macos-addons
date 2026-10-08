@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 7, 23:33"
+    static let BUILD_TIME = "Oct 8, 09:39"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -32,11 +32,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var virtualDesktopItem: NSMenuItem!
     private(set) var claudeRemoteControlItem: NSMenuItem!
-    private(set) var lidAwakeItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
-    private(set) var lidAwakeModeItems: [LidAwakeMode: NSMenuItem] = [:]
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
-    private(set) var lidAwakeFloorItem: NSMenuItem!
     private(set) var homeAwakeItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
@@ -161,11 +158,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// repaints a showing Break overlay in that timezone.
     var onPickCountry: ((BreakCountry) -> Void)?
     var onEmojiOverlayEnabledChanged: ((Bool) -> Void)?
-    /// Returns whether the kernel flag actually followed — see `toggleLidAwakeAction`.
-    /// Returns whether the kernel agreed, so the menu can tell a refused
-    /// `pmset` from a mode that took.
-    var onLidAwakeModeChanged: ((LidAwakeMode) -> Bool)?
-    /// 🏠 Home Wi-Fi. Unlike 🔋 this cannot fail — there is no privileged flag
+    /// 🏠 Home Wi-Fi. Unlike Victor Insomnia's kernel flag this cannot fail — there is no privileged flag
     /// to be refused, just an assertion this process owns — so it returns
     /// nothing and the tick follows the click.
     var onHomeAwakeEnabledChanged: ((Bool) -> Void)?
@@ -682,75 +675,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // because a row per repo is a list that only ever grows, and F8 / ⌘⌃C
         // opens claude where the work is anyway.
 
-        // Claude prevents sleep — the travel switch, at the **top level** since
-        // 2026-09-17 (Victor's call; it spent its life under 👩🏻‍💻 Extra). It is
-        // the one state in this app that decides whether the Mac is awake in a
-        // bag, and a state you have to open a submenu to see is a state you
-        // forget you left on.
-        //
-        // **A tick when it is on and nothing at all when it is off** — Victor's
-        // words, and the reason this row has no emoji where every other row
-        // here has one: the leading 🔋 would be "something in front" in both
-        // states, which is exactly what a checkbox must not have.
-        //
-        // The tick is **in the title** (`LidAwakeMenu`), not the item's
-        // `state`: one natively-ticked row makes AppKit reserve a check column
-        // for the entire menu and shifts every other row's text to the right,
-        // which moves the leading emoji this menu is read by.
-        //
-        // It is also the one toggle that changes something *outside* the app (a
-        // kernel flag), so the tick has to be the truth — the toggle reads the
-        // flag back and unticks itself if the kernel said no.
-        //
-        // The label names the *subject*, and that is the contract: it is Claude
-        // that stays awake, not the Mac on its own. "While a Claude session is
-        // working, the Mac stays up"; when they all finish it sleeps like any
-        // other Mac. A label like "Keep Awake" would promise the thing this
-        // deliberately does not do.
-        //
-        // **Three states, so it is a submenu — and the parent row still says
-        // which one** (2026-09-21). The states are ordered rather than
-        // independent (off ⊂ interactive ⊂ background), which is a picker, not
-        // two checkboxes. That would normally lose the rule above about not
-        // hiding this state in a submenu, so the *parent* carries the current
-        // mode in its own title: the menu still answers "what is it doing" at a
-        // glance, and only changing it costs a hover.
-        lidAwakeItem = NSMenuItem(title: LidAwakeMenu.parentTitle(LidAwakeSettings.mode),
-                                  action: nil, keyEquivalent: "")
-        lidAwakeItem.isEnabled = true
-        lidAwakeItem.image = LidAwakeMenu.icon
-        // **The native tick, here and nowhere else** (Victor, 2026-09-21). The
-        // rule everywhere above is that a checked `NSMenuItem.state` makes
-        // AppKit reserve a check column for the *whole* menu and shift every
-        // row's text — which moves the leading emoji this menu is read by. A
-        // submenu is its own menu: the column it reserves is three rows wide,
-        // those three rows carry no emoji, and nothing else moves. So the
-        // classic Mac checkmark costs nothing here and looks like what it is,
-        // while the parent row keeps its mode in plain text.
-        let lidAwakeSubmenu = NSMenu()
-        for mode in LidAwakeMode.allCases {
-            let item = NSMenuItem(title: LidAwakeMenu.label(mode),
-                                  action: #selector(pickLidAwakeModeAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.isEnabled = true
-            item.state = LidAwakeMenu.state(mode, current: LidAwakeSettings.mode)
-            item.representedObject = mode.rawValue
-            lidAwakeSubmenu.addItem(item)
-            lidAwakeModeItems[mode] = item
-        }
-        // **"Sleep under 20%"** (2026-10-07, Victor): whether the battery
-        // floor stands the feature down at all. A checkbox rather than a mode —
-        // it applies to every mode alike — and native-ticked for the same
-        // reason the modes are: this submenu's check column is its own.
-        lidAwakeSubmenu.addItem(.separator())
-        lidAwakeFloorItem = NSMenuItem(title: LidAwakeMenu.floorLabel,
-                                       action: #selector(toggleLidAwakeFloorAction), keyEquivalent: "")
-        lidAwakeFloorItem.target = self
-        lidAwakeFloorItem.isEnabled = true
-        lidAwakeFloorItem.state = LidAwakeSettings.sleepsUnderFloor ? .on : .off
-        lidAwakeSubmenu.addItem(lidAwakeFloorItem)
-        lidAwakeItem.submenu = lidAwakeSubmenu
-        menu.addItem(lidAwakeItem)
         menu.addItem(hotspotFallbackItem)
         menu.addItem(fluxInboxItem)
 
@@ -856,7 +780,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         updateTranscribeTitle()
         refreshWsItem()
         refreshClipboardLinkItem()
-        refreshLidAwakeCounts()
         portRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refreshPortItems()
             // Lets a "checking…" click resolve to its real result without the
@@ -1061,69 +984,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         }
     }
 
-    enum LidAwakeMenu {
-        /// The parent row: the name Victor gave it, plus the state it is in,
-        /// because a submenu that hides its state is a state you forget you
-        /// left on — the reason this stopped being a submenu in the first place.
-        /// **Claude Code's icon says whose insomnia** (2026-09-23, Victor: *"pune
-        /// iconița claude code în locul emoji din label … scoate «Claude»"*) —
-        /// the row's `image`, Clawd (`ClaudeCodeIcon`).
-        static let name = "Insomnia"
-
-        static let icon: NSImage? = ClaudeCodeIcon.image(height: 16)
-
-        static func label(_ mode: LidAwakeMode) -> String {
-            switch mode {
-            case .off: return "Off"
-            case .interactive: return "Claude"
-            case .background: return "Claude /rc"
-            case .always: return "Always"
-            }
-        }
-
-        /// The rows with the count of sessions **working** right now — the ones
-        /// that would actually keep the laptop from sleeping (2026-10-08,
-        /// Victor; on 10-07 they counted sessions merely alive). Each row names
-        /// what it holds: `Claude (2)`, and `Claude (2) /rc (1)` because that
-        /// mode holds both. `nil` counts — before the menu has ever been
-        /// opened — leave the bare words.
-        static func label(_ mode: LidAwakeMode, counts: ClaudeActivity.WorkingCounts?) -> String {
-            guard let counts else { return label(mode) }
-            switch mode {
-            case .interactive: return "Claude (\(counts.claude))"
-            case .background: return "Claude (\(counts.claude)) /rc (\(counts.rc))"
-            case .off, .always: return label(mode)
-            }
-        }
-
-        static let floorLabel = "Sleep under \(LidAwakePolicy.batteryFloorPercent)%"
-
-        /// The parent's short word for the mode — the row's own label since
-        /// 2026-10-02 (Victor: Off / Claude / Claude/rc / Always; `rc` = the
-        /// sessions opened from the phone over remote control). `Off` carried a 😴 for an hour and lost it (2026-09-23,
-        /// Victor: *"Off fără emoji după"*) — the row already starts with one.
-        static func short(_ mode: LidAwakeMode) -> String {
-            switch mode {
-            case .off: return "Off"
-            case .interactive: return "Claude"
-            case .background: return "Claude /rc"
-            case .always: return "Always"
-            }
-        }
-
-        static func parentTitle(_ mode: LidAwakeMode) -> String {
-            "\(name): \(short(mode))"
-        }
-
-        /// The classic Mac checkmark on the current mode. Safe *inside a
-        /// submenu* and nowhere else in this app: the check column AppKit
-        /// reserves for it belongs to these three rows alone, and they carry no
-        /// leading emoji to be shifted.
-        static func state(_ mode: LidAwakeMode, current: LidAwakeMode) -> NSControl.StateValue {
-            mode == current ? .on : .off
-        }
-    }
-
     enum RawAudioMenu {
         static let off = "Record raw audio"
         static func on(hours: Double) -> String {
@@ -1248,54 +1108,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !ZoomSharePrepSettings.isEnabled
         ZoomSharePrepSettings.isEnabled = enabled
         zoomSharePrepItem.state = enabled ? .on : .off
-    }
-
-    /// 🔋 Awake Lid Closed. The one toggle here that can *fail*: the kernel flag
-    /// needs the sudoers rule, and without it `pmset` exits non-zero. So the
-    /// tick is set from what the handler reports back, never optimistically
-    /// from the click — a ticked row that isn't holding the Mac awake is the
-    /// single worst outcome this feature has.
-    /// Pick a mode. The kernel has the last word: `pmset` can refuse (a missing
-    /// sudoers rule), and then the menu must show `off` rather than the mode
-    /// that was asked for — this is the one toggle in the app that changes
-    /// something outside it, so the row has to be the truth.
-    @objc private func pickLidAwakeModeAction(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let wanted = LidAwakeMode(rawValue: raw) else { return }
-        let applied = onLidAwakeModeChanged?(wanted) ?? false
-        refreshLidAwakeMode(applied ? wanted : .off)
-    }
-
-    /// Called by the battery floor when it stands the feature down on its own,
-    /// so the rows stop claiming the Mac is being held awake.
-    func setLidAwakeTick(_ on: Bool) {
-        refreshLidAwakeMode(on ? LidAwakeSettings.mode : .off)
-    }
-
-    /// The working counts on the `Claude` and `Claude /rc` rows, read as the
-    /// 💬 menu opens — the submenu is only ever seen from inside it.
-    func refreshLidAwakeCounts() {
-        let counts = ClaudeActivity.workingCounts()
-        for (mode, item) in lidAwakeModeItems {
-            item.title = LidAwakeMenu.label(mode, counts: counts)
-        }
-        lidAwakeFloorItem?.state = LidAwakeSettings.sleepsUnderFloor ? .on : .off
-    }
-
-    /// "Sleep under 20%". Read by the next tick; nothing to arm or disarm.
-    @objc private func toggleLidAwakeFloorAction() {
-        LidAwakeSettings.sleepsUnderFloor.toggle()
-        lidAwakeFloorItem.state = LidAwakeSettings.sleepsUnderFloor ? .on : .off
-        overlayInfo("LidAwake: sleep under \(LidAwakePolicy.batteryFloorPercent)% "
-            + (LidAwakeSettings.sleepsUnderFloor ? "on" : "off — no battery floor"))
-    }
-
-    /// Move the tick and repaint the parent row.
-    func refreshLidAwakeMode(_ mode: LidAwakeMode) {
-        lidAwakeItem?.title = LidAwakeMenu.parentTitle(mode)
-        for (each, item) in lidAwakeModeItems {
-            item.state = LidAwakeMenu.state(each, current: mode)
-        }
     }
 
     /// 🛰️ Claude RC in background. The tick means "armed and minding it", and

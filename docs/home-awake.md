@@ -8,7 +8,7 @@ nobody clicking anything.
 Code: `HomeAwake.swift` (runtime + settings), `HomeAwakePolicy.swift` (the
 decision), `DisplaySleepAssertion.swift` (the mechanism, shared with the ☕️
 break screen), `HomeAwakePolicyTests.swift`. Menu row + toggle in
-`MenuBarManager.swift`, wired in `AppDelegate.swift` right after `LidAwake`.
+`MenuBarManager.swift`, wired in `AppDelegate.swift`.
 
 ## What "does not lock" means — read this before being surprised
 
@@ -133,8 +133,8 @@ pmset -g assertions | grep -i "home Wi-Fi"
 second lifetime to keep in step with this one — and a `caffeinate` that outlives a
 crash keeps the display awake off-network with nothing left to release it.
 
-**Not `LidAwake`'s machinery**, despite the neighbouring row, and the distinction
-is the whole of docs/lid-awake.md: 🔋 needs the kernel `SleepDisabled` flag
+**Not `LidAwake`'s machinery** (😴 insomnia, its own app `victor-insomnia` since
+2026-10-08), and the distinction is the whole of its docs/insomnia.md: 🔋 needs the kernel `SleepDisabled` flag
 because **no assertion in the public API vetoes a closing lid** — clamshell sleep
 is a different event. Here the event *is* an idle timer, which is precisely what
 an assertion does veto. Different event, different tool. Reusing 🔋's flag would
