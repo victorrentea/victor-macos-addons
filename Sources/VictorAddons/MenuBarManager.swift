@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 7, 22:04"
+    static let BUILD_TIME = "Oct 7, 23:33"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -1081,15 +1081,17 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             }
         }
 
-        /// The row with the live count in round brackets (2026-10-07, Victor):
-        /// `Claude (5)` = sessions alive on this Mac, `Claude /rc (1)` = the
-        /// ones the remote-control host is driving. `nil` counts — before the
-        /// menu has ever been opened — leave the bare words.
-        static func label(_ mode: LidAwakeMode, counts: ClaudeActivity.LiveCounts?) -> String {
+        /// The rows with the count of sessions **working** right now — the ones
+        /// that would actually keep the laptop from sleeping (2026-10-08,
+        /// Victor; on 10-07 they counted sessions merely alive). Each row names
+        /// what it holds: `Claude (2)`, and `Claude (2) /rc (1)` because that
+        /// mode holds both. `nil` counts — before the menu has ever been
+        /// opened — leave the bare words.
+        static func label(_ mode: LidAwakeMode, counts: ClaudeActivity.WorkingCounts?) -> String {
             guard let counts else { return label(mode) }
             switch mode {
-            case .interactive: return "\(label(mode)) (\(counts.claude))"
-            case .background: return "\(label(mode)) (\(counts.rc))"
+            case .interactive: return "Claude (\(counts.claude))"
+            case .background: return "Claude (\(counts.claude)) /rc (\(counts.rc))"
             case .off, .always: return label(mode)
             }
         }
@@ -1270,10 +1272,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         refreshLidAwakeMode(on ? LidAwakeSettings.mode : .off)
     }
 
-    /// The live counts on the `Claude` and `Claude /rc` rows, read as the 💬
-    /// menu opens — the submenu is only ever seen from inside it.
+    /// The working counts on the `Claude` and `Claude /rc` rows, read as the
+    /// 💬 menu opens — the submenu is only ever seen from inside it.
     func refreshLidAwakeCounts() {
-        let counts = ClaudeActivity.liveCounts()
+        let counts = ClaudeActivity.workingCounts()
         for (mode, item) in lidAwakeModeItems {
             item.title = LidAwakeMenu.label(mode, counts: counts)
         }

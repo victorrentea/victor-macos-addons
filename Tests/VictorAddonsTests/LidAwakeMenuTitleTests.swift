@@ -60,12 +60,12 @@ final class LidAwakeMenuTitleTests: XCTestCase {
         XCTAssertFalse(Menu.name.lowercased().contains("keep awake"))
     }
 
-    // MARK: - Live counts (2026-10-07)
+    // MARK: - Working counts (2026-10-08)
 
-    func testTheClaudeRowsCarryTheirLiveCountInBrackets() {
-        let counts = ClaudeActivity.LiveCounts(claude: 5, rc: 1)
-        XCTAssertEqual(Menu.label(.interactive, counts: counts), "Claude (5)")
-        XCTAssertEqual(Menu.label(.background, counts: counts), "Claude /rc (1)")
+    func testTheClaudeRowsCarryTheirWorkingCountsInBrackets() {
+        let counts = ClaudeActivity.WorkingCounts(claude: 2, rc: 1)
+        XCTAssertEqual(Menu.label(.interactive, counts: counts), "Claude (2)")
+        XCTAssertEqual(Menu.label(.background, counts: counts), "Claude (2) /rc (1)")
         XCTAssertEqual(Menu.label(.off, counts: counts), "Off")
         XCTAssertEqual(Menu.label(.always, counts: counts), "Always")
         XCTAssertEqual(Menu.label(.background, counts: nil), "Claude /rc")
@@ -75,23 +75,13 @@ final class LidAwakeMenuTitleTests: XCTestCase {
         XCTAssertEqual(Menu.floorLabel, "Sleep under 20%")
     }
 
-    func testLiveCountsSplitTerminalsFromRemoteControlAndDropTheDead() {
-        func presence(_ pid: Int32, _ entry: String) -> SessionPresence {
-            SessionPresence(pid: pid, sessionId: "s\(pid)", cwd: "/w", entrypoint: entry,
-                            status: "idle", statusUpdatedAt: nil)
-        }
-        // 10, 11: terminals. 12: `claude -p` under a shell (Flux). 20: spawned
-        // by the rc host 99. 30: a stale file whose pid is now something else.
-        let sessions = [presence(10, "cli"), presence(11, "cli"), presence(12, "sdk-cli"),
-                        presence(20, "sdk-cli"), presence(30, "cli")]
-        let parents: [Int32: Int32] = [10: 5, 11: 5, 12: 6, 20: 99, 99: 7, 30: 5]
-        let argv1: [Int32: String] = [99: "remote-control", 6: "/w/flux-agent.sh"]
-        let counts = ClaudeActivity.liveCounts(
-            in: sessions,
-            executablePath: { $0 == 30 ? "/usr/bin/vim" : "/Users/v/.local/share/claude/versions/2.1.300" },
-            parent: { parents[$0] },
-            firstArgument: { argv1[$0] })
-        XCTAssertEqual(counts, ClaudeActivity.LiveCounts(claude: 3, rc: 1))
+    /// The rc number is what `Claude /rc` adds on top of `Claude`, so a
+    /// session answering both signals is counted once, under `Claude`.
+    func testWorkingCountsNeverCountASessionTwice() {
+        XCTAssertEqual(ClaudeActivity.workingCounts(interactive: [10, 11], remote: [11, 20]),
+                       ClaudeActivity.WorkingCounts(claude: 2, rc: 1))
+        XCTAssertEqual(ClaudeActivity.workingCounts(interactive: [], remote: []),
+                       ClaudeActivity.WorkingCounts(claude: 0, rc: 0))
     }
 
     // MARK: - What each mode holds the lid open for

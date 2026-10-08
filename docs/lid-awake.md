@@ -7,10 +7,13 @@ only its three Bassos (the log: `battery 19% below floor` → `pmset sleepnow`
 stand-down now plays the three Bassos **and then the 🫀 flatline**, output taken
 up if the lid is shut, and disarms only after the flatline ends
 (`farewellInFlight` keeps a tick from starting a second goodbye).
-The submenu rows carry live counts read on `menuWillOpen`
-(`ClaudeActivity.liveCounts`): `Claude (N)` = Claude sessions alive on this Mac,
-`Claude /rc (M)` = those spawned by the `claude remote-control` host (an
-ancestor whose argv[1] is `remote-control`). Below a separator, **`Sleep under
+The submenu rows carry counts read on `menuWillOpen`
+(`ClaudeActivity.workingCounts`) — **since 2026-10-08 the sessions *working*,
+not alive** (Victor: the number that would actually stop the laptop from
+sleeping; the first version counted every open session). `Claude (N)` = sessions
+with a live `caffeinate` (`interactiveWorkingSessions`); `Claude (N) /rc (M)`
+repeats N and adds the busy remote sessions (`remoteWorkingSessions` minus any
+already in N) — exactly the two sets `LidAwake` holds the lid open for. Below a separator, **`Sleep under
 20%`** (`LidAwakeSettings.sleepsUnderFloor`, key `LidAwake.sleepUnderFloor`,
 default on) turns the floor off entirely — `LidAwakePolicy.decide(floorEnabled:)`;
 unticked, only macOS's own ~2–3% emergency sleep is left. `GET

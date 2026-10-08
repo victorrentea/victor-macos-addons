@@ -309,51 +309,28 @@ enum ClaudeActivity {
             now: Date())
     }
 
-    /// **How many sessions are alive, split by who drives them** — the two
-    /// numbers on the 😴 Insomnia rows (2026-10-07, Victor: `Claude (N)`,
-    /// `Claude /rc (M)`). Alive, not working: a session parked at its prompt
-    /// counts. Read when the menu opens, never polled.
-    struct LiveCounts: Equatable {
+    /// **How many sessions are working, split by who drives them** — the
+    /// numbers on the 😴 Insomnia rows. First shipped as sessions *alive*
+    /// (2026-10-07); a day later Victor wanted the ones that would actually stop
+    /// the laptop from sleeping, so these are the exact two sets `LidAwake`
+    /// holds the lid open for. Read when the menu opens, never polled.
+    struct WorkingCounts: Equatable {
+        /// Sessions with a live `caffeinate` — what `Claude` holds awake.
         var claude = 0
-        /// Sessions spawned by the `claude remote-control` host — the ones
-        /// opened from the phone.
+        /// Remote sessions (`sdk-cli`, driven from the phone) busy right now,
+        /// minus any already counted above, so `claude + rc` is what
+        /// `Claude /rc` holds awake.
         var rc = 0
     }
 
-    static func liveCounts() -> LiveCounts {
-        let parents = Dictionary(processTable().map { ($0.pid, $0.ppid) }, uniquingKeysWith: { a, _ in a })
-        return liveCounts(in: sessionPresence(),
-                          executablePath: executablePath(of:),
-                          parent: { parents[$0] },
-                          firstArgument: firstArgument(of:))
+    static func workingCounts() -> WorkingCounts {
+        workingCounts(interactive: interactiveWorkingSessions(), remote: remoteWorkingSessions())
     }
 
-    /// A presence file outlives a crash, so a session only counts while its pid
-    /// is still a `claude` binary. It is `rc` when an ancestor (a couple of
-    /// levels up, in case a wrapper ever appears) is `claude remote-control`;
-    /// everything else — terminals, `claude -p` agents like 📬 Flux — is `claude`.
-    static func liveCounts(
-        in sessions: [SessionPresence],
-        executablePath: (Int32) -> String?,
-        parent: (Int32) -> Int32?,
-        firstArgument: (Int32) -> String?
-    ) -> LiveCounts {
-        var counts = LiveCounts()
-        for session in sessions {
-            guard let path = executablePath(session.pid), isClaudeExecutable(path: path) else { continue }
-            var pid = session.pid
-            var underHost = false
-            for _ in 0..<3 {
-                guard let up = parent(pid), up > 1 else { break }
-                if firstArgument(up) == remoteControlSubcommand { underHost = true; break }
-                pid = up
-            }
-            if underHost { counts.rc += 1 } else { counts.claude += 1 }
-        }
-        return counts
+    static func workingCounts(interactive: [Int32], remote: [Int32]) -> WorkingCounts {
+        let claude = Set(interactive)
+        return WorkingCounts(claude: claude.count, rc: Set(remote).subtracting(claude).count)
     }
-
-    static let remoteControlSubcommand = "remote-control"
 
     /// When a session's transcript was last written, and what its last line
     /// says the session is doing.
