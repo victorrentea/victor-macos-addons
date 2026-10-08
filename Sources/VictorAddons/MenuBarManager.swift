@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 8, 15:38"
+    static let BUILD_TIME = "Oct 8, 16:21"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -36,7 +36,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
     private var wiredLinkItem: NSMenuItem!
-    /// 🖥️ ASUS left / right — two top-level rows, shown only while the ASUS is plugged in.
+    /// 🖥️ ◀ ASUS left / 🖥️ ASUS ▶ right — only the applicable one shows, only while the ASUS is plugged in and not mirroring.
     private var asusLeftItem: NSMenuItem!
     private var asusRightItem: NSMenuItem!
     /// 🎥 Layout Zoom — shown only while Zoom is running.
@@ -705,13 +705,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
         fixDisplayItem.isEnabled = true
 
-        // ◀️ ASUS left / ASUS ▶️ right (2026-10-08) — flip the travel monitor to
+        // 🖥️ ◀ ASUS left / 🖥️ ASUS ▶ right (2026-10-08) — flip the travel monitor to
         // the other side of the Retina without opening System Settings ›
         // Displays. Remembered, so the next plug-in lands it there too. Only
         // the move that would change something is shown, with the arrow on the
-        // side the ASUS goes to; neither while it is absent or mirroring.
-        asusLeftItem = addItem("◀️ ASUS left", action: #selector(placeAsusLeftAction))
-        asusRightItem = addItem("ASUS ▶️ right", action: #selector(placeAsusRightAction))
+        // side the ASUS goes to — a plain text-style
+        // arrowhead (U+FE0E), not the blue emoji key cap; neither while it is absent or mirroring.
+        asusLeftItem = addItem("🖥️ ◀\u{FE0E} ASUS left", action: #selector(placeAsusLeftAction))
+        asusRightItem = addItem("🖥️ ASUS ▶\u{FE0E} right", action: #selector(placeAsusRightAction))
         refreshAsusSideItem()
 
         // 🎥 Layout Zoom (2026-09-29) — meeting video + Participants over Chat
