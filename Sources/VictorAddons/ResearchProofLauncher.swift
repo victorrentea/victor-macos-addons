@@ -108,7 +108,7 @@ enum ResearchProofLauncher {
     /// reports success. Verbatim the `BreakSummaryLauncher` handshake — see the
     /// comment there for why Terminal's `busy` flag cannot be used instead.
     private static func launchTerminal(script: String, report: String) {
-        let sentinel = "/tmp/research-proof-\(Int(Date().timeIntervalSince1970)).done"
+        let sentinel = "/tmp/research-proof-\(UUID().uuidString).done"
         let osa = """
         set sentinel to "\(sentinel)"
         do shell script "rm -f " & quoted form of sentinel

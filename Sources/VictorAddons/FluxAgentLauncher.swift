@@ -186,7 +186,11 @@ enum FluxAgentLauncher {
     /// UUID), and they are single-quoted into the `do script` line, so they are
     /// escaped defensively even though no email *body* text goes near the shell.
     private static func launchTerminal(script: String, messageId: String, threadId: String) {
-        let sentinel = "/tmp/flux-agent-\(Int(Date().timeIntervalSince1970)).done"
+        // One sentinel per window, never per second: one poll tick launches
+        // every mail it admitted in the same second, and a shared sentinel let
+        // the first agent to finish close the others mid-run (2026-10-10 01:53
+        // — a 16-minute agent killed, its mail never answered).
+        let sentinel = "/tmp/flux-agent-\(UUID().uuidString).done"
         let osa = appleScript(script: script, sentinel: sentinel,
                               messageId: messageId, threadId: threadId)
         let p = Process()

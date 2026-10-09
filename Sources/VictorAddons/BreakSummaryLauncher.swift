@@ -58,7 +58,7 @@ enum BreakSummaryLauncher {
     /// close the window; on "fail" (or timeout) we leave it open so the failure is
     /// readable. Fired detached (no waitUntilExit) so it survives an app redeploy.
     private static func launchTerminal(script: String) {
-        let sentinel = "/tmp/break-summary-\(Int(Date().timeIntervalSince1970)).done"
+        let sentinel = "/tmp/break-summary-\(UUID().uuidString).done"
         let osa = """
         set sentinel to "\(sentinel)"
         do shell script "rm -f " & quoted form of sentinel
