@@ -39,7 +39,9 @@ import Foundation
 ///    long — the auto-kill re-armed to it — because there the last frame *is*
 ///    the punchline (LGTM).
 ///
-/// 4. **Subtitles, when a clip has them.** A `<name>.srt` sidecar is parsed
+/// 4. **Subtitles, when a clip has them and ✓ Subtitles is on.** The switch is
+///    the Victor Effects menu row (off by default, 2026-10-09), read from that
+///    app's defaults domain at play time (`subtitlesOn`). A `<name>.srt` sidecar is parsed
 ///    (`SRTSubtitles`) and drawn as an outlined caption over the picture —
 ///    at the bottom, or at the top for a cue tagged `{\an8}`, in the colour of
 ///    its `<font color=…>` tag (white when untagged). No backdrop box.
@@ -103,7 +105,7 @@ final class VideoPlayer {
         let win = VideoWindow(screenFrame: screen.frame, player: p)
         win.onSpace = { [weak self] in self?.togglePause() }
         win.onEscape = { [weak self] in self?.stop() }
-        if let srt = Self.sidecarSubtitle(for: fileURL) {
+        if Self.subtitlesOn, let srt = Self.sidecarSubtitle(for: fileURL) {
             win.subtitles = SRTSubtitles.parse(file: srt)
             overlayInfo("VideoPlayer: subtitles \(srt.lastPathComponent) (\(win.subtitles.count) cues)")
         }
@@ -249,6 +251,19 @@ final class VideoPlayer {
 
     /// Subtitle sidecar extensions understood, in the order they win.
     private static let subtitleExtensions = ["srt"]
+
+    /// Victor Effects' `✓ Subtitles` menu row — ONE switch for the soundboard
+    /// captions over there and the `.srt` lines here. Read straight from its
+    /// defaults domain on every play: a local read, so no HTTP hop and nothing
+    /// that waits on the effects app being up. Missing (effects never launched,
+    /// or never toggled) reads as off, which is the default it shows too.
+    static let effectsDefaultsDomain = "ro.victorrentea.victor-effects" as CFString
+    static var subtitlesOn: Bool {
+        // Refresh first: cfprefsd may still hold this domain from an earlier
+        // read, and a click in the other app has to count for the next video.
+        CFPreferencesAppSynchronize(effectsDefaultsDomain)
+        return (CFPreferencesCopyAppValue("subtitlesOn" as CFString, effectsDefaultsDomain) as? Bool) ?? false
+    }
 
     /// The subtitle file sitting next to a clip under the same basename
     /// (`KLSdOY-6R_U.mp4` → `KLSdOY-6R_U.srt`), or nil when the clip has none.
