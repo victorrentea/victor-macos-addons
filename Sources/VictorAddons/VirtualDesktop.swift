@@ -104,6 +104,20 @@ struct VirtualDesktopCornerPolicy {
     }
 }
 
+/// Where 🪞's invisible screen sits in the arrangement: **last on the right**, past the
+/// rightmost physical screen, top edges aligned — whichever side the ASUS is on. macOS
+/// drops a new screen wherever it likes (it landed in the ASUS's place, 2026-10-09), and
+/// `DisplayArrangementManager` never moves it (it filters it out), so the pointer and
+/// windows could wander onto a screen nobody looks at between the two real ones.
+enum VirtualDesktopPlacement {
+    /// `nil` when `virtual` is already there.
+    static func origin(virtual: CGRect, physical: [CGRect]) -> CGPoint? {
+        guard let last = physical.max(by: { $0.maxX < $1.maxX }) else { return nil }
+        let target = CGPoint(x: last.maxX, y: last.minY)
+        return virtual.origin == target ? nil : target
+    }
+}
+
 /// 🪞 Virtual Desktop — Victor cut out of his background, over the desktop, on an
 /// **invisible screen** that Teams or Zoom shares like any other.
 ///
@@ -199,6 +213,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
     private var corners = VirtualDesktopCornerPolicy()
     private var hoverTimer: Timer?
+    private var screensObserver: NSObjectProtocol?
+    private var parkDebounce: DispatchWorkItem?
 
     // MARK: - Lifecycle
 
@@ -223,6 +239,10 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
         waitForScreen(display.displayID) { [weak self] screen in
             guard let self, self.display === display else { return }
+            self.parkLast()
+            self.screensObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.scheduleParkLast() }
             self.buildScreenWindow(on: screen)
             self.buildSilhouette()
             self.startCamera()
@@ -236,6 +256,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private func stop() {
         guard display != nil else { return }
         hoverTimer?.invalidate(); hoverTimer = nil
+        screensObserver.map(NotificationCenter.default.removeObserver); screensObserver = nil
+        parkDebounce?.cancel(); parkDebounce = nil
         stream?.stopCapture { _ in }
         stream = nil
         captureSource = nil
@@ -274,6 +296,31 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         settings.modes = [CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: Double(Self.fps))]
         guard display.apply(settings) else { overlayError("🪞 VirtualDesktop: applySettings failed"); return nil }
         return display
+    }
+
+    /// After any rearrangement, once it has settled: `DisplayArrangementManager` waits
+    /// 1.2 s, then places the origins 0.6 s later and checks them 1.5 s after that.
+    private func scheduleParkLast() {
+        parkDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.parkLast() }
+        parkDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
+    }
+
+    /// Moves only this screen; the physical ones are `DisplayArrangementManager`'s.
+    private func parkLast() {
+        guard let id = display?.displayID else { return }
+        var count: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &count)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetActiveDisplayList(count, &ids, &count)
+        let physical = physicalDisplayIDs(ids.prefix(Int(count))).map(CGDisplayBounds)
+        guard let origin = VirtualDesktopPlacement.origin(virtual: CGDisplayBounds(id), physical: physical) else { return }
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else { return }
+        CGConfigureDisplayOrigin(config, id, Int32(origin.x), Int32(origin.y))
+        let result = CGCompleteDisplayConfiguration(config, .permanently)
+        overlayInfo("🪞 VirtualDesktop: screen parked last at \(Int(origin.x)),\(Int(origin.y)) (\(result == .success ? "ok" : "failed \(result.rawValue)"))")
     }
 
     private func waitForScreen(_ id: CGDirectDisplayID, attempt: Int = 0, then: @escaping (NSScreen) -> Void) {

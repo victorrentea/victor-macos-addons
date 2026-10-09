@@ -403,6 +403,16 @@ screen at alpha 0 while hidden, so both captures exclude it by id — nobody on 
 call sees it. (First cut, same day: the pointer anywhere in the rectangle for 4 s
 moved the face on its own — it jumped while Victor was merely reading under it.)
 
+**Always last on the right** (`VirtualDesktopPlacement`, tested; 2026-10-09). macOS put
+the new screen in the ASUS's place, between the two screens Victor works on, so the
+pointer and windows wandered onto a screen nobody sees. `DisplayArrangementManager`
+filters it out and never moves it, so `VirtualDesktop` places it itself: past the
+rightmost physical screen, top edges aligned — after the ASUS when the ASUS is on the
+right, after the Retina when it is on the left. Once when it appears, and again 4 s after
+every screen change (`didChangeScreenParametersNotification`), i.e. after the
+arrangement's own debounce + origins + verification have settled; only its own origin
+moves, and a no-op when it is already there.
+
 **No overlay lands on it.** Every overlay picks its screens from `NSScreen.physical`
 (`PhysicalScreens.swift`), the CoreGraphics lists (terminal tiling, Layout Zoom, the
 lens cursor fence) from `physicalDisplayIDs`. The day it went live the keymap, the
