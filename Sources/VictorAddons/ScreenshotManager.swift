@@ -174,7 +174,9 @@ enum ScreenshotManager {
         // the pixels he drew it around — and a ring lit round those same pixels a
         // moment later is the same news, later, on top of the thing he framed.
         // Victor's call, and it applies in Walkie Talkie's copy of this gesture
-        // for the same reason.
+        // for the same reason. What it gets instead (2026-10-09) is a yellow wash
+        // + camera *inside* the box — the pixels are already on disk by now.
+        DispatchQueue.main.async { ScreenCaptureFlash.flash(area: selection.rect) }
         copyToClipboard(filepath)
         overlayInfo("✂️ \(filename) → clipboard + \(screenshotsDir.path)")
 

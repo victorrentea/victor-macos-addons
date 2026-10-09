@@ -1250,11 +1250,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // `at=x,y` in global Cocoa points, so a test can aim the mark at a screen
         // without dragging the pointer out from under whoever is using it.
         tabletServer?.onTestScreenshotMark = { at in
-            let point: NSPoint = {
-                let parts = (at ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-                guard parts.count == 2 else { return NSEvent.mouseLocation }
-                return NSPoint(x: parts[0], y: parts[1])
-            }()
+            let parts = (at ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            // Four numbers are a crop's box (x,y,w,h global Cocoa): its 📸 flash.
+            if parts.count == 4 {
+                let rect = NSRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
+                DispatchQueue.main.async { ScreenCaptureFlash.flash(area: rect) }
+                return
+            }
+            let point = parts.count == 2 ? NSPoint(x: parts[0], y: parts[1]) : NSEvent.mouseLocation
             DispatchQueue.main.async { ScreenCaptureFlash.markCursor(at: point) }
         }
         tabletServer?.onTestTile = { [weak menuBarManager] in menuBarManager?.onTileTerminals?() }

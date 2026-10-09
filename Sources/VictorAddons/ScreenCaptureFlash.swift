@@ -105,6 +105,110 @@ enum ScreenCaptureFlash {
     // flash below stays — one keypress, no gesture, nothing else to say it
     // happened.
 
+    /// 📸 The crop's "taken": the selected area washes yellow and the old
+    /// camera glyph sits in its middle, both fading out together — and still
+    /// **no ring** round it. Victor, 2026-10-09: *"there should be an icon of
+    /// the camera like it was in the old days with yellow appearing on the area
+    /// that I've selected but without any yellow border around it."* The box
+    /// vanishing on release said nothing about whether a file landed; this
+    /// says it, over the pixels that were taken.
+    ///
+    /// Raised only after the capture returned, so it is never in the picture —
+    /// which is also why it ignores the suppression a crop holds: that guards
+    /// the selection, and the selection is over. `rect` is global Cocoa.
+    static func flash(area rect: NSRect, duration: CFTimeInterval = 0.9) {
+        let panel = NSPanel(contentRect: rect,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+
+        let size = rect.size
+        let view = NSView(frame: NSRect(origin: .zero, size: size))
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.systemYellow.withAlphaComponent(0.3).cgColor
+
+        if let glyph = tintedCameraGlyph(tint: .systemYellow) {
+            // Half the box, capped so a near-full-screen crop doesn't get a
+            // poster-sized camera; the aspect decides which side binds.
+            let aspect = glyph.size.height / max(glyph.size.width, 1)
+            let glyphW = min(size.width * 0.5, size.height * 0.5 / aspect, 360)
+            let glyphH = glyphW * aspect
+            let glyphLayer = CALayer()
+            glyphLayer.frame = CGRect(x: (size.width - glyphW) / 2, y: (size.height - glyphH) / 2,
+                                      width: glyphW, height: glyphH)
+            glyphLayer.contents = glyph
+            glyphLayer.contentsGravity = .resizeAspect
+            glyphLayer.opacity = 0.9
+            view.layer?.addSublayer(glyphLayer)
+        }
+
+        panel.contentView = view
+        panel.setFrame(rect, display: true)
+        panel.orderFrontRegardless()
+        activePanels.append(panel)
+
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1.0, 1.0, 0.0]
+        fade.keyTimes = [0.0, 0.3, 1.0]
+        fade.duration = duration
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        view.layer?.add(fade, forKey: "fade")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            panel.orderOut(nil)
+            activePanels.removeAll { $0 === panel }
+        }
+    }
+
+    private static var glyphCache: [String: NSImage] = [:]
+
+    /// `camera_glyph.png` (black outline on white) recoloured: white → fully
+    /// transparent, black → `tint`, anti-aliased edges kept as partial alpha.
+    private static func tintedCameraGlyph(tint: NSColor) -> NSImage? {
+        let key = tint.usingColorSpace(.deviceRGB)?.description ?? tint.description
+        if let cached = glyphCache[key] { return cached }
+
+        guard let url = Bundle.module.url(forResource: "camera_glyph", withExtension: "png", subdirectory: "Resources"),
+              let src = NSImage(contentsOf: url),
+              let cg = src.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        let width = cg.width, height = cg.height
+        let bytesPerRow = width * 4
+        guard let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = ctx.data else { return nil }
+
+        let rgb = tint.usingColorSpace(.deviceRGB) ?? tint
+        let tr = rgb.redComponent, tg = rgb.greenComponent, tb = rgb.blueComponent
+        let ptr = data.bindMemory(to: UInt8.self, capacity: height * bytesPerRow)
+        for y in 0..<height {
+            for x in 0..<width {
+                let i = y * bytesPerRow + x * 4
+                let lum = (Double(ptr[i]) + Double(ptr[i + 1]) + Double(ptr[i + 2])) / (3.0 * 255.0)
+                let a = 1.0 - lum
+                ptr[i]     = UInt8((tr * a) * 255.0)
+                ptr[i + 1] = UInt8((tg * a) * 255.0)
+                ptr[i + 2] = UInt8((tb * a) * 255.0)
+                ptr[i + 3] = UInt8(a * 255.0)
+            }
+        }
+
+        guard let out = ctx.makeImage() else { return nil }
+        let image = NSImage(cgImage: out, size: NSSize(width: width, height: height))
+        glyphCache[key] = image
+        return image
+    }
+
     /// Mark the spot the cursor was standing on when the shutter went, with a
     /// single solid yellow disc: it appears already centred on the point at
     /// 100 pt, blooms out to 250 pt while fading, and is gone in ~0.6 s. It is
