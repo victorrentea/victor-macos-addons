@@ -289,7 +289,7 @@ async function playInBackground(msg) {
   // with "Cannot access contents of the page", which is what the ladder below
   // was spending ten seconds re-discovering on every press. `reload()` commits
   // the page; `renderOnce` then gives it the frames the player needs.
-  if (found && found.discarded) await reloadDiscarded(tab.id);
+  if (found && found.discarded) await reloadTab(tab.id);
   if ((!found || found.discarded) && await renderOnce(tab)) return;
 
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -301,6 +301,16 @@ async function playInBackground(msg) {
       const rendered = await renderOnce(tab);
       if (rendered === BUSY) return;             // the other call owns this tab
       if (rendered) return;
+      // **Painted and still silent: the player itself is wedged (2026-10-09).**
+      // A tab that is live (`status: complete`, not discarded) can still hold a
+      // YouTube player that never loaded its stream — `duration 0`, `readyState
+      // 0`, `paused false` after our `play()` — and no amount of `play()` or
+      // frames brings it back. Only Memory Saver's discards used to get a
+      // reload, so this tab was found on every press, poked for ten seconds and
+      // given up on, forever. A fresh document is the one thing that has always
+      // worked, so it gets one, and the same paint a new tab gets.
+      await reloadTab(tab.id);
+      if (await renderOnce(tab) === true) return;
     }
     await sleep(700);
   }
@@ -385,8 +395,9 @@ async function pauseMedia(tabId) {
   }
 }
 
-/// Bring a discarded tab's document back, and wait for it to commit.
-async function reloadDiscarded(tabId) {
+/// Give the tab a fresh document — a discarded one, or one whose player is
+/// wedged — and wait for it to commit.
+async function reloadTab(tabId) {
   try {
     await chrome.tabs.reload(tabId);
   } catch (e) {
