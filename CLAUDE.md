@@ -80,6 +80,7 @@ load-bearing, not commentary.
 | [docs/activity-monitors.md](docs/activity-monitors.md) | powerpoint-monitor, intellij-monitor (Python sidecars feeding the daemon) |
 | [docs/menu-bar.md](docs/menu-bar.md) | menu philosophy (the menu is not a second cheat-sheet — removed rows), ☠️ Kill port, the banner chip layout, ⏱️ Resumed row colouring, 🔄 Reverse Mouse Wheel (the one default-on checkbox). 🖥️ **tart VM running** — a separate status item that appears only while a `tart run` VM is up, with ⏹ Stop (`TartVMIndicator`). The ⭐️ Effects submenu and the 🔥 Whip Agent row live in `victor-effects` now |
 | [docs/testing.md](docs/testing.md) | all headless `GET /test/*` hooks on `127.0.0.1:55123` (`TabletHttpServer`) + `./test-transcription-control.sh` — check here before testing anything by clicking. The effect hooks still answer on 55123, **through the proxy**; their documentation is in `victor-effects/docs/testing.md` |
+| [docs/conversations-backup.md](docs/conversations-backup.md) | 🗄️ daily merge of every local AI conversation (Claude Code/desktop, Copilot CLI/JetBrains/VS Code, Codex) onto the "Vic" drive when it is plugged in — `conversations-backup.sh` + its own LaunchAgent, no Swift; never deletes, keeps shrunk files aside |
 | [docs/deployment.md](docs/deployment.md) | `build-app.sh`, LaunchAgent install (**two** of them since the split), stable code-signing identity, Accessibility grants, single-instance lock, reopen-replaces-it (`AppRelaunch`), `TerminalTiler` AX note |
 
 ## Rules that apply everywhere
