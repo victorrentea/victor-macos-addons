@@ -95,6 +95,7 @@ final class DisplayArrangementManager {
 
         let displays = resolveDisplays()
         captureStandardRetinaModeIfNeeded(displays)
+        AsusSide.forgetUnless(attached: displays.asus != nil)
         lastScene = scene(for: displays)
         overlayInfo("DisplayArrangementManager started (registered=\(reconfigureRegistered)); "
             + "baseline scene=\(describe(lastScene)); \(describe(displays))")
@@ -151,6 +152,9 @@ final class DisplayArrangementManager {
         }
 
         captureStandardRetinaModeIfNeeded(displays)
+        // Past the probe every display has a name, so "no ASUS" is real: the
+        // left/right pick ends with the plug-in it was made for.
+        AsusSide.forgetUnless(attached: displays.asus != nil)
         // Always refresh the presentation signal first — even when the arrange
         // scene is unchanged or suppressed below.
         notifyUnknownExternal(unknownExternalPresent(displays))
@@ -273,7 +277,7 @@ final class DisplayArrangementManager {
     }
 
     /// Put the ASUS on `side` of the Retina **now**, and remember it for every
-    /// later automatic arrangement. Only origins move — no modes, no mirrors —
+    /// later automatic arrangement until the ASUS is unplugged. Only origins move — no modes, no mirrors —
     /// and whichever of the two is main stays main, so it is the same gesture at
     /// home (Retina main), at a venue (ASUS main) and next to the home monitors.
     /// Returns the banner it showed. Main queue only.

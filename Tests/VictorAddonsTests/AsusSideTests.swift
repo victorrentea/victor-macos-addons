@@ -20,6 +20,14 @@ final class AsusSideTests: XCTestCase {
         XCTAssertEqual(AsusSide.preferred, .left)
     }
 
+    func testUnpluggingForgetsThePick() {
+        AsusSide.preferred = .left
+        AsusSide.forgetUnless(attached: true)
+        XCTAssertEqual(AsusSide.preferred, .left)   // still plugged in: the pick holds
+        AsusSide.forgetUnless(attached: false)
+        XCTAssertEqual(AsusSide.preferred, .right)  // next plug-in lands on the right
+    }
+
     func testCurrentSideFromBounds() {
         XCTAssertEqual(AsusSide.current(asus: asusRight, retina: retina), .right)
         let asusLeft = asusRight.offsetBy(dx: -1728 - 1920, dy: 0)
