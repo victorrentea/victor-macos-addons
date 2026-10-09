@@ -119,6 +119,17 @@ class EventTapManager {
     var onGlassSpotlightEnd: ((CGPoint) -> Void)?
     /// Esc while the glass is up.
     var onGlassSpotlightDismiss: (() -> Void)?
+    /// 🛞 A bare wheel press that moved or stayed down: the ⌃P crop, the box
+    /// already under way from the press (`WheelCropPolicy`). Global CG points.
+    /// All called on main.
+    var onWheelCropBegin: ((CGPoint) -> Void)?
+    var onWheelCropMove: ((CGPoint) -> Void)?
+    var onWheelCropEnd: (() -> Void)?
+    /// Whether a dictation holds the microphone. A wheel drag during one is
+    /// Walkie Talkie's (its crop goes to the agent), and whose tap sees the
+    /// press first depends on which app made its tap last — so the answer is
+    /// asked, not assumed. Called on the tap thread or main, once per press.
+    var isDictating: (() -> Bool)?
     /// ⚠️ ⌥+scroll (⌥ alone) — the macOS magnifier, which a share never carries.
     /// Seen by its own HID tap (`optionScrollCallbackFunc`); the scroll still goes
     /// through, `ShareZoomHint` decides whether to warn. Called on main.
@@ -212,6 +223,15 @@ private let VK_I: CGKeyCode = 0x22
     private var spotlightDragging = false
     /// The Esc press that took the glass down — its release is swallowed too.
     private var spotlightEscSwallowed = false
+
+    /// 🛞 The bare wheel press being watched for a drag or a hold, and whether
+    /// it became a crop. Under a lock because the hold timer reads it from main.
+    private let wheelCropLock = NSLock()
+    private var wheelCropAnchor: CGPoint?
+    private var wheelCropping = false
+    /// Bumped at every press, so a hold timer left over from an earlier press
+    /// finds it is not its own.
+    private var wheelCropPress = 0
     /// Set from main whenever the glass goes up or down, read here on every Esc.
     private let spotlightLock = NSLock()
     private var spotlightUp = false
@@ -230,6 +250,93 @@ private let VK_I: CGKeyCode = 0x22
         guard spotlightUp, let hole = spotlightHole else { return false }
         return GlassSpotlightCorners.corner(of: hole, near: point, reach: GlassSpotlight.cornerReach,
                                             inside: GlassSpotlight.cornerInside) != nil
+    }
+
+    /// 🛞 A bare wheel press → the ⌃P crop, once it has moved
+    /// `WheelCropPolicy.dragThreshold` or stayed down `holdSeconds`.
+    ///
+    /// `nil` when the event is not this gesture's, otherwise whether it goes on
+    /// to the app underneath. **The press and the release always go on**, and
+    /// only the drags between them are taken: a middle click must still close a
+    /// tab, and a release swallowed after a press that went out leaves the
+    /// window server believing the button is still down — Walkie Talkie
+    /// measured that as a VS Code tab stuck to the cursor for seven hours. The
+    /// app underneath gets a down and an up in different places, which it
+    /// ignores. Tap thread only.
+    private func wheelCrop(_ type: CGEventType, _ event: CGEvent) -> Bool? {
+        let at = event.location
+        switch type {
+        case .otherMouseDown:
+            wheelCropLock.lock()
+            wheelCropPress += 1
+            wheelCropAnchor = nil
+            wheelCropping = false
+            guard event.flags.intersection([.maskShift, .maskCommand, .maskControl, .maskAlternate]).isEmpty else {
+                wheelCropLock.unlock()
+                return nil
+            }
+            wheelCropAnchor = at
+            let press = wheelCropPress
+            wheelCropLock.unlock()
+            DispatchQueue.main.asyncAfter(deadline: .now() + WheelCropPolicy.holdSeconds) { [weak self] in
+                self?.armWheelCrop(press: press, at: nil)
+            }
+            return true
+
+        case .otherMouseDragged:
+            wheelCropLock.lock()
+            let cropping = wheelCropping
+            let anchor = wheelCropAnchor
+            let press = wheelCropPress
+            wheelCropLock.unlock()
+            if cropping {
+                DispatchQueue.main.async { [weak self] in self?.onWheelCropMove?(at) }
+                return false
+            }
+            guard let anchor, WheelCropPolicy.isDrag(from: anchor, to: at) else { return anchor == nil ? nil : true }
+            return armWheelCrop(press: press, at: at) ? false : true
+
+        case .otherMouseUp:
+            wheelCropLock.lock()
+            let cropping = wheelCropping
+            let watched = wheelCropAnchor != nil || cropping
+            wheelCropPress += 1
+            wheelCropAnchor = nil
+            wheelCropping = false
+            wheelCropLock.unlock()
+            if cropping { DispatchQueue.main.async { [weak self] in self?.onWheelCropEnd?() } }
+            return watched ? true : nil
+
+        default:
+            return nil
+        }
+    }
+
+    /// The watched press becomes a crop — from the drag (`at`, tap thread) or
+    /// the hold timer (`nil`, main). Whoever gets here first takes it; a press
+    /// already let go, already cropping, or made during a dictation is left
+    /// alone. Answers whether the crop started.
+    @discardableResult
+    private func armWheelCrop(press: Int, at: CGPoint?) -> Bool {
+        if isDictating?() == true {
+            wheelCropLock.lock()
+            if wheelCropPress == press { wheelCropAnchor = nil }
+            wheelCropLock.unlock()
+            return false
+        }
+        wheelCropLock.lock()
+        guard wheelCropPress == press, let anchor = wheelCropAnchor, !wheelCropping else {
+            wheelCropLock.unlock()
+            return false
+        }
+        wheelCropping = true
+        wheelCropLock.unlock()
+        overlayInfo("🛞 wheel \(at == nil ? "held" : "dragged") — cropping")
+        DispatchQueue.main.async { [weak self] in
+            self?.onWheelCropBegin?(anchor)
+            if let at { self?.onWheelCropMove?(at) }
+        }
+        return true
     }
 
     func setGlassSpotlightUp(_ up: Bool) {
@@ -489,6 +596,7 @@ private let VK_I: CGKeyCode = 0x22
                 }
                 return nil
             }
+            if let passed = wheelCrop(type, event) { return passed ? Unmanaged.passUnretained(event) : nil }
         }
         if type == .otherMouseDragged {
             return Unmanaged.passUnretained(event)

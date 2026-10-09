@@ -1918,6 +1918,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onGlassSpotlightMove = { [weak self] at in self?.glassSpotlight.moved(toCG: at) }
         eventTap.onGlassSpotlightEnd = { [weak self] at in self?.glassSpotlight.end(atCG: at) }
         eventTap.onGlassSpotlightDismiss = { [weak self] in self?.glassSpotlight.dismiss() }
+        // 🛞 A bare wheel drag (or hold) is the ⌃P crop — except during a
+        // dictation, when the same drag is Walkie Talkie's.
+        eventTap.isDictating = { [weak self] in self?.coreAudioManager?.probeWisprRecording() ?? false }
+        eventTap.onWheelCropBegin = { at in ScreenshotManager.beginWheelCrop(fromCG: at) }
+        eventTap.onWheelCropMove = { at in ScreenshotManager.wheelCropMoved(toCG: at) }
+        eventTap.onWheelCropEnd = { ScreenshotManager.wheelCropReleased() }
         eventTap.onOptionScroll = { [weak self] in
             self?.shareZoomHint.optionScrolled()
         }

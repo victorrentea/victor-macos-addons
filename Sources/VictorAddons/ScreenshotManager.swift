@@ -127,6 +127,32 @@ enum ScreenshotManager {
         }
         semaphore.wait()
 
+        return fileCrop(selection)
+    }
+
+    /// 🛞 The same crop, driven by the wheel (`WheelCropPolicy`): the box is
+    /// already being dragged from `anchor` (global CG), the tap pushes every
+    /// move in (`CropSelectionOverlay.dragMoved`) and says when the wheel comes
+    /// up (`endDrag`), because it is the one that knows. Main thread.
+    static func beginWheelCrop(fromCG anchor: CGPoint) {
+        guard let primary = NSScreen.screens.first else { return }
+        ScreenCaptureFlash.beginSuppression()
+        let cocoa = NSPoint(x: anchor.x, y: primary.frame.maxY - anchor.y)
+        CropSelectionOverlay.begin(button: .middle, from: cocoa, style: cropStyle) { selection in
+            DispatchQueue.global(qos: .userInitiated).async {
+                defer { ScreenCaptureFlash.endSuppression() }
+                fileCrop(selection)
+            }
+        }
+    }
+
+    static func wheelCropMoved(toCG point: CGPoint) { CropSelectionOverlay.dragMoved(toCG: point) }
+    static func wheelCropReleased() { CropSelectionOverlay.endDrag() }
+
+    /// The selection → the dated file and the clipboard; nil (Esc, a right
+    /// click, a box too small) leaves both untouched.
+    @discardableResult
+    private static func fileCrop(_ selection: CropSelectionOverlay.Selection?) -> URL? {
         guard let selection else {
             overlayInfo("📸 crop cancelled")
             return nil   // Esc: clipboard and folder untouched.
