@@ -229,16 +229,36 @@ async function playInBackground(msg) {
   // a sound" and costs no injection, so the decision is made before anything is
   // opened or painted.
   //
+  // **"Off" means whatever Chrome is playing, not just the mix tab (2026-10-09).**
+  // The music in the room is often not the mix: a "Deep Work Music" video picked
+  // by hand, or a mix tab whose url lost its `list=` — and a toggle that only
+  // looked at `list=RD<seed>` found a silent mix tab, tried to *start* it, and
+  // left the real music playing through four presses. Dictation already pauses
+  // every audible tab (`dictation-pause.js`), so the key now does the same. The
+  // tabs it paused are remembered, and the next press brings back exactly those
+  // — "on" resumes the music that was turned off, and only starts the mix when
+  // there is nothing of ours to resume.
+  //
   // ⌘⌃F sends two messages per press — a probe, then the real call a second
-  // later — and both carry the same `press` id. When the tab is there the probe
-  // does everything the second call could, so the second one is dropped: without
-  // that, the probe would pause the music and its sibling would start it again a
-  // heartbeat later, and the toggle would be a key that does nothing. A tab that
-  // is *not* there is the one case the second message exists for (it carries the
-  // url), so no press is claimed on that path.
-  if (found) {
+  // later — and both carry the same `press` id. When the probe can act (something
+  // to pause, something to resume, a mix tab to start) it does everything the
+  // second call could, so the second one is dropped: without that, the probe
+  // would pause the music and its sibling would start it again a heartbeat later,
+  // and the toggle would be a key that does nothing. When there is nothing at all
+  // the second message is the one that opens the mix (it carries the url), so no
+  // press is claimed on that path.
+  const audible = await chrome.tabs.query({ audible: true });
+  const remembered = audible.length ? [] : await recallPaused();
+  if (audible.length || remembered.length || found) {
     if (claimed(msg.press)) return;
-    if (found.audible && await pauseMedia(found.id)) return;
+  }
+  if (audible.length) {
+    const paused = await pauseTabs(audible);
+    if (paused.length) { await rememberPaused(paused); return; }
+  }
+  if (remembered.length) {
+    await rememberPaused([]);
+    if (await resumeTabs(remembered)) return;
   }
 
   let tab = found;
@@ -303,6 +323,45 @@ function claimed(press) {
   handledPresses.push(press);
   if (handledPresses.length > 20) handledPresses.shift();
   return false;
+}
+
+/// Where the key keeps the tabs it paused. `storage.session`, not a variable:
+/// an MV3 worker is shut down after ~30 s idle, and the "on" press comes minutes
+/// later — a module-level list would be empty by then. Session storage lives as
+/// long as the browser, which is exactly as long as the tab ids mean anything.
+const PAUSED_KEY = 'focusKeyPausedTabs';
+
+async function rememberPaused(tabIds) {
+  try { await chrome.storage.session.set({ [PAUSED_KEY]: tabIds }); } catch (e) { /* best effort */ }
+}
+
+/// The remembered tabs that still exist. A tab closed since the pause is simply
+/// dropped — there is nothing to resume in it.
+async function recallPaused() {
+  let ids = [];
+  try { ids = (await chrome.storage.session.get(PAUSED_KEY))[PAUSED_KEY] || []; } catch (e) { return []; }
+  const alive = await Promise.all(ids.map((id) => chrome.tabs.get(id).then(() => id, () => null)));
+  return alive.filter((id) => id !== null);
+}
+
+/// Pause every given tab; the ids of those that actually had something playing.
+async function pauseTabs(tabs) {
+  const results = await Promise.all(tabs.map(async (t) => (await pauseMedia(t.id)) ? t.id : null));
+  return results.filter((id) => id !== null);
+}
+
+/// Resume the tabs the key paused. They were playing a moment ago, so their
+/// players are loaded and a plain `play()` is enough — a few tries only cover
+/// the gap while YouTube re-buffers. True when at least one is rolling again.
+async function resumeTabs(tabIds) {
+  let any = false;
+  for (const id of tabIds) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (await tryStart(id)) { any = true; break; }
+      await sleep(300);
+    }
+  }
+  return any;
 }
 
 /// Stop everything that is playing in the tab, and say whether anything was.
