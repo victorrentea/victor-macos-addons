@@ -139,8 +139,11 @@ enum OutputRouterPolicy {
     ///   - previous: every output device name in the last snapshot.
     ///   - current: every output device name now.
     ///   - defaultOutput: what macOS has right now (`nil` if unreadable).
+    ///   - zoomSharing: Zoom's share host (`CptHost`) is running — see
+    ///     `zoomOwnsTheOutput`.
     static func takeoverTarget(previous: Set<String>, current: Set<String>,
-                               defaultOutput: String?) -> String? {
+                               defaultOutput: String?, zoomSharing: Bool = false) -> String? {
+        if zoomOwnsTheOutput(defaultOutput: defaultOutput, zoomSharing: zoomSharing) { return nil }
         guard let target = best(of: Array(current).sorted()) else { return nil }
         if defaultOutput == target { return nil }  // already there
 
@@ -164,5 +167,28 @@ enum OutputRouterPolicy {
         }
         if rankedVanished || defaultVanished { return target }
         return nil
+    }
+
+    // MARK: - Rule 3 — a Zoom share with sound is Zoom's
+
+    /// Zoom's virtual capture device, the default output for the length of a
+    /// share with *Share sound* on.
+    static let zoomShareDevice = "ZoomAudioDevice"
+
+    /// **Zoom is sharing the computer's sound, so the output is not ours to
+    /// move** (2026-10-09). Share sound works by making `ZoomAudioDevice` the
+    /// system default — that is how Zoom hears everything the Mac plays — and
+    /// Zoom then plays it on to *its own* Speaker setting, which is what the
+    /// room hears. It also holds the default there: set by hand to the JBL
+    /// mid-share, it was back on `ZoomAudioDevice` in under 50 ms. So a JBL
+    /// reconnecting mid-share (08:39 and 09:54 that day) could only cut the
+    /// shared sound for a moment and lose. The speaker the room hears is picked
+    /// in Zoom's audio menu, never here.
+    ///
+    /// **Both halves, not the name alone:** a share that ended badly can leave
+    /// the default stranded on the virtual device, and then the ladder is the
+    /// thing that should rescue it.
+    static func zoomOwnsTheOutput(defaultOutput: String?, zoomSharing: Bool) -> Bool {
+        zoomSharing && defaultOutput.map { matches($0, zoomShareDevice) } == true
     }
 }

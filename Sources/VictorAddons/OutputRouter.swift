@@ -36,6 +36,9 @@ import Foundation
 /// +1 s and +2.5 s. After that we stop; three attempts on a connect edge are
 /// invisible on battery.
 final class OutputRouter {
+    /// Zoom's screen-share host: running exactly while a share is up.
+    private static let zoomShareHost = "/CptHost.app/Contents/MacOS/CptHost"
+
     /// Retry offsets after the immediate attempt, in seconds.
     private static let retryDelays: [TimeInterval] = [1.0, 2.5]
 
@@ -121,8 +124,14 @@ final class OutputRouter {
         rescueIfBlocked()
 
         let defaultName = BluetoothOutput.defaultOutput().name
+        let zoomSharing = FromWalkieWatchdog.processRunning(executableSuffix: Self.zoomShareHost)
+        if OutputRouterPolicy.zoomOwnsTheOutput(defaultOutput: defaultName, zoomSharing: zoomSharing),
+           current.subtracting(previous).contains(where: { OutputRouterPolicy.rank($0) != nil }) {
+            overlayInfo("🔊 Zoom is sharing sound — the output stays on '\(defaultName)'; pick the speaker in Zoom's audio menu")
+        }
         guard let target = OutputRouterPolicy.takeoverTarget(
-            previous: previous, current: current, defaultOutput: defaultName) else { return }
+            previous: previous, current: current, defaultOutput: defaultName,
+            zoomSharing: zoomSharing) else { return }
         overlayInfo("🔊 '\(target)' takes the output (was '\(defaultName)')")
         attempt(target: target, system: false, remaining: Self.retryDelays)
     }

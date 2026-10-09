@@ -202,4 +202,23 @@ final class OutputRouterPolicyTests: XCTestCase {
         XCTAssertNotNil(OutputRouterPolicy.rank("Vic Bose"))
         XCTAssertNil(OutputRouterPolicy.rank("MacBook Pro Speakers"))
     }
+
+    // MARK: - A Zoom share with sound
+
+    private let zoom = "ZoomAudioDevice"
+
+    func testTheSpeakersDoNotTakeTheOutputFromAZoomShare() {
+        XCTAssertNil(OutputRouterPolicy.takeoverTarget(
+            previous: [mac, zoom], current: [mac, zoom, jbl], defaultOutput: zoom, zoomSharing: true))
+    }
+
+    func testAZoomDeviceLeftBehindAfterTheShareIsRescued() {
+        XCTAssertEqual(OutputRouterPolicy.takeoverTarget(
+            previous: [mac, zoom], current: [mac, zoom, jbl], defaultOutput: zoom, zoomSharing: false), jbl)
+    }
+
+    func testASharedScreenWithoutSoundStillFollowsTheLadder() {
+        XCTAssertEqual(OutputRouterPolicy.takeoverTarget(
+            previous: [mac], current: [mac, jbl], defaultOutput: mac, zoomSharing: true), jbl)
+    }
 }
