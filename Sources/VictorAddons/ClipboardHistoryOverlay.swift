@@ -598,7 +598,12 @@ final class ClipboardHistoryOverlay {
         field.drawsBackground = false
         field.isBezeled = false
         field.isSelectable = false
-        field.lineBreakMode = .byTruncatingTail
+        // Word wrapping plus an ellipsis on the last visible line — never
+        // `.byTruncatingTail` on the field: that switches the cell's `wraps`
+        // off, so one long paragraph drew as a single line ending in "…"
+        // (2026-10-10, measured: 20 pt tall uncapped instead of 460).
+        field.lineBreakMode = .byWordWrapping
+        field.cell?.truncatesLastVisibleLine = true
         field.preferredMaxLayoutWidth = box.width
         field.maximumNumberOfLines = 0
         // Measured uncapped first, because the honest answer to "is there more

@@ -92,7 +92,10 @@ the content changes (2026-09-17).
   lines squeezed to one, blank lines at either end. The 4000-character cap in
   `preview` is a safety stop for a pasted log, not the visible cut — the cut is
   `maximumNumberOfLines`, counted in *drawn* lines, so one long line that wraps
-  four times spends four of them.
+  four times spends four of them. That only holds with `.byWordWrapping` +
+  `cell.truncatesLastVisibleLine`: `.byTruncatingTail` on the field turns the
+  cell's `wraps` off, and every long paragraph came out as one line and "…"
+  (fixed 2026-10-10).
 
 **One line under the box, not two.** The counter, the legend and what-this-clip-
 is were a footer row plus a hint row, and two rows of small grey text under a
