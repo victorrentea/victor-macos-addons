@@ -1,8 +1,8 @@
 import Foundation
 import SystemConfiguration
 
-/// 🔌 Is the cable giving this Mac a network? — the readout row under
-/// 👩🏻‍💻 Extras (2026-10-08). It replaces **Ethernet Menubar**, a third-party
+/// ‹···› Is the cable giving this Mac a network? — a readout row at the top
+/// level of the 💬 menu (2026-10-08 in Extras, top level since 2026-10-10). It replaces **Ethernet Menubar**, a third-party
 /// status item whose whole job was this one fact, and which cost a slot in an
 /// already crowded menu bar to answer a question asked twice a day: on arrival
 /// in a training room, and when the room's Wi-Fi starts dropping.
@@ -52,13 +52,16 @@ enum WiredLinkPolicy {
         return live.isEmpty ? .disconnected : .noAddress
     }
 
-    /// The status dot leads, as every Extras row opens with an emoji, so the
-    /// answer is read before the words.
+    /// ‹···› — the glyph Ethernet Menubar drew in the menu bar, kept so the
+    /// row is found where the eye already looks for it; then the status dot,
+    /// so the answer is read before the words.
+    static let glyph = "‹···›"
+
     static func title(_ state: WiredLinkState) -> String {
         switch state {
-        case .connected(let ip): return "🟢 Wired: connected · \(ip)"
-        case .noAddress:         return "🟡 Wired: cable in, no IP"
-        case .disconnected:      return "⚪️ Wired: not connected"
+        case .connected(let ip): return "\(glyph) 🟢 Wired: connected · \(ip)"
+        case .noAddress:         return "\(glyph) 🟡 Wired: cable in, no IP"
+        case .disconnected:      return "\(glyph) ⚪️ Wired: not connected"
         }
     }
 }

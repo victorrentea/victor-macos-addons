@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 8, 20:50"
+    static let BUILD_TIME = "Oct 10, 16:54"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -623,8 +623,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
 
-        // 🔌 Wired status (2026-10-08, Victor: replaces the Ethernet Menubar
-        // status item). A readout, repainted on every menu open
+        // ‹···› Wired status (2026-10-08, Victor: replaces the Ethernet Menubar
+        // status item; out of Extras to the top level on 2026-10-10, under the
+        // same ‹···› glyph that app drew — one click on 💬 shows it). A readout, repainted on every menu open
         // (`refreshDynamicItems`); the click opens Network settings, which is
         // also what keeps it from being drawn dimmed like a disabled row.
         wiredLinkItem = NSMenuItem(title: WiredLinkPolicy.title(WiredLink.current()),
@@ -674,7 +675,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [darkModeItem, zoomSharePrepItem, scrollReversalItem],
             [windowHalfItem, windowScreenItem, windowFillItem],
             [homeAwakeItem, claudeRemoteControlItem],
-            [wiredLinkItem],
         ]
         for (i, group) in extraGroups.enumerated() {
             if i > 0 { extraSubmenu.addItem(.separator()) }
@@ -694,6 +694,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // because a row per repo is a list that only ever grows, and F8 / ⌘⌃C
         // opens claude where the work is anyway.
 
+        menu.addItem(wiredLinkItem)
         menu.addItem(hotspotFallbackItem)
         menu.addItem(fluxInboxItem)
 
