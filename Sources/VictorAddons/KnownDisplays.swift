@@ -23,6 +23,14 @@ final class KnownDisplays {
         // "DELL U2419H", "LG", "SAMSUNG",
     ]
 
+    /// The same monitors by EDID `(vendor, model)` — for the moment macOS hands
+    /// one over with a **blank** `localizedName` (a home DELL did, 2026-10-10,
+    /// and was mirrored as a projector). Vendor/model come from the panel itself,
+    /// so they survive a flaky name read; the label is what `name(for:)` reports.
+    static let trustedModels: [(vendor: UInt32, model: UInt32, label: String)] = [
+        (4268, 16881, "DELL S2421HN"),
+    ]
+
     /// Names Victor trusts (for the snapshot / logging).
     var trustedNames: [String] { Self.trustedNameSubstrings }
 
@@ -45,14 +53,21 @@ final class KnownDisplays {
     /// The display's name. Falls back to `DisplayNameCache` because a display
     /// swept into a **mirror set has no `NSScreen`** — mirrored displays collapse
     /// into one — and would otherwise read as anonymous.
+    /// A blank `localizedName` counts as no name: it falls through to the cache,
+    /// then to the EDID model.
     static func name(for id: CGDirectDisplayID) -> String? {
         for screen in NSScreen.screens {
             if let n = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
-               n.uint32Value == id {
+               n.uint32Value == id, !screen.localizedName.isEmpty {
                 return screen.localizedName
             }
         }
-        return DisplayNameCache.name(for: id)
+        return DisplayNameCache.name(for: id) ?? modelLabel(for: id)
+    }
+
+    static func modelLabel(for id: CGDirectDisplayID) -> String? {
+        let vendor = CGDisplayVendorNumber(id), model = CGDisplayModelNumber(id)
+        return trustedModels.first { $0.vendor == vendor && $0.model == model }?.label
     }
 
     static func onlineDisplayIDs() -> [CGDirectDisplayID] {

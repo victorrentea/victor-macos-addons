@@ -36,6 +36,10 @@ enum DisplayNameCache {
             let id = CGDirectDisplayID(n.uint32Value)
             guard CGDisplayIsBuiltin(id) == 0 else { continue }
             guard let k = key(for: id) else { continue }
+            // A DELL S2421HN at home came up with an empty `localizedName` on
+            // 2026-10-10; storing that "" erased its real name and the monitor
+            // read as a venue projector. Never let a blank overwrite a name.
+            guard !screen.localizedName.isEmpty else { continue }
             if map[k] != screen.localizedName {
                 map[k] = screen.localizedName
                 changed = true
@@ -46,8 +50,8 @@ enum DisplayNameCache {
 
     /// The remembered name for a display that has no `NSScreen` right now.
     static func name(for id: CGDirectDisplayID) -> String? {
-        guard let k = key(for: id) else { return nil }
-        return stored()[k]
+        guard let k = key(for: id), let name = stored()[k], !name.isEmpty else { return nil }
+        return name
     }
 
     private static func stored() -> [String: String] {
