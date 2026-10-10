@@ -11,6 +11,10 @@
 #
 # Fired by ro.victorrentea.conversations-backup: on every volume mount
 # (StartOnMount) plus hourly, so a drive left plugged in still gets its daily run.
+# The LaunchAgent does not run this script itself: it opens
+# "/Applications/Conversations Backup.app", which runs it. macOS only lets a
+# process write to a removable drive if an *app* was granted that, and a bare
+# /bin/bash under launchd gets "Operation not permitted" (seen 2026-10-10).
 #
 #   conversations-backup.sh          # back up if the drive is here and >20h passed
 #   conversations-backup.sh --force  # back up now regardless of the last run
@@ -58,7 +62,11 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
-mkdir -p "$DEST" || { log "cannot create $DEST"; exit 1; }
+mkdir -p "$DEST" 2>>"$LOG" || {
+    log "cannot create $DEST (no access to the drive? see docs/conversations-backup.md)"
+    echo "Nu pot scrie pe $VOLUME — Conversations Backup are nevoie de acces la volume amovibile" >&2
+    exit 1
+}
 TODAY=$(date +%Y-%m-%d)
 SHRUNK="$DEST/_shrunk/$TODAY"
 FAILED=0
@@ -169,8 +177,12 @@ took=$(( $(date +%s) - START ))
 if [ "$FAILED" = 0 ]; then
     date '+%Y-%m-%d %H:%M:%S' > "$STAMP"
     cp "$LOG" "$DEST/backup.log" 2>/dev/null
-    log "done: $COPIED file(s) new/updated in ${took}s, $(du -sh "$DEST" 2>/dev/null | cut -f1) on drive"
+    size=$(du -sh "$DEST" 2>/dev/null | cut -f1 | tr -d ' ')
+    log "done: $COPIED file(s) new/updated in ${took}s, $size on drive"
+    # stdout is read by Conversations Backup.app and shown as a notification.
+    echo "$COPIED fișiere noi/actualizate în ${took}s — $size pe Vic"
 else
     log "finished WITH ERRORS in ${took}s ($COPIED file(s) copied) — will retry on the next trigger"
+    echo "EROARE după ${took}s ($COPIED fișiere copiate) — vezi ~/.conversations-backup/backup.log" >&2
     exit 1
 fi

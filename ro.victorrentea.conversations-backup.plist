@@ -10,10 +10,16 @@
          drive in; the hourly interval covers a drive that just stays plugged.
          Without the drive, or within 20 h of the last good run, the script
          exits in milliseconds, so the frequent triggers cost nothing. -->
+    <!-- Opens the app rather than running the script: a bare /bin/bash under
+         launchd is refused the removable drive ("Operation not permitted"),
+         the app holds the grant. -g -j: background, hidden. If a backup is
+         still running, open just finds the app already up. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/victorrentea/workspace/victor-macos-addons/conversations-backup.sh</string>
+        <string>/usr/bin/open</string>
+        <string>-g</string>
+        <string>-j</string>
+        <string>/Applications/Conversations Backup.app</string>
     </array>
 
     <key>StartOnMount</key>
