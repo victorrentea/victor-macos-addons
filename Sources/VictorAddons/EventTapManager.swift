@@ -359,6 +359,9 @@ private let VK_I: CGKeyCode = 0x22
         "com.apple.Terminal",
         "com.googlecode.iterm2",
     ]
+    /// Off since 2026-10-12: Victor hit Cmd+scroll by mistake far more often
+    /// than he meant it. The machinery stays, so turning it back on is this flag.
+    private let cmdScrollZoomEnabled = false
     /// Accumulates wheel line-delta so one notch = one font step regardless of how
     /// many scroll events a notch emits. Touched only on the tap's run-loop thread
     /// (events are handled serially there), so no lock needed.
@@ -697,7 +700,8 @@ private let VK_I: CGKeyCode = 0x22
                 return nil
             }
 
-            guard event.flags.contains(.maskCommand),
+            guard cmdScrollZoomEnabled,
+                  event.flags.contains(.maskCommand),
                   let front = currentFrontmost(),
                   scrollScopeBundleIds.contains(front.bundleId) else {
                 return Unmanaged.passUnretained(event)
