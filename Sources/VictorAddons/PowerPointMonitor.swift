@@ -55,6 +55,10 @@ class PowerPointMonitor {
     private var lastSentDurations: [String: [Int: TimeInterval]] = [:]  // deck → slide → secs already sent
     private var sendTimer: Timer?
     private var lastWasFrontmost: Bool = false
+    // PowerPoint coming to the front is news even without a slide change: the
+    // training daemon switches the talk phones from the trainer's notes (VS Code)
+    // back to the slides. Kept apart from lastWasFrontmost, which times slides.
+    private var announcedFrontmost: Bool = false
 
     // Serial queue ensures tick()/sendDelta() never race on the duration
     // dictionaries — a concurrent global queue caused EXC_BAD_ACCESS in
@@ -127,6 +131,8 @@ class PowerPointMonitor {
             }
         }
         lastWasFrontmost = isFrontmostNow
+        let cameToFront = isFrontmostNow && !announcedFrontmost
+        announcedFrontmost = isFrontmostNow
 
         // Deck changed?
         if deck != currentDeck {
@@ -141,6 +147,8 @@ class PowerPointMonitor {
             currentSlide = slide
             currentPresenting = isPresenting
             notifySlideChange()
+        } else if cameToFront {
+            notifySlideChange(frontmost: true)
         }
 
         currentSlide = slide
@@ -148,7 +156,7 @@ class PowerPointMonitor {
         lastProbeTime = now
     }
 
-    private func notifySlideChange() {
+    private func notifySlideChange(frontmost: Bool = false) {
         guard let deck = currentDeck else { return }
         var payload: [String: Any] = [
             "type": "slide_presenting_now",
@@ -156,6 +164,7 @@ class PowerPointMonitor {
             "slide": currentSlide,
             "presenting": currentPresenting
         ]
+        if frontmost { payload["frontmost"] = true }
         if let path = currentDeckPath {
             payload["path"] = path
         }

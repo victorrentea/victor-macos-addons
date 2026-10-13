@@ -107,7 +107,11 @@ class LocalWebSocketServer {
     }
 
     func pushSlide(_ event: [String: Any]) {
-        lastSlide = event
+        // The welcome on reconnect replays the slide, not a "PowerPoint came to
+        // the front" that happened long ago.
+        var cached = event
+        cached.removeValue(forKey: "frontmost")
+        lastSlide = cached
         guard let data = try? JSONSerialization.data(withJSONObject: event),
               let text = String(data: data, encoding: .utf8) else { return }
         queue.async { [weak self] in

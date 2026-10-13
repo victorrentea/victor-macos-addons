@@ -2026,7 +2026,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let pptMonitor = PowerPointMonitor()
         pptMonitor.onSlideChange = { [weak self] event in
             self?.wsServer?.pushSlide(event)
-            self?.checkSlideSharedState(event: event)
+            // Only PowerPoint coming to the front: same slide, already checked.
+            if event["frontmost"] == nil { self?.checkSlideSharedState(event: event) }
         }
         pptMonitor.onSlidesViewed = { [weak self] slides in
             self?.wsServer?.pushSlidesViewed(slides)
