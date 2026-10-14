@@ -27,7 +27,7 @@ import Foundation
 /// **Measured end to end on 2026-09-19**, feeding a 20 s clip at real time:
 /// words appear **0.8–1.3 s** after they were spoken, not the 150 ms on the
 /// pricing page — that number is the model's, and the rest is the network, their
-/// VAD and the chunk size below. It is also why `LiveCaptionsOverlay` draws the
+/// VAD and the chunk size below. It is also why the band (`LiveCaptionBand`) draws the
 /// partial dimmer than the committed text: the partials **rewrite themselves**
 /// (`label on the tool` → `label of the tooltip` → `label on the tooltip`,
 /// observed in that same run), so the tail of a live caption is a guess and must
@@ -37,12 +37,74 @@ final class LiveCaptionsStream: NSObject {
     /// `scribe_v2_realtime`, the only model on this endpoint today.
     private static let model = "scribe_v2_realtime"
 
-    /// **$0.39 an hour**, published. It is here because the menu row spends it
-    /// back at Victor while the feature is on — a cost you cannot see is a cost
-    /// you forget to stop paying, which is the same rule the 🔴 raw capture
-    /// keeps its hours under. If the row and the invoice disagree, the invoice
-    /// is right.
-    static let dollarsPerHour = 0.39
+    /// **~$0.69 an hour since the Walkie Talkie port** (2026-10-14; $0.39
+    /// before). The realtime socket is $0.39/h, +20 % for the `keyterms`
+    /// ($0.47), and every second of audio is uploaded once more to the batch
+    /// model for the correction behind the live words (`scribe_v2`, $0.22/h).
+    /// It is here because the menu row spends it back at Victor while the
+    /// feature is on — a cost you cannot see is a cost you forget to stop
+    /// paying, which is the same rule the 🔴 raw capture keeps its hours under.
+    /// If the row and the invoice disagree, the invoice is right.
+    static let dollarsPerHour = 0.39 * 1.2 + 0.22
+
+    /// **Walkie Talkie's live-caption settings, ported 2026-10-14** (its
+    /// `ElevenLabsLive`, where each was probed on a corpus WAV before it was
+    /// written):
+    ///
+    /// - **`vad_silence_threshold_secs` 1.5** — committed text is frozen, the
+    ///   model only revises the open segment, so a longer pause before the
+    ///   freeze is more context per revision.
+    /// - **Pinned to two languages** — a caption came back Turkish once
+    ///   unpinned. `language_code` is the first, the rest go as
+    ///   `secondary_languages`. **English first here** (Walkie: Romanian
+    ///   first), because a workshop room is English more often than a
+    ///   dictation is; `LIVE_CAPTIONS_LANGS=ro,en` in
+    ///   `~/.training-assistants-secrets.env` flips it for a Romanian course.
+    /// - **Up to 50 `keyterms`**, the first column of
+    ///   `~/.walkie-talkie/vocab.txt` — the English technical words that
+    ///   actually occur in his speech, ranked by Walkie's corpus. Re-read at
+    ///   every start, so the file is live.
+    static let vadSilence = 1.5
+
+    static var languages: [String] {
+        let raw = ProcessInfo.processInfo.environment["LIVE_CAPTIONS_LANGS"]
+            ?? SecretsLoader.load()["LIVE_CAPTIONS_LANGS"] ?? "en,ro"
+        return raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    static func keyterms() -> [String] {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".walkie-talkie/vocab.txt")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").lazy
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+            .map { String($0.split(separator: ":", maxSplits: 1)[0]).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .prefix(50).map { $0 }
+    }
+
+    /// **The batch model corrects the live words behind him** — Walkie's
+    /// technique (2026-09-26 there). At every segment the server commits, the
+    /// audio since the previous cut is uploaded to the batch endpoint and its
+    /// text replaces the live segments of that span; the band shows the swap
+    /// softly (`gentle`). A failure leaves the cut where it was, and the next
+    /// commit after a 5 s hold covers the longer span.
+    static let minSpan: TimeInterval = 1.0
+    /// **Captions run for hours here, a dictation for seconds in Walkie** — so
+    /// the uncorrected audio is capped: past this much (a batch endpoint that
+    /// keeps failing) the span is given up on and the live words stand.
+    static let maxSpan: TimeInterval = 60
+    /// And the text the band is handed is capped too: the band aligns the
+    /// whole text at every update, and two lines of it are ~30 words. Old
+    /// segments, long rolled out, are dropped from the head past this.
+    static let keepWords = 150
+
+    /// Walkie's batch model, from its own config — the two apps bill the same
+    /// key, so they should agree on the model too.
+    static var batchModel: String {
+        ProcessInfo.processInfo.environment["WT_ELEVEN_MODEL"]
+            ?? walkieConfig()["WT_ELEVEN_MODEL"] ?? "scribe_v2"
+    }
 
     /// **250 ms.** Small enough that the first words of a sentence are on the
     /// wire while he is still saying it, large enough that a workshop's Wi-Fi is
@@ -58,10 +120,11 @@ final class LiveCaptionsStream: NSObject {
 
     // MARK: - What the caller hears back
 
-    /// A transcript that is still being revised. Drawn, dimmed.
-    var onPartial: ((String) -> Void)?
-    /// A segment Scribe has stopped changing its mind about.
-    var onCommitted: ((String) -> Void)?
+    /// What was heard so far, on main: the committed segments (corrected by
+    /// the batch model where it has caught up), the one still being spoken,
+    /// and whether this update is a batch correction (`gentle`) — the band's
+    /// own `setText` signature, which is the point.
+    var onText: ((_ committed: String, _ partial: String, _ gentle: Bool) -> Void)?
     /// **The socket is gone and the captions are over.** Always followed by the
     /// controller taking the overlay down: a caption frozen mid-sentence in
     /// front of a room is worse than no caption, because it looks like it is
@@ -83,19 +146,25 @@ final class LiveCaptionsStream: NSObject {
             return key
         }
         if let key = SecretsLoader.load()["ELEVENLABS_API_KEY"], !key.isEmpty { return key }
+        return walkieConfig()["ELEVENLABS_API_KEY"]
+    }
+
+    /// `~/.walkie-talkie/elevenlabs.env` as `KEY=value` rows.
+    static func walkieConfig() -> [String: String] {
         let relay = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".walkie-talkie/elevenlabs.env")
-        guard let text = try? String(contentsOf: relay, encoding: .utf8) else { return nil }
+        guard let text = try? String(contentsOf: relay, encoding: .utf8) else { return [:] }
+        var out: [String: String] = [:]
         for line in text.split(separator: "\n") {
             let row = line.trimmingCharacters(in: .whitespaces)
-            guard row.hasPrefix("ELEVENLABS_API_KEY="), let eq = row.firstIndex(of: "=") else { continue }
+            guard !row.hasPrefix("#"), let eq = row.firstIndex(of: "=") else { continue }
             var value = String(row[row.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
             if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
                 value = String(value.dropFirst().dropLast())
             }
-            return value.isEmpty ? nil : value
+            if !value.isEmpty { out[String(row[..<eq])] = value }
         }
-        return nil
+        return out
     }
 
     // MARK: - State
@@ -147,6 +216,26 @@ final class LiveCaptionsStream: NSObject {
     /// mysterious.
     private(set) var deviceName: String = "default input"
 
+    // MARK: - The text and the correction (on `textQueue`)
+
+    private let textQueue = DispatchQueue(label: "ro.victorrentea.addons.live-captions.text")
+    /// Segments the server committed, in order; a correction collapses the
+    /// span it covered into one. `trimmed` counts segments dropped off the
+    /// head, so a correction in flight can find its span again.
+    private var segments: [String] = []
+    private var trimmed = 0
+    private var partial = ""
+    private var correctedSegments = 0
+    /// Audio from the last cut on (the head before it is dropped): 16 kHz mono
+    /// int16, 32 000 bytes a second.
+    private var pcm = Data()
+    private var correcting = false
+    private var correctionHoldUntil = Date.distantPast
+    private var key = ""
+    private(set) var corrections = 0
+    private(set) var correctionFailures = 0
+    private(set) var keytermCount = 0
+
     // MARK: - Start / stop
 
     /// Opens the socket and the microphone, in that order — a chunk produced
@@ -159,12 +248,30 @@ final class LiveCaptionsStream: NSObject {
         guard let key = Self.apiKey() else {
             return done("no ElevenLabs API key — ELEVENLABS_API_KEY in ~/.training-assistants-secrets.env")
         }
-        // **The language is not pinned**, for Walkie Talkie's reason: Victor
-        // teaches Romanian with English technical words inside it, and telling
-        // the recogniser the whole sentence is Romanian is what turns `git
-        // rebase` into something spelled the way a Romanian would.
+        // **Pinned to two languages since 2026-10-14** (it was not pinned at
+        // all before): Walkie Talkie found that the unpinned socket sometimes
+        // answers in the wrong language entirely — see `languages`.
         var components = URLComponents(string: "wss://api.elevenlabs.io/v1/speech-to-text/realtime")!
-        components.queryItems = [URLQueryItem(name: "model_id", value: Self.model)]
+        var query = [URLQueryItem(name: "model_id", value: Self.model),
+                     URLQueryItem(name: "audio_format", value: "pcm_16000"),
+                     URLQueryItem(name: "commit_strategy", value: "vad"),
+                     URLQueryItem(name: "vad_silence_threshold_secs", value: String(Self.vadSilence))]
+        let terms = Self.keyterms()
+        for term in terms { query.append(URLQueryItem(name: "keyterms", value: term)) }
+        let langs = Self.languages
+        if let first = langs.first {
+            query.append(URLQueryItem(name: "language_code", value: first))
+            for extra in langs.dropFirst() { query.append(URLQueryItem(name: "secondary_languages", value: extra)) }
+        }
+        components.queryItems = query
+        textQueue.sync {
+            self.key = key
+            self.keytermCount = terms.count
+            self.segments = []; self.trimmed = 0; self.partial = ""
+            self.correctedSegments = 0; self.pcm = Data(); self.correcting = false
+            self.correctionHoldUntil = .distantPast
+        }
+        overlayInfo("LiveCaptions: languages \(langs.joined(separator: "+")), \(terms.count) keyterms, commit after \(Self.vadSilence) s, corrected by \(Self.batchModel)")
         var request = URLRequest(url: components.url!)
         request.setValue(key, forHTTPHeaderField: "xi-api-key")
 
@@ -223,6 +330,7 @@ final class LiveCaptionsStream: NSObject {
         // this connect to nothing at all for three builds.
         session?.invalidateAndCancel()
         session = nil
+        textQueue.async { self.pcm = Data() }
         let teardown = { [weak self] in
             guard let self = self else { return }
             self.engine?.inputNode.removeTap(onBus: 0)
@@ -342,6 +450,7 @@ final class LiveCaptionsStream: NSObject {
         }
         lock.unlock()
         for data in ready { send(data) }
+        textQueue.async { self.pcm.append(chunk) }
     }
 
     // MARK: - The wire
@@ -392,14 +501,24 @@ final class LiveCaptionsStream: NSObject {
         switch kind {
         case "partial_transcript":
             partials += 1
-            DispatchQueue.main.async { self.onPartial?(body) }
+            textQueue.async {
+                self.partial = body
+                self.publish()
+            }
         case "committed_transcript":
             commits += 1
             // **Only the plain one.** `committed_transcript_with_timestamps`
             // carries the same words again with a `words[]` beside them, and
             // acting on both would draw every settled sentence twice. Timings
             // are what Walkie Talkie's markers need; a subtitle needs none.
-            DispatchQueue.main.async { self.onCommitted?(body) }
+            let segment = body.trimmingCharacters(in: .whitespaces)
+            textQueue.async {
+                if !segment.isEmpty { self.segments.append(segment) }
+                self.partial = ""
+                self.trim()
+                self.publish()
+                self.correctIfDue()
+            }
         case "session_started":
             overlayInfo("LiveCaptions: session \(json["session_id"] as? String ?? "?")")
         default:
@@ -410,6 +529,124 @@ final class LiveCaptionsStream: NSObject {
                 self.closed((json["error"] as? String) ?? kind)
             }
         }
+    }
+
+    // MARK: - Text and correction (on `textQueue`)
+
+    private func publish(gentle: Bool = false) {
+        guard running || socket != nil else { return }
+        let committed = segments.joined(separator: " ")
+        let partial = self.partial.trimmingCharacters(in: .whitespaces)
+        DispatchQueue.main.async { [weak self] in self?.onText?(committed, partial, gentle) }
+    }
+
+    /// Drops whole segments off the head while the rest still holds
+    /// `keepWords` — corrected ones first; an uncorrected one only once the
+    /// text is twice the cap (a correction that keeps failing).
+    private func trim() {
+        func words(_ s: String) -> Int { s.split(whereSeparator: { $0.isWhitespace }).count }
+        var total = segments.reduce(0) { $0 + words($1) }
+        while segments.count > 1, total - words(segments[0]) >= Self.keepWords,
+              correctedSegments > 0 || total >= 2 * Self.keepWords {
+            total -= words(segments.removeFirst())
+            trimmed += 1
+            correctedSegments = max(0, correctedSegments - 1)
+        }
+    }
+
+    /// Live segments not yet corrected and at least `minSpan` of audio since
+    /// the cut → upload the span. Called at every commit.
+    private func correctIfDue() {
+        guard running, !correcting, segments.count > correctedSegments,
+              Date() >= correctionHoldUntil,
+              pcm.count > Int(Self.minSpan * 32_000) else { return }
+        if pcm.count > Int(Self.maxSpan * 32_000) {
+            // Given up on: the live words stand for this span.
+            pcm = Data()
+            correctedSegments = segments.count
+            return
+        }
+        let span = pcm, to = pcm.count
+        let from = correctedSegments + trimmed, upTo = segments.count + trimmed
+        correcting = true
+        Self.transcribeBatch(pcm: span, key: key) { [weak self] result in
+            guard let self else { return }
+            self.textQueue.async {
+                self.correcting = false
+                guard self.running else { return }
+                switch result {
+                case .failure(let why):
+                    self.correctionFailures += 1
+                    self.correctionHoldUntil = Date().addingTimeInterval(5)
+                    overlayError("LiveCaptions correction failed — \(why); the next commit after 5 s covers the span again")
+                case .success(let text):
+                    let lo = from - self.trimmed, hi = upTo - self.trimmed
+                    self.pcm.removeFirst(min(to, self.pcm.count))
+                    // The span rolled off the head meanwhile: nothing to swap.
+                    guard !text.isEmpty, lo >= 0, lo == self.correctedSegments, hi <= self.segments.count, lo < hi else {
+                        self.correctedSegments = max(self.correctedSegments, min(hi, self.segments.count))
+                        return
+                    }
+                    self.segments.replaceSubrange(lo..<hi, with: [text])
+                    self.correctedSegments = lo + 1
+                    self.corrections += 1
+                    self.publish(gentle: true)
+                }
+            }
+        }
+    }
+
+    /// One upload of `pcm` to the batch endpoint — Walkie's
+    /// `ElevenLabsSource.transcribe`, minus the retry and the word timings,
+    /// which a correction behind a caption does not need: the next commit is
+    /// the retry. Language auto-detected, as Walkie's batch is.
+    static func transcribeBatch(pcm: Data, key: String, _ done: @escaping (Result<String, BatchError>) -> Void) {
+        let boundary = "addons-\(UUID().uuidString)"
+        var body = Data()
+        func field(_ name: String, _ value: String) {
+            body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
+        }
+        field("model_id", batchModel)
+        field("diarize", "false")
+        field("tag_audio_events", "false")
+        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"span.wav\"\r\nContent-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append(wav(pcm: pcm))
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        var req = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/speech-to-text")!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 20
+        req.setValue(key, forHTTPHeaderField: "xi-api-key")
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if let error { return done(.failure(BatchError(error.localizedDescription))) }
+            guard code == 200, let data else {
+                let detail = data.flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? ""
+                return done(.failure(BatchError("HTTP \(code) \(detail)")))
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let text = json["text"] as? String else {
+                return done(.failure(BatchError("unreadable reply")))
+            }
+            done(.success(text.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }.resume()
+    }
+
+    struct BatchError: Error, CustomStringConvertible {
+        let description: String
+        init(_ d: String) { description = d }
+    }
+
+    /// A 16 kHz mono 16-bit RIFF/WAVE around raw PCM.
+    static func wav(pcm: Data) -> Data {
+        var d = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        d.append("RIFF".data(using: .ascii)!); u32(UInt32(36 + pcm.count)); d.append("WAVE".data(using: .ascii)!)
+        d.append("fmt ".data(using: .ascii)!); u32(16); u16(1); u16(1); u32(16_000); u32(32_000); u16(2); u16(16)
+        d.append("data".data(using: .ascii)!); u32(UInt32(pcm.count)); d.append(pcm)
+        return d
     }
 
     private func closed(_ why: String?) {

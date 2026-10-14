@@ -12,6 +12,37 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
 
 ## 🎬 Live subtitles (2026-09-19) — ElevenLabs, and only while it is on
 
+> **2026-10-14 — Walkie Talkie's captions, ported.** Victor: *"Copy from the Walkie Talkie into the
+> macOS addons the way that I've implemented live captions … the same engine, the same technique"*,
+> then *"the captions should display on the screen which I [use] … so I can enable captions on
+> another monitor, not on the first one."* What changed, and what it supersedes below:
+>
+> - **The band is Walkie's `LiveCaptionBand`, copied as is** (`walkie-talkie@2af0f51`): two centred
+>   lines ≤ 80 % of the width that **roll up** at the **top** of the screen, a grey 45 % backdrop
+>   10 pt around the text, words entering **letter by letter**, the open segment drawn
+>   provisionally faded, a new sentence starting a new line, a line lifted after its read time in
+>   silence, and the band **jumping to the bottom while the pointer is over it**. Its doc comment
+>   carries Walkie's whole history; a fix to the motion belongs in both copies. The bottom plate
+>   (`LiveCaptionsOverlay`, Victor's 2026-09 red drawing, two inks, left-aligned) is **deleted** —
+>   the bullets below about the band's shape, trimming and inks describe that removed plate.
+> - **On the screen the pointer is on when the switch is flipped**, not the Retina any more. From the
+>   menu that is the screen whose menu bar he clicked, so choosing a monitor is just opening the 💬
+>   menu there. `GET /test/live-captions?on=1` follows the pointer the same way.
+> - **The socket is configured like Walkie's**: `commit_strategy=vad` with
+>   `vad_silence_threshold_secs=1.5` (more context per revision), **pinned to two languages**
+>   (`language_code` + `secondary_languages`; an unpinned socket answered Turkish once in Walkie) —
+>   **`en,ro` here** (Walkie: `ro,en`) because a workshop room is English more often than a
+>   dictation; `LIVE_CAPTIONS_LANGS=ro,en` in `~/.training-assistants-secrets.env` flips it — and
+>   up to 50 **`keyterms`** from the first column of `~/.walkie-talkie/vocab.txt` (+20 %).
+> - **The batch model corrects the live words behind him** (Walkie's technique): at every segment
+>   the server commits, the audio since the last cut is uploaded to the batch endpoint (Walkie's
+>   `WT_ELEVEN_MODEL`, `scribe_v2`) and its text replaces the live segments of that span — the band
+>   swaps them in softly (`gentle`, a faded yellow returning to white). A failure holds 5 s and the
+>   next commit covers the longer span. **Two caps Walkie does not need**, because a dictation lasts
+>   seconds and captions hours: uncorrected audio is given up on past 60 s, and the text handed to
+>   the band keeps ~150 words (old segments, long rolled out, drop off the head).
+> - **The row's rate is ~$0.69/h**: $0.39 realtime × 1.2 for keyterms + $0.22 for the corrections.
+
 - **It is not the 💬 transcription and must never be confused for it.** The continuous one stays
   exactly where it was: `mlx-whisper`, **local**, two channels, automatic on AC, writing the day's
   `[HH:MM] text` file that the 🎙️ picker and the summarizer read. Victor, asked directly:
@@ -99,7 +130,7 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
   `~/.training-assistants-secrets.env` if it is there, otherwise
   **`~/.walkie-talkie/elevenlabs.env`**, which is where the relay keeps it. Two copies of one
   secret is how they come to disagree.
-- **Test hook:** `GET /test/live-captions?on=1` / `?on=0` on `:55123`. The feature opens a
+- **Test hook:** `GET /test/live-captions?on=1` / `?on=0` on `:55123` (the band opens on the pointer's screen). The feature opens a
   microphone, a socket and a panel on the projector, and none of that is reachable from a script
   through an `NSMenuItem`.
 

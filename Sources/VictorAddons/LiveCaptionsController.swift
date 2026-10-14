@@ -30,7 +30,17 @@ import Foundation
 final class LiveCaptionsController {
 
     private let stream = LiveCaptionsStream()
-    private let overlay = LiveCaptionsOverlay()
+    /// **Walkie Talkie's band since 2026-10-14** (the bottom plate,
+    /// `LiveCaptionsOverlay`, before): two centred lines that roll up at the
+    /// top of the screen, words entering letter by letter, the batch
+    /// corrections swapped in softly, out of the pointer's way.
+    private let band = LiveCaptionBand()
+    /// What `preview` has drawn so far, so successive `say` calls build up a
+    /// text the way the socket does.
+    private var previewCommitted = ""
+    /// The screen the band was opened on, so the reason it stopped is said
+    /// there and not wherever the pointer has wandered since.
+    private var bandScreen: NSScreen?
 
     /// Repaint the menu row — the title is a readout and it goes stale by the
     /// minute.
@@ -71,16 +81,23 @@ final class LiveCaptionsController {
         isOn ? stop(why: nil) : start()
     }
 
-    func start() {
+    /// - Parameter screen: where the band goes. Nil = **the screen the pointer
+    ///   is on right now** — from the menu, that is the screen whose menu bar
+    ///   he just clicked, so the captions land on the monitor he chose
+    ///   (Victor, 2026-10-14: *"so I can enable captions on another monitor,
+    ///   not on the first one"*). It used to be the Retina, always.
+    func start(on screen: NSScreen? = nil) {
         guard !isOn else { return }
-        overlay.show()
-        // Said before the first word, because there is a second or two of socket
-        // and model between the click and anything appearing, and a band that
-        // comes up empty reads as broken.
-        overlay.say("…")
+        let mouse = NSEvent.mouseLocation
+        let target = screen ?? NSScreen.physical.first { NSMouseInRect(mouse, $0.frame, false) }
+        bandScreen = target
+        band.setOpen(false)
+        band.setOpen(true, on: target)
+        previewCommitted = ""
 
-        stream.onPartial = { [weak self] text in self?.overlay.update(partial: text) }
-        stream.onCommitted = { [weak self] text in self?.overlay.commit(text) }
+        stream.onText = { [weak self] committed, partial, gentle in
+            self?.band.setText(committed: committed, partial: partial, gentle: gentle)
+        }
         stream.onClosed = { [weak self] why in
             // The socket ending is the feature ending. `stop` is safe to call
             // from here — it is idempotent and this is already on main.
@@ -102,7 +119,7 @@ final class LiveCaptionsController {
             self.isOn = false
             self.startedAt = nil
             self.lastError = why
-            self.overlay.hide()
+            self.band.setOpen(false)
             overlayError("LiveCaptions: \(why)")
             self.onFailed?("🎬 subtitles: \(why)")
             self.onStateChange?()
@@ -112,7 +129,7 @@ final class LiveCaptionsController {
     /// - Parameter why: nil when Victor turned it off himself, which needs no
     ///   explanation and gets none.
     func stop(why: String?) {
-        // **`overlay.isVisible` is in this guard because of `preview`.** A
+        // **`band.isOpen` is in this guard because of `preview`.** A
         // `/test/live-captions/say` puts the band up without ever starting the
         // stream, so `isOn` is false — and the first version of this guard
         // therefore returned early and left a black band across the bottom of
@@ -121,7 +138,7 @@ final class LiveCaptionsController {
         // `{"ok":true,"on":false}` while the panel was still on screen. The
         // switch has to be able to undo everything that can put the band up,
         // not just the path it knows about.
-        guard isOn || stream.isRunning || overlay.isVisible else { return }
+        guard isOn || stream.isRunning || band.isOpen else { return }
         let wasOn = isOn
         stream.stop()
         let spent = minutes
@@ -133,15 +150,15 @@ final class LiveCaptionsController {
             // he is already looking: the alternative is a room watching a
             // subtitle area that has simply stopped, with the explanation in a
             // log file.
-            overlay.say("🎬 subtitles stopped — \(why)")
+            say("🎬 subtitles stopped — \(why)")
             overlayError("LiveCaptions stopped: \(why)")
             onFailed?("🎬 subtitles stopped — \(why)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
                 guard self?.isOn == false else { return }
-                self?.overlay.hide()
+                self?.band.setOpen(false)
             }
         } else {
-            overlay.hide()
+            band.setOpen(false)
             overlayInfo(String(format: "LiveCaptions off — %.0f min, $%.2f", spent, spent / 60 * LiveCaptionsStream.dollarsPerHour))
             // Only on a deliberate stop of something that was actually running:
             // a failure already raises its own pill carrying the reason, and
@@ -156,9 +173,19 @@ final class LiveCaptionsController {
     /// saying sentences. It draws into the same two inks the socket feeds, so
     /// what it shows is what a real one would look like.
     func preview(committed: String?, partial: String?) {
-        overlay.show()
-        if let committed = committed, !committed.isEmpty { overlay.commit(committed) }
-        if let partial = partial { overlay.update(partial: partial) }
+        if !band.isOpen { band.setOpen(true); previewCommitted = "" }
+        if let committed = committed, !committed.isEmpty {
+            previewCommitted = previewCommitted.isEmpty ? committed : previewCommitted + " " + committed
+        }
+        band.setText(committed: previewCommitted, partial: partial ?? "")
+    }
+
+    /// A one-off message on a fresh band (the reason it stopped): the band
+    /// would otherwise align it against the last caption as a correction.
+    private func say(_ text: String) {
+        band.setOpen(false)
+        band.setOpen(true, on: bandScreen)
+        band.setText(committed: text, partial: "")
     }
 
     /// Everything `GET /test/live-captions/state` answers with, so the endpoint
@@ -171,13 +198,18 @@ final class LiveCaptionsController {
          "lastMessage": stream.lastMessage ?? NSNull(),
          "chunksSent": stream.chunksSent,
          "partials": stream.partials,
-         "commits": stream.commits]
+         "commits": stream.commits,
+         "corrections": stream.corrections,
+         "correctionFailures": stream.correctionFailures,
+         "keyterms": stream.keytermCount,
+         "languages": LiveCaptionsStream.languages,
+         "band": band.describe()]
     }
 
     /// The app is going away. Nothing may outlive it holding a microphone.
     func shutdown() {
         stream.abandon()
-        overlay.hide()
+        band.setOpen(false)
         isOn = false
     }
 
