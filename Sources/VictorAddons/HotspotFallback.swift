@@ -1,4 +1,5 @@
 import AppKit
+import CoreLocation
 import CoreWLAN
 import Foundation
 import IOBluetooth
@@ -244,6 +245,10 @@ final class HotspotFallback {
     /// plus a retry is up to 20 seconds, and the menu bar (and the `/test/*`
     /// HTTP handler, which runs there) must not be held that long.
     private let bluetooth = RunLoopThread(name: "ro.victorrentea.macos-addons.bluetooth")
+
+    /// The geofence's last location fix — shared rather than a second
+    /// `CLLocationManager`, which would ask for the same permission twice.
+    func lastLocationFix() -> (CLLocation, Date)? { geofence.lastFix() }
 
     func start() {
         bluetooth.start()

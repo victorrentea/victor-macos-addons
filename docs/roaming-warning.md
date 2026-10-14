@@ -91,3 +91,28 @@ Between the phone's answers it **keeps moving**: what this Mac pulled through
 deltas every 5 s, since the 32-bit counters wrap at 4 GiB). While on the
 hotspot it asks the phone every 5 min instead of 20. The menu has the breakdown
 and "Ask the phone now".
+
+## ⏸ Pause Claude on roaming data (14 Oct 2026)
+
+`RoamingDataWatch` + `RoamingDataPolicy` (unit-tested) answer "is this Mac on
+roaming data now?" every 5 s and write it to `~/.victor-addons/roaming-data.json`:
+
+```json
+{"country":"NL","onHotspot":true,"roamingData":true,"source":"phone","suspendClaude":true,"updatedAt":1791000000}
+```
+
+Roaming data means on `victor` **and** the phone roaming. The evidence for the
+second half is ranked, because the phone has gone silent before:
+
+1. a phone reading under 30 min old (`roamingNow`);
+2. else the country of the geofence's last fix (`CLGeocoder`, one lookup per
+   20 km or hour, under 6 h old);
+3. else the system timezone. It can't see Bulgaria or Greece, so it comes last.
+
+The top-level menu row **⏸ Pause Claude on roaming data** (default on, sits
+under 🛜) sets `suspendClaude`. `~/.claude/hooks/roaming-gate.sh` is wired
+beside `net-gate.sh` on UserPromptSubmit / PreToolUse / PostToolUse (timeout
+7 days). It parks the turn while `roamingData && suspendClaude` and polls every
+10 s. Unticking the row, leaving the hotspot or coming home wakes it. The hook
+**fails open**: no file, unreadable, or `updatedAt` older than 120 s (app quit)
+never parks anything. Log: `~/.claude/roaming-gate.log`.

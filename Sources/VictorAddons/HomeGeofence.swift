@@ -79,6 +79,13 @@ final class HomeGeofence: NSObject, CLLocationManagerDelegate {
         return d <= radius
     }
 
+    /// The last fix and when it came, for `RoamingDataWatch`'s country lookup.
+    func lastFix() -> (CLLocation, Date)? {
+        lock.lock(); defer { lock.unlock() }
+        guard let l = _last, let at = _lastAt else { return nil }
+        return (l, at)
+    }
+
     /// Logged so the coordinates can be read once and written into the secrets
     /// file; there is no UI for setting home, and inventing one for a value that
     /// changes when you move house would be the wrong trade.

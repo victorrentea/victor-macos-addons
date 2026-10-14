@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 10, 16:54"
+    static let BUILD_TIME = "Oct 14, 08:19"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -42,6 +42,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// 🎥 Layout Zoom — shown only while Zoom is running.
     private var layoutZoomItem: NSMenuItem!
     private(set) var hotspotFallbackItem: NSMenuItem!
+    /// ⏸ Claude on roaming data — see `RoamingDataWatch` and `roaming-gate.sh`.
+    private(set) var roamingSuspendItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
@@ -111,6 +113,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
+    /// The ⏸ roaming switch flipped: rewrite the hooks' state file at once.
+    var onRoamingSuspendToggled: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onToggleRecordRaw: (() -> Void)?
 
@@ -528,6 +532,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         hotspotFallbackItem.target = self
         hotspotFallbackItem.isEnabled = true
 
+        // ⏸ under the hotspot row, since it is about the same phone data:
+        // while the Mac is on the hotspot and the phone roams, every Claude Code
+        // session parks before its next API request (`roaming-gate.sh`). State
+        // in the title, like the row above, to keep the top level tick-free.
+        roamingSuspendItem = NSMenuItem(title: RoamingSuspendMenu.title(enabled: RoamingDataSettings.suspendClaude),
+                                        action: #selector(toggleRoamingSuspendAction), keyEquivalent: "")
+        roamingSuspendItem.target = self
+        roamingSuspendItem.isEnabled = true
+
         // 📱 Start Victor Phone Hotspot Now was deleted on 2026-09-23 (Victor:
         // *"rămâne pe auto"*) — the automatic fallback above is the one path.
 
@@ -696,6 +709,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(wiredLinkItem)
         menu.addItem(hotspotFallbackItem)
+        menu.addItem(roamingSuspendItem)
         menu.addItem(fluxInboxItem)
 
         menu.addItem(extraItem)
@@ -1013,6 +1027,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// the leading 🛜 stays put in both states, so the row does not jump, and a
     /// plain `✓` takes the menu's text colour in dark and light alike (an
     /// emoji check would not).
+    enum RoamingSuspendMenu {
+        static func title(enabled: Bool) -> String {
+            "⏸ Pause Claude on roaming data" + (enabled ? "  ✓" : "")
+        }
+    }
+
     enum HotspotMenu {
         static func title(enabled: Bool) -> String {
             "🛜 Auto Mobile Hotspot" + (enabled ? "  ✓" : "")
@@ -1080,6 +1100,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func toggleDarkModeAction() {
         onToggleDarkMode?()
+    }
+
+    @objc private func toggleRoamingSuspendAction() {
+        let enabled = !RoamingDataSettings.suspendClaude
+        RoamingDataSettings.suspendClaude = enabled
+        roamingSuspendItem.title = RoamingSuspendMenu.title(enabled: enabled)
+        onRoamingSuspendToggled?()
     }
 
     @objc private func toggleHotspotFallbackAction() {

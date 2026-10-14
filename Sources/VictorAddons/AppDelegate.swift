@@ -114,6 +114,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var roamingWarning: RoamingWarning?
     /// 📶 `3.2 GB` in the menu bar while on the phone's hotspot; see docs/roaming-warning.md.
     private var roamingMeter: RoamingMeter?
+    /// 📵 on roaming data? → `~/.victor-addons/roaming-data.json`, read by `roaming-gate.sh`.
+    private var roamingData: RoamingDataWatch?
     /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
     private var checkInWatch: CheckInMailWatch?
     private var memoryPressure: MemoryPressureMonitor?
@@ -1806,6 +1808,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             hotspot?.forceAttemptJSON() ?? "{\"error\":\"hotspot fallback unavailable\"}"
         }
         hotspot.start()
+
+        // 📵 Roaming data = on the phone's hotspot while the phone roams. The
+        // verdict goes to a file the Claude Code hooks read; the ⏸ menu switch
+        // decides whether they park on it. See docs/roaming-warning.md.
+        if let phoneRoaming = self.phoneRoaming {
+            let roamingData = RoamingDataWatch(phone: phoneRoaming,
+                                               location: { [weak hotspot] in hotspot?.lastLocationFix() })
+            roamingData.start()
+            self.roamingData = roamingData
+            menuBarManager.onRoamingSuspendToggled = { [weak roamingData] in roamingData?.refresh() }
+        }
 
         let eventTap = EventTapManager()
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
