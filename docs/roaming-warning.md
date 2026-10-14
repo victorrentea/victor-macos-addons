@@ -116,3 +116,31 @@ beside `net-gate.sh` on UserPromptSubmit / PreToolUse / PostToolUse (timeout
 10 s. Unticking the row, leaving the hotspot or coming home wakes it. The hook
 **fails open**: no file, unreadable, or `updatedAt` older than 120 s (app quit)
 never parks anything. Log: `~/.claude/roaming-gate.log`.
+
+## One socket, not two (14 Oct 2026)
+
+The second RFCOMM service above never worked once. The APK on the phone
+predated it until 14 Oct, and once installed, this Mac still never saw its SDP
+record: the phone published only `VictorPhoneAddons`. Started in the same
+millisecond as the beacon, the stack even put the beacon's name on the roaming
+socket's channel. So the beacon now answers both questions on its own SPP
+socket, told apart by the first byte:
+
+- **roaming poll:** `PhoneRoamingMonitor` writes `R\n` the moment the channel
+  opens, and the phone answers with the JSON line, with no activity and so no
+  routine;
+- **hotspot request:** `HotspotFallback` writes nothing. After 1.5 s of silence
+  the phone brings the activity to the front, as before (+1.5 s on that chain).
+
+Verified end to end the same day: `/test/roaming` returned the phone's line
+(`limit` 13 380 000 000, `roamingNow:false`, `hotspotBlocked:false`).
+**`low` is now `roamingNow`, not `roamingToday`**: back home in the morning
+with 4.3 GB of roaming already counted that day, the pill and the phone's bar
+had flashed on the home network.
+
+**Plan:** `*123#` (answered by SMS) said on 13 Oct: *"pana la 13.38GB trafic de
+date disponibil lunar in roaming in SEE, MD si UA"*. It's set to 13 380 MB (flat
+GB, so warnings come early). Reset day 2, matching the bill issued on the 2nd.
+The phone's count **overstates** it: `querySummary` with a null subscriber
+also counts the Maya eSIM's traffic (French, so "roaming" everywhere; it was
+the UK data), and UK roaming isn't part of the SEE allowance anyway.

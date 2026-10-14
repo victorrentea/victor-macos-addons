@@ -34,7 +34,9 @@ enum RoamingWarningPolicy {
         /// since midnight, or on a roaming network right now (the morning,
         /// before anything has been counted).
         var roamingToday: Bool { roamingNow || today > 0 }
-        var low: Bool { roamingToday && remainingFraction < lowFraction }
+        /// Roaming **now**, not today (14 Oct 2026): back home in the morning, the
+        /// day already held GBs of roaming and the red pill fired on the home network.
+        var low: Bool { roamingNow && remainingFraction < lowFraction }
     }
 
     /// A reading this old says nothing about *now*: the phone may have gone

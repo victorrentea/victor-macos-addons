@@ -26,11 +26,15 @@ import IOBluetooth
 /// so it inherits the stale-channel-number and cold-link fixes that one paid for.
 final class PhoneRoamingMonitor {
 
-    /// Must equal `RoamingStatusChannel.UUID_ROAMING` on the phone.
-    static let serviceUUID: [UInt8] = [
-        0x7a, 0x1f, 0x3c, 0x52, 0x9b, 0x4e, 0x4d, 0x1a,
-        0x8c, 0x6f, 0x2e, 0x5b, 0x9d, 0x0a, 0x4f, 0x17,
-    ]
+    /// The beacon's own SPP service. Until 14 Oct 2026 the roaming answer had
+    /// a second RFCOMM service (UUID `7a1f3c52-…`), and this Mac never once saw
+    /// its SDP record: the phone published only one of its two records, and when
+    /// both started in the same millisecond the stack mixed them up. Now the
+    /// beacon answers both questions on one socket, told apart by the first byte.
+    static let sppUUID: UInt16 = 0x1101
+    /// Written the moment the channel opens. The phone waits 1.5 s for it; a
+    /// channel that stays silent is a hotspot request, so this must never be late.
+    static let query = Data("R\n".utf8)
     static let pollInterval: TimeInterval = 20 * 60
     /// Page + SDP + open + the phone's reading. The opener gives up on its own
     /// well inside this; the budget only guards against a callback that never comes.
@@ -147,13 +151,14 @@ final class PhoneRoamingMonitor {
                 return finish(nil, "phone not in the Bluetooth pairing list")
             }
             self.buffer = Data()
-            let uuid = Self.serviceUUID.withUnsafeBytes {
-                IOBluetoothSDPUUID(bytes: $0.baseAddress, length: $0.count)
-            }
-            let opener = PhoneChannelOpener(device: dev, service: uuid, serviceName: "roaming status") { [weak self] outcome in
+            let opener = PhoneChannelOpener(device: dev, service: IOBluetoothSDPUUID(uuid16: Self.sppUUID),
+                                            serviceName: "beacon (roaming query)") { [weak self] outcome in
                 switch outcome {
                 case .opened(let ch, _):
                     self?.channel = ch
+                    var bytes = [UInt8](Self.query)
+                    let written = ch.writeSync(&bytes, length: UInt16(bytes.count))
+                    if written != kIOReturnSuccess { finish(nil, "could not ask the phone (\(written))") }
                 case .failed(let why):
                     finish(nil, why)
                 }

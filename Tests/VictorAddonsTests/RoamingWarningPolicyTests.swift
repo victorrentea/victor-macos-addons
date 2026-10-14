@@ -28,6 +28,11 @@ final class RoamingWarningPolicyTests: XCTestCase {
         XCTAssertFalse(RoamingWarningPolicy.shouldWarn(reading(leftPct: 15), now: now, dismissedDay: nil, calendar: cal))
     }
 
+    func testSilentBackHomeAfterARoamingMorning() {
+        let backHome = reading(leftPct: 5, today: 4_300_000_000, roamingNow: false)
+        XCTAssertFalse(RoamingWarningPolicy.shouldWarn(backHome, now: now, dismissedDay: nil, calendar: cal))
+    }
+
     func testSilentOnADayWithoutRoaming() {
         let home = reading(leftPct: 5, today: 0, roamingNow: false)
         XCTAssertFalse(RoamingWarningPolicy.shouldWarn(home, now: now, dismissedDay: nil, calendar: cal))
