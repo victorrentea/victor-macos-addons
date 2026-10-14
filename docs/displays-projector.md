@@ -426,6 +426,40 @@ WindowServer 45–48 % → 48–49 % (the invisible screen is nearly free); the 
 ~27 % of one core and ~150 MB, nearly all of it the segmentation at 30 fps. With Zoom
 sharing, WindowServer swings 68–98 % on its own, so measure with Zoom closed.
 
+**Cost in the wild** (2026-10-14 ~18:20, a Teams call with the camera on, auto-switched
+on; Victor asked "what burns my CPU" with the load average at ~150 on 10 cores). Measured
+**without** an on/off alternation (he may have been presenting through it), so only the
+in-process half is solid. `sample 60339 5` on Victor Addons, then the counts per frame:
+
+| frame | samples / ~5000 | ≈ one core |
+|---|---|---|
+| `captureOutput` → `renderFace` (segmentation + mask + blend, 720p) | ~2,400 | **40–45 %** (part of it waiting on GPU/ANE in `iokit_user_client_trap`) |
+| `stream(didOutputSampleBuffer)` (the Retina mirror) | 5 | ≈ 0, zero-copy; its real cost is WindowServer's |
+| `PowerPointMonitor.tick` (osascript every ~3 s, not this feature) | ~660 | ~10–13 % |
+
+The whole process sat at 55–63 %, footprint 405 MB (peak 439). The hot leaves are CPU, not
+GPU: `VNCVPixelBufferHelper renderRawDataBuffer…`, `vCGCompositeConstMask_ARGB16F`,
+`RGBAf16_image_mark` — the compositing runs in 16-bit float on the CPU. So in a real call
+the cut-out costs ~1.5× the 27 % of the 2026-10-05 prototype measurement. Outside the
+process, unattributed: WindowServer ~107 % (shared with Teams' own video), `UVCAssistant`
+~11 % and `VTDecoderXPCService` 5–8 % for the Elgato that this feature keeps open. It was
+**not** the cause of that load spike — a headless LibreOffice from another Claude session
+(6 GB, pptx → pdf), a Spotlight burst (36 `mdworker_shared`) and Teams' renderer (~170 %)
+were; the virtual desktop is a steady ~half-core on top.
+
+**Next time it runs during a CPU complaint, capture:**
+1. An **A/B**, which is the missing number: 20 s on, 20 s off, twice, summing
+   WindowServer + Victor Addons + `UVCAssistant` + `VTDecoderXPCService` per window
+   (`ps -Ao pcpu=,comm=` every second). There is no `/test/*` hook to flip it yet — adding
+   `GET /test/virtual-desktop?on=0|1` turns this into one curl instead of a menu click.
+2. Whether **anyone is actually sharing the 🪞 screen** — if not, the whole cost is wasted
+   (the auto-switch fires on Teams/Zoom *launch*, not on a share starting).
+3. `sudo powermetrics --samplers gpu_power,ane_power -i 1000 -n 5`, to see how much moved
+   to the GPU/ANE versus what `ps` shows.
+4. Cheap knobs worth trying, each measured against (1): segmentation at 15 fps instead of
+   30 (the mask barely moves between frames), `.fast` instead of `.balanced`, and an 8-bit
+   (BGRA) composite instead of RGBA16F.
+
 **Gotchas**
 - `NSWindow(contentRect:…, screen:)` takes the rect **relative to that screen**:
   passing `screen.frame` put the first prototype's window on the Retina.
