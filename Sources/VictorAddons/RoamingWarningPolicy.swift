@@ -22,6 +22,11 @@ enum RoamingWarningPolicy {
         let nextReset: Date
         /// When the phone took the reading.
         let readAt: Date
+        /// The phone's own verdict (`RoamingGuard`, since 14 Oct 2026): roaming
+        /// right now and under its reserve, so it no longer turns the hotspot on.
+        var hotspotBlocked: Bool = false
+        /// The reserve the phone keeps out of the hotspot's reach.
+        var reserve: Int64 = 1_000_000_000
 
         var remaining: Int64 { max(0, limit - cycleTotal) }
         var remainingFraction: Double { limit > 0 ? Double(remaining) / Double(limit) : 0 }
@@ -56,7 +61,9 @@ enum RoamingWarningPolicy {
             limit: limit,
             lowFraction: (o["lowFraction"] as? NSNumber)?.doubleValue ?? 0.15,
             nextReset: Date(timeIntervalSince1970: ((o["nextReset"] as? NSNumber)?.doubleValue ?? 0) / 1000),
-            readAt: Date(timeIntervalSince1970: readAt / 1000))
+            readAt: Date(timeIntervalSince1970: readAt / 1000),
+            hotspotBlocked: (o["hotspotBlocked"] as? Bool) ?? false,
+            reserve: (o["reserve"] as? NSNumber)?.int64Value ?? 1_000_000_000)
     }
 
     /// Show the warning now? Only for a fresh reading taken *today* (its

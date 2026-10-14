@@ -112,6 +112,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// that says when it is nearly gone.
     private var phoneRoaming: PhoneRoamingMonitor?
     private var roamingWarning: RoamingWarning?
+    /// 📶 `3.2 GB` in the menu bar while on the phone's hotspot; see docs/roaming-warning.md.
+    private var roamingMeter: RoamingMeter?
     /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
     private var checkInWatch: CheckInMailWatch?
     private var memoryPressure: MemoryPressureMonitor?
@@ -1025,9 +1027,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // until hovered, once a day. The phone counts; see docs/roaming-warning.md.
         let roamingWarning = RoamingWarning(screensProvider: { NSScreen.physical })
         let phoneRoaming = PhoneRoamingMonitor()
-        phoneRoaming.onReading = { [weak roamingWarning] r in roamingWarning?.update(r) }
+        let roamingMeter = RoamingMeter(monitor: phoneRoaming)
+        phoneRoaming.onReading = { [weak roamingWarning, weak roamingMeter] r in
+            roamingWarning?.update(r)
+            roamingMeter?.refresh()
+        }
         roamingWarning.start()
         phoneRoaming.start()
+        roamingMeter.start()
+        self.roamingMeter = roamingMeter
         self.roamingWarning = roamingWarning
         self.phoneRoaming = phoneRoaming
         tabletServer?.onTestRoaming = { [weak phoneRoaming, weak roamingWarning] sub in

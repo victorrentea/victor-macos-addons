@@ -62,3 +62,32 @@ reading. It never reads as "nothing used".
   retina included, so don't preview it in front of a room.
 - `GET /test/roaming/reset-dismissal` forgets today's dismissal.
 - Phone side: `adb logcat -s RoamingStatus RoamingUsage`.
+
+## 📵 The 1 GB reserve and the 📶 menu bar meter (14 Oct 2026)
+
+Asked for after the laptop emptied the roaming allowance through the hotspot.
+The Mac's log showed why nothing warned: from 13 Oct 11:58 on, **60 polls, zero
+readings**. 40 said `the phone is not publishing the roaming status channel`,
+three seconds after the *beacon's* channel had opened fine. So the hotspot kept
+coming on, and the pill had nothing to decide on.
+
+**The phone enforces, not the Mac.** Only the phone knows it is roaming *now*.
+Back home the same Mac on the same hotspot costs nothing against the roaming
+plan, and a Mac-side block would have no way to tell. `RoamingGuard.kt`
+(`victor-phone-addons`): while `isNetworkRoaming` and under 1 GB left, the
+beacon accepts the channel but does not bring the app to the front, so the
+Samsung routine never fires. It shows a red overlay with a sound instead, and
+rings again (at most every 10 min) while hotspot traffic keeps flowing under the
+reserve, because the app cannot switch a running hotspot off. The reading
+carries `hotspotBlocked` and `reserve`.
+
+**The Mac only shows the number** (`RoamingMeter` + `RoamingMeterPolicy`,
+unit-tested). It's a status item that exists only while the Mac is on
+`victor`, and is hidden when a fresh reading says the phone is on its home
+network. It shows `📶 3.2 GB`, orange under 3 GB, red under 1.5 GB, `📵` under
+the phone's reserve, `~` once the reading is over 30 min old, `?` with none.
+Between the phone's answers it **keeps moving**: what this Mac pulled through
+`en0` since the phone's `readAt` is subtracted (64-bit sum of `if_data`
+deltas every 5 s, since the 32-bit counters wrap at 4 GiB). While on the
+hotspot it asks the phone every 5 min instead of 20. The menu has the breakdown
+and "Ask the phone now".
