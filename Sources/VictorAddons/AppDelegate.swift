@@ -1781,9 +1781,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let payload = try? JSONSerialization.data(withJSONObject: self.liveCaptions.diagnostics)
             return payload.flatMap { String(data: $0, encoding: .utf8) } ?? "{\"error\":\"undescribable\"}"
         }
-        tabletServer?.onTestLiveCaptionsSay = { [weak self] text, partial in
+        tabletServer?.onTestLiveCaptionsSay = { [weak self] text, partial, correct, speakers in
             guard let self else { return "{\"error\":\"gone\"}" }
-            DispatchQueue.main.async { self.liveCaptions.preview(committed: text, partial: partial) }
+            DispatchQueue.main.async {
+                self.liveCaptions.preview(committed: text, partial: partial, correct: correct, speakers: speakers)
+            }
             return "{\"ok\":true}"
         }
         audioManager.start()

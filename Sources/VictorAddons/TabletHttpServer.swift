@@ -108,8 +108,9 @@ case testTerminalFont
     case testLiveCaptions(Bool)
     /// `GET /test/live-captions/state` — is it on, and why not.
     case testLiveCaptionsState
-    /// `GET /test/live-captions/say?text=…&partial=…` — draw the band without talking.
-    case testLiveCaptionsSay(String?, String?)
+    /// `GET /test/live-captions/say?text=…&partial=…` — draw the band without talking;
+    /// `&correct=…&speakers=3,9` — a batch correction of the whole committed text, new voices at those words.
+    case testLiveCaptionsSay(String?, String?, String?, [Int])
         /// Force-apply the projector/standard display arrangement now and return
         /// a JSON snapshot of the detected displays + applied scene (test hook).
         case testProjector
@@ -335,7 +336,7 @@ case testTerminalFont
     /// the band.
     var onTestLiveCaptions: ((Bool) -> String)?
     var onTestLiveCaptionsState: (() -> String)?
-    var onTestLiveCaptionsSay: ((String?, String?) -> String)?
+    var onTestLiveCaptionsSay: ((String?, String?, String?, [Int]) -> String)?
     /// Force-apply the display arrangement now; returns a JSON snapshot.
     var onTestProjector: (() -> String)?
     var onTestAsusSide: ((AsusSide?) -> String)?
@@ -690,9 +691,9 @@ case testTerminalFont
             case .testLiveCaptionsState:
                 contentType = "application/json"
                 body = self.onTestLiveCaptionsState?() ?? "{\"error\":\"live captions unavailable\"}"
-            case .testLiveCaptionsSay(let text, let partial):
+            case .testLiveCaptionsSay(let text, let partial, let correct, let speakers):
                 contentType = "application/json"
-                body = self.onTestLiveCaptionsSay?(text, partial) ?? "{\"error\":\"live captions unavailable\"}"
+                body = self.onTestLiveCaptionsSay?(text, partial, correct, speakers) ?? "{\"error\":\"live captions unavailable\"}"
             case .testHotspot:
                 contentType = "application/json"
                 body = self.onTestHotspot?() ?? "{\"error\":\"hotspot fallback unavailable\"}"
@@ -1006,7 +1007,10 @@ case testTerminalFont
             return .testLiveCaptionsState
         case "/test/live-captions/say":
             return .testLiveCaptionsSay(queryItems.first(where: { $0.name == "text" })?.value,
-                                        queryItems.first(where: { $0.name == "partial" })?.value)
+                                        queryItems.first(where: { $0.name == "partial" })?.value,
+                                        queryItems.first(where: { $0.name == "correct" })?.value,
+                                        (queryItems.first(where: { $0.name == "speakers" })?.value ?? "")
+                                            .split(separator: ",").compactMap { Int($0) })
         case "/test/live-captions":
             let raw = queryItems.first(where: { $0.name == "on" })?.value ?? "1"
             return .testLiveCaptions(raw != "0" && raw.lowercased() != "false")

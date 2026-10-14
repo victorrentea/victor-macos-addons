@@ -42,6 +42,18 @@ Live transcription (power-driven), its watchdogs, the 🎙️ "Ce tocmai am spus
 >   seconds and captions hours: uncorrected audio is given up on past 60 s, and the text handed to
 >   the band keeps ~150 words (old segments, long rolled out, drop off the head).
 > - **The row's rate is ~$0.69/h**: $0.39 realtime × 1.2 for keyterms + $0.22 for the corrections.
+> - **A new voice starts a new line** (same day, Victor: *"understand when multiple people are
+>   speaking to break the line of the live captions"*). The realtime socket cannot do it — it has
+>   no diarization switch, and its words carry a `speaker_id` only "if available" — so it rides on
+>   the correction: the batch upload is sent with `diarize=true` + `timestamps_granularity=word`
+>   (was `diarize=false`; no surcharge listed), `speakerStarts` turns each change of `speaker_id`
+>   into a word index, and the band splits the line holding that word (`reason: "speaker"`), the
+>   words from the new voice gliding down to a line of their own. **What it costs in behaviour:**
+>   the break lands with the correction, a few seconds after the words; and each span is
+>   diarized alone, so it knows *the voice changed here*, never *who*, and never across two spans
+>   — a change across a 1.5 s VAD commit is left to the sentence-end rule. Measured 2026-10-14
+>   through the MacBook mic: two `say` voices answering each other 0.3 s apart → both changes
+>   found; one voice saying two sentences → none.
 
 - **It is not the 💬 transcription and must never be confused for it.** The continuous one stays
   exactly where it was: `mlx-whisper`, **local**, two channels, automatic on AC, writing the day's

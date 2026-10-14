@@ -74,6 +74,11 @@ import AppKit
 ///   `?`, `!`, `…`) marks the next word to start a new line even if the current
 ///   one is short (`breakBefore`). A commit with no terminal punctuation is a
 ///   pause inside the sentence and changes nothing.
+/// - **A new voice starts a new line** (2026-10-14, addons only — a dictation
+///   has one voice): `setText(…, speakers:)` names the committed words where
+///   the batch correction's diarization heard a different speaker, and the
+///   line holding one is split there after the fact (`split(atSpeakers:)`) —
+///   the one exception to the sticky lines below.
 /// - **Lines are sticky per word.** Each word carries the line it was placed
 ///   on through every revision (the LCS alignment carries it, as it carries
 ///   the x); a correction's new words take the line of the words they replace,
@@ -288,11 +293,13 @@ final class LiveCaptionBand {
     /// The whole sentence as the recogniser has it now, revisions included.
     /// `gentle`: a batch correction of words behind him — softer tint, and it
     /// does not count as him speaking again (the silence clock keeps running).
-    func setText(committed: String, partial: String, gentle: Bool = false) {
+    /// `speakers`: indices of the committed words where a new voice begins
+    /// (the batch model's diarization) — each starts a line of its own.
+    func setText(committed: String, partial: String, gentle: Bool = false, speakers: [Int] = []) {
         guard isOpen else { return }
         let split: (String) -> [String] = { $0.split(whereSeparator: { $0.isWhitespace }).map(String.init) }
         let c = split(committed)
-        view.setWords(c + split(partial), committed: c.count, gentle: gentle)
+        view.setWords(c + split(partial), committed: c.count, gentle: gentle, speakers: speakers)
     }
 
     // MARK: - The clock
@@ -377,7 +384,8 @@ final class LiveCaptionBand {
             var lastGoal: CGFloat?
             var slot: CGFloat
             var slotTarget: CGFloat
-            /// Why it began: `first`, `full` (the 80 % wrap) or `sentence`.
+            /// Why it began: `first`, `full` (the 80 % wrap), `sentence` or
+            /// `speaker` (a new voice, split out of a line by a correction).
             let reason: String
         }
         /// A line pushed out, drawn from a snapshot while it glides up and fades.
@@ -658,8 +666,8 @@ final class LiveCaptionBand {
             return ".?!…".contains(last)
         }
 
-        func setWords(_ new: [String], committed newCommitted: Int, gentle: Bool = false) {
-            guard new != words || newCommitted != committed else { return }
+        func setWords(_ new: [String], committed newCommitted: Int, gentle: Bool = false, speakers: [Int] = []) {
+            guard new != words || newCommitted != committed else { return split(atSpeakers: speakers) }
             let oldCommitted = committed
             committed = min(newCommitted, new.count)
             // **A commit that ends a sentence** (2026-09-28): the next word
@@ -668,7 +676,7 @@ final class LiveCaptionBand {
                 breakBefore = committed
             }
             retarget()
-            guard new != words else { return }
+            guard new != words else { return split(atSpeakers: speakers) }
             let old = words
             let stamp = CACurrentMediaTime()
             if !gentle { lastWordsAt = stamp }
@@ -847,6 +855,46 @@ final class LiveCaptionBand {
                 // A jump of the goal made here (a correction) is eased; only
                 // its motion from frame to frame (a word coming in) is fed
                 // forward — so the goal is re-read in the new layout.
+                lines[i].lastGoal = centredAnchor(rs[i], current: lines[i].anchor)
+            }
+            needsDisplay = true
+            split(atSpeakers: speakers)
+        }
+
+        /// **A new voice starts a new line** (2026-10-14). Victor: *"break the
+        /// line of the live captions when … you detect a different voice"*.
+        /// The voices come from the batch correction's diarization, so they
+        /// arrive on words already on screen — the one place a line is split
+        /// after the fact, against the sticky-line rule: the words from the
+        /// new voice on leave their line for one of their own, right below,
+        /// gliding from where they stood (the new line starts at the old one's
+        /// slot and anchor), and a third line lifts the top one as usual.
+        /// Already split (the boundary is a line start) → nothing, so the same
+        /// indices can come with every update.
+        private func split(atSpeakers speakers: [Int]) {
+            var opened = false
+            for b in speakers.sorted() {
+                let j = b - dropped
+                guard j > 0, j < lineOf.count, lineOf[j] == lineOf[j - 1],
+                      let at = lines.firstIndex(where: { $0.id == lineOf[j] }) else { continue }
+                let old = lines[at]
+                lines.insert(Line(id: nextLineId, anchor: old.anchor, slot: old.slot,
+                                  slotTarget: old.slotTarget, reason: "speaker"), at: at + 1)
+                for k in j..<lineOf.count where lineOf[k] == old.id { lineOf[k] = nextLineId }
+                nextLineId += 1
+                opened = true
+            }
+            guard opened else { return }
+            target = []
+            var x: CGFloat = 0
+            for k in widths.indices {
+                if k == 0 || lineOf[k] != lineOf[k - 1] { x = 0 }
+                target.append(x); x += widths[k]
+            }
+            while lines.count > 2 { lift() }
+            let rs = ranges()
+            for i in lines.indices {
+                lines[i].slotTarget = CGFloat(i)
                 lines[i].lastGoal = centredAnchor(rs[i], current: lines[i].anchor)
             }
             needsDisplay = true

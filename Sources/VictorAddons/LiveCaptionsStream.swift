@@ -122,9 +122,10 @@ final class LiveCaptionsStream: NSObject {
 
     /// What was heard so far, on main: the committed segments (corrected by
     /// the batch model where it has caught up), the one still being spoken,
-    /// and whether this update is a batch correction (`gentle`) — the band's
-    /// own `setText` signature, which is the point.
-    var onText: ((_ committed: String, _ partial: String, _ gentle: Bool) -> Void)?
+    /// whether this update is a batch correction (`gentle`), and the indices
+    /// of the committed words where a new voice begins — the band's own
+    /// `setText` signature, which is the point.
+    var onText: ((_ committed: String, _ partial: String, _ gentle: Bool, _ speakers: [Int]) -> Void)?
     /// **The socket is gone and the captions are over.** Always followed by the
     /// controller taking the overlay down: a caption frozen mid-sentence in
     /// front of a room is worse than no caption, because it looks like it is
@@ -223,6 +224,9 @@ final class LiveCaptionsStream: NSObject {
     /// span it covered into one. `trimmed` counts segments dropped off the
     /// head, so a correction in flight can find its span again.
     private var segments: [String] = []
+    /// Per segment, the indices of its words where a new voice begins — only
+    /// a corrected segment has any (the live socket does not diarize).
+    private var voices: [[Int]] = []
     private var trimmed = 0
     private var partial = ""
     private var correctedSegments = 0
@@ -234,6 +238,8 @@ final class LiveCaptionsStream: NSObject {
     private var key = ""
     private(set) var corrections = 0
     private(set) var correctionFailures = 0
+    /// New voices the diarization found inside corrected spans.
+    private(set) var speakerChanges = 0
     private(set) var keytermCount = 0
 
     // MARK: - Start / stop
@@ -267,7 +273,7 @@ final class LiveCaptionsStream: NSObject {
         textQueue.sync {
             self.key = key
             self.keytermCount = terms.count
-            self.segments = []; self.trimmed = 0; self.partial = ""
+            self.segments = []; self.voices = []; self.trimmed = 0; self.partial = ""
             self.correctedSegments = 0; self.pcm = Data(); self.correcting = false
             self.correctionHoldUntil = .distantPast
         }
@@ -513,7 +519,7 @@ final class LiveCaptionsStream: NSObject {
             // are what Walkie Talkie's markers need; a subtitle needs none.
             let segment = body.trimmingCharacters(in: .whitespaces)
             textQueue.async {
-                if !segment.isEmpty { self.segments.append(segment) }
+                if !segment.isEmpty { self.segments.append(segment); self.voices.append([]) }
                 self.partial = ""
                 self.trim()
                 self.publish()
@@ -537,7 +543,12 @@ final class LiveCaptionsStream: NSObject {
         guard running || socket != nil else { return }
         let committed = segments.joined(separator: " ")
         let partial = self.partial.trimmingCharacters(in: .whitespaces)
-        DispatchQueue.main.async { [weak self] in self?.onText?(committed, partial, gentle) }
+        var speakers: [Int] = [], offset = 0
+        for (segment, starts) in zip(segments, voices) {
+            speakers += starts.map { $0 + offset }
+            offset += segment.split(whereSeparator: { $0.isWhitespace }).count
+        }
+        DispatchQueue.main.async { [weak self] in self?.onText?(committed, partial, gentle, speakers) }
     }
 
     /// Drops whole segments off the head while the rest still holds
@@ -549,6 +560,7 @@ final class LiveCaptionsStream: NSObject {
         while segments.count > 1, total - words(segments[0]) >= Self.keepWords,
               correctedSegments > 0 || total >= 2 * Self.keepWords {
             total -= words(segments.removeFirst())
+            voices.removeFirst()
             trimmed += 1
             correctedSegments = max(0, correctedSegments - 1)
         }
@@ -579,7 +591,7 @@ final class LiveCaptionsStream: NSObject {
                     self.correctionFailures += 1
                     self.correctionHoldUntil = Date().addingTimeInterval(5)
                     overlayError("LiveCaptions correction failed — \(why); the next commit after 5 s covers the span again")
-                case .success(let text):
+                case .success(let (text, starts)):
                     let lo = from - self.trimmed, hi = upTo - self.trimmed
                     self.pcm.removeFirst(min(to, self.pcm.count))
                     // The span rolled off the head meanwhile: nothing to swap.
@@ -588,6 +600,8 @@ final class LiveCaptionsStream: NSObject {
                         return
                     }
                     self.segments.replaceSubrange(lo..<hi, with: [text])
+                    self.voices.replaceSubrange(lo..<hi, with: [starts])
+                    if !starts.isEmpty { self.speakerChanges += starts.count }
                     self.correctedSegments = lo + 1
                     self.corrections += 1
                     self.publish(gentle: true)
@@ -597,17 +611,29 @@ final class LiveCaptionsStream: NSObject {
     }
 
     /// One upload of `pcm` to the batch endpoint — Walkie's
-    /// `ElevenLabsSource.transcribe`, minus the retry and the word timings,
-    /// which a correction behind a caption does not need: the next commit is
-    /// the retry. Language auto-detected, as Walkie's batch is.
-    static func transcribeBatch(pcm: Data, key: String, _ done: @escaping (Result<String, BatchError>) -> Void) {
+    /// `ElevenLabsSource.transcribe`, minus the retry: the next commit is the
+    /// retry. Language auto-detected, as Walkie's batch is.
+    ///
+    /// **Diarized since 2026-10-14**, so the band can start a new line where a
+    /// new voice does (`speakerStarts`). The realtime socket has no such
+    /// switch — its words carry a `speaker_id` only "if available", and it
+    /// never is — so the line break arrives with the correction, a few seconds
+    /// behind the words. Each upload is diarized on its own, so `speaker_0` in
+    /// one span is not `speaker_0` in the next: what it can say is *the voice
+    /// changed here*, never *who*, and never across two spans. A change across
+    /// a VAD commit (1.5 s of silence) mostly coincides with a sentence end,
+    /// which starts a line already. Measured on two `say` voices answering
+    /// each other 0.3 s apart: every word on the right side, both changes
+    /// found. No surcharge for `diarize` on the price list.
+    static func transcribeBatch(pcm: Data, key: String, _ done: @escaping (Result<(String, [Int]), BatchError>) -> Void) {
         let boundary = "addons-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
         }
         field("model_id", batchModel)
-        field("diarize", "false")
+        field("diarize", "true")
+        field("timestamps_granularity", "word")
         field("tag_audio_events", "false")
         body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"span.wav\"\r\nContent-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(wav(pcm: pcm))
@@ -626,11 +652,36 @@ final class LiveCaptionsStream: NSObject {
                 return done(.failure(BatchError("HTTP \(code) \(detail)")))
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let text = json["text"] as? String else {
+                  let reply = speakerStarts(json) else {
                 return done(.failure(BatchError("unreadable reply")))
             }
-            done(.success(text.trimmingCharacters(in: .whitespacesAndNewlines)))
+            done(.success(reply))
         }.resume()
+    }
+
+    /// The batch reply as the band reads it: the text, and the indices of its
+    /// whitespace-separated words where `speaker_id` changes. The text is the
+    /// `words[]` laid end to end (spacing included), so the indices count the
+    /// same words the band will split; no `words[]` → `text`, no voices.
+    static func speakerStarts(_ json: [String: Any]) -> (String, [Int])? {
+        func count(_ s: Substring) -> Int { s.split(whereSeparator: { $0.isWhitespace }).count }
+        guard let list = json["words"] as? [[String: Any]], !list.isEmpty else {
+            return (json["text"] as? String).map { ($0.trimmingCharacters(in: .whitespacesAndNewlines), []) }
+        }
+        var text = "", starts: [Int] = [], last: String?
+        for item in list {
+            let piece = item["text"] as? String ?? ""
+            if item["type"] as? String == "word", let who = item["speaker_id"] as? String {
+                // A word glued to the one before (no spacing between) is not a
+                // place to break a line.
+                if let last, who != last, !text.isEmpty, text.last?.isWhitespace == true {
+                    starts.append(count(text[...]))
+                }
+                last = who
+            }
+            text += piece
+        }
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), starts.filter { $0 > 0 })
     }
 
     struct BatchError: Error, CustomStringConvertible {

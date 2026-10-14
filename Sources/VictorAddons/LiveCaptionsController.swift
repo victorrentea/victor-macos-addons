@@ -95,8 +95,8 @@ final class LiveCaptionsController {
         band.setOpen(true, on: target)
         previewCommitted = ""
 
-        stream.onText = { [weak self] committed, partial, gentle in
-            self?.band.setText(committed: committed, partial: partial, gentle: gentle)
+        stream.onText = { [weak self] committed, partial, gentle, speakers in
+            self?.band.setText(committed: committed, partial: partial, gentle: gentle, speakers: speakers)
         }
         stream.onClosed = { [weak self] why in
             // The socket ending is the feature ending. `stop` is safe to call
@@ -172,8 +172,16 @@ final class LiveCaptionsController {
     /// caption *lays out* on the projector without standing in front of it
     /// saying sentences. It draws into the same two inks the socket feeds, so
     /// what it shows is what a real one would look like.
-    func preview(committed: String?, partial: String?) {
+    ///
+    /// `correct` replaces everything committed so far the way a batch
+    /// correction does (`gentle`), with a new voice at each of `speakers`.
+    func preview(committed: String?, partial: String?, correct: String? = nil, speakers: [Int] = []) {
         if !band.isOpen { band.setOpen(true); previewCommitted = "" }
+        if let correct, !correct.isEmpty {
+            previewCommitted = correct
+            band.setText(committed: correct, partial: partial ?? "", gentle: true, speakers: speakers)
+            return
+        }
         if let committed = committed, !committed.isEmpty {
             previewCommitted = previewCommitted.isEmpty ? committed : previewCommitted + " " + committed
         }
@@ -201,6 +209,7 @@ final class LiveCaptionsController {
          "commits": stream.commits,
          "corrections": stream.corrections,
          "correctionFailures": stream.correctionFailures,
+         "speakerChanges": stream.speakerChanges,
          "keyterms": stream.keytermCount,
          "languages": LiveCaptionsStream.languages,
          "band": band.describe()]
