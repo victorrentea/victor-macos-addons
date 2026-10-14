@@ -156,7 +156,12 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   listener: position at zoom start, keep-alives while resting, cleared at 1×.
 - **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
   filtered with `excludingWindows: [our panel]` — only ours, not the whole app, so the
-  banners and the hands-off locks stay in the picture. Frames are `IOSurface`s set
+  banners and the hands-off locks stay in the picture. **Also excluded: Victor
+  Effects' 💬 subtitle window** (`isEffectsCaption`, by title + owner — it is
+  another app's), which sits above this zoom on purpose so a caption keeps its size
+  and place; filmed, it would show a second, magnified copy behind itself. The
+  filters are rebuilt when the lingering stream stops, so a Victor Effects restart
+  (new window id) is picked up by the next zoom. Frames are `IOSurface`s set
   straight as the layer's `contents`; the zoom is just `contentsRect`. The panel is
   `.screenSaver` level, opaque, click-through, on every Space, invisible until it has
   a frame. It honours `closeViewSmoothImages` (off here → `.nearest`).

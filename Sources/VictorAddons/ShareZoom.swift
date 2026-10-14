@@ -130,6 +130,17 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// or they would show twice, once magnified: 🪞 `VirtualDesktop`'s silhouette.
     var alsoExcluded: () -> [CGWindowID] = { [] }
 
+    /// 💬 Victor Effects' subtitle window. It is painted above this zoom on
+    /// purpose — a caption stays the same size in the same place whatever the
+    /// zoom does — so filming it would put a magnified copy behind the real one.
+    /// Found by title and owner, not id: it lives in the other app, which
+    /// creates it at launch so it is listed before the first caption.
+    static let effectsCaptionTitle = "Victor Effects caption"
+
+    static func isEffectsCaption(_ w: SCWindow) -> Bool {
+        w.title == effectsCaptionTitle && w.owningApplication?.applicationName == "Victor Effects"
+    }
+
     /// Rebuild the filters after `alsoExcluded` changed. Takes effect on the next zoom.
     func refreshExclusions() {
         prepareStages()
@@ -232,7 +243,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                     // hands-off locks and the break overlay belong in the picture.
                     let own = content.windows.filter { $0.windowID == CGWindowID(s.panel.windowNumber) }
                     let above = Set(self.alsoExcluded())
-                    let others = content.windows.filter { above.contains($0.windowID) }
+                    let others = content.windows.filter {
+                        above.contains($0.windowID) || Self.isEffectsCaption($0)
+                    }
                     s.excludesOwnWindow = !own.isEmpty
                     s.filter = SCContentFilter(display: display, excludingWindows: own + others)
                 }
@@ -319,6 +332,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.active == nil else { return }
             self.stopStream()
+            // Re-list the windows for the next zoom: the filters are built ahead
+            // of time, and a Victor Effects restart gives its caption window a
+            // new id that a filter from before would no longer exclude.
+            self.prepareStages()
         }
         lingerStop = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.linger, execute: work)
