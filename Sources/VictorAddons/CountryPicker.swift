@@ -3,9 +3,9 @@ import AppKit
 /// A small **searchable** dropdown for choosing the Break timer's country.
 ///
 /// A stock `NSMenu` only offers prefix type-select that jumps to a single item per
-/// keystroke. Here, typing FILTERS the list to every country whose name *contains*
-/// the query (case-insensitive) — so "arg" leaves just Argentina, "land" leaves
-/// Ireland / Netherlands / New Zealand … The list shrinks to fit as you type.
+/// keystroke. Here, typing FILTERS the list through `CountrySearch` — name,
+/// aliases ("UK", "Olanda"), timezone city ("London") and small typos ("Germnay"),
+/// best matches first. The list shrinks to fit as you type.
 ///
 /// Keyboard: type to filter, ↑/↓ move the highlight, ⏎ or a click selects, Esc or
 /// clicking away closes. The app is an accessory (no Dock icon), so we activate it
@@ -161,16 +161,14 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
 
     /// Rebuild `rows` from the search text. With no query, Romania is pinned at the
     /// top with a divider, then the rest of the list alphabetically — a one-click
-    /// "back to Romania". While filtering, only the contains-matches are shown.
+    /// "back to Romania". While filtering, only the `CountrySearch` matches are shown.
     private func rebuildRows() {
         let q = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if q.isEmpty {
             rows = [.country(.romania), .separator]
                 + BreakCountry.all.filter { $0.tz != BreakCountry.romania.tz }.map { Row.country($0) }
         } else {
-            rows = BreakCountry.all
-                .filter { $0.name.localizedCaseInsensitiveContains(q) }
-                .map { Row.country($0) }
+            rows = CountrySearch.search(q).map { Row.country($0) }
         }
     }
 
