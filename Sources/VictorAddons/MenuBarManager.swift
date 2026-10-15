@@ -636,9 +636,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
 
-        // ‹···› Wired status (2026-10-08, Victor: replaces the Ethernet Menubar
-        // status item; out of Extras to the top level on 2026-10-10, under the
-        // same ‹···› glyph that app drew — one click on 💬 shows it). A readout, repainted on every menu open
+        // 🟢 Wired status (2026-10-08, Victor: replaces the Ethernet Menubar
+        // status item; out of Extras to the top level on 2026-10-10 — one click
+        // on 💬 shows it). A readout, repainted on every menu open
         // (`refreshDynamicItems`); the click opens Network settings, which is
         // also what keeps it from being drawn dimmed like a disabled row.
         wiredLinkItem = NSMenuItem(title: WiredLinkPolicy.title(WiredLink.current()),
@@ -1029,7 +1029,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// emoji check would not).
     enum RoamingSuspendMenu {
         static func title(enabled: Bool) -> String {
-            "⏸ Pause Claude on roaming data" + (enabled ? "  ✓" : "")
+            "⏸️ Pause Claude on roaming data" + (enabled ? "  ✓" : "")
         }
     }
 

@@ -109,7 +109,7 @@ second half is ranked, because the phone has gone silent before:
    20 km or hour, under 6 h old);
 3. else the system timezone. It can't see Bulgaria or Greece, so it comes last.
 
-The top-level menu row **⏸ Pause Claude on roaming data** (default on, sits
+The top-level menu row **⏸️ Pause Claude on roaming data** (default on, sits
 under 🛜) sets `suspendClaude`. `~/.claude/hooks/roaming-gate.sh` is wired
 beside `net-gate.sh` on UserPromptSubmit / PreToolUse / PostToolUse (timeout
 7 days). It parks the turn while `roamingData && suspendClaude` and polls every

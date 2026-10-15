@@ -52,16 +52,16 @@ enum WiredLinkPolicy {
         return live.isEmpty ? .disconnected : .noAddress
     }
 
-    /// ‹···› — the glyph Ethernet Menubar drew in the menu bar, kept so the
-    /// row is found where the eye already looks for it; then the status dot,
-    /// so the answer is read before the words.
-    static let glyph = "‹···›"
-
+    /// One emoji, like every other row, so the words line up with theirs: the
+    /// status dot carries the answer. The `‹···›` glyph Ethernet Menubar drew
+    /// used to stand in front of it, but it is text, twice an emoji's width,
+    /// and pushed this row out of the column (2026-10-15). The IP went too —
+    /// Victor never needed it, only whether the cable works.
     static func title(_ state: WiredLinkState) -> String {
         switch state {
-        case .connected(let ip): return "\(glyph) 🟢 Wired: connected · \(ip)"
-        case .noAddress:         return "\(glyph) 🟡 Wired: cable in, no IP"
-        case .disconnected:      return "\(glyph) ⚪️ Wired: not connected"
+        case .connected:         return "🟢 Wired: connected"
+        case .noAddress:         return "🟡 Wired: cable in, no IP"
+        case .disconnected:      return "⚪️ Wired: not connected"
         }
     }
 }
