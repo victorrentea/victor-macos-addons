@@ -73,6 +73,17 @@ enum BreakTimerModel {
         return .subtract
     }
 
+    /// Does the ☕ that just popped settle the UNTIL BREAK vote — i.e. once its
+    /// −1 and the ones already in the air have landed, is the watch at zero?
+    /// Asked at the POP, not the landing: a −1 flies for over a second, and
+    /// cups the room fills in that second must already burst as fireworks
+    /// (2026-10-15: ten cups emptied a 10:00 watch, the seven filled while the
+    /// tenth −1 was flying popped as plain votes and their minutes were thrown
+    /// away on a watch at zero). True for every pop after that one, too.
+    static func coffeePopWins(title: String, remaining: Int, minutesInFlight: Int) -> Bool {
+        title == untilBreakTitle && remaining - 60 * minutesInFlight <= 60
+    }
+
     /// Format remaining seconds as `MM:SS`. Minutes are NOT capped at 59 — one
     /// hour shows `60:00` to keep the two-group "watch" look. Negative values
     /// clamp to `00:00`.

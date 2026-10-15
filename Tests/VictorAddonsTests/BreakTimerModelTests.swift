@@ -178,6 +178,18 @@ final class BreakTimerModelTests: XCTestCase {
         XCTAssertEqual(BreakTimerModel.coffeeMinute(title: until, remaining: 12), .subtractAndWin)
     }
 
+    func testThePopWhoseMinuteEmptiesTheWatchArmsTheFireworks() {
+        let until = BreakTimerModel.untilBreakTitle
+        // 10:00 left: the tenth cup settles it, with nine −1s still flying.
+        XCTAssertFalse(BreakTimerModel.coffeePopWins(title: until, remaining: 600, minutesInFlight: 8))
+        XCTAssertTrue(BreakTimerModel.coffeePopWins(title: until, remaining: 600, minutesInFlight: 9))
+        // Cups after it, while those are still in the air, are fireworks too.
+        XCTAssertTrue(BreakTimerModel.coffeePopWins(title: until, remaining: 600, minutesInFlight: 12))
+        XCTAssertTrue(BreakTimerModel.coffeePopWins(title: until, remaining: 45, minutesInFlight: 0))
+        XCTAssertFalse(BreakTimerModel.coffeePopWins(title: until, remaining: 61, minutesInFlight: 0))
+        XCTAssertFalse(BreakTimerModel.coffeePopWins(title: "BREAK", remaining: 30, minutesInFlight: 0))
+    }
+
     func testARealBreakIsNeverWonByCoffee() {
         // Coffees during a menu-started break only shave it; the yee-haw is for
         // the watch the room voted in.

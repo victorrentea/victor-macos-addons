@@ -23,6 +23,8 @@ final class MinuteToken {
     /// workshop is a window in every screenshot and every Mission Control.
     private var panel: AddonsOverlayPanel?
     private var inFlight = 0
+    /// −1s on their way to the watch, not yet landed or fizzled.
+    var minutesInFlight: Int { inFlight }
 
     /// Fling a **−1** from `point` (global coordinates) to the break timer and,
     /// when it lands, call `onArrival` — which is what actually takes the minute

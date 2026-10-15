@@ -90,6 +90,13 @@ final class BreakTimerController {
         BreakTimerModel.coffeeMinute(title: titleText, remaining: remaining)
     }
 
+    /// Whether a ☕ popping now settles the UNTIL BREAK vote, counting the −1s
+    /// already flying at the watch.
+    func coffeePopWins(minutesInFlight: Int) -> Bool {
+        BreakTimerModel.coffeePopWins(title: titleText, remaining: remaining,
+                                      minutesInFlight: minutesInFlight)
+    }
+
     // Fullscreen-on-idle: after `fullscreenIdleSeconds` of total inactivity the
     // panel fills the retina (a black "break screen"), every OTHER display goes
     // black, and the Mac is kept awake; any input restores everything.

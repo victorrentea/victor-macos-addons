@@ -377,6 +377,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     // converging on the watch instead of digits dropping by 3 while
                     // confetti happened elsewhere.
                     overlayInfo("☕ popped → −1m flying to the break")
+                    if self.breakTimer.coffeePopWins(minutesInFlight: MinuteToken.shared.minutesInFlight) {
+                        // This −1 will empty the watch when it lands: from now on
+                        // the cups the room fills burst as fireworks (and pay
+                        // nothing). The 🤠 still waits for the landing.
+                        overlayInfo("☕ this −1 empties UNTIL BREAK → fireworks armed")
+                        EffectsProxy.fire("/effect/coffee/armed")
+                    }
                     self.flyMinuteToBreakTimer(from: at)
                 } else {
                     // The first explosion STARTS the 10-min "UNTIL BREAK" timer,
