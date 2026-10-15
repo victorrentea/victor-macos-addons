@@ -187,6 +187,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         var smooth: Double = 0
         /// Film the Retina minus the silhouette and its ← (true), or the whole display.
         var exclude = true
+        /// Width of the inner glow in face pixels (Gaussian σ); 0 = none.
+        var glowSigma: Double = 5
         var maskSize = CGSize.zero
     }
     private let tuneLock = NSLock()
@@ -223,9 +225,16 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     /// The keyed face last shown (main thread): its alpha is the shadow, read for the
     /// pointer test and to find the head.
     private var shownFace: CVPixelBuffer?
+    /// Keeps the glow's buffer out of the pool while it is on screen.
+    private var shownGlow: CVPixelBuffer?
     private let desktopLayer = CALayer()
     private let faceLayer = CALayer()
     private let silhouetteMask = CALayer()
+    /// The silhouette's contour, glowing **inward** only (Victor, 2026-10-15: on a
+    /// black slide a 20 % black shadow is invisible; "no halo around my own head").
+    /// White, strongest just inside the edge, gone deep inside and outside — rendered
+    /// with the face (`glowSigma`), shown as a sublayer of the shadow so it slides too.
+    private let glowLayer = CALayer()
     /// The 20 % shadow, inside a panel spanning the Retina's bottom strip so it can
     /// slide corner to corner like the face does.
     private let shadowLayer = CALayer()
@@ -446,6 +455,10 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         silhouetteMask.contentsGravity = .resizeAspect
         silhouetteMask.actions = Self.noAnimation
         shadow.mask = silhouetteMask
+        glowLayer.frame = shadow.bounds
+        glowLayer.contentsGravity = .resizeAspect
+        glowLayer.actions = Self.noAnimation
+        shadow.addSublayer(glowLayer)
         view.layer?.addSublayer(shadow)
         panel.contentView = view
         panel.orderFrontRegardless()
@@ -696,7 +709,23 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         ]).cropped(to: crop).transformed(by: place)
 
         guard let out = nextFaceBuffer(size) else { return }
-        ciContext.render(keyed, to: out, bounds: CGRect(origin: .zero, size: size), colorSpace: CGColorSpaceCreateDeviceRGB())
+        let bounds = CGRect(origin: .zero, size: size)
+        ciContext.render(keyed, to: out, bounds: bounds, colorSpace: CGColorSpaceCreateDeviceRGB())
+        // Inner glow: white where the shape is, minus a blurred copy of it — high
+        // just inside the edge, zero deep inside (blur ≈ 1) and outside (no shape).
+        var glow: CVPixelBuffer?
+        if tune.silhouette, tune.glowSigma > 0, let buffer = nextFaceBuffer(size) {
+            let white = CIImage(color: .white).cropped(to: bounds)
+                .applyingFilter("CIBlendWithAlphaMask", parameters: [
+                    kCIInputBackgroundImageKey: CIImage.empty(),
+                    kCIInputMaskImageKey: keyed,
+                ])
+            let blurred = white.clampedToExtent().applyingGaussianBlur(sigma: tune.glowSigma).cropped(to: bounds)
+            let edge = white.applyingFilter("CISourceOutCompositing", parameters: [kCIInputBackgroundImageKey: blurred])
+            ciContext.render(edge, to: buffer, bounds: bounds, colorSpace: CGColorSpaceCreateDeviceRGB())
+            glow = buffer
+        }
+        let glowSurface = glow.flatMap { CVPixelBufferGetIOSurface($0)?.takeUnretainedValue() }
         let t2 = CFAbsoluteTimeGetCurrent()
         tuneLock.lock()
         statFaces += 1; statSegMs += (t1 - t0) * 1000; statRenderMs += (t2 - t1) * 1000
@@ -706,7 +735,11 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         DispatchQueue.main.async { [weak self] in
             guard let self, self.display != nil else { return }
             self.faceLayer.contents = surface
-            if tune.silhouette { self.silhouetteMask.contents = surface }
+            if tune.silhouette {
+                self.silhouetteMask.contents = surface
+                self.glowLayer.contents = glowSurface
+                self.shownGlow = glow
+            }
             self.shownFace = out
         }
     }
@@ -749,6 +782,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         if let v = q["desk"].flatMap(Int32.init), v > 0 { t.deskFPS = v }
         if let v = q["smooth"].flatMap(Double.init), v >= 0 { t.smooth = v }
         if let v = q["exclude"] { t.exclude = v == "1" }
+        if let v = q["glow"].flatMap(Double.init), v >= 0 { t.glowSigma = v }
         let excludeChanged = t.exclude != tune.exclude
         let deskChanged = t.deskFPS != tune.deskFPS
         let formatChanged = t.ciFormat8 != tune.ciFormat8
@@ -776,7 +810,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         silhouettePanel?.alphaValue = t.silhouette ? 0.2 : 0
         if t.silhouette { silhouettePanel?.orderFrontRegardless() } else { silhouettePanel?.orderOut(nil) }
         let quality = t.quality == .fast ? "fast" : t.quality == .accurate ? "accurate" : "balanced"
-        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"exclude\":\(t.exclude),\"deskFrames\":\(screenQueue.sync { deskEcho.json }),\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
+        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"exclude\":\(t.exclude),\"glow\":\(t.glowSigma),\"deskFrames\":\(screenQueue.sync { deskEcho.json }),\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
     }
 
     // MARK: - Retina → IOSurface straight into a layer

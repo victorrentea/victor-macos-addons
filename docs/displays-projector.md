@@ -441,6 +441,15 @@ silhouette** (50 % at first — too dark to read through) where the face is (the
 layer — no second render), at `.screenSaver + 1`, above `ShareZoom`, which is told to
 exclude it (`ShareZoom.alsoExcluded`) so it is not magnified underneath.
 
+**Inner glow on the silhouette** (2026-10-15, Victor: a 20 % black shadow vanishes on a
+black slide; *"glow inward — I don't want a halo around my own head"*). Rendered with
+each face: white where the shape is minus a Gaussian-blurred copy of it
+(`CISourceOutCompositing`, σ 5 face px, `glow=` on `/test/virtual-desktop`, 0 = off) —
+high just inside the contour, zero deep inside and zero outside. Shown as a sublayer
+of the masked shadow, so it slides with it and is dimmed by the same panel 20 %.
+Render cost per face 1.0 → 2.5 ms (GPU). ⚠️ Not yet seen with a face in front of the
+camera — the first check was made with nobody there.
+
 **Corner** (`VirtualDesktopCornerPolicy`, tested): the pointer resting **on the shadow
 itself** — its pixels' alpha, read from the last keyed face, not the clip's rectangle —
 for **3 s** raises a **←** button on the head (top of the silhouette + 18 % of its
