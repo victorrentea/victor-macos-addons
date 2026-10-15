@@ -29,30 +29,51 @@ enum ShareZoomPolicy {
     /// acceleration reports deltas of 5–10 lines per event.
     static let maxNotchesPerEvent: CGFloat = 3
 
+    /// Where a scroll came from, as far as an event can tell.
+    enum Source {
+        /// A notched wheel scrolling in lines (`isContinuous == 0`).
+        case wheel
+        /// A wheel that scrolls in pixels: Logi Options+ "smooth scrolling" turns
+        /// Victor's M650 continuous, so it looks like a trackpad except that it
+        /// carries **no gesture phase** — a trackpad's and a Magic Mouse's events
+        /// always do (began/changed/ended, or a momentum phase).
+        case smoothWheel
+        /// Two fingers: continuous, with a phase.
+        case trackpad
+
+        static func of(continuous: Bool, phase: Int64, momentumPhase: Int64) -> Source {
+            if !continuous { return .wheel }
+            return phase == 0 && momentumPhase == 0 ? .smoothWheel : .trackpad
+        }
+    }
+
     /// The next target factor after one scroll event.
     ///
-    /// `delta` is the event's vertical delta **after** `ScrollReversal`; **negative =
-    /// closer**, for the wheel and the trackpad alike.
+    /// `delta` is the event's delta **after** `ScrollReversal`. The rule is "the same
+    /// way as ⌥+scroll in the system magnifier": wheel up and fingers up = closer.
     ///
-    /// The wheel has been flipped twice. The first build copied the ⌘-scroll
-    /// terminal font zoom's sign and Victor found it backwards (2026-10-01, *"l-ai
-    /// făcut pe dos"*), so it became positive = closer; two weeks of real use later
-    /// that was backwards too (2026-10-15, *"the zoom is reversed"*, on the wheel
-    /// only), so it is negative = closer again. The calibration is his hand, not a
-    /// rule — flip it here if it ever feels wrong again.
-    ///
-    /// A **trackpad** delta: `ScrollReversal` leaves continuous scrolls alone, so
-    /// they arrive in natural-scrolling sign: two fingers up is negative. The system
-    /// magnifier (⌥+scroll) zooms in on fingers up, and so does this (Victor,
-    /// 2026-10-07: *"inverse ca accessibility"*).
-    static func step(_ factor: CGFloat, delta: Double, continuous: Bool) -> CGFloat {
+    /// - **Any wheel: positive = closer.** Measured on 2026-10-15 from the event log:
+    ///   Victor's wheel-up arrived as `continuous=1 phase=0`, positive (Logi Options+
+    ///   smooth scrolling). This morning's "the zoom is reversed" was that wheel, but
+    ///   only the *notched* sign got flipped, which his mouse never sends — so the
+    ///   notched wheel is back on the 2026-10-01 calibration, positive = closer.
+    /// - **Trackpad: negative = closer.** `ScrollReversal` leaves it alone, so it
+    ///   arrives in natural-scrolling sign: two fingers up is negative (2026-10-07,
+    ///   *"inverse ca accessibility"*).
+    /// - **A smooth wheel counts one notch per event.** It reports 13–205 px per
+    ///   event (accelerated), i.e. up to 17 notches each: one flick slammed the zoom
+    ///   to 8× before anything was on screen — the "hung halfway" of 2026-10-15.
+    static func step(_ factor: CGFloat, delta: Double, source: Source) -> CGFloat {
         guard delta != 0 else { return factor }
         let notches: CGFloat
-        if continuous {
+        switch source {
+        case .trackpad:
             notches = -CGFloat(delta) / pixelsPerNotch
-        } else {
+        case .smoothWheel:
+            notches = delta > 0 ? 1 : -1
+        case .wheel:
             let n = min(abs(CGFloat(delta)), maxNotchesPerEvent)
-            notches = delta < 0 ? n : -n
+            notches = delta > 0 ? n : -n
         }
         let next = factor * pow(notchFactor, notches)
         // Ten notches up and ten down multiply out to 1.0000001, not 1 — and a

@@ -126,6 +126,8 @@ case testTerminalFont
         case testZoomLayout(run: Bool)
         /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
         case testShareZoom(factor: Double?, x: Double?, y: Double?)
+        /// 🪞 `VirtualDesktop`: live knobs for measuring its cost (see `testTune`).
+        case testVirtualDesktop([String: String])
         /// 🔦 `GlassSpotlight`: a box (global Cocoa points), or off.
         case testGlassSpotlight(rect: CGRect?, off: Bool)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
@@ -351,6 +353,8 @@ case testTerminalFont
     var onTestZoomLayout: ((Bool) -> String)?
     /// 🔎 `ShareZoom` — factor (nil = just report), focus point in global Cocoa points.
     var onTestShareZoom: ((Double?, Double?, Double?) -> String)?
+    /// 🪞 `VirtualDesktop` — the query, as given.
+    var onTestVirtualDesktop: (([String: String]) -> String)?
     /// 🔦 `GlassSpotlight` — box in global Cocoa points (nil = just report), or off.
     var onTestGlassSpotlight: ((CGRect?, Bool) -> String)?
     /// Force-show the aggressive silent-transcription warning.
@@ -639,6 +643,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestZoomJoin == nil { statusCode = 503 }
+            case .testVirtualDesktop(let query):
+                contentType = "application/json"
+                body = self.onTestVirtualDesktop?(query) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestVirtualDesktop == nil { statusCode = 503 }
             case .testShareZoom(let factor, let x, let y):
                 contentType = "application/json"
                 body = self.onTestShareZoom?(factor, x, y) ?? "{\"error\":\"unavailable\"}"
@@ -1024,6 +1032,10 @@ case testTerminalFont
             return .testZoomShare
         case "/test/zoom-join":
             return .testZoomJoin
+        case "/test/virtual-desktop":
+            var query: [String: String] = [:]
+            for item in queryItems { query[item.name] = item.value ?? "" }
+            return .testVirtualDesktop(query)
         case "/test/share-zoom":
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
             return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"))

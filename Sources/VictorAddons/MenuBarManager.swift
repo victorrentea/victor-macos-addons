@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 14, 21:38"
+    static let BUILD_TIME = "Oct 15, 13:31"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -31,6 +31,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var scrollReversalItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var virtualDesktopItem: NSMenuItem!
+    private(set) var virtualDesktopAutoItem: NSMenuItem!
     private(set) var claudeRemoteControlItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
@@ -601,6 +602,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         virtualDesktopItem.isEnabled = true
         virtualDesktopItem.state = VirtualDesktopSettings.isEnabled ? .on : .off
         virtualDesktopItem.toolTip = "An invisible screen with the Retina and you cut out bottom-right. Share that screen in Teams/Zoom. On the Retina you see only your faint 20% shadow; rest the pointer on it 3 s for a ← that moves you left."
+        virtualDesktopAutoItem = NSMenuItem(title: "🪞 Auto-start on Zoom/Teams", action: #selector(toggleVirtualDesktopAutoAction), keyEquivalent: "")
+        virtualDesktopAutoItem.target = self
+        virtualDesktopAutoItem.isEnabled = true
+        virtualDesktopAutoItem.state = VirtualDesktopSettings.autoStart ? .on : .off
+        virtualDesktopAutoItem.toolTip = "Switch 🪞 Virtual Desktop on by itself when Zoom or Teams starts. It still goes off when the last of them quits."
 
         // 🛰️ Claude RC in background — the `claude remote-control` server the
         // phone opens sessions against, kept alive in a detached tmux session.
@@ -737,6 +743,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         layoutZoomItem = addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
         refreshLayoutZoomItem()
         menu.addItem(virtualDesktopItem)
+        menu.addItem(virtualDesktopAutoItem)
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
@@ -1157,6 +1164,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// The tick follows `VirtualDesktopAutoSwitch` too, not only clicks.
     func setVirtualDesktopState(_ on: Bool) {
         virtualDesktopItem?.state = on ? .on : .off
+    }
+
+    @objc private func toggleVirtualDesktopAutoAction() {
+        VirtualDesktopSettings.autoStart.toggle()
+        virtualDesktopAutoItem.state = VirtualDesktopSettings.autoStart ? .on : .off
     }
 
     @objc private func toggleVirtualDesktopAction() {

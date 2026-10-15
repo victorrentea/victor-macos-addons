@@ -208,7 +208,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     // MARK: - Gesture
 
     /// One ⌥⇧+scroll event, already reversed (`ScrollReversal`). Main thread.
-    func scroll(delta: Double, continuous: Bool) {
+    func scroll(delta: Double, source: ShareZoomPolicy.Source) {
         let mouse = NSEvent.mouseLocation
         guard let under = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else { return }
         pinnedFocus = nil
@@ -218,7 +218,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             deactivate()
             target = keep
         }
-        target = ShareZoomPolicy.step(target, delta: delta, continuous: continuous)
+        target = ShareZoomPolicy.step(target, delta: delta, source: source)
         if target > 1, active == nil { activate(on: under) }
         // `follow` is what switches a finished zoom off, and it waits for the first
         // frame. A zoom scrolled back to 1× before any frame arrived would otherwise

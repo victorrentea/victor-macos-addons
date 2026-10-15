@@ -7,17 +7,31 @@ final class ShareZoomPolicyTests: XCTestCase {
 
     // MARK: - The dial
 
-    /// Negative (after `ScrollReversal`) = closer — flipped on 2026-10-15, Victor found
-    /// the wheel backwards; the trackpad was already this way.
-    func testNegativeWheelDeltaZoomsIn() {
-        XCTAssertGreaterThan(ShareZoomPolicy.step(1, delta: -1, continuous: false), 1)
-        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: 1, continuous: false), 2)
+    /// Positive (after `ScrollReversal`) = closer, for a notched wheel.
+    func testPositiveWheelDeltaZoomsIn() {
+        XCTAssertGreaterThan(ShareZoomPolicy.step(1, delta: 1, source: .wheel), 1)
+        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: -1, source: .wheel), 2)
+    }
+
+    /// Victor's Logi M650 under Options+: continuous, no phase, wheel-up positive
+    /// (measured 2026-10-15). Closer, and one notch per event however big the delta.
+    func testSmoothWheelUpZoomsInOneNotchPerEvent() {
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 205, source: .smoothWheel),
+                       ShareZoomPolicy.notchFactor, accuracy: 0.0001)
+        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: -13, source: .smoothWheel), 2)
+    }
+
+    func testAPhaselessContinuousScrollIsASmoothWheel() {
+        XCTAssertEqual(ShareZoomPolicy.Source.of(continuous: true, phase: 0, momentumPhase: 0), .smoothWheel)
+        XCTAssertEqual(ShareZoomPolicy.Source.of(continuous: true, phase: 2, momentumPhase: 0), .trackpad)
+        XCTAssertEqual(ShareZoomPolicy.Source.of(continuous: true, phase: 0, momentumPhase: 3), .trackpad)
+        XCTAssertEqual(ShareZoomPolicy.Source.of(continuous: false, phase: 0, momentumPhase: 0), .wheel)
     }
 
     /// Steps halved twice (in the log domain): four notches make the first build's one.
     func testFourNotchesMakeTheFirstBuildsOneNotchStep() {
         var f: CGFloat = 1
-        for _ in 0..<4 { f = ShareZoomPolicy.step(f, delta: -1, continuous: false) }
+        for _ in 0..<4 { f = ShareZoomPolicy.step(f, delta: 1, source: .wheel) }
         XCTAssertEqual(f, 1.15, accuracy: 0.0001)
     }
 
@@ -26,25 +40,25 @@ final class ShareZoomPolicyTests: XCTestCase {
     }
 
     func testOneFastSpinCountsForAtMostThreeNotches() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -10, continuous: false),
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 10, source: .wheel),
                        pow(ShareZoomPolicy.notchFactor, 3), accuracy: 0.0001)
     }
 
     func testTrackpadPixelsAccumulateIntoNotches() {
         // Fingers up = negative (natural scrolling) = closer, like ⌥+scroll.
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -12, continuous: true), ShareZoomPolicy.notchFactor, accuracy: 0.0001)
-        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: 12, continuous: true), 2)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -12, source: .trackpad), ShareZoomPolicy.notchFactor, accuracy: 0.0001)
+        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: 12, source: .trackpad), 2)
     }
 
     func testTheDialStopsAtOneAndAtTheCeiling() {
-        XCTAssertEqual(ShareZoomPolicy.step(1.05, delta: 3, continuous: false), 1)
-        XCTAssertEqual(ShareZoomPolicy.step(7.9, delta: -3, continuous: false), ShareZoomPolicy.maxFactor)
+        XCTAssertEqual(ShareZoomPolicy.step(1.05, delta: -3, source: .wheel), 1)
+        XCTAssertEqual(ShareZoomPolicy.step(7.9, delta: 3, source: .wheel), ShareZoomPolicy.maxFactor)
     }
 
     func testScrollingBackAsFarAsInLandsOnExactlyOne() {
         var f: CGFloat = 1
-        for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: -1, continuous: false) }
-        for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: 1, continuous: false) }
+        for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: 1, source: .wheel) }
+        for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: -1, source: .wheel) }
         XCTAssertEqual(f, 1)
     }
 

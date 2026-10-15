@@ -862,6 +862,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         virtualDesktop.onExclusionsChanged = { [weak self] in self?.shareZoom.refreshExclusions() }
         menuBarManager.onToggleVirtualDesktop = { [weak self] enabled in self?.virtualDesktop.setEnabled(enabled) }
         virtualDesktopAutoSwitch.onChange = { [weak self] on in
+            if on, !VirtualDesktopSettings.autoStart {
+                overlayInfo("🪞 VirtualDesktop: auto-start is off — left as it is")
+                return
+            }
             VirtualDesktopSettings.isEnabled = on
             self?.menuBarManager.setVirtualDesktopState(on)
             self?.virtualDesktop.setEnabled(on)
@@ -1329,6 +1333,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let factor else { return self.shareZoom.snapshotJSON() }
             let focus = (x != nil && y != nil) ? CGPoint(x: x!, y: y!) : nil
             return self.shareZoom.testSet(factor: CGFloat(factor), focus: focus)
+        }
+        // /test/virtual-desktop?on=&fps=&quality=&cam=&silhouette=&ci= — 🪞 live knobs
+        // and per-face timings since the last call; no query just reports.
+        tabletServer?.onTestVirtualDesktop = { [weak self] query in
+            self?.virtualDesktop.testTune(query) ?? "{\"error\":\"unavailable\"}"
         }
         // /test/glass-spotlight?x=&y=&w=&h= — 🔦 a box without the mouse
         // (global Cocoa points); ?off=1 takes it down; nothing just reports.

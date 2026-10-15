@@ -12,6 +12,17 @@ enum VirtualDesktopSettings {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
     }
+
+    static let autoStartKey = "VirtualDesktop.autoStart"
+
+    /// Whether Zoom/Teams starting switches it on (`VirtualDesktopAutoSwitch`). On by
+    /// default, as it has been since 2026-10-05; a checkbox since 2026-10-15, when its
+    /// cost made Victor want it only on purpose. The last meeting app quitting still
+    /// switches it off either way.
+    static var autoStart: Bool {
+        get { UserDefaults.standard.object(forKey: autoStartKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: autoStartKey) }
+    }
 }
 
 /// Turns 🪞 Virtual Desktop on when Zoom or Teams starts and off when the last of
@@ -153,6 +164,22 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     static func isVirtual(_ id: CGDirectDisplayID) -> Bool { CGDisplayVendorNumber(id) == vendorID }
 
     private static let fps: Int32 = 30
+
+    /// What `/test/virtual-desktop` can change live, to measure the cost of each part
+    /// without a restart (a restart recreates the screen and drops a call's share).
+    /// Read on the camera queue under `tuneLock`.
+    struct Tune {
+        var faceFPS: Double = Double(VirtualDesktop.fps)
+        var quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
+        var cameraWidth = 1280
+        var silhouette = true
+        var ciFormat8 = false
+    }
+    private let tuneLock = NSLock()
+    private var tune = Tune()
+    private var output: AVCaptureVideoDataOutput?
+    /// Per-face timings since the last report (camera queue, under `tuneLock`).
+    private var statFaces = 0, statSegMs = 0.0, statRenderMs = 0.0, statSince = CFAbsoluteTimeGetCurrent()
     // The **whole camera frame**, uncropped, 16:9 like the Elgato's 720p output, and
     // 35 % of the screen height — 10 % lower than the 4:3 cut before it (a third of
     // the width, 4:3, which itself replaced a quarter-wide portrait 3:4). Victor,
@@ -199,7 +226,13 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private var captureFailures = 0
     private let screenQueue = DispatchQueue(label: "VirtualDesktop.screen", qos: .userInteractive)
     private let cameraQueue = DispatchQueue(label: "VirtualDesktop.camera", qos: .userInteractive)
-    private lazy var ciContext = CIContext(mtlDevice: MTLCreateSystemDefaultDevice()!, options: [.cacheIntermediates: false])
+    private lazy var ciContext = Self.makeContext(format8: false)
+
+    private static func makeContext(format8: Bool) -> CIContext {
+        var options: [CIContextOption: Any] = [.cacheIntermediates: false]
+        if format8 { options[.workingFormat] = CIFormat.RGBA8 }
+        return CIContext(mtlDevice: MTLCreateSystemDefaultDevice()!, options: options)
+    }
     private let segmentation: VNGeneratePersonSegmentationRequest = {
         let request = VNGeneratePersonSegmentationRequest()
         request.qualityLevel = .balanced
@@ -581,6 +614,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                                 kCVPixelBufferWidthKey as String: 1280, kCVPixelBufferHeightKey as String: 720]
         output.setSampleBufferDelegate(self, queue: cameraQueue)
+        self.output = output
 
         let session = AVCaptureSession()
         session.beginConfiguration()
@@ -605,15 +639,19 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     }
 
     private func renderFace(_ sampleBuffer: CMSampleBuffer) {
+        tuneLock.lock(); let tune = self.tune; tuneLock.unlock()
         // The Elgato runs at 60 fps; segmenting every frame would double the cost for nothing.
         let now = sampleBuffer.presentationTimeStamp
-        guard CMTimeGetSeconds(now - lastFace) >= 0.95 / Double(Self.fps) else { return }
+        guard CMTimeGetSeconds(now - lastFace) >= 0.95 / tune.faceFPS else { return }
         lastFace = now
         let size = renderSize
         guard let camera = sampleBuffer.imageBuffer, size != .zero else { return }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        if segmentation.qualityLevel != tune.quality { segmentation.qualityLevel = tune.quality }
         let handler = VNImageRequestHandler(cvPixelBuffer: camera, options: [:])
         guard (try? handler.perform([segmentation])) != nil,
               let mask = segmentation.results?.first?.pixelBuffer else { return }
+        let t1 = CFAbsoluteTimeGetCurrent()
 
         // The whole frame (the aspect matches the camera's, so the crop is a no-op),
         // mirrored, scaled to the layer.
@@ -636,11 +674,15 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
         guard let out = nextFaceBuffer(size) else { return }
         ciContext.render(keyed, to: out, bounds: CGRect(origin: .zero, size: size), colorSpace: CGColorSpaceCreateDeviceRGB())
+        let t2 = CFAbsoluteTimeGetCurrent()
+        tuneLock.lock()
+        statFaces += 1; statSegMs += (t1 - t0) * 1000; statRenderMs += (t2 - t1) * 1000
+        tuneLock.unlock()
         guard let surface = CVPixelBufferGetIOSurface(out)?.takeUnretainedValue() else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.display != nil else { return }
             self.faceLayer.contents = surface
-            self.silhouetteMask.contents = surface
+            if tune.silhouette { self.silhouetteMask.contents = surface }
             self.shownFace = out
         }
     }
@@ -661,6 +703,46 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         var buffer: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
         return buffer
+    }
+
+    // MARK: - /test/virtual-desktop
+
+    /// Apply whichever knobs are given, then report. Main thread.
+    func testTune(_ q: [String: String]) -> String {
+        if let on = q["on"] { setEnabled(on == "1") }
+        tuneLock.lock()
+        var t = tune
+        if let v = q["fps"].flatMap(Double.init), v > 0 { t.faceFPS = v }
+        switch q["quality"] {
+        case "fast": t.quality = .fast
+        case "balanced": t.quality = .balanced
+        case "accurate": t.quality = .accurate
+        default: break
+        }
+        if let v = q["silhouette"] { t.silhouette = v == "1" }
+        if let v = q["ci"] { t.ciFormat8 = v == "8" }
+        if let v = q["cam"].flatMap(Int.init), v >= 320 { t.cameraWidth = v }
+        let formatChanged = t.ciFormat8 != tune.ciFormat8
+        let camChanged = t.cameraWidth != tune.cameraWidth
+        tune = t
+        let secs = CFAbsoluteTimeGetCurrent() - statSince
+        let faces = statFaces
+        let stats = faces == 0 ? "\"facesPerSec\":0" : String(format: "\"facesPerSec\":%.1f,\"segMs\":%.1f,\"renderMs\":%.1f",
+                                                                Double(faces) / secs, statSegMs / Double(faces), statRenderMs / Double(faces))
+        statFaces = 0; statSegMs = 0; statRenderMs = 0; statSince = CFAbsoluteTimeGetCurrent()
+        tuneLock.unlock()
+        if formatChanged { cameraQueue.async { self.ciContext = Self.makeContext(format8: t.ciFormat8) } }
+        if camChanged, let output {
+            let w = t.cameraWidth, h = t.cameraWidth * 9 / 16
+            cameraQueue.async {
+                output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                                        kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h]
+            }
+        }
+        silhouettePanel?.alphaValue = t.silhouette ? 0.2 : 0
+        if t.silhouette { silhouettePanel?.orderFrontRegardless() } else { silhouettePanel?.orderOut(nil) }
+        let quality = t.quality == .fast ? "fast" : t.quality == .accurate ? "accurate" : "balanced"
+        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\(stats)}"
     }
 
     // MARK: - Retina → IOSurface straight into a layer
