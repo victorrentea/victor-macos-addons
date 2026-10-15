@@ -1328,8 +1328,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // /test/share-zoom?factor=3&x=&y= — 🔎 ShareZoom without the wheel;
         // factor=1 turns it off, no factor just reports.
-        tabletServer?.onTestShareZoom = { [weak self] factor, x, y in
+        tabletServer?.onTestShareZoom = { [weak self] factor, x, y, fps in
             guard let self else { return "{\"error\":\"unavailable\"}" }
+            if let fps { self.shareZoom.testSet(fps: Int32(fps)) }
             guard let factor else { return self.shareZoom.snapshotJSON() }
             let focus = (x != nil && y != nil) ? CGPoint(x: x!, y: y!) : nil
             return self.shareZoom.testSet(factor: CGFloat(factor), focus: focus)

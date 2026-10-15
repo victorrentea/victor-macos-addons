@@ -125,7 +125,7 @@ case testTerminalFont
         /// 🎥 Layout Zoom: start a run (unless `run=0`) and return the last report.
         case testZoomLayout(run: Bool)
         /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
-        case testShareZoom(factor: Double?, x: Double?, y: Double?)
+        case testShareZoom(factor: Double?, x: Double?, y: Double?, fps: Double?)
         /// 🪞 `VirtualDesktop`: live knobs for measuring its cost (see `testTune`).
         case testVirtualDesktop([String: String])
         /// 🔦 `GlassSpotlight`: a box (global Cocoa points), or off.
@@ -352,7 +352,7 @@ case testTerminalFont
     /// on Zoom for seconds, far too long to hold the main thread for).
     var onTestZoomLayout: ((Bool) -> String)?
     /// 🔎 `ShareZoom` — factor (nil = just report), focus point in global Cocoa points.
-    var onTestShareZoom: ((Double?, Double?, Double?) -> String)?
+    var onTestShareZoom: ((Double?, Double?, Double?, Double?) -> String)?
     /// 🪞 `VirtualDesktop` — the query, as given.
     var onTestVirtualDesktop: (([String: String]) -> String)?
     /// 🔦 `GlassSpotlight` — box in global Cocoa points (nil = just report), or off.
@@ -647,9 +647,9 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestVirtualDesktop?(query) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestVirtualDesktop == nil { statusCode = 503 }
-            case .testShareZoom(let factor, let x, let y):
+            case .testShareZoom(let factor, let x, let y, let fps):
                 contentType = "application/json"
-                body = self.onTestShareZoom?(factor, x, y) ?? "{\"error\":\"unavailable\"}"
+                body = self.onTestShareZoom?(factor, x, y, fps) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestShareZoom == nil { statusCode = 503 }
             case .testGlassSpotlight(let rect, let off):
                 contentType = "application/json"
@@ -1038,7 +1038,7 @@ case testTerminalFont
             return .testVirtualDesktop(query)
         case "/test/share-zoom":
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
-            return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"))
+            return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"), fps: num("fps"))
         case "/test/glass-spotlight":
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
             let rect = num("x").flatMap { x in num("y").flatMap { y in num("w").flatMap { w in num("h").map { h in

@@ -146,6 +146,13 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var publishedAt: CFAbsoluteTime = 0
 
     private var framesShown = 0
+    /// Layer commits by `follow` since the zoom started — `/test/share-zoom` shows
+    /// whether the zoom rests when nothing moves.
+    private var commits = 0
+    private struct Written: Equatable { var rect: CGRect; var cursor: CGRect? }
+    private var lastWritten: Written?
+    /// Capture rate; `/test/share-zoom?fps=` changes it for the next stream.
+    private var captureFPS: Int32 = 60
     private var startedAt = CFAbsoluteTimeGetCurrent()
     private var lastStartupMs = 0
     private let frameQueue = DispatchQueue(label: "ShareZoom.frames", qos: .userInteractive)
@@ -227,6 +234,12 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     /// `/test/share-zoom`: set the factor directly, optionally pinning the focus point.
+    func testSet(fps: Int32) {
+        guard fps > 0, fps != captureFPS else { return }
+        captureFPS = fps
+        if active == nil { stopStream() }
+    }
+
     func testSet(factor: CGFloat, focus: CGPoint?) -> String {
         let point = focus ?? NSEvent.mouseLocation
         if factor <= 1 {
@@ -254,7 +267,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "contentsRect":[\(String(format: "%.4f,%.4f,%.4f,%.4f", rect.minX, rect.minY, rect.width, rect.height))],\
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"prepared":{\(prepared)},\
-        "startupMs":\(lastStartupMs)}
+        "startupMs":\(lastStartupMs),"commits":\(commits),"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
 
@@ -309,6 +322,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         visible = false
         framesShown = 0
         tickCount = 0
+        commits = 0
+        lastWritten = nil
         startedAt = CFAbsoluteTimeGetCurrent()
         lingerStop?.cancel()
         lingerStop = nil
@@ -391,7 +406,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let config = SCStreamConfiguration()
         config.width = Int(s.frame.width * s.scale)
         config.height = Int(s.frame.height * s.scale)
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        config.minimumFrameInterval = CMTime(value: 1, timescale: captureFPS)
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.showsCursor = false
         config.queueDepth = 5
@@ -488,6 +503,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                 guard let self else { return }
                 self.cursorReadInFlight = false
                 guard let cg, self.active === s else { return }
+                // A fresh CGImage every read: compare the pixels, or the 10 Hz read
+                // alone would recompose the Retina ten times a second.
+                if size == self.cursorSize, hot == self.hotSpot,
+                   let old = s.cursor.contents, CFGetTypeID(old as CFTypeRef) == CGImage.typeID,
+                   (old as! CGImage).dataProvider?.data == cg.dataProvider?.data { return }
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
                 s.cursor.contents = cg
@@ -524,9 +544,13 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         origin = ShareZoomPolicy.rezoom(origin: origin, from: previous, to: current, pointer: p, screenSize: size)
         origin = ShareZoomPolicy.pan(origin: origin, pointer: p, factor: current, screenSize: size)
 
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        s.image.contentsRect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
+        // Every layer write is a commit, and every commit makes WindowServer recompose
+        // the whole Retina — which the stream then films again (it excludes a window,
+        // so it renders a composite of its own). Written every tick, that was a
+        // 120 Hz loop that never rested even with the pointer and the picture still
+        // (the adversarial review of 2026-10-15). Only what changed is written now.
+        let rect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
+        var cursorFrame: CGRect?
         if inside {
             let drawnAt = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             publishCursor(CGPoint(x: s.frame.minX + drawnAt.x, y: s.frame.minY + drawnAt.y))
@@ -551,15 +575,25 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
             let b = cursorSize
-            s.cursor.frame = CGRect(x: at.x - hotSpot.x * current,
-                                    y: at.y - (b.height - hotSpot.y) * current,
-                                    width: b.width * current, height: b.height * current)
-            s.cursor.isHidden = false
+            cursorFrame = CGRect(x: at.x - hotSpot.x * current,
+                                 y: at.y - (b.height - hotSpot.y) * current,
+                                 width: b.width * current, height: b.height * current)
         } else {
             // On another display the real cursor is the one to follow.
             restoreCursor()
-            s.cursor.isHidden = true
         }
+        // Compared with what was last written, not read back from the layers: a
+        // CALayer's frame comes back from position/bounds and can differ by an ulp.
+        let written = Written(rect: rect, cursor: cursorFrame)
+        guard written != lastWritten else { return }
+        lastWritten = written
+        commits += 1
+        let cursorHidden = cursorFrame == nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        s.image.contentsRect = rect
+        if let cursorFrame { s.cursor.frame = cursorFrame }
+        s.cursor.isHidden = cursorHidden
         CATransaction.commit()
     }
 

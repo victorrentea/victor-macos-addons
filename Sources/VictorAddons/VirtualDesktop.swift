@@ -184,6 +184,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         var deskFPS: Int32 = 15
         /// Gaussian blur radius (camera pixels) on the upscaled mask; 0 = none.
         var smooth: Double = 3
+        /// Film the Retina minus the silhouette and its ← (true), or the whole display.
+        var exclude = true
         var maskSize = CGSize.zero
     }
     private let tuneLock = NSLock()
@@ -743,6 +745,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         if let v = q["cam"].flatMap(Int.init), v >= 320 { t.cameraWidth = v }
         if let v = q["desk"].flatMap(Int32.init), v > 0 { t.deskFPS = v }
         if let v = q["smooth"].flatMap(Double.init), v >= 0 { t.smooth = v }
+        if let v = q["exclude"] { t.exclude = v == "1" }
+        let excludeChanged = t.exclude != tune.exclude
         let deskChanged = t.deskFPS != tune.deskFPS
         let formatChanged = t.ciFormat8 != tune.ciFormat8
         let camChanged = t.cameraWidth != tune.cameraWidth
@@ -761,7 +765,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                                         kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h]
             }
         }
-        if deskChanged, let source = captureSource {
+        if deskChanged || excludeChanged, let source = captureSource {
             stream?.stopCapture { _ in }
             stream = nil
             startDesktopCapture(source: source.display, width: source.width, height: source.height)
@@ -769,7 +773,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         silhouettePanel?.alphaValue = t.silhouette ? 0.2 : 0
         if t.silhouette { silhouettePanel?.orderFrontRegardless() } else { silhouettePanel?.orderOut(nil) }
         let quality = t.quality == .fast ? "fast" : t.quality == .accurate ? "accurate" : "balanced"
-        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
+        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"exclude\":\(t.exclude),\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
     }
 
     // MARK: - Retina → IOSurface straight into a layer
@@ -796,7 +800,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                 }
                 // Exclude the silhouette and its ← only, not the whole app: 🔎 ShareZoom, the
                 // banners and the break overlay belong in the picture.
-                let silhouette = content.windows.filter { excluded.contains($0.windowID) }
+                self.tuneLock.lock(); let exclude = self.tune.exclude; self.tuneLock.unlock()
+                let silhouette = exclude ? content.windows.filter { excluded.contains($0.windowID) } : []
                 let config = SCStreamConfiguration()
                 config.width = width
                 config.height = height
