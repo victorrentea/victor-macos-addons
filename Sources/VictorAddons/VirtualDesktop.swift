@@ -170,18 +170,19 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     /// Read on the camera queue under `tuneLock`.
     ///
     /// The defaults are the measured ones (2026-10-15, `docs/displays-projector.md`):
-    /// `.balanced` takes 33 ms a face and could not even hold 30 fps (~24), so 15 —
-    /// what a Zoom screen share carries anyway — costs ~30 % of a core instead of 36 %.
+    /// `.balanced` takes 33 ms a face and never held 30 fps (~24), so 24 is asked for —
+    /// Victor's pick after a 60/30/15/10 side-by-side ("prefer thirty, or twenty-four";
+    /// 15 was visibly choppy) — and the desktop is mirrored at 30.
     /// `.fast` (13 ms, 19 %) was tried and **rejected**: even with its mask blurred it
     /// keyed the microphone in as "person" and let a patch of background through.
     struct Tune {
-        var faceFPS: Double = 15
+        var faceFPS: Double = 24
         var quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
         var cameraWidth = 1280
         var silhouette = true
         var ciFormat8 = false
         /// Frames per second of the Retina capture shown on the screen.
-        var deskFPS: Int32 = 15
+        var deskFPS: Int32 = 30
         /// Gaussian blur radius (camera pixels) on the upscaled mask; 0 = none.
         var smooth: Double = 0
         /// Film the Retina minus the silhouette and its ← (true), or the whole display.

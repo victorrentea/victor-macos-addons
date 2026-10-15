@@ -515,8 +515,8 @@ four rounds alternated with OFF:
   updates, not the 30 fps desktop capture, drive it (face 1 fps + desktop 30 ≈ off),
   but a repeat contradicted it. Unresolved: `top` is too noisy; WindowServer needs
   `sudo powermetrics` or Instruments.
-- Defaults: 15 faces/s **`.balanced`**, desktop 15 fps (a Zoom share carries ~15) —
-  ~30 % of a core. `.fast` σ 3 (19 %) was shipped for an hour and **reverted**: on the
+- Defaults: **24 faces/s `.balanced`, desktop 30 fps** — Victor's pick after watching
+  the same clip at 24/15/10 fps and motion at 60/30/15 side by side (15 was too choppy). `.fast` σ 3 (19 %) was shipped for an hour and **reverted**: on the
   full frame it keyed the microphone in as "person" and let a patch of background
   through by the hand; the first comparison had been cropped and missed both.
 - **Then the echo filter** (`EchoFilter`, see 🔎 ShareZoom above) on the Retina
