@@ -1193,7 +1193,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             BreakSummaryLauncher.launchNow(reason: "/test/break-summary")
         }
         tabletServer?.onTestResearchProof = {
-            ResearchProofLauncher.launchNow(reason: "/test/research-proof")
+            FactCheck.launchNow(reason: "/test/research-proof")
         }
         tabletServer?.onTestFeedbackReminder = { [weak self] in
             DispatchQueue.main.async { self?.feedbackFormReminder?.offer(reason: "/test/feedback-reminder") }
@@ -1713,13 +1713,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 menuBarManager?.flashScreenshotIcon()
             }
         }
-        // 🔬 The fact-check report lands on the Retina, in front, unasked: the
-        // run takes minutes, so by the time it is ready Victor is teaching
-        // again and would never go looking for a file. `.retina` is the same
-        // target the tablet's links use — the screen the room is watching.
-        ResearchProofLauncher.onReportReady = { [weak self] url in
-            self?.openUrlInChrome(url, target: .retina)
-        }
+        // 🔬 The fact-check reads the last 30 s of today's transcript from here
+        // and hands it to Walkie Talkie as a quick question.
+        FactCheck.transcriptionFolder = transcriptionFolder
         // Apply the current power state (start Whisper if on AC) and arm the
         // crash-recovery heartbeat. Single launch entry point.
         controller.start()

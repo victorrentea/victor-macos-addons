@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 15, 14:53"
+    static let BUILD_TIME = "Oct 15, 18:06"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -356,7 +356,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // want in one click. The window is in the title because 10 minutes is
         // the whole contract: it checks the topic being taught, not the
         // sentence that just ended.
-        addItem("🔬 Fact-check last 10 min", action: #selector(researchProofAction))
+        addItem("🔬 Fact-check last 30 s", action: #selector(researchProofAction))
 
         // 🎬 Live subtitles — the band across the bottom of the projector,
         // fed by ElevenLabs Scribe v2 Realtime **only while it is on**.
@@ -1987,7 +1987,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     }
 
     @objc private func researchProofAction() {
-        ResearchProofLauncher.launchNow(reason: "menu")
+        FactCheck.launchNow(reason: "menu")
     }
 
     @objc private func checkTaskInboxAction() {
