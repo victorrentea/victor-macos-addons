@@ -695,6 +695,14 @@ private let VK_I: CGKeyCode = 0x22
                     delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
                 }
                 if delta != 0 {
+                    // Which sign a "wheel up" arrives with depends on the device and on
+                    // Logi Options+ (smooth scrolling turns a notched wheel continuous),
+                    // so every ⌥⇧ event says what it carried.
+                    let phase = event.getIntegerValueField(.scrollWheelEventScrollPhase)
+                    let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
+                    let line1 = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)
+                    let line2 = event.getIntegerValueField(.scrollWheelEventDeltaAxis2)
+                    overlayInfo("🔎 ⌥⇧scroll continuous=\(continuous) phase=\(phase) momentum=\(momentum) line=(\(line1),\(line2)) delta=\(delta)")
                     DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, continuous) }
                 }
                 return nil

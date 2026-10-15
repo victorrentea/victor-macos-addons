@@ -170,6 +170,9 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   hop to main is ever in flight**: the frame queue parks the newest surface and
   main takes whichever is newest when it gets there — a hop per frame queued up
   behind a busy main thread and pinned surfaces the stream wanted back.
+- **A faded 🔍 (26 pt, 50 %) sits in the zoomed screen's top-right corner** while the
+  zoom is on, at constant size — over the picture, not in it — so the room and the
+  call can tell it is this zoom and not the system one (2026-10-15).
 - **At 1× nothing of it is on screen**: the panel is ordered out and the stream stops
   10 s later. A zoom scrolled back to 1× before its first frame arrived used to stay
   armed (only the per-frame tick switched it off); `scroll` now ends it itself. The panel is
