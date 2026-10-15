@@ -107,9 +107,10 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 `victor-effects`), but full-screen and live:
 
 - **⌥⇧+scroll** zooms in/out on the display under the pointer; back to 1× hides the
-  window. Positive delta *after* `ScrollReversal` = closer. The first build copied the
-  ⌘-scroll terminal font zoom's sign and came out backwards — that branch maps the
-  wheel to ⌘-/⌘= keystrokes, so its sign was never the one to copy. **One notch is
+  window. **Negative** delta *after* `ScrollReversal` = closer, wheel and trackpad
+  alike. The wheel's sign is calibrated by Victor's hand and has flipped twice: the
+  first build (copied from the ⌘-scroll font zoom) was "pe dos" on 2026-10-01, and
+  the fix for that was reversed again in real use on 2026-10-15. **One notch is
   ×⁴√1.15 ≈ 1.036** (1× → 2× in twenty notches): the first build's ×1.15 was "pași
   prea mari", halved in the log domain, and then halved again the same evening. The
   ceiling is **8×** (80 % of the first build's 10×). The factor eases at 120 Hz and the easing starts
@@ -126,7 +127,10 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   real pointer is no longer drawn under it, so the **hardware cursor is hidden**
   (`CGDisplayHideCursor` + the `SetsCursorInBackground` connection flag, the
   `CropSelectionOverlay` technique) and a **copy of the system cursor's current shape**
-  (`NSCursor.currentSystem`, refreshed at 20 Hz), magnified by the same factor, is
+  (`NSCursor.currentSystem`, refreshed at 10 Hz **off the main thread** — one read
+  is a synchronous WindowServer round trip, 8 ms median / 17 ms p90 with WindowServer
+  at ~95 % on 2026-10-15, and at 20 Hz on main it starved the easing: "laggy", "hung
+  halfway"), magnified by the same factor, is
   drawn where that desktop point appears on the glass. A click lands on the real
   pointer's point, which is exactly what the drawn cursor is over. The drawn cursor
   lives in the window, so the share carries it. When the pointer leaves the zoomed
@@ -162,7 +166,13 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   and place; filmed, it would show a second, magnified copy behind itself. The
   filters are rebuilt when the lingering stream stops, so a Victor Effects restart
   (new window id) is picked up by the next zoom. Frames are `IOSurface`s set
-  straight as the layer's `contents`; the zoom is just `contentsRect`. The panel is
+  straight as the layer's `contents`; the zoom is just `contentsRect`. **Only one
+  hop to main is ever in flight**: the frame queue parks the newest surface and
+  main takes whichever is newest when it gets there — a hop per frame queued up
+  behind a busy main thread and pinned surfaces the stream wanted back.
+- **At 1× nothing of it is on screen**: the panel is ordered out and the stream stops
+  10 s later. A zoom scrolled back to 1× before its first frame arrived used to stay
+  armed (only the per-frame tick switched it off); `scroll` now ends it itself. The panel is
   `.screenSaver` level, opaque, click-through, on every Space, invisible until it has
   a frame. It honours `closeViewSmoothImages` (off here → `.nearest`).
 - **Startup latency**, measured with `startupMs` in the test hook: the first build

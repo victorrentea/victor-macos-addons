@@ -31,17 +31,20 @@ enum ShareZoomPolicy {
 
     /// The next target factor after one scroll event.
     ///
-    /// `delta` is the event's vertical delta **after** `ScrollReversal`; **positive =
-    /// closer**. The first build copied the ⌘-scroll terminal font zoom's sign and
-    /// came out backwards (Victor, 2026-10-01: *"l-ai făcut pe dos"*) — that branch
-    /// maps the wheel to ⌘- / ⌘= keystrokes, not to "towards the screen", so its
-    /// sign was never the one to copy.
+    /// `delta` is the event's vertical delta **after** `ScrollReversal`; **negative =
+    /// closer**, for the wheel and the trackpad alike.
     ///
-    /// A **trackpad** delta counts the other way. `ScrollReversal` leaves continuous
-    /// scrolls alone, so they arrive in natural-scrolling sign: two fingers up is
-    /// negative. The system magnifier (⌥+scroll) zooms in on fingers up; using the
-    /// wheel's sign made ⌥⇧ do the opposite (Victor, 2026-10-07: *"inverse ca
-    /// accessibility"*).
+    /// The wheel has been flipped twice. The first build copied the ⌘-scroll
+    /// terminal font zoom's sign and Victor found it backwards (2026-10-01, *"l-ai
+    /// făcut pe dos"*), so it became positive = closer; two weeks of real use later
+    /// that was backwards too (2026-10-15, *"the zoom is reversed"*, on the wheel
+    /// only), so it is negative = closer again. The calibration is his hand, not a
+    /// rule — flip it here if it ever feels wrong again.
+    ///
+    /// A **trackpad** delta: `ScrollReversal` leaves continuous scrolls alone, so
+    /// they arrive in natural-scrolling sign: two fingers up is negative. The system
+    /// magnifier (⌥+scroll) zooms in on fingers up, and so does this (Victor,
+    /// 2026-10-07: *"inverse ca accessibility"*).
     static func step(_ factor: CGFloat, delta: Double, continuous: Bool) -> CGFloat {
         guard delta != 0 else { return factor }
         let notches: CGFloat
@@ -49,7 +52,7 @@ enum ShareZoomPolicy {
             notches = -CGFloat(delta) / pixelsPerNotch
         } else {
             let n = min(abs(CGFloat(delta)), maxNotchesPerEvent)
-            notches = delta > 0 ? n : -n
+            notches = delta < 0 ? n : -n
         }
         let next = factor * pow(notchFactor, notches)
         // Ten notches up and ten down multiply out to 1.0000001, not 1 — and a

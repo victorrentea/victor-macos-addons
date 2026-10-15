@@ -124,6 +124,21 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var lastStartupMs = 0
     private let frameQueue = DispatchQueue(label: "ShareZoom.frames", qos: .userInteractive)
 
+    /// The newest frame not yet on the layer, handed from `frameQueue` to main. One
+    /// hop to main at a time, whatever the frame rate: a hop per frame queued 60
+    /// closures a second behind whatever main was doing, each pinning an IOSurface
+    /// the stream wanted back — the picture fell behind the pointer (2026-10-15).
+    private let pendingLock = NSLock()
+    private var pendingSurface: IOSurface?
+
+    /// `NSCursor.currentSystem` is a synchronous WindowServer round trip: **8 ms
+    /// median, 17 ms p90** measured on 2026-10-15 with WindowServer at ~95 % (four
+    /// screens, Zoom sharing, 🪞 Virtual Desktop). Read on main 20×/s it ate a fifth
+    /// of the main thread and stalled the 120 Hz easing — "laggy", "hung halfway".
+    /// Read here instead, one at a time.
+    private let cursorQueue = DispatchQueue(label: "ShareZoom.cursor", qos: .userInitiated)
+    private var cursorReadInFlight = false
+
     var isActive: Bool { active != nil }
 
     /// Windows another feature puts **above** this zoom, which the zoom must not film
@@ -179,6 +194,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         target = ShareZoomPolicy.step(target, delta: delta, continuous: continuous)
         if target > 1, active == nil { activate(on: under) }
+        // `follow` is what switches a finished zoom off, and it waits for the first
+        // frame. A zoom scrolled back to 1× before any frame arrived would otherwise
+        // stay armed — an invisible panel and a running stream nobody can end.
+        if target <= 1, active != nil, !visible { deactivate() }
     }
 
     /// `/test/share-zoom`: set the factor directly, optionally pinning the focus point.
@@ -430,13 +449,27 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private static func armBackgroundCursorHiding() { _ = backgroundCursorHidingArmed }
 
     /// Copy the system cursor's current shape (arrow, I-beam, hand…) into the layer
-    /// and remember its hot spot.
+    /// and remember its hot spot. Read off main (see `cursorQueue`), applied on main.
     private func refreshCursorImage(_ s: Stage) {
-        guard let sys = NSCursor.currentSystem,
-              let cg = sys.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        s.cursor.contents = cg
-        cursorSize = sys.image.size
-        hotSpot = sys.hotSpot
+        guard !cursorReadInFlight else { return }
+        cursorReadInFlight = true
+        cursorQueue.async { [weak self] in
+            let sys = NSCursor.currentSystem
+            let cg = sys?.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            let size = sys?.image.size ?? .zero
+            let hot = sys?.hotSpot ?? .zero
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.cursorReadInFlight = false
+                guard let cg, self.active === s else { return }
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                s.cursor.contents = cg
+                CATransaction.commit()
+                self.cursorSize = size
+                self.hotSpot = hot
+            }
+        }
     }
 
     // MARK: - Follow the pointer
@@ -488,7 +521,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                 reassertUntil = now + 2
             }
             if now < reassertUntil, tickCount % 30 == 0 { hideCursor(again: true) }
-            if tickCount % 6 == 1 { refreshCursorImage(s) }
+            if tickCount % 12 == 1 { refreshCursorImage(s) }
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
             let b = cursorSize
@@ -550,8 +583,18 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
               SCFrameStatus(rawValue: raw) == .complete,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               let surface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
+        pendingLock.lock()
+        let hopQueued = pendingSurface != nil
+        pendingSurface = surface
+        pendingLock.unlock()
+        guard !hopQueued else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.stream === stream, let s = self.streamStage else { return }
+            guard let self else { return }
+            self.pendingLock.lock()
+            let latest = self.pendingSurface
+            self.pendingSurface = nil
+            self.pendingLock.unlock()
+            guard let surface = latest, self.stream === stream, let s = self.streamStage else { return }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             s.image.contents = surface

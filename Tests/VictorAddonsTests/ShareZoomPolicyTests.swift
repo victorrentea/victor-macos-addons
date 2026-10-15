@@ -7,16 +7,17 @@ final class ShareZoomPolicyTests: XCTestCase {
 
     // MARK: - The dial
 
-    /// Positive (after `ScrollReversal`) = closer. The first build had it backwards.
-    func testPositiveDeltaZoomsIn() {
-        XCTAssertGreaterThan(ShareZoomPolicy.step(1, delta: 1, continuous: false), 1)
-        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: -1, continuous: false), 2)
+    /// Negative (after `ScrollReversal`) = closer — flipped on 2026-10-15, Victor found
+    /// the wheel backwards; the trackpad was already this way.
+    func testNegativeWheelDeltaZoomsIn() {
+        XCTAssertGreaterThan(ShareZoomPolicy.step(1, delta: -1, continuous: false), 1)
+        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: 1, continuous: false), 2)
     }
 
     /// Steps halved twice (in the log domain): four notches make the first build's one.
     func testFourNotchesMakeTheFirstBuildsOneNotchStep() {
         var f: CGFloat = 1
-        for _ in 0..<4 { f = ShareZoomPolicy.step(f, delta: 1, continuous: false) }
+        for _ in 0..<4 { f = ShareZoomPolicy.step(f, delta: -1, continuous: false) }
         XCTAssertEqual(f, 1.15, accuracy: 0.0001)
     }
 
@@ -25,7 +26,7 @@ final class ShareZoomPolicyTests: XCTestCase {
     }
 
     func testOneFastSpinCountsForAtMostThreeNotches() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 10, continuous: false),
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: -10, continuous: false),
                        pow(ShareZoomPolicy.notchFactor, 3), accuracy: 0.0001)
     }
 
@@ -36,14 +37,14 @@ final class ShareZoomPolicyTests: XCTestCase {
     }
 
     func testTheDialStopsAtOneAndAtTheCeiling() {
-        XCTAssertEqual(ShareZoomPolicy.step(1.05, delta: -3, continuous: false), 1)
-        XCTAssertEqual(ShareZoomPolicy.step(7.9, delta: 3, continuous: false), ShareZoomPolicy.maxFactor)
+        XCTAssertEqual(ShareZoomPolicy.step(1.05, delta: 3, continuous: false), 1)
+        XCTAssertEqual(ShareZoomPolicy.step(7.9, delta: -3, continuous: false), ShareZoomPolicy.maxFactor)
     }
 
     func testScrollingBackAsFarAsInLandsOnExactlyOne() {
         var f: CGFloat = 1
-        for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: 1, continuous: false) }
         for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: -1, continuous: false) }
+        for _ in 0..<20 { f = ShareZoomPolicy.step(f, delta: 1, continuous: false) }
         XCTAssertEqual(f, 1)
     }
 
