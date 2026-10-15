@@ -40,6 +40,10 @@ enum ReminderMail {
     /// either.
     static let subjectSnippetLimit = 60
 
+    /// The banner repeats the subject in a much larger font across the bottom
+    /// of the screen, so it gets a shorter cut of the same line.
+    static let bannerSnippetLimit = 40
+
     /// The body is a note to self, not a document. Well past anything a
     /// clipboard reminder carries, and far under AgentMail's 6 MB request cap
     /// so the text can never be what makes a send fail.
@@ -189,14 +193,14 @@ enum ReminderMail {
     // MARK: The mail
 
     /// `Reminder`, plus the clipboard's first real line when there is one.
-    static func subject(text: String?) -> String {
+    static func subject(text: String?, limit: Int = subjectSnippetLimit) -> String {
         guard let line = text?
             .components(separatedBy: .newlines)
             .map({ $0.trimmingCharacters(in: .whitespaces) })
             .first(where: { !$0.isEmpty }), !line.isEmpty else { return subjectPrefix }
 
-        let snippet = line.count > subjectSnippetLimit
-            ? String(line.prefix(subjectSnippetLimit)) + "…"
+        let snippet = line.count > limit
+            ? String(line.prefix(limit)) + "…"
             : line
         return "\(subjectPrefix): \(snippet)"
     }
@@ -256,13 +260,13 @@ enum ReminderMail {
         return payload
     }
 
-    /// One line for the banner, saying what actually left the Mac.
+    /// One line for the banner, saying what actually left the Mac: the start
+    /// of the subject that was mailed, so a glance confirms it was the right
+    /// clipboard — "Reminder trimis" alone could have been anything.
     static func confirmation(for clip: Clipping) -> String {
-        switch (clip.image != nil, clip.text != nil) {
-        case (true, true):  return "📤 Reminder trimis (imagine + text)"
-        case (true, false): return "📤 Reminder trimis (imagine)"
-        default:            return "📤 Reminder trimis"
-        }
+        let subject = subject(text: clip.text, limit: bannerSnippetLimit)
+        guard clip.image != nil else { return "📤 \(subject)" }
+        return subject == subjectPrefix ? "📤 \(subjectPrefix): (imagine)" : "📤 \(subject) + imagine"
     }
 }
 

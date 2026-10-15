@@ -241,11 +241,14 @@ final class ReminderMailTests: XCTestCase {
         let image = ReminderMail.Clipping.Image(
             data: Data([1]), filename: "a.png", contentType: "image/png")
         XCTAssertEqual(ReminderMail.confirmation(for: .init(text: "x", image: image)),
-                       "📤 Reminder trimis (imagine + text)")
+                       "📤 Reminder: x + imagine")
         XCTAssertEqual(ReminderMail.confirmation(for: .init(text: nil, image: image)),
-                       "📤 Reminder trimis (imagine)")
-        XCTAssertEqual(ReminderMail.confirmation(for: .init(text: "x", image: nil)),
-                       "📤 Reminder trimis")
+                       "📤 Reminder: (imagine)")
+        XCTAssertEqual(ReminderMail.confirmation(for: .init(text: "buy milk\nand eggs", image: nil)),
+                       "📤 Reminder: buy milk")
+        let long = String(repeating: "z", count: 100)
+        XCTAssertEqual(ReminderMail.confirmation(for: .init(text: long, image: nil)),
+                       "📤 Reminder: " + String(repeating: "z", count: ReminderMail.bannerSnippetLimit) + "…")
     }
 
     func testAnEmptyClipboardFailsBeforeAnyRequestIsMade() {
