@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 15, 14:51"
+    static let BUILD_TIME = "Oct 15, 14:53"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -587,7 +587,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // over the content, the Retina, Share pressed. In the menu at all because
         // it *acts on its own*, and a row that acts on its own needs a visible way
         // to be told to stop. Default on.
-        zoomSharePrepItem = NSMenuItem(title: "🔊 Auto Share Faceover", action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
+        zoomSharePrepItem = NSMenuItem(title: "Auto Share Faceover", action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
+        // Its icon is what it shares (Victor, 2026-10-15): the screen, with his face
+        // framed in the bottom-right corner.
+        zoomSharePrepItem.image = Self.faceoverIcon
         zoomSharePrepItem.target = self
         zoomSharePrepItem.isEnabled = true
         zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
@@ -1248,6 +1251,34 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         asusLeftItem.isHidden = state != .at(.right)
         asusRightItem.isHidden = state != .at(.left)
     }
+
+    /// A screen with a framed head-and-shoulders in its bottom-right corner — the
+    /// "As background" share 🔊 Auto Share Faceover sets up. Template image.
+    static let faceoverIcon: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 14), flipped: false) { rect in
+            NSColor.black.setStroke()
+            NSColor.black.setFill()
+            let screen = rect.insetBy(dx: 1, dy: 1.5)
+            let outline = NSBezierPath(roundedRect: screen, xRadius: 1.5, yRadius: 1.5)
+            outline.lineWidth = 1.2
+            outline.stroke()
+            // The cut-out's frame, flush with the bottom-right corner.
+            let face = NSRect(x: screen.maxX - 8, y: screen.minY, width: 8, height: 6.5)
+            let frame = NSBezierPath(rect: face)
+            frame.lineWidth = 1
+            frame.stroke()
+            // Head and shoulders inside it.
+            NSBezierPath(ovalIn: NSRect(x: face.midX - 1.4, y: face.minY + 2.6, width: 2.8, height: 2.8)).fill()
+            let shoulders = NSBezierPath()
+            shoulders.appendArc(withCenter: NSPoint(x: face.midX, y: face.minY), radius: 2.6,
+                                startAngle: 0, endAngle: 180)
+            shoulders.close()
+            shoulders.fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
 
     /// The Ethernet symbol, tinted with the link's state (`WiredLinkPolicy.tint`).
     static func wiredIcon(_ state: WiredLinkState) -> NSImage? {

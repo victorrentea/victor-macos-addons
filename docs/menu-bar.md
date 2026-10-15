@@ -67,20 +67,20 @@ A checkbox row at the **bottom of the 💬 Transcribing submenu**, under a separ
 
 ## 🔄 Reverse Mouse Wheel
 
-A checkbox in the **👩🏻‍💻 Extra** submenu and **one of only two rows in the whole menu whose default is on** — the other is 🔊 Auto Share Faceover, below. It breaks *the menu is not a second cheat-sheet* on the 🔴 raw-audio row's terms rather than despite them: there is no key to teach — nothing is bound — and no other place in the app where the state appears. When a scroll goes the wrong way the first question is "is this app doing that?", and this row is the only thing that can answer it.
+A checkbox in the **👩🏻‍💻 Extra** submenu and **one of only two rows in the whole menu whose default is on** — the other is Auto Share Faceover, below. It breaks *the menu is not a second cheat-sheet* on the 🔴 raw-audio row's terms rather than despite them: there is no key to teach — nothing is bound — and no other place in the app where the state appears. When a scroll goes the wrong way the first question is "is this app doing that?", and this row is the only thing that can answer it.
 
 The default is the point, and it is the one thing that could have shipped wrong silently. The row replaces **Scroll Reverser**, a utility that was *already running* when it was uninstalled (2026-09-07), so a first launch with nothing stored has to reproduce the machine as it was — and `UserDefaults.bool(forKey:)` answers **false** for a key nobody has written, which is exactly how a replacement like this ends up installed in the off position with no error anywhere. `ScrollReversalSettings.isEnabled` is therefore `object(forKey:) as? Bool ?? true`, and there is a test that removes the key and asserts on it.
 
 **Nothing is notified when it is clicked**, unlike every other toggle here. The event tap reads `ScrollReversalSettings` itself, on the scroll event it is already holding, so there is no cached mirror and no window in which the tick and the wheel disagree — the failure mode a "push the new value to the component" toggle has by construction. It costs a `UserDefaults` lookup per scroll event, measured at 630 ns (200k reads, `-O`) against a tap whose watchdog is measured in seconds. The mechanism, the trackpad exclusion and why the reversal sits *ahead* of the Cmd+scroll font zoom are in [hotkeys-launchers.md](hotkeys-launchers.md).
 
-## 🔊 Auto Share Faceover (was "Zoom Share Prep")
+## Auto Share Faceover (was "🔊 Zoom Share Prep")
 
 A checkbox, default **on** — the second and last default-on row. **Top level since 2026-10-15** (it lived in 👩🏻‍💻 Extra under 🔄), renamed after what it does — share, with Victor's face over the content — in the screens-and-meetings section Victor laid out that day, under a separator:
 
 ```
 🖥️ Arrange Monitors        (+ the ASUS row when it applies)
 ▥  Layout Zoom             only while Zoom runs; the icon is the layout it makes, drawn
-🔊 Auto Share Faceover
+⛶  Auto Share Faceover     drawn icon: a screen with a framed face bottom-right
 🪞 Virtual Desktop
 🪞 Auto-start on Zoom/Teams
 ``` It admits the same *the menu is not a second cheat-sheet* exemption as its neighbour (no key to teach, no other place the state shows) but earns it for a different reason: **this row acts on its own**. `ZoomSharePrep` reaches into Zoom's share picker the moment it opens and presses things. Anything that presses things unasked needs a visible way to be told to stop, and the ⌥ escape hatch is not that — it only covers the openings you remember to hold it for, and it cannot help at all when something *other than Victor's hand* is opening the picker.
