@@ -80,7 +80,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             cursor.magnificationFilter = .linear
             cursor.actions = noAnimation
             cursor.isHidden = true
-            let side: CGFloat = 26, margin: CGFloat = 10
+            let side: CGFloat = 104, margin: CGFloat = 16  // 26 pt was too small to notice (Victor, 2026-10-15)
             badge.frame = CGRect(x: screen.frame.width - side - margin, y: screen.frame.height - side - margin,
                                  width: side, height: side)
             badge.contents = Self.emojiImage("🔍", side: side, scale: screen.backingScaleFactor)

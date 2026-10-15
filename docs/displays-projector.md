@@ -180,7 +180,7 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   hop to main is ever in flight**: the frame queue parks the newest surface and
   main takes whichever is newest when it gets there — a hop per frame queued up
   behind a busy main thread and pinned surfaces the stream wanted back.
-- **A faded 🔍 (26 pt, 50 %) sits in the zoomed screen's top-right corner** while the
+- **A faded 🔍 (104 pt — 26 was too small to notice — 50 %) sits in the zoomed screen's top-right corner** while the
   zoom is on, at constant size — over the picture, not in it — so the room and the
   call can tell it is this zoom and not the system one (2026-10-15).
 - **It must not feed itself** (2026-10-15, found by an adversarial review, then
