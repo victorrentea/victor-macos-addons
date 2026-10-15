@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 15, 14:49"
+    static let BUILD_TIME = "Oct 15, 14:51"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -652,6 +652,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
                                    action: #selector(openNetworkSettingsAction), keyEquivalent: "")
         wiredLinkItem.target = self
         wiredLinkItem.isEnabled = true
+        wiredLinkItem.image = Self.wiredIcon(WiredLink.current())
         wiredLinkItem.toolTip = "Is the Ethernet cable (dongle or dock) giving this Mac a network? Click for Network settings."
 
         // Dark Mode (⌘⌃⌥D) — a checkbox like every other row in here
@@ -886,7 +887,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu.addItem(portItem)
 
         darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
-        wiredLinkItem.title = WiredLinkPolicy.title(WiredLink.current())
+        let wired = WiredLink.current()
+        wiredLinkItem.title = WiredLinkPolicy.title(wired)
+        wiredLinkItem.image = Self.wiredIcon(wired)
 
         updateTranscribeTitle()
         updateTailItem()
@@ -1244,6 +1247,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let state = asusState?() ?? .absent
         asusLeftItem.isHidden = state != .at(.right)
         asusRightItem.isHidden = state != .at(.left)
+    }
+
+    /// The Ethernet symbol, tinted with the link's state (`WiredLinkPolicy.tint`).
+    static func wiredIcon(_ state: WiredLinkState) -> NSImage? {
+        let color: NSColor
+        switch WiredLinkPolicy.tint(state) {
+        case .green:  color = .systemGreen
+        case .yellow: color = .systemYellow
+        case .gray:   color = .systemGray
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        return NSImage(systemSymbolName: "network", accessibilityDescription: "Wired")?
+            .withSymbolConfiguration(config)
     }
 
     /// ▥ — what 🎥 Layout Zoom does to the monitor above the Retina, as a template

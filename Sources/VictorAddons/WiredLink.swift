@@ -57,11 +57,26 @@ enum WiredLinkPolicy {
     /// used to stand in front of it, but it is text, twice an emoji's width,
     /// and pushed this row out of the column (2026-10-15). The IP went too —
     /// Victor never needed it, only whether the cable works.
+    ///
+    /// Since 2026-10-15 the dot is no longer in the text: the row's icon is the
+    /// Ethernet network symbol (SF Symbol `network`, Victor's pick from an image
+    /// search — the system's own, so no licence to carry), tinted with the
+    /// colour the dot had (`tint`).
     static func title(_ state: WiredLinkState) -> String {
         switch state {
-        case .connected:         return "🟢 Wired: connected"
-        case .noAddress:         return "🟡 Wired: cable in, no IP"
-        case .disconnected:      return "⚪️ Wired: not connected"
+        case .connected:         return "Wired: connected"
+        case .noAddress:         return "Wired: cable in, no IP"
+        case .disconnected:      return "Wired: not connected"
+        }
+    }
+
+    enum Tint { case green, yellow, gray }
+
+    static func tint(_ state: WiredLinkState) -> Tint {
+        switch state {
+        case .connected:    return .green
+        case .noAddress:    return .yellow
+        case .disconnected: return .gray
         }
     }
 }
