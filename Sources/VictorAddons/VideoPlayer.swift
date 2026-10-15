@@ -358,7 +358,8 @@ final class VideoWindow: NSWindow {
         playerLayer = AVPlayerLayer(player: player)
         // 1/15 of the screen: a line is ~8% of its height (the broadcast
         // subtitle size), read off a projector from the back of a room.
-        captionFont = .systemFont(ofSize: max(36, screenFrame.height / 15), weight: .heavy)
+        // Regular, not heavy: heavy plus the outline read as shouting (2026-10-15).
+        captionFont = .systemFont(ofSize: max(36, screenFrame.height / 15), weight: .regular)
         super.init(contentRect: screenFrame, styleMask: [.borderless], backing: .buffered, defer: false)
         // Above a full-screen app and the PiP magnifier lens, on every Space.
         level = .screenSaver
@@ -423,7 +424,7 @@ final class VideoWindow: NSWindow {
             .font: captionFont,
             .foregroundColor: NSColor.black,
             .strokeColor: NSColor.black,
-            .strokeWidth: 22,
+            .strokeWidth: 12,
             .shadow: shadow,
             .paragraphStyle: paragraph,
         ])
