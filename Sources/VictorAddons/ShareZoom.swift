@@ -162,6 +162,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// closures a second behind whatever main was doing, each pinning an IOSurface
     /// the stream wanted back — the picture fell behind the pointer (2026-10-15).
     private let pendingLock = NSLock()
+    /// Frame-queue only.
+    private var echo = EchoFilter()
     private var pendingSurface: IOSurface?
 
     /// `NSCursor.currentSystem` is a synchronous WindowServer round trip: **8 ms
@@ -253,6 +255,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         return snapshotJSON()
     }
 
+    private func echoJSON() -> String {
+        let counts = frameQueue.sync { (echo.shown, echo.skipped) }
+        return "\"echo\":{\"shown\":\(counts.0),\"skipped\":\(counts.1)}"
+    }
+
     func snapshotJSON() -> String {
         let frame = active?.frame ?? .zero
         let rect = active?.image.contentsRect ?? .zero
@@ -267,7 +274,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "contentsRect":[\(String(format: "%.4f,%.4f,%.4f,%.4f", rect.minX, rect.minY, rect.width, rect.height))],\
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"prepared":{\(prepared)},\
-        "startupMs":\(lastStartupMs),"commits":\(commits),"ticks":\(tickCount),"fps":\(captureFPS)}
+        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
 
@@ -420,6 +427,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         self.stream = stream
         streamStage = s
+        frameQueue.async { self.echo.reset() }
         stream.startCapture { [weak self] error in
             guard let error else { return }
             DispatchQueue.main.async {
@@ -643,6 +651,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
               SCFrameStatus(rawValue: raw) == .complete,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               let surface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
+        // Our own repaint damages the display we film: an unchanged frame is skipped,
+        // or showing it would summon the next one (`FrameSignature`).
+        guard echo.shouldShow(surface) else { return }
         pendingLock.lock()
         let hopQueued = pendingSurface != nil
         pendingSurface = surface
