@@ -168,12 +168,23 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     /// What `/test/virtual-desktop` can change live, to measure the cost of each part
     /// without a restart (a restart recreates the screen and drops a call's share).
     /// Read on the camera queue under `tuneLock`.
+    ///
+    /// The defaults are the measured ones (2026-10-15, `docs/displays-projector.md`):
+    /// `.balanced` took 33 ms a face and could not even hold its 30 fps (~24); `.fast`
+    /// takes 13 ms, and its blocky 256×192 mask is hidden by a σ 3 blur on the GPU
+    /// (σ 6 leaves a halo). 15 faces and 15 desktop frames a second — what a Zoom
+    /// screen share carries anyway — halve the process (36 % → 19 % of a core).
     struct Tune {
-        var faceFPS: Double = Double(VirtualDesktop.fps)
-        var quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
+        var faceFPS: Double = 15
+        var quality: VNGeneratePersonSegmentationRequest.QualityLevel = .fast
         var cameraWidth = 1280
         var silhouette = true
         var ciFormat8 = false
+        /// Frames per second of the Retina capture shown on the screen.
+        var deskFPS: Int32 = 15
+        /// Gaussian blur radius (camera pixels) on the upscaled mask; 0 = none.
+        var smooth: Double = 3
+        var maskSize = CGSize.zero
     }
     private let tuneLock = NSLock()
     private var tune = Tune()
@@ -235,7 +246,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     }
     private let segmentation: VNGeneratePersonSegmentationRequest = {
         let request = VNGeneratePersonSegmentationRequest()
-        request.qualityLevel = .balanced
+        request.qualityLevel = .fast
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
         return request
     }()
@@ -665,8 +676,15 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
             .concatenating(CGAffineTransform(translationX: size.width, y: 0))
 
         var maskImage = CIImage(cvPixelBuffer: mask)
+        let maskExtent = maskImage.extent.size
+        if tune.smooth > 0 { maskImage = maskImage.samplingLinear() }
         maskImage = maskImage.transformed(by: CGAffineTransform(scaleX: full.width / maskImage.extent.width,
                                                                 y: full.height / maskImage.extent.height))
+        if tune.smooth > 0 {
+            maskImage = maskImage.clampedToExtent()
+                .applyingGaussianBlur(sigma: tune.smooth)
+                .cropped(to: full)
+        }
         let keyed = image.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: CIImage.empty(),
             kCIInputMaskImageKey: maskImage,
@@ -677,6 +695,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         let t2 = CFAbsoluteTimeGetCurrent()
         tuneLock.lock()
         statFaces += 1; statSegMs += (t1 - t0) * 1000; statRenderMs += (t2 - t1) * 1000
+        self.tune.maskSize = maskExtent
         tuneLock.unlock()
         guard let surface = CVPixelBufferGetIOSurface(out)?.takeUnretainedValue() else { return }
         DispatchQueue.main.async { [weak self] in
@@ -722,6 +741,9 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         if let v = q["silhouette"] { t.silhouette = v == "1" }
         if let v = q["ci"] { t.ciFormat8 = v == "8" }
         if let v = q["cam"].flatMap(Int.init), v >= 320 { t.cameraWidth = v }
+        if let v = q["desk"].flatMap(Int32.init), v > 0 { t.deskFPS = v }
+        if let v = q["smooth"].flatMap(Double.init), v >= 0 { t.smooth = v }
+        let deskChanged = t.deskFPS != tune.deskFPS
         let formatChanged = t.ciFormat8 != tune.ciFormat8
         let camChanged = t.cameraWidth != tune.cameraWidth
         tune = t
@@ -739,10 +761,15 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                                         kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h]
             }
         }
+        if deskChanged, let source = captureSource {
+            stream?.stopCapture { _ in }
+            stream = nil
+            startDesktopCapture(source: source.display, width: source.width, height: source.height)
+        }
         silhouettePanel?.alphaValue = t.silhouette ? 0.2 : 0
         if t.silhouette { silhouettePanel?.orderFrontRegardless() } else { silhouettePanel?.orderOut(nil) }
         let quality = t.quality == .fast ? "fast" : t.quality == .accurate ? "accurate" : "balanced"
-        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\(stats)}"
+        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
     }
 
     // MARK: - Retina → IOSurface straight into a layer
@@ -773,7 +800,8 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                 let config = SCStreamConfiguration()
                 config.width = width
                 config.height = height
-                config.minimumFrameInterval = CMTime(value: 1, timescale: Self.fps)
+                self.tuneLock.lock(); let deskFPS = self.tune.deskFPS; self.tuneLock.unlock()
+                config.minimumFrameInterval = CMTime(value: 1, timescale: deskFPS)
                 config.pixelFormat = kCVPixelFormatType_32BGRA
                 config.showsCursor = true
                 config.queueDepth = 4

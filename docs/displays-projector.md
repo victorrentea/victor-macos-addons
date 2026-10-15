@@ -107,10 +107,15 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 `victor-effects`), but full-screen and live:
 
 - **⌥⇧+scroll** zooms in/out on the display under the pointer; back to 1× hides the
-  window. **Negative** delta *after* `ScrollReversal` = closer, wheel and trackpad
-  alike. The wheel's sign is calibrated by Victor's hand and has flipped twice: the
-  first build (copied from the ⌘-scroll font zoom) was "pe dos" on 2026-10-01, and
-  the fix for that was reversed again in real use on 2026-10-15. **One notch is
+  window. **Same direction as ⌥+scroll**: wheel up / fingers up = closer
+  (`ShareZoomPolicy.Source`). Three sources, told apart by the event:
+  a notched wheel (lines; positive after `ScrollReversal` = closer), a **smooth
+  wheel** — Victor's Logi M650 under Logi Options+ scrolls `continuous=1` with **no
+  gesture phase**, positive = closer, and counts **one notch per event** (it reports
+  13–205 px per event; read as pixels, one flick slammed the zoom to 8× — the "hung
+  halfway" of 2026-10-15) — and a trackpad (continuous *with* a phase, natural sign,
+  negative = closer). Measured from an event log the same day, after a blind flip of
+  the notched sign changed nothing: his wheel never sends notched events. **One notch is
   ×⁴√1.15 ≈ 1.036** (1× → 2× in twenty notches): the first build's ×1.15 was "pași
   prea mari", halved in the log domain, and then halved again the same evening. The
   ceiling is **8×** (80 % of the first build's 10×). The factor eases at 120 Hz and the easing starts
@@ -389,7 +394,8 @@ them. macOS's Presenter Overlay was not offered either. Teams never had it. A vi
 declared in `Sources/CGVirtualDisplayShim`.
 
 **What it does.** 🪞 Virtual Desktop — a **top-level** row next to 🎥 Layout Zoom —
-**turns itself on when Zoom or Teams starts and off when the last of them quits**
+**turns itself on when Zoom or Teams starts** (unless **🪞 Auto-start on Zoom/Teams**,
+the row under it, is unticked — 2026-10-15, on by default) **and off when the last of them quits**
 (`VirtualDesktopAutoSwitch`, bundle ids `us.zoom.xos`, `com.microsoft.teams`, `…teams2`;
 edge-triggered, so a click on the row wins until the next start/quit). It creates a 1x screen
 the size of the Retina, vendor `0xF00D`, and fills it with:
@@ -464,6 +470,31 @@ process, unattributed: WindowServer ~107 % (shared with Teams' own video), `UVCA
 **not** the cause of that load spike — a headless LibreOffice from another Claude session
 (6 GB, pptx → pdf), a Spotlight burst (36 `mdworker_shared`) and Teams' renderer (~170 %)
 were; the virtual desktop is a steady ~half-core on top.
+
+**Tuned 2026-10-15** (Victor: "lag vizibil la mouse", a Zoom with himself, free to
+experiment). `GET /test/virtual-desktop?on=&fps=&quality=&cam=&silhouette=&ci=&desk=&smooth=`
+changes every knob live and reports faces/s, `segMs`, `renderMs` and the mask size since
+the previous call (the report lags one call). Sampled with `top` 1 Hz, 15 s per run,
+four rounds alternated with OFF:
+
+| config | Victor Addons | WindowServer |
+|---|---|---|
+| off | 2 % | 52 % |
+| 30 fps `.balanced`, desktop 30 (the old default) | **36 %** | 69 % (50–77) |
+| 15 fps `.fast`, desktop 15 | **19 %** | 65 % (55–75) |
+
+- `.balanced` = **33 ms** per face (mask 512×384): it never reached 30 fps, ~24.
+  `.fast` = **13 ms** (mask 256×192), but blocky edges and the microphone kept as
+  "person" — fixed visually by `samplingLinear` + a **σ 3** Gaussian blur on the mask
+  (σ 6 leaves a halo). Compared side by side on captures of the 🪞 screen.
+- Camera size (1280 vs 640), Core Image working format (RGBA8 vs RGBA16F) and the
+  Retina silhouette made no measurable difference.
+- WindowServer: the VD costs ~+13–17 points over off and the knobs do not move it
+  beyond the noise (±10 between identical runs). A decomposition hinted the face
+  updates, not the 30 fps desktop capture, drive it (face 1 fps + desktop 30 ≈ off),
+  but a repeat contradicted it. Unresolved: `top` is too noisy; WindowServer needs
+  `sudo powermetrics` or Instruments.
+- New defaults: 15 faces/s `.fast` σ 3, desktop 15 fps (a Zoom share carries ~15).
 
 **Next time it runs during a CPU complaint, capture:**
 1. An **A/B**, which is the missing number: 20 s on, 20 s off, twice, summing
