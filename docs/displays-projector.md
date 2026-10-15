@@ -144,6 +144,11 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   and the factor compounded every tick (k, k², k³…) until the 20 Hz shape refresh reset
   it — the cursor pulsed small/big. `cursorFrame` in the test hook now reads 34×46
   (the 17×23 arrow at 2×) on every sample.
+  **It honours Accessibility's "Pointer size"** (`mouseDriverCursorSize`, 2.43× here):
+  `NSCursor.currentSystem` hands out the bare arrow, so the drawn cursor shrank the
+  moment the zoom started and stayed smaller than ⌥+scroll's (Victor, 2026-10-15).
+  Size and hot spot are multiplied by it, and the image is requested at the drawn size
+  (×4 headroom) so the representation picked stays crisp.
   **The Dock gives the real cursor back**: on this Mac it sits on the left,
   auto-hidden, and popping it out (or moving across its icons) made the real arrow
   reappear beside the drawn one — Victor's screenshot, then reproduced on the retina's
