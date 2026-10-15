@@ -170,20 +170,20 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     /// Read on the camera queue under `tuneLock`.
     ///
     /// The defaults are the measured ones (2026-10-15, `docs/displays-projector.md`):
-    /// `.balanced` took 33 ms a face and could not even hold its 30 fps (~24); `.fast`
-    /// takes 13 ms, and its blocky 256×192 mask is hidden by a σ 3 blur on the GPU
-    /// (σ 6 leaves a halo). 15 faces and 15 desktop frames a second — what a Zoom
-    /// screen share carries anyway — halve the process (36 % → 19 % of a core).
+    /// `.balanced` takes 33 ms a face and could not even hold 30 fps (~24), so 15 —
+    /// what a Zoom screen share carries anyway — costs ~30 % of a core instead of 36 %.
+    /// `.fast` (13 ms, 19 %) was tried and **rejected**: even with its mask blurred it
+    /// keyed the microphone in as "person" and let a patch of background through.
     struct Tune {
         var faceFPS: Double = 15
-        var quality: VNGeneratePersonSegmentationRequest.QualityLevel = .fast
+        var quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
         var cameraWidth = 1280
         var silhouette = true
         var ciFormat8 = false
         /// Frames per second of the Retina capture shown on the screen.
         var deskFPS: Int32 = 15
         /// Gaussian blur radius (camera pixels) on the upscaled mask; 0 = none.
-        var smooth: Double = 3
+        var smooth: Double = 0
         /// Film the Retina minus the silhouette and its ← (true), or the whole display.
         var exclude = true
         var maskSize = CGSize.zero
@@ -239,7 +239,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private var captureFailures = 0
     private let screenQueue = DispatchQueue(label: "VirtualDesktop.screen", qos: .userInteractive)
     /// Screen-queue only.
-    private var deskEcho = EchoFilter()
+    private lazy var deskEcho = EchoGate(queue: screenQueue) { [weak self] surface in self?.presentDesk(surface) }
     private let cameraQueue = DispatchQueue(label: "VirtualDesktop.camera", qos: .userInteractive)
     private lazy var ciContext = Self.makeContext(format8: false)
 
@@ -250,7 +250,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     }
     private let segmentation: VNGeneratePersonSegmentationRequest = {
         let request = VNGeneratePersonSegmentationRequest()
-        request.qualityLevel = .fast
+        request.qualityLevel = .balanced
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
         return request
     }()
@@ -775,7 +775,7 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         silhouettePanel?.alphaValue = t.silhouette ? 0.2 : 0
         if t.silhouette { silhouettePanel?.orderFrontRegardless() } else { silhouettePanel?.orderOut(nil) }
         let quality = t.quality == .fast ? "fast" : t.quality == .accurate ? "accurate" : "balanced"
-        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"exclude\":\(t.exclude),\"deskFrames\":{\"shown\":\(screenQueue.sync { deskEcho.shown }),\"skipped\":\(screenQueue.sync { deskEcho.skipped })},\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
+        return "{\"on\":\(isRunning),\"fps\":\(t.faceFPS),\"quality\":\"\(quality)\",\"cam\":\(t.cameraWidth),\"silhouette\":\(t.silhouette),\"ci\":\(t.ciFormat8 ? 8 : 16),\"desk\":\(t.deskFPS),\"smooth\":\(t.smooth),\"exclude\":\(t.exclude),\"deskFrames\":\(screenQueue.sync { deskEcho.json }),\"mask\":\"\(Int(t.maskSize.width))x\(Int(t.maskSize.height))\",\(stats)}"
     }
 
     // MARK: - Retina → IOSurface straight into a layer
@@ -836,9 +836,12 @@ final class VirtualDesktop: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         // The silhouette repainting at 15 fps damages the Retina, so the stream sends
         // a frame each time — identical, since the silhouette is excluded. Showing it
         // would recompose the 🪞 screen and hand the call a new frame for nothing.
-        guard deskEcho.shouldShow(surface) else { return }
+        deskEcho.offer(pixelBuffer, surface)
+    }
+
+    private func presentDesk(_ surface: IOSurface) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.stream === stream else { return }
+            guard let self, self.stream != nil else { return }
             self.desktopLayer.contents = surface
             self.captureFailures = 0
         }

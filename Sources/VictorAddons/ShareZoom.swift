@@ -151,8 +151,12 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var commits = 0
     private struct Written: Equatable { var rect: CGRect; var cursor: CGRect? }
     private var lastWritten: Written?
-    /// Capture rate; `/test/share-zoom?fps=` changes it for the next stream.
-    private var captureFPS: Int32 = 60
+    /// Capture rate; `/test/share-zoom?fps=` changes it for the next stream. 30, not
+    /// 60, since 2026-10-15: panning and the drawn cursor move by `contentsRect` and
+    /// never wait for a frame, so only a *change on screen* reaches the zoom at 30 —
+    /// and the Retina hands this stream ~57 identical frames/s while the 🪞 silhouette
+    /// repaints, each one a composite WindowServer renders for nothing.
+    private var captureFPS: Int32 = 30
     private var startedAt = CFAbsoluteTimeGetCurrent()
     private var lastStartupMs = 0
     private let frameQueue = DispatchQueue(label: "ShareZoom.frames", qos: .userInteractive)
@@ -163,7 +167,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// the stream wanted back — the picture fell behind the pointer (2026-10-15).
     private let pendingLock = NSLock()
     /// Frame-queue only.
-    private var echo = EchoFilter()
+    private lazy var echo = EchoGate(queue: frameQueue) { [weak self] surface in
+        self?.present(surface, from: self?.liveStream)
+    }
+    /// The stream frames are presented for, readable on `frameQueue` (set there).
+    private var liveStream: SCStream?
     private var pendingSurface: IOSurface?
 
     /// `NSCursor.currentSystem` is a synchronous WindowServer round trip: **8 ms
@@ -256,8 +264,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     private func echoJSON() -> String {
-        let counts = frameQueue.sync { (echo.shown, echo.skipped) }
-        return "\"echo\":{\"shown\":\(counts.0),\"skipped\":\(counts.1)}"
+        "\"echo\":" + frameQueue.sync { echo.json }
     }
 
     func snapshotJSON() -> String {
@@ -427,7 +434,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         self.stream = stream
         streamStage = s
-        frameQueue.async { self.echo.reset() }
+        frameQueue.async { self.echo.reset(); self.liveStream = stream }
         stream.startCapture { [weak self] error in
             guard let error else { return }
             DispatchQueue.main.async {
@@ -652,8 +659,12 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               let surface = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
         // Our own repaint damages the display we film: an unchanged frame is skipped,
-        // or showing it would summon the next one (`FrameSignature`).
-        guard echo.shouldShow(surface) else { return }
+        // or showing it would summon the next one (`EchoGate`).
+        echo.offer(pixelBuffer, surface)
+    }
+
+    /// A frame worth showing, from `echo` on `frameQueue`: hand it to main.
+    private func present(_ surface: IOSurface, from stream: SCStream?) {
         pendingLock.lock()
         let hopQueued = pendingSurface != nil
         pendingSurface = surface

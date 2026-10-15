@@ -1,4 +1,6 @@
 import CoreFoundation
+import CoreVideo
+import Dispatch
 import IOSurface
 
 /// A cheap fingerprint of a captured frame: one pixel in 64 (every 8th of every 8th
@@ -7,10 +9,7 @@ import IOSurface
 /// every frame it shows damages that display again, so the stream answered with
 /// another full-screen frame ~50×/s for a desktop that changed ~3×/s (measured
 /// 2026-10-15; `dirtyRects` reported the whole screen each time, so they cannot tell
-/// the echo from a real change). Skipping a frame whose fingerprint is unchanged
-/// breaks the loop. A character typed on a Retina is ~14×28 px, so it lands on the
-/// grid; what can slip through (a 2 px caret blink) is caught by `EchoFilter`'s
-/// periodic forced refresh.
+/// the echo from a real change).
 enum FrameSignature {
     static func of(_ surface: IOSurface) -> UInt64 {
         guard IOSurfaceLock(surface, .readOnly, nil) == kIOReturnSuccess else { return 0 }
@@ -33,28 +32,67 @@ enum FrameSignature {
     }
 }
 
-/// Decides, on the frame queue, whether a frame is worth showing. Not thread-safe:
-/// one per stream, used only on that stream's sample-handler queue.
-struct EchoFilter {
-    /// Show an unchanged frame anyway after this long, for what the grid misses.
-    static let forcedRefresh: CFTimeInterval = 0.25
+/// Lets a frame through only if its `FrameSignature` changed — which breaks the
+/// self-feeding loop — **plus one trailing delivery** 250 ms after each real change.
+///
+/// The grid misses what falls between its samples (a typed `.`, a 1 px underline, a
+/// caret). Such a change arrives as a frame that looks identical and is skipped; on a
+/// still screen nothing else may ever arrive, so the room would watch a stale picture.
+/// The newest skipped frame is therefore kept (its pixel buffer retained, so the pool
+/// cannot hand the surface out again) and shown once, 250 ms after the last real
+/// change, unless a newer change got there first. That delivery's own echo is
+/// identical and does **not** re-arm it: armed at most once per real change, so the
+/// loop stays broken.
+///
+/// All calls on `queue`, the stream's sample-handler queue.
+final class EchoGate {
+    static let trailingDelay: CFTimeInterval = 0.25
 
+    private let queue: DispatchQueue
+    private let deliver: (IOSurface) -> Void
     private var last: UInt64?
-    private var shownAt: CFTimeInterval = 0
+    /// Bumped on every real change; the trailing delivery is armed once per value.
+    private var change = 0
+    private var armedFor = -1
+    private var held: (buffer: CVPixelBuffer, surface: IOSurface)?
     private(set) var shown = 0
     private(set) var skipped = 0
+    private(set) var trailing = 0
 
-    mutating func shouldShow(_ surface: IOSurface, now: CFTimeInterval = CFAbsoluteTimeGetCurrent()) -> Bool {
-        let signature = FrameSignature.of(surface)
-        if signature == last, now - shownAt < Self.forcedRefresh {
-            skipped += 1
-            return false
-        }
-        last = signature
-        shownAt = now
-        shown += 1
-        return true
+    init(queue: DispatchQueue, deliver: @escaping (IOSurface) -> Void) {
+        self.queue = queue
+        self.deliver = deliver
     }
 
-    mutating func reset() { self = EchoFilter() }
+    func offer(_ buffer: CVPixelBuffer, _ surface: IOSurface) {
+        let signature = FrameSignature.of(surface)
+        if signature != last {
+            last = signature
+            change += 1
+            held = nil
+            shown += 1
+            deliver(surface)
+            return
+        }
+        skipped += 1
+        held = (buffer, surface)
+        guard armedFor != change else { return }
+        armedFor = change
+        let armed = change
+        queue.asyncAfter(deadline: .now() + Self.trailingDelay) { [weak self] in
+            guard let self, self.change == armed, let held = self.held else { return }
+            self.held = nil
+            self.trailing += 1
+            self.deliver(held.surface)
+        }
+    }
+
+    func reset() {
+        last = nil
+        change += 1
+        held = nil
+        shown = 0; skipped = 0; trailing = 0
+    }
+
+    var json: String { "{\"shown\":\(shown),\"skipped\":\(skipped),\"trailing\":\(trailing)}" }
 }

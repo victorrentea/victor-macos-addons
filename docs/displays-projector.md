@@ -188,8 +188,13 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   2. Each frame shown was a layer commit → the next frame, identical: **~50 frames/s on
      a Dell that changed ~3×/s** (an outside capture excluding the same window saw
      every one identical). `EchoFilter` / `FrameSignature` fingerprint 1 pixel in 64
-     and drop an unchanged frame, with a forced refresh every 250 ms for what the grid
-     misses (a 2 px caret). At rest on the Dell: ~5 frames/s.
+     and drop an unchanged frame (`EchoGate`). What the grid misses (a typed `.`, a
+     1 px underline) arrives as a "same" frame, so the newest skipped frame is kept and
+     shown **once, 250 ms after the last real change**; that delivery's own echo does
+     not re-arm it. At rest on the Dell: 0 shown, 12 skipped in 5 s.
+  3. Capture at **30 fps**, not 60: panning and the drawn cursor move by `contentsRect`
+     and never wait for a frame; the Retina hands the stream ~57 identical frames/s
+     while the 🪞 silhouette repaints, each a composite WindowServer renders for nothing.
   The 10 Hz cursor-shape read commits only when the cursor's pixels changed.
   Cost of a 2× zoom on the Retina, VD on, a 15 fps share simulated, `top` over three
   alternations: WindowServer **55 → 56 %** (was +15–20 points), the process +3.
@@ -501,9 +506,8 @@ four rounds alternated with OFF:
 | 15 fps `.fast`, desktop 15 | **19 %** | 65 % (55–75) |
 
 - `.balanced` = **33 ms** per face (mask 512×384): it never reached 30 fps, ~24.
-  `.fast` = **13 ms** (mask 256×192), but blocky edges and the microphone kept as
-  "person" — fixed visually by `samplingLinear` + a **σ 3** Gaussian blur on the mask
-  (σ 6 leaves a halo). Compared side by side on captures of the 🪞 screen.
+  `.fast` = **13 ms** (mask 256×192): blocky edges, which `samplingLinear` + a σ 3 blur
+  hide (σ 6 haloes, `smooth=` knob) — but not the microphone it keys in as "person".
 - Camera size (1280 vs 640), Core Image working format (RGBA8 vs RGBA16F) and the
   Retina silhouette made no measurable difference.
 - WindowServer: the VD costs ~+13–17 points over off and the knobs do not move it
@@ -511,7 +515,10 @@ four rounds alternated with OFF:
   updates, not the 30 fps desktop capture, drive it (face 1 fps + desktop 30 ≈ off),
   but a repeat contradicted it. Unresolved: `top` is too noisy; WindowServer needs
   `sudo powermetrics` or Instruments.
-- New defaults: 15 faces/s `.fast` σ 3, desktop 15 fps (a Zoom share carries ~15).
+- Defaults: 15 faces/s **`.balanced`**, desktop 15 fps (a Zoom share carries ~15) —
+  ~30 % of a core. `.fast` σ 3 (19 %) was shipped for an hour and **reverted**: on the
+  full frame it keyed the microphone in as "person" and let a patch of background
+  through by the hand; the first comparison had been cropped and missed both.
 - **Then the echo filter** (`EchoFilter`, see 🔎 ShareZoom above) on the Retina
   mirror: the silhouette repainting at 15 fps damaged the Retina and each identical
   frame recomposed the 🪞 screen. After it, two alternations: off **51 %** WS / 2 %
