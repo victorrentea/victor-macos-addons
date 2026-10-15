@@ -53,7 +53,10 @@ enum FactCheck {
     /// The pop-up's header: what is being checked, so he can tell at a glance
     /// which part of the conversation the answer is about.
     static func header(for speech: String, limit: Int = 60) -> String {
-        let flat = speech.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        // The transcript marks each line with who spoke (🎙️ Victor, 👥 the room).
+        let flat = speech.split(whereSeparator: \.isWhitespace)
+            .filter { $0 != "🎙️" && $0 != "👥" }
+            .joined(separator: " ")
         let cut = flat.count > limit ? "…" + String(flat.suffix(limit)).trimmingCharacters(in: .whitespaces) : flat
         return "🔬 «\(cut)»"
     }

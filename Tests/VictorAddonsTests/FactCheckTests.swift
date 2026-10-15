@@ -5,6 +5,8 @@ final class FactCheckTests: XCTestCase {
     func testTheHeaderShowsTheLastWordsSaid() {
         XCTAssertEqual(FactCheck.header(for: "Kafka keeps   offsets\nper partition"),
                        "🔬 «Kafka keeps offsets per partition»")
+        XCTAssertEqual(FactCheck.header(for: "🎙️ the broker. 🎙️ Throws an exception."),
+                       "🔬 «the broker. Throws an exception.»")
         let long = String(repeating: "a ", count: 50) + "the end"
         let header = FactCheck.header(for: long, limit: 10)
         XCTAssertEqual(header, "🔬 «…a the end»")
