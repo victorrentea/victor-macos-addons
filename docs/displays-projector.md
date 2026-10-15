@@ -450,6 +450,14 @@ of the masked shadow, so it slides with it and is dimmed by the same panel 20 %.
 Render cost per face 1.0 → 2.5 ms (GPU). ⚠️ Not yet seen with a face in front of the
 camera — the first check was made with nobody there.
 
+Same day, after the first look on camera: **brighter, and along the top cut too**.
+The 20 % moved from the panel's `alphaValue` into the shadow's colour (black at
+0.2), so the glow is no longer capped by it: it shows at `glowAlpha` 0.4 (was an
+effective 0.2; `glowAlpha=` on `/test/virtual-desktop`). The blur's source is
+clamped left, right and bottom but **transparent above the top**, so a head cut by
+the frame's top edge glows along that straight cut as well — while the body cut
+by the bottom edge (= the screen's) still doesn't.
+
 **Corner** (`VirtualDesktopCornerPolicy`, tested): the pointer resting **on the shadow
 itself** — its pixels' alpha, read from the last keyed face, not the clip's rectangle —
 for **3 s** raises a **←** button on the head (top of the silhouette + 18 % of its
