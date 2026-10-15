@@ -178,6 +178,23 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **A faded 🔍 (26 pt, 50 %) sits in the zoomed screen's top-right corner** while the
   zoom is on, at constant size — over the picture, not in it — so the room and the
   call can tell it is this zoom and not the system one (2026-10-15).
+- **It must not feed itself** (2026-10-15, found by an adversarial review, then
+  measured). It films the display its own window covers, so anything it draws damages
+  that display and summons another frame — and `dirtyRects` report the *whole screen*
+  for every such frame, so they cannot tell an echo from a change. Two loops, both cut:
+  1. `follow` wrote `contentsRect` and the cursor frame on every 120 Hz tick → now only
+     when they differ from what was **last written** (not read back from the layer:
+     its frame round-trips through position/bounds). At rest: 0 commits in 600 ticks.
+  2. Each frame shown was a layer commit → the next frame, identical: **~50 frames/s on
+     a Dell that changed ~3×/s** (an outside capture excluding the same window saw
+     every one identical). `EchoFilter` / `FrameSignature` fingerprint 1 pixel in 64
+     and drop an unchanged frame, with a forced refresh every 250 ms for what the grid
+     misses (a 2 px caret). At rest on the Dell: ~5 frames/s.
+  The 10 Hz cursor-shape read commits only when the cursor's pixels changed.
+  Cost of a 2× zoom on the Retina, VD on, a 15 fps share simulated, `top` over three
+  alternations: WindowServer **55 → 56 %** (was +15–20 points), the process +3.
+  `/test/share-zoom` reports `commits`, `ticks`, `echo {shown, skipped}` (cumulative
+  per stream — read twice and subtract) and takes `fps=` for the next stream.
 - **At 1× nothing of it is on screen**: the panel is ordered out and the stream stops
   10 s later. A zoom scrolled back to 1× before its first frame arrived used to stay
   armed (only the per-frame tick switched it off); `scroll` now ends it itself. The panel is
@@ -495,6 +512,12 @@ four rounds alternated with OFF:
   but a repeat contradicted it. Unresolved: `top` is too noisy; WindowServer needs
   `sudo powermetrics` or Instruments.
 - New defaults: 15 faces/s `.fast` σ 3, desktop 15 fps (a Zoom share carries ~15).
+- **Then the echo filter** (`EchoFilter`, see 🔎 ShareZoom above) on the Retina
+  mirror: the silhouette repainting at 15 fps damaged the Retina and each identical
+  frame recomposed the 🪞 screen. After it, two alternations: off **51 %** WS / 2 %
+  process; on **50 %** / 22 %; on without the window exclusions 50 % / 21 % — the
+  WindowServer cost is gone into the noise, and dropping the exclusions (an
+  adversarial review's idea) changes nothing, so they stay.
 
 **Next time it runs during a CPU complaint, capture:**
 1. An **A/B**, which is the missing number: 20 s on, 20 s off, twice, summing
