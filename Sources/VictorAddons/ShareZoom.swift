@@ -180,6 +180,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// of the main thread and stalled the 120 Hz easing — "laggy", "hung halfway".
     /// Read here instead, one at a time.
     private let cursorQueue = DispatchQueue(label: "ShareZoom.cursor", qos: .userInitiated)
+    /// Accessibility → Display → Pointer size (`mouseDriverCursorSize`), read at each zoom start.
+    private var pointerScale: CGFloat = 1
     private var cursorReadInFlight = false
 
     var isActive: Bool { active != nil }
@@ -344,7 +346,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
         // Follow the magnifier's own "Smooth images" switch, so this looks like the
         // zoom Victor already knows (it is off on this Mac: crisp pixels).
-        let smooth = UserDefaults(suiteName: "com.apple.universalaccess")?.bool(forKey: "closeViewSmoothImages") ?? true
+        let universal = UserDefaults(suiteName: "com.apple.universalaccess")
+        let smooth = universal?.bool(forKey: "closeViewSmoothImages") ?? true
+        pointerScale = max(1, CGFloat(universal?.double(forKey: "mouseDriverCursorSize") ?? 1))
         s.image.magnificationFilter = smooth ? .linear : .nearest
         s.image.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
         s.cursor.isHidden = true
@@ -509,11 +513,19 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private func refreshCursorImage(_ s: Stage) {
         guard !cursorReadInFlight else { return }
         cursorReadInFlight = true
+        let scale = pointerScale
         cursorQueue.async { [weak self] in
             let sys = NSCursor.currentSystem
-            let cg = sys?.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-            let size = sys?.image.size ?? .zero
-            let hot = sys?.hotSpot ?? .zero
+            // Ask for the size it will be drawn at (×4 headroom for the zoom), so the
+            // best representation is picked and the magnified copy stays crisp.
+            var proposed = CGRect(origin: .zero, size: CGSize(width: (sys?.image.size.width ?? 0) * scale * 4,
+                                                              height: (sys?.image.size.height ?? 0) * scale * 4))
+            let cg = sys?.image.cgImage(forProposedRect: &proposed, context: nil, hints: nil)
+            // Accessibility's "Pointer size" enlarges the real cursor but not the
+            // image handed out here: without it, the drawn cursor shrank to the bare
+            // arrow the moment the zoom started (Victor, 2026-10-15; his is 2.43×).
+            let size = (sys?.image.size ?? .zero).applying(CGAffineTransform(scaleX: scale, y: scale))
+            let hot = (sys?.hotSpot ?? .zero).applying(CGAffineTransform(scaleX: scale, y: scale))
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.cursorReadInFlight = false
