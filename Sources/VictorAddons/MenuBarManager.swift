@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 15, 13:59"
+    static let BUILD_TIME = "Oct 15, 14:49"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -581,12 +581,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.isEnabled = true
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
 
-        // 🔊 Zoom Share Prep — the picker automation. Same justification as the
-        // row above for being in the menu at all: no key to teach, and nowhere
-        // else the state shows. It earns its place for a different reason
-        // though — this one *acts on its own*, and a row that acts on its own
-        // needs a visible way to be told to stop. Default on.
-        zoomSharePrepItem = NSMenuItem(title: "🔊 Zoom Share Prep", action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
+        // 🔊 Auto Share Faceover (was "Zoom Share Prep", renamed and brought to the
+        // top level next to the other meeting rows on 2026-10-15) — the picker
+        // automation: Share sound, the "As background" layout with Victor cut out
+        // over the content, the Retina, Share pressed. In the menu at all because
+        // it *acts on its own*, and a row that acts on its own needs a visible way
+        // to be told to stop. Default on.
+        zoomSharePrepItem = NSMenuItem(title: "🔊 Auto Share Faceover", action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
         zoomSharePrepItem.target = self
         zoomSharePrepItem.isEnabled = true
         zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
@@ -691,7 +692,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [historyItem, reminderMailItem, screenshotItem, appendNotesItem, appendPromptItem],
             [killItem],
             [emojiOverlayItem, commandOverlayItem],
-            [darkModeItem, zoomSharePrepItem, scrollReversalItem],
+            [darkModeItem, scrollReversalItem],
             [windowHalfItem, windowScreenItem, windowFillItem],
             [homeAwakeItem, claudeRemoteControlItem],
         ]
@@ -720,6 +721,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(extraItem)
 
+        // The screens-and-meetings section (2026-10-15, Victor's order): where the
+        // monitors go, where Zoom's windows go, and the three things that act on
+        // their own when a meeting starts.
+        menu.addItem(.separator())
+
         // 🖥️ Arrange Monitors — force the projector/standard arrangement now (manual
         // fallback for a venue projector that came up wrong). Top-level rather
         // than buried in the submenu: it's wanted in a hurry, mid-talk.
@@ -740,8 +746,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // on the monitor above the Retina. Next to Arrange Monitors because it
         // is the same kind of gesture: put windows where they belong, now.
         // Hidden while Zoom is not running (2026-10-08): there is nothing to lay out.
-        layoutZoomItem = addItem("🎥 Layout Zoom", action: #selector(layoutZoomAction))
+        // Its icon is the layout itself, drawn (Victor: "imitate the layout"): the
+        // meeting on the left, Participants over Chat on the right.
+        layoutZoomItem = addItem("Layout Zoom", action: #selector(layoutZoomAction))
+        layoutZoomItem.image = Self.zoomLayoutIcon
         refreshLayoutZoomItem()
+        menu.addItem(zoomSharePrepItem)
         menu.addItem(virtualDesktopItem)
         menu.addItem(virtualDesktopAutoItem)
 
@@ -1157,7 +1167,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.state = enabled ? .on : .off
     }
 
-    /// 🔊 Zoom Share Prep. Notifies nobody, for the same reason as its
+    /// 🔊 Auto Share Faceover (`ZoomSharePrep`). Notifies nobody, for the same reason as its
     /// neighbour: `ZoomSharePrep` reads the setting on each of its own scans,
     /// so there is no second copy of the answer that could drift out of step
     /// with the tick.
@@ -1235,6 +1245,33 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         asusLeftItem.isHidden = state != .at(.right)
         asusRightItem.isHidden = state != .at(.left)
     }
+
+    /// ▥ — what 🎥 Layout Zoom does to the monitor above the Retina, as a template
+    /// image so it follows the menu's light/dark appearance.
+    static let zoomLayoutIcon: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 14), flipped: false) { rect in
+            let frame = rect.insetBy(dx: 1, dy: 1.5)
+            NSColor.black.setStroke()
+            let outline = NSBezierPath(roundedRect: frame, xRadius: 1.5, yRadius: 1.5)
+            outline.lineWidth = 1.2
+            outline.stroke()
+            let split = frame.minX + frame.width * 0.6
+            let lines = NSBezierPath()
+            lines.move(to: NSPoint(x: split, y: frame.minY))
+            lines.line(to: NSPoint(x: split, y: frame.maxY))
+            lines.move(to: NSPoint(x: split, y: frame.midY))
+            lines.line(to: NSPoint(x: frame.maxX, y: frame.midY))
+            lines.lineWidth = 1.2
+            lines.stroke()
+            // The meeting pane, filled: the big picture is the video.
+            NSColor.black.withAlphaComponent(0.35).setFill()
+            NSBezierPath(rect: NSRect(x: frame.minX + 1.5, y: frame.minY + 1.5,
+                                      width: split - frame.minX - 3, height: frame.height - 3)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
 
     private func refreshLayoutZoomItem() {
         layoutZoomItem.isHidden = !NSWorkspace.shared.runningApplications
