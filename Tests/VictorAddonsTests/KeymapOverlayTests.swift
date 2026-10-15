@@ -413,12 +413,10 @@ final class KeymapOverlayTests: XCTestCase {
         // Q (12) left the sheet on 2026-09-09 with the 🤖 mascot, which had moved
         // to ⌃⌥G, and came back on 2026-09-10 with it: ⌃⌥ became the emoji board
         // and G was needed for the goose, so ⌘⌃Q shadows Lock Screen again.
-        // U (32) joined on 2026-09-22 with the magnifier flip. It is the one key
-        // here whose effect is invisible on this Mac — both magnifier styles look
-        // identical on screen, and only a screen share can tell them apart — which
-        // is precisely why it needs a word on the sheet and a pill when pressed.
+        // U (32) joined on 2026-09-22 with the magnifier flip and became the 🐘
+        // elephant on 2026-10-15, when O (31) went to the 🤖 Opus head.
         XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 34, 35, 32])
-        XCTAssertEqual(CommandControlShortcuts.labels[32], "lupă")
+        XCTAssertEqual(CommandControlShortcuts.labels[32], "trump")
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
         // V (9) stopped meaning the 🎙️ transcript picker on 2026-09-17: the key
@@ -432,7 +430,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.labels[16], "copilot")
         XCTAssertNotEqual(CommandControlShortcuts.labels[16], CommandControlShortcuts.labels[8])
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
-        XCTAssertEqual(CommandControlShortcuts.labels[31], "trump")
+        XCTAssertEqual(CommandControlShortcuts.labels[31], "opus")
         XCTAssertEqual(CommandControlShortcuts.labels[34], "xi")
         XCTAssertEqual(CommandControlShortcuts.labels[14], "email")
         XCTAssertEqual(CommandControlShortcuts.labels[3], "focus")
@@ -462,7 +460,7 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(CommandControlShortcuts.accents[40], "📕")  // K — the catalog
         XCTAssertEqual(CommandControlShortcuts.accents[3], "🎧")   // F — the focus mix
         XCTAssertEqual(CommandControlShortcuts.accents[46], "📤")  // M — it is sent, not drafted
-        XCTAssertEqual(CommandControlShortcuts.accents[31], "🐘")  // O — what "trump" puts on screen
+        XCTAssertEqual(CommandControlShortcuts.accents[32], "🐘")  // U — what "trump" puts on screen
         XCTAssertEqual(CommandControlShortcuts.accents[34], "🐼")  // I — what "xi" puts on screen
         XCTAssertEqual(CommandControlShortcuts.accents[35], "🤖")  // P — the marker the notes get
         XCTAssertEqual(CommandControlShortcuts.accents[12], "👋")  // Q — the wave, not P's 🤖

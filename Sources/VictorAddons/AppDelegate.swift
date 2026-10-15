@@ -1913,6 +1913,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // owns since the split — the key stays here, its pixels do not.
             EffectsProxy.fire("/effect/elephant")
         }
+        eventTap.onShowOpus = {
+            // Same as the elephant: drawn by Victor Effects, keyed here.
+            EffectsProxy.fire("/effect/opus")
+        }
         eventTap.onShowPanda = {
             // Same as the elephant: drawn by Victor Effects, keyed here.
             EffectsProxy.fire("/effect/panda")
@@ -1929,10 +1933,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onOpenFocusPlaylist = { [weak self] in
             DispatchQueue.main.async { self?.startFocusPlaylist() }
         }
-        // ⌘⌃U — flip the magnifier style. The pill comes from the toggle itself, not
-        // from the watcher's next tick, so the key answers immediately.
-        eventTap.onShareZoomScroll = { [weak self] delta, continuous in
-            self?.shareZoom.scroll(delta: delta, continuous: continuous)
+        eventTap.onShareZoomScroll = { [weak self] delta, source in
+            self?.shareZoom.scroll(delta: delta, source: source)
         }
         // 🔦 ⇧ + wheel-drag: the glass spotlight. The tap asks back on every
         // Esc whether the glass is up, so it is told each time that changes.
@@ -1952,9 +1954,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onWheelCropEnd = { ScreenshotManager.wheelCropReleased() }
         eventTap.onOptionScroll = { [weak self] in
             self?.shareZoomHint.optionScrolled()
-        }
-        eventTap.onToggleZoomLens = { [weak self] in
-            self?.zoomLensWatch?.toggle()
         }
         // ⌘⌃P — the selection (or the clipboard) is filed as an agent prompt in
         // the session notes, which is what puts it on the participants' Prompts

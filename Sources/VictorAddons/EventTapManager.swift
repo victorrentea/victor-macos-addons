@@ -73,14 +73,16 @@ class EventTapManager {
     var onPasteZoomLink: (() -> Void)?
     /// ⌘⌃E — paste Victor's email address.
     var onPasteEmail: (() -> Void)?
-    /// ⌘⌃O — 🐘 the elephant in the room, standing in the left half of the
-    /// screen. **O for the orange one**: T (Trump) is the empty Terminal and E
-    /// is the email paste, and this key is worth neither of those; O is the one
-    /// letter this picture can claim that nothing else on the board wants.
+    /// ⌘⌃U — 🐘 the elephant in the room, standing in the left half of the
+    /// screen. T (Trump) is the empty Terminal and E is the email paste; it was
+    /// on O (the orange one) until 2026-10-15, when O went to the Opus head.
     var onShowElephant: (() -> Void)?
+    /// ⌘⌃O — 🤖 the rusty Opus robot head, cut in at the centre of the screen
+    /// and cut out again a few seconds later.
+    var onShowOpus: (() -> Void)?
     /// ⌘⌃I — 🐼 the panda, the elephant's twin walking in from the RIGHT edge
     /// into the right half of the screen. It spent its first morning on ⌃⌥I
-    /// (2026-10-01); it moved next to the ⌘⌃O elephant so both animals live on
+    /// (2026-10-01); it moved next to the elephant so both animals live on
     /// the same board, on neighbouring keys.
     var onShowPanda: (() -> Void)?
     /// ⌘⌃R — paste the company's invoicing details (name / VAT code / address).
@@ -99,13 +101,10 @@ class EventTapManager {
     /// A key was pressed while ⌃⇧ were held: that hold was a shortcut.
     var onKeyDownUnderControlShift: (() -> Void)?
     private var controlShiftHeld = false
-    /// 🔍 ⌘⌃U — flip the screen magnifier between the style a screen share carries
-    /// and the one it silently drops.
-    var onToggleZoomLens: (() -> Void)?
     /// 🔎 ⌥⇧+scroll — our own full-screen zoom, the one a Zoom share carries
-    /// (`ShareZoom`). Vertical delta after `ScrollReversal`, and whether it came
-    /// from a trackpad (pixels) rather than a wheel (lines). Called on main.
-    var onShareZoomScroll: ((Double, Bool) -> Void)?
+    /// (`ShareZoom`). Vertical delta after `ScrollReversal`, and what sent it
+    /// (wheel / smooth wheel / trackpad). Called on main.
+    var onShareZoomScroll: ((Double, ShareZoomPolicy.Source) -> Void)?
     /// 🔦 ⇧ + wheel-drag — the glass spotlight (`GlassSpotlight`). Global CG
     /// points, as the events carry them. All called on main.
     var onGlassSpotlightBegin: ((CGPoint) -> Void)?
@@ -695,15 +694,11 @@ private let VK_I: CGKeyCode = 0x22
                     delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
                 }
                 if delta != 0 {
-                    // Which sign a "wheel up" arrives with depends on the device and on
-                    // Logi Options+ (smooth scrolling turns a notched wheel continuous),
-                    // so every ⌥⇧ event says what it carried.
-                    let phase = event.getIntegerValueField(.scrollWheelEventScrollPhase)
-                    let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
-                    let line1 = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)
-                    let line2 = event.getIntegerValueField(.scrollWheelEventDeltaAxis2)
-                    overlayInfo("🔎 ⌥⇧scroll continuous=\(continuous) phase=\(phase) momentum=\(momentum) line=(\(line1),\(line2)) delta=\(delta)")
-                    DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, continuous) }
+                    let source = ShareZoomPolicy.Source.of(
+                        continuous: continuous,
+                        phase: event.getIntegerValueField(.scrollWheelEventScrollPhase),
+                        momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase))
+                    DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, source) }
                 }
                 return nil
             }
@@ -1128,13 +1123,19 @@ private let VK_I: CGKeyCode = 0x22
             return nil
         }
 
-        // Cmd+Ctrl+O → 🐘 elephant in the room (suppress). Two modifiers, like
-        // every other key on this board — the ⇧ it used to carry made it the
-        // only shortcut here needing three, which is a shortcut you think about
-        // before pressing. T and E, the two letters the picture actually wants,
-        // are the empty Terminal and the email paste; O is the orange one.
-        if keyCode == VK_O && hasCmd && hasCtrl && !hasOpt {
+        // Cmd+Ctrl+U → 🐘 elephant in the room (suppress). Two modifiers, like
+        // every other key on this board. T and E, the two letters the picture
+        // actually wants, are the empty Terminal and the email paste; it sat on O
+        // (the orange one) until 2026-10-15, when O went to the Opus head and the
+        // elephant moved next door to U, still beside the panda's I.
+        if keyCode == VK_U && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onShowElephant?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+O → 🤖 the rusty Opus robot head, dead centre (suppress).
+        if keyCode == VK_O && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onShowOpus?() }
             return nil
         }
 
@@ -1164,27 +1165,6 @@ private let VK_I: CGKeyCode = 0x22
         // track (suppress). F for focus — the music is the point, not YouTube.
         if keyCode == VK_F && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onOpenFocusPlaylist?() }
-            return nil
-        }
-
-        // Cmd+Ctrl+U → flip the screen magnifier between Full screen and
-        // Picture-in-picture (suppress). **The two look identical on screen** — same
-        // pixels, same magnification — and differ only in where macOS applies them:
-        // full screen at scanout, *after* the frame every capture client reads, so a
-        // Zoom share never carries it; picture-in-picture as an ordinary composited
-        // window, which a share does carry. So this key does not change what Victor
-        // sees at all. It changes whether the people on the call see anything.
-        //
-        // Apple binds ⌥⌘F to the same flip (`AX_ZOOM_TOGGLE_FS_AND_PIP`) but appears
-        // to act only while a magnification is already on screen, which is a key that
-        // does nothing the one time you reach for it cold. This one always works,
-        // because it writes the setting rather than asking the magnifier to.
-        //
-        // U because every letter with a claim is taken: Z is the Zoom room link, F is
-        // the focus playlist, L is the calendar. U is free, and it sits under the
-        // finger that just pressed it.
-        if keyCode == VK_U && hasCmd && hasCtrl && !hasOpt {
-            DispatchQueue.global().async { [weak self] in self?.onToggleZoomLens?() }
             return nil
         }
 

@@ -56,12 +56,10 @@ enum CommandControlShortcuts {
                          // not that you do. It took the letter from the old
                          // "todo" Gmail draft on 2026-09-08 — the two were the
                          // same gesture and the one that actually sends won.
-        31: "trump",     // O — 🐘 the elephant in the room, in the left half of
-                         // the screen. The word is the picture, not the key: the
-                         // letter is only "the Orange one" because T (Trump) is
-                         // the empty Terminal and E is the email paste, and a
-                         // sheet that answered "elefant" would leave you hunting
-                         // for the T you actually reached for.
+        31: "opus",      // O — 🤖 the rusty Opus robot head, cut in dead centre
+                         // and cut out again after a few seconds (2026-10-15).
+                         // O for Opus: the one key here where the letter and the
+                         // picture agree, which is why it took O from the elephant.
         34: "xi",        // I — 🐼 the panda, the elephant's twin from the right
                          // half of the screen, on the key next to it. Named
                          // after the man like "trump", for the same reason.
@@ -77,13 +75,12 @@ enum CommandControlShortcuts {
         15: "SRL",       // R — paste the company's invoicing details
         1:  "notes",     // S — send the selection to the training notes
         17: "terminal",  // T — empty Terminal in ~/workspace
-        32: "lupă",      // U — flip the screen magnifier between the style a Zoom
-                         // share carries and the one it drops. The word is the thing
-                         // you are reaching for, not the switch: "zoom" is already Z
-                         // (the room link), and naming this key after the mode you
-                         // land in would need two words and change every press. What
-                         // the sheet has to answer at speed is "which key is the
-                         // magnifier", and `lupă` is that answer.
+        32: "trump",     // U — 🐘 the elephant in the room, in the left half of
+                         // the screen. The word is the picture, not the key: T
+                         // (Trump) is the empty Terminal, and the elephant left O
+                         // for the Opus head on 2026-10-15 — U is the free letter
+                         // right beside I, so the twins stay one hand position.
+                         // U stopped being the magnifier flip (`lupă`) that day.
         16: "copilot",   // Y — the ⌘⌃C terminal running `copilot` instead. The
                          // word names the agent, because that is the only thing
                          // that separates this key from C; the letter is a
@@ -148,7 +145,7 @@ enum CommandControlShortcuts {
                   // room's Prompts tab, so the sheet, the pill and the list all
                   // say the same word. S's 🚀 is the sibling: both launch the
                   // selection, this one lands on the participants' screens.
-        31: "🐘",  // O — the word names the man, the mark names what appears
+        32: "🐘",  // U — the word names the man, the mark names what appears
         34: "🐼",  // I — same, for the twin
         12: "👋",  // Q — the wave itself. NOT P's 🤖: that stamp means "this text
                   // is going to the room as a prompt", and the same mark on a key
