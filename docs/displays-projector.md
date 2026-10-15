@@ -524,7 +524,13 @@ four rounds alternated with OFF:
   frame recomposed the 🪞 screen. After it, two alternations: off **51 %** WS / 2 %
   process; on **50 %** / 22 %; on without the window exclusions 50 % / 21 % — the
   WindowServer cost is gone into the noise, and dropping the exclusions (an
-  adversarial review's idea) changes nothing, so they stay.
+  adversarial review's idea) changes nothing, so they stay. **But that run was on
+  `.fast`.** Re-measured on the shipped `.balanced` (15 faces/s, desktop 15, echo gate),
+  three alternations: off 52 % WS / 2 %; on **67 %** / **29 %**. So `.balanced` brings
+  ~+15 WindowServer points back that `.fast` did not have — plausibly GPU contention
+  (`.fast` runs on the Neural Engine, `.balanced` leans on the GPU WindowServer
+  composites with), unverified. The trade is Victor's: `.fast` is cheap but keys the
+  mic in; `quality=fast` on `/test/virtual-desktop` switches live.
 
 **Next time it runs during a CPU complaint, capture:**
 1. An **A/B**, which is the missing number: 20 s on, 20 s off, twice, summing
