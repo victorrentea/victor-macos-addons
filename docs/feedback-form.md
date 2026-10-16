@@ -111,15 +111,26 @@ the three changed.
 ## What the site does to you
 
 The Angular DOM notes — which selectors survive a rebuild, why text matching
-fails on the action buttons, why the clone arrives already expanded, why the
-share URL is not in an input — live in the header comment of
+fails on the action buttons, why the first row is not the newest form, why a
+fresh copy arrives selected and turns the list compact, why the share URL is
+not in an input — live in the header comment of
 [`chrome-extension/feedback-form.js`](../chrome-extension/feedback-form.js),
 next to the code that depends on them.
 
+**2026-10-16: the site rebuilt its forms list** (grouped by week, sorted by
+recent activity, a side panel for the selected form). The flow had been
+waiting for `sh-dashboard-project` rows and died with *timed out waiting for
+the forms list*. It now addresses rows by form id and finds actions in
+whichever layout is showing. The same fix turned up an older bug: the in-page
+wait read a module-level constant, so every wait's promise had been rejecting
+and `waitFor()` was really a tight re-inject loop. The old UI's persistent
+buttons hid that; the new UI's re-rendered menus turned it into a second Copy.
+
 ## Testing
 
-The extension must be reloaded in `chrome://extensions` after any change to
-`chrome-extension/` — the Mac-side rebuild does not touch it. Watch it work in
+The extension must be reloaded after any change to `chrome-extension/` — the
+Mac-side rebuild does not touch it: `curl -s 127.0.0.1:55123/chrome/extension/reload`
+(the extension reloads itself; `chrome://extensions` is the manual fallback). Watch it work in
 the service worker console (`chrome://extensions` → *Victor Chrome Addons* →
 *service worker*); every step logs.
 

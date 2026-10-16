@@ -45,25 +45,30 @@
 //
 // ── What the site does, all of it learned the hard way ──────────────────────
 //
-// It is Angular, and its classes carry build-hashed `ng-tns-c…` suffixes. What
-// does NOT move, and is therefore what everything below selects on: the custom
-// element `sh-dashboard-project` (one form row), and plain BEM classes under it
-// — `h5.dashboard-project__title`, `button.nrm-btn`, `mat-dialog-container`,
-// `div.launch-url`.
+// It is Angular, and its classes carry build-hashed `ng-c…` suffixes. What
+// does NOT move, and is therefore what everything below selects on: plain BEM
+// classes and data attributes — `div.lib-row[data-lib-id]` (one form row, the
+// id being the form's), `.lib-title[title]`, `.lib-row__updated` (CREATED),
+// `button[aria-label="Form actions"]`, `sh-form-panel`, `mat-dialog-container`,
+// `div.launch-url`. (The list was rebuilt in Oct 2026; before that a row was
+// `sh-dashboard-project` with buttons that appeared when it was expanded.)
 //
 //  • Never match an action button by its text: Material renders the icon as a
-//    ligature *inside* the button, so the Copy button's text is "file_copy Copy".
-//    Match the label <span>, scoped to the row.
+//    ligature *inside* the button, so the Copy item's text is "file_copy Copy".
+//    Match the label <span>.
 //  • The bounce to the login page is late and JavaScript-driven — a signed-out
 //    visit to /dashboard/all still shows the app's own URL for a second or two.
 //    Wait for a positive marker of one screen or the other, never for a URL.
-//  • Google sign-in lands on /en-GB/home, which also has a "NEW FORM" button and
-//    so passes every "am I in the app" check while showing no forms at all.
-//  • The dashboard renders exactly 20 rows. On a full account the count is 20
-//    before the Copy and 20 after, so "wait for the list to grow" never fires:
-//    the signal is "Clone of: <title>" reaching row 0.
-//  • A fresh clone arrives ALREADY expanded — clicking it "to open it" folds it
-//    shut, and the flow then hunts for a Rename button that is no longer there.
+//  • Google sign-in lands on /en-GB/home, which also lists forms (as
+//    li.live-forms__row) and has a "NEW FORM" button, but none of the rows
+//    this flow acts on.
+//  • The list is grouped by week and sorted by RECENT ACTIVITY, so the first
+//    row is not the newest form: the template is picked by CREATED date
+//    ("Oct 16, 2026" — month first, unlike the old "16 Oct 2026").
+//  • A fresh copy ("Clone of: <title>") arrives SELECTED: a side panel opens
+//    and the whole list turns compact — no row has icon buttons or a ⋮ any
+//    more, and Rename/Send live in the panel. Hence `act`, which handles both
+//    layouts, and the copy being tracked by its new id rather than a position.
 //  • The share URL is not in an input. It only looks like a field; it is the
 //    text of div.launch-url. Scanning input values finds nothing, forever.
 //  • Setting input.value alone does not reach Angular's form model — the
@@ -75,8 +80,6 @@ const LOGIN_HOST = 'identity.freeonlinesurveys.com';
 
 /** Longest a single injected wait may block before reporting back. */
 const WAIT_CHUNK_MS = 5_000;
-/** In-page safety tick, for the rare state change no mutation announces. */
-const SAFETY_POLL_MS = 200;
 
 /**
  * Everything that touches the page, in one injectable function.
@@ -92,29 +95,51 @@ const SAFETY_POLL_MS = 200;
  * satisfies it, or `{ok:false}` when `budgetMs` runs out.
  */
 function pageOp(op, arg, expect, budgetMs) {
+  /* Declared in here, not at module level: executeScript ships this function's
+   * SOURCE, so a module constant is a ReferenceError in the page. That is not
+   * hypothetical — until 2026-10-16 the safety tick read the module's
+   * SAFETY_POLL_MS, every wait's promise rejected on creation, every injection
+   * came back null, and waitFor() silently re-injected in a tight loop. */
+  const safetyPollMs = 200;
   const trim = (s) => (s || '').trim();
-  const rows = () => Array.from(document.querySelectorAll('sh-dashboard-project'));
-  const titleEl = (row) => row.querySelector('h5.dashboard-project__title');
+  /* One row per form, wherever the list puts it. Rows are addressed by their
+   * form id (data-lib-id), never by position: the list is grouped (This week /
+   * Last week / Earlier) and sorted by recent activity, so "row 0" is neither
+   * the newest form nor where a fresh copy lands. */
+  const rows = () => Array.from(document.querySelectorAll('div.lib-row[data-lib-id]'));
+  const rowById = (id) => document.querySelector(`div.lib-row[data-lib-id="${id}"]`);
   const titleOf = (row) => {
-    const h = titleEl(row);
+    const t = row && row.querySelector('.lib-title');
     // The title= attribute is the untruncated name; the text may be ellipsised.
-    return h ? trim(h.getAttribute('title') || h.innerText) : '';
+    return t ? trim(t.getAttribute('title') || t.innerText) : '';
   };
-  const actionBtn = (row, label) =>
-    Array.from(row.querySelectorAll('button.nrm-btn')).find((b) => {
-      const span = b.querySelector('span');
+  const forms = () =>
+    rows().map((row) => ({
+      id: row.getAttribute('data-lib-id'),
+      title: titleOf(row),
+      // The CREATED column: "Oct 16, 2026", "Sept 29, 2026".
+      date: trim((row.querySelector('.lib-row__updated') || {}).innerText),
+    }));
+  /* "Oct 16, 2026" → "2026-10-16". Parsed rather than string-compared, so the
+   * site's month abbreviations ("Sept" is not one JavaScript accepts — hence
+   * the clip to three letters) and its locale never have to be matched by hand.
+   * The day-first spelling of the previous UI ("3 Sept 2026") is accepted too. */
+  const dayOf = (s) => {
+    const m = (s || '').match(/^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/) ||
+      ((x) => x && [x[0], x[2], x[1], x[3]])((s || '').match(/^(\d{1,2})\s+([A-Za-z]+)\.?\s+(\d{4})$/));
+    if (!m) return null;
+    const d = new Date(`${m[2]} ${m[1].slice(0, 3)} ${m[3]}`);
+    return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const menuPanel = () => document.querySelector('.cdk-overlay-container .mat-mdc-menu-panel');
+  /* Material renders the icon as a ligature *inside* the item, so an item's text
+   * is "file_copy Copy". Match the label span, never the button's text. */
+  const menuItem = (label) => {
+    const panel = menuPanel();
+    return panel && Array.from(panel.querySelectorAll('button[mat-menu-item]')).find((b) => {
+      const span = b.querySelector('.mat-mdc-menu-item-text');
       return span && trim(span.innerText) === label;
     });
-  const forms = () =>
-    rows().map((row) => {
-      const meta = trim((row.querySelector('.dashboard-project__meta') || {}).innerText).replace(/\s+/g, ' ');
-      // "3 Sept 2026 10 Responses ADD LABEL" → "3 Sept 2026"
-      const date = (meta.match(/^\d{1,2}\s+\S+\s+\d{4}/) || [null])[0];
-      return { title: titleOf(row), meta, date };
-    });
-  const expanded = (i) => {
-    const row = rows()[i];
-    return !!row && !!actionBtn(row, 'Copy');
   };
   /* One click per element per document. The observer can re-run an operation
    * within a frame of the previous run, so "I clicked, the DOM has not caught
@@ -137,7 +162,9 @@ function pageOp(op, arg, expect, budgetMs) {
       case 'screen':
         if (location.host === 'identity.freeonlinesurveys.com') return 'login';
         if (rows().length > 0) return 'dashboard';
-        if (/new form/i.test(document.body.innerText || '')) return 'app';
+        // /home (where Google sign-in lands) lists recent forms too, but as
+        // li.live-forms__row — not rows this flow can act on.
+        if (/\/home\b/.test(location.pathname) || /new form/i.test(document.body.innerText || '')) return 'app';
         return 'loading';
 
       case 'clickGoogle':
@@ -149,37 +176,40 @@ function pageOp(op, arg, expect, budgetMs) {
       case 'forms':
         return forms();
 
-      /* Just row 0's name. The clone and the rename are both watched by waiting
-       * on this, and it is re-read on every mutation of a 20-row list — no
-       * reason to ship the whole list back each time. */
-      case 'topTitle': {
-        const row = rows()[0];
-        return row ? titleOf(row) : null;
+      /* The newest form by CREATED date — the one to clone. Not row 0: the list
+       * is sorted by recent activity, so a months-old form that just got a
+       * response would otherwise be the template. Ties keep list order. */
+      case 'newest': {
+        let best = null;
+        for (const f of forms()) {
+          const d = dayOf(f.date);
+          if (d && (!best || d > best.day)) best = { ...f, day: d };
+        }
+        return best;
       }
 
+      /* The row that was not there before the Copy — the clone. Watched by id,
+       * not by its "Copy of …" title, so a change in the site's naming of
+       * copies cannot strand the flow. */
+      case 'newRow': {
+        const row = rows().find((r) => arg.indexOf(r.getAttribute('data-lib-id')) === -1);
+        return row ? { id: row.getAttribute('data-lib-id'), title: titleOf(row) } : null;
+      }
+
+      case 'titleOf':
+        return titleOf(rowById(arg)) || null;
+
       /* Is there already a form with this exact name carrying TODAY's date?
-       *
-       * The row's date is PARSED rather than string-compared against a date we
-       * format ourselves: matching "4 Sept 2026" by hand would mean matching the
-       * site's locale, its month abbreviations and its timezone, and would stop
-       * matching silently the day any of the three changed. "Sept" is not a month
-       * name JavaScript accepts, so it is clipped to three letters first.
        *
        * Same NAME and same DAY is the signal — a name reused months later is a
        * different workshop and perfectly legitimate; a second one this afternoon
        * means the automation is about to run twice for the same session.
        */
       case 'duplicate': {
-        const dayOf = (s) => {
-          const m = (s || '').match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
-          if (!m) return null;
-          const d = new Date(`${m[1]} ${m[2].slice(0, 3)} ${m[3]}`);
-          return isNaN(d) ? null : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-        };
         const now = new Date();
-        const today = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const dup = forms().find((f) => f.title === arg && dayOf(f.date) === today);
-        return dup ? { title: dup.title, date: dup.date, meta: dup.meta } : null;
+        return dup ? { id: dup.id, title: dup.title, date: dup.date } : null;
       }
 
       /* Say why we stopped, in the page, where the eye already is. A console
@@ -202,30 +232,55 @@ function pageOp(op, arg, expect, budgetMs) {
         return true;
       }
 
-      /* Clicking the title TOGGLES the row, and a fresh clone arrives already
-       * expanded — so this only clicks a closed row, and then not again for
-       * 600ms. Without that floor the observer would re-enter mid-animation and
-       * fold the row back shut. */
-      case 'expand': {
-        if (expanded(arg)) return true;
-        const row = rows()[arg];
+      /* Press one of a form's actions — Copy, Rename, Send — whichever of the
+       * site's two layouts is showing:
+       *  • a SELECTED row opens a side panel (sh-form-panel) and the list turns
+       *    compact: the row loses its icon buttons and its ⋮, and the actions
+       *    live in the panel — tiles (Edit, Send, Results) and a list (Copy,
+       *    Rename, …). A fresh copy arrives selected, so this is the layout the
+       *    copy is always renamed and sent in.
+       *  • otherwise the row carries a ⋮ "Form actions" menu, a cdk overlay
+       *    outside the row.
+       * Neither one on screen: click the row to select it. Openers are clicked
+       * at most every 600ms, or the observer re-entering mid-animation would
+       * toggle the menu or the selection straight back. */
+      case 'act': {
+        /* Each action is pressed at most once per document, whatever re-runs
+         * this: the per-element guard cannot see a repeat, because every opening
+         * of the menu or the panel renders fresh buttons. */
+        const key = `${arg.id}:${arg.label}`;
+        const pressed = (document.documentElement.dataset.vaPressed || '').split('|');
+        if (pressed.indexOf(key) !== -1) return true;
+        const press = (el) => {
+          if (!clickOnce(el)) return false;
+          document.documentElement.dataset.vaPressed = pressed.concat(key).join('|');
+          return true;
+        };
+        const row = rowById(arg.id);
         if (!row) return false;
-        const el = titleEl(row) || row;
-        const last = Number(el.dataset.vaExpandAt || 0);
-        if (Date.now() - last > 600) {
-          el.dataset.vaExpandAt = String(Date.now());
-          el.click();
+        const throttled = (el) => {
+          const last = Number(el.dataset.vaOpenAt || 0);
+          if (Date.now() - last > 600) {
+            el.dataset.vaOpenAt = String(Date.now());
+            el.click();
+          }
+          return false;
+        };
+        const panel = document.querySelector('sh-form-panel');
+        if (panel && row.classList.contains('lib-row--selected')) {
+          const btn = Array.from(panel.querySelectorAll('.tiles button, sh-library-panel-menu button')).find((b) => {
+            const l = b.querySelector('.lib-tile__label, .mdc-list-item__primary-text');
+            return l && trim(l.innerText) === arg.label;
+          });
+          return press(btn);
         }
-        return expanded(arg);
-      }
-
-      case 'expanded':
-        return expanded(arg);
-
-      case 'action': {
-        const row = rows()[arg.i];
-        if (!row) return false;
-        return clickOnce(actionBtn(row, arg.label));
+        const trigger = row.querySelector('button[aria-label="Form actions"]');
+        if (trigger) {
+          // Only trust an open menu that THIS row's trigger opened.
+          const item = trigger.getAttribute('aria-expanded') === 'true' && menuItem(arg.label);
+          return item ? press(item) : throttled(trigger);
+        }
+        return throttled(row.querySelector('.lib-row__name') || row);
       }
 
       case 'dialogValue': {
@@ -325,8 +380,14 @@ function pageOp(op, arg, expect, budgetMs) {
       clearTimeout(budget);
       resolve(out);
     };
+    /* `done` is checked HERE, not only in finish(): a frame queued before the
+     * wait resolved still fires afterwards — late, in a background tab — and
+     * would run the operation once more. For a click that is a second Copy,
+     * since each opening of a menu or panel renders fresh buttons the
+     * per-element guard has never seen. */
     const check = () => {
       scheduled = false;
+      if (done) return;
       const hit = attempt();
       if (hit) finish(hit);
     };
@@ -342,7 +403,7 @@ function pageOp(op, arg, expect, budgetMs) {
     observer.observe(document.documentElement, {
       childList: true, subtree: true, attributes: true, characterData: true,
     });
-    const ticker = setInterval(check, SAFETY_POLL_MS);
+    const ticker = setInterval(check, safetyPollMs);
     const budget = setTimeout(() => finish({ ok: false }), budgetMs);
   });
 }
@@ -447,25 +508,23 @@ async function run(tabId, session) {
     throw new Error(`"${session}" already exists for today (${dup.date}) — publish it from that form, or rename it first`);
   }
 
-  const source = list[0].title;                 // Recent view: newest first
-  console.log('[feedback-form] cloning', source);
+  const source = await exec(tabId, 'newest');
+  if (!source) throw new Error('no form on the dashboard has a readable creation date');
+  console.log('[feedback-form] cloning', source.title, source.date);
 
-  await waitFor(tabId, 'expand', 0, TRUTHY, 15_000, 'the newest form to expand');
-  await waitFor(tabId, 'action', { i: 0, label: 'Copy' }, TRUTHY, 15_000, 'the Copy button');
+  // The clone is recognised as "the id that was not there before the Copy".
+  const before = list.map((f) => f.id);
+  await waitFor(tabId, 'act', { id: source.id, label: 'Copy' }, TRUTHY, 15_000, `Copy on "${source.title}"`);
+  const clone = await waitFor(tabId, 'newRow', before, TRUTHY, 30_000, `the copy of "${source.title}" to appear`);
+  console.log('[feedback-form] clone', clone.id, clone.title);
 
-  // Not "the list grew" — the dashboard renders a fixed 20 rows.
-  const cloneTitle = `Clone of: ${source}`;
-  await waitFor(tabId, 'topTitle', null, eq(cloneTitle), 30_000, `the clone "${cloneTitle}" to reach the top`);
-
-  await waitFor(tabId, 'expand', 0, TRUTHY, 15_000, 'the clone to be expanded');
-  await waitFor(tabId, 'action', { i: 0, label: 'Rename' }, TRUTHY, 15_000, 'the Rename button');
+  await waitFor(tabId, 'act', { id: clone.id, label: 'Rename' }, TRUTHY, 15_000, 'Rename on the copy');
   await waitFor(tabId, 'dialogValue', null, TEXT, 15_000, 'the rename dialog');
   await waitFor(tabId, 'setTitle', session, TRUTHY, 5_000, 'the new title to stick');
   await waitFor(tabId, 'save', null, TRUTHY, 5_000, 'the SAVE button');
-  await waitFor(tabId, 'topTitle', null, eq(session), 20_000, `the row to read "${session}"`);
+  await waitFor(tabId, 'titleOf', clone.id, eq(session), 20_000, `the copy to read "${session}"`);
 
-  await waitFor(tabId, 'expand', 0, TRUTHY, 15_000, 'the renamed row to be expanded');
-  await waitFor(tabId, 'action', { i: 0, label: 'Send' }, TRUTHY, 15_000, 'the Send button');
+  await waitFor(tabId, 'act', { id: clone.id, label: 'Send' }, TRUTHY, 15_000, 'Send on the renamed copy');
   await waitFor(tabId, 'onLaunchPage', null, TRUTHY, 30_000, 'the Send page');
 
   // 'done' means it was already published — idempotent either way.
