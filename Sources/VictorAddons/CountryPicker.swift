@@ -99,7 +99,25 @@ final class CountryPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         panel.hasShadow = true
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
         panel.contentView = content
-        panel.onResignKey = { [weak self] in self?.close() }
+        // The first click on the flag arrives while this accessory app is not
+        // active: `NSApp.activate` below finishes *after* the panel became key,
+        // and the activation hands key back to another window — so the picker
+        // resigned at once and closed, a flicker, and only a second click (app
+        // now active) kept it open (2026-10-16). A resign within the first half
+        // second is that, not the user clicking away: take key back instead.
+        let openedAt = Date()
+        panel.onResignKey = { [weak self, weak panel] in
+            if Date().timeIntervalSince(openedAt) < 0.5, let panel {
+                DispatchQueue.main.async {
+                    guard self?.panel === panel else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    panel.makeKeyAndOrderFront(nil)
+                    panel.makeFirstResponder(self?.searchField)
+                }
+            } else {
+                self?.close()
+            }
+        }
         self.panel = panel
 
         tableView.reloadData()   // populate rows before layout forces a table pass
