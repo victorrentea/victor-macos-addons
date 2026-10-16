@@ -93,6 +93,25 @@ enum AXWindows {
         // the room left below the window's *current* origin: F3 on a window at
         // y=300 filled only 780 of 1055 pt, and the second F3 then saw "not
         // filled" and filled again instead of restoring (2026-10-05).
+        //
+        // AXEnhancedUserInterface off for the duration, then back as it was: an
+        // app that has it on (Chrome does, as soon as an accessibility client such
+        // as the Claude/Playwright extensions talks to it) answers each AX write
+        // relative to the frame it had *before* the batch, so the second resize
+        // threw a window just placed on another screen straight back onto the one
+        // it came from — fn⌃⌥⌘ + arrow moved PowerPoint but only shuffled Chrome
+        // along its own screen (2026-10-16). Measured: same three writes, flag on
+        // → back at (-1920, 25); flag off → stays at the target. Rectangle does
+        // the same dance.
+        var pid: pid_t = 0
+        AXUIElementGetPid(window, &pid)
+        let app = AXUIElementCreateApplication(pid)
+        var enhanced: CFTypeRef?
+        let wasEnhanced = pid != 0
+            && AXUIElementCopyAttributeValue(app, "AXEnhancedUserInterface" as CFString, &enhanced) == .success
+            && (enhanced as? Bool) == true
+        if wasEnhanced { AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse) }
+        defer { if wasEnhanced { AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue) } }
         AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, originValue)
         AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
