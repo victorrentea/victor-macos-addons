@@ -188,7 +188,6 @@ final class TeamsMeetingLayout {
         // thing measured to close the menu (`AXCancel` on its items leaves it open).
         if !isOn(nine) { notes.append("9 people") }
         AXUIElementPerformAction(nine, kAXPressAction as CFString)
-        Thread.sleep(forTimeInterval: 0.5)
         closeMenus(meeting)
         return true
     }
@@ -207,12 +206,20 @@ final class TeamsMeetingLayout {
         return nil
     }
 
-    /// Never leave the View menu hanging open on the call: if any of it is
-    /// still there, View is pressed once more, which toggles it shut.
+    /// Never leave the View menu hanging open on the call: if it is still
+    /// there after 1.5 s, View is pressed once more, which toggles it shut.
+    /// Not sooner — a menu that is merely slow to go would be reopened.
     private static func closeMenus(_ meeting: AXUIElement) {
-        guard find(in: meeting, dom: "gallery-view-size-button") != nil,
-              let view = find(in: meeting, dom: "view-mode-button") else { return }
-        AXUIElementPerformAction(view, kAXPressAction as CFString)
+        let deadline = Date().addingTimeInterval(1.5)
+        while find(in: meeting, dom: "gallery-view-size-button") != nil {
+            if Date() >= deadline {
+                if let view = find(in: meeting, dom: "view-mode-button") {
+                    AXUIElementPerformAction(view, kAXPressAction as CFString)
+                }
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+        }
     }
 
     private static func isOn(_ item: AXUIElement) -> Bool {
