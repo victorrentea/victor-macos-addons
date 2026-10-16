@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 15, 18:06"
+    static let BUILD_TIME = "Oct 16, 17:07"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -750,6 +750,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // on the monitor above the Retina. Next to Arrange Monitors because it
         // is the same kind of gesture: put windows where they belong, now.
         // Hidden while Zoom is not running (2026-10-08): there is nothing to lay out.
+        // Teams too since 2026-10-16 (`TeamsMeetingLayout`): the row is renamed after the app.
         // Its icon is the layout itself, drawn (Victor: "imitate the layout"): the
         // meeting on the left, Participants over Chat on the right.
         layoutZoomItem = addItem("Layout Zoom", action: #selector(layoutZoomAction))
@@ -1321,9 +1322,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         return image
     }()
 
+    /// Named after the meeting app that is running — Teams joined Zoom on
+    /// 2026-10-16 (`TeamsMeetingLayout`); with both open it says neither.
     private func refreshLayoutZoomItem() {
-        layoutZoomItem.isHidden = !NSWorkspace.shared.runningApplications
-            .contains { $0.bundleIdentifier == "us.zoom.xos" }
+        let ids = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        let zoom = ids.contains("us.zoom.xos")
+        let teams = !ids.isDisjoint(with: TeamsMeetingLayout.bundleIDs)
+        layoutZoomItem.isHidden = !zoom && !teams
+        layoutZoomItem.title = zoom && teams ? "Layout Meeting" : teams ? "Layout Teams" : "Layout Zoom"
     }
 
 

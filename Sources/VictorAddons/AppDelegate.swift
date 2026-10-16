@@ -158,7 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
     private var zoomSharePrep: ZoomSharePrep?
-    /// 🎥 Layout Zoom runs here: it waits on Zoom opening panels, and a second
+    /// 🎥 Layout Zoom/Teams runs here: it waits on the app opening panels, and a second
     /// click while one is running must queue behind it, not race it.
     private let zoomLayoutQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.zoom-layout",
                                                 qos: .userInitiated)
@@ -2617,16 +2617,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return max(0, Date().timeIntervalSince(mtime))
     }
 
-    /// 🎥 Layout Zoom. Feedback is emoji-only, like 🔊's: the banner lands on
-    /// the Retina, which may be what the room is watching.
+    /// 🎥 Layout Zoom / Teams. Feedback is emoji-only, like 🔊's: the banner
+    /// lands on the Retina, which may be what the room is watching.
+    /// Zoom first; Teams (2026-10-16) when Zoom is not running or has no
+    /// meeting — both open at once is rare, and only one can hold a call.
     private func layoutZoom() {
         zoomLayoutQueue.async { [weak self] in
-            let report = ZoomMeetingLayout.apply()
-            NSLog("🎥 Layout Zoom: \(report.json)")
+            var outcome: ZoomMeetingLayout.Outcome
+            var json: String
+            let zoom = ZoomMeetingLayout.apply()
+            (outcome, json) = (zoom.outcome, zoom.json)
+            if [.zoomNotRunning, .noMeeting].contains(outcome), TeamsMeetingLayout.runningApp() != nil {
+                let teams = TeamsMeetingLayout.apply()
+                (outcome, json) = (teams.outcome, teams.json)
+            }
+            NSLog("🎥 Layout meeting: \(json)")
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.lastZoomLayoutReport = report.json
-                switch report.outcome {
+                self.lastZoomLayoutReport = json
+                switch outcome {
                 case .done:
                     self.statusBanner?.showNow(text: "🎥✅", sound: nil, visibleDuration: 2.5)
                 case .zoomNotRunning, .noMeeting:

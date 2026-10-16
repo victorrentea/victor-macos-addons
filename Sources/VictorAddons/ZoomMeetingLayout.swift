@@ -332,11 +332,11 @@ final class ZoomMeetingLayout {
 
     // MARK: - Displays
 
-    private static func onMain<T>(_ work: () -> T) -> T {
+    static func onMain<T>(_ work: () -> T) -> T {
         Thread.isMainThread ? work() : DispatchQueue.main.sync(execute: work)
     }
 
-    private static func displayAboveBuiltIn() -> CGRect? {
+    static func displayAboveBuiltIn() -> CGRect? {
         var count: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &count)
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
@@ -350,7 +350,7 @@ final class ZoomMeetingLayout {
     /// `NSScreen.visibleFrame` of the display with these global top-left
     /// bounds, converted back to top-left coordinates — the menu bar (and a
     /// Dock parked on that screen) taken out. **Main thread only.**
-    private static func usableArea(ofDisplayBounds bounds: CGRect) -> CGRect? {
+    static func usableArea(ofDisplayBounds bounds: CGRect) -> CGRect? {
         guard let primaryHeight = NSScreen.screens.first?.frame.height else { return nil }
         let screen = NSScreen.physical.first { s in
             let f = s.frame
