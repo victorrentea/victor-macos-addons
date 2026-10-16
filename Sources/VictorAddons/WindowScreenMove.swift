@@ -41,17 +41,29 @@ enum WindowScreenMove {
         }
     }
 
+    /// One log line per press — what was asked, from where, to where, and where
+    /// the window really ended up — because "it moved but wrong" is otherwise
+    /// invisible (2026-10-16: Chrome shuffling along its own screen).
     static func run(_ key: Key) {
-        guard let window = focusedWindow(), let frame = AXWindows.frame(of: window) else { return }
+        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+        guard let window = focusedWindow(), let frame = AXWindows.frame(of: window) else {
+            overlayInfo("🪟 \(key) \(app): no focused window"); return
+        }
         let screens = visibleScreens()
         guard let src = WindowScreenMovePolicy.screenIndex(containing: frame, in: screens) else { return }
+        let target: CGRect
         switch key {
         case .half(let direction):
-            AXWindows.setFrame(window, WindowScreenMovePolicy.half(of: screens[src], direction))
+            target = WindowScreenMovePolicy.half(of: screens[src], direction)
         case .screen(let direction):
-            guard let dst = WindowScreenMovePolicy.neighbour(of: src, direction, in: screens) else { return }
-            AXWindows.setFrame(window, WindowScreenMovePolicy.relocate(frame, from: screens[src], to: screens[dst]))
+            guard let dst = WindowScreenMovePolicy.neighbour(of: src, direction, in: screens) else {
+                overlayInfo("🪟 \(key) \(app): no screen that way from \(screens[src])"); return
+            }
+            target = WindowScreenMovePolicy.relocate(frame, from: screens[src], to: screens[dst])
         }
+        AXWindows.setFrame(window, target)
+        let landed = AXWindows.frame(of: window).map { "\($0)" } ?? "?"
+        overlayInfo("🪟 \(key) \(app): \(frame) → \(target), landed \(landed)")
     }
 
     // MARK: - F3 fill / restore
