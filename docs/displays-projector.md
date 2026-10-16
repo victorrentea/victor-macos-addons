@@ -159,7 +159,8 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   times when the zoom ends. Verifying this needs a ScreenCaptureKit capture with
   `showsCursor = true` (it omits a hidden cursor — calibrated with a probe process that
   hid it); `screencapture -C` draws the cursor even while it is hidden and lies.
-- **Effects (`victor-effects`) need only the cursor.** Their overlay is at the
+- **Effects (`victor-effects`) need only the cursor — and to be left out of the
+  capture** (below). Their overlay is at the
   maximum window level, above this panel, so they are drawn unmagnified over the
   zoomed picture — what they look like unzoomed — and screenshot effects photograph
   the zoomed picture. What broke was anything drawn *at the cursor* (💓 heartbeat,
@@ -170,12 +171,20 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   listener: position at zoom start, keep-alives while resting, cleared at 1×.
 - **Capture**: `SCStream` of the whole display at 60 fps, `showsCursor = false`,
   filtered with `excludingWindows: [our panel]` — only ours, not the whole app, so the
-  banners and the hands-off locks stay in the picture. **Also excluded: Victor
-  Effects' 💬 subtitle window** (`isEffectsCaption`, by title + owner — it is
-  another app's), which sits above this zoom on purpose so a caption keeps its size
-  and place; filmed, it would show a second, magnified copy behind itself. The
-  filters are rebuilt when the lingering stream stops, so a Victor Effects restart
-  (new window id) is picked up by the next zoom. Frames are `IOSurface`s set
+  banners and the hands-off locks stay in the picture. **Also excluded: every
+  Victor Effects window** (`isEffectsWindow`, by bundle id). They all sit at
+  `maximumWindow` ± 2, above this zoom, so each is drawn unmagnified over the
+  picture already; filmed too, it showed twice — the 💀 skull boom "duplicated",
+  a magnified copy behind the live one (2026-10-16). Until then only the 💬
+  subtitle window was left out, by title, and every other effect was filmed. The
+  effects app makes some panels on demand (a fresh one per green edge flash) and a
+  restart renumbers them all, so: every 15 ticks (~8 Hz) the zoom compares Victor
+  Effects' on-screen windows (`CGWindowListCopyWindowInfo`, cheap) against the
+  filter and, on a new one, lists again and hands the **live** stream the new filter
+  (`updateContentFilter`) — at most ~0.25 s of ghost for a panel opened mid-zoom;
+  and the filters are rebuilt 2 s after Victor Effects launches, so the first zoom
+  after a deploy is clean too. `/test/share-zoom` reports `effectsExcluded` (per
+  display) and `filterRefreshes`. Frames are `IOSurface`s set
   straight as the layer's `contents`; the zoom is just `contentsRect`. **Only one
   hop to main is ever in flight**: the frame queue parks the newest surface and
   main takes whichever is newest when it gets there — a hop per frame queued up

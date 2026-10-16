@@ -48,6 +48,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// Whether the filter really excludes our panel. If it does not, the stream
         /// would film its own output; the filter is rebuilt once the panel is on screen.
         var excludesOwnWindow = false
+        /// Victor Effects' windows the filter leaves out (see `isEffectsWindow`).
+        var excludedEffects: Set<CGWindowID> = []
+        /// Effects windows a listing was already asked about. One that ScreenCaptureKit
+        /// never lists would otherwise re-run the listing 8× a second for the whole zoom.
+        var askedAbout: Set<CGWindowID> = []
 
         init(screen: NSScreen, displayID: CGDirectDisplayID) {
             self.displayID = displayID
@@ -190,18 +195,21 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// or they would show twice, once magnified: 🪞 `VirtualDesktop`'s silhouette.
     var alsoExcluded: () -> [CGWindowID] = { [] }
 
-    /// 💬 Victor Effects' subtitle window. It is painted above this zoom on
-    /// purpose — a caption stays the same size in the same place whatever the
-    /// zoom does — so filming it would put a magnified copy behind the real one.
-    /// Found by title and owner, not id: it lives in the other app, which
-    /// creates it at launch so it is listed before the first caption.
-    static let effectsCaptionTitle = "Victor Effects caption"
+    /// **Every** window of Victor Effects. They all sit at `maximumWindow` ± 2, far
+    /// above this zoom's `.screenSaver`, so each one is already drawn unmagnified
+    /// over the zoomed picture — the effect at the size it has unzoomed. Filmed as
+    /// well, it showed twice: once live on top, once magnified behind it (Victor,
+    /// 2026-10-16: the 💀 skull boom "duplicated"). Until then only the 💬 subtitle
+    /// window was left out, by title. Matched by bundle id, not name or window id:
+    /// the effects app makes panels on demand (the green edge flash, a fresh one per
+    /// flash), and a restart renumbers them all — `watchEffectsWindows` catches both.
+    static let effectsBundleID = "ro.victorrentea.victor-effects"
 
-    static func isEffectsCaption(_ w: SCWindow) -> Bool {
-        w.title == effectsCaptionTitle && w.owningApplication?.applicationName == "Victor Effects"
+    static func isEffectsWindow(_ w: SCWindow) -> Bool {
+        w.owningApplication?.bundleIdentifier == effectsBundleID
     }
 
-    /// Rebuild the filters after `alsoExcluded` changed. Takes effect on the next zoom.
+    /// Rebuild the filters after `alsoExcluded` changed. A live stream picks it up at once.
     func refreshExclusions() {
         prepareStages()
     }
@@ -222,6 +230,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.prepareStages() }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.prepareStages() }
+        // A Victor Effects deploy between two zooms renumbers its windows: without a
+        // fresh listing the next zoom would film them all again — the first demo after
+        // every deploy. 2 s lets its overlay and caption panels come up first.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == Self.effectsBundleID else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.prepareStages() }
+        }
     }
 
     // MARK: - Gesture
@@ -275,6 +293,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let prepared = stages.values
             .map { "\"\($0.name)\":\($0.filter != nil && $0.excludesOwnWindow)" }
             .joined(separator: ",")
+        let effectsExcluded = stages.values
+            .map { "\"\($0.name)\":\($0.excludedEffects.count)" }
+            .joined(separator: ",")
         return """
         {"active":\(isActive),"visible":\(visible),"target":\(String(format: "%.3f", target)),\
         "current":\(String(format: "%.3f", current)),"framesShown":\(framesShown),\
@@ -283,6 +304,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "contentsRect":[\(String(format: "%.4f,%.4f,%.4f,%.4f", rect.minX, rect.minY, rect.width, rect.height))],\
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"prepared":{\(prepared)},\
+        "effectsExcluded":{\(effectsExcluded)},"filterRefreshes":\(filterRefreshes),\
         "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
@@ -317,12 +339,22 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                     // hands-off locks and the break overlay belong in the picture.
                     let own = content.windows.filter { $0.windowID == CGWindowID(s.panel.windowNumber) }
                     let above = Set(self.alsoExcluded())
-                    let others = content.windows.filter {
-                        above.contains($0.windowID) || Self.isEffectsCaption($0)
-                    }
+                    let effects = content.windows.filter(Self.isEffectsWindow)
+                    let others = content.windows.filter { above.contains($0.windowID) } + effects
                     s.excludesOwnWindow = !own.isEmpty
-                    s.filter = SCContentFilter(display: display, excludingWindows: own + others)
+                    s.excludedEffects = Set(effects.map(\.windowID))
+                    let filter = SCContentFilter(display: display, excludingWindows: own + others)
+                    s.filter = filter
+                    // A stream already running keeps the filter it started with: hand it
+                    // the new one, or a window that appeared mid-zoom stays filmed.
+                    if let stream = self.stream, self.streamStage === s, s.excludesOwnWindow {
+                        stream.updateContentFilter(filter) { error in
+                            guard let error else { return }
+                            overlayError("🔎 ShareZoom: updateContentFilter failed: \(error.localizedDescription)")
+                        }
+                    }
                 }
+                self.filterRefreshes += 1
                 done?()
             }
         }
@@ -545,6 +577,36 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
+    // MARK: - Victor Effects' windows
+
+    /// Ticks between two looks at Victor Effects' on-screen windows: 15 at 120 Hz,
+    /// so a panel it opens mid-zoom is filmed for ~125 ms plus one listing (~100 ms)
+    /// at most. The look is `CGWindowListCopyWindowInfo` — cheap, unlike the
+    /// `SCShareableContent` round trip, which is paid only when the set changed.
+    private static let effectsWatchEvery = 15
+    private var filterRefreshes = 0
+    private var effectsRefreshInFlight = false
+
+    /// Victor Effects puts a window on screen that the filter does not leave out
+    /// (the green edge flash makes a new one per flash; a restart renumbers them
+    /// all): list again and hand the live stream the new filter.
+    private func watchEffectsWindows(_ s: Stage) {
+        guard !effectsRefreshInFlight,
+              let pid = NSRunningApplication.runningApplications(withBundleIdentifier: Self.effectsBundleID)
+                .first?.processIdentifier,
+              let info = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]
+        else { return }
+        let onScreen = info.compactMap { w -> CGWindowID? in
+            guard (w[kCGWindowOwnerPID as String] as? pid_t) == pid else { return nil }
+            return w[kCGWindowNumber as String] as? CGWindowID
+        }
+        let fresh = Set(onScreen).subtracting(s.excludedEffects).subtracting(s.askedAbout)
+        guard !fresh.isEmpty else { return }
+        s.askedAbout.formUnion(fresh)
+        effectsRefreshInFlight = true
+        refreshFilters(for: [s]) { [weak self] in self?.effectsRefreshInFlight = false }
+    }
+
     // MARK: - Follow the pointer
 
     private func startTick() {
@@ -557,6 +619,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private func follow() {
         guard let s = active, visible else { return }
         tickCount += 1
+        if tickCount % Self.effectsWatchEvery == 0 { watchEffectsWindows(s) }
         let previous = current
         current = ShareZoomPolicy.ease(current, toward: target)
         if ShareZoomPolicy.isOff(current: current, target: target) {
