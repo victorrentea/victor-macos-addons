@@ -37,7 +37,8 @@ load-bearing, not commentary.
   [`victor-insomnia`](https://github.com/victorrentea/victor-insomnia) (public,
   beside this checkout) — its own ☕ / 🛏 in the menu bar, test hooks on
   **55125**. This app answers it one question, `GET /chrome/audible` (it owns
-  the Chrome extension's socket). 🛰️ Claude RC in background **stayed here**.
+  the Chrome extension's socket). 🛰️ Claude RC (the `claude remote-control`
+  watchdog) **moved there too** on 2026-10-16, next to the `/rc` count it feeds.
 - **Neither app waits for the other.** No launch ordering, no shared process;
   each degrades on its own.
 - **Single Swift process**: `VictorAddons` is the main application combining menu bar UI and overlay functionality
@@ -66,7 +67,6 @@ load-bearing, not commentary.
 | [docs/summaries.md](docs/summaries.md) | ☕️→📝 break-summary delta (`BreakSummaryLauncher` + `summarize-on-break.sh`), 📝 wrap-up offer at 16:45/17:15 (`SummaryReminder`) |
 | [docs/fact-check.md](docs/fact-check.md) | 🔬 Fact-check last 30 s (`FactCheck`): the last ~30 s of transcript → Walkie Talkie's `POST /ask` (token-gated, 8917–8919), framed as an overheard discussion → answered in Walkie's ⚡ pop-up (first words ~1 s, then 🌐 searched + 🧐 reviewed); no whisper settle wait. The 10-min Terminal + HTML report pipeline (`research-proof.sh`) is gone since 2026-10-15 |
 | [docs/flux-email-agent.md](docs/flux-email-agent.md) | 📬 AgentMail inbox poller (`FluxInboxPoller` + `FluxMailPolicy`), 📬 menu item, 📬→🤖 email agent (`FluxAgentLauncher` + `flux-agent.sh`) — **read the security posture before changing anything** |
-| [docs/claude-remote-control.md](docs/claude-remote-control.md) | 🛰️ **Claude RC in background** (`ClaudeRemoteControl`): keeps `claude remote-control` — the server the phone opens new sessions against — alive in the detached `claude-rc` tmux session, rechecked every 60 s and once at launch; the checkbox under 👩🏻‍💻 Extra is the off switch the `ro.victorrentea.claude-rc` LaunchAgent never had (that agent is booted out and `launchctl disable`d, 22 Sep 2026, so two watchdogs cannot race) |
 | [docs/home-awake.md](docs/home-awake.md) | 🏠 Home Wi-Fi keeps the screen on (`HomeAwake` + `HomeAwakePolicy` + `DisplaySleepAssertion`): while associated with a configured home SSID the display never idles, so the screen saver → lock path never starts (⌃⌘Q and the lid still lock); CoreWLAN `.ssidDidChange` + a 60 s backstop poll, the SSID in `UserDefaults` not in a branch, why not `caffeinate` and why not `victor-insomnia`'s kernel flag |
 | [docs/hotspot-fallback.md](docs/hotspot-fallback.md) | 📶 asks the phone for its hotspot when the Mac is offline: RFCOMM signal, the Samsung routine, why not Bluetooth-connected, the home geofence |
 | [docs/roaming-warning.md](docs/roaming-warning.md) | 📶 roaming allowance < 15% on a roaming day → red pill until hovered, once a day (`PhoneRoamingMonitor` + `RoamingWarningPolicy` + `RoamingWarning`); read from the phone over a **second** RFCOMM service (not the hotspot beacon's), shared `PhoneChannelOpener` |

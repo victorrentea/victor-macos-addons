@@ -50,8 +50,6 @@ case testTerminalFont
     case testMenuOpen(closeAfter: Double, appearance: String?)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
         case testHomeAwake
-        /// What the 🛰️ row claims and what tmux says — see docs/testing.md.
-        case testClaudeRemoteControl
         /// Is any Chrome tab audible? Asked by Victor Insomnia before it takes the
         /// output up for its lid-shut heartbeat — this app owns the extension's socket.
         case chromeAudible
@@ -305,7 +303,6 @@ case testTerminalFont
     var onTestMenuOpen: ((Double, String?) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
     var onTestHomeAwake: (() -> String)?
-    var onTestClaudeRemoteControl: (() -> String)?
     var onChromeAudible: (() -> Bool?)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
@@ -578,10 +575,6 @@ case testTerminalFont
                 contentType = "application/json"
                 let audible = self.onChromeAudible?() ?? nil
                 body = "{\"audible\":\(audible.map(String.init) ?? "null")}"
-            case .testClaudeRemoteControl:
-                contentType = "application/json"
-                body = self.onTestClaudeRemoteControl?() ?? "{\"error\":\"claude rc unavailable\"}"
-                if self.onTestClaudeRemoteControl == nil { statusCode = 503 }
             case .testWisprRecording:
                 contentType = "application/json"
                 body = self.onTestWisprRecording?() ?? "{\"error\":\"wispr probe unavailable\"}"
@@ -976,8 +969,6 @@ case testTerminalFont
             return .testHomeAwake
         case "/chrome/audible":
             return .chromeAudible
-        case "/test/claude-rc":
-            return .testClaudeRemoteControl
         case "/test/wispr/recording":
             return .testWisprRecording
         case "/test/break/close":

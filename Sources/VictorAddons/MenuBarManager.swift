@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 16, 17:07"
+    static let BUILD_TIME = "Oct 16, 17:13"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -32,7 +32,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var virtualDesktopItem: NSMenuItem!
     private(set) var virtualDesktopAutoItem: NSMenuItem!
-    private(set) var claudeRemoteControlItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
@@ -175,11 +174,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// to be refused, just an assertion this process owns — so it returns
     /// nothing and the tick follows the click.
     var onHomeAwakeEnabledChanged: ((Bool) -> Void)?
-    /// 🛰️ Claude RC in background. Like 🏠 it cannot be refused by anything
-    /// outside the app, so the tick follows the click; what it costs is a `tmux
-    /// kill-session` on the way down and a script launch on the way up, both on
-    /// the watcher's own queue.
-    var onClaudeRemoteControlEnabledChanged: ((Bool) -> Void)?
     /// Force one Flux-inbox poll now, bypassing the power gate.
     var onCheckTaskInbox: (() -> Void)?
     /// Current `(last real inbox read, agents launched so far)` for the 📬 title.
@@ -612,20 +606,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         virtualDesktopAutoItem.state = VirtualDesktopSettings.autoStart ? .on : .off
         virtualDesktopAutoItem.toolTip = "Switch 🪞 Virtual Desktop on by itself when Zoom or Teams starts. It still goes off when the last of them quits."
 
-        // 🛰️ Claude RC in background — the `claude remote-control` server the
-        // phone opens sessions against, kept alive in a detached tmux session.
-        // It is in the menu for the reason 🔊 above it is: it *acts on its own*,
-        // once a minute, and a thing that acts on its own needs a visible way to
-        // be told to stop. Until now there was none — the behaviour lived in a
-        // LaunchAgent whose only off switch was `launchctl bootout`. Default on,
-        // because that LaunchAgent was unconditional and this row inherits its
-        // job (see `ClaudeRemoteControlSettings`).
-        claudeRemoteControlItem = NSMenuItem(title: "🛰️ Claude RC in background", action: #selector(toggleClaudeRemoteControlAction), keyEquivalent: "")
-        claudeRemoteControlItem.target = self
-        claudeRemoteControlItem.isEnabled = true
-        claudeRemoteControlItem.state = ClaudeRemoteControlSettings.isEnabled ? .on : .off
-        claudeRemoteControlItem.toolTip = "Keeps `claude remote-control` up in the detached tmux session \"claude-rc\", rechecking every minute, so the phone can open new sessions. Unticking kills it."
-
         // 🔋 Claude prevents sleep left this submenu for the **top level** on
         // 2026-09-17 — see the row itself, further down.
 
@@ -698,7 +678,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, scrollReversalItem],
             [windowHalfItem, windowScreenItem, windowFillItem],
-            [homeAwakeItem, claudeRemoteControlItem],
+            [homeAwakeItem],
         ]
         for (i, group) in extraGroups.enumerated() {
             if i > 0 { extraSubmenu.addItem(.separator()) }
@@ -1199,17 +1179,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !ZoomSharePrepSettings.isEnabled
         ZoomSharePrepSettings.isEnabled = enabled
         zoomSharePrepItem.state = enabled ? .on : .off
-    }
-
-    /// 🛰️ Claude RC in background. The tick means "armed and minding it", and
-    /// unlike its neighbours the click has an immediate effect on something
-    /// outside the app — unticking kills the tmux session, ticking starts it if
-    /// it is down. What tmux actually holds this instant is in
-    /// `GET /test/claude-rc` (`alive`), which is the row's own proof.
-    @objc private func toggleClaudeRemoteControlAction() {
-        let enabled = !ClaudeRemoteControlSettings.isEnabled
-        claudeRemoteControlItem.state = enabled ? .on : .off
-        onClaudeRemoteControlEnabledChanged?(enabled)
     }
 
     /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",

@@ -4,7 +4,7 @@ import Foundation
 
 /// What the watchdog does on one tick.
 ///
-/// **One-way, like 🛰️ Claude RC's tick**: it only ever turns the device *off*.
+/// **One-way**: it only ever turns the device *off*.
 /// Turning it on is Walkie Talkie's job at launch — a watchdog that also switched it
 /// on would make "From Walkie" exist without the relay feeding it, which is the
 /// silent microphone this whole thing is there to prevent.
