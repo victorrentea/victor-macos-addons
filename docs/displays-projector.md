@@ -193,6 +193,10 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **A faded 🔍 (104 pt — 26 was too small to notice — 50 %) sits in the zoomed screen's top-right corner** while the
   zoom is on, at constant size — over the picture, not in it — so the room and the
   call can tell it is this zoom and not the system one (2026-10-15).
+- **A second 🔍 (40 pt, 85 %) rides at the drawn cursor's lower right** like a
+  tooltip, for the whole zoom (2026-10-17): the corner one is out of sight when the
+  eyes are on the pointer. Flips to the cursor's left / top near the right / bottom
+  edge; hidden whenever the drawn cursor is (pointer on another display, pinned focus).
 - **It must not feed itself** (2026-10-15, found by an adversarial review, then
   measured). It films the display its own window covers, so anything it draws damages
   that display and summons another frame — and `dirtyRects` report the *whole screen*

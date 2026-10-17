@@ -44,6 +44,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// the call — can tell this is our zoom and not the system one (Victor,
         /// 2026-10-15). Never magnified: it sits over the picture, not in it.
         let badge = CALayer()
+        /// The same 🔍 riding at the drawn cursor's lower right, like a tooltip, for
+        /// as long as the zoom is on — the corner one is out of sight when the eyes
+        /// are on the pointer (Victor, 2026-10-17). Constant size, never magnified.
+        let tip = CALayer()
+        static let tipSide: CGFloat = 40
         var filter: SCContentFilter?
         /// Whether the filter really excludes our panel. If it does not, the stream
         /// would film its own output; the filter is rebuilt once the panel is on screen.
@@ -92,9 +97,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             badge.contentsGravity = .resizeAspect
             badge.opacity = 0.5
             badge.actions = noAnimation
+            tip.frame = CGRect(x: 0, y: 0, width: Self.tipSide, height: Self.tipSide)
+            tip.contents = Self.emojiImage("🔍", side: Self.tipSide, scale: screen.backingScaleFactor)
+            tip.contentsGravity = .resizeAspect
+            tip.opacity = 0.85
+            tip.actions = noAnimation
+            tip.isHidden = true
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(badge)
             view.layer?.addSublayer(cursor)
+            view.layer?.addSublayer(tip)
             panel.contentView = view
         }
 
@@ -682,9 +694,25 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         s.image.contentsRect = rect
-        if let cursorFrame { s.cursor.frame = cursorFrame }
+        if let cursorFrame {
+            s.cursor.frame = cursorFrame
+            s.tip.frame = Self.tipFrame(beside: cursorFrame, in: size)
+        }
         s.cursor.isHidden = cursorHidden
+        s.tip.isHidden = cursorHidden
         CATransaction.commit()
+    }
+
+    /// Just off the drawn cursor's lower-right corner, flipped to the other side of
+    /// it near the right or bottom edge so it never leaves the screen.
+    static func tipFrame(beside cursor: CGRect, in screen: CGSize) -> CGRect {
+        let side = Stage.tipSide, gap: CGFloat = 4
+        var x = cursor.maxX + gap
+        if x + side > screen.width { x = cursor.minX - gap - side }
+        var y = cursor.minY - gap - side  // the layer's y grows up: below = smaller
+        if y < 0 { y = cursor.maxY + gap }
+        return CGRect(x: min(max(x, 0), screen.width - side), y: min(max(y, 0), screen.height - side),
+                      width: side, height: side)
     }
 
     // MARK: - Telling victor-effects where the cursor is
