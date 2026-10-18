@@ -53,13 +53,13 @@ Five rows changed place or left, all for the same reason: the top level had grow
 
 ## 📤 Mail clipboard to myself
 
-Sits **directly under 🔳 Display clipboard link**, because the two rows answer the same question — *what is on the clipboard* — and differ only in where it goes: one puts it on the wall for the room, this one mails it to Victor as a `Reminder` (⌘⌃P, `ReminderMail`; the mechanism is in [hotkeys-launchers.md](hotkeys-launchers.md)).
+Sits **directly under 🔳 Display clipboard link**, because the two rows answer the same question — *what is on the clipboard* — and differ only in where it goes: one puts it on the wall for the room, this one mails it to Victor as a 🔔 mail (⌘⌃M, `ReminderMail`; the mechanism is in [hotkeys-launchers.md](hotkeys-launchers.md)).
 
 It breaks *the menu is not a second cheat-sheet* knowingly, and not on the 🔴 raw-audio row's terms — there is no invisible state here to reveal. The justification is the other one: **this key SENDS**, into a real inbox, with nothing to confirm and nothing to undo. Every removed row was a shortcut for something reversible; a menu row is the deliberate, aimed form of an irreversible gesture — you read the title before you click it, which is not true of a key you hit mid-sentence.
 
-The row carries `⌘⌃P` as a real `keyEquivalent`, not as text in the title, and it **cannot fire the send twice**: the event tap returns `nil` for ⌘⌃P, so the keystroke never reaches AppKit and the menu equivalent never matches. That makes the equivalent a fallback as well as a label — with no Accessibility grant the tap is not running, and the menu is then the only way to fire it at all.
+The row carries `⌘⌃M` as a real `keyEquivalent`, not as text in the title, and it **cannot fire the send twice**: the event tap returns `nil` for ⌘⌃M, so the keystroke never reaches AppKit and the menu equivalent never matches. That makes the equivalent a fallback as well as a label — with no Accessibility grant the tap is not running, and the menu is then the only way to fire it at all.
 
-The click runs `sendClipboardReminder()` off the main thread, exactly as ⌘⌃P and `GET /test/reminder` do: the pasteboard read and any JPEG re-encode happen inline, and only the receipt banner hops back.
+The click runs `sendClipboardReminder()` off the main thread, exactly as `GET /test/reminder` does (⌘⌃M takes the same path, selection first): the pasteboard read and any JPEG re-encode happen inline, and only the receipt banner hops back.
 
 ## 🔴 Record raw audio
 

@@ -47,10 +47,11 @@ enum CommandControlShortcuts {
         // G (key 5) is drawn from `artworkNames` below, not from a word.
         40: "catalog",   // K — training Catalog.docx (the 📕 rides in the corner)
         37: "📅",        // L — Google Calendar
-        46: "remind",    // M — mail the clipboard to myself, subject "Reminder".
-                         // The word is the subject line you will later search
-                         // Gmail for, which is the only name this key answers to
-                         // once the mail has arrived. Deliberately not "mail":
+        46: "remind",    // M — mail the selection (or the clipboard) to myself,
+                         // subject "🔔 …" (the word `Reminder` until 2026-10-18).
+                         // The word names what the mail is for, which is the
+                         // only name this key answers to once the mail has
+                         // arrived. Deliberately not "mail":
                          // ⌘⌃G (the Gmail mark) is already mail, and the thing
                          // that separates this key from it is *why* you send it,
                          // not that you do. It took the letter from the old

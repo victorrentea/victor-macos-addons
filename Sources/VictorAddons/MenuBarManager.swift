@@ -135,7 +135,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onDisplayClipboardLink: (() -> Void)?
     /// True while the banner shows a clipboard link — the row stays up to take it down.
     var isClipboardLinkShown: (() -> Bool)?
-    /// 📤 Mail the clipboard to Victor, subject "Reminder" — the ⌘⌃P key's row.
+    /// 📤 Mail the clipboard to Victor, subject "🔔 …" — the ⌘⌃M key's row.
     var onSendReminderMail: (() -> Void)?
     /// 📝 Ask Chrome to clone, rename and publish this session's feedback form.
     var onPublishFeedbackForm: (() -> Void)?

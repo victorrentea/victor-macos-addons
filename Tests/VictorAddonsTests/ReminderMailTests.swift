@@ -6,36 +6,36 @@ final class ReminderMailTests: XCTestCase {
 
     // MARK: Subject
 
-    func testSubjectAlwaysStartsWithTheWordEverythingIsFiledUnder() {
-        // The whole point of the prefix: `subject:Reminder` in Gmail must find
-        // every one of these, whatever was on the clipboard.
+    func testSubjectAlwaysStartsWithTheBell() {
+        // The bell is what marks every one of these in the inbox, whatever was
+        // selected or on the clipboard.
         for text in [nil, "", "   ", "buy milk", "a\nb"] as [String?] {
-            XCTAssertTrue(ReminderMail.subject(text: text).hasPrefix("Reminder"),
+            XCTAssertTrue(ReminderMail.subject(text: text).hasPrefix("🔔"),
                           "subject for \(String(describing: text)) lost the prefix")
         }
     }
 
     func testSubjectCarriesTheFirstRealLineOfTheClipboard() {
-        XCTAssertEqual(ReminderMail.subject(text: "buy milk"), "Reminder: buy milk")
+        XCTAssertEqual(ReminderMail.subject(text: "buy milk"), "🔔 buy milk")
         // Leading blank lines are what a copied paragraph usually starts with;
-        // a subject reading "Reminder: " would be worse than none.
-        XCTAssertEqual(ReminderMail.subject(text: "\n\n  hello \nworld"), "Reminder: hello")
-        XCTAssertEqual(ReminderMail.subject(text: nil), "Reminder")
-        XCTAssertEqual(ReminderMail.subject(text: "   "), "Reminder")
+        // a subject reading "🔔 " would be worse than none.
+        XCTAssertEqual(ReminderMail.subject(text: "\n\n  hello \nworld"), "🔔 hello")
+        XCTAssertEqual(ReminderMail.subject(text: nil), "🔔")
+        XCTAssertEqual(ReminderMail.subject(text: "   "), "🔔")
     }
 
     func testLongSubjectIsCutSoTheNotificationStaysReadable() {
         let long = String(repeating: "x", count: 200)
         let subject = ReminderMail.subject(text: long)
         XCTAssertTrue(subject.hasSuffix("…"))
-        XCTAssertEqual(subject, "Reminder: " + String(repeating: "x", count: 60) + "…")
+        XCTAssertEqual(subject, "🔔 " + String(repeating: "x", count: 60) + "…")
     }
 
     func testSubjectNeverContainsANewline() {
         // A raw \n in the JSON subject is a header injection in any mail system
         // that doesn't fold it; taking only the first line makes it impossible.
         XCTAssertFalse(ReminderMail.subject(text: "one\nBcc: evil@example.com").contains("\n"))
-        XCTAssertEqual(ReminderMail.subject(text: "one\nBcc: evil@example.com"), "Reminder: one")
+        XCTAssertEqual(ReminderMail.subject(text: "one\nBcc: evil@example.com"), "🔔 one")
     }
 
     // MARK: Payload
@@ -43,7 +43,7 @@ final class ReminderMailTests: XCTestCase {
     func testTextOnlyClippingIsSentAsPlainTextWithNoAttachment() {
         let payload = ReminderMail.payload(for: .init(text: "buy milk", image: nil))
         XCTAssertEqual(payload["to"] as? String, "victorrentea@gmail.com")
-        XCTAssertEqual(payload["subject"] as? String, "Reminder: buy milk")
+        XCTAssertEqual(payload["subject"] as? String, "🔔 buy milk")
         XCTAssertEqual(payload["text"] as? String, "buy milk")
         XCTAssertNil(payload["attachments"])
         // No HTML part when there is nothing an HTML part could add.
@@ -78,7 +78,7 @@ final class ReminderMailTests: XCTestCase {
             data: Data([1]), filename: "clipboard.png", contentType: "image/png")
         let payload = ReminderMail.payload(for: .init(text: nil, image: image))
         XCTAssertEqual(payload["text"] as? String, ReminderMail.imageOnlyBody)
-        XCTAssertEqual(payload["subject"] as? String, "Reminder")
+        XCTAssertEqual(payload["subject"] as? String, "🔔")
     }
 
     func testTextAndImageTogetherKeepBothHalves() {
@@ -241,14 +241,14 @@ final class ReminderMailTests: XCTestCase {
         let image = ReminderMail.Clipping.Image(
             data: Data([1]), filename: "a.png", contentType: "image/png")
         XCTAssertEqual(ReminderMail.confirmation(for: .init(text: "x", image: image)),
-                       "📤 Reminder: x + imagine")
+                       "📤 🔔 x + imagine")
         XCTAssertEqual(ReminderMail.confirmation(for: .init(text: nil, image: image)),
-                       "📤 Reminder: (imagine)")
+                       "📤 🔔 (imagine)")
         XCTAssertEqual(ReminderMail.confirmation(for: .init(text: "buy milk\nand eggs", image: nil)),
-                       "📤 Reminder: buy milk")
+                       "📤 🔔 buy milk")
         let long = String(repeating: "z", count: 100)
         XCTAssertEqual(ReminderMail.confirmation(for: .init(text: long, image: nil)),
-                       "📤 Reminder: " + String(repeating: "z", count: ReminderMail.bannerSnippetLimit) + "…")
+                       "📤 🔔 " + String(repeating: "z", count: ReminderMail.bannerSnippetLimit) + "…")
     }
 
     func testAnEmptyClipboardFailsBeforeAnyRequestIsMade() {

@@ -109,44 +109,17 @@ enum SessionNotesAppender {
             return
         }
 
-        // 2. The app didn't answer (many Java/Electron UIs don't). Fall back to a
-        //    simulated ⌘C — but ONLY once the hotkey's own modifiers are off the
-        //    keyboard. A ⌘C posted while ⌘⌃S is still held arrives at the app as
-        //    ⌃⌘C, and on this Mac that is a real shortcut: it makes Wispr Flow
-        //    replace the clipboard with its last dictation. That is the whole bug
-        //    — the fresh copy was overwritten by a stale transcript a few
-        //    milliseconds before we read it, and the transcript went to the notes.
-        //    So if the fingers are still down after the wait, we do NOT copy: the
-        //    clipboard already holds what the user wants, and the one thing worse
-        //    than missing a selection is destroying the clipboard to look for it.
-        let clean = KeySimulator.waitForModifiersReleased()
-        var waited: TimeInterval = 0
-        var copiedSomething = false
+        // 2. The app didn't answer. Fall back to a simulated ⌘C, guarded against
+        //    the still-held hotkey — see `SelectionReader.copyWithSimulatedCmdC`.
         let clipboardBefore = ClipboardManager.read()
-
-        if clean {
-            let before = PasteboardGate.sync { $0.changeCount }
-            KeySimulator.cmdC()
-
-            // Wait for the app to service the copy. changeCount bumps on every
-            // pasteboard write (even identical content), so this detects whether
-            // anything was copied — apps no-op ⌘C when nothing is selected.
-            let step: TimeInterval = 0.02
-            while PasteboardGate.sync({ $0.changeCount }) == before && waited < 0.5 {
-                Thread.sleep(forTimeInterval: step)
-                waited += step
-            }
-            copiedSomething = PasteboardGate.sync { $0.changeCount } != before
-        }
+        let copy = SelectionReader.copyWithSimulatedCmdC()
 
         let text = ClipboardManager.read().trimmingCharacters(in: .whitespacesAndNewlines)
-        overlayInfo("\(hotkey): no AX selection; "
-            + (clean ? "⌘C \(copiedSomething ? "copied" : "no-op") after \(Int(waited * 1000))ms"
-                     : "modifiers still held — skipped ⌘C, using clipboard")
+        overlayInfo("\(hotkey): no AX selection; \(copy.summary)"
             + "; before [\(clipboardBefore.count)]: \(String(clipboardBefore.prefix(40))) "
             + "→ after [\(text.count)]: \(String(text.prefix(40)))")
         guard !text.isEmpty else {
-            showResult(copiedSomething ? "(empty selection)" : "(empty clipboard)")
+            showResult(copy.copied ? "(empty selection)" : "(empty clipboard)")
             return
         }
         pasteAndOfferUndo(text: text, marker: marker)

@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
 
-/// ⌘⌃M — "remind me of this": whatever is on the clipboard right now (a
-/// picture, some text, or both) is **sent** to Victor's own Gmail through
-/// AgentMail's REST API, subject `Reminder`.
+/// ⌘⌃M — "remind me of this": the text selected in the frontmost app, or —
+/// when nothing is selected — whatever is on the clipboard (a picture, some
+/// text, or both), is **sent** to Victor's own Gmail through AgentMail's REST
+/// API, subject `🔔 <first line>`.
 ///
 /// **Sent, not drafted.** The other half of the pair — `GmailCompose`, which
 /// filled a Gmail compose window and then waited for a human to press Send —
@@ -20,8 +21,9 @@ import Foundation
 /// exactly as they were copied. The AgentMail inbox is the **sender**; Gmail is
 /// only ever the destination.
 ///
-/// The clipboard is read, never written, so ⌘V still produces the same thing
-/// afterwards.
+/// The clipboard is only ever written by the ⌘C fallback that captures a
+/// selection the app would not report through Accessibility — the same thing a
+/// hand-pressed ⌘C would have left there.
 enum ReminderMail {
     /// Hardcoded, like `FluxAgentLauncher`'s `TRUSTED_SENDER`: this shortcut
     /// mails Victor and nobody else, so no clipboard content can ever choose a
@@ -29,13 +31,14 @@ enum ReminderMail {
     /// mail to an address the page put on the pasteboard.
     static let recipient = "victorrentea@gmail.com"
 
-    /// The subject always *starts* with this word, so the whole set filters in
-    /// Gmail with `subject:Reminder` no matter what was on the clipboard.
-    static let subjectPrefix = "Reminder"
+    /// The subject always *starts* with the bell (2026-10-18, was the word
+    /// `Reminder`): in a list of subjects it is spotted before it is read, and it
+    /// costs 1 of the ~40 characters a phone notification shows instead of 10.
+    static let subjectPrefix = "🔔"
 
     /// How much of the clipboard's first line is allowed to follow the prefix.
     /// The subject line is the only part visible in a notification, so a bare
-    /// `Reminder` on every mail would make an inbox of them unreadable — but a
+    /// 🔔 on every mail would make an inbox of them unreadable — but a
     /// subject long enough to be truncated by the mail client answers nothing
     /// either.
     static let subjectSnippetLimit = 60
@@ -192,7 +195,7 @@ enum ReminderMail {
 
     // MARK: The mail
 
-    /// `Reminder`, plus the clipboard's first real line when there is one.
+    /// 🔔, plus the first real line of the text when there is one.
     static func subject(text: String?, limit: Int = subjectSnippetLimit) -> String {
         guard let line = text?
             .components(separatedBy: .newlines)
@@ -202,7 +205,7 @@ enum ReminderMail {
         let snippet = line.count > limit
             ? String(line.prefix(limit)) + "…"
             : line
-        return "\(subjectPrefix): \(snippet)"
+        return "\(subjectPrefix) \(snippet)"
     }
 
     static func escapeHTML(_ s: String) -> String {
@@ -262,17 +265,17 @@ enum ReminderMail {
 
     /// One line for the banner, saying what actually left the Mac: the start
     /// of the subject that was mailed, so a glance confirms it was the right
-    /// clipboard — "Reminder trimis" alone could have been anything.
+    /// text — "Reminder trimis" alone could have been anything.
     static func confirmation(for clip: Clipping) -> String {
         let subject = subject(text: clip.text, limit: bannerSnippetLimit)
         guard clip.image != nil else { return "📤 \(subject)" }
-        return subject == subjectPrefix ? "📤 \(subjectPrefix): (imagine)" : "📤 \(subject) + imagine"
+        return subject == subjectPrefix ? "📤 \(subjectPrefix) (imagine)" : "📤 \(subject) + imagine"
     }
 }
 
-/// Sends the clipboard as a `Reminder` mail. One `POST`, no retry: the banner
-/// reports the outcome and the clipboard is untouched, so ⌘⌃P again is the
-/// retry.
+/// Sends the selection or the clipboard as a 🔔 mail. One `POST`, no retry: the
+/// banner reports the outcome and the text is still where it was, so ⌘⌃M again
+/// is the retry.
 final class ReminderMailer {
     enum SendError: LocalizedError, Equatable {
         case emptyClipboard
@@ -280,7 +283,7 @@ final class ReminderMailer {
 
         var errorDescription: String? {
             switch self {
-            case .emptyClipboard: return "clipboard gol"
+            case .emptyClipboard: return "nimic selectat, clipboard gol"
             case .badStatus(let code, let detail):
                 return detail.isEmpty ? "AgentMail HTTP \(code)" : "AgentMail HTTP \(code) — \(detail)"
             }
@@ -293,6 +296,32 @@ final class ReminderMailer {
     init(apiKey: String, session: URLSession = .shared) {
         self.apiKey = apiKey
         self.session = session
+    }
+
+    /// ⌘⌃M — mail the selection when there is one, the clipboard otherwise.
+    ///
+    /// The same two-step capture as ⌘⌃S / ⌘⌃P (`SessionNotesAppender`): ask the
+    /// frontmost app through Accessibility first, and only when it does not
+    /// answer fall back to a simulated ⌘C. A ⌘C that copies nothing leaves the
+    /// clipboard as it was, so "no selection" and "mail the clipboard" are the
+    /// same read below — no separate branch to get wrong.
+    ///
+    /// Selection wins over the clipboard because it is the fresher of the two:
+    /// the paragraph under the cursor is what the hand meant, and a stale
+    /// clipboard silently mailed instead is the mistake worth avoiding.
+    ///
+    /// Call off the main thread: the AX read, the ⌘C wait and the image
+    /// re-encode all block.
+    func sendSelectionOrClipboard(completion: @escaping (Result<ReminderMail.Clipping, Error>) -> Void) {
+        if let selection = SelectionReader.focusedSelection() {
+            overlayInfo("⌘⌃M: AX selection (\(selection.count) chars)")
+            let clip = ReminderMail.clipping(from: .init(text: selection))
+            send(clip) { result in completion(result.map { clip }) }
+            return
+        }
+        let copy = SelectionReader.copyWithSimulatedCmdC()
+        overlayInfo("⌘⌃M: no AX selection; " + copy.summary)
+        sendClipboard(completion: completion)
     }
 
     /// Read the clipboard and mail it. Call off the main thread: the pasteboard

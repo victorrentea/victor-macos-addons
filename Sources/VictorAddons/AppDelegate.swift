@@ -1366,7 +1366,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.fluxInboxPoller?.forcePollAndSnapshot()
                 ?? "{\"error\":\"flux poller unavailable — AGENTMAIL_API_KEY missing?\"}"
         }
-        // /test/reminder — the ⌘⌃P mail without the keyboard, so the shortcut
+        // /test/reminder — the ⌘⌃M mail (clipboard half) without the keyboard, so the shortcut
         // can be exercised while something else is holding ⌘ (or over ssh).
         tabletServer?.onTestReminderMail = { [weak self] in
             DispatchQueue.global(qos: .userInitiated).async { self?.sendClipboardReminder() }
@@ -1958,15 +1958,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onSendSelectionAsPrompt = {
             SessionNotesAppender.sendSelectionAsPrompt()
         }
-        // ⌘⌃M — the clipboard leaves the Mac as a "Reminder" mail. Same
+        // ⌘⌃M — the selection (or the clipboard) leaves the Mac as a 🔔 mail. Same
         // AgentMail key as the 📬 poller, used in the sending direction; no
         // agent and no model are involved, so the shortcut costs nothing and
         // works with the network as its only dependency.
         if let reminderKey = secrets["AGENTMAIL_API_KEY"], !reminderKey.isEmpty {
             let mailer = ReminderMailer(apiKey: reminderKey)
             self.reminderMailer = mailer
-            eventTap.onSendClipboardReminder = { [weak self] in
-                self?.sendClipboardReminder()
+            eventTap.onSendSelectionReminder = { [weak self] in
+                self?.sendClipboardReminder(selectionFirst: true)
             }
         } else {
             overlayError("⌘⌃M reminder mail disabled: AGENTMAIL_API_KEY missing from secrets")
@@ -2193,17 +2193,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    /// ⌘⌃P and `GET /test/reminder`. Reads the clipboard and mails it, then
-    /// says what happened — the mail is already gone by the time the banner
-    /// appears, so the banner is the receipt, not a progress indicator. Called
-    /// off the main thread (the pasteboard read and any JPEG re-encode happen
-    /// inline); only the banner hops back.
-    func sendClipboardReminder() {
+    /// ⌘⌃M, the 📤 menu row and `GET /test/reminder`. Mails the selection
+    /// (`selectionFirst`, the key only) or the clipboard, then says what happened
+    /// — the mail is already gone by the time the banner appears, so the banner
+    /// is the receipt, not a progress indicator. Called off the main thread (the
+    /// AX read, the ⌘C wait and any JPEG re-encode happen inline); only the
+    /// banner hops back.
+    ///
+    /// The menu row stays clipboard-only, like ⌘⌃P's: a menu click happens
+    /// while the menu holds the focus, so there is no selection left to read.
+    func sendClipboardReminder(selectionFirst: Bool = false) {
         guard let mailer = reminderMailer else {
-            overlayError("⌘⌃P: no AgentMail key — nothing sent")
+            overlayError("⌘⌃M: no AgentMail key — nothing sent")
             return
         }
-        mailer.sendClipboard { [weak self] result in
+        let completion: (Result<ReminderMail.Clipping, Error>) -> Void = { [weak self] result in
             let text: String
             switch result {
             case .success(let clip):
@@ -2218,6 +2222,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DispatchQueue.main.async { [weak self] in
                 self?.statusBanner?.showNow(text: text, sound: nil, visibleDuration: 6.0)
             }
+        }
+        if selectionFirst {
+            mailer.sendSelectionOrClipboard(completion: completion)
+        } else {
+            mailer.sendClipboard(completion: completion)
         }
     }
 

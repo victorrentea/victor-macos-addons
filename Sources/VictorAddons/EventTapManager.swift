@@ -133,9 +133,9 @@ class EventTapManager {
     /// Seen by its own HID tap (`optionScrollCallbackFunc`); the scroll still goes
     /// through, `ShareZoomHint` decides whether to warn. Called on main.
     var onOptionScroll: (() -> Void)?
-    /// ⌘⌃M — send the clipboard (picture and/or text) to Victor by mail,
-    /// subject "Reminder". Nothing to confirm: it is already gone.
-    var onSendClipboardReminder: (() -> Void)?
+    /// ⌘⌃M — send the selection, or else the clipboard (picture and/or text),
+    /// to Victor by mail, subject "🔔 …". Nothing to confirm: it is already gone.
+    var onSendSelectionReminder: (() -> Void)?
     /// ⌘⌃P — take the selected text (or the clipboard) as an agent prompt and
     /// append it to the session notes, stamped 🤖, so it shows up in the room's
     /// Prompts tab.
@@ -1168,7 +1168,7 @@ private let VK_I: CGKeyCode = 0x22
             return nil
         }
 
-        // Cmd+Ctrl+M → mail the clipboard to Victor, subject "Reminder"
+        // Cmd+Ctrl+M → mail the selection (or the clipboard) to Victor, subject "🔔 …"
         // (suppress). M is for *mail*: this is the only key left that sends one,
         // and it took the letter from the old Gmail "TO DO" draft, which asked
         // for a browser window and a human before anything left the Mac.
@@ -1179,7 +1179,7 @@ private let VK_I: CGKeyCode = 0x22
         // arrive in a real inbox.
         if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.global().async { [weak self] in self?.onSendClipboardReminder?() }
+                DispatchQueue.global().async { [weak self] in self?.onSendSelectionReminder?() }
             }
             return nil
         }
