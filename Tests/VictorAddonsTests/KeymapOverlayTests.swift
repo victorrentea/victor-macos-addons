@@ -111,6 +111,19 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertEqual(frame.width, retina.width / 3.0, accuracy: 0.001)
     }
 
+    func testEmojiBoardsHaveNoExternalWithOneScreenOrMirrored() {
+        // One NSScreen — a lone retina, or a mirrored pair macOS reports as one.
+        XCTAssertNil(KeymapOverlayPlacement.externalFrame(externalFrames: []))
+    }
+
+    func testEmojiBoardsHaveNoExternalWhenTheMouseIsOnTheOnlyOne() {
+        let external = NSRect(x: 1728, y: 0, width: 1920, height: 1080)
+        XCTAssertNil(KeymapOverlayPlacement.externalFrame(externalFrames: [external],
+                                                          mouseLocation: CGPoint(x: 2500, y: 500)))
+        XCTAssertEqual(KeymapOverlayPlacement.externalFrame(externalFrames: [external],
+                                                            mouseLocation: CGPoint(x: 500, y: 500)), external)
+    }
+
     func testMouseOnRetinaStillFillsTheExternalScreen() {
         let retina = NSRect(x: 0, y: 0, width: 1728, height: 1117)
         let external = NSRect(x: 1728, y: 0, width: 1920, height: 1080)

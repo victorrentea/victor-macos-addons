@@ -534,6 +534,14 @@ enum KeymapOverlayPlacement {
         return external
     }
 
+    /// The external screen a sheet would fill, or nil when the only place left
+    /// is the retina corner: one screen, a mirrored pair (macOS reports a mirror
+    /// set as a single `NSScreen`), or the mouse on the only external.
+    static func externalFrame(externalFrames: [NSRect], mouseLocation: CGPoint? = nil) -> NSRect? {
+        let candidates = mouseLocation.map { mouse in externalFrames.filter { !$0.contains(mouse) } } ?? externalFrames
+        return rightmostExternal(among: candidates)
+    }
+
     // Among the candidate external screens, prefer the RIGHTMOST one (greatest
     // left-edge x). With Victor's 3-monitor home rig (retina + two externals) the
     // cheat-sheet lands on the right monitor, which is where he wants it — not
@@ -1058,6 +1066,16 @@ final class KeymapOverlayController {
         let retina = retinaScreenProvider()
         let retinaID = screenID(retina)
         let externals = screensProvider().filter { screenID($0) != retinaID }.map(\.frame)
+        // **The emoji boards never land on the retina** (2026-10-19, Victor:
+        // *"when I'm presenting, I might use option to zoom in different areas and
+        // I don't want the emoji overlay to kick in"*). The retina is what the room
+        // sees — alone or mirrored — so with no other screen to fill, ⌥ / ⌥⇧ / ⌃⌥
+        // still type their emoji but draw no sheet. The ⌘⌃ shortcut sheet keeps
+        // its retina corner.
+        if modifier != .commandControl,
+           KeymapOverlayPlacement.externalFrame(externalFrames: externals, mouseLocation: NSEvent.mouseLocation) == nil {
+            return
+        }
         let frame = KeymapOverlayPlacement.frame(
             retinaFrame: retina.frame,
             externalFrames: externals,
