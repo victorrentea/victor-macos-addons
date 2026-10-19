@@ -242,6 +242,7 @@ final class ClipboardHistoryOverlay {
         // what a ⌘V would have done, and every further V steps back in time.
         index = 0
         isOpen = true
+        watchClicks()
         guard pastes else { render(); return }
         let reveal = DispatchWorkItem { [weak self] in
             guard let self, self.isOpen else { return }
@@ -252,17 +253,19 @@ final class ClipboardHistoryOverlay {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealDelay, execute: reveal)
     }
 
-    /// Step through the list. Wraps, because the list is short and a walk that
-    /// dead-ends at the oldest clip makes you release and start again.
+    /// Step through the list. **Stops at both ends** (2026-10-19, Victor: *"if
+    /// I am at #1 left should be a noop, rather than looping at #40"*) — it
+    /// used to wrap, and one ← too many on the newest clip threw the walk to
+    /// the oldest one, the opposite end of where the hand was going.
     func next() {
-        guard isShowing, !entries.isEmpty else { return }
-        index = (index + 1) % entries.count
+        guard isShowing, index + 1 < entries.count else { return }
+        index += 1
         render()
     }
 
     func previous() {
-        guard isShowing, !entries.isEmpty else { return }
-        index = (index - 1 + entries.count) % entries.count
+        guard isShowing, index > 0 else { return }
+        index -= 1
         render()
     }
 
@@ -319,6 +322,10 @@ final class ClipboardHistoryOverlay {
 
     func close() {
         isOpen = false
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        globalClickMonitor = nil
+        localClickMonitor = nil
         pendingReveal?.cancel()
         pendingReveal = nil
         panel?.orderOut(nil)
@@ -326,6 +333,50 @@ final class ClipboardHistoryOverlay {
         scrim?.orderOut(nil)
         scrim = nil
         entries = []
+    }
+
+    /// **Any mouse click cancels** (2026-10-19, Victor) — left, right or any
+    /// other button, anywhere, the clipboard left as it was. The one exception
+    /// is the bezel's own buttons (⬇️ Downloads, 👁 Preview), which do their
+    /// job and close it themselves. Clicks into other apps arrive through the
+    /// global monitor (the scrim is click-through, so that is everywhere off the
+    /// bezel) and pass on untouched; clicks on this app's windows arrive through
+    /// the local one, which swallows the click on the bezel's empty card.
+    private var globalClickMonitor: Any?
+    private var localClickMonitor: Any?
+    private static let clickMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+
+    private func watchClicks() {
+        guard globalClickMonitor == nil else { return }
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.clickMask) { [weak self] _ in
+            self?.cancelByClick()
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.clickMask) { [weak self] event in
+            guard let self else { return event }
+            if let panel = self.panel, event.window === panel, event.type == .leftMouseDown,
+               let content = panel.contentView,
+               Self.isOnButton(content.hitTest(content.convert(event.locationInWindow, from: nil))) {
+                return event
+            }
+            let onBezel = event.window === self.panel
+            self.cancelByClick()
+            return onBezel ? nil : event
+        }
+    }
+
+    private static func isOnButton(_ view: NSView?) -> Bool {
+        var view = view
+        while let current = view {
+            if current is ClickButton { return true }
+            view = current.superview
+        }
+        return false
+    }
+
+    private func cancelByClick() {
+        guard isShowing else { return }
+        close()
+        onClosedByClick?()
     }
 
     // MARK: - Drawing

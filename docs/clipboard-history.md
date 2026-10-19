@@ -18,12 +18,13 @@ Victor asked for the same gesture with the one thing it could never do.
 |---|---|---|
 | **⌘⇧V** | open it (on the current clipboard), then step one clip older each press | — |
 | **V** | the same step — the hold never has to be broken | ✅ |
-| **↑ ↓ ← →** | walk, wrapping at both ends | ✅ |
+| **↑ ↓ ← →** | walk, **stopping** at both ends — ← on #1 does nothing (2026-10-19; it used to wrap to the oldest) | ✅ |
 | **release ⌘** | take this one — the way the gesture normally ends | — |
 | **Esc** | out, clipboard untouched | ✅ |
 | **⏎** | take this one | no |
 | **⌫ / ⌦** | forget this clip (and its files), stay open on the next | no |
 | any other key | out, and the key **passes through** to whatever you were typing in | — |
+| any mouse click | out, clipboard untouched, the click passes through — except on the bezel's own ⬇️ / 👁 buttons (2026-10-19) | — |
 
 **The legend is shorter than the key list, on purpose.** It is read at a glance
 with a hand already holding ⌘⇧, so it names only the keys that belong to *that
