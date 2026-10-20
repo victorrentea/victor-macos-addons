@@ -19,3 +19,4 @@ videos/
 
 # Serena MCP tooling metadata (not project source)
 .serena/
+.playwright-cli/
