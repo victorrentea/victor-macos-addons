@@ -978,12 +978,17 @@ enum EmojiBoardStore {
     }
 }
 
-/// Left ⌥ tapped twice, alone — what opens the picker (Victor, 2026-10-04).
+/// Right ⌥ tapped twice, alone — what opens the picker (Victor, 2026-10-04;
+/// the left ⌥ until 2026-10-20: *"without connected 2nd monitor, left option
+/// pressed down should not show emoji panel. only right opt-opt"* — on the
+/// retina alone the left ⌥ is the presenting zoom's, and a tap then a hold of
+/// it opened the picker over the room. Right ⌥ ×2 was Walkie's plain dictation
+/// until the same day; that moved to right ⌘ ×2).
 ///
-/// A tap is a press and release of the **left** ⌥ with nothing else held and
+/// A tap is a press and release of the **right** ⌥ with nothing else held and
 /// nothing typed in between, short enough not to be a hold (a hold is the ⌥
 /// cheat-sheet's gesture, 0.3 s on a multi-monitor desk). Any other key, any
-/// other modifier, or the right ⌥ breaks the sequence, so ⌥-typing an emoji
+/// other modifier, or the left ⌥ breaks the sequence, so ⌥-typing an emoji
 /// twice in a row — ⌥ down, key, ⌥ up — never counts.
 ///
 /// **The second ⌥ does not have to come back up** (Victor, 2026-10-05: "I
@@ -993,7 +998,7 @@ enum EmojiBoardStore {
 /// cheat-sheet's 0.3 s on purpose, so the picker wins that race and the
 /// sheet never flashes up first.
 struct OptionDoubleTap {
-    static let leftOptionKeyCode = 58
+    static let rightOptionKeyCode = 61
     static let maxHold: TimeInterval = 0.35
     static let maxGap: TimeInterval = 0.45
     static let secondHoldFire: TimeInterval = 0.25
@@ -1003,7 +1008,7 @@ struct OptionDoubleTap {
 
     /// Feed every flagsChanged event; true when it completes the second tap.
     mutating func flagsChanged(keyCode: Int, optionDown: Bool, optionAlone: Bool, at time: TimeInterval) -> Bool {
-        guard keyCode == Self.leftOptionKeyCode else { interrupt(); return false }
+        guard keyCode == Self.rightOptionKeyCode else { interrupt(); return false }
         if optionDown {
             if optionAlone { downAt = time } else { interrupt() }
             return false

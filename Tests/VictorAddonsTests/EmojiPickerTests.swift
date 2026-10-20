@@ -337,14 +337,14 @@ final class EmojiPickerTests: XCTestCase {
         XCTAssertEqual(small.frame.width / small.frame.height, alone.frame.width / alone.frame.height, accuracy: 0.01, "same proportions")
     }
 
-    // MARK: - Left ⌥ double tap
+    // MARK: - Right ⌥ double tap
 
-    private func tap(_ d: inout OptionDoubleTap, at t: TimeInterval, code: Int = 58, alone: Bool = true, hold: TimeInterval = 0.08) -> Bool {
+    private func tap(_ d: inout OptionDoubleTap, at t: TimeInterval, code: Int = 61, alone: Bool = true, hold: TimeInterval = 0.08) -> Bool {
         _ = d.flagsChanged(keyCode: code, optionDown: true, optionAlone: alone, at: t)
         return d.flagsChanged(keyCode: code, optionDown: false, optionAlone: false, at: t + hold)
     }
 
-    func testTwoQuickLeftOptionTapsFire() {
+    func testTwoQuickRightOptionTapsFire() {
         var d = OptionDoubleTap()
         XCTAssertFalse(tap(&d, at: 0))
         XCTAssertTrue(tap(&d, at: 0.2))
@@ -354,33 +354,33 @@ final class EmojiPickerTests: XCTestCase {
     func testASecondOptionStillHeldFiresOnTheTimerCheck() {
         var d = OptionDoubleTap()
         _ = tap(&d, at: 0)
-        _ = d.flagsChanged(keyCode: 58, optionDown: true, optionAlone: true, at: 0.2)
+        _ = d.flagsChanged(keyCode: 61, optionDown: true, optionAlone: true, at: 0.2)
         XCTAssertTrue(d.isSecondPressDown, "the tap thread should schedule a check")
         XCTAssertFalse(d.secondPressHeld(at: 0.3), "too early — still a tap in the making")
         XCTAssertTrue(d.secondPressHeld(at: 0.2 + OptionDoubleTap.secondHoldFire))
-        XCTAssertFalse(d.flagsChanged(keyCode: 58, optionDown: false, optionAlone: false, at: 1.0),
+        XCTAssertFalse(d.flagsChanged(keyCode: 61, optionDown: false, optionAlone: false, at: 1.0),
                        "letting go afterwards does not toggle it shut again")
     }
 
     func testAHeldSecondOptionDoesNotFireWhenTypedWithOrAlone() {
         var d = OptionDoubleTap()
-        _ = d.flagsChanged(keyCode: 58, optionDown: true, optionAlone: true, at: 0)
+        _ = d.flagsChanged(keyCode: 61, optionDown: true, optionAlone: true, at: 0)
         XCTAssertFalse(d.isSecondPressDown, "a first press is not a second one")
         XCTAssertFalse(d.secondPressHeld(at: 1.0))
         d = OptionDoubleTap()
         _ = tap(&d, at: 0)
-        _ = d.flagsChanged(keyCode: 58, optionDown: true, optionAlone: true, at: 0.2)
+        _ = d.flagsChanged(keyCode: 61, optionDown: true, optionAlone: true, at: 0.2)
         d.interrupt()
         XCTAssertFalse(d.secondPressHeld(at: 0.5), "⌥ + a key — an emoji typed right after a tap")
     }
 
-    func testSlowTapsHoldsRightOptionAndTypingDoNotFire() {
+    func testSlowTapsHoldsLeftOptionAndTypingDoNotFire() {
         var d = OptionDoubleTap()
         _ = tap(&d, at: 0); XCTAssertFalse(tap(&d, at: 1.0), "too far apart")
         d = OptionDoubleTap()
         _ = tap(&d, at: 0); XCTAssertFalse(tap(&d, at: 0.2, hold: 0.6), "a held second ⌥ is the timer check's to fire, never the release's")
         d = OptionDoubleTap()
-        _ = tap(&d, at: 0); XCTAssertFalse(tap(&d, at: 0.2, code: 61), "right ⌥")
+        _ = tap(&d, at: 0); XCTAssertFalse(tap(&d, at: 0.2, code: 58), "left ⌥ — the presenting zoom's, never the picker's")
         d = OptionDoubleTap()
         _ = tap(&d, at: 0); d.interrupt(); XCTAssertFalse(tap(&d, at: 0.2), "⌥-typing an emoji in between")
         d = OptionDoubleTap()

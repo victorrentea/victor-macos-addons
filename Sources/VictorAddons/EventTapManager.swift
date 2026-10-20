@@ -91,7 +91,7 @@ class EventTapManager {
     var onOpenNotesDoc: (() -> Void)?
     /// ⌘⌃F — open the 🎧 focus playlist on YouTube, on a random track.
     var onOpenFocusPlaylist: (() -> Void)?
-    /// 😀 left ⌥ tapped twice — the emoji picker for every emoji not on a key
+    /// 😀 right ⌥ tapped twice — the emoji picker for every emoji not on a key
     /// (`EmojiPickerController`).
     var onEmojiPicker: (() -> Void)?
     /// A keystroke for the open picker, already decoded.

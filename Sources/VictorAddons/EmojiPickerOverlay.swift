@@ -1,6 +1,6 @@
 import AppKit
 
-/// 😀 left ⌥ tapped twice (`OptionDoubleTap`) — the emoji picker for every
+/// 😀 right ⌥ tapped twice (`OptionDoubleTap`) — the emoji picker for every
 /// emoji that is **not** on a key.
 ///
 /// Opens exactly where the ⌥ cheat-sheet does (`KeymapOverlayPlacement`): the
