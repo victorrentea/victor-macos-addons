@@ -167,6 +167,8 @@ final class GlassSpotlight {
     /// the cut-out stays and the zoom waits, so it never starts from a blank.
     private var lensLive = false
     private var zoomTimer: Timer?
+    /// Esc came while zoomed: the box is on its way back, the glass goes after.
+    private var dismissAfterZoomOut = false
 
     init() {
         lens.onLive = { [weak self] in self?.lensWentLive() }
@@ -274,12 +276,22 @@ final class GlassSpotlight {
     /// A bare scroll the tap found on this glass (or anywhere on its screen,
     /// zoomed): `notches` closer (+) or farther (−), `ShareZoomPolicy.notches`.
     func scroll(notches: CGFloat) {
-        guard isShowing, drag == nil, let box = hole else { return }
+        guard isShowing, drag == nil, !dismissAfterZoomOut, let box = hole else { return }
         setZoom(GlassSpotlightZoom.step(zoomTarget, notches: notches), box: box)
     }
 
-    /// Esc: the glass goes, whatever state it is in — a zoomed box with it.
+    /// Esc: the glass goes, whatever state it is in. A zoomed box first travels
+    /// back to where it was drawn, and only then does the glass fade (Victor,
+    /// 2026-10-20: *"it should zoom back into where it came from and then the
+    /// glass effect should fade out"*).
     func dismiss() {
+        if isShowing, isZoomed, lensLive, drag == nil {
+            guard !dismissAfterZoomOut else { return }
+            dismissAfterZoomOut = true
+            zoomTarget = 0
+            startZoomTimer()
+            return
+        }
         stopTimer()
         drag = nil
         hole = nil
@@ -572,7 +584,11 @@ final class GlassSpotlight {
         CATransaction.commit()
         guard zoom == zoomTarget else { return }
         stopZoomTimer()
-        if zoom == 0 { endZoom() }
+        if zoom == 0 {
+            let thenDismiss = dismissAfterZoomOut
+            endZoom()
+            if thenDismiss { dismiss() }
+        }
     }
 
     /// Back to the cut-out: the hole first, then the picture over it goes.
@@ -590,6 +606,7 @@ final class GlassSpotlight {
         lens.layer.mask = nil
         CATransaction.commit()
         lensLive = false
+        dismissAfterZoomOut = false
         zoom = 0
         zoomTarget = 0
         zoomBox = nil

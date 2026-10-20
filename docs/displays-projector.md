@@ -375,7 +375,7 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   to 0, the hole is cut again and the stream stops. **While zoomed the box cannot be moved
   or resized** (Victor: *"I cannot move the selection while I'm zooming"*): the tap stops
   offering corners and ⌘-grab, the whole screen takes clicks, the cursor is the arrow; a
-  new ⇧ drag drops the zoom and draws a fresh box; Esc fades everything. Verified
+  new ⇧ drag drops the zoom and draws a fresh box. **Esc while zoomed first eases the box back to where it was drawn, then fades the glass** (Victor, 2026-10-20: *"it should zoom back into where it came from and then the glass effect should fade out and disappear"*); scrolls are ignored on the way back. Verified
   2026-10-20 on the ASUS: `?zoom=1` on a 500×250 box → 1536×768 centred (80% of 1920),
   frames live; three posted wheel notches → exactly 0.3.
 - **After the release the glass stays** (since 2026-10-06 it takes clicks — see below) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
