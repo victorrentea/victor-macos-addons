@@ -40,7 +40,9 @@ final class GlassSpotlight {
     /// `CGWindowListCopyWindowInfo`, 2026-10-04).
     static let windowLevel = 28
     /// Feather, in points, *outside* the box: everything in the box stays sharp.
-    static let feather: CGFloat = 40
+    /// 40 until 2026-10-20, halved at Victor's word (*"the transitions from glass
+    /// to full transparency have half the thickness"*).
+    static let feather: CGFloat = 20
     /// A drag puts the glass up *while it is still under way* only once its box
     /// covers this much of the screen, and from then on keeps it up however small
     /// the box gets again — never the whole screen blurred first and the box

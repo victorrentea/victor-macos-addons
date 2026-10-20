@@ -366,7 +366,7 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   read by the tap after `ScrollReversal`, so this zoom turns the same way as ⌥⇧ ShareZoom
   under the same wheel (and trackpad). **Only a bare scroll, only on the glass** — in the
   box the app underneath still scrolls; once zoomed, anywhere on that screen. The picture
-  is `GlassSpotlightLens`, a ScreenCaptureKit stream of just the box plus its 40 pt feather
+  is `GlassSpotlightLens`, a ScreenCaptureKit stream of just the box plus its 20 pt feather
   (30 fps, `EchoGate` against its own echo), with **every window of this app** and Victor
   Effects' left out, drawn in the glass panel over the glass (so it fades with it) and
   masked by the cut-out's exact complement (`GlassSpotlightMask(inverted:)`): unmagnified,
@@ -391,7 +391,7 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   `revealsOnRelease` — a ⇧-click) does, leaving no glass or the previous box.
 - **The glass** is an `NSVisualEffectView` (`.behindWindow`, `.fullScreenUI`) whose
   `maskImage` is `GlassSpotlightMask`: opaque, clear inside the box, and a smoothstep
-  ramp over **40 pt outside** it — so nothing inside the box is softened. It is redrawn
+  ramp over **20 pt outside** it (40 until 2026-10-20, halved: *"the transitions from glass to full transparency have half the thickness"*) — so nothing inside the box is softened. It is redrawn
   only when the box moves. `GlassSpotlightMaskTests` reads the pixels back.
   - **The mask is a drawing-handler `NSImage`, never a bitmap.** `NSVisualEffectView`
     reads a bitmap mask's pixels as *backing* pixels whatever size the `NSImage`
@@ -419,7 +419,7 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   one where a line of terminal text can still be made out, slowly. The tuning is
   reapplied on `updateLayer` and after each mask change, since AppKit may rebuild those
   layers. If a macOS update renames them nothing throws: the glass just goes back to
-  the heavy grey blur. The 40 pt feather is unchanged, and at this radius its
+  the heavy grey blur. The feather (40 pt then, 20 since 2026-10-20) was left alone, and at this radius its
   crossfade no longer shows a sharp double image (the reason 0.75 alpha failed).
 - **ScreenBrush draws on top of the glass.** The panel sits at window level **28**, one
   under ScreenBrush's canvas (**29**, read from `CGWindowListCopyWindowInfo`) — Victor
