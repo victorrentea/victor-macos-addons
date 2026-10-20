@@ -426,6 +426,16 @@ private let VK_I: CGKeyCode = 0x22
     private var screenshotKeyDownAt: CFAbsoluteTime?
     private var screenshotCropFired = false
 
+    /// Walkie Talkie is recording a prompt: `~/.walkie-talkie/prompting` names a
+    /// live pid. Its ⌃P is the shutter then (2026-10-20).
+    static func walkieIsPrompting() -> Bool {
+        let mark = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".walkie-talkie/prompting")
+        guard let text = try? String(contentsOf: mark, encoding: .utf8),
+              let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return kill(pid, 0) == 0
+    }
+
     /// Bundle id + pid of the focused app, cached from the main thread via an
     /// NSWorkspace notification so the tap callback can read them without touching
     /// AppKit off-thread. The pid is what `TerminalZoomSizeLock` addresses the
@@ -1005,6 +1015,12 @@ private let VK_I: CGKeyCode = 0x22
         // The keyDown only starts the clock — which of the two you meant is
         // answered on the release, or earlier if autorepeat says "still down".
         if keyCode == VK_P && hasCtrl && !hasCmd && !hasOpt && !hasShift {
+            // **Walkie Talkie's while it records a prompt** (2026-10-20, Victor: *"take
+            // over the shortcut and block the addon … If I am dictating, it's I'm
+            // telling you first"*): there ⌃P is its shutter. It marks the prompt with
+            // `~/.walkie-talkie/prompting` holding its pid; a live pid → the key goes
+            // on to Walkie's tap. A stat and a `kill(pid, 0)`, on ⌃P only.
+            if Self.walkieIsPrompting() { return Unmanaged.passUnretained(event) }
             if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
                 if !screenshotCropFired {
                     screenshotCropFired = true
