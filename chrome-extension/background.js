@@ -4,6 +4,7 @@
 //   • dictation-pause.js   pause the music while Wispr Flow is dictating
 //   • feedback-form.js     clone/rename/publish the session's feedback survey
 //   • focus-tab.js         send ⌘⌃L/G/N/F to the tab that is already open
+//   • save-image.js        right-click an image → Save Image to Downloads (no socket)
 //
 // This file owns nothing but the transport. The Mac app (Victor Addons) pushes
 // commands over a WebSocket on 127.0.0.1:8766 and each feature module handles
@@ -18,6 +19,7 @@ import { onDictation } from './dictation-pause.js';
 import { publishFeedbackForm } from './feedback-form.js';
 import { focusOrOpen } from './focus-tab.js';
 import { watchAudible } from './audible-report.js';
+import { installSaveImage } from './save-image.js';
 
 const PORT = 8766;
 const RECONNECT_MIN_MS = 1000;
@@ -36,6 +38,8 @@ const ALARM_SLOW_MIN = 5;
 /// Failures before the alarm gives up on "it is coming right back". Four at half
 /// a minute covers a rebuild-and-restart; a night does not deserve 2000 lines.
 const FAILURES_BEFORE_SLOW = 4;
+
+installSaveImage();
 
 let socket = null;
 
