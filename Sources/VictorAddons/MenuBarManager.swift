@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 20, 12:12"
+    static let BUILD_TIME = "Oct 20, 13:43"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -35,17 +35,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
-    private var wiredLinkItem: NSMenuItem!
-    /// 📈 Traffic — samples only while its submenu is open (`TrafficMenu`).
-    private let trafficMenu = TrafficMenu()
+    // 🔌 Wired, 📈 Traffic, 🛜 Auto Mobile Hotspot and ⏸ Pause Claude on roaming
+    // data moved to Victor Net (`victor-net`, its own menu bar icon) on 2026-10-20.
     /// 🖥️ ◀ ASUS left / 🖥️ ASUS ▶ right — only the applicable one shows, only while the ASUS is plugged in and not mirroring.
     private var asusLeftItem: NSMenuItem!
     private var asusRightItem: NSMenuItem!
     /// 🎥 Layout Zoom — shown only while Zoom is running.
     private var layoutZoomItem: NSMenuItem!
-    private(set) var hotspotFallbackItem: NSMenuItem!
-    /// ⏸ Claude on roaming data — see `RoamingDataWatch` and `roaming-gate.sh`.
-    private(set) var roamingSuspendItem: NSMenuItem!
     private(set) var commandOverlayItem: NSMenuItem!
     private(set) var transcribeItem: NSMenuItem!
     private(set) var recordRawItem: NSMenuItem!
@@ -115,8 +111,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     // Callbacks wired in by AppDelegate
     var onQuit: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
-    /// The ⏸ roaming switch flipped: rewrite the hooks' state file at once.
-    var onRoamingSuspendToggled: (() -> Void)?
     var onMonitor: (() -> Void)?
     var onToggleRecordRaw: (() -> Void)?
 
@@ -512,35 +506,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // here any more — they sit at the top level with the other clipboard
         // rows (2026-09-14).
 
-        // Both hotspot rows name the phone (2026-09-14). "Hotspot" alone reads
-        // as the Mac's own sharing; what these two actually do is reach the
-        // Galaxy running `victor-phone-addons` over Bluetooth and make IT hand
-        // out the network — and when the room's Wi-Fi has just died, which
-        // device is about to be asked for internet is the whole question.
-        //
-        // **"🛜 Auto Mobile Hotspot", at the top level** since 2026-09-25
-        // (Victor: *"rename … and bring it up in the main menu"*). Being there
-        // costs it the native tick: one checked row at the top level makes
-        // AppKit reserve a check column for the whole menu and shifts every
-        // leading emoji. So, like Insomnia, the state is in the title —
-        // `HotspotMenu.title`.
-        hotspotFallbackItem = NSMenuItem(title: HotspotMenu.title(enabled: HotspotFallbackSettings.isEnabled),
-                                         action: #selector(toggleHotspotFallbackAction), keyEquivalent: "")
-        hotspotFallbackItem.target = self
-        hotspotFallbackItem.isEnabled = true
-
-        // ⏸ under the hotspot row, since it is about the same phone data:
-        // while the Mac is on the hotspot and the phone roams, every Claude Code
-        // session parks before its next API request (`roaming-gate.sh`). State
-        // in the title, like the row above, to keep the top level tick-free.
-        roamingSuspendItem = NSMenuItem(title: RoamingSuspendMenu.title(enabled: RoamingDataSettings.suspendClaude),
-                                        action: #selector(toggleRoamingSuspendAction), keyEquivalent: "")
-        roamingSuspendItem.target = self
-        roamingSuspendItem.isEnabled = true
-
-        // 📱 Start Victor Phone Hotspot Now was deleted on 2026-09-23 (Victor:
-        // *"rămâne pe auto"*) — the automatic fallback above is the one path.
-
         // 🖱️ Reconnect Mouse was removed on 2026-09-23 (Victor: *"scoate
         // featureul"*) — `MouseReconnect`, its test route and its doc with it;
         // `git log -- Sources/VictorAddons/MouseReconnect.swift` brings it back.
@@ -628,18 +593,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
 
-        // 🟢 Wired status (2026-10-08, Victor: replaces the Ethernet Menubar
-        // status item; out of Extras to the top level on 2026-10-10 — one click
-        // on 💬 shows it). A readout, repainted on every menu open
-        // (`refreshDynamicItems`); the click opens Network settings, which is
-        // also what keeps it from being drawn dimmed like a disabled row.
-        wiredLinkItem = NSMenuItem(title: WiredLinkPolicy.title(WiredLink.current()),
-                                   action: #selector(openNetworkSettingsAction), keyEquivalent: "")
-        wiredLinkItem.target = self
-        wiredLinkItem.isEnabled = true
-        wiredLinkItem.image = Self.wiredIcon(WiredLink.current())
-        wiredLinkItem.toolTip = "Is the Ethernet cable (dongle or dock) giving this Mac a network? Click for Network settings."
-
         // Dark Mode (⌘⌃⌥D) — a checkbox like every other row in here
         // (2026-09-14). It toggles a state, and a toggle that does not tick
         // reads as an action, which is what makes you click it just to find out
@@ -700,10 +653,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // because a row per repo is a list that only ever grows, and F8 / ⌘⌃C
         // opens claude where the work is anyway.
 
-        menu.addItem(wiredLinkItem)
-        menu.addItem(trafficMenu.item)
-        menu.addItem(hotspotFallbackItem)
-        menu.addItem(roamingSuspendItem)
         menu.addItem(fluxInboxItem)
 
         menu.addItem(extraItem)
@@ -806,20 +755,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// `appearance` (`light` / `dark`) forces this app's appearance for the
     /// time the menu is open, so a row can be checked in both themes without
     /// flipping Victor's whole desktop; it is put back when the menu closes.
-    ///
-    /// `traffic` samples 📈 Traffic as a hover on its row would, inside the same
-    /// tracking loop, and writes its rows to `TrafficMenu.testOutput` at close —
-    /// no route can read them while the menu is open (see above).
-    func openMenuForTest(closeAfter seconds: TimeInterval, appearance: String? = nil, traffic: Bool = false) {
+    func openMenuForTest(closeAfter seconds: TimeInterval, appearance: String? = nil) {
         // On the menu itself, not `NSApp.appearance`: a status item's menu
         // follows the menu bar, and ignored the app-wide override when tried.
         let previous = menu.appearance
         if let appearance {
             menu.appearance = NSAppearance(named: appearance == "light" ? .aqua : .darkAqua)
         }
-        if traffic { trafficMenu.startSampling() }
         let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
-            if traffic { self?.trafficMenu.stopSampling(writingTestOutput: true) }
             self?.menu.cancelTracking()
             if appearance != nil { self?.menu.appearance = previous }
         }
@@ -880,9 +823,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killSubmenu.addItem(portItem)
 
         darkModeItem.state = DarkModeToggle.isDarkNow() ? .on : .off
-        let wired = WiredLink.current()
-        wiredLinkItem.title = WiredLinkPolicy.title(wired)
-        wiredLinkItem.image = Self.wiredIcon(wired)
 
         updateTranscribeTitle()
         updateTailItem()
@@ -1036,22 +976,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     ///
     /// Off is the bare words, with nothing in front — also Victor's, and the
     /// reason there is no 🔋 here: a mark in *both* states is not a checkbox.
-    /// The 🛜 top-level row. A trailing tick when armed and nothing when off:
-    /// the leading 🛜 stays put in both states, so the row does not jump, and a
-    /// plain `✓` takes the menu's text colour in dark and light alike (an
-    /// emoji check would not).
-    enum RoamingSuspendMenu {
-        static func title(enabled: Bool) -> String {
-            "⏸️ Pause Claude on roaming data" + (enabled ? "  ✓" : "")
-        }
-    }
-
-    enum HotspotMenu {
-        static func title(enabled: Bool) -> String {
-            "🛜 Auto Mobile Hotspot" + (enabled ? "  ✓" : "")
-        }
-    }
-
     enum RawAudioMenu {
         static let off = "Record raw audio"
         static func on(hours: Double) -> String {
@@ -1113,19 +1037,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     @objc private func toggleDarkModeAction() {
         onToggleDarkMode?()
-    }
-
-    @objc private func toggleRoamingSuspendAction() {
-        let enabled = !RoamingDataSettings.suspendClaude
-        RoamingDataSettings.suspendClaude = enabled
-        roamingSuspendItem.title = RoamingSuspendMenu.title(enabled: enabled)
-        onRoamingSuspendToggled?()
-    }
-
-    @objc private func toggleHotspotFallbackAction() {
-        let enabled = !HotspotFallbackSettings.isEnabled
-        HotspotFallbackSettings.isEnabled = enabled
-        hotspotFallbackItem.title = HotspotMenu.title(enabled: enabled)
     }
 
     @objc private func toggleCommandOverlayAction() {
@@ -1194,10 +1105,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// not "holding right now" — same contract as 🔋 next door, where a ticked
     /// row with nothing working is the honest state. Which of the two it is at
     /// this instant is in `GET /test/home-awake` (`at_home`, `holding`).
-    @objc private func openNetworkSettingsAction() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension")!)
-    }
-
     @objc private func toggleHomeAwakeAction() {
         let enabled = !HomeAwakeSettings.isEnabled
         homeAwakeItem.state = enabled ? .on : .off
@@ -1258,20 +1165,6 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         image.isTemplate = true
         return image
     }()
-
-    /// The Ethernet symbol, tinted with the link's state (`WiredLinkPolicy.tint`).
-    static func wiredIcon(_ state: WiredLinkState) -> NSImage? {
-        let color: NSColor
-        switch WiredLinkPolicy.tint(state) {
-        case .green:  color = .systemGreen
-        case .yellow: color = .systemYellow
-        case .gray:   color = .systemGray
-        }
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        return NSImage(systemSymbolName: "network", accessibilityDescription: "Wired")?
-            .withSymbolConfiguration(config)
-    }
 
     /// ▥ — what 🎥 Layout Zoom does to the monitor above the Retina, as a template
     /// image so it follows the menu's light/dark appearance.

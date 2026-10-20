@@ -47,7 +47,7 @@ case testTerminalFont
     /// The 🎤 DJI receiver's status stream / a replayed reading — see docs/testing.md.
     case testDjiState
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
-    case testMenuOpen(closeAfter: Double, appearance: String?, traffic: Bool)
+    case testMenuOpen(closeAfter: Double, appearance: String?)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
         case testHomeAwake
         /// Is any Chrome tab audible? Asked by Victor Insomnia before it takes the
@@ -166,10 +166,6 @@ case testTerminalFont
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
-        /// Open the RFCOMM channel to the phone now — the signal that asks it for
-        /// its hotspot — whatever the Mac's connectivity, the geofence or the
-        /// cooldown; returns a JSON snapshot (test hook).
-        case testHotspot
         /// JSON snapshot of the 📱 phone low-battery mirror (read-only): whether
         /// the tablet is being told to blink, at what charge, and how fresh the
         /// underlying Soduto notification is (test hook).
@@ -177,11 +173,6 @@ case testTerminalFont
         /// Pretend the phone is at N% for a couple of minutes, so the tablet's
         /// blink can be previewed without waiting for a genuinely flat phone.
         case testPhoneBatterySimulate(Int)
-        /// 📶 roaming allowance warning: `/test/roaming` polls the phone now and
-        /// answers with the previous poll; `/test/roaming/simulate/<pct|off>`
-        /// fakes a roaming day with that much left; `/test/roaming/reset-dismissal`
-        /// forgets today's dismissal. The payload is the part after `/test/roaming`.
-        case testRoaming(String)
         /// ✈️ check-in mail alarm: `/test/checkin` is the state, `/poll` asks
         /// Gmail now, `/simulate` raises a fake pill off the retina
         /// (`/simulate/all` on every screen), `/clear` empties the queue.
@@ -300,7 +291,7 @@ case testTerminalFont
     var onTestMicDead: ((String?) -> String)?
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
-    var onTestMenuOpen: ((Double, String?, Bool) -> Void)?
+    var onTestMenuOpen: ((Double, String?) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
     var onTestHomeAwake: (() -> String)?
     var onChromeAudible: (() -> Bool?)?
@@ -374,13 +365,10 @@ case testTerminalFont
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
-    var onTestHotspot: (() -> String)?
     /// Read-only JSON snapshot of the 📱 phone low-battery mirror.
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
     var onTestPhoneBatterySimulate: ((Int) -> String)?
-    /// 📶 roaming warning hooks; the argument is the sub-path (see `.testRoaming`).
-    var onTestRoaming: ((String) -> String)?
     /// ✈️ check-in alarm hooks; the argument is the sub-path (see `.testCheckIn`).
     var onTestCheckIn: ((String) -> String)?
     /// Read-only JSON snapshot of the 🟥 memory-pressure watch.
@@ -551,10 +539,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestMicDead?(screens) ?? "{\"error\":\"mic alarm unavailable\"}"
                 if self.onTestMicDead == nil { statusCode = 503 }
-            case .testMenuOpen(let closeAfter, let appearance, let traffic):
+            case .testMenuOpen(let closeAfter, let appearance):
                 // Async: the menu's tracking loop holds the main thread until
                 // it closes, so this must not wait for it.
-                DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance, traffic) }
+                DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance) }
             case .testDjiState:
                 contentType = "application/json"
                 body = self.onTestDjiState?() ?? "{\"error\":\"dji monitor unavailable\"}"
@@ -695,10 +683,6 @@ case testTerminalFont
             case .testLiveCaptionsSay(let text, let partial, let correct, let speakers):
                 contentType = "application/json"
                 body = self.onTestLiveCaptionsSay?(text, partial, correct, speakers) ?? "{\"error\":\"live captions unavailable\"}"
-            case .testHotspot:
-                contentType = "application/json"
-                body = self.onTestHotspot?() ?? "{\"error\":\"hotspot fallback unavailable\"}"
-                if self.onTestHotspot == nil { statusCode = 503 }
             case .testPhoneBattery:
                 contentType = "application/json"
                 body = self.onTestPhoneBattery?() ?? "{\"error\":\"phone battery monitor unavailable\"}"
@@ -707,10 +691,6 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestPhoneBatterySimulate?(pct) ?? "{\"error\":\"phone battery monitor unavailable\"}"
                 if self.onTestPhoneBatterySimulate == nil { statusCode = 503 }
-            case .testRoaming(let sub):
-                contentType = "application/json"
-                body = self.onTestRoaming?(sub) ?? "{\"error\":\"roaming monitor unavailable\"}"
-                if self.onTestRoaming == nil { statusCode = 503 }
             case .testCheckIn(let sub):
                 contentType = "application/json"
                 body = self.onTestCheckIn?(sub) ?? "{\"error\":\"check-in watch unavailable\"}"
@@ -960,8 +940,7 @@ case testTerminalFont
         case "/test/menu/open":
             let secs = queryItems.first(where: { $0.name == "close" })?.value.flatMap { Double($0) } ?? 3
             return .testMenuOpen(closeAfter: min(max(secs, 0.5), 10),
-                                 appearance: queryItems.first(where: { $0.name == "appearance" })?.value,
-                                 traffic: queryItems.first(where: { $0.name == "traffic" })?.value == "1")
+                                 appearance: queryItems.first(where: { $0.name == "appearance" })?.value)
         case let p where p.hasPrefix("/test/dji/"):
             return .testDjiEvent(kind: String(p.dropFirst("/test/dji/".count)),
                                  level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Int($0) },
@@ -1073,8 +1052,6 @@ case testTerminalFont
             return .testReminderMail
         case "/test/android-deploy":
             return .testAndroidDeploy
-        case "/test/hotspot":
-            return .testHotspot
         case "/test/phone-battery":
             return .testPhoneBattery
         case "/test/screen-lock":
@@ -1175,9 +1152,6 @@ case testTerminalFont
             if pathOnly.hasPrefix("/test/video/") {
                 let id = String(pathOnly.dropFirst("/test/video/".count))
                 if !id.isEmpty { return .videoPlay(id, nil) }
-            }
-            if pathOnly == "/test/roaming" || pathOnly.hasPrefix("/test/roaming/") {
-                return .testRoaming(String(pathOnly.dropFirst("/test/roaming".count)))
             }
             if pathOnly == "/test/checkin" || pathOnly.hasPrefix("/test/checkin/") {
                 return .testCheckIn(String(pathOnly.dropFirst("/test/checkin".count)))

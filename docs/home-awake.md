@@ -102,7 +102,7 @@ answer this question at all.
 - **A 60 s poll behind all three.** Not belt-and-braces for its own sake — the
   hotspot feature already paid for trusting edges alone: on 27 Aug 2026 an
   `NWPathMonitor` edge that never arrived left the Mac offline for five hours
-  ("The night it never asked", docs/hotspot-fallback.md). Where the network is a
+  ("The night it never asked", victor-net/docs/hotspot-fallback.md). Where the network is a
   *state* rather than an event, a clock has to be able to notice by itself. The
   poll is one in-process `CWInterface.ssid()` read a minute — no process spawn,
   10 s of leeway so the scheduler coalesces the wake-up.

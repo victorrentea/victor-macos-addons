@@ -108,50 +108,8 @@ it switches itself on with Zoom/Teams (see `docs/displays-projector.md`).
 
 Three greyed rows in 👩🏻‍💻 Extras — `⌃⌥⌘ ←→↑↓` half of screen, `fn⌃⌥⌘ ←→↑↓` next screen, `F3` fill ↔ restore — an exception to "the menu is not a second cheat-sheet", asked for by Victor once Magnet (which used to own the gesture) was uninstalled: no hold-to-see sheet covers ⌃⌥⌘, so this is the only place they are written down. No action: a click from the menu would have no arrow to say which way. The shortcut sits in the title because a key equivalent shows one arrow, not four, and has no fn glyph. Details in `hotkeys-launchers.md`.
 
-## Wired status (2026-10-08)
+## 🔌 Wired, 📈 Traffic, 🛜 Auto Mobile Hotspot, ⏸ Pause Claude on roaming — moved out (2026-10-20)
 
-A top-level row of the 💬 menu (above 📶 hotspot) answers one question — *is the cable giving this Mac a network?* — and replaces **Ethernet Menubar** (`com.victorlobe.Ethernet-Menubar`), a third-party status item that spent a menu-bar slot on it. It started as the last row of 👩🏻‍💻 Extras and moved to the top level on 2026-10-10 (Victor: *"apăs pe macOS Addons și văd acolo direct"*). Ethernet Menubar was quit and taken out of the login items the same day. It first wore the `‹···›` glyph Ethernet Menubar drew and showed the IP; on 2026-10-15 both went (Victor: *"I don't need to see the IP … choose an icon that has the same width"*) — `‹···›` is text, about two emoji wide, and pushed the row's words out of the column every other row shares. Later the same day the dot went too: the row's icon is the **Ethernet network symbol** — SF Symbol `network`, the shape Victor picked from an image search (a Flaticon file; the system symbol is the same drawing with no licence to carry) — **tinted green / yellow / grey** with the state the dot used to show (`WiredLinkPolicy.tint`, `MenuBarManager.wiredIcon`). `WiredLink` + `WiredLinkPolicy`:
-
-- green `Wired: connected` — link up and a routable IPv4 (the address is read, not shown).
-- yellow `Wired: cable in, no IP` — link up, no address yet; a **169.254.x.x** self-assigned address counts here, because it means DHCP never answered.
-- grey `Wired: not connected` — cable out or no adapter. The two are not told apart: on Apple Silicon the Ethernet-type ports exist with nothing plugged, so "no adapter" cannot be read reliably.
-
-**What is a cable**: SystemConfiguration's ports of type Ethernet, minus `Thunderbolt N` (the Thunderbolt Bridge members, up only on a Mac-to-Mac cable) and `Ethernet Adapter (enN)` (the `anpi` placeholders present on every boot). Link and address come from the dynamic store (`State:/Network/Interface/<bsd>/Link` and `/IPv4`, what `scutil` shows) — no shell-out.
-
-Read in `menuNeedsUpdate`, never polled: the row is only seen with the menu open. A click opens Network settings, which is also what keeps it from being drawn dimmed like a disabled readout.
-
-## 📈 Traffic (2026-10-20)
-
-A top-level row under the Wired row, with a submenu that measures **only while it is open**:
-hovering the row opens it (AppKit's submenu delay), `menuWillOpen` starts the sampling and
-`menuDidClose` kills it, so a closed menu costs nothing (Victor: *"you don't need to monitor
-this traffic continuously. Only when I start hovering"*). `TrafficMenu` + `TrafficPolicy`
-(`TrafficMonitor.swift`), its own `NSMenuDelegate` so opening it does not run the top level's
-`menuNeedsUpdate`.
-
-```
-↓ In   2.3 MB/s
-↑ Out  140 KB/s
-⏱️ Latency  150 ms  (7 conn.)
-──────────
-1. Google Chrome   ↓ 1.2 MB/s  ↑ 40 KB/s
-2. …
-```
-
-- **In/Out** — the `en*` interfaces' kernel byte counters (`getifaddrs`, what `netstat -ib`
-  prints), diffed every second. `utun*` is skipped: a VPN's bytes also cross `en0`. The
-  counters are 32-bit and wrap at 4 GB; the diff is wrap-aware.
-- **Top 3 apps** — `/usr/bin/nettop -d -s 1 -L 0 -x -n -t external`, one delta block per
-  second (the first block is totals since each socket opened and is dropped). Helpers are
-  folded into the outermost `.app` of their executable path (`proc_pidpath`), so Chrome is one
-  line. First numbers arrive ~1.2 s after the submenu opens.
-- **Latency** — no probe is sent: it is the kernel's smoothed TCP RTT (`rtt_avg`) of the open
-  connections to **public** addresses (the LAN tablet answers in 0 ms, an AirPlay socket in
-  2.7 s), from the same nettop stream. Median, preferring connections that moved bytes that
-  second — an idle socket's RTT is whatever it was when it last spoke (one read 16.8 s).
-  nettop truncates that column (`1247.78 m`, `16787.62`), so only the number is read.
-- **No root needed** for any of it; nettop and the counters are readable as the user.
-- **Delivery during menu tracking**: nettop's lines are read on a background handle and handed
-  to the main run loop with `RunLoop.main.perform(inModes: [.common])` + `CFRunLoopWakeUp` —
-  `DispatchQueue.main` is not drained while a menu tracks, and would deliver every sample only
-  after the menu closed. The timers are added in `.common` for the same reason.
+All four rows, and the separate 📶 roaming meter status item, left for **Victor Net**
+(`victor-net`, its own menu bar icon — the cable / the phone's bars / Wi-Fi). Their reasoning
+went with them: `victor-net/docs/`. The 🛜/⏸ paragraphs above are history.

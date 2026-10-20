@@ -108,9 +108,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>NSAccessibilityUsageDescription</key>
     <string>Victor Addons needs accessibility access for keyboard shortcuts and clipboard monitoring.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Victor Addons checks whether this Mac is at home, so it leaves the phone's hotspot alone there.</string>
+    <string>macOS shows the Wi-Fi network name only to apps with Location access; Victor Addons reads it to keep the screen awake on your home Wi-Fi.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Victor Addons opens a Bluetooth channel to the phone to ask it for its hotspot when this Mac has no internet.</string>
+    <string>Victor Addons reconnects your Bluetooth speakers and microphones.</string>
     <key>NSUserNotificationAlertStyle</key>
     <string>alert</string>
 </dict>

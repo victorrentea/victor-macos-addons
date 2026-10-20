@@ -49,10 +49,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     })
     /// The test hooks' own corner pill, so a review can stay off the retina.
     private var djiTestStatusBanner: StatusBanner?
-    /// 📶 Brings the phone's hotspot up when this Mac is left without internet.
-    /// Bluetooth is only the trigger — see HotspotFallback for why it can't be
-    /// the transport, and why the escalation has two stages.
-    private var hotspotFallback: HotspotFallback?
     private var wsServer: LocalWebSocketServer?
     private var tabletServer: TabletHttpServer?
     /// ✋ The amber "an agent is driving" frame. Owned here rather than by a
@@ -105,14 +101,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 📱 Watches Soduto's low-battery notification for the paired Android and
     /// feeds it into `/ping` so the tablet can blink about it.
     private var phoneBattery: PhoneBatteryMonitor?
-    /// 📶 Roaming allowance, read from the phone over Bluetooth, and the pill
-    /// that says when it is nearly gone.
-    private var phoneRoaming: PhoneRoamingMonitor?
-    private var roamingWarning: RoamingWarning?
-    /// 📶 `3.2 GB` in the menu bar while on the phone's hotspot; see docs/roaming-warning.md.
-    private var roamingMeter: RoamingMeter?
-    /// 📵 on roaming data? → `~/.victor-addons/roaming-data.json`, read by `roaming-gate.sh`.
-    private var roamingData: RoamingDataWatch?
     /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
     private var checkInWatch: CheckInMailWatch?
     private var memoryPressure: MemoryPressureMonitor?
@@ -752,8 +740,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         djiReceiver.start()
         menuBarManager.djiMenuSuffix = { [weak self] in self?.djiReceiver.menuSuffix() }
-        tabletServer?.onTestMenuOpen = { [weak self] secs, appearance, traffic in
-            self?.menuBarManager.openMenuForTest(closeAfter: secs, appearance: appearance, traffic: traffic)
+        tabletServer?.onTestMenuOpen = { [weak self] secs, appearance in
+            self?.menuBarManager.openMenuForTest(closeAfter: secs, appearance: appearance)
         }
         tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
         // Replay a reading through the same handler the USB reader uses, so the
@@ -1033,33 +1021,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             phoneBatteryMonitor?.pollNow()
             return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
         }
-        // 📶 Roaming allowance under 15% on a roaming day → a red pill that stays
-        // until hovered, once a day. The phone counts; see docs/roaming-warning.md.
-        let roamingWarning = RoamingWarning(screensProvider: { NSScreen.physical })
-        let phoneRoaming = PhoneRoamingMonitor()
-        let roamingMeter = RoamingMeter(monitor: phoneRoaming)
-        phoneRoaming.onReading = { [weak roamingWarning, weak roamingMeter] r in
-            roamingWarning?.update(r)
-            roamingMeter?.refresh()
-        }
-        roamingWarning.start()
-        phoneRoaming.start()
-        roamingMeter.start()
-        self.roamingMeter = roamingMeter
-        self.roamingWarning = roamingWarning
-        self.phoneRoaming = phoneRoaming
-        tabletServer?.onTestRoaming = { [weak phoneRoaming, weak roamingWarning] sub in
-            guard let phoneRoaming else { return "{\"error\":\"monitor unavailable\"}" }
-            if sub.hasPrefix("/simulate/") {
-                let arg = String(sub.dropFirst("/simulate/".count))
-                phoneRoaming.simulate(remainingPct: Int(arg) ?? -1)   // "off" clears
-            } else if sub == "/reset-dismissal" {
-                roamingWarning?.resetDismissal()
-            } else {
-                phoneRoaming.pollNow()
-            }
-            return phoneRoaming.diagnosticsJSON
-        }
+        // 📶 The phone's hotspot, the roaming allowance and its warning moved to
+        // Victor Net (`victor-net`) on 2026-10-20.
         // ✈️ An airline mailed "check-in is open" → an orange pill that stays
         // until clicked; the click opens that mail. Hourly, via gmail-cli; see
         // docs/checkin-alarm.md.
@@ -1802,24 +1765,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         })
         self.micSourceAnnouncer = micAnnouncer
         micAnnouncer.start()
-
-        let hotspot = HotspotFallback()
-        self.hotspotFallback = hotspot
-        tabletServer?.onTestHotspot = { [weak hotspot] in
-            hotspot?.forceAttemptJSON() ?? "{\"error\":\"hotspot fallback unavailable\"}"
-        }
-        hotspot.start()
-
-        // 📵 Roaming data = on the phone's hotspot while the phone roams. The
-        // verdict goes to a file the Claude Code hooks read; the ⏸ menu switch
-        // decides whether they park on it. See docs/roaming-warning.md.
-        if let phoneRoaming = self.phoneRoaming {
-            let roamingData = RoamingDataWatch(phone: phoneRoaming,
-                                               location: { [weak hotspot] in hotspot?.lastLocationFix() })
-            roamingData.start()
-            self.roamingData = roamingData
-            menuBarManager.onRoamingSuspendToggled = { [weak roamingData] in roamingData?.refresh() }
-        }
 
         let eventTap = EventTapManager()
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }

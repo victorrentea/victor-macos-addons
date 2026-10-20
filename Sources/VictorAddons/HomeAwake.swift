@@ -1,4 +1,5 @@
 import AppKit
+import CoreLocation
 import CoreWLAN
 import Foundation
 
@@ -77,15 +78,16 @@ enum HomeAwakeSettings {
 /// **Why not `networksetup` to read the SSID.** Measured on this Mac on 11 Sep
 /// 2026: `networksetup -getairportnetwork en0` answers "You are not associated
 /// with an AirPort network" on a healthy, associated interface. CoreWLAN's
-/// `CWInterface.ssid()` is the only source of truth, and this app can use it
-/// because it already holds Location Services for `HomeGeofence`. `networksetup`
-/// is for *acting*, never for *checking*.
+/// `CWInterface.ssid()` is the only source of truth, and it answers only an app
+/// holding Location Services — asked for here (`location`) since the hotspot's
+/// `HomeGeofence`, which used to ask, moved to Victor Net on 2026-10-20.
+/// `networksetup` is for *acting*, never for *checking*.
 final class HomeAwake: NSObject, CWEventDelegate {
 
     /// The backstop poll. Everything below is edge-driven, and the hotspot
     /// feature has already paid for believing edges: on 27 Aug 2026 an
     /// `NWPathMonitor` edge that never arrived left the Mac offline for five
-    /// hours (docs/hotspot-fallback.md, "The night it never asked"). Where a
+    /// hours (victor-net/docs/hotspot-fallback.md, "The night it never asked"). Where a
     /// network *is* a state rather than an event, a clock has to be able to
     /// notice on its own — and here the cost of a missed edge is a display
     /// assertion still held in someone else's building. One in-process
@@ -107,6 +109,8 @@ final class HomeAwake: NSObject, CWEventDelegate {
     /// running app flips the answer without a word about it, which is exactly
     /// the case someone is watching the log for.
     private var lastLogged: (ssid: String?, atHome: Bool)?
+    /// Held only to ask for the permission `ssid()` needs; no fix is ever read.
+    private let location = CLLocationManager()
 
     // MARK: - Lifecycle
 
@@ -136,6 +140,7 @@ final class HomeAwake: NSObject, CWEventDelegate {
 
     private func startWatching() {
         guard timer == nil else { return }
+        location.requestWhenInUseAuthorization()
 
         // The event path. `.ssidDidChange` is the direct answer to "did we just
         // change network"; `.powerDidChange` is there because switching Wi-Fi

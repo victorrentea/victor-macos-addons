@@ -39,6 +39,11 @@ load-bearing, not commentary.
   **55125**. This app answers it one question, `GET /chrome/audible` (it owns
   the Chrome extension's socket). 🛰️ Claude RC (the `claude remote-control`
   watchdog) **moved there too** on 2026-10-16, next to the `/rc` count it feeds.
+- **📶 Victor Net is a fourth app since 2026-10-20**:
+  [`victor-net`](https://github.com/victorrentea/victor-net) (public, beside this checkout) —
+  the network icon in the menu bar, 🔌 Wired, 📈 Traffic, 🛜 Auto Mobile Hotspot, the 📶
+  roaming meter and pill, ⏸ Pause Claude on roaming data, and every Bluetooth exchange with
+  the phone app. Nothing here talks to it.
 - **Neither app waits for the other.** No launch ordering, no shared process;
   each degrades on its own.
 - **Single Swift process**: `VictorAddons` is the main application combining menu bar UI and overlay functionality
@@ -68,8 +73,6 @@ load-bearing, not commentary.
 | [docs/fact-check.md](docs/fact-check.md) | 🔬 Fact-check last 30 s (`FactCheck`): the last ~30 s of transcript → Walkie Talkie's `POST /ask` (token-gated, 8917–8919), framed as an overheard discussion → answered in Walkie's ⚡ pop-up (first words ~1 s, then 🌐 searched + 🧐 reviewed); no whisper settle wait. The 10-min Terminal + HTML report pipeline (`research-proof.sh`) is gone since 2026-10-15 |
 | [docs/flux-email-agent.md](docs/flux-email-agent.md) | 📬 AgentMail inbox poller (`FluxInboxPoller` + `FluxMailPolicy`), 📬 menu item, 📬→🤖 email agent (`FluxAgentLauncher` + `flux-agent.sh`) — **read the security posture before changing anything** |
 | [docs/home-awake.md](docs/home-awake.md) | 🏠 Home Wi-Fi keeps the screen on (`HomeAwake` + `HomeAwakePolicy` + `DisplaySleepAssertion`): while associated with a configured home SSID the display never idles, so the screen saver → lock path never starts (⌃⌘Q and the lid still lock); CoreWLAN `.ssidDidChange` + a 60 s backstop poll, the SSID in `UserDefaults` not in a branch, why not `caffeinate` and why not `victor-insomnia`'s kernel flag |
-| [docs/hotspot-fallback.md](docs/hotspot-fallback.md) | 📶 asks the phone for its hotspot when the Mac is offline: RFCOMM signal, the Samsung routine, why not Bluetooth-connected, the home geofence |
-| [docs/roaming-warning.md](docs/roaming-warning.md) | 📶 roaming allowance < 15% on a roaming day → red pill until hovered, once a day (`PhoneRoamingMonitor` + `RoamingWarningPolicy` + `RoamingWarning`); read from the phone over a **second** RFCOMM service (not the hotspot beacon's), shared `PhoneChannelOpener` |
 | [docs/checkin-alarm.md](docs/checkin-alarm.md) | ✈️ airline "check-in is open" mails → hourly `gmail-cli` search (`CheckInMailWatch` + `CheckInMailPolicy`: one sender+subject clause per airline, Tarom sends none), marked read, orange click-only pill that survives restarts (`CheckInAlarm`); click opens the mail in Chrome |
 | [docs/tablet.md](docs/tablet.md) | Tablet ↔ Mac transport (USB/LAN/mDNS/Railway relay), 🎬 video playback (IINA orchestration), 🔌📶→🤖 LaunchBreak auto-deploy on USB *or WiFi* (`AndroidAppDeployer`, `WirelessTabletLink`), 📱 phone low-battery mirror (`PhoneBatteryMonitor`) |
 | [docs/displays-projector.md](docs/displays-projector.md) | 🖥️ auto display arrangement (`DisplayArrangementManager`, `KnownDisplays`), 🖥️ **◀ ASUS left / ASUS ▶ right** row, only the applicable one (`AsusSide`: move the ASUS to either side of the Retina, remembered for every auto-arrangement), 🎥 **Layout Zoom** menu row (only while Zoom or Teams runs) (`ZoomMeetingLayout`: meeting left, Participants over Chat right, on the monitor above the Retina) — also **Teams** since 2026-10-16 (`TeamsMeetingLayout`: window fills that monitor, chat docked right, Gallery 9 people, all by Chromium DOM id), 🔴 presentation detection + aggressive 😶😶😶 silent-transcription warning, 🔊 Zoom share-picker prep (`ZoomSharePrep`), ▶️ Zoom join-preview auto-press (`ZoomJoinAutoStart`), 🔍 **which magnifier style the remote can see** (`ZoomLensMode` + `ZoomLensWatch`: full-screen zoom is applied at scanout and never reaches a screen share, the PiP lens does — plus the three dead ends, measured), 🔎 **⌥⇧+scroll — our own full-screen zoom in a window** that every share carries (`ShareZoom`: live ScreenCaptureKit minus its own window, pointer = fixed point so clicks stay true), ⚠️ **⌥+scroll during a share → "Use ⌥⇧↕ for Zoom"** by the cursor (`ShareZoomHint`, seen at the HID tap), 🔦 **⇧ + wheel-drag → frosted glass everywhere but one box**, Esc clears (`GlassSpotlight`: the crop's ⌘ move via `RegionDrag`, one level under `ShareZoom` so both zooms magnify it; dashed outline while dragging, fading glass; **scroll on the glass zooms the box** to the middle, ≤ 80% — `GlassSpotlightZoom` + `GlassSpotlightLens`) |
@@ -92,6 +95,8 @@ load-bearing, not commentary.
 - When documenting a change, edit the matching `docs/*.md` zone file — this index only routes.
 
 ## Related
+
+- **`victor-net`** (public, beside this checkout): the network icon and everything about the phone's hotspot and roaming (moved out 2026-10-20); test hooks on 55126.
 
 - **`victor-effects`** (public, beside this checkout): the 🎆 app — every desktop effect, the soundboard, the 🔥 whip, the right-⌘ thumbnail panel, on port 55124. Its `docs/` is where an effect's reasoning lives now.
 - Backend repo: `training-assistant` (FastAPI, provides WebSocket server)
