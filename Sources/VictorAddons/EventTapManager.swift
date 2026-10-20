@@ -118,6 +118,9 @@ class EventTapManager {
     var onGlassSpotlightEnd: ((CGPoint) -> Void)?
     /// Esc while the glass is up.
     var onGlassSpotlightDismiss: (() -> Void)?
+    /// A bare scroll on the glass (anywhere on its screen while zoomed): notches
+    /// closer (+) or farther (−), counted as for `onShareZoomScroll`.
+    var onGlassSpotlightScroll: ((CGFloat) -> Void)?
     /// 🛞 A bare wheel press that moved or stayed down: the ⌃P crop, the box
     /// already under way from the press (`WheelCropPolicy`). Global CG points.
     /// All called on main.
@@ -236,6 +239,34 @@ private let VK_I: CGKeyCode = 0x22
     private var spotlightUp = false
     /// The box on the glass, global CG coordinates — set from main.
     private var spotlightHole: CGRect?
+    /// The glass's screen (global CG) and whether its box is zoomed — set from main.
+    private var spotlightScreen: CGRect?
+    private var spotlightZoomed = false
+
+    func setGlassSpotlightScreen(_ screen: CGRect) {
+        spotlightLock.lock()
+        spotlightScreen = screen
+        spotlightLock.unlock()
+    }
+
+    func setGlassSpotlightZoomed(_ zoomed: Bool) {
+        spotlightLock.lock()
+        spotlightZoomed = zoomed
+        spotlightLock.unlock()
+    }
+
+    /// A bare scroll at `point` belongs to the glass's zoom.
+    private func isGlassSpotlightScroll(at point: CGPoint) -> Bool {
+        spotlightLock.lock(); defer { spotlightLock.unlock() }
+        guard spotlightUp else { return false }
+        return GlassSpotlightZoom.takesScroll(at: point, screen: spotlightScreen, hole: spotlightHole,
+                                              zoomed: spotlightZoomed)
+    }
+
+    private var isGlassSpotlightZoomed: Bool {
+        spotlightLock.lock(); defer { spotlightLock.unlock() }
+        return spotlightZoomed
+    }
 
     func setGlassSpotlightHole(_ hole: CGRect?) {
         spotlightLock.lock()
@@ -246,7 +277,7 @@ private let VK_I: CGKeyCode = 0x22
     /// The glass is up and `point` is within reach of a corner of its box.
     private func isOnGlassSpotlightCorner(_ point: CGPoint) -> Bool {
         spotlightLock.lock(); defer { spotlightLock.unlock() }
-        guard spotlightUp, let hole = spotlightHole else { return false }
+        guard spotlightUp, !spotlightZoomed, let hole = spotlightHole else { return false }
         return GlassSpotlightCorners.corner(of: hole, near: point, reach: GlassSpotlight.cornerReach,
                                             inside: GlassSpotlight.cornerInside) != nil
     }
@@ -336,6 +367,26 @@ private let VK_I: CGKeyCode = 0x22
             if let at { self?.onWheelCropMove?(at) }
         }
         return true
+    }
+
+    /// A scroll event's delta for the zooms, after `ScrollReversal`, and what sent
+    /// it. ⇧ may already have turned the wheel into a horizontal scroll by the
+    /// time a session tap sees it, so whichever axis moved is the delta.
+    private func zoomScroll(_ event: CGEvent) -> (Double, ShareZoomPolicy.Source)? {
+        let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+        let delta: Double
+        if continuous {
+            let y = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
+            delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2)
+        } else {
+            let y = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
+            delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
+        }
+        guard delta != 0 else { return nil }
+        return (delta, ShareZoomPolicy.Source.of(
+            continuous: continuous,
+            phase: event.getIntegerValueField(.scrollWheelEventScrollPhase),
+            momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase)))
     }
 
     func setGlassSpotlightUp(_ up: Bool) {
@@ -571,7 +622,10 @@ private let VK_I: CGKeyCode = 0x22
             // and carry it — Victor, 2026-10-05. Read at the press only, like ⇧,
             // and ours only while there is glass: ⌘-middle-click is left alone
             // everywhere else.
-            if type == .otherMouseDown, event.flags.contains(.maskCommand), isGlassSpotlightUp {
+            // Not while the box is zoomed: it stays where it is until scrolled
+            // back out (Victor, 2026-10-20).
+            if type == .otherMouseDown, event.flags.contains(.maskCommand), isGlassSpotlightUp,
+               !isGlassSpotlightZoomed {
                 spotlightDragging = true
                 DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightGrab?(at) }
                 return nil
@@ -684,21 +738,19 @@ private let VK_I: CGKeyCode = 0x22
             // time a session tap sees it, so whichever axis moved is the delta.
             let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
             if zoomFlags == [.maskAlternate, .maskShift] {
-                let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
-                let delta: Double
-                if continuous {
-                    let y = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
-                    delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2)
-                } else {
-                    let y = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
-                    delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
-                }
-                if delta != 0 {
-                    let source = ShareZoomPolicy.Source.of(
-                        continuous: continuous,
-                        phase: event.getIntegerValueField(.scrollWheelEventScrollPhase),
-                        momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase))
+                if let (delta, source) = zoomScroll(event) {
                     DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, source) }
+                }
+                return nil
+            }
+
+            // 🔦 A bare scroll on the glass zooms its box (`GlassSpotlightZoom`);
+            // in the box it still scrolls the app underneath. Same count and
+            // same direction as the ⌥⇧ zoom just above.
+            if zoomFlags.isEmpty, isGlassSpotlightScroll(at: event.location) {
+                if let (delta, source) = zoomScroll(event) {
+                    let notches = ShareZoomPolicy.notches(delta: delta, source: source)
+                    DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightScroll?(notches) }
                 }
                 return nil
             }

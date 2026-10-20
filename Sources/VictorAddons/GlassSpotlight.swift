@@ -28,6 +28,11 @@ import VictorMacKit
 /// coordinates, which is also what the pointer is in: neither zoom remaps input,
 /// so the corner sits under the cursor the room sees.
 ///
+/// **Scroll on the glass zooms the box** (2026-10-20, `GlassSpotlightZoom`): a
+/// live picture of it grows towards the middle of the screen, up to 80% of its
+/// width or height, over glass that has closed behind it. Moving or resizing
+/// waits until it is scrolled back out.
+///
 /// Main thread only.
 final class GlassSpotlight {
 
@@ -49,6 +54,17 @@ final class GlassSpotlight {
     /// zone is the glass's, and the glass takes no clicks.
     static let cornerInside: CGFloat = 16
 
+    /// The glass comes and goes over this long, its blur growing (or melting)
+    /// with its opacity, so it settles rather than appears (Victor, 2026-10-20:
+    /// *"it should be a progressive animation, not immediately"*). It was a
+    /// 0.15 s / 0.2 s opacity fade.
+    static let fadeInSeconds: Double = 0.6
+    static let fadeOutSeconds: Double = 0.45
+    /// The dashed outline's fade once the wheel comes up — about as long as the
+    /// glass takes to settle (Victor: *"the dashed rectangle fades out as the
+    /// glass effect settles"*).
+    static let outlineFadeSeconds: Double = 0.6
+
     static func reveals(_ box: CGRect, on screen: CGRect) -> Bool {
         box.width * box.height >= revealFraction * screen.width * screen.height
     }
@@ -65,12 +81,32 @@ final class GlassSpotlight {
         didSet { if isShowing != oldValue { onShowingChanged?(isShowing) } }
     }
 
+    /// The glass's screen, global CG — the tap asks whether a scroll landed on it.
+    var onScreenChanged: ((CGRect) -> Void)?
+    /// Called on every change of `isZoomed`: while zoomed, the tap takes every
+    /// bare scroll on the glass's screen and leaves the box's corners and ⌘ alone.
+    var onZoomedChanged: ((Bool) -> Void)?
+    /// The box is (or is about to be) magnified. It cannot be moved or resized
+    /// then (Victor, 2026-10-20: *"I cannot move the selection while I'm zooming"*);
+    /// a new ⇧ drag drops the zoom and starts over.
+    private(set) var isZoomed = false {
+        didSet { if isZoomed != oldValue { onZoomedChanged?(isZoomed) } }
+    }
+
     private var panel: SpotlightPanel?
     private var glass: PlainGlassView?
-    private var decorations: CALayer?
+    private var glassScreen: NSScreen?
+    private var screenFrame: CGRect = .zero
+
+    /// The dashed outline and the `⌘ move` legend, in a window of their own over
+    /// the glass: they are up during a drag before any glass is (its first 5%),
+    /// and the glass's fade must not fade them with it. Never takes the mouse.
+    private var decoPanel: SpotlightPanel?
+    private var decoFrame: CGRect = .zero
+    private let outline = CAShapeLayer()
     private let legend = CATextLayer()
     private let legendPill = CALayer()
-    private var screenFrame: CGRect = .zero
+    private var decoHide: DispatchWorkItem?
 
     /// The drag under the hand, nil between drags.
     private var drag: RegionDrag?
@@ -98,7 +134,31 @@ final class GlassSpotlight {
     /// (the box), and which cursor shows.
     private var hoverTimer: Timer?
     private let cursors = GlassSpotlightCursors()
-    private var fadeGeneration = 0
+
+    /// How far the glass is up, 0…1, and where it is heading (`fade`).
+    private var level: CGFloat = 0
+    private var levelTarget: CGFloat = 0
+    private var fadeTimer: Timer?
+    private var fadeLast: CFAbsoluteTime = 0
+
+    /// The zoom (`GlassSpotlightZoom`): the box's live picture, and how far it
+    /// has travelled towards the middle — eased towards the wheel's target.
+    private let lens = GlassSpotlightLens()
+    private var zoom: CGFloat = 0
+    private var zoomTarget: CGFloat = 0
+    private var zoomBox: CGRect?
+    /// The picture has its first frame and lies over unbroken glass. Until then
+    /// the cut-out stays and the zoom waits, so it never starts from a blank.
+    private var lensLive = false
+    private var zoomTimer: Timer?
+
+    init() {
+        lens.onLive = { [weak self] in self?.lensWentLive() }
+        lens.onFailed = { [weak self] reason in
+            overlayError("🔦 glass spotlight zoom: \(reason)")
+            self?.endZoom()
+        }
+    }
 
     // MARK: - Driven by the event tap
 
@@ -108,12 +168,14 @@ final class GlassSpotlight {
         let p = Self.cocoa(point)
         guard let screen = NSScreen.physical.first(where: { NSMouseInRect(p, $0.frame, false) })
                 ?? NSScreen.main else { return }
+        if isZoomed { endZoom() }   // a new box is drawn on unmagnified glass
         holeBeforeDrag = screenFrame == screen.frame ? hole : nil
         dragScreen = screen
         revealed = false
         grabbing = false
         drag = RegionDrag(anchor: p, within: screen.frame, controlArmed: true)
         pushed = p
+        ensureDeco(on: screen)
         startTimer()
         tick()
     }
@@ -122,7 +184,7 @@ final class GlassSpotlight {
     /// there follows the hand, kept on its own screen, from wherever the press
     /// was. ⌘ may be let go once the drag has started, as ⇧ may for `begin`.
     func grab(atCG point: CGPoint) {
-        guard isShowing, let box = hole else { return }
+        guard isShowing, !isZoomed, let box = hole, let glassScreen else { return }
         let p = Self.cocoa(point)
         holeBeforeDrag = box
         dragScreen = nil
@@ -132,6 +194,7 @@ final class GlassSpotlight {
         drag.regrip(anchor: box.origin, free: CGPoint(x: box.maxX, y: box.maxY), mouse: p)
         self.drag = drag
         pushed = p
+        ensureDeco(on: glassScreen)
         startTimer()
         tick()
     }
@@ -143,7 +206,7 @@ final class GlassSpotlight {
     /// *"let's resume what we were cropping"*).
     func resume(atCG point: CGPoint) {
         let p = Self.cocoa(point)
-        guard isShowing, let box = hole,
+        guard isShowing, !isZoomed, let box = hole, let glassScreen,
               let corner = GlassSpotlightCorners.corner(of: box, near: p, reach: .greatestFiniteMagnitude) else { return }
         holeBeforeDrag = box
         dragScreen = nil
@@ -156,6 +219,7 @@ final class GlassSpotlight {
         drag.regrip(anchor: GlassSpotlightCorners.opposite(corner, in: box), free: corner, mouse: p)
         self.drag = drag
         pushed = p
+        ensureDeco(on: glassScreen)
         startTimer()
         tick()
     }
@@ -166,7 +230,7 @@ final class GlassSpotlight {
         tick()
     }
 
-    /// The wheel came up: the box stays, the hand is free.
+    /// The wheel came up: the box stays, the hand is free, the outline fades.
     func end(atCG point: CGPoint) {
         guard drag != nil else { return }
         pushed = Self.cocoa(point)
@@ -175,6 +239,7 @@ final class GlassSpotlight {
         drag = nil
         grabbing = false
         legendPill.isHidden = true
+        fadeOutline()
         if !isShowing { cursors.release() }   // with the glass up, `hover` takes the cursor back
         guard revealed, let box = hole else {
             overlayInfo("🔦 glass spotlight: drag under \(Int(Self.revealFraction * 100))% of the screen, "
@@ -184,24 +249,30 @@ final class GlassSpotlight {
         overlayInfo("🔦 glass spotlight: \(Int(box.width))×\(Int(box.height)) at (\(Int(box.minX)),\(Int(box.minY)))")
     }
 
-    /// Esc: the glass goes, whatever state it is in.
+    /// A bare scroll the tap found on this glass (or anywhere on its screen,
+    /// zoomed): `notches` closer (+) or farther (−), `ShareZoomPolicy.notches`.
+    func scroll(notches: CGFloat) {
+        guard isShowing, drag == nil, let box = hole else { return }
+        setZoom(GlassSpotlightZoom.step(zoomTarget, notches: notches), box: box)
+    }
+
+    /// Esc: the glass goes, whatever state it is in — a zoomed box with it.
     func dismiss() {
         stopTimer()
         drag = nil
         hole = nil
         holeBeforeDrag = nil
-        guard let panel, isShowing else { return }
+        legendPill.isHidden = true
+        fadeOutline()
+        stopZoomTimer()
+        isZoomed = false
+        guard panel != nil, isShowing else {
+            resetZoom()
+            return
+        }
         isShowing = false
         stopHover()
-        fadeGeneration += 1
-        let generation = fadeGeneration
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.2
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            guard let self, self.fadeGeneration == generation else { return }
-            panel.orderOut(nil)
-        })
+        fade(to: 0)
         overlayInfo("🔦 glass spotlight: off")
     }
 
@@ -213,6 +284,7 @@ final class GlassSpotlight {
            let screen = NSScreen.physical.first(where: { NSMouseInRect(CGPoint(x: rect.midX, y: rect.midY), $0.frame, false) }) {
             stopTimer()
             drag = nil
+            if isZoomed { endZoom() }
             ensurePanel(on: screen)
             legendPill.isHidden = true
             apply(hole: rect.intersection(screen.frame))
@@ -222,13 +294,23 @@ final class GlassSpotlight {
         return snapshotJSON()
     }
 
+    /// `?zoom=0…1`: the wheel's target, set directly.
+    func testZoom(_ target: CGFloat) -> String {
+        if isShowing, drag == nil, let box = hole { setZoom(min(1, max(0, target)), box: box) }
+        return snapshotJSON()
+    }
+
     func snapshotJSON() -> String {
         let r = hole ?? .zero
+        let z = zoomBox.map { GlassSpotlightZoom.frame(box: $0, screen: screenFrame, progress: zoom) } ?? .zero
         return """
         {"showing":\(isShowing),"dragging":\(drag != nil),\
         "hole":[\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))],\
         "screen":[\(Int(screenFrame.minX)),\(Int(screenFrame.minY)),\(Int(screenFrame.width)),\(Int(screenFrame.height))],\
-        "level":\(panel?.level.rawValue ?? 0)}
+        "level":\(panel?.level.rawValue ?? 0),"glass":\(String(format: "%.2f", level)),\
+        "zoomed":\(isZoomed),"lensLive":\(lensLive),"lensFrames":\(lens.framesShown),\
+        "zoom":\(String(format: "%.3f", zoom)),"zoomTarget":\(String(format: "%.3f", zoomTarget)),\
+        "zoomFrame":[\(Int(z.minX)),\(Int(z.minY)),\(Int(z.width)),\(Int(z.height))]}
         """
     }
 
@@ -264,13 +346,14 @@ final class GlassSpotlight {
             // Cocoa y is up: a free corner up-right or down-left of the anchor is the ↗↙ diagonal.
             cursors.show((free.x - drag.anchor.x) * (free.y - drag.anchor.y) > 0 ? .resizeNESW : .resizeNWSE)
         }
+        // The outline from the first pixel, glass or not yet.
+        renderDecorations(box: box, moving: drag.moving)
         if !revealed {
             guard let dragScreen, Self.reveals(box, on: dragScreen.frame) else { return }
             revealed = true
             ensurePanel(on: dragScreen)
         }
         apply(hole: box)
-        renderDecorations(box: box, moving: drag.moving)
     }
 
     // MARK: - Hover: clicks and cursor while the glass is up
@@ -296,6 +379,13 @@ final class GlassSpotlight {
             cursors.release()
             return
         }
+        if isZoomed {
+            // The box is under glass now, its picture is not a window: nothing
+            // on this screen is clickable until the zoom is scrolled back out.
+            if panel.ignoresMouseEvents { panel.ignoresMouseEvents = false }
+            cursors.show(.arrow)
+            return
+        }
         let corner = GlassSpotlightCorners.corner(of: box, near: p, reach: Self.cornerReach, inside: Self.cornerInside)
         let inBox = corner == nil && box.contains(p)
         if panel.ignoresMouseEvents != inBox { panel.ignoresMouseEvents = inBox }
@@ -317,31 +407,178 @@ final class GlassSpotlight {
         }
     }
 
-    // MARK: - Drawing
+    // MARK: - Showing and hiding the glass
 
     private func ensurePanel(on screen: NSScreen) {
-        fadeGeneration += 1   // a fade-out still running must not order the panel out under us
         if panel == nil || screenFrame != screen.frame {
             panel?.orderOut(nil)
             build(on: screen)
+            level = 0
         }
         guard let panel else { return }
         if !isShowing {
+            resetZoom()   // a zoom still fading out with the last glass
             hole = nil
             maskedHole = nil
-            panel.alphaValue = 0
+            applyLevel()
             panel.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.15
-                panel.animator().alphaValue = 1
-            }
+            decoPanel?.orderFrontRegardless()   // the outline stays over the glass
             isShowing = true
             startHover()
+            fade(to: 1)
         }
     }
 
+    /// Up or down from wherever the glass is now, so a ⇧ drag during a fade-out
+    /// turns it around instead of starting over.
+    private func fade(to target: CGFloat) {
+        levelTarget = target
+        guard fadeTimer == nil else { return }
+        fadeLast = CFAbsoluteTimeGetCurrent()
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.fadeTick() }
+        RunLoop.main.add(t, forMode: .common)
+        fadeTimer = t
+    }
+
+    private func fadeTick() {
+        let now = CFAbsoluteTimeGetCurrent()
+        let dt = CGFloat(now - fadeLast)
+        fadeLast = now
+        let up = levelTarget > level
+        let step = dt / CGFloat(up ? Self.fadeInSeconds : Self.fadeOutSeconds)
+        level = up ? min(levelTarget, level + step) : max(levelTarget, level - step)
+        applyLevel()
+        guard level == levelTarget else { return }
+        fadeTimer?.invalidate()
+        fadeTimer = nil
+        if level == 0, !isShowing {
+            panel?.orderOut(nil)
+            if drag == nil { decoPanel?.orderOut(nil) }
+            resetZoom()
+            maskedHole = nil
+        }
+    }
+
+    /// Opacity and blur radius move together: at a third of the way the glass is
+    /// a third as opaque *and* a third as blurred — a focus pull, not a curtain.
+    private func applyLevel() {
+        let eased = level * level * (3 - 2 * level)
+        panel?.alphaValue = eased
+        glass?.radius = PlainGlassView.blurRadius * Double(eased)
+        glass?.tune()
+    }
+
+    // MARK: - Zoom
+
+    private func setZoom(_ target: CGFloat, box: CGRect) {
+        guard target != zoomTarget else { return }
+        zoomTarget = target
+        if target > 0, !isZoomed { startZoom(box) }
+        if target == 0, !lensLive {
+            endZoom()   // scrolled back out before the picture ever came
+            return
+        }
+        startZoomTimer()
+    }
+
+    private func startZoom(_ box: CGRect) {
+        guard let glassScreen else { return }
+        isZoomed = true
+        zoomBox = box
+        zoom = 0
+        lensLive = false
+        let capture = GlassSpotlightZoom.capture(box: box, feather: Self.feather, screen: screenFrame)
+        let l = lens.layer
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        l.isHidden = true
+        l.transform = CATransform3DIdentity
+        l.bounds = CGRect(origin: .zero, size: capture.size)
+        // Scaled about the box's own centre, which is what slides to the screen's.
+        l.anchorPoint = CGPoint(x: (box.midX - capture.minX) / capture.width,
+                                y: (box.midY - capture.minY) / capture.height)
+        l.position = CGPoint(x: box.midX - screenFrame.minX, y: box.midY - screenFrame.minY)
+        let mask = CALayer()
+        mask.frame = l.bounds
+        mask.contents = GlassSpotlightMask.image(canvas: capture.size,
+                                                 hole: box.offsetBy(dx: -capture.minX, dy: -capture.minY),
+                                                 feather: Self.feather, scale: glassScreen.backingScaleFactor,
+                                                 inverted: true)
+        l.mask = mask
+        CATransaction.commit()
+        lens.start(filming: capture, on: glassScreen)
+    }
+
+    /// The first frame is in: the picture, unmagnified, goes over the cut-out
+    /// it matches pixel for pixel, the glass closes under it, and only then does
+    /// the zoom begin to move.
+    private func lensWentLive() {
+        guard isZoomed, let glass else { return }
+        lensLive = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        lens.layer.isHidden = false
+        CATransaction.commit()
+        glass.maskImage = nil
+        maskedHole = nil
+        glass.tune()
+        startZoomTimer()
+    }
+
+    private func startZoomTimer() {
+        guard zoomTimer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.zoomTick() }
+        RunLoop.main.add(t, forMode: .common)
+        zoomTimer = t
+    }
+
+    private func stopZoomTimer() {
+        zoomTimer?.invalidate()
+        zoomTimer = nil
+    }
+
+    private func zoomTick() {
+        guard lensLive, let box = zoomBox else { return }
+        zoom = GlassSpotlightZoom.ease(zoom, toward: zoomTarget)
+        let s = GlassSpotlightZoom.scale(box: box, screen: screenFrame, progress: zoom)
+        let c = GlassSpotlightZoom.center(box: box, screen: screenFrame, progress: zoom)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        lens.layer.position = CGPoint(x: c.x - screenFrame.minX, y: c.y - screenFrame.minY)
+        lens.layer.transform = CATransform3DMakeScale(s, s, 1)
+        CATransaction.commit()
+        guard zoom == zoomTarget else { return }
+        stopZoomTimer()
+        if zoom == 0 { endZoom() }
+    }
+
+    /// Back to the cut-out: the hole first, then the picture over it goes.
+    private func endZoom() {
+        if isShowing, let hole { apply(hole: hole) }
+        resetZoom()
+    }
+
+    private func resetZoom() {
+        stopZoomTimer()
+        lens.stop()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        lens.layer.isHidden = true
+        lens.layer.mask = nil
+        CATransaction.commit()
+        lensLive = false
+        zoom = 0
+        zoomTarget = 0
+        zoomBox = nil
+        isZoomed = false
+    }
+
+    // MARK: - Drawing
+
     private func build(on screen: NSScreen) {
         screenFrame = screen.frame
+        glassScreen = screen
+        onScreenChanged?(Self.cg(screen.frame))
         let panel = SpotlightPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                                    backing: .buffered, defer: false)
         panel.setFrame(screen.frame, display: false)
@@ -371,21 +608,101 @@ final class GlassSpotlight {
         glass.state = .active
         root.addSubview(glass)
 
-        let deco = NSView(frame: root.bounds)
-        deco.autoresizingMask = [.width, .height]
-        deco.wantsLayer = true
-        legendPill.isHidden = true
-        legend.contentsScale = screen.backingScaleFactor
-        legend.alignmentMode = .center
-        legendPill.addSublayer(legend)
-        deco.layer?.addSublayer(legendPill)
-        root.addSubview(deco)
+        // The zoomed picture, over the glass and in the same window, so it fades
+        // with it.
+        let lensHost = NSView(frame: root.bounds)
+        lensHost.autoresizingMask = [.width, .height]
+        lensHost.wantsLayer = true
+        lens.layer.removeFromSuperlayer()
+        lens.layer.isHidden = true
+        lensHost.layer?.addSublayer(lens.layer)
+        root.addSubview(lensHost)
 
         panel.contentView = root
         self.panel = panel
         self.glass = glass
-        self.decorations = deco.layer
         maskedHole = nil
+    }
+
+    /// The outline's window on `screen`, in front, the outline fully drawn.
+    private func ensureDeco(on screen: NSScreen) {
+        decoHide?.cancel()
+        decoHide = nil
+        if decoPanel == nil || decoFrame != screen.frame {
+            decoPanel?.orderOut(nil)
+            buildDeco(on: screen)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outline.removeAllAnimations()
+        outline.path = nil
+        outline.opacity = 1
+        CATransaction.commit()
+        decoPanel?.orderFrontRegardless()
+    }
+
+    private func buildDeco(on screen: NSScreen) {
+        decoFrame = screen.frame
+        let panel = SpotlightPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+                                   backing: .buffered, defer: false)
+        panel.setFrame(screen.frame, display: false)
+        panel.level = NSWindow.Level(rawValue: GlassSpotlight.windowLevel)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+
+        let view = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        view.wantsLayer = true
+        // The crop's own colour, dashed: the box's exact edge while the hand is
+        // on it — the feather hides where it really is (Victor, 2026-10-20:
+        // *"should be a dotted line border as I crop my screen … I have to have
+        // precision"*).
+        outline.removeFromSuperlayer()
+        outline.fillColor = nil
+        outline.strokeColor = CropSelectionStyle().accent.cgColor
+        outline.lineWidth = 2
+        outline.lineDashPattern = [6, 4]
+        outline.shadowColor = NSColor.black.cgColor
+        outline.shadowOpacity = 0.5
+        outline.shadowRadius = 1.5
+        outline.shadowOffset = .zero
+        view.layer?.addSublayer(outline)
+        legendPill.removeFromSuperlayer()
+        legendPill.isHidden = true
+        legend.contentsScale = screen.backingScaleFactor
+        legend.alignmentMode = .center
+        if legend.superlayer == nil { legendPill.addSublayer(legend) }
+        view.layer?.addSublayer(legendPill)
+        panel.contentView = view
+        decoPanel = panel
+    }
+
+    /// The wheel is up: the outline fades while the glass settles; with no glass
+    /// to settle (a drag under 5%) its window goes too.
+    private func fadeOutline() {
+        let from = outline.presentation()?.opacity ?? outline.opacity
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outline.removeAllAnimations()
+        outline.opacity = 0
+        CATransaction.commit()
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = from
+        anim.toValue = 0
+        anim.duration = Self.outlineFadeSeconds
+        anim.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        outline.add(anim, forKey: "fade")
+        decoHide?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.drag == nil else { return }
+            self.decoPanel?.orderOut(nil)
+        }
+        decoHide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.outlineFadeSeconds + 0.1, execute: work)
     }
 
     /// Cut `box` (global Cocoa) out of the glass.
@@ -408,15 +725,17 @@ final class GlassSpotlight {
         glass.tune()
     }
 
-    /// While the hand is on it: the crop's `⌘ move` under the box, brighter while
-    /// ⌘ is held. Straight on the glass, no plate behind it, and no line on the
-    /// edge — the cut-out is the frame (Victor, 2026-10-04: *"nu ai nevoie de
-    /// marginea punctată galbenă"*, *"deseneaz-o pe blur fără fundal negru, discret"*).
+    /// While the hand is on it: the dashed outline on the box's edge, and the
+    /// crop's `⌘ move` under it, brighter while ⌘ is held — straight on the
+    /// glass, no plate behind it (Victor, 2026-10-04: *"deseneaz-o pe blur fără
+    /// fundal negru, discret"*). The outline goes when the hand does.
     private func renderDecorations(box: CGRect, moving: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        let local = box.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY)
+        let local = box.offsetBy(dx: -decoFrame.minX, dy: -decoFrame.minY)
+        // Just outside the box, so the dashes never sit on what it frames.
+        outline.path = CGPath(rect: local.insetBy(dx: -1, dy: -1), transform: nil)
 
         let style = CropSelectionStyle()
         let text = NSAttributedString(string: style.movingSuffix, attributes: [
@@ -426,7 +745,7 @@ final class GlassSpotlight {
         let measured = text.size()
         let size = CGSize(width: measured.width.rounded(.up), height: measured.height.rounded(.up))
         legend.frame = CGRect(origin: .zero, size: size)
-        let bounds = CGRect(origin: .zero, size: screenFrame.size)
+        let bounds = CGRect(origin: .zero, size: decoFrame.size)
         var y = local.minY - size.height - 8
         if y < 4 { y = min(local.maxY + 8, bounds.height - size.height - 4) }
         let x = min(max(local.midX - size.width / 2, 4), max(4, bounds.width - size.width - 4))
@@ -462,6 +781,9 @@ final class GlassSpotlight {
 final class PlainGlassView: NSVisualEffectView {
     static let blurRadius: Double = 3
     static let backdropScale: Double = 0.5
+    /// The radius `tune` applies: `blurRadius`, except while `GlassSpotlight`
+    /// fades the glass in or out and walks it up from (or down to) zero.
+    var radius: Double = PlainGlassView.blurRadius
 
     override func updateLayer() {
         super.updateLayer()
@@ -480,7 +802,7 @@ final class PlainGlassView: NSVisualEffectView {
             if layer.name == "fill" || layer.name == "tone" { layer.isHidden = true }
             if layer.name == "backdrop",
                (layer.filters ?? []).contains(where: { ($0 as? NSObject)?.value(forKey: "name") as? String == "gaussianBlur" }) {
-                layer.setValue(Self.blurRadius, forKeyPath: "filters.gaussianBlur.inputRadius")
+                layer.setValue(radius, forKeyPath: "filters.gaussianBlur.inputRadius")
                 layer.setValue(Self.backdropScale, forKey: "scale")
             }
             layer.sublayers?.forEach(walk)
@@ -607,23 +929,29 @@ private func CGSSetConnectionProperty(_ cid: Int32, _ target: Int32, _ key: CFSt
 enum GlassSpotlightMask {
     /// An alpha-only image of `canvas` (points, y up), at `scale` pixels a point —
     /// what the tests read back; the glass itself draws straight into its mask.
-    static func image(canvas: CGSize, hole: CGRect, feather: CGFloat, scale: CGFloat = 1) -> CGImage? {
+    ///
+    /// `inverted` is the zoomed picture's own mask (`GlassSpotlightZoom`): opaque in
+    /// the box, fading out across the feather — the cut-out's exact complement, so
+    /// the picture laid over unbroken glass looks like the hole it replaces.
+    static func image(canvas: CGSize, hole: CGRect, feather: CGFloat, scale: CGFloat = 1,
+                      inverted: Bool = false) -> CGImage? {
         let width = max(1, Int((canvas.width * scale).rounded(.up)))
         let height = max(1, Int((canvas.height * scale).rounded(.up)))
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                   bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
                                   bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return nil }
         ctx.scaleBy(x: scale, y: scale)
-        draw(in: ctx, canvas: canvas, hole: hole, feather: feather, steps: Int(feather * scale))
+        draw(in: ctx, canvas: canvas, hole: hole, feather: feather, steps: Int(feather * scale), inverted: inverted)
         return ctx.makeImage()
     }
 
     /// The mask's alpha into `ctx`, in points, `steps` rings across the feather.
     /// Opaque past the feather: a lighter glass (0.75, tried 2026-10-04) let the
     /// sharp text through enough to read it — *"trebuie să fie greu de citit"*.
-    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat, steps: Int = 64) {
+    static func draw(in ctx: CGContext, canvas: CGSize, hole: CGRect, feather: CGFloat, steps: Int = 64,
+                     inverted: Bool = false) {
         ctx.setBlendMode(.copy)
-        ctx.setFillColor(gray: 0, alpha: 1)
+        ctx.setFillColor(gray: 0, alpha: inverted ? 0 : 1)
         ctx.fill(CGRect(origin: .zero, size: canvas))
         // Concentric rounded rects from the feather's outer edge in to the box,
         // each one *replacing* the alpha under it (`.copy`): one step a point,
@@ -631,7 +959,8 @@ enum GlassSpotlightMask {
         let steps = max(1, min(64, steps))
         for i in 0...steps {
             let f = CGFloat(steps - i) / CGFloat(steps)        // 1 at the outer edge → 0 at the box
-            let alpha = f * f * (3 - 2 * f)
+            let glass = f * f * (3 - 2 * f)
+            let alpha = inverted ? 1 - glass : glass
             let rect = hole.insetBy(dx: -feather * f, dy: -feather * f)
             guard rect.width > 0, rect.height > 0 else { continue }
             let radius = min(feather * f, rect.width / 2, rect.height / 2)

@@ -127,7 +127,7 @@ case testTerminalFont
         /// 🪞 `VirtualDesktop`: live knobs for measuring its cost (see `testTune`).
         case testVirtualDesktop([String: String])
         /// 🔦 `GlassSpotlight`: a box (global Cocoa points), or off.
-        case testGlassSpotlight(rect: CGRect?, off: Bool)
+        case testGlassSpotlight(rect: CGRect?, off: Bool, zoom: Double?)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -353,7 +353,7 @@ case testTerminalFont
     /// 🪞 `VirtualDesktop` — the query, as given.
     var onTestVirtualDesktop: (([String: String]) -> String)?
     /// 🔦 `GlassSpotlight` — box in global Cocoa points (nil = just report), or off.
-    var onTestGlassSpotlight: ((CGRect?, Bool) -> String)?
+    var onTestGlassSpotlight: ((CGRect?, Bool, Double?) -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -644,9 +644,9 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestShareZoom?(factor, x, y, fps) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestShareZoom == nil { statusCode = 503 }
-            case .testGlassSpotlight(let rect, let off):
+            case .testGlassSpotlight(let rect, let off, let zoom):
                 contentType = "application/json"
-                body = self.onTestGlassSpotlight?(rect, off) ?? "{\"error\":\"unavailable\"}"
+                body = self.onTestGlassSpotlight?(rect, off, zoom) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestGlassSpotlight == nil { statusCode = 503 }
             case .testZoomLayout(let run):
                 contentType = "application/json"
@@ -1034,7 +1034,8 @@ case testTerminalFont
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
             let rect = num("x").flatMap { x in num("y").flatMap { y in num("w").flatMap { w in num("h").map { h in
                 CGRect(x: x, y: y, width: w, height: h) } } } }
-            return .testGlassSpotlight(rect: rect, off: queryItems.first(where: { $0.name == "off" })?.value == "1")
+            return .testGlassSpotlight(rect: rect, off: queryItems.first(where: { $0.name == "off" })?.value == "1",
+                                       zoom: num("zoom"))
         case "/test/zoom-layout":
             return .testZoomLayout(run: queryItems.first(where: { $0.name == "run" })?.value != "0")
         case "/test/emoji-layer":

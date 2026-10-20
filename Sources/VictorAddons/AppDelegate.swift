@@ -1345,10 +1345,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.virtualDesktop.testTune(query) ?? "{\"error\":\"unavailable\"}"
         }
         // /test/glass-spotlight?x=&y=&w=&h= — 🔦 a box without the mouse
-        // (global Cocoa points); ?off=1 takes it down; nothing just reports.
-        tabletServer?.onTestGlassSpotlight = { [weak self] rect, off in
+        // (global Cocoa points); ?off=1 takes it down; ?zoom=0…1 sets the
+        // scroll zoom's target; nothing just reports.
+        tabletServer?.onTestGlassSpotlight = { [weak self] rect, off, zoom in
             guard let self else { return "{\"error\":\"unavailable\"}" }
             if off { return self.glassSpotlight.testShow(nil) }
+            if let zoom { return self.glassSpotlight.testZoom(CGFloat(zoom)) }
             guard let rect else { return self.glassSpotlight.snapshotJSON() }
             return self.glassSpotlight.testShow(rect)
         }
@@ -1943,6 +1945,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onGlassSpotlightMove = { [weak self] at in self?.glassSpotlight.moved(toCG: at) }
         eventTap.onGlassSpotlightEnd = { [weak self] at in self?.glassSpotlight.end(atCG: at) }
         eventTap.onGlassSpotlightDismiss = { [weak self] in self?.glassSpotlight.dismiss() }
+        glassSpotlight.onScreenChanged = { [weak eventTap] screen in eventTap?.setGlassSpotlightScreen(screen) }
+        glassSpotlight.onZoomedChanged = { [weak eventTap] zoomed in eventTap?.setGlassSpotlightZoomed(zoomed) }
+        eventTap.onGlassSpotlightScroll = { [weak self] notches in self?.glassSpotlight.scroll(notches: notches) }
         // 🛞 A bare wheel drag (or hold) is the ⌃P crop — except during a
         // dictation, when the same drag is Walkie Talkie's.
         eventTap.isDictating = { [weak self] in self?.coreAudioManager?.probeWisprRecording() ?? false }

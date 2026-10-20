@@ -47,6 +47,21 @@ enum ShareZoomPolicy {
         }
     }
 
+    /// How many notches closer (positive) or farther (negative) one scroll event is,
+    /// by the rules under `step`. 🔦 `GlassSpotlight`'s zoom reads the same count, so
+    /// both zooms turn the same way under the same wheel.
+    static func notches(delta: Double, source: Source) -> CGFloat {
+        switch source {
+        case .trackpad:
+            return -CGFloat(delta) / pixelsPerNotch
+        case .smoothWheel:
+            return delta > 0 ? 1 : delta < 0 ? -1 : 0
+        case .wheel:
+            let n = min(abs(CGFloat(delta)), maxNotchesPerEvent)
+            return delta > 0 ? n : -n
+        }
+    }
+
     /// The next target factor after one scroll event.
     ///
     /// `delta` is the event's delta **after** `ScrollReversal`. The rule is "the same
@@ -65,17 +80,7 @@ enum ShareZoomPolicy {
     ///   to 8× before anything was on screen — the "hung halfway" of 2026-10-15.
     static func step(_ factor: CGFloat, delta: Double, source: Source) -> CGFloat {
         guard delta != 0 else { return factor }
-        let notches: CGFloat
-        switch source {
-        case .trackpad:
-            notches = -CGFloat(delta) / pixelsPerNotch
-        case .smoothWheel:
-            notches = delta > 0 ? 1 : -1
-        case .wheel:
-            let n = min(abs(CGFloat(delta)), maxNotchesPerEvent)
-            notches = delta > 0 ? n : -n
-        }
-        let next = factor * pow(notchFactor, notches)
+        let next = factor * pow(notchFactor, notches(delta: delta, source: source))
         // Ten notches up and ten down multiply out to 1.0000001, not 1 — and a
         // target above 1 is a zoom that never switches itself off.
         if next < 1.01 { return 1 }

@@ -52,4 +52,15 @@ final class GlassSpotlightMaskTests: XCTestCase {
         XCTAssertFalse(GlassSpotlight.reveals(CGRect(x: 0, y: 0, width: 400, height: 250), on: screen))
         XCTAssertTrue(GlassSpotlight.reveals(CGRect(x: 0, y: 0, width: 432, height: 240), on: screen))
     }
+
+    func testTheZoomedPicturesMaskIsTheExactComplement() {
+        let glass = GlassSpotlightMask.image(canvas: canvas, hole: hole, feather: feather)!
+        let picture = GlassSpotlightMask.image(canvas: canvas, hole: hole, feather: feather, inverted: true)!
+        let g = glass.dataProvider!.data! as Data, p = picture.dataProvider!.data! as Data
+        for (x, y) in [(100, 80), (390, 290), (160, 80), (175, 80), (60, 130)] {
+            let row = glass.height - 1 - y
+            let sum = Int(g[row * glass.bytesPerRow + x]) + Int(p[row * picture.bytesPerRow + x])
+            XCTAssertEqual(sum, 255, accuracy: 2, "(\(x), \(y))")
+        }
+    }
 }

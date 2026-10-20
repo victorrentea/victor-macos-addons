@@ -283,11 +283,21 @@ crop"* — so it is the crop's gesture, read by the crop's code.
 - **The keys are `RegionDrag` in victor-mac-kit**, extracted from `CropSelectionOverlay`
   the same day so both overlays drive one value: ⌘ moves the box instead of resizing
   it, the box stays on the screen the drag began on. **No ⌃ square here** (Victor,
-  same day: *"n-am nevoie de square"* — ⌃ is passed as never held). The only legend
+  same day: *"n-am nevoie de square"* — ⌃ is passed as never held). The legend
   is the crop's `⌘ move`, small, white, straight on the glass with no plate behind
-  it, brighter while ⌘ is held; **no line on the box's edge** — the cut-out is the
-  frame. Only the trigger differs: **⇧ is read at the press and never again**, so it
-  can be let go as soon as the drag has started.
+  it, brighter while ⌘ is held. Only the trigger differs: **⇧ is read at the press
+  and never again**, so it can be let go as soon as the drag has started.
+- **A dashed outline while the hand is on the box, gone once it lets go** (Victor,
+  2026-10-20: *"should be a dotted line border as I crop my screen before the glass
+  overlay shows … the dashed rectangle fades out as the glass effect settles. I have to
+  have precision"*). Every drag — a new ⇧ box, a ⌘ move, a corner resumed — draws the
+  box's exact edge in the crop's yellow, dashed 6/4, 1 pt outside the box so it never
+  covers what it frames; from the first pixel, so the first 5% (before any glass) is
+  no longer drawn blind. On release it fades over 0.6 s while the glass settles. The
+  2026-10-04 *"nu ai nevoie de marginea punctată galbenă"* still holds for the box at
+  rest: the feather is the frame then. The outline and the legend live in a **second,
+  click-through window** at the same level, ordered over the glass: they are up before
+  the glass is, and the glass's fade must not fade them.
 - **The tap owns all three halves.** `EventTapManager` swallows the ⇧-middle press,
   every drag and the release (the orphan-up rule), and pushes positions to main on
   arrival — Walkie Talkie's lesson, a 60 Hz timer alone lets the box lag the hand.
@@ -340,6 +350,34 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   the cursor just stays whatever the app underneath set. The corner zone reaches 60 pt
   around a corner but only **16 pt into the box** (`cornerInside`), so the box itself
   stays clickable almost to its corners.
+- **The glass fades in and out over 0.6 s / 0.45 s, its blur growing with it**
+  (Victor, 2026-10-20: *"it should be a progressive animation, not immediately"* — it
+  was a 0.15 s / 0.2 s opacity fade). One 60 Hz timer walks a level 0…1 (smoothstep)
+  into both the panel's `alphaValue` and `PlainGlassView.radius` (0 → 3 pt), so it reads
+  as a focus pull rather than a curtain. A ⇧ drag during a fade-out turns it around from
+  where it is.
+- **Scroll on the glass zooms the box** (Victor, 2026-10-20: *"if I hold my mouse over
+  the blurred area and I scroll in, the part that I have allowed to be visible should zoom
+  in towards the center of the screen. To the maximum zoom in, that should fit 80% of the
+  screen … the things around it should be still blurred"*). `GlassSpotlightZoom` is the
+  arithmetic: a progress 0…1, ten notches end to end, the box's centre sliding to the
+  screen's while it grows, at 1 as big as fits in 80% of the width *and* the height (never
+  shrunk: a box already over 80% only slides). The notches are `ShareZoomPolicy.notches`,
+  read by the tap after `ScrollReversal`, so this zoom turns the same way as ⌥⇧ ShareZoom
+  under the same wheel (and trackpad). **Only a bare scroll, only on the glass** — in the
+  box the app underneath still scrolls; once zoomed, anywhere on that screen. The picture
+  is `GlassSpotlightLens`, a ScreenCaptureKit stream of just the box plus its 40 pt feather
+  (30 fps, `EchoGate` against its own echo), with **every window of this app** and Victor
+  Effects' left out, drawn in the glass panel over the glass (so it fades with it) and
+  masked by the cut-out's exact complement (`GlassSpotlightMask(inverted:)`): unmagnified,
+  it lies over the hole pixel for pixel. Only when its first frame is in does the glass
+  close (`maskImage = nil`) and the zoom start to move, so nothing flashes; scrolled back
+  to 0, the hole is cut again and the stream stops. **While zoomed the box cannot be moved
+  or resized** (Victor: *"I cannot move the selection while I'm zooming"*): the tap stops
+  offering corners and ⌘-grab, the whole screen takes clicks, the cursor is the arrow; a
+  new ⇧ drag drops the zoom and draws a fresh box; Esc fades everything. Verified
+  2026-10-20 on the ASUS: `?zoom=1` on a 500×250 box → 1536×768 centred (80% of 1920),
+  frames live; three posted wheel notches → exactly 0.3.
 - **After the release the glass stays** (since 2026-10-06 it takes clicks — see below) until **Esc**, which the tap swallows with its release — ⌘/⌃/⌥+Esc are left
   alone. A new ⇧-wheel-drag replaces the box.
 - **The glass comes up only once the box covers 5% of the screen** (`revealFraction`),
@@ -393,7 +431,9 @@ crop"* — so it is the crop's gesture, read by the crop's code.
 - **Why not victor-effects**: that repo is public and cannot depend on the private kit
   the gesture lives in, and `ShareZoom` is in this process.
 - Headless: `GET /test/glass-spotlight?x=&y=&w=&h=` (global Cocoa points) puts a box
-  up, `?off=1` takes it down, no query reports.
+  up, `?zoom=0…1` sets the scroll zoom's target, `?off=1` takes it down, no query
+  reports (`glass` = the fade level, `zoom`/`zoomTarget`/`zoomFrame`, `lensLive`,
+  `lensFrames`).
 
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 
