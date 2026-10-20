@@ -328,9 +328,15 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   *"the masked area shouldn't be clickable at all"*). Until then the panel was
   click-through everywhere. Now `ignoresMouseEvents` is false and a 60 Hz `hover` while the
   glass is up flips it to true only while the pointer is in the box (minus the corner
-  zones). A click or scroll on the glass lands on a non-activating panel that can't become
-  key, so it does nothing. Verified with a test window under the glass counting posted
-  clicks: 2 on the glass and 1 on a corner never arrived, 2 in the box did.
+  zones). A click on the glass lands on a non-activating panel that can't become key, so
+  no app gets it. Verified with a test window under the glass counting posted clicks: 2 on
+  the glass and 1 on a corner never arrived, 2 in the box did.
+- **A click on the glass takes it down, as Esc does** (Victor, 2026-10-20: *"if I click on
+  the glass during the zooming, or in general during that effect, the glass disappears,
+  fades out"*). Left or right, on the glass or a corner zone — anywhere on that screen
+  while zoomed, where a zoomed box first eases home. `GlassClickView`, the panel's root,
+  turns the click into `dismiss()`; the middle button stays the tap's. Until then a click
+  there did nothing.
 - **The cursor says what the wheel will do** (same day: *"a resizing diagonal … and when I
   pull down command, the move"*). On a corner zone: the diagonal `NSCursor.frameResize`
   for that corner (macOS 15; crosshair before), or a four-arrow move cursor drawn from the

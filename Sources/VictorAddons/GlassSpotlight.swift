@@ -634,13 +634,19 @@ final class GlassSpotlight {
         // The glass takes every click and scroll — nothing under it is reachable
         // (Victor, 2026-10-06: *"the masked area shouldn't be clickable at all"*);
         // `hover` makes the panel click-through only while the pointer is in the
-        // box. Non-activating and never key, so a click on the glass does nothing.
+        // box. Non-activating and never key, so a click on the glass reaches no
+        // app — it takes the glass down, as Esc does (`GlassClickView`).
         panel.ignoresMouseEvents = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-        let root = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let root = GlassClickView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        root.onClick = { [weak self] in
+            guard let self, self.drag == nil else { return }
+            overlayInfo("🔦 glass spotlight: clicked on the glass")
+            self.dismiss()
+        }
         let glass = PlainGlassView(frame: root.bounds)
         glass.autoresizingMask = [.width, .height]
         glass.blendingMode = .behindWindow
@@ -853,6 +859,18 @@ final class PlainGlassView: NSVisualEffectView {
         walk(layer)
         CATransaction.commit()
     }
+}
+
+/// The glass panel's root: a left or right click on it is Esc (Victor, 2026-10-20:
+/// *"if I click on the glass during the zooming, or in general during that effect,
+/// the glass … fades out"*). It only ever sees clicks on the glass — in the box the
+/// panel is click-through (`hover`) — or anywhere on the screen while zoomed. The
+/// wheel is left to the tap, which owns every middle press the glass cares about.
+private final class GlassClickView: NSView {
+    var onClick: (() -> Void)?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func rightMouseDown(with event: NSEvent) { onClick?() }
 }
 
 /// Never key, never main, never pushed under the menu bar — the frame handed
