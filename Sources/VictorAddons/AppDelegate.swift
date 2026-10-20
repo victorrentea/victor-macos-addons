@@ -752,8 +752,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         djiReceiver.start()
         menuBarManager.djiMenuSuffix = { [weak self] in self?.djiReceiver.menuSuffix() }
-        tabletServer?.onTestMenuOpen = { [weak self] secs, appearance in
-            self?.menuBarManager.openMenuForTest(closeAfter: secs, appearance: appearance)
+        tabletServer?.onTestMenuOpen = { [weak self] secs, appearance, traffic in
+            self?.menuBarManager.openMenuForTest(closeAfter: secs, appearance: appearance, traffic: traffic)
         }
         tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
         // Replay a reading through the same handler the USB reader uses, so the

@@ -47,7 +47,7 @@ case testTerminalFont
     /// The 🎤 DJI receiver's status stream / a replayed reading — see docs/testing.md.
     case testDjiState
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
-    case testMenuOpen(closeAfter: Double, appearance: String?)
+    case testMenuOpen(closeAfter: Double, appearance: String?, traffic: Bool)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
         case testHomeAwake
         /// Is any Chrome tab audible? Asked by Victor Insomnia before it takes the
@@ -300,7 +300,7 @@ case testTerminalFont
     var onTestMicDead: ((String?) -> String)?
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
-    var onTestMenuOpen: ((Double, String?) -> Void)?
+    var onTestMenuOpen: ((Double, String?, Bool) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
     var onTestHomeAwake: (() -> String)?
     var onChromeAudible: (() -> Bool?)?
@@ -551,10 +551,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestMicDead?(screens) ?? "{\"error\":\"mic alarm unavailable\"}"
                 if self.onTestMicDead == nil { statusCode = 503 }
-            case .testMenuOpen(let closeAfter, let appearance):
+            case .testMenuOpen(let closeAfter, let appearance, let traffic):
                 // Async: the menu's tracking loop holds the main thread until
                 // it closes, so this must not wait for it.
-                DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance) }
+                DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance, traffic) }
             case .testDjiState:
                 contentType = "application/json"
                 body = self.onTestDjiState?() ?? "{\"error\":\"dji monitor unavailable\"}"
@@ -960,7 +960,8 @@ case testTerminalFont
         case "/test/menu/open":
             let secs = queryItems.first(where: { $0.name == "close" })?.value.flatMap { Double($0) } ?? 3
             return .testMenuOpen(closeAfter: min(max(secs, 0.5), 10),
-                                 appearance: queryItems.first(where: { $0.name == "appearance" })?.value)
+                                 appearance: queryItems.first(where: { $0.name == "appearance" })?.value,
+                                 traffic: queryItems.first(where: { $0.name == "traffic" })?.value == "1")
         case let p where p.hasPrefix("/test/dji/"):
             return .testDjiEvent(kind: String(p.dropFirst("/test/dji/".count)),
                                  level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Int($0) },

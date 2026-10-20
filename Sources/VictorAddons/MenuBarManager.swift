@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 20, 08:12"
+    static let BUILD_TIME = "Oct 20, 12:12"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -36,6 +36,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
     private var wiredLinkItem: NSMenuItem!
+    /// 📈 Traffic — samples only while its submenu is open (`TrafficMenu`).
+    private let trafficMenu = TrafficMenu()
     /// 🖥️ ◀ ASUS left / 🖥️ ASUS ▶ right — only the applicable one shows, only while the ASUS is plugged in and not mirroring.
     private var asusLeftItem: NSMenuItem!
     private var asusRightItem: NSMenuItem!
@@ -699,6 +701,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // opens claude where the work is anyway.
 
         menu.addItem(wiredLinkItem)
+        menu.addItem(trafficMenu.item)
         menu.addItem(hotspotFallbackItem)
         menu.addItem(roamingSuspendItem)
         menu.addItem(fluxInboxItem)
@@ -803,14 +806,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// `appearance` (`light` / `dark`) forces this app's appearance for the
     /// time the menu is open, so a row can be checked in both themes without
     /// flipping Victor's whole desktop; it is put back when the menu closes.
-    func openMenuForTest(closeAfter seconds: TimeInterval, appearance: String? = nil) {
+    ///
+    /// `traffic` samples 📈 Traffic as a hover on its row would, inside the same
+    /// tracking loop, and writes its rows to `TrafficMenu.testOutput` at close —
+    /// no route can read them while the menu is open (see above).
+    func openMenuForTest(closeAfter seconds: TimeInterval, appearance: String? = nil, traffic: Bool = false) {
         // On the menu itself, not `NSApp.appearance`: a status item's menu
         // follows the menu bar, and ignored the app-wide override when tried.
         let previous = menu.appearance
         if let appearance {
             menu.appearance = NSAppearance(named: appearance == "light" ? .aqua : .darkAqua)
         }
+        if traffic { trafficMenu.startSampling() }
         let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+            if traffic { self?.trafficMenu.stopSampling(writingTestOutput: true) }
             self?.menu.cancelTracking()
             if appearance != nil { self?.menu.appearance = previous }
         }

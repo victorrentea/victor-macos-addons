@@ -119,3 +119,39 @@ A top-level row of the 💬 menu (above 📶 hotspot) answers one question — *
 **What is a cable**: SystemConfiguration's ports of type Ethernet, minus `Thunderbolt N` (the Thunderbolt Bridge members, up only on a Mac-to-Mac cable) and `Ethernet Adapter (enN)` (the `anpi` placeholders present on every boot). Link and address come from the dynamic store (`State:/Network/Interface/<bsd>/Link` and `/IPv4`, what `scutil` shows) — no shell-out.
 
 Read in `menuNeedsUpdate`, never polled: the row is only seen with the menu open. A click opens Network settings, which is also what keeps it from being drawn dimmed like a disabled readout.
+
+## 📈 Traffic (2026-10-20)
+
+A top-level row under the Wired row, with a submenu that measures **only while it is open**:
+hovering the row opens it (AppKit's submenu delay), `menuWillOpen` starts the sampling and
+`menuDidClose` kills it, so a closed menu costs nothing (Victor: *"you don't need to monitor
+this traffic continuously. Only when I start hovering"*). `TrafficMenu` + `TrafficPolicy`
+(`TrafficMonitor.swift`), its own `NSMenuDelegate` so opening it does not run the top level's
+`menuNeedsUpdate`.
+
+```
+↓ In   2.3 MB/s
+↑ Out  140 KB/s
+⏱️ Latency  150 ms  (7 conn.)
+──────────
+1. Google Chrome   ↓ 1.2 MB/s  ↑ 40 KB/s
+2. …
+```
+
+- **In/Out** — the `en*` interfaces' kernel byte counters (`getifaddrs`, what `netstat -ib`
+  prints), diffed every second. `utun*` is skipped: a VPN's bytes also cross `en0`. The
+  counters are 32-bit and wrap at 4 GB; the diff is wrap-aware.
+- **Top 3 apps** — `/usr/bin/nettop -d -s 1 -L 0 -x -n -t external`, one delta block per
+  second (the first block is totals since each socket opened and is dropped). Helpers are
+  folded into the outermost `.app` of their executable path (`proc_pidpath`), so Chrome is one
+  line. First numbers arrive ~1.2 s after the submenu opens.
+- **Latency** — no probe is sent: it is the kernel's smoothed TCP RTT (`rtt_avg`) of the open
+  connections to **public** addresses (the LAN tablet answers in 0 ms, an AirPlay socket in
+  2.7 s), from the same nettop stream. Median, preferring connections that moved bytes that
+  second — an idle socket's RTT is whatever it was when it last spoke (one read 16.8 s).
+  nettop truncates that column (`1247.78 m`, `16787.62`), so only the number is read.
+- **No root needed** for any of it; nettop and the counters are readable as the user.
+- **Delivery during menu tracking**: nettop's lines are read on a background handle and handed
+  to the main run loop with `RunLoop.main.perform(inModes: [.common])` + `CFRunLoopWakeUp` —
+  `DispatchQueue.main` is not drained while a menu tracks, and would deliver every sample only
+  after the menu closed. The timers are added in `.common` for the same reason.
