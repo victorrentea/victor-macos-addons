@@ -1809,6 +1809,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onCopilotWorkspaceHotkey = { [weak menuBarManager] in
             DispatchQueue.main.async { menuBarManager?.openCopilotWorkspace() }
         }
+        eventTap.onCodexWorkspaceHotkey = { [weak menuBarManager] in
+            DispatchQueue.main.async { menuBarManager?.openCodexWorkspace() }
+        }
         eventTap.onMouseButton5Pressed = { [weak audioManager] in
             audioManager?.notifyMouseButton5Pressed()
         }

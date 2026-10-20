@@ -88,6 +88,9 @@ enum CommandControlShortcuts {
                          // borrowed one (C, O, P, T and L are all taken) and Y's
                          // only claim is that it sits next to T, keeping the
                          // three terminal keys in one corner of the board.
+        7:  "codex",     // X — the ⌘⌃C terminal running `codex`. Like Y, the
+                         // word names the agent; X is the word's last letter and
+                         // sits under C, so the two agent keys are neighbours.
         12: "salut",     // Q — 🤖 the Claude mark waves in from the left edge and
                          // goes away again. It said `claude` while the key also
                          // opened a permissions-bypassed Terminal; now that C is

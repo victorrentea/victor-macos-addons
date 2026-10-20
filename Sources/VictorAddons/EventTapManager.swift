@@ -60,6 +60,8 @@ class EventTapManager {
     var onPlainTerminalHotkey: (() -> Void)?
     /// ⌘⌃Y — the same Terminal as ⌘⌃C, running `copilot` instead of `claude`.
     var onCopilotWorkspaceHotkey: (() -> Void)?
+    /// ⌘⌃X — the same Terminal as ⌘⌃C, running `codex` instead of `claude`.
+    var onCodexWorkspaceHotkey: (() -> Void)?
     var onMouseButton5Pressed: (() -> Void)?
     var onAppendClipboardToNotes: (() -> Void)?
     var onCopySelectionToNotes: (() -> Void)?
@@ -1112,6 +1114,15 @@ private let VK_I: CGKeyCode = 0x22
         // neighbours even when the letters have to be borrowed.
         if keyCode == VK_Y && hasCmd && hasCtrl && !hasOpt {
             DispatchQueue.global().async { [weak self] in self?.onCopilotWorkspaceHotkey?() }
+            return nil
+        }
+
+        // Cmd+Ctrl+X → the same terminal again, running `codex` (suppress). The
+        // third agent, same gesture. X is the word's own last letter and sits
+        // right under C, so Claude and Codex are one finger-drop apart. ⌃⌥⌘X
+        // (the broken-keyboard stand-in above) needs ⌥, so it never gets here.
+        if keyCode == VK_X && hasCmd && hasCtrl && !hasOpt {
+            DispatchQueue.global().async { [weak self] in self?.onCodexWorkspaceHotkey?() }
             return nil
         }
 

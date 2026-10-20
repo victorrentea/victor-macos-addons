@@ -428,7 +428,8 @@ final class KeymapOverlayTests: XCTestCase {
         // and G was needed for the goose, so ⌘⌃Q shadows Lock Screen again.
         // U (32) joined on 2026-09-22 with the magnifier flip and became the 🐘
         // elephant on 2026-10-15, when O (31) went to the 🤖 Opus head.
-        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 34, 35, 32])
+        // X (7) joined on 2026-10-20 with the Codex terminal.
+        XCTAssertEqual(CommandControlShortcuts.boundKeyCodes, [0, 2, 8, 12, 14, 3, 5, 40, 37, 46, 45, 15, 1, 16, 17, 9, 13, 6, 31, 34, 35, 32, 7])
         XCTAssertEqual(CommandControlShortcuts.labels[32], "trump")
         XCTAssertEqual(CommandControlShortcuts.labels[12], "salut")
         XCTAssertEqual(CommandControlShortcuts.labels[2], "dictate")
@@ -442,6 +443,7 @@ final class KeymapOverlayTests: XCTestCase {
         // word must name the agent and nothing else.
         XCTAssertEqual(CommandControlShortcuts.labels[16], "copilot")
         XCTAssertNotEqual(CommandControlShortcuts.labels[16], CommandControlShortcuts.labels[8])
+        XCTAssertEqual(CommandControlShortcuts.labels[7], "codex")
         XCTAssertEqual(CommandControlShortcuts.labels[6], "zoom")
         XCTAssertEqual(CommandControlShortcuts.labels[31], "opus")
         XCTAssertEqual(CommandControlShortcuts.labels[34], "xi")

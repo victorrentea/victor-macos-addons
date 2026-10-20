@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 20, 13:43"
+    static let BUILD_TIME = "Oct 20, 13:50"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -1269,6 +1269,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// finds it there the same way it finds `claude`.
     @objc func openCopilotWorkspace() {
         openWorkspaceTerminal(command: "copilot")
+    }
+
+    /// ⌘⌃X global hotkey lands here — the ⌘⌃C window with Codex CLI in it.
+    /// Typed into an interactive shell, `codex` resolves to the `~/.zshrc`
+    /// function, so the window gets its `--yolo` like one opened by hand.
+    @objc func openCodexWorkspace() {
+        openWorkspaceTerminal(command: "codex")
     }
 
     /// ⌘⌃T global hotkey lands here — same window, no `claude`: just a shell.
