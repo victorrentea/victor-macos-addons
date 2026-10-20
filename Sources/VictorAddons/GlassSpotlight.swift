@@ -41,10 +41,11 @@ final class GlassSpotlight {
     static let windowLevel = 28
     /// Feather, in points, *outside* the box: everything in the box stays sharp.
     static let feather: CGFloat = 40
-    /// A drag puts the glass up only once its box covers this much of the screen,
-    /// and from then on keeps it up however small the box gets again — never the
-    /// whole screen blurred first and the box revealed from nothing (Victor,
-    /// 2026-10-04). A drag that never gets there changes nothing.
+    /// A drag puts the glass up *while it is still under way* only once its box
+    /// covers this much of the screen, and from then on keeps it up however small
+    /// the box gets again — never the whole screen blurred first and the box
+    /// revealed from nothing (Victor, 2026-10-04). A smaller box gets its glass on
+    /// release (`revealsOnRelease`).
     static let revealFraction: CGFloat = 0.05
 
     /// How close to a corner of the box a bare wheel press has to land to pick
@@ -67,6 +68,17 @@ final class GlassSpotlight {
 
     static func reveals(_ box: CGRect, on screen: CGRect) -> Bool {
         box.width * box.height >= revealFraction * screen.width * screen.height
+    }
+
+    /// **On release, any box at all puts the glass up** — `revealFraction` only
+    /// decides whether it comes up *during* the drag (Victor, 2026-10-20: *"there
+    /// should not be any lower limit to the surface that I need to select … anything
+    /// I have selected is going to show up as visible on a surface of glass"*). Only
+    /// a press that never opened a box (a ⇧-click) changes nothing.
+    static let minimumSide: CGFloat = 2
+
+    static func revealsOnRelease(_ box: CGRect) -> Bool {
+        box.width >= minimumSide && box.height >= minimumSide
     }
 
     /// The box on the glass, in global **CG** coordinates (y down, as events
@@ -114,6 +126,8 @@ final class GlassSpotlight {
     /// `revealFraction` yet — until then the glass is left as the drag found it.
     private var dragScreen: NSScreen?
     private var revealed = false
+    /// The box as the drag last drew it, glass or not yet.
+    private var dragBox: CGRect?
     /// This drag carries the box already up (⌘ at the press) rather than
     /// drawing a new one: the whole drag is a ⌘ move, held or not.
     private var grabbing = false
@@ -174,6 +188,7 @@ final class GlassSpotlight {
         revealed = false
         grabbing = false
         drag = RegionDrag(anchor: p, within: screen.frame, controlArmed: true)
+        dragBox = nil
         pushed = p
         ensureDeco(on: screen)
         startTimer()
@@ -238,11 +253,16 @@ final class GlassSpotlight {
         stopTimer()
         drag = nil
         grabbing = false
+        if !revealed, let dragScreen, let box = dragBox, Self.revealsOnRelease(box) {
+            revealed = true
+            ensurePanel(on: dragScreen)
+            apply(hole: box)
+        }
         legendPill.isHidden = true
         fadeOutline()
         if !isShowing { cursors.release() }   // with the glass up, `hover` takes the cursor back
         guard revealed, let box = hole else {
-            overlayInfo("🔦 glass spotlight: drag under \(Int(Self.revealFraction * 100))% of the screen, "
+            overlayInfo("🔦 glass spotlight: no box drawn, "
                         + (holeBeforeDrag == nil ? "no glass" : "previous box kept"))
             return
         }
@@ -339,6 +359,7 @@ final class GlassSpotlight {
         // No ⌃ square here, unlike the crop: Victor, 2026-10-04, *"n-am nevoie de square"*.
         let box = drag.update(mouse: mouse, command: grabbing || flags.contains(.command), control: false)
         self.drag = drag
+        dragBox = box
         if drag.moving {
             cursors.show(.move)
         } else {

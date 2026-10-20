@@ -63,4 +63,10 @@ final class GlassSpotlightMaskTests: XCTestCase {
             XCTAssertEqual(sum, 255, accuracy: 2, "(\(x), \(y))")
         }
     }
+
+    func testOnReleaseAnyBoxGetsItsGlassButAClickDoesNot() {
+        XCTAssertTrue(GlassSpotlight.revealsOnRelease(CGRect(x: 0, y: 0, width: 20, height: 8)))
+        XCTAssertFalse(GlassSpotlight.revealsOnRelease(CGRect(x: 0, y: 0, width: 0, height: 0)))
+        XCTAssertFalse(GlassSpotlight.revealsOnRelease(CGRect(x: 0, y: 0, width: 300, height: 1)))
+    }
 }
