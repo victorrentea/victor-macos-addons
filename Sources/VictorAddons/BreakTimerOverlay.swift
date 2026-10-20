@@ -46,9 +46,9 @@ final class BreakTimerController {
 
     init(mode: Mode = .countdown) { self.mode = mode }
 
-    /// A fresh stopwatch opens at a fifth of the break watch's size, in the
-    /// bottom-right corner: it times something Victor is doing, it is not a notice
-    /// to the room — at half size, top-left, it sat on the slide being presented.
+    /// A fresh stopwatch opens small and off the slides: it times something Victor
+    /// is doing, it is not a notice to the room — at half size, top-left of the
+    /// retina, it sat on the slide being presented. See `defaultFrame(.stopwatch)`.
     private static let stopwatchScale: CGFloat = 0.2
 
     private var panel: BreakTimerPanel?
@@ -80,12 +80,12 @@ final class BreakTimerController {
     private var titleText = "BREAK"
     private var nextFreshScale: CGFloat = 1.0
 
-    enum Corner { case topRight, topLeft, bottomRight }
+    enum Corner { case topRight, topLeft, stopwatch }
 
     /// The corner this watch belongs in, straight off its mode and (already
     /// persisted) title — no extra state to keep in sync across a redeploy.
     private var corner: Corner {
-        if isStopwatch { return .bottomRight }
+        if isStopwatch { return .stopwatch }
         return BreakTimerModel.opensTopLeft(title: titleText) ? .topLeft : .topRight
     }
 
@@ -872,13 +872,28 @@ final class BreakTimerController {
         panel.setFrame(home, display: true)
     }
 
+    /// The first physical display that isn't the retina, if any.
+    private static func secondScreen() -> NSScreen? {
+        let retinaID = displayID(of: AppDelegate.findRetinaScreen())
+        return NSScreen.physical.first { displayID(of: $0) != retinaID }
+    }
+
     private static func displayID(of screen: NSScreen?) -> CGDirectDisplayID? {
         screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
     /// Where a fresh window opens. `.topLeft` is the ☕-started "UNTIL BREAK"
-    /// watch — see `BreakTimerModel.opensTopLeft`; `.bottomRight` the ⏱️ Timer.
+    /// watch — see `BreakTimerModel.opensTopLeft`.
     private static func defaultFrame(scale: CGFloat = 1.0, corner: Corner = .topRight) -> NSRect {
+        // The ⏱️ Timer is Victor's, not the room's: top-left of the second monitor,
+        // ~14% of its width, hugging the corner (over its menu bar — the panel sits
+        // above it). Only with the retina alone does it go there, small, bottom-right,
+        // so it can still be started mid-presentation without covering the slide.
+        if corner == .stopwatch, let f = secondScreen()?.frame {
+            let w = f.width * 0.14
+            let gap: CGFloat = 4
+            return NSRect(x: f.minX + gap, y: f.maxY - gap - w / aspect, width: w, height: w / aspect)
+        }
         // Always the laptop's built-in retina display — that's what's projected to
         // the room. The macOS *primary* display (origin .zero) or NSScreen.main (the
         // focused screen) may be an external monitor when one is set as main during
@@ -895,7 +910,7 @@ final class BreakTimerController {
             let gap = f.width * 0.02
             let x = corner == .topLeft ? f.minX + gap : f.maxX - w - gap
             return NSRect(x: x, y: f.maxY - f.height * 0.035 - h, width: w, height: h)
-        case .bottomRight:
+        case .stopwatch:
             // Hugs the corner: out of the way is the whole point of this one.
             let gap = f.width * 0.005
             return NSRect(x: f.maxX - w - gap, y: f.minY + gap, width: w, height: h)
