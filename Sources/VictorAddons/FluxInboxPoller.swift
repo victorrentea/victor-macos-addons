@@ -690,9 +690,10 @@ final class FluxInboxPoller {
                   let timestamp = isoFormatter.date(from: stamp)
                     ?? isoFormatterNoFraction.date(from: stamp) else { return nil }
             let headers = item["headers"] as? [String: String] ?? [:]
-            let auth = headers.first {
-                $0.key.caseInsensitiveCompare("Authentication-Results") == .orderedSame
-            }?.value
+            let auth = authStamp(item["authentication_results"])
+                ?? headers.first {
+                    $0.key.caseInsensitiveCompare("Authentication-Results") == .orderedSame
+                }?.value
             return FluxMessage(
                 messageId: id,
                 from: from,
@@ -702,6 +703,23 @@ final class FluxInboxPoller {
                 threadId: item["thread_id"] as? String ?? "",
                 labels: item["labels"] as? [String] ?? [])
         }
+    }
+
+    /// AgentMail's own DKIM/DMARC verdict, rendered as an `Authentication-Results`
+    /// stamp so `FluxMailPolicy.isAuthenticated` judges it unchanged.
+    ///
+    /// Since mid-October 2026 AgentMail strips the `Authentication-Results`
+    /// header and reports the verdict only in this structured field. It is
+    /// preferred over the header even when both exist: a sender can paste a
+    /// header into their message, but not a field AgentMail fills in itself.
+    static func authStamp(_ value: Any?) -> String? {
+        guard let r = value as? [String: Any],
+              let dkim = r["dkim"] as? String, let dmarc = r["dmarc"] as? String
+        else { return nil }
+        let dkimDomain = r["dkim_domain"] as? String ?? ""
+        let dmarcDomain = r["dmarc_domain"] as? String ?? ""
+        return "agentmail; dkim=\(dkim) header.i=@\(dkimDomain);"
+            + " dmarc=\(dmarc) header.from=\(dmarcDomain)"
     }
 
     private static let isoFormatter: ISO8601DateFormatter = {

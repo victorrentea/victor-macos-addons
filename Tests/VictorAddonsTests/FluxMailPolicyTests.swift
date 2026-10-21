@@ -263,6 +263,34 @@ final class FluxMailPolicyTests: XCTestCase {
         XCTAssertEqual(parsed?.first?.labels, ["received", "unread"])
     }
 
+    /// Since Oct 2026 AgentMail drops the `Authentication-Results` header and
+    /// reports the verdict in a structured field — a real mail from Victor
+    /// (21 Oct, with a PNG attached) was forwarded as a stranger's because of it.
+    func testStructuredAuthenticationResultsAreTrusted() {
+        let json = """
+        {"messages":[{"message_id":"<x@mail.gmail.com>",
+          "from":"Victor Rentea <victorrentea@gmail.com>",
+          "timestamp":"2026-10-21T21:28:40.000Z","labels":["received","unread"],
+          "headers":{"X-Received":"by 2002"},
+          "authentication_results":{"spf":"pass","dkim":"pass","dmarc":"pass",
+            "spf_domain":"gmail.com","dkim_domain":"gmail.com","dmarc_domain":"gmail.com"}}]}
+        """.data(using: .utf8)!
+        let message = FluxInboxPoller.parse(json)!.first!
+        XCTAssertTrue(FluxMailPolicy.isTrusted(message))
+    }
+
+    /// The structured verdict wins over a header the sender could have pasted.
+    func testStructuredFailBeatsPastedHeader() {
+        let json = """
+        {"messages":[{"message_id":"x","from":"victorrentea@gmail.com",
+          "timestamp":"2026-10-21T21:28:40Z",
+          "headers":{"Authentication-Results":"x; dkim=pass header.i=@gmail.com; dmarc=pass header.from=gmail.com"},
+          "authentication_results":{"dkim":"fail","dmarc":"fail",
+            "dkim_domain":"evil.com","dmarc_domain":"gmail.com"}}]}
+        """.data(using: .utf8)!
+        XCTAssertFalse(FluxMailPolicy.isTrusted(FluxInboxPoller.parse(json)!.first!))
+    }
+
     func testParsesTimestampWithoutFractionalSeconds() {
         let json = """
         {"messages":[{"message_id":"x","from":"a@b.com",

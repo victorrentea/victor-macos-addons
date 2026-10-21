@@ -568,10 +568,18 @@ new_followups() {
       (. // "") | ascii_downcase
       | (if contains("<") then (split("<") | last | split(">") | first) else . end)
       | gsub("\\s"; "");
+    # AgentMail reports the verdict in `authentication_results` (it stopped
+    # passing the header through in Oct 2026); same rendering as
+    # FluxInboxPoller.authStamp, header only as the fallback.
     def authstamp:
-      ((.headers // {}) | to_entries
-       | map(select(.key | ascii_downcase == "authentication-results"))
-       | (.[0].value // "")) | ascii_downcase | gsub("\\s"; "");
+      (if (.authentication_results | type) == "object" then
+         .authentication_results
+         | "dkim=\(.dkim) header.i=@\(.dkim_domain // ""); dmarc=\(.dmarc) header.from=\(.dmarc_domain // "")"
+       else
+         (.headers // {}) | to_entries
+         | map(select(.key | ascii_downcase == "authentication-results"))
+         | (.[0].value // "")
+       end) | ascii_downcase | gsub("\\s"; "");
     ($absorbed | split("\n")) as $done
     | [ .messages[]?
         | select((.labels // []) | index("unread"))
