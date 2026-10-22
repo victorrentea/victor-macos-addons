@@ -160,6 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private let glassSpotlight = GlassSpotlight()
     private let shareZoomHint = ShareZoomHint()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
+    private var pptPresenterPlacement: PowerPointPresenterPlacement?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
     /// that the next `whisperManager.onStateChanged(true)` shows the
@@ -1644,6 +1645,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let zoomJoin = ZoomJoinAutoStart()
         zoomJoinAutoStart = zoomJoin
         zoomJoin.start()
+
+        // 🖥️ PowerPoint picks the slide-show screens by Quartz display id, which
+        // macOS re-deals on every replug: put Presenter View left, slides on the Retina.
+        let pptPlacement = PowerPointPresenterPlacement()
+        pptPresenterPlacement = pptPlacement
+        pptPlacement.start()
 
         let detector = MeetingDetector()
         // A live Zoom/Teams/Webex/Meet call (an app driving the 🎙️TO Zoom
