@@ -316,7 +316,7 @@ case testTerminalFont
     /// with that already typed into the search, so the strip can be checked
     /// without a keyboard.
     var onTestEmojiPicker: ((String?) -> Void)?
-    /// 🩹 Toggle the F1 dead-keys pad; `at=x,y` (global Cocoa points) centres it
+    /// 🩹 Toggle the F2 dead-keys pad; `at=x,y` (global Cocoa points) centres it
     /// there instead of on the mouse.
     var onTestBrokenKeysPad: ((String?) -> Void)?
     var onTestScreenshotMark: ((String?) -> Void)?

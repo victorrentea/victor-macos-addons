@@ -96,9 +96,9 @@ unicode string, ⌘⌥ cleared), like the emoji layer.
   modifiers and the left hand only types the letter.
 - Delete the branch once the keyboard is fixed.
 
-### 🩹 F1 — the dead keys as a mini keyboard by the mouse (`BrokenKeysPad`)
+### 🩹 F2 — the dead keys as a mini keyboard by the mouse (`BrokenKeysPad`)
 
-The second way in, for when the chord is one thing too many: **bare F1** opens a small
+The second way in, for when the chord is one thing too many: **bare F2** opens a small
 dark pad **centred on the pointer** with the five dead keys — `` `~ ``, `1!`, Q, A, Z —
 **laid out exactly as on the physical (ANSI, US) keyboard**, row stagger included, in
 key units: `` ` `` at 0 and 1 at 1 on the number row, Q at 1.5 (Tab is 1.5u), A at 1.75
@@ -112,7 +112,11 @@ in front.
   ⌘Z — shortcuts the dead column had taken away too.
 - **Closes by itself 5 s after the pointer was last on it.** It opens *under* the
   pointer, so "on it" counts only once the pointer has **moved** (or a key was
-  clicked) — otherwise an F1 pressed and forgotten would stay up forever. While you
-  hover, it stays, for as many clicks as you like. F1 again or a click elsewhere
+  clicked) — otherwise an F2 pressed and forgotten would stay up forever. While you
+  hover, it stays, for as many clicks as you like. F2 again or a click elsewhere
   closes it.
+- It was **F1** at first (2026-10-22): F1 sits right above the dead column, and a
+  real press never reached the tap while a synthetic one did — it looks dead too.
+- The panel sets `ignoresMouseEvents = false` explicitly: left at the default, the
+  clear, non-opaque window let every click fall through to the app underneath.
 - Delete it together with the ⌘⌥ branch once the keyboard is fixed.

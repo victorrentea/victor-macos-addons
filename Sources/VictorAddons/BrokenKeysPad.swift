@@ -1,6 +1,6 @@
 import AppKit
 
-/// 🩹 F1 → a mini keyboard of the keys that are dead on the physical keyboard
+/// 🩹 F2 → a mini keyboard of the keys that are dead on the physical keyboard
 /// (the `~ 1 Q A Z` column, since 2026-10-08), centred on the mouse, each one
 /// typed into the app in front by clicking it. The second way in, next to the
 /// right ⌘⌥ stand-ins in `EventTapManager`; this one needs no chord to learn.
@@ -12,8 +12,8 @@ import AppKit
 ///
 /// **Lifetime:** gone by itself 5 s after the mouse was last on it. The pad
 /// opens *under* the pointer, so being under the pointer only counts once the
-/// pointer has moved (or a key was clicked) — otherwise an F1 pressed and
-/// forgotten would stay up forever. F1 again or a click elsewhere closes it.
+/// pointer has moved (or a key was clicked) — otherwise an F2 pressed and
+/// forgotten would stay up forever. F2 again or a click elsewhere closes it.
 ///
 /// The panel never takes focus (`nonactivatingPanel`, never key), so the app
 /// underneath keeps its caret and the clicked key lands there. A modifier held
@@ -60,7 +60,7 @@ final class BrokenKeysPad {
         if isVisible { close() } else { show(at: NSEvent.mouseLocation) }
     }
 
-    /// `center` in global Cocoa points — the mouse for F1, any point for the
+    /// `center` in global Cocoa points — the mouse for F2, any point for the
     /// test hook, so a test never has to move the pointer.
     func show(at center: NSPoint) {
         close()
