@@ -199,6 +199,8 @@ class EventTapManager {
 private let VK_F: CGKeyCode = 0x03
     private let VK_X: CGKeyCode = 0x07
     private let VK_W: CGKeyCode = 0x0D
+    private let VK_1: CGKeyCode = 0x12
+    private let VK_2: CGKeyCode = 0x13
 private let VK_I: CGKeyCode = 0x22
     private let VK_ESCAPE: CGKeyCode = 0x35
     private let VK_F3: CGKeyCode = 0x63
@@ -927,23 +929,31 @@ private let VK_I: CGKeyCode = 0x22
             DispatchQueue.main.async { [weak self] in self?.onKeyDownWhileModifierHeld?() }
         }
 
-        // ⌃⌥⌘ W / S / X → q / a / z (⇧ for Q / A / Z). EMERGENCY stand-in while
-        // those three keys are broken on the physical keyboard (2026-10-08) —
-        // delete once it is fixed. Each spare key sits right under the dead
-        // one, so the finger only drops a row. Rewritten in place, like the
-        // emoji layer below and for the same reason; ⇧ stays on so the result
-        // is an ordinary shifted keystroke.
-        if hasCmd, hasCtrl, hasOpt {
-            let stand: (CGKeyCode, String)? = switch keyCode {
-                case VK_W: (VK_Q, "q")
-                case VK_S: (VK_A, "a")
-                case VK_X: (VK_Z, "z")
+        // Right ⌘ + right ⌥ (the two keys right of the space bar) with
+        // 2 / W / S / X → 1 / q / a / z (⇧ for ! / Q / A / Z). EMERGENCY
+        // stand-in while the 1-Q-A-Z column is broken on the physical keyboard
+        // (since 2026-10-08) — delete once it is fixed. Each spare key is the
+        // live neighbour of the dead one, so the finger only shifts a column.
+        // It moved off ⌃⌥⌘ on 2026-10-22: the right thumb holds both modifiers
+        // and leaves the left hand free for the letter. Only the RIGHT-side
+        // device bits count, so a left ⌘⌥W still closes all windows.
+        // Rewritten in place, like the emoji layer below and for the same
+        // reason; ⇧ stays on so the result is an ordinary shifted keystroke.
+        let rightBits = UInt64(NX_DEVICERCMDKEYMASK | NX_DEVICERALTKEYMASK)
+        let rightCmdAndOpt = flags.rawValue & rightBits == rightBits
+        if rightCmdAndOpt, !hasCtrl {
+            let stand: (CGKeyCode, String, String)? = switch keyCode {
+                case VK_2: (VK_1, "1", "!")
+                case VK_W: (VK_Q, "q", "Q")
+                case VK_S: (VK_A, "a", "A")
+                case VK_X: (VK_Z, "z", "Z")
                 default: nil
             }
-            if let (code, letter) = stand {
-                let utf16 = Array((hasShift ? letter.uppercased() : letter).utf16)
+            if let (code, plain, shifted) = stand {
+                let utf16 = Array((hasShift ? shifted : plain).utf16)
                 event.setIntegerValueField(.keyboardEventKeycode, value: Int64(code))
-                event.flags = flags.subtracting([.maskCommand, .maskControl, .maskAlternate])
+                event.flags = flags.subtracting([.maskCommand, .maskAlternate])
+                    .subtracting(CGEventFlags(rawValue: rightBits))
                 event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
                 return Unmanaged.passUnretained(event)
             }

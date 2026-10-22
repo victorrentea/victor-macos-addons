@@ -81,3 +81,17 @@ style you land in would have to change on every press.
 - **Which screen is "that way"** (`neighbour`): one whose centre lies past the source's centre in that direction; among those, one sharing an edge with the source beats one that is merely diagonal, then the nearest. Nothing that way → nothing happens.
 - **Where it lands** (`relocate`): proportionally inside the target's `visibleFrame` — a left half stays a left half, a filled window fills — then clamped so it never overhangs. The 🪞 Virtual Desktop's screen is skipped (`NSScreen.physical`): nobody sees it, so a window thrown there would vanish.
 - **F3 = a double-click on the title bar.** The state is read off the window, not off a toggle: a window that already fills its screen's `visibleFrame` (`fills`, 40 pt per edge — Terminal stops a character cell short) goes back to the frame remembered before the fill, or to a centred ⅔ (`centred`) when nothing was remembered; any other window is remembered and filled (menu bar and Dock stay; not macOS full screen). The memory is keyed by **pid + `CGWindowID`** (`_AXUIElementGetWindow`, what Rectangle/yabai key on), not by the AX element: the first version matched elements with `CFEqual`, and on PowerPoint the second F3 found no memory and just filled again (2026-10-05, *"F3 nu mi-a resetat fereastra"*). It used to type macOS's own Window ▸ Fill (fn⌃F) — **VS Code never answers that** (2026-10-05, *"F3 nu mi-a mers"*), like most Electron apps, so the frame is now set directly. Autorepeat is ignored on all of these.
+
+## 🩹 Broken 1-Q-A-Z column: right ⌘⌥ stand-ins (temporary)
+
+Since 2026-10-08 the 1, Q, A and Z keys on the physical keyboard are dead. While
+they are, holding **right ⌘ + right ⌥** (the two keys right of the space bar) turns
+the live neighbour into the dead key: **2 → 1, W → q, S → a, X → z** (⇧ gives
+`!` / Q / A / Z). The event is rewritten in place in `EventTapManager` (keycode,
+unicode string, ⌘⌥ cleared), like the emoji layer.
+
+- Only the **right-side device bits** (`NX_DEVICERCMDKEYMASK | NX_DEVICERALTKEYMASK`)
+  count, so a left ⌘⌥W still means "close all windows".
+- It was ⌃⌥⌘ + W/S/X until 2026-10-22; moved so the right thumb holds both
+  modifiers and the left hand only types the letter.
+- Delete the branch once the keyboard is fixed.
