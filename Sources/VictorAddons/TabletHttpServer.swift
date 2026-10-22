@@ -88,6 +88,7 @@ case testTerminalFont
         /// real shortcut means taking Victor's keyboard.
         case testClipboardHistory
         case testEmojiPicker(String?)
+        case testBrokenKeysPad(String?)
         /// 🟡 Play the capture's cursor mark at the mouse, without taking a shot —
         /// the one part of ⌃P that cannot be checked from a saved file.
         case testScreenshotMark(String?)
@@ -315,6 +316,9 @@ case testTerminalFont
     /// with that already typed into the search, so the strip can be checked
     /// without a keyboard.
     var onTestEmojiPicker: ((String?) -> Void)?
+    /// 🩹 Toggle the F1 dead-keys pad; `at=x,y` (global Cocoa points) centres it
+    /// there instead of on the mouse.
+    var onTestBrokenKeysPad: ((String?) -> Void)?
     var onTestScreenshotMark: ((String?) -> Void)?
     var onTestGroupPhoto: (() -> Void)?
     var onTestGroupPhotoBreakEnd: (() -> Void)?
@@ -600,6 +604,8 @@ case testTerminalFont
                 self.onTestClipboardHistory?()
             case .testEmojiPicker(let query):
                 self.onTestEmojiPicker?(query)
+            case .testBrokenKeysPad(let at):
+                self.onTestBrokenKeysPad?(at)
             case .testScreenshotMark(let at):
                 self.onTestScreenshotMark?(at)
             case .testGroupPhoto:
@@ -980,6 +986,8 @@ case testTerminalFont
             return .testClipboardHistory
         case "/test/emoji-picker":
             return .testEmojiPicker(queryItems.first(where: { $0.name == "q" })?.value)
+        case "/test/broken-keys-pad":
+            return .testBrokenKeysPad(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/screenshot/mark":
             return .testScreenshotMark(queryItems.first(where: { $0.name == "at" })?.value)
         case "/test/group-photo":

@@ -23,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var eventTapManager: EventTapManager?
     private var keymapOverlayController: KeymapOverlayController?
     private var emojiPicker: EmojiPickerController?
+    private let brokenKeysPad = BrokenKeysPad()
     private var emojiPickerHold: EmojiPickerHold?
     private var keymapHoldCoordinator: KeymapHoldCoordinator?
     private var keymapHoldWorkItem: DispatchWorkItem?
@@ -1230,6 +1231,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 if let query { picker.show(); picker.search(query) } else { picker.toggle() }
             }
         }
+        tabletServer?.onTestBrokenKeysPad = { [weak self] at in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let pad = self?.brokenKeysPad else { return }
+                    let parts = (at ?? "").split(separator: ",").compactMap { Double($0) }
+                    if parts.count == 2 { pad.show(at: NSPoint(x: parts[0], y: parts[1])) } else { pad.toggle() }
+                }
+            }
+        }
         tabletServer?.onTestClipboardHistory = { [weak self] in
             DispatchQueue.main.async { self?.toggleClipboardHistoryWithoutKeyboard() }
         }
@@ -1782,6 +1792,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onScreenshot = { DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeScreenshot() } }
         eventTap.onScreenshotCrop = {
             DispatchQueue.global(qos: .userInitiated).async { ScreenshotManager.takeCropScreenshot() }
+        }
+        eventTap.onBrokenKeysPad = { [weak self] in
+            MainActor.assumeIsolated { self?.brokenKeysPad.toggle() }
         }
         eventTap.onToggleDarkMode = {
             DispatchQueue.global(qos: .userInteractive).async { DarkModeToggle.toggle() }

@@ -95,3 +95,24 @@ unicode string, ⌘⌥ cleared), like the emoji layer.
 - It was ⌃⌥⌘ + W/S/X until 2026-10-22; moved so the right thumb holds both
   modifiers and the left hand only types the letter.
 - Delete the branch once the keyboard is fixed.
+
+### 🩹 F1 — the dead keys as a mini keyboard by the mouse (`BrokenKeysPad`)
+
+The second way in, for when the chord is one thing too many: **bare F1** opens a small
+dark pad **centred on the pointer** with the five dead keys — `` `~ ``, `1!`, Q, A, Z —
+**laid out exactly as on the physical (ANSI, US) keyboard**, row stagger included, in
+key units: `` ` `` at 0 and 1 at 1 on the number row, Q at 1.5 (Tab is 1.5u), A at 1.75
+(Caps Lock 1.75u), Z at 2.25 (left Shift 2.25u). Click a key → it is typed into the app
+in front.
+
+- **Never takes focus** (`nonactivatingPanel`, never key — the `EmojiPickerPanel`
+  recipe), so the caret stays where it was and the click lands there. The keystroke
+  carries the real keycode plus the character.
+- **Modifiers held while clicking ride along**: ⇧ gives `~ ! Q A Z`; ⌘ gives ⌘Q / ⌘A /
+  ⌘Z — shortcuts the dead column had taken away too.
+- **Closes by itself 5 s after the pointer was last on it.** It opens *under* the
+  pointer, so "on it" counts only once the pointer has **moved** (or a key was
+  clicked) — otherwise an F1 pressed and forgotten would stay up forever. While you
+  hover, it stays, for as many clicks as you like. F1 again or a click elsewhere
+  closes it.
+- Delete it together with the ⌘⌥ branch once the keyboard is fixed.

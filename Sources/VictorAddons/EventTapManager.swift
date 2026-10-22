@@ -44,6 +44,8 @@ class EventTapManager {
     /// ⌃P **held** — macOS's crosshair crop (see `ScreenshotHoldPolicy`).
     var onScreenshotCrop: (() -> Void)?
     var onToggleDarkMode: (() -> Void)?
+    /// 🩹 F1 — the mini keyboard of the dead `~ 1 Q A Z` keys (`BrokenKeysPad`).
+    var onBrokenKeysPad: (() -> Void)?
     /// ✋ ⌃⌘⎋ pressed on the **real** keyboard while the hands-off locks are up.
     /// Called on main; the app counts two within a second as "Victor takes
     /// control" (`HandsOffOverlay.handleEscapeChord`).
@@ -203,6 +205,7 @@ private let VK_F: CGKeyCode = 0x03
     private let VK_2: CGKeyCode = 0x13
 private let VK_I: CGKeyCode = 0x22
     private let VK_ESCAPE: CGKeyCode = 0x35
+    private let VK_F1: CGKeyCode = 0x7A
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F4: CGKeyCode = 0x76
     private let VK_F8: CGKeyCode = 0x64
@@ -1076,6 +1079,17 @@ private let VK_I: CGKeyCode = 0x22
         // a real keyDown rather than a media-key system event.
         if keyCode == VK_F8 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
+            return nil
+        }
+
+        // F1 → 🩹 the dead-keys pad by the mouse (`BrokenKeysPad`), a second
+        // stand-in for the broken 1-Q-A-Z column next to the right ⌘⌥ chord
+        // above (suppress). Bare F1, standard function keys, same as F3/F4/F8;
+        // autorepeat ignored so a held key does not open and close it.
+        if keyCode == VK_F1 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.main.async { [weak self] in self?.onBrokenKeysPad?() }
+            }
             return nil
         }
 
