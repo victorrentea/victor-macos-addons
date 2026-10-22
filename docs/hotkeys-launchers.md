@@ -99,9 +99,9 @@ unicode string, ⌘⌥ cleared), like the emoji layer.
 ### 🩹 F2 — the dead keys as a mini keyboard by the mouse (`BrokenKeysPad`)
 
 The second way in, for when the chord is one thing too many: **bare F2** opens a small
-dark pad **centred on the pointer** with the five dead keys — `` `~ ``, `1!`, Q, A, Z —
+dark pad **centred on the pointer** with the dead keys — F1, `` `~ ``, `1!`, Q, A, Z —
 **laid out exactly as on the physical (ANSI, US) keyboard**, row stagger included, in
-key units: `` ` `` at 0 and 1 at 1 on the number row, Q at 1.5 (Tab is 1.5u), A at 1.75
+key units: F1 at 1.5 on the function row (Esc is 1.5u here), `` ` `` at 0 and 1 at 1 on the number row, Q at 1.5 (Tab is 1.5u), A at 1.75
 (Caps Lock 1.75u), Z at 2.25 (left Shift 2.25u). Click a key → it is typed into the app
 in front.
 
@@ -116,7 +116,8 @@ in front.
   hover, it stays, for as many clicks as you like. F2 again or a click elsewhere
   closes it.
 - It was **F1** at first (2026-10-22): F1 sits right above the dead column, and a
-  real press never reached the tap while a synthetic one did — it looks dead too.
+  real press never reached the tap while a synthetic one did — dead too, confirmed by
+  Victor, so F1 became a key on the pad (posted with the fn flag a real one carries).
 - The panel sets `ignoresMouseEvents = false` explicitly: left at the default, the
   clear, non-opaque window let every click fall through to the app underneath.
 - Delete it together with the ⌘⌥ branch once the keyboard is fixed.

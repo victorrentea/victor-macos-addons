@@ -1,12 +1,13 @@
 import AppKit
 
 /// 🩹 F2 → a mini keyboard of the keys that are dead on the physical keyboard
-/// (the `~ 1 Q A Z` column, since 2026-10-08), centred on the mouse, each one
+/// (the `~ 1 Q A Z` column since 2026-10-08, and F1 above it), centred on the mouse, each one
 /// typed into the app in front by clicking it. The second way in, next to the
 /// right ⌘⌥ stand-ins in `EventTapManager`; this one needs no chord to learn.
 ///
 /// The keys sit where they sit on the real (ANSI) keyboard — the row stagger is
-/// the true one in key units: `~` at 0 and `1` at 1 on the number row, Q at 1.5
+/// the true one in key units: F1 at 1.5 on the function row (this MacBook's Esc
+/// is 1.5u), `~` at 0 and `1` at 1 on the number row, Q at 1.5
 /// (Tab is 1.5u), A at 1.75 (Caps Lock is 1.75u), Z at 2.25 (left Shift is
 /// 2.25u). The hand reaches for them by memory, so the pad keeps the memory.
 ///
@@ -29,14 +30,20 @@ final class BrokenKeysPad {
         /// Left edge, in key units from the left of the number row.
         let column: CGFloat
         let row: Int
+        /// What the keycap says when it is not the character it types — F1,
+        /// whose character is AppKit's private-use `NSF1FunctionKey`.
+        var label: String? = nil
+        /// A function key: posted with the fn flag a real one carries.
+        var function = false
     }
 
     static let keys: [Key] = [
-        Key(code: 0x32, plain: "`", shifted: "~", column: 0, row: 0),
-        Key(code: 0x12, plain: "1", shifted: "!", column: 1, row: 0),
-        Key(code: 0x0C, plain: "q", shifted: "Q", column: 1.5, row: 1),
-        Key(code: 0x00, plain: "a", shifted: "A", column: 1.75, row: 2),
-        Key(code: 0x06, plain: "z", shifted: "Z", column: 2.25, row: 3),
+        Key(code: 0x7A, plain: "\u{F704}", shifted: "\u{F704}", column: 1.5, row: 0, label: "F1", function: true),
+        Key(code: 0x32, plain: "`", shifted: "~", column: 0, row: 1),
+        Key(code: 0x12, plain: "1", shifted: "!", column: 1, row: 1),
+        Key(code: 0x0C, plain: "q", shifted: "Q", column: 1.5, row: 2),
+        Key(code: 0x00, plain: "a", shifted: "A", column: 1.75, row: 3),
+        Key(code: 0x06, plain: "z", shifted: "Z", column: 2.25, row: 4),
     ]
 
     static let unit: CGFloat = 48
@@ -122,11 +129,11 @@ final class BrokenKeysPad {
         let held = KeySimulator.heldModifiers()
         let text = held.contains(.maskShift) ? key.shifted : key.plain
         let utf16 = Array(text.utf16)
-        overlayInfo("BrokenKeysPad: typing \(text) (keycode \(key.code), flags \(held.rawValue)) into \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
+        overlayInfo("BrokenKeysPad: typing \(key.label ?? text) (keycode \(key.code), flags \(held.rawValue)) into \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: key.code, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: key.code, keyDown: false) else { return }
         for event in [down, up] {
-            event.flags = held
+            event.flags = key.function ? held.union(.maskSecondaryFn) : held
             event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
         }
         down.post(tap: .cghidEventTap)
@@ -213,7 +220,9 @@ final class BrokenKeysPadView: NSView {
 
             // A real keycap: a letter shows once, uppercase; a symbol key shows
             // its shifted glyph over the plain one.
-            if key.plain.uppercased() == key.shifted {
+            if let label = key.label {
+                draw(label, size: 15, in: rect)
+            } else if key.plain.uppercased() == key.shifted {
                 draw(key.shifted, size: 20, in: rect)
             } else {
                 let top = NSRect(x: rect.minX, y: rect.minY + 2, width: rect.width, height: rect.height / 2)
