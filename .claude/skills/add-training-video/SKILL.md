@@ -33,6 +33,9 @@ The helper:
 3. Upserts `{id, title, startSeconds, file, url}` into `videos/videos.json`,
    replacing any existing entry with the same id.
 
+4. **Subtitles before anything else** — write `videos/<id>.srt` for the played window: `mlx_whisper` (large-v3) over start → +60 s, times on the mp4's own clock, songs framed `♪ … ♪`, words only, corrected by hand (rules in `docs/tablet.md`). Skip only when the words are already burned into the picture.
+5. **It goes to YouTube on its own**: the `ro.victorrentea.ytpub` LaunchAgent (`victor-vibe-board/tools/youtube-publish`) watches `videos.json`, cuts the played window, attaches the `.srt` and publishes it — public unless the copyright check blocks it everywhere — and records the URL in `victor-vibe-board/youtube-publish.json`; the workshop summary links it from there. A `.srt` written after the upload re-publishes it at the next daily run (03:17), or now with `cd ~/workspace/victor-vibe-board/tools/youtube-publish && python3 -m ytpub publish --upload`.
+
 Re-running for the same id is idempotent — it skips the re-download unless `--force`
 is passed, and always refreshes the manifest entry.
 
