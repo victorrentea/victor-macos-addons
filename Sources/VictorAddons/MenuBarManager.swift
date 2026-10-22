@@ -37,6 +37,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
+    private(set) var pptPresenterItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var virtualDesktopItem: NSMenuItem!
     private(set) var virtualDesktopAutoItem: NSMenuItem!
@@ -551,6 +552,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.isEnabled = true
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
 
+        // 🖥️ PowerPoint Presenter View → left screen (`PowerPointPresenterPlacement`).
+        // A row for the same reason as Auto Share Faceover: it acts on its own,
+        // whenever a slide show starts, so it needs a visible way to be told to stop.
+        // No key. Default on.
+        pptPresenterItem = NSMenuItem(title: "🖥️ PowerPoint Presenter View → left screen", action: #selector(togglePptPresenterAction), keyEquivalent: "")
+        pptPresenterItem.target = self
+        pptPresenterItem.isEnabled = true
+        pptPresenterItem.state = PowerPointPresenterSettings.isEnabled ? .on : .off
+
         // 🔊 Auto Share Faceover (was "Zoom Share Prep", renamed and brought to the
         // top level next to the other meeting rows on 2026-10-15) — the picker
         // automation: Share sound, the "As background" layout with Victor cut out
@@ -641,7 +651,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             [killItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, scrollReversalItem],
-            [windowHalfItem, windowScreenItem, windowFillItem],
+            [windowHalfItem, windowScreenItem, windowFillItem, pptPresenterItem],
             [homeAwakeItem],
         ]
         for (i, group) in extraGroups.enumerated() {
@@ -1126,6 +1136,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !ScrollReversalSettings.isEnabled
         ScrollReversalSettings.isEnabled = enabled
         scrollReversalItem.state = enabled ? .on : .off
+    }
+
+    /// 🖥️ PowerPoint Presenter View. Notifies nobody: `PowerPointPresenterPlacement`
+    /// reads the setting on each of its own scans.
+    @objc private func togglePptPresenterAction() {
+        let enabled = !PowerPointPresenterSettings.isEnabled
+        PowerPointPresenterSettings.isEnabled = enabled
+        pptPresenterItem.state = enabled ? .on : .off
     }
 
     /// 🔊 Auto Share Faceover (`ZoomSharePrep`). Notifies nobody, for the same reason as its

@@ -1,6 +1,18 @@
 import AppKit
 import ApplicationServices
 
+/// The 🖥️ PowerPoint Presenter View row in 👩🏻‍💻 Extra. Default **on**: the
+/// placement shipped running before the row existed. Read on every scan, like
+/// `ZoomSharePrepSettings`, so the tick and the behaviour cannot drift apart.
+enum PowerPointPresenterSettings {
+    static let enabledKey = "PowerPointPresenterPlacement.enabled"
+
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+}
+
 /// 🖥️ Puts PowerPoint's **Presenter View on the leftmost external screen** and the
 /// **slides on the Retina** the moment a slide show starts — the choice PowerPoint
 /// for Mac leaves to Quartz display ids (see `PowerPointPresenterPolicy`).
@@ -16,7 +28,8 @@ import ApplicationServices
 /// **Only at the start.** Each window is placed during its first few seconds
 /// (PowerPoint may still nudge it while it lays the show out), then left alone, so
 /// a window Victor drags elsewhere — or PowerPoint's own *Swap Displays* — sticks.
-/// Hold **⌥ while the show starts** to keep PowerPoint's own placement.
+/// Turned off by unticking the 🖥️ row in 👩🏻‍💻 Extra (`PowerPointPresenterSettings`);
+/// there is no key for it — the ⌥-at-start escape went on 2026-10-23.
 final class PowerPointPresenterPlacement {
 
     private static let bundleID = "com.microsoft.Powerpoint"
@@ -25,15 +38,13 @@ final class PowerPointPresenterPlacement {
     /// How long after a window appears it is still put back on its screen.
     private static let settleWindow: TimeInterval = 3
 
-    var isEnabled = true
-
     private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.ppt-presenter",
                                       qos: .userInitiated)
     private var observer: AXObserver?
     private var observedPID: pid_t?
     private var safetyTimer: DispatchSourceTimer?
-    /// Title prefix → when that window was first seen, or `.distantPast` when ⌥ said
-    /// leave it. Cleared when the window goes away, so the next show starts fresh.
+    /// Title prefix → when that window was first seen. Cleared when the window goes
+    /// away, so the next show starts fresh.
     private var firstSeen: [String: Date] = [:]
 
     // MARK: - Lifecycle
@@ -112,7 +123,7 @@ final class PowerPointPresenterPlacement {
     }
 
     private func scan() {
-        guard isEnabled, let app = Self.app() else {
+        guard PowerPointPresenterSettings.isEnabled, let app = Self.app() else {
             firstSeen = [:]
             return
         }
@@ -138,11 +149,7 @@ final class PowerPointPresenterPlacement {
                        Self.slidesPrefix: PowerPointPresenterPolicy.slidesTarget(screens)]
         let now = Date()
         for (prefix, window) in present {
-            if firstSeen[prefix] == nil {
-                let optionHeld = NSEvent.modifierFlags.contains(.option)
-                firstSeen[prefix] = optionHeld ? .distantPast : now
-                if optionHeld { overlayInfo("PowerPointPresenterPlacement: ⌥ held — \(prefix) left where PowerPoint put it") }
-            }
+            if firstSeen[prefix] == nil { firstSeen[prefix] = now }
             guard now.timeIntervalSince(firstSeen[prefix]!) < Self.settleWindow,
                   let target = targets[prefix] ?? nil,
                   let frame = AXWindows.frame(of: window),
