@@ -419,6 +419,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start,
                 holdEndSeconds: entry.holdEndSeconds ?? 0
             ) else { return nil }
+            VideoPlayLog.append(id: id, title: entry.title, startSeconds: start, kind: "video")
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
         }
         tabletServer?.onVideoStop = { VideoPlayer.shared.stop() }
@@ -432,6 +433,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let ms = VideoSoundtrackPlayer.shared.play(
                 id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start
             ) else { return nil }
+            VideoPlayLog.append(id: id, title: entry.title, startSeconds: start, kind: "soundtrack")
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
         }
         tabletServer?.onVideoSoundStop = { VideoSoundtrackPlayer.shared.stop() }
