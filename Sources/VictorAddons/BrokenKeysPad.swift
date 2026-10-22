@@ -87,12 +87,13 @@ final class BrokenKeysPad {
             MainActor.assumeIsolated { self?.tick() }
         }
         outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated { self?.close() }
+            MainActor.assumeIsolated { self?.close("(click elsewhere)") }
         }
         overlayInfo("BrokenKeysPad: shown at \(Int(center.x)),\(Int(center.y))")
     }
 
-    func close() {
+    func close(_ why: String = "") {
+        if panel != nil { overlayInfo("BrokenKeysPad: closed \(why)") }
         ticker?.invalidate()
         ticker = nil
         if let outsideClick { NSEvent.removeMonitor(outsideClick) }
@@ -112,7 +113,7 @@ final class BrokenKeysPad {
         let local = NSPoint(x: mouse.x - panel.frame.minX, y: mouse.y - panel.frame.minY)
         padView.hovered = inside ? padView.keyIndex(at: local) : nil
 
-        if Date().timeIntervalSince(lastOnPad) > Self.idleClose { close() }
+        if Date().timeIntervalSince(lastOnPad) > Self.idleClose { close("(idle)") }
     }
 
     private func type(_ key: Key) {
@@ -121,6 +122,7 @@ final class BrokenKeysPad {
         let held = KeySimulator.heldModifiers()
         let text = held.contains(.maskShift) ? key.shifted : key.plain
         let utf16 = Array(text.utf16)
+        overlayInfo("BrokenKeysPad: typing \(text) (keycode \(key.code), flags \(held.rawValue)) into \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: key.code, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: key.code, keyDown: false) else { return }
         for event in [down, up] {
@@ -157,6 +159,10 @@ final class BrokenKeysPadPanel: NSPanel {
         isReleasedWhenClosed = false
         becomesKeyOnlyIfNeeded = false
         hidesOnDeactivate = false
+        // Set explicitly, not left at the default: a clear, non-opaque window
+        // lets clicks fall through to the app underneath, and the pad's
+        // first build swallowed none of them (2026-10-23).
+        ignoresMouseEvents = false
     }
 
     override var canBecomeKey: Bool { false }
@@ -185,6 +191,7 @@ final class BrokenKeysPadView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         pressed = keyIndex(of: event)
+        overlayInfo("BrokenKeysPad: mouseDown on key \(pressed.map(String.init) ?? "none")")
     }
 
     override func mouseUp(with event: NSEvent) {
