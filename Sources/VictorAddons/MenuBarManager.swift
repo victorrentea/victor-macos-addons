@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 20, 13:50"
+    static let BUILD_TIME = "Oct 22, 16:38"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -25,6 +25,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
+    /// The ☕️ Break parent row, kept so `openBreakMenu` can unfold its submenu.
+    private var breakItem: NSMenuItem!
+    /// Set by `openBreakMenu`, consumed by the next `menuWillOpen`.
+    private var unfoldBreakOnOpen = false
+    private var isMenuOpen = false
+    /// When the ☕️ Break submenu last unfolded — `/test/state` reports it, so
+    /// `openBreakMenu` can be checked without looking at the screen.
+    private(set) var breakSubmenuOpenedAt: Date?
 
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
@@ -223,10 +231,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // each row is just its duration — and the emoji says which KIND of break it
         // is: ☕️ for the coffee-length ones, 🍽️ from 30 min up, where the room
         // actually goes to eat.
-        let breakItem = NSMenuItem(title: "☕️ Break", action: nil, keyEquivalent: "")
+        breakItem = NSMenuItem(title: "☕️ Break", action: nil, keyEquivalent: "")
         breakItem.isEnabled = true
         let breakSubmenu = NSMenu()
         breakSubmenu.autoenablesItems = false
+        breakSubmenu.delegate = self             // only to stamp `breakSubmenuOpenedAt`
         breakItem.submenu = breakSubmenu
         let breakDurations: [(String, Int)] = [
             ("☕️ 1 minute", 1),
@@ -771,8 +780,51 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         statusItem.button?.performClick(nil)
     }
 
+    /// Open the 💬 menu with the ☕️ Break submenu already unfolded, so a break
+    /// length is one click away. Called when the ☕-voted UNTIL BREAK watch
+    /// runs out (2026-10-22, Victor). Left untouched, it closes itself after
+    /// `breakMenuTimeout`: while a menu tracks, the main queue is not drained,
+    /// so a menu forgotten open would hold everything else in the app.
+    func openBreakMenu(closeAfter seconds: TimeInterval = breakMenuTimeout) {
+        guard !isMenuOpen else { return }        // a click would CLOSE an open menu
+        unfoldBreakOnOpen = true
+        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.menu.cancelTracking()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statusItem.button?.performClick(nil)
+        timer.invalidate()                       // performClick returns once the menu closed
+    }
+    static let breakMenuTimeout: TimeInterval = 60
+
+    /// Highlight ☕️ Break and press → on it, the way the keyboard opens a
+    /// submenu. `highlightItem:` is private NSMenu API (there is no public
+    /// setter); the arrow is an `NSEvent` posted to this app's own queue, not a
+    /// `CGEvent`, so it never reaches the HID tap `SyntheticInputWatch` listens on.
+    private func unfoldBreakSubmenu() {
+        let highlight = NSSelectorFromString("highlightItem:")
+        guard menu.responds(to: highlight), let breakItem else { return }
+        menu.perform(highlight, with: breakItem)
+        let arrow = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                           modifierFlags: [.numericPad, .function],
+                                           timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: 0, context: nil,
+                                           characters: arrow, charactersIgnoringModifiers: arrow,
+                                           isARepeat: false, keyCode: 124) else { return }
+        NSApp.postEvent(event, atStart: false)
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
+        if menu === breakItem?.submenu { breakSubmenuOpenedAt = Date(); return }
         guard menu === self.menu else { return }
+        isMenuOpen = true
+        if unfoldBreakOnOpen {
+            unfoldBreakOnOpen = false
+            // After the menu is up and tracking, not inside willOpen.
+            let t = Timer(timeInterval: 0.05, repeats: false) { [weak self] _ in self?.unfoldBreakSubmenu() }
+            RunLoop.main.add(t, forMode: .common)
+        }
         onMenuOpened?()
         // The 🎤 DJI battery on the Transcribing row is read here, from the
         // USB monitor's last status — the row is only ever seen with the menu
@@ -795,11 +847,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         guard menu === self.menu else { return }
+        isMenuOpen = false
         portRefreshTimer?.invalidate()
         portRefreshTimer = nil
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
         refreshDynamicItems()
     }
 

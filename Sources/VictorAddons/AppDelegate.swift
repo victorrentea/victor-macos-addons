@@ -743,6 +743,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestMenuOpen = { [weak self] secs, appearance in
             self?.menuBarManager.openMenuForTest(closeAfter: secs, appearance: appearance)
         }
+        tabletServer?.onTestMenuBreak = { [weak self] secs in
+            self?.menuBarManager.openBreakMenu(closeAfter: secs)
+        }
         tabletServer?.onTestDjiState = { [weak self] in self?.djiReceiver.stateJSON() ?? "{}" }
         // Replay a reading through the same handler the USB reader uses, so the
         // banners can be reviewed without draining a transmitter. Drawn off the
@@ -1373,6 +1376,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 "ui_transcribing": ui.isTranscribing,
                 "ui_stale": ui.isStale,
                 "menu_title": ui.menuTitle,
+                "break_submenu_opened_at": menuBarManager.breakSubmenuOpenedAt.map { $0.timeIntervalSince1970 } ?? 0,
                 "icon_mode": ui.iconMode,
                 "source": ui.source,
                 "chosen_mic": ui.chosenMic,
@@ -1648,6 +1652,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         breakTimer.transcriptSilentSeconds = { [weak self] in
             guard let self else { return .infinity }
             return Self.transcriptSilenceSeconds(in: self.transcriptionFolder)
+        }
+        // ☕ The voted UNTIL BREAK watch ran out → the break is due: offer its
+        // length straight away. Async: the menu's tracking loop holds the main
+        // thread until it closes, and the expiry sequence must finish scheduling.
+        breakTimer.onUntilBreakExpired = { [weak self] in
+            DispatchQueue.main.async { self?.menuBarManager.openBreakMenu() }
         }
         breakTimer.onEnded = { [weak self] in
             DispatchQueue.main.async {

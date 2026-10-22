@@ -158,6 +158,11 @@ final class BreakTimerController {
     /// "Resumed Xm ago" clock (time since the last break ended).
     var onEnded: (() -> Void)?
 
+    /// Fired the moment the ☕-started "UNTIL BREAK" watch hits zero — the room
+    /// voted a break in and it is now due, so the next thing Victor does is pick
+    /// its length. Fired at zero, not at the close ~2 gongs later.
+    var onUntilBreakExpired: (() -> Void)?
+
     /// (Re)start the countdown at `minutes`. Reuses the existing window in place
     /// (keeping its position & size); a fresh window opens top-right at 25% width.
     ///
@@ -823,6 +828,7 @@ final class BreakTimerController {
         // everyone can see it, and it never expires forgotten on a side monitor.
         returnToRetinaIfNeeded()
         let myEpoch = epoch
+        if !isStopwatch && titleText == BreakTimerModel.untilBreakTitle { onUntilBreakExpired?() }
         // Play the FULL gong (exact same mp3 as tablet effect #50 — not a clip),
         // then the second strike after the first finishes.
         let gong = AddonSounds.shared.soundDuration("50_gong.mp3") ?? 8.6

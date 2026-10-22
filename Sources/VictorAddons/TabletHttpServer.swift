@@ -48,6 +48,7 @@ case testTerminalFont
     case testDjiState
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
     case testMenuOpen(closeAfter: Double, appearance: String?)
+    case testMenuBreak(closeAfter: Double)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
         case testHomeAwake
         /// Is any Chrome tab audible? Asked by Victor Insomnia before it takes the
@@ -292,6 +293,7 @@ case testTerminalFont
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
     var onTestMenuOpen: ((Double, String?) -> Void)?
+    var onTestMenuBreak: ((Double) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
     var onTestHomeAwake: (() -> String)?
     var onChromeAudible: (() -> Bool?)?
@@ -543,6 +545,8 @@ case testTerminalFont
                 // Async: the menu's tracking loop holds the main thread until
                 // it closes, so this must not wait for it.
                 DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance) }
+            case .testMenuBreak(let closeAfter):
+                DispatchQueue.main.async { self.onTestMenuBreak?(closeAfter) }
             case .testDjiState:
                 contentType = "application/json"
                 body = self.onTestDjiState?() ?? "{\"error\":\"dji monitor unavailable\"}"
@@ -941,6 +945,9 @@ case testTerminalFont
             let secs = queryItems.first(where: { $0.name == "close" })?.value.flatMap { Double($0) } ?? 3
             return .testMenuOpen(closeAfter: min(max(secs, 0.5), 10),
                                  appearance: queryItems.first(where: { $0.name == "appearance" })?.value)
+        case "/test/menu/break":
+            let secs = queryItems.first(where: { $0.name == "close" })?.value.flatMap { Double($0) } ?? 3
+            return .testMenuBreak(closeAfter: min(max(secs, 0.5), 10))
         case let p where p.hasPrefix("/test/dji/"):
             return .testDjiEvent(kind: String(p.dropFirst("/test/dji/".count)),
                                  level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Int($0) },
