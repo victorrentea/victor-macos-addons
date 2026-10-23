@@ -574,6 +574,9 @@ private let VK_I: CGKeyCode = 0x22
         CFRunLoopAddTimer(runLoop, timer, .commonModes)
     }
 
+    /// Whether the § key now held down was turned into A (decided on its keyDown).
+    private var sectionIsA = false
+
     func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent?) -> Unmanaged<CGEvent>? {
         // Re-enable tap if disabled by system timeout
         if type.rawValue == 0xFFFFFFFE {  // kCGEventTapDisabledByTimeout
@@ -585,15 +588,24 @@ private let VK_I: CGKeyCode = 0x22
 
         guard let event = event else { return nil }
 
-        // § (top-left, left of 1) IS the A key while the 1-Q-A-Z column is
-        // broken (2026-10-23) — delete once the keyboard is fixed. Rewritten
-        // here, before anything reads the keycode, on both down and up, so
-        // every branch below (⌘A, the ⌥A emoji, autorepeat) sees a real A.
+        // ⇧§ (top-left, left of 1) IS the A key while the 1-Q-A-Z column is
+        // broken (2026-10-23) — delete once the keyboard is fixed. Only with ⇧:
+        // bare § and ⌘§ stay § for the screen-drawing tool. The ⇧ only picks
+        // the A, so it is dropped: ⇧§ = a, ⌘⇧§ = ⌘A. Rewritten before anything
+        // reads the keycode, so every branch below sees a real A; the keyUp
+        // follows its keyDown even if ⇧ was let go first.
         if type == .keyDown || type == .keyUp,
            CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_SECTION {
-            let utf16 = Array((event.flags.contains(.maskShift) ? "A" : "a").utf16)
-            event.setIntegerValueField(.keyboardEventKeycode, value: Int64(VK_A))
-            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+            if type == .keyDown, event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                sectionIsA = event.flags.contains(.maskShift)
+            }
+            if sectionIsA {
+                let utf16 = Array("a".utf16)
+                event.setIntegerValueField(.keyboardEventKeycode, value: Int64(VK_A))
+                event.flags = event.flags.subtracting(.maskShift)
+                    .subtracting(CGEventFlags(rawValue: UInt64(NX_DEVICELSHIFTKEYMASK | NX_DEVICERSHIFTKEYMASK)))
+                event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+            }
         }
 
         if type == .flagsChanged {

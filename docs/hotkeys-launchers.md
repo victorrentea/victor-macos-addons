@@ -96,15 +96,21 @@ unicode string, ⌘⌥ cleared), like the emoji layer.
   modifiers and the left hand only types the letter.
 - Delete the branch once the keyboard is fixed.
 
-### 🩹 § is A (2026-10-23)
+### 🩹 ⇧§ is A (2026-10-23)
 
-The **§** key (ISO, top-left, left of 1 — keycode `0x0A`, `kVK_ISO_Section`) is
-rewritten into **A** at the very top of the tap, on keyDown *and* keyUp, before any
-branch reads the keycode — so ⇧§ = A, ⌘§ = ⌘A (select all), ⌥§ = the ⌥A emoji, and
-autorepeat works. The § character itself is lost while this is on. Asked for as
-*"când apăs pe tasta din colțul ecranului… să scriu A, că nu mai pot"*: the ⌘⌥S
-chord and the F2 pad were too slow for the most frequent dead letter. Delete with the
-rest once the keyboard is fixed.
+The **§** key (ISO, top-left, left of 1 — keycode `0x0A`, `kVK_ISO_Section`) becomes
+**A** at the very top of the tap, before any branch reads the keycode — **but only with
+⇧**: ⇧§ = a, ⌘⇧§ = ⌘A (select all), ⌥⇧§ = the ⌥A emoji; autorepeat works. The ⇧ only
+selects the A, so it is stripped from the rewritten event (capital A stays on the right
+⌘⌥⇧S chord). The choice is made on keyDown and remembered, so the keyUp matches even when
+⇧ is let go first.
+
+Bare § and ⌘§ stay § — **⌘§ belongs to the screen-drawing tool**. The first version
+(same morning) rewrote every §, which took ⌘§ away from it; reworked on
+*"poa' să fie A doar dacă apăs Command Shift sau Shift… ca să-mi eliberez command"*.
+First asked for as *"când apăs pe tasta din colțul ecranului… să scriu A, că nu mai
+pot"*: the ⌘⌥S chord and the F2 pad were too slow for the most frequent dead letter.
+Delete with the rest once the keyboard is fixed.
 
 ### 🩹 F2 — the dead keys as a mini keyboard by the mouse (`BrokenKeysPad`)
 
