@@ -184,6 +184,7 @@ class EventTapManager {
     private let VK_D: CGKeyCode = 0x02
     private let VK_C: CGKeyCode = 0x08
     private let VK_A: CGKeyCode = 0x00
+private let VK_SECTION: CGKeyCode = 0x0A  // kVK_ISO_Section, the § key top-left
     private let VK_T: CGKeyCode = 0x11
     private let VK_Y: CGKeyCode = 0x10
     private let VK_U: CGKeyCode = 0x20
@@ -583,6 +584,17 @@ private let VK_I: CGKeyCode = 0x22
         }
 
         guard let event = event else { return nil }
+
+        // § (top-left, left of 1) IS the A key while the 1-Q-A-Z column is
+        // broken (2026-10-23) — delete once the keyboard is fixed. Rewritten
+        // here, before anything reads the keycode, on both down and up, so
+        // every branch below (⌘A, the ⌥A emoji, autorepeat) sees a real A.
+        if type == .keyDown || type == .keyUp,
+           CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_SECTION {
+            let utf16 = Array((event.flags.contains(.maskShift) ? "A" : "a").utf16)
+            event.setIntegerValueField(.keyboardEventKeycode, value: Int64(VK_A))
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+        }
 
         if type == .flagsChanged {
             let flags = event.flags
