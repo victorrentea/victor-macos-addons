@@ -46,6 +46,14 @@ class EventTapManager {
     var onToggleDarkMode: (() -> Void)?
     /// 🩹 F2 — the mini keyboard of the dead `~ 1 Q A Z` keys (`BrokenKeysPad`).
     var onBrokenKeysPad: (() -> Void)?
+    /// 🩹 The three stand-ins for the dead 1-Q-A-Z column (right ⌘⌥ + 2/W/S/X,
+    /// ⇧§ as A, F2 dead-keys pad) run only where the keyboard is actually
+    /// broken — the 2026-10 MacBook, which has
+    /// `defaults write ro.victorrentea.macos-addons BrokenKeysWorkarounds -bool true`.
+    /// Off by default (2026-10-25, the move to a Mac with a working keyboard), so
+    /// F2, § and the right ⌘⌥ chord mean what they always did there. The code
+    /// stays, not a revert: the old machine still needs it. Read once at launch.
+    static let brokenKeysWorkarounds = UserDefaults.standard.bool(forKey: "BrokenKeysWorkarounds")
     /// ✋ ⌃⌘⎋ pressed on the **real** keyboard while the hands-off locks are up.
     /// Called on main; the app counts two within a second as "Victor takes
     /// control" (`HandsOffOverlay.handleEscapeChord`).
@@ -594,7 +602,7 @@ private let VK_I: CGKeyCode = 0x22
         // the A, so it is dropped: ⇧§ = a, ⌘⇧§ = ⌘A. Rewritten before anything
         // reads the keycode, so every branch below sees a real A; the keyUp
         // follows its keyDown even if ⇧ was let go first.
-        if type == .keyDown || type == .keyUp,
+        if Self.brokenKeysWorkarounds, type == .keyDown || type == .keyUp,
            CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_SECTION {
             if type == .keyDown, event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 sectionIsA = event.flags.contains(.maskShift)
@@ -968,7 +976,7 @@ private let VK_I: CGKeyCode = 0x22
         // reason; ⇧ stays on so the result is an ordinary shifted keystroke.
         let rightBits = UInt64(NX_DEVICERCMDKEYMASK | NX_DEVICERALTKEYMASK)
         let rightCmdAndOpt = flags.rawValue & rightBits == rightBits
-        if rightCmdAndOpt, !hasCtrl {
+        if Self.brokenKeysWorkarounds, rightCmdAndOpt, !hasCtrl {
             let stand: (CGKeyCode, String, String)? = switch keyCode {
                 case VK_2: (VK_1, "1", "!")
                 case VK_W: (VK_Q, "q", "Q")
@@ -1112,7 +1120,7 @@ private let VK_I: CGKeyCode = 0x22
         // autorepeat ignored so a held key does not open and close it. It was
         // F1 for its first hour (2026-10-22): F1 sits above the dead column and
         // never reached the tap from the real keyboard, so it looks dead too.
-        if keyCode == VK_F2 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
+        if Self.brokenKeysWorkarounds, keyCode == VK_F2 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 DispatchQueue.main.async { [weak self] in self?.onBrokenKeysPad?() }
             }

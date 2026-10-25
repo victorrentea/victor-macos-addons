@@ -84,6 +84,11 @@ style you land in would have to change on every press.
 
 ## 🩹 Broken 1-Q-A-Z column: right ⌘⌥ stand-ins (temporary)
 
+**Gated (2026-10-25):** all three stand-ins below (right ⌘⌥, ⇧§, F2 pad) run only when
+`defaults write ro.victorrentea.macos-addons BrokenKeysWorkarounds -bool true` is set —
+it is, on the MacBook with the dead column. Off by default, so the new Mac (working
+keyboard) keeps F2, § and right ⌘⌥ untouched. `EventTapManager.brokenKeysWorkarounds`.
+
 Since 2026-10-08 the 1, Q, A and Z keys on the physical keyboard are dead. While
 they are, holding **right ⌘ + right ⌥** (the two keys right of the space bar) turns
 the live neighbour into the dead key: **2 → 1, W → q, S → a, X → z** (⇧ gives
