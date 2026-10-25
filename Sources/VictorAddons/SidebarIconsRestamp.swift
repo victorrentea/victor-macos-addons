@@ -43,6 +43,9 @@ final class SidebarIconsRestamp {
     private var sources: [DispatchSourceFileSystemObject] = []
     private var pending: DispatchWorkItem?
 
+    /// Built on the AppDelegate's property line, before the main actor is in play (same as `BrokenKeysPad`).
+    nonisolated init() {}
+
     func start() {
         for path in Self.watched {
             let fd = open(path, O_EVTONLY)

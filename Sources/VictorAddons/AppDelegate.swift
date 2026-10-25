@@ -873,7 +873,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // A few seconds in, like ShareZoom's stages: not on the launch path.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.virtualDesktopAutoSwitch.start() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.sidebarIcons.start() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in MainActor.assumeIsolated { self?.sidebarIcons.start() } }
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
         menuBarManager.onMenuTick = { [weak self] in
             guard let self, self.liveCaptions.isOn else { return }
