@@ -54,6 +54,9 @@ final class ShareZoomHint {
     private static let warningColor = NSColor(calibratedRed: 0.75, green: 0.35, blue: 0.0, alpha: 0.95)
     /// Below-right of the hotspot, the quadrant the cursor's own artwork leaves free.
     private let offset = CGPoint(x: 16, y: -34)
+    /// The engine flip's pill sits clear of `ZoomSwitchEffect`'s 72 pt lens.
+    private let announceOffset = CGPoint(x: 44, y: -48)
+    private var currentOffset = CGPoint(x: 16, y: -34)
     private let visibleFor: TimeInterval = 2.5
 
     /// Called on main for every ⌥+scroll (⌥ alone, no ⇧/⌘/⌃).
@@ -61,6 +64,7 @@ final class ShareZoomHint {
         guard isZoomSharing() else { return }
         if panel == nil {
             overlayInfo("⚠️ ⌥+scroll during a Zoom share → hint ⌥F1")
+            currentOffset = offset
             show(text, color: Self.warningColor)
         }
         hideAfter(visibleFor)
@@ -72,6 +76,7 @@ final class ShareZoomHint {
         let color = engine == .share
             ? NSColor(calibratedRed: 0.10, green: 0.45, blue: 0.85, alpha: 0.95)
             : NSColor(calibratedWhite: 0.25, alpha: 0.95)
+        currentOffset = announceOffset
         show(engine.announcement, color: color)
         hideAfter(1.2)
     }
@@ -141,6 +146,6 @@ final class ShareZoomHint {
     private func follow() {
         guard let panel else { return }
         let mouse = NSEvent.mouseLocation
-        panel.setFrameOrigin(NSPoint(x: mouse.x + offset.x, y: mouse.y + offset.y - panel.frame.height / 2))
+        panel.setFrameOrigin(NSPoint(x: mouse.x + currentOffset.x, y: mouse.y + currentOffset.y - panel.frame.height / 2))
     }
 }

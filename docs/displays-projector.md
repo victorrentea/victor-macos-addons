@@ -107,7 +107,14 @@ back as a 90×90 square; refit with the prefs-write + engine-restart recipe abov
 **macOS zoom** (⌥+scroll reaches the magnifier, as before) and **Share Zoom** (the HID
 ⌥+scroll tap below swallows the event *before* `AXVisualSupportAgent`'s tap and feeds it
 here, so the magnifier never moves). A pill by the cursor names the new mode for 1.2 s
-(`ShareZoomHint.announce`); switching to macOS zoom ends a Share Zoom in progress. The
+(`ShareZoomHint.announce`), and **the flip has a look of its own at the cursor**
+(`ZoomSwitchEffect`, Victor: *"explozia subtilă a lupei la trecerea la macOS zoom nativ,
+respectiv dissolve in la trecerea la zoom sintetic"*): → macOS, a 72 pt magnifier holds
+0.18 s, then breaks into 6×6 shards that drift 25–45 pt out, turn and fade in 0.5 s; →
+Share, the magnifier dissolves in PowerPoint-style (8×8 cells, random order, 0.4 s),
+holds 0.45 s and fades. Its own click-through panel at the maximum window level, made
+per play; the pill moves to (44, −48) from the cursor so it clears the lens. Filmed with
+`/test/zoom-input` bursts on DELL (1), both ways; switching to macOS zoom ends a Share Zoom in progress. The
 choice is `ZoomEngine` in this app's defaults and survives restarts; default macOS.
 **⌥⇧+scroll does nothing since** (Victor's choice: one gesture, a switch). The switch
 was a quick ⌥⇧ tap for its first hour and flipped by itself while typing (*"volatil…

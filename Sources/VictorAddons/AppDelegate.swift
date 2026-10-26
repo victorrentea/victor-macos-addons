@@ -160,6 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var mirrorExcluded: [CGWindowID] = []
     private let glassSpotlight = GlassSpotlight()
     private let shareZoomHint = ShareZoomHint()
+    private let zoomSwitchEffect = ZoomSwitchEffect()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
     private var pptPresenterPlacement: PowerPointPresenterPlacement?
     private var breakReminderTimer: Timer?
@@ -1887,6 +1888,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             ZoomEngine.current = engine
             eventTap?.zoomEngine = engine
             if engine == .system { self.shareZoom.end() }
+            self.zoomSwitchEffect.play(engine, at: NSEvent.mouseLocation)
             self.shareZoomHint.announce(engine)
             overlayInfo("🔍/🔎 ⌥F1 → ⌥+scroll drives \(engine == .share ? "ShareZoom" : "the macOS magnifier")")
         }
