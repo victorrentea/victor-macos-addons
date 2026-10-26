@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 23, 00:06"
+    static let BUILD_TIME = "Oct 26, 08:37"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -567,13 +567,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // over the content, the Retina, Share pressed. In the menu at all because
         // it *acts on its own*, and a row that acts on its own needs a visible way
         // to be told to stop. Default on.
-        zoomSharePrepItem = NSMenuItem(title: "Auto Share Faceover", action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
+        zoomSharePrepItem = NSMenuItem(title: Self.ticked(Self.faceoverTitle, ZoomSharePrepSettings.isEnabled), action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
         // Its icon is what it shares (Victor, 2026-10-15): the screen, with his face
         // framed in the bottom-right corner.
         zoomSharePrepItem.image = Self.faceoverIcon
         zoomSharePrepItem.target = self
         zoomSharePrepItem.isEnabled = true
-        zoomSharePrepItem.state = ZoomSharePrepSettings.isEnabled ? .on : .off
 
         // 🪞 Virtual Desktop — an invisible screen showing the Retina with Victor
         // cut out bottom-right, for Teams/Zoom to share. Top level, next to 🎥
@@ -581,15 +580,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Teams starts and off when the last of them quits
         // (`VirtualDesktopAutoSwitch`), and a thing that acts on its own needs
         // its state in sight. The tick overrides it until the next start/quit.
-        virtualDesktopItem = NSMenuItem(title: "🪞 Virtual Desktop", action: #selector(toggleVirtualDesktopAction), keyEquivalent: "")
+        virtualDesktopItem = NSMenuItem(title: Self.ticked(Self.virtualDesktopTitle, VirtualDesktopSettings.isEnabled), action: #selector(toggleVirtualDesktopAction), keyEquivalent: "")
+        virtualDesktopItem.image = Self.emojiIcon("🪞")
         virtualDesktopItem.target = self
         virtualDesktopItem.isEnabled = true
-        virtualDesktopItem.state = VirtualDesktopSettings.isEnabled ? .on : .off
         virtualDesktopItem.toolTip = "An invisible screen with the Retina and you cut out bottom-right. Share that screen in Teams/Zoom. On the Retina you see only your faint 20% shadow; rest the pointer on it 3 s for a ← that moves you left."
-        virtualDesktopAutoItem = NSMenuItem(title: "🪞 Auto-start on Zoom/Teams", action: #selector(toggleVirtualDesktopAutoAction), keyEquivalent: "")
+        virtualDesktopAutoItem = NSMenuItem(title: Self.ticked(Self.virtualDesktopAutoTitle, VirtualDesktopSettings.autoStart), action: #selector(toggleVirtualDesktopAutoAction), keyEquivalent: "")
+        virtualDesktopAutoItem.image = Self.emojiIcon("🪞")
         virtualDesktopAutoItem.target = self
         virtualDesktopAutoItem.isEnabled = true
-        virtualDesktopAutoItem.state = VirtualDesktopSettings.autoStart ? .on : .off
         virtualDesktopAutoItem.toolTip = "Switch 🪞 Virtual Desktop on by itself when Zoom or Teams starts. It still goes off when the last of them quits."
 
         // 🔋 Claude prevents sleep left this submenu for the **top level** on
@@ -684,7 +683,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // 🖥️ Arrange Monitors — force the projector/standard arrangement now (manual
         // fallback for a venue projector that came up wrong). Top-level rather
         // than buried in the submenu: it's wanted in a hurry, mid-talk.
-        let fixDisplayItem = addItem("🖥️ Arrange Monitors", action: #selector(fixDisplayLayoutAction))
+        let fixDisplayItem = addItem("Arrange Monitors", action: #selector(fixDisplayLayoutAction))
+        fixDisplayItem.image = Self.emojiIcon("🖥️")
         fixDisplayItem.isEnabled = true
 
         // 🖥️ ◀ ASUS left / 🖥️ ASUS ▶ right (2026-10-08) — flip the travel monitor to
@@ -693,8 +693,10 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // the move that would change something is shown, with the arrow on the
         // side the ASUS goes to — a plain text-style
         // arrowhead (U+FE0E), not the blue emoji key cap; neither while it is absent or mirroring.
-        asusLeftItem = addItem("🖥️ ◀\u{FE0E} ASUS left", action: #selector(placeAsusLeftAction))
-        asusRightItem = addItem("🖥️ ASUS ▶\u{FE0E} right", action: #selector(placeAsusRightAction))
+        asusLeftItem = addItem("◀\u{FE0E} ASUS left", action: #selector(placeAsusLeftAction))
+        asusLeftItem.image = Self.emojiIcon("🖥️")
+        asusRightItem = addItem("ASUS ▶\u{FE0E} right", action: #selector(placeAsusRightAction))
+        asusRightItem.image = Self.emojiIcon("🖥️")
         refreshAsusSideItem()
 
         // 🎥 Layout Zoom (2026-09-29) — meeting video + Participants over Chat
@@ -729,6 +731,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // Victor asked for the two to be separated, for cleanliness, the same
         // way in Victor Effects and Walkie Talkie.
         let versionItem = addItem("Built " + MenuBarManager.BUILD_TIME, action: nil)
+        versionItem.image = Self.blankIcon
         versionItem.isEnabled = false
 
         // Quit carries the ⏻ SF Symbol as an *image*, the way Walkie Talkie's
@@ -751,6 +754,39 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         sized.isTemplate = true
         return sized
     }
+
+    /// **One grid for the meeting section** (Victor, 2026-10-26: *"strict
+    /// alineamentul meniurilor"*). macOS 26 aligns a menu **per section**: one
+    /// drawn image in a section indents every title in it past the icon box, so a
+    /// row whose icon is a leading *emoji in the title* starts its emoji where the
+    /// neighbours' titles start, a box's width to the right. And a natively ticked
+    /// row (`state = .on`) pulls its content back into the check mark's inset, so
+    /// a ticked toggle and an unticked one no longer share a column either. The
+    /// section with 🔊 Auto Share Faceover's and 🎥 Layout Zoom's drawn icons
+    /// therefore gives **every** row an image — the emoji drawn into the icon box
+    /// (`emojiIcon`), a transparent box for the build stamp (`blankIcon`) — and
+    /// keeps its ticks in the **title** (`ticked`), the way the ✓ rows above
+    /// already do and docs/menu-bar.md asks for.
+    static func emojiIcon(_ emoji: String) -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let text = NSAttributedString(string: emoji, attributes: [.font: NSFont.systemFont(ofSize: 13)])
+            let bounds = text.size()
+            text.draw(at: NSPoint(x: (rect.width - bounds.width) / 2, y: (rect.height - bounds.height) / 2))
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    /// A transparent icon box: a row with nothing to draw keeps its title in the column.
+    static let blankIcon = NSImage(size: NSSize(width: 18, height: 18))
+
+    /// A toggle's tick as part of its title, never `state` (see `emojiIcon`).
+    static func ticked(_ title: String, _ on: Bool) -> String { title + (on ? "  ✓" : "") }
+
+    static let faceoverTitle = "Auto Share Faceover"
+    static let virtualDesktopTitle = "Virtual Desktop"
+    static let virtualDesktopAutoTitle = "Auto-start on Zoom/Teams"
 
     @discardableResult
     private func addItem(_ title: String, action: Selector?) -> NSMenuItem {
@@ -1014,8 +1050,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     ///   what a feature costs is how a row comes to disagree with an invoice.
     func setLiveCaptions(on: Bool, title: String) {
         guard liveCaptionsItem != nil else { return }
-        liveCaptionsItem.title = title
-        liveCaptionsItem.state = on ? .on : .off
+        liveCaptionsItem.title = Self.ticked(title, on)
     }
 
     @objc private func toggleRecordRawAction() {
@@ -1152,25 +1187,25 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// with the tick.
     /// The tick follows `VirtualDesktopAutoSwitch` too, not only clicks.
     func setVirtualDesktopState(_ on: Bool) {
-        virtualDesktopItem?.state = on ? .on : .off
+        virtualDesktopItem?.title = Self.ticked(Self.virtualDesktopTitle, on)
     }
 
     @objc private func toggleVirtualDesktopAutoAction() {
         VirtualDesktopSettings.autoStart.toggle()
-        virtualDesktopAutoItem.state = VirtualDesktopSettings.autoStart ? .on : .off
+        virtualDesktopAutoItem.title = Self.ticked(Self.virtualDesktopAutoTitle, VirtualDesktopSettings.autoStart)
     }
 
     @objc private func toggleVirtualDesktopAction() {
         let enabled = !VirtualDesktopSettings.isEnabled
         VirtualDesktopSettings.isEnabled = enabled
-        virtualDesktopItem.state = enabled ? .on : .off
+        virtualDesktopItem.title = Self.ticked(Self.virtualDesktopTitle, enabled)
         onToggleVirtualDesktop?(enabled)
     }
 
     @objc private func toggleZoomSharePrepAction() {
         let enabled = !ZoomSharePrepSettings.isEnabled
         ZoomSharePrepSettings.isEnabled = enabled
-        zoomSharePrepItem.state = enabled ? .on : .off
+        zoomSharePrepItem.title = Self.ticked(Self.faceoverTitle, enabled)
     }
 
     /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",
