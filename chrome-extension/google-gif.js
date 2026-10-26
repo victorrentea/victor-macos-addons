@@ -50,7 +50,7 @@ function pill() {
   const a = document.createElement('a');
   a.id = PILL_ID;
   a.href = toggledHref();
-  a.textContent = on ? '✓ GIF' : 'GIF';
+  a.textContent = on ? '✓ Animated Gif' : 'Animated Gif';
   a.title = on ? 'Show all images again' : 'Only animated GIFs (Tools → Type → GIF)';
   a.style.cssText = [
     'display:inline-flex', 'align-items:center', 'align-self:center',
