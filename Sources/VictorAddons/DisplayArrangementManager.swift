@@ -161,6 +161,11 @@ final class DisplayArrangementManager {
 
         let target = scene(for: displays)
         if !force, target == lastScene {
+            // At home the layout itself is enforced, not just the scene: the 🪞
+            // screen appearing makes macOS shove the monitors (2026-10-26: the
+            // right DELL 108 pt off the Retina, the top one 12 pt off centre).
+            // A no-op when everything is in place.
+            if displays.hasKnownExternal { closeUpHomeLayout(); return }
             overlayInfo("Display change ignored (scene unchanged: \(describe(target)))")
             return
         }
@@ -383,6 +388,15 @@ final class DisplayArrangementManager {
         CGGetOnlineDisplayList(count, &ids, &count)
         // 🪞 VirtualDesktop's invisible screen is ours, not a venue projector.
         return Array(ids.prefix(Int(count))).filter { !VirtualDesktop.isVirtual($0) }
+    }
+
+    /// 🪞 VirtualDesktop's screen, when it is up.
+    private func activeVirtualDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &count)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetActiveDisplayList(count, &ids, &count)
+        return ids.prefix(Int(count)).filter { VirtualDesktop.isVirtual($0) }
     }
 
     /// Cache-backed so a mirror slave (no `NSScreen`) still reports its name.
@@ -728,8 +742,9 @@ final class DisplayArrangementManager {
 
     /// Home rig, origins only: every un-mirrored external where `HomeLayout`
     /// puts it, the Retina main at (0,0). Moves nothing that is already in place,
-    /// so a correct layout costs no reconfiguration at all. The 🪞 screen is not
-    /// ours to place — `VirtualDesktopPlacement` re-parks it after the change.
+    /// so a correct layout costs no reconfiguration at all. The 🪞 screen goes
+    /// last on the right in the same transaction — where `VirtualDesktopPlacement`
+    /// would park it — so the two never move it back and forth.
     private func closeUpHomeLayout() {
         guard let retina = resolveDisplays().retina, CGDisplayIsInMirrorSet(retina) == 0 else { return }
         let retinaFrame = CGDisplayBounds(retina)
@@ -738,7 +753,14 @@ final class DisplayArrangementManager {
             // Relative to the Retina, in case it is not at (0,0) yet.
             frames[id] = CGDisplayBounds(id).offsetBy(dx: -retinaFrame.minX, dy: -retinaFrame.minY)
         }
-        let target = HomeLayout.origins(retina: retinaFrame.size, externals: frames)
+        var target = HomeLayout.origins(retina: retinaFrame.size, externals: frames)
+        let placed = [CGRect(origin: .zero, size: retinaFrame.size)]
+            + target.compactMap { id, p in frames[id].map { CGRect(origin: p, size: $0.size) } }
+        for id in activeVirtualDisplayIDs() {
+            let frame = CGDisplayBounds(id).offsetBy(dx: -retinaFrame.minX, dy: -retinaFrame.minY)
+            frames[id] = frame
+            target[id] = VirtualDesktopPlacement.origin(virtual: frame, physical: placed) ?? frame.origin
+        }
         let moves = target.filter { id, p in frames[id]?.origin != p }
         guard !moves.isEmpty || retinaFrame.origin != .zero else {
             overlayInfo("Home layout already closed up")
