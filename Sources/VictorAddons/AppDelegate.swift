@@ -1323,8 +1323,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // /test/virtual-desktop?on=&fps=&quality=&cam=&silhouette=&ci= — 🪞 live knobs
         // and per-face timings since the last call; no query just reports.
+        // `on=` moves the setting and the menu tick too, as a click on the row
+        // would — or the menu reads "off" while it runs.
         tabletServer?.onTestVirtualDesktop = { [weak self] query in
-            self?.virtualDesktop.testTune(query) ?? "{\"error\":\"unavailable\"}"
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            if let on = query["on"].map({ $0 == "1" }) {
+                VirtualDesktopSettings.isEnabled = on
+                self.menuBarManager.setVirtualDesktopState(on)
+            }
+            return self.virtualDesktop.testTune(query)
         }
         // /test/glass-spotlight?x=&y=&w=&h= — 🔦 a box without the mouse
         // (global Cocoa points); ?off=1 takes it down; ?zoom=0…1 sets the
