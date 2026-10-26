@@ -23,7 +23,6 @@ private let optionScrollCallbackFunc: CGEventTapCallBack = { _, type, event, use
         if let port = manager.optionScrollTapPort { CGEvent.tapEnable(tap: port, enable: true) }
     } else if type == .scrollWheel,
               event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]) == [.maskAlternate] {
-        manager.optionShiftTap.interrupt()
         // 🔎 `ZoomEngine.share`: ⌥+scroll is ours, and swallowed here so the
         // magnifier's own HID tap never sees it — one zoom at a time.
         if manager.zoomEngine == .share {
@@ -128,7 +127,7 @@ class EventTapManager {
     /// `ScrollReversal`, and what sent it (wheel / smooth wheel / trackpad).
     /// Called on main.
     var onShareZoomScroll: ((Double, ShareZoomPolicy.Source) -> Void)?
-    /// 🔍/🔎 ⌥⇧ tapped (`OptionShiftTap`): flip the `ZoomEngine`. Called on main.
+    /// 🔍/🔎 ⌃⌥F1: flip the `ZoomEngine`. Called on main.
     var onZoomEngineToggle: (() -> Void)?
     /// 🔦 ⇧ + wheel-drag — the glass spotlight (`GlassSpotlight`). Global CG
     /// points, as the events carry them. All called on main.
@@ -231,10 +230,9 @@ private let VK_I: CGKeyCode = 0x22
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F4: CGKeyCode = 0x76
     private let VK_F8: CGKeyCode = 0x64
+    private let VK_F1: CGKeyCode = 0x7A
     /// 😀 left-⌥ double tap → emoji picker; lives on the tap thread only.
     private var optionDoubleTap = OptionDoubleTap()
-    /// 🔍/🔎 ⌥⇧ tap → `ZoomEngine` flip; tap thread only (both taps share it).
-    fileprivate var optionShiftTap = OptionShiftTap()
     private let zoomEngineLock = NSLock()
     private var zoomEngineValue = ZoomEngine.current
     /// Which zoom ⌥+scroll drives. Set on main, read on the tap thread.
@@ -645,10 +643,6 @@ private let VK_I: CGKeyCode = 0x22
             let hasCmdFlag = flags.contains(.maskCommand)
             let hasCtrlFlag = flags.contains(.maskControl)
             let historyOpen = isClipboardHistoryOpen
-            if optionShiftTap.flagsChanged(option: hasOpt, shift: hasShift, command: hasCmdFlag,
-                                           control: hasCtrlFlag, at: ProcessInfo.processInfo.systemUptime) {
-                DispatchQueue.main.async { [weak self] in self?.onZoomEngineToggle?() }
-            }
             // Never swallowed: ⌥ still has to reach apps as ⌥, the picker just
             // listens for the rhythm.
             if optionDoubleTap.flagsChanged(
@@ -685,7 +679,6 @@ private let VK_I: CGKeyCode = 0x22
         // middle-up it never saw a middle-down for. The cost is a ⇧-middle-click
         // anywhere else on the machine. Walkie Talkie never competes for it: its
         // wheel gestures all require a bare press.
-        if type == .otherMouseDown { optionShiftTap.interrupt() }
         if type == .otherMouseDown || type == .otherMouseDragged || type == .otherMouseUp,
            event.getIntegerValueField(.mouseEventButtonNumber) == MOUSE_BUTTON_MIDDLE {
             let at = event.location
@@ -812,9 +805,8 @@ private let VK_I: CGKeyCode = 0x22
             // the magnifier could — so this is for scrolls posted at session level.
             // Read after the reversal, so the direction moves with every other
             // scroll on this Mac. ⌥⇧+scroll was this zoom until 2026-10-26 and is
-            // left alone now: ⌥⇧ tapped is the engine switch.
+            // left alone now: ⌃⌥F1 is the engine switch.
             let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-            if !zoomFlags.isEmpty { optionShiftTap.interrupt() }
             if zoomFlags == [.maskAlternate], zoomEngine == .share {
                 if let (delta, source) = zoomScroll(event) {
                     DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, source) }
@@ -920,7 +912,6 @@ private let VK_I: CGKeyCode = 0x22
         }
 
         optionDoubleTap.interrupt()
-        optionShiftTap.interrupt()
         if controlShiftHeld {
             DispatchQueue.main.async { [weak self] in self?.onKeyDownUnderControlShift?() }
         }
@@ -1139,6 +1130,16 @@ private let VK_I: CGKeyCode = 0x22
         // F8 → open Claude Code in ~/workspace (suppress). Bare F8, not fn+F8:
         // this Mac runs F1–F12 as standard function keys, so the key arrives as
         // a real keyDown rather than a media-key system event.
+        // ⌃⌥F1 → 🔍/🔎 flip which zoom ⌥+scroll drives (`ZoomEngine`). A chord,
+        // not a modifier tap: the first try, a quick ⌥⇧ tap, flipped on its own
+        // while typing (Victor, 2026-10-26: "volatil… la întâmplare"). ⌃⌥ + F is
+        // free — Walkie's Logi gestures are all ⌃⌥⌘ + F. Autorepeat ignored.
+        if keyCode == VK_F1 && hasCtrl && hasOpt && !hasCmd && !hasShift {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                DispatchQueue.main.async { [weak self] in self?.onZoomEngineToggle?() }
+            }
+            return nil
+        }
         if keyCode == VK_F8 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
             return nil

@@ -125,6 +125,7 @@ case testTerminalFont
         case testZoomLayout(run: Bool)
         /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
         case testShareZoom(factor: Double?, x: Double?, y: Double?, fps: Double?)
+        case testZoomInput([String: String])
         /// 🪞 Victor Mirror's hooks (`/test/virtual-desktop`, `/test/zoom-share`),
         /// forwarded to 55127 with the query intact — they lived here until 2026-10-26.
         case mirrorProxied(String)
@@ -637,6 +638,9 @@ case testTerminalFont
                 self.onMirrorExclusions?(ids)
                 contentType = "application/json"
                 body = "{\"ok\":true}"
+            case .testZoomInput(let query):
+                contentType = "application/json"
+                body = ZoomInputTest.run(query)
             case .testShareZoom(let factor, let x, let y, let fps):
                 contentType = "application/json"
                 body = self.onTestShareZoom?(factor, x, y, fps) ?? "{\"error\":\"unavailable\"}"
@@ -1021,6 +1025,9 @@ case testTerminalFont
             return .mirrorExclusions(ids)
         case "/test/zoom-join":
             return .testZoomJoin
+        case "/test/zoom-input":
+            return .testZoomInput(Dictionary(queryItems.compactMap { i in i.value.map { (i.name, $0) } },
+                                             uniquingKeysWith: { _, last in last }))
         case "/test/share-zoom":
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
             return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"), fps: num("fps"))
