@@ -127,7 +127,7 @@ class EventTapManager {
     /// `ScrollReversal`, and what sent it (wheel / smooth wheel / trackpad).
     /// Called on main.
     var onShareZoomScroll: ((Double, ShareZoomPolicy.Source) -> Void)?
-    /// 🔍/🔎 ⌥F1: flip the `ZoomEngine`. Called on main.
+    /// 🔍/🔎 ⌥ + wheel click: flip the `ZoomEngine`. Called on main.
     var onZoomEngineToggle: (() -> Void)?
     /// 🔦 ⇧ + wheel-drag — the glass spotlight (`GlassSpotlight`). Global CG
     /// points, as the events carry them. All called on main.
@@ -230,11 +230,13 @@ private let VK_I: CGKeyCode = 0x22
     private let VK_F3: CGKeyCode = 0x63
     private let VK_F4: CGKeyCode = 0x76
     private let VK_F8: CGKeyCode = 0x64
-    private let VK_F1: CGKeyCode = 0x7A
     /// 😀 left-⌥ double tap → emoji picker; lives on the tap thread only.
     private var optionDoubleTap = OptionDoubleTap()
     private let zoomEngineLock = NSLock()
     private var zoomEngineValue = ZoomEngine.current
+    /// The ⌥ + wheel click that flipped the engine is down: its drags and release
+    /// are ours too. Tap thread only.
+    private var zoomToggleClick = false
     /// Which zoom ⌥+scroll drives. Set on main, read on the tap thread.
     var zoomEngine: ZoomEngine {
         get { zoomEngineLock.lock(); defer { zoomEngineLock.unlock() }; return zoomEngineValue }
@@ -682,6 +684,23 @@ private let VK_I: CGKeyCode = 0x22
         if type == .otherMouseDown || type == .otherMouseDragged || type == .otherMouseUp,
            event.getIntegerValueField(.mouseEventButtonNumber) == MOUSE_BUTTON_MIDDLE {
             let at = event.location
+            // ⌥ + wheel click → 🔍/🔎 flip which zoom ⌥+scroll drives (`ZoomEngine`):
+            // the hand is on the wheel already, and ⌥ is the zoom's own key. Third
+            // try in one evening (Victor, 2026-10-26): a quick ⌥⇧ tap flipped by
+            // itself while typing, ⌃⌥F1 then ⌥F1 sent the hand to the keyboard.
+            // Press, any drag and release are all swallowed. Walkie Talkie wants
+            // only bare wheel presses, except while a locked crop waits for its
+            // destination — then the press is its, whoever's tap runs first.
+            if type == .otherMouseDown,
+               event.flags.intersection([.maskShift, .maskCommand, .maskControl, .maskAlternate]) == [.maskAlternate] {
+                zoomToggleClick = true
+                DispatchQueue.main.async { [weak self] in self?.onZoomEngineToggle?() }
+                return nil
+            }
+            if zoomToggleClick {
+                if type == .otherMouseUp { zoomToggleClick = false }
+                return nil
+            }
             if type == .otherMouseDown, event.flags.contains(.maskShift) {
                 spotlightDragging = true
                 DispatchQueue.main.async { [weak self] in self?.onGlassSpotlightBegin?(at) }
@@ -805,7 +824,7 @@ private let VK_I: CGKeyCode = 0x22
             // the magnifier could — so this is for scrolls posted at session level.
             // Read after the reversal, so the direction moves with every other
             // scroll on this Mac. ⌥⇧+scroll was this zoom until 2026-10-26 and is
-            // left alone now: ⌥F1 is the engine switch.
+            // left alone now: ⌥ + wheel click is the engine switch.
             let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
             if zoomFlags == [.maskAlternate], zoomEngine == .share {
                 if let (delta, source) = zoomScroll(event) {
@@ -1130,17 +1149,6 @@ private let VK_I: CGKeyCode = 0x22
         // F8 → open Claude Code in ~/workspace (suppress). Bare F8, not fn+F8:
         // this Mac runs F1–F12 as standard function keys, so the key arrives as
         // a real keyDown rather than a media-key system event.
-        // ⌥F1 → 🔍/🔎 flip which zoom ⌥+scroll drives (`ZoomEngine`). A chord,
-        // not a modifier tap: the first try, a quick ⌥⇧ tap, flipped on its own
-        // while typing (Victor, 2026-10-26: "volatil… la întâmplare"); ⌃⌥F1 came
-        // next and lost the ⌃ the same evening ("doar opt-F1"). ⌥ + F is free —
-        // Walkie's Logi gestures are all ⌃⌥⌘ + F. Autorepeat ignored.
-        if keyCode == VK_F1 && hasOpt && !hasCtrl && !hasCmd && !hasShift {
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.main.async { [weak self] in self?.onZoomEngineToggle?() }
-            }
-            return nil
-        }
         if keyCode == VK_F8 && !hasCmd && !hasCtrl && !hasOpt && !hasShift {
             DispatchQueue.global().async { [weak self] in self?.onClaudeWorkspaceHotkey?() }
             return nil

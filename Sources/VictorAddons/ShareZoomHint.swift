@@ -37,7 +37,7 @@ enum ZoomShareWindows {
 ///
 /// With `ZoomEngine.system`, ⌥+scroll is the macOS full-screen magnifier, applied
 /// at scanout: Victor sees it, the share never does (`ZoomLensMode`). The one a
-/// share carries is ours (`ShareZoom`), one ⌥F1 away; the hint sits by the
+/// share carries is ours (`ShareZoom`), one ⌥ + wheel click away; the hint sits by the
 /// cursor because that is where the eye is while the wheel turns. The scroll
 /// itself is left alone — the local zoom still happens, the hint only says the
 /// room is not seeing it. The same pill announces an engine flip (`announce`).
@@ -50,7 +50,7 @@ final class ShareZoomHint {
     /// so the answer is reused for a second.
     private var sharingCache: (at: CFTimeInterval, sharing: Bool)?
 
-    private let text = "⚠️ ⌥F1 for Zoom"
+    private let text = "⚠️ ⌥ + wheel click for Zoom"
     private static let warningColor = NSColor(calibratedRed: 0.75, green: 0.35, blue: 0.0, alpha: 0.95)
     /// Below-right of the hotspot, the quadrant the cursor's own artwork leaves free.
     private let offset = CGPoint(x: 16, y: -34)
@@ -63,7 +63,7 @@ final class ShareZoomHint {
     func optionScrolled() {
         guard isZoomSharing() else { return }
         if panel == nil {
-            overlayInfo("⚠️ ⌥+scroll during a Zoom share → hint ⌥F1")
+            overlayInfo("⚠️ ⌥+scroll during a Zoom share → hint ⌥ + wheel click")
             currentOffset = offset
             show(text, color: Self.warningColor)
         }
