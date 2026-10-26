@@ -259,7 +259,10 @@ class WhisperProcessManager {
 
     private func findPython3() -> String {
         // Prefer interpreters that actually have Whisper runtime deps installed.
+        // The uv venv comes first: Homebrew's python3 moves to new minors under
+        // us (3.15 on 2026-10-25) and the framework 3.12 install was removed.
         let candidates = [
+            NSHomeDirectory() + "/.victor-addons/venv/bin/python3",
             "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
             "/usr/local/bin/python3",
             "/opt/homebrew/bin/python3",
