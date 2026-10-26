@@ -220,12 +220,13 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **A faded 🔍 (104 pt — 26 was too small to notice — 50 %) sits in the zoomed screen's top-right corner** while the
   zoom is on, at constant size — over the picture, not in it — so the room and the
   call can tell it is this zoom and not the system one (2026-10-15).
-- **A ⊕/⊖ magnifier (40 pt, SF Symbols `plus`/`minus.magnifyingglass` on a dark
-  disc) rides at the drawn cursor's lower right** like a tooltip (2026-10-17): the
-  corner one is out of sight when the eyes are on the pointer. Since 2026-10-26 it
-  shows **only while the zoom changes** — ⊕ for closer, ⊖ for farther, by the last
-  notch's sign — and is gone 0.5 s after the last notch (Victor: *"să reflecte
-  schimbarea de zoom… și să dispară la jumătate de secundă"*). Flips to the cursor's left / top near the right / bottom
+- **While the zoom changes, a ⊕/⊖ magnifier stands in for the drawn cursor** (SF
+  Symbols `plus`/`minus.magnifyingglass` on a dark disc, centred on the hot spot, as
+  big as the drawn cursor within 44–96 pt): ⊕ closer, ⊖ farther, by the last notch's
+  sign; the cursor comes back 0.5 s after the last notch (Victor, 2026-10-26: *"să
+  reflecte schimbarea de zoom… și să dispară la jumătate de secundă"*, then *"cursorul
+  e înlocuit temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). From
+  2026-10-17 a 🔍 rode beside the cursor for the whole zoom. Flips to the cursor's left / top near the right / bottom
   edge; hidden whenever the drawn cursor is (pointer on another display, pinned focus).
 - **It must not feed itself** (2026-10-15, found by an adversarial review, then
   measured). It films the display its own window covers, so anything it draws damages
@@ -284,7 +285,7 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   Posted events arrive at ~80 ms each, not at the 30 ms they are sent at — wait on
   `target`, not on the clock. **Verified with it on 2026-10-26** on DELL (1): ⌃⌥F1 →
   `ZoomEngine=share` + the pill; ⌥+scroll → ShareZoom on, ⊕ at the cursor at 0.15 s,
-  gone at 0.65 s, ⊖ zooming out; `open -a ScreenBrush` mid-zoom → the cursor came back
+  gone at 0.65 s (in the cursor's place since the same evening), ⊖ zooming out; `open -a ScreenBrush` mid-zoom → the cursor came back
   and was hidden again within one look (`rehides: 1`, one cursor in the shot); ⌃⌥F1 back →
   the zoom ends, and ⌥+scroll no longer starts it. Not provable synthetically: that a
   *physical* ⌥+scroll in Share mode leaves the magnifier still (it ignores synthetic

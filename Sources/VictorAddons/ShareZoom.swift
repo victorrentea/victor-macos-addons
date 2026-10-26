@@ -44,13 +44,14 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// the call — can tell this is our zoom and not the system one (Victor,
         /// 2026-10-15). Never magnified: it sits over the picture, not in it.
         let badge = CALayer()
-        /// A ⊕/⊖ magnifier riding at the drawn cursor's lower right, like a tooltip —
-        /// the corner one is out of sight when the eyes are on the pointer (Victor,
-        /// 2026-10-17). Since 2026-10-26 only while the zoom changes: it shows which
-        /// way the wheel just turned and is gone `tipLinger` after the last notch.
-        /// Constant size, never magnified.
+        /// A ⊕/⊖ magnifier that **stands in for the drawn cursor while the zoom
+        /// changes** — centred on its hot spot, the cursor hidden — and gives it back
+        /// `tipLinger` after the last notch (Victor, 2026-10-26: *"cursorul e înlocuit
+        /// temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). It rode
+        /// beside the cursor for the whole zoom from 2026-10-17. As big as the drawn
+        /// cursor, within `tipSides`; never magnified.
         let tip = CALayer()
-        static let tipSide: CGFloat = 40
+        static let tipSides: ClosedRange<CGFloat> = 44...96
         let tipIn: CGImage?
         let tipOut: CGImage?
         var filter: SCContentFilter?
@@ -101,9 +102,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             badge.contentsGravity = .resizeAspect
             badge.opacity = 0.5
             badge.actions = noAnimation
-            tip.frame = CGRect(x: 0, y: 0, width: Self.tipSide, height: Self.tipSide)
-            tipIn = Self.symbolImage("plus.magnifyingglass", side: Self.tipSide, scale: screen.backingScaleFactor)
-            tipOut = Self.symbolImage("minus.magnifyingglass", side: Self.tipSide, scale: screen.backingScaleFactor)
+            let tipSide = Self.tipSides.upperBound
+            tip.frame = CGRect(x: 0, y: 0, width: tipSide, height: tipSide)
+            tipIn = Self.symbolImage("plus.magnifyingglass", side: tipSide, scale: screen.backingScaleFactor)
+            tipOut = Self.symbolImage("minus.magnifyingglass", side: tipSide, scale: screen.backingScaleFactor)
             tip.contents = tipIn
             tip.contentsGravity = .resizeAspect
             tip.opacity = 0.9
@@ -717,6 +719,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         // (the adversarial review of 2026-10-15). Only what changed is written now.
         let rect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
         var cursorFrame: CGRect?
+        var hotPoint = CGPoint.zero
         if inside {
             let drawnAt = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             publishCursor(CGPoint(x: s.frame.minX + drawnAt.x, y: s.frame.minY + drawnAt.y))
@@ -751,6 +754,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             }
             if tickCount % 12 == 1 { refreshCursorImage(s) }
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
+            hotPoint = at
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
             let b = cursorSize
             cursorFrame = CGRect(x: at.x - hotSpot.x * current,
@@ -773,24 +777,19 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         s.image.contentsRect = rect
         if let cursorFrame {
             s.cursor.frame = cursorFrame
-            s.tip.frame = Self.tipFrame(beside: cursorFrame, in: size)
+            s.tip.frame = Self.tipFrame(over: hotPoint, cursor: cursorFrame)
         }
-        s.cursor.isHidden = cursorHidden
+        s.cursor.isHidden = cursorHidden || written.tipIn != nil
         if let tipIn = written.tipIn { s.tip.contents = tipIn ? s.tipIn : s.tipOut }
         s.tip.isHidden = written.tipIn == nil
         CATransaction.commit()
     }
 
-    /// Just off the drawn cursor's lower-right corner, flipped to the other side of
-    /// it near the right or bottom edge so it never leaves the screen.
-    static func tipFrame(beside cursor: CGRect, in screen: CGSize) -> CGRect {
-        let side = Stage.tipSide, gap: CGFloat = 4
-        var x = cursor.maxX + gap
-        if x + side > screen.width { x = cursor.minX - gap - side }
-        var y = cursor.minY - gap - side  // the layer's y grows up: below = smaller
-        if y < 0 { y = cursor.maxY + gap }
-        return CGRect(x: min(max(x, 0), screen.width - side), y: min(max(y, 0), screen.height - side),
-                      width: side, height: side)
+    /// Centred on the drawn cursor's hot spot — where the eye already is — and as
+    /// big as the drawn cursor, within `tipSides`.
+    static func tipFrame(over hot: CGPoint, cursor: CGRect) -> CGRect {
+        let side = min(max(cursor.height, Stage.tipSides.lowerBound), Stage.tipSides.upperBound)
+        return CGRect(x: hot.x - side / 2, y: hot.y - side / 2, width: side, height: side)
     }
 
     // MARK: - Telling victor-effects where the cursor is
