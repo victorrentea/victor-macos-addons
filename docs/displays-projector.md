@@ -103,7 +103,7 @@ back as a 90×90 square; refit with the prefs-write + engine-restart recipe abov
 ### 🔎 The fifth path: our own zoom, in a window (`ShareZoom`, ⌥+scroll in Share mode, 2026-10-01)
 
 **⌥+scroll drives one zoom or the other, never both (`ZoomEngine`, 2026-10-26).** Victor:
-*"n-are sens vreodată să fac zoom și de un fel, și de altul"*. **⌃⌥F1** flips between
+*"n-are sens vreodată să fac zoom și de un fel, și de altul"*. **⌥F1** flips between
 **macOS zoom** (⌥+scroll reaches the magnifier, as before) and **Share Zoom** (the HID
 ⌥+scroll tap below swallows the event *before* `AXVisualSupportAgent`'s tap and feeds it
 here, so the magnifier never moves). A pill by the cursor names the new mode for 1.2 s
@@ -111,7 +111,8 @@ here, so the magnifier never moves). A pill by the cursor names the new mode for
 choice is `ZoomEngine` in this app's defaults and survives restarts; default macOS.
 **⌥⇧+scroll does nothing since** (Victor's choice: one gesture, a switch). The switch
 was a quick ⌥⇧ tap for its first hour and flipped by itself while typing (*"volatil…
-la întâmplare"*), so it is a chord now: ⌃⌥ + an F key is free here (F1–F12 are standard
+la întâmplare"*), so it is a chord now — ⌃⌥F1 for an hour, then just ⌥F1 (*"doar
+opt-F1"*): ⌥ + an F key is free here (F1–F12 are standard
 function keys on this Mac, `fnState = 1`; Walkie's Logi gestures are all ⌃⌥⌘ + F), and
 F1 is the corner key, found without looking. Not handled:
 a macOS zoom left zoomed in when switching to Share Zoom stays zoomed — the magnifier
@@ -278,25 +279,25 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   alone.
 - `GET /test/zoom-input?do=chord|scroll|shot` — **real HID events posted by this app**
   (an agent's shell holds neither Accessibility nor Screen Recording, so its own
-  `CGEvent.post` and `screencapture` silently do nothing): `chord` = ⌃⌥F1,
+  `CGEvent.post` and `screencapture` silently do nothing): `chord` = ⌥F1,
   `scroll&lines=N&n=K` = K ⌥+scroll events (after `ScrollReversal`, **−1 = closer**),
   `shot&display=<name part>&path=<png>` = a ScreenCaptureKit capture **with the cursor**,
   the only screenshot that shows whether the real cursor is up beside the drawn one.
   Posted events arrive at ~80 ms each, not at the 30 ms they are sent at — wait on
-  `target`, not on the clock. **Verified with it on 2026-10-26** on DELL (1): ⌃⌥F1 →
+  `target`, not on the clock. **Verified with it on 2026-10-26** on DELL (1): ⌥F1 →
   `ZoomEngine=share` + the pill; ⌥+scroll → ShareZoom on, ⊕ at the cursor at 0.15 s,
   gone at 0.65 s (in the cursor's place since the same evening), ⊖ zooming out; `open -a ScreenBrush` mid-zoom → the cursor came back
-  and was hidden again within one look (`rehides: 1`, one cursor in the shot); ⌃⌥F1 back →
+  and was hidden again within one look (`rehides: 1`, one cursor in the shot); ⌥F1 back →
   the zoom ends, and ⌥+scroll no longer starts it. Not provable synthetically: that a
   *physical* ⌥+scroll in Share mode leaves the magnifier still (it ignores synthetic
   scrolls) — that rests on the HID tap order, as for `ShareZoomHint`.
 
-### ⚠️ ⌥+scroll during a share → "⌃⌥F1 for Zoom" (`ShareZoomHint`, 2026-10-01)
+### ⚠️ ⌥+scroll during a share → "⌥F1 for Zoom" (`ShareZoomHint`, 2026-10-01)
 
 In macOS-zoom mode ⌥+scroll is the magnifier — the style a share never carries — and
-`ShareZoom`, which it does, is one ⌃⌥F1 away (it was ⌥⇧+scroll until 2026-10-26). While
+`ShareZoom`, which it does, is one ⌥F1 away (it was ⌥⇧+scroll until 2026-10-26). While
 Zoom is sharing, every ⌥+scroll (⌥ alone, no ⇧/⌘/⌃) in macOS-zoom mode puts an orange
-**⚠️ ⌃⌥F1 for Zoom**
+**⚠️ ⌥F1 for Zoom**
 pill beside the cursor, following it, gone 2.5 s after the last notch. The scroll
 itself is not touched: the local zoom still happens.
 

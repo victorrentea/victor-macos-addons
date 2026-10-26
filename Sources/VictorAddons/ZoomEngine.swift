@@ -8,7 +8,7 @@ import Foundation
 /// - `share`: our `ShareZoom`, drawn in a window, which every share carries. The
 ///   ⌥+scroll HID tap swallows the event before the magnifier's tap sees it.
 ///
-/// ⌃⌥F1 flips it (a quick ⌥⇧ tap did for an hour: it fired by itself while
+/// ⌥F1 flips it (a quick ⌥⇧ tap did for an hour: it fired by itself while
 /// typing); the choice survives restarts. ⌥⇧+scroll, the gesture `ShareZoom`
 /// had until then, does nothing any more.
 enum ZoomEngine: String {

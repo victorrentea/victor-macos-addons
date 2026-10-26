@@ -127,7 +127,7 @@ class EventTapManager {
     /// `ScrollReversal`, and what sent it (wheel / smooth wheel / trackpad).
     /// Called on main.
     var onShareZoomScroll: ((Double, ShareZoomPolicy.Source) -> Void)?
-    /// 🔍/🔎 ⌃⌥F1: flip the `ZoomEngine`. Called on main.
+    /// 🔍/🔎 ⌥F1: flip the `ZoomEngine`. Called on main.
     var onZoomEngineToggle: (() -> Void)?
     /// 🔦 ⇧ + wheel-drag — the glass spotlight (`GlassSpotlight`). Global CG
     /// points, as the events carry them. All called on main.
@@ -805,7 +805,7 @@ private let VK_I: CGKeyCode = 0x22
             // the magnifier could — so this is for scrolls posted at session level.
             // Read after the reversal, so the direction moves with every other
             // scroll on this Mac. ⌥⇧+scroll was this zoom until 2026-10-26 and is
-            // left alone now: ⌃⌥F1 is the engine switch.
+            // left alone now: ⌥F1 is the engine switch.
             let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
             if zoomFlags == [.maskAlternate], zoomEngine == .share {
                 if let (delta, source) = zoomScroll(event) {
@@ -1130,11 +1130,12 @@ private let VK_I: CGKeyCode = 0x22
         // F8 → open Claude Code in ~/workspace (suppress). Bare F8, not fn+F8:
         // this Mac runs F1–F12 as standard function keys, so the key arrives as
         // a real keyDown rather than a media-key system event.
-        // ⌃⌥F1 → 🔍/🔎 flip which zoom ⌥+scroll drives (`ZoomEngine`). A chord,
+        // ⌥F1 → 🔍/🔎 flip which zoom ⌥+scroll drives (`ZoomEngine`). A chord,
         // not a modifier tap: the first try, a quick ⌥⇧ tap, flipped on its own
-        // while typing (Victor, 2026-10-26: "volatil… la întâmplare"). ⌃⌥ + F is
-        // free — Walkie's Logi gestures are all ⌃⌥⌘ + F. Autorepeat ignored.
-        if keyCode == VK_F1 && hasCtrl && hasOpt && !hasCmd && !hasShift {
+        // while typing (Victor, 2026-10-26: "volatil… la întâmplare"); ⌃⌥F1 came
+        // next and lost the ⌃ the same evening ("doar opt-F1"). ⌥ + F is free —
+        // Walkie's Logi gestures are all ⌃⌥⌘ + F. Autorepeat ignored.
+        if keyCode == VK_F1 && hasOpt && !hasCtrl && !hasCmd && !hasShift {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 DispatchQueue.main.async { [weak self] in self?.onZoomEngineToggle?() }
             }

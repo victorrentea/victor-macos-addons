@@ -5,7 +5,7 @@ import ScreenCaptureKit
 /// by this app (it holds Accessibility; an agent's shell does not), so they cross the
 /// same two taps a hand would: the ⌥+scroll HID tap and the session tap.
 ///
-/// - `do=chord` — ⌃⌥F1, the `ZoomEngine` flip.
+/// - `do=chord` — ⌥F1, the `ZoomEngine` flip.
 /// - `do=scroll&lines=N&n=K` — K ⌥+scroll events of N lines each (notched wheel).
 /// - `do=shot&display=<name part>&path=<png>` — a ScreenCaptureKit screenshot of that
 ///   display **with the cursor** (`showsCursor`), written asynchronously. The one capture
@@ -21,11 +21,11 @@ enum ZoomInputTest {
         case "chord":
             for down in [true, false] {
                 guard let e = CGEvent(keyboardEventSource: src, virtualKey: 0x7A, keyDown: down) else { continue }
-                e.flags = [.maskControl, .maskAlternate, .maskSecondaryFn]
+                e.flags = [.maskAlternate, .maskSecondaryFn]
                 e.post(tap: .cghidEventTap)
                 usleep(20_000)
             }
-            return "{\"posted\":\"⌃⌥F1\"}"
+            return "{\"posted\":\"⌥F1\"}"
         case "scroll":
             let lines = Int32(q["lines"] ?? "1") ?? 1
             let n = Int(q["n"] ?? "1") ?? 1

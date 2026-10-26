@@ -1879,7 +1879,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         eventTap.onShareZoomScroll = { [weak self] delta, source in
             self?.shareZoom.scroll(delta: delta, source: source)
         }
-        // 🔍/🔎 ⌃⌥F1: ⌥+scroll switches between the macOS magnifier and
+        // 🔍/🔎 ⌥F1: ⌥+scroll switches between the macOS magnifier and
         // ShareZoom — one or the other, never both (`ZoomEngine`).
         eventTap.onZoomEngineToggle = { [weak self, weak eventTap] in
             guard let self else { return }
@@ -1888,7 +1888,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             eventTap?.zoomEngine = engine
             if engine == .system { self.shareZoom.end() }
             self.shareZoomHint.announce(engine)
-            overlayInfo("🔍/🔎 ⌃⌥F1 → ⌥+scroll drives \(engine == .share ? "ShareZoom" : "the macOS magnifier")")
+            overlayInfo("🔍/🔎 ⌥F1 → ⌥+scroll drives \(engine == .share ? "ShareZoom" : "the macOS magnifier")")
         }
         // 🔦 ⇧ + wheel-drag: the glass spotlight. The tap asks back on every
         // Esc whether the glass is up, so it is told each time that changes.
