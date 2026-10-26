@@ -622,8 +622,8 @@ four rounds alternated with OFF:
 **Next time it runs during a CPU complaint, capture:**
 1. An **A/B**, which is the missing number: 20 s on, 20 s off, twice, summing
    WindowServer + Victor Addons + `UVCAssistant` + `VTDecoderXPCService` per window
-   (`ps -Ao pcpu=,comm=` every second). There is no `/test/*` hook to flip it yet — adding
-   `GET /test/virtual-desktop?on=0|1` turns this into one curl instead of a menu click.
+   (`ps -Ao pcpu=,comm=` every second). Flip it with `GET /test/virtual-desktop?on=0|1`,
+   which since 2026-10-26 moves the saved setting and the menu tick too, like a click.
 2. Whether **anyone is actually sharing the 🪞 screen** — if not, the whole cost is wasted
    (the auto-switch fires on Teams/Zoom *launch*, not on a share starting).
 3. `sudo powermetrics --samplers gpu_power,ane_power -i 1000 -n 5`, to see how much moved
