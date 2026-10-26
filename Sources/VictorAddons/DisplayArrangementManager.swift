@@ -168,15 +168,18 @@ final class DisplayArrangementManager {
         applyAttempt = 0
 
         // A familiar multi-display rig: when KNOWN non-ASUS externals (home
-        // monitors / TV) are present, Victor's own layout — the exact positions
-        // and resolutions he set — is kept **verbatim**. The ONE invariant we
-        // enforce is that no home display *mirrors* the Retina; we touch only a
-        // display actually caught in a mirror set (see `unmirrorHomeDisplays`),
-        // never the ones already extended. A venue (unknown projector) never has
-        // these connected. Even the manual "🖥️ Arrange Monitors" (force) only
-        // breaks stray mirroring here — it does not re-shuffle the home layout.
+        // monitors / TV) are present, no home display may *mirror* the Retina
+        // (see `unmirrorHomeDisplays`), and since 2026-10-26 the monitors are
+        // closed up around it (`HomeLayout`): sides flush, the top one centred.
+        // Resolutions are left as Victor set them. A venue (unknown projector)
+        // never has these connected.
         if displays.hasKnownExternal {
-            unmirrorHomeDisplays(displays)
+            let unmirrored = unmirrorHomeDisplays(displays)
+            // Origins in their own transaction after a mirror change, as on the
+            // projector path: macOS recomputes the layout once the mirror lands.
+            DispatchQueue.main.asyncAfter(deadline: .now() + (unmirrored ? 0.6 : 0)) { [weak self] in
+                self?.closeUpHomeLayout()
+            }
             return
         }
 
@@ -653,8 +656,9 @@ final class DisplayArrangementManager {
     /// rightmost display we're *not* moving — so the already-extended monitors
     /// keep their precise positions and resolutions. If nothing is mirrored, we
     /// touch nothing at all (the layout stays byte-for-byte as the user left it).
-    private func unmirrorHomeDisplays(_ displays: DisplaySet) {
-        guard let retina = displays.retina else { return }
+    @discardableResult
+    private func unmirrorHomeDisplays(_ displays: DisplaySet) -> Bool {
+        guard let retina = displays.retina else { return false }
 
         let externals = onlineDisplayIDs().filter { $0 != retina }
         let mirroredExternals = externals.filter { CGDisplayIsInMirrorSet($0) != 0 }
@@ -662,8 +666,8 @@ final class DisplayArrangementManager {
         // also have forced down to 1080p — we restore its native mode then).
         let retinaMirrored = CGDisplayIsInMirrorSet(retina) != 0
         guard !mirroredExternals.isEmpty || retinaMirrored else {
-            overlayInfo("Home layout preserved (nothing mirrored)")
-            return
+            overlayInfo("Home layout: nothing mirrored")
+            return false
         }
 
         isApplying = true
@@ -676,7 +680,7 @@ final class DisplayArrangementManager {
         var configRef: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
             overlayError("CGBeginDisplayConfiguration failed — could not un-mirror home monitors")
-            return
+            return false
         }
 
         // Retina: only if it was the mirror master — un-mirror + restore native
@@ -712,13 +716,52 @@ final class DisplayArrangementManager {
             x += Int32(mode?.width ?? CGDisplayCopyDisplayMode(ext)?.width ?? 1920)
         }
 
-        let banner = "🖥️ un-mirrored \(mirroredExternals.count) monitor(s), layout preserved"
+        let banner = "🖥️ un-mirrored \(mirroredExternals.count) monitor(s)"
         if CGCompleteDisplayConfiguration(config, .permanently) == .success {
             overlayInfo(banner)
             DispatchQueue.main.async { [weak self] in self?.onArrangementApplied?(banner) }
-        } else {
-            overlayError("CGCompleteDisplayConfiguration failed — could not un-mirror home monitors")
+            return true
         }
+        overlayError("CGCompleteDisplayConfiguration failed — could not un-mirror home monitors")
+        return false
+    }
+
+    /// Home rig, origins only: every un-mirrored external where `HomeLayout`
+    /// puts it, the Retina main at (0,0). Moves nothing that is already in place,
+    /// so a correct layout costs no reconfiguration at all. The 🪞 screen is not
+    /// ours to place — `VirtualDesktopPlacement` re-parks it after the change.
+    private func closeUpHomeLayout() {
+        guard let retina = resolveDisplays().retina, CGDisplayIsInMirrorSet(retina) == 0 else { return }
+        let retinaFrame = CGDisplayBounds(retina)
+        var frames: [CGDirectDisplayID: CGRect] = [:]
+        for id in onlineDisplayIDs() where id != retina && CGDisplayIsInMirrorSet(id) == 0 && CGDisplayIsActive(id) != 0 {
+            // Relative to the Retina, in case it is not at (0,0) yet.
+            frames[id] = CGDisplayBounds(id).offsetBy(dx: -retinaFrame.minX, dy: -retinaFrame.minY)
+        }
+        let target = HomeLayout.origins(retina: retinaFrame.size, externals: frames)
+        let moves = target.filter { id, p in frames[id]?.origin != p }
+        guard !moves.isEmpty || retinaFrame.origin != .zero else {
+            overlayInfo("Home layout already closed up")
+            return
+        }
+
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
+            overlayError("CGBeginDisplayConfiguration failed — home layout not closed up")
+            return
+        }
+        isApplying = true
+        CGConfigureDisplayOrigin(config, retina, 0, 0)
+        for (id, p) in target { CGConfigureDisplayOrigin(config, id, Int32(p.x), Int32(p.y)) }
+        let result = CGCompleteDisplayConfiguration(config, .permanently)
+        scheduleApplyingReset()
+        guard result == .success else {
+            overlayError("CGCompleteDisplayConfiguration failed (\(result.rawValue)) — home layout not closed up")
+            return
+        }
+        let banner = "🖥️ home monitors closed up around the Retina"
+        overlayInfo("\(banner): " + moves.map { "\($0.key)→(\(Int($0.value.x)),\(Int($0.value.y)))" }.joined(separator: " "))
+        onArrangementApplied?(banner)
     }
 
     /// The highest-resolution usable mode for an external display (prefers 60 Hz),
