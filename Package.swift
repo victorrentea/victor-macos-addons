@@ -11,12 +11,9 @@ let package = Package(
         .package(path: "../victor-mac-kit"),
     ],
     targets: [
-        // The private CoreGraphics API behind 🪞 Virtual Desktop's invisible screen
-        // (the same declarations DeskPad and BetterDisplay use). Headers only.
-        .target(name: "CGVirtualDisplayShim", path: "Sources/CGVirtualDisplayShim"),
         .executableTarget(
             name: "VictorAddons",
-            dependencies: [.product(name: "VictorMacKit", package: "victor-mac-kit"), "CGVirtualDisplayShim"],
+            dependencies: [.product(name: "VictorMacKit", package: "victor-mac-kit")],
             resources: [.copy("Resources")]
         ),
         .testTarget(

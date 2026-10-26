@@ -145,7 +145,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var fxCard: FxCard?
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
-    private var zoomSharePrep: ZoomSharePrep?
     /// 🎥 Layout Zoom/Teams runs here: it waits on the app opening panels, and a second
     /// click while one is running must queue behind it, not race it.
     private let zoomLayoutQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.zoom-layout",
@@ -157,8 +156,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomLensFence: ZoomLensCursorFence?
     /// 🔎 ⌥⇧+scroll — the full-screen zoom a screen share can see.
     private let shareZoom = ShareZoom()
-    private let virtualDesktop = VirtualDesktop()
-    private let virtualDesktopAutoSwitch = VirtualDesktopAutoSwitch()
+    /// 🪞 Victor Mirror's silhouette windows (`/mirror/exclusions`).
+    private var mirrorExcluded: [CGWindowID] = []
     private let glassSpotlight = GlassSpotlight()
     private let shareZoomHint = ShareZoomHint()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
@@ -858,21 +857,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.statusBanner?.showNow(text: on ? "🎬 Subtitles ON" : "🎬 Subtitles OFF",
                                         sound: nil, visibleDuration: 4)
         }
-        // 🪞 Virtual Desktop: its silhouette sits above 🔎 ShareZoom, which must not film it.
-        shareZoom.alsoExcluded = { [weak self] in self?.virtualDesktop.excludedWindowIDs ?? [] }
-        virtualDesktop.onExclusionsChanged = { [weak self] in self?.shareZoom.refreshExclusions() }
-        menuBarManager.onToggleVirtualDesktop = { [weak self] enabled in self?.virtualDesktop.setEnabled(enabled) }
-        virtualDesktopAutoSwitch.onChange = { [weak self] on in
-            if on, !VirtualDesktopSettings.autoStart {
-                overlayInfo("🪞 VirtualDesktop: auto-start is off — left as it is")
-                return
-            }
-            VirtualDesktopSettings.isEnabled = on
-            self?.menuBarManager.setVirtualDesktopState(on)
-            self?.virtualDesktop.setEnabled(on)
-        }
-        // A few seconds in, like ShareZoom's stages: not on the launch path.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.virtualDesktopAutoSwitch.start() }
+        // 🪞 Victor Mirror's silhouette sits above 🔎 ShareZoom, which must not film
+        // it. Another process since 2026-10-26: the ids arrive over HTTP on every
+        // change, and are asked for once here in case it changed while we were down.
+        shareZoom.alsoExcluded = { [weak self] in self?.mirrorExcluded ?? [] }
+        tabletServer?.onMirrorExclusions = { [weak self] ids in self?.setMirrorExcluded(ids) }
+        MirrorProxy.fetchExclusions { ids in DispatchQueue.main.async { [weak self] in self?.setMirrorExcluded(ids) } }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in MainActor.assumeIsolated { self?.sidebarIcons.start() } }
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
         menuBarManager.onMenuTick = { [weak self] in
@@ -1297,11 +1287,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestPresentation = { [weak self] in
             self?.presentationSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
-        // /test/zoom-share — what the Zoom share-picker scanner sees right now,
-        // and a forced re-prepare of an open picker.
-        tabletServer?.onTestZoomShare = { [weak self] in
-            self?.zoomSharePrep?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
-        }
         // /test/zoom-join — what the Zoom join-preview watcher sees right now,
         // and a forced re-press of an open preview.
         // /test/zoom-layout — 🎥 Layout Zoom headless: starts a run (unless
@@ -1320,18 +1305,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let factor else { return self.shareZoom.snapshotJSON() }
             let focus = (x != nil && y != nil) ? CGPoint(x: x!, y: y!) : nil
             return self.shareZoom.testSet(factor: CGFloat(factor), focus: focus)
-        }
-        // /test/virtual-desktop?on=&fps=&quality=&cam=&silhouette=&ci= — 🪞 live knobs
-        // and per-face timings since the last call; no query just reports.
-        // `on=` moves the setting and the menu tick too, as a click on the row
-        // would — or the menu reads "off" while it runs.
-        tabletServer?.onTestVirtualDesktop = { [weak self] query in
-            guard let self else { return "{\"error\":\"unavailable\"}" }
-            if let on = query["on"].map({ $0 == "1" }) {
-                VirtualDesktopSettings.isEnabled = on
-                self.menuBarManager.setVirtualDesktopState(on)
-            }
-            return self.virtualDesktop.testTune(query)
         }
         // /test/glass-spotlight?x=&y=&w=&h= — 🔦 a box without the mouse
         // (global Cocoa points); ?off=1 takes it down; ?zoom=0…1 sets the
@@ -1612,25 +1585,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // is actually up (or shows the battery-paused state).
         menuBarManager.setTranscribing(false)
 
-        // 🔊 Zoom resets "Share sound" and the presenter layout at the start of
-        // every meeting, and there is no setting or plist key that persists
-        // them — so re-apply both the moment the share picker opens.
-        let zoomPrep = ZoomSharePrep()
-        zoomPrep.onResult = { [weak self] result in
-            guard let self else { return }
-            if result.soundOnNow {
-                // Nothing to announce when it was already ticked — a pill for a
-                // no-op is just noise on a screen that may be mirrored to the room.
-                guard !result.soundWasAlreadyOn else { return }
-                self.statusBanner?.showNow(text: "🔊✅", sound: nil, visibleDuration: 2.5)
-            } else {
-                // The one case Victor must catch before he starts talking.
-                self.statusBanner?.showNow(text: "🔊❌", sound: NSSound(named: NSSound.Name("Basso")),
-                                           visibleDuration: 8)
-            }
-        }
-        zoomSharePrep = zoomPrep
-        zoomPrep.start()
 
         // 🔍 ⌥⌘F flips the magnifier between Full screen and Picture-in-picture, and
         // the two look *identical* on screen — the difference is only where macOS
@@ -2157,6 +2111,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// extension, a counter starting at 0 re-sent press 1, 2, 3… — all "already
     /// handled", all dropped without a word, and ⌘⌃F did nothing.
     static var focusPressCounter = Int(Date().timeIntervalSince1970 * 1000)
+
+    /// Main thread. A no-op when nothing changed, so a repeated push costs no filter rebuild.
+    private func setMirrorExcluded(_ ids: [CGWindowID]) {
+        guard ids != mirrorExcluded else { return }
+        mirrorExcluded = ids
+        shareZoom.refreshExclusions()
+    }
 
     func startFocusPlaylist() {
         let spec = AppDelegate.focusPlaylistTab

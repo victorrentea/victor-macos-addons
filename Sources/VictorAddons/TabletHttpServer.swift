@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Network
 
@@ -118,16 +119,17 @@ case testTerminalFont
         case testAsusSide(AsusSide?)
         /// JSON snapshot of the presenting state (meeting / unknown display).
         case testPresentation
-        /// JSON snapshot of Zoom's share picker + a forced re-prepare of it.
-        case testZoomShare
         /// JSON snapshot of Zoom's join-preview dialog + a forced re-press of it.
         case testZoomJoin
         /// 🎥 Layout Zoom: start a run (unless `run=0`) and return the last report.
         case testZoomLayout(run: Bool)
         /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
         case testShareZoom(factor: Double?, x: Double?, y: Double?, fps: Double?)
-        /// 🪞 `VirtualDesktop`: live knobs for measuring its cost (see `testTune`).
-        case testVirtualDesktop([String: String])
+        /// 🪞 Victor Mirror's hooks (`/test/virtual-desktop`, `/test/zoom-share`),
+        /// forwarded to 55127 with the query intact — they lived here until 2026-10-26.
+        case mirrorProxied(String)
+        /// 🪞 Victor Mirror telling us its silhouette's window ids, for `ShareZoom`.
+        case mirrorExclusions([CGWindowID])
         /// 🔦 `GlassSpotlight`: a box (global Cocoa points), or off.
         case testGlassSpotlight(rect: CGRect?, off: Bool, zoom: Double?)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
@@ -338,8 +340,6 @@ case testTerminalFont
     var onTestAsusSide: ((AsusSide?) -> String)?
     /// JSON snapshot of the presenting state + display classification.
     var onTestPresentation: (() -> String)?
-    /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
-    var onTestZoomShare: (() -> String)?
     var onTestZoomJoin: (() -> String)?
     /// 🎥 Layout Zoom — starts a run in the background when the flag is true,
     /// and answers the *previous* run's report right away (the run itself waits
@@ -347,8 +347,8 @@ case testTerminalFont
     var onTestZoomLayout: ((Bool) -> String)?
     /// 🔎 `ShareZoom` — factor (nil = just report), focus point in global Cocoa points.
     var onTestShareZoom: ((Double?, Double?, Double?, Double?) -> String)?
-    /// 🪞 `VirtualDesktop` — the query, as given.
-    var onTestVirtualDesktop: (([String: String]) -> String)?
+    /// 🪞 Victor Mirror's silhouette windows, which `ShareZoom` must not magnify.
+    var onMirrorExclusions: (([CGWindowID]) -> Void)?
     /// 🔦 `GlassSpotlight` — box in global Cocoa points (nil = just report), or off.
     var onTestGlassSpotlight: ((CGRect?, Bool, Double?) -> String)?
     /// Force-show the aggressive silent-transcription warning.
@@ -499,6 +499,9 @@ case testTerminalFont
         if case .proxied(let forwarded) = route {
             return EffectsProxy.forward(forwarded, body: requestBody, pingExtras: onPingExtras)
         }
+        if case .mirrorProxied(let forwarded) = route {
+            return MirrorProxy.forward(forwarded)
+        }
 
         var statusCode = 200
         var body = "ok"
@@ -506,7 +509,7 @@ case testTerminalFont
 
         DispatchQueue.main.sync {
             switch route {
-            case .proxied:
+            case .proxied, .mirrorProxied:
                 break   // handled above, before the main-thread hop
             case .effectsEvent(let type, let params):
                 self.onEffectsEvent?(type, params)
@@ -626,18 +629,14 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestPresentation == nil { statusCode = 503 }
-            case .testZoomShare:
-                contentType = "application/json"
-                body = self.onTestZoomShare?() ?? "{\"error\":\"unavailable\"}"
-                if self.onTestZoomShare == nil { statusCode = 503 }
             case .testZoomJoin:
                 contentType = "application/json"
                 body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestZoomJoin == nil { statusCode = 503 }
-            case .testVirtualDesktop(let query):
+            case .mirrorExclusions(let ids):
+                self.onMirrorExclusions?(ids)
                 contentType = "application/json"
-                body = self.onTestVirtualDesktop?(query) ?? "{\"error\":\"unavailable\"}"
-                if self.onTestVirtualDesktop == nil { statusCode = 503 }
+                body = "{\"ok\":true}"
             case .testShareZoom(let factor, let x, let y, let fps):
                 contentType = "application/json"
                 body = self.onTestShareZoom?(factor, x, y, fps) ?? "{\"error\":\"unavailable\"}"
@@ -1014,14 +1013,14 @@ case testTerminalFont
             return .testAsusSide(queryItems.first(where: { $0.name == "side" })?.value.flatMap(AsusSide.init))
         case "/test/presentation":
             return .testPresentation
-        case "/test/zoom-share":
-            return .testZoomShare
+        case "/test/zoom-share", "/test/virtual-desktop":
+            return .mirrorProxied(path)
+        case "/mirror/exclusions":
+            let ids = (queryItems.first(where: { $0.name == "ids" })?.value ?? "")
+                .split(separator: ",").compactMap { CGWindowID($0) }
+            return .mirrorExclusions(ids)
         case "/test/zoom-join":
             return .testZoomJoin
-        case "/test/virtual-desktop":
-            var query: [String: String] = [:]
-            for item in queryItems { query[item.name] = item.value ?? "" }
-            return .testVirtualDesktop(query)
         case "/test/share-zoom":
             func num(_ n: String) -> Double? { queryItems.first(where: { $0.name == n })?.value.flatMap(Double.init) }
             return .testShareZoom(factor: num("factor"), x: num("x"), y: num("y"), fps: num("fps"))
