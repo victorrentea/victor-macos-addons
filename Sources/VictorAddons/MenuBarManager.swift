@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 26, 08:37"
+    static let BUILD_TIME = "Oct 26, 21:59"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -38,6 +38,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
     private(set) var pptPresenterItem: NSMenuItem!
+    private(set) var zoomSharePrepItem: NSMenuItem!
+    private(set) var retinaCapItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
@@ -122,6 +124,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     /// 🎬 Live subtitles, clicked. One switch, both ways.
     var onToggleLiveCaptions: (() -> Void)?
+    /// 🎞️ Retina 60 Hz ticked/unticked: cap or give the refresh back now.
+    var onToggleRetinaCap: (() -> Void)?
 
     /// Once a second while the menu is open — for rows whose title is a clock.
     var onMenuTick: (() -> Void)?
@@ -556,9 +560,32 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         pptPresenterItem.isEnabled = true
         pptPresenterItem.state = PowerPointPresenterSettings.isEnabled ? .on : .off
 
-        // 🔊 Auto Share Faceover and 🪞 Virtual Desktop (+ its Auto-start) left for
-        // Victor Mirror's own 🪞 menu on 2026-10-26: a redeploy of this app killed
-        // the invisible screen, and with it the share running on it.
+        // 🔊 Auto Share Faceover (was "Zoom Share Prep", renamed and brought to the
+        // top level next to the other meeting rows on 2026-10-15) — the picker
+        // automation: Share sound, the "As background" layout with Victor cut out
+        // over the content, the Retina, Share pressed. In the menu at all because
+        // it *acts on its own*, and a row that acts on its own needs a visible way
+        // to be told to stop. Default on. Spent a few hours of 2026-10-26 in Victor
+        // Mirror and came back: only the 🪞 screen needs to survive a redeploy.
+        zoomSharePrepItem = NSMenuItem(title: Self.ticked(Self.faceoverTitle, ZoomSharePrepSettings.isEnabled), action: #selector(toggleZoomSharePrepAction), keyEquivalent: "")
+        // Its icon is what it shares (Victor, 2026-10-15): the screen, with his face
+        // framed in the bottom-right corner.
+        zoomSharePrepItem.image = Self.faceoverIcon
+        zoomSharePrepItem.target = self
+        zoomSharePrepItem.isEnabled = true
+        zoomSharePrepItem.toolTip = "When Zoom's share picker opens: tick Share sound, pick “As background” with you cut out bottom-right, select the Retina and press Share. Hold ⌥ while opening the picker to choose yourself."
+
+        // 🎞️ Retina 60 Hz while Zoom or Teams runs (`RetinaRefreshCap`), ticked by
+        // default. Born in Victor Mirror on 2026-10-26, here since the same evening.
+        retinaCapItem = NSMenuItem(title: Self.ticked(Self.retinaCapTitle, RetinaRefreshCapSettings.isEnabled), action: #selector(toggleRetinaCapAction), keyEquivalent: "")
+        retinaCapItem.image = Self.emojiIcon("🎞️")
+        retinaCapItem.target = self
+        retinaCapItem.isEnabled = true
+        retinaCapItem.toolTip = "While Zoom or Teams runs, the Retina refreshes at 60 Hz at most (120 Hz ProMotion otherwise). The share and the projector never get more than 60. Given back when the last of them quits."
+
+        // 🪞 Virtual Desktop (+ its Auto-start) left for Victor Mirror's own 🪞 menu
+        // on 2026-10-26: a redeploy of this app killed the invisible screen, and
+        // with it the share running on it.
 
         // 🔋 Claude prevents sleep left this submenu for the **top level** on
         // 2026-09-17 — see the row itself, further down.
@@ -678,6 +705,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         layoutZoomItem = addItem("Layout Zoom", action: #selector(layoutZoomAction))
         layoutZoomItem.image = Self.zoomLayoutIcon
         refreshLayoutZoomItem()
+        menu.addItem(zoomSharePrepItem)
+        menu.addItem(retinaCapItem)
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
@@ -749,6 +778,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     /// A toggle's tick as part of its title, never `state` (see `emojiIcon`).
     static func ticked(_ title: String, _ on: Bool) -> String { title + (on ? "  ✓" : "") }
+
+    static let faceoverTitle = "Auto Share Faceover"
+    static let retinaCapTitle = "Retina 60 Hz in Zoom/Teams"
 
 
     @discardableResult
@@ -1144,6 +1176,23 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         pptPresenterItem.state = enabled ? .on : .off
     }
 
+    /// 🔊 Auto Share Faceover (`ZoomSharePrep`). Notifies nobody, for the same reason as its
+    /// neighbour: `ZoomSharePrep` reads the setting on each of its own scans,
+    /// so there is no second copy of the answer that could drift out of step
+    /// with the tick.
+    @objc private func toggleZoomSharePrepAction() {
+        let enabled = !ZoomSharePrepSettings.isEnabled
+        ZoomSharePrepSettings.isEnabled = enabled
+        zoomSharePrepItem.title = Self.ticked(Self.faceoverTitle, enabled)
+    }
+
+    /// 🎞️ Unlike its neighbour it acts on the tick: a capped Retina is given back now.
+    @objc private func toggleRetinaCapAction() {
+        RetinaRefreshCapSettings.isEnabled.toggle()
+        retinaCapItem.title = Self.ticked(Self.retinaCapTitle, RetinaRefreshCapSettings.isEnabled)
+        onToggleRetinaCap?()
+    }
+
     /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",
     /// not "holding right now" — same contract as 🔋 next door, where a ticked
     /// row with nothing working is the honest state. Which of the two it is at
@@ -1180,6 +1229,34 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         asusLeftItem.isHidden = state != .at(.right)
         asusRightItem.isHidden = state != .at(.left)
     }
+
+    /// A screen with a framed head-and-shoulders in its bottom-right corner — the
+    /// "As background" share 🔊 Auto Share Faceover sets up. Template image.
+    static let faceoverIcon: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 14), flipped: false) { rect in
+            NSColor.black.setStroke()
+            NSColor.black.setFill()
+            let screen = rect.insetBy(dx: 1, dy: 1.5)
+            let outline = NSBezierPath(roundedRect: screen, xRadius: 1.5, yRadius: 1.5)
+            outline.lineWidth = 1.2
+            outline.stroke()
+            // The cut-out's frame, flush with the bottom-right corner.
+            let face = NSRect(x: screen.maxX - 8, y: screen.minY, width: 8, height: 6.5)
+            let frame = NSBezierPath(rect: face)
+            frame.lineWidth = 1
+            frame.stroke()
+            // Head and shoulders inside it.
+            NSBezierPath(ovalIn: NSRect(x: face.midX - 1.4, y: face.minY + 2.6, width: 2.8, height: 2.8)).fill()
+            let shoulders = NSBezierPath()
+            shoulders.appendArc(withCenter: NSPoint(x: face.midX, y: face.minY), radius: 2.6,
+                                startAngle: 0, endAngle: 180)
+            shoulders.close()
+            shoulders.fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
 
     /// ▥ — what 🎥 Layout Zoom does to the monitor above the Retina, as a template
     /// image so it follows the menu's light/dark appearance.

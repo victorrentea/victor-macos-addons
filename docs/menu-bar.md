@@ -83,14 +83,17 @@ The default is the point, and it is the one thing that could have shipped wrong 
 
 A checkbox, default **on** — the second and last default-on row. **Top level since 2026-10-15** (it lived in 👩🏻‍💻 Extra under 🔄), renamed after what it does — share, with Victor's face over the content — in the screens-and-meetings section Victor laid out that day, under a separator:
 
-**2026-10-26:** ⛶ Auto Share Faceover, 🪞 Virtual Desktop and 🪞 Auto-start left this
-menu for **Victor Mirror's own 🪞** (`victor-mirror`), same titles, ticks and tooltips —
-a redeploy of this app killed the 🪞 screen and the share on it. What follows about
-those rows is their history here.
+**2026-10-26:** 🪞 Virtual Desktop and 🪞 Auto-start left this menu for **Victor
+Mirror's own 🪞** (`victor-mirror`), same titles, ticks and tooltips — a redeploy of
+this app killed the 🪞 screen and the share on it. ⛶ Auto Share Faceover went with
+them and came back the same evening, bringing 🎞️ Retina 60 Hz (born over there that
+afternoon, ticked by default): Mirror keeps only what has to outlive a redeploy.
 
 ```
 🖥️ Arrange Monitors        (+ the ASUS row when it applies)
 ▥  Layout Zoom             only while Zoom runs; the icon is the layout it makes, drawn
+⛶  Auto Share Faceover     drawn icon: a screen with a framed face bottom-right
+🎞️ Retina 60 Hz in Zoom/Teams
 ``` It admits the same *the menu is not a second cheat-sheet* exemption as its neighbour (no key to teach, no other place the state shows) but earns it for a different reason: **this row acts on its own**. `ZoomSharePrep` reaches into Zoom's share picker the moment it opens and presses things. Anything that presses things unasked needs a visible way to be told to stop, and the ⌥ escape hatch is not that — it only covers the openings you remember to hold it for, and it cannot help at all when something *other than Victor's hand* is opening the picker.
 
 That last case is what put the row here, on 2026-09-22: a Codex run was driving Zoom toward a **Portion of Screen** share while the prep kept re-selecting the full Retina and pressing Share underneath it. Two automations, one dialog, no way to stand one of them down.

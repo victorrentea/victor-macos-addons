@@ -145,6 +145,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var fxCard: FxCard?
     private var meetingDetector: MeetingDetector?
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
+    private var zoomSharePrep: ZoomSharePrep?
+    /// 🎞️ The Retina at 60 Hz while Zoom or Teams runs.
+    private let retinaCap = RetinaRefreshCap()
     /// 🎥 Layout Zoom/Teams runs here: it waits on the app opening panels, and a second
     /// click while one is running must queue behind it, not race it.
     private let zoomLayoutQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.zoom-layout",
@@ -1285,6 +1288,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 + (banner.map { ",\"banner\":\"\($0)\"" } ?? "") + "}"
         }
         // /test/presentation — JSON snapshot of the presenting state + detection.
+        // /test/zoom-share — what the Zoom share-picker scanner sees right now,
+        // and a forced re-prepare of an open picker.
+        tabletServer?.onTestZoomShare = { [weak self] in
+            self?.zoomSharePrep?.testSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
+        }
+        // /test/retina-cap?meeting=1|0&on=1|0 — 🎞️ pretend Zoom/Teams started or
+        // quit; `on` is the menu tick.
+        tabletServer?.onTestRetinaCap = { [weak self] query in
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            if let on = query["on"] {
+                RetinaRefreshCapSettings.isEnabled = on == "1"
+                self.menuBarManager.retinaCapItem?.title = MenuBarManager.ticked(MenuBarManager.retinaCapTitle, on == "1")
+                self.retinaCap.apply()
+            }
+            if let m = query["meeting"] { self.retinaCap.meeting = m == "1" }
+            return self.retinaCap.snapshotJSON()
+        }
         tabletServer?.onTestPresentation = { [weak self] in
             self?.presentationSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
@@ -1586,6 +1606,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // is actually up (or shows the battery-paused state).
         menuBarManager.setTranscribing(false)
 
+        // 🔊 Zoom resets "Share sound" and the presenter layout at the start of
+        // every meeting, and there is no setting or plist key that persists
+        // them — so re-apply both the moment the share picker opens.
+        let zoomPrep = ZoomSharePrep()
+        zoomPrep.onResult = { [weak self] result in
+            guard let self else { return }
+            if result.soundOnNow {
+                // Nothing to announce when it was already ticked — a pill for a
+                // no-op is just noise on a screen that may be mirrored to the room.
+                guard !result.soundWasAlreadyOn else { return }
+                self.statusBanner?.showNow(text: "🔊✅", sound: nil, visibleDuration: 2.5)
+            } else {
+                // The one case Victor must catch before he starts talking.
+                self.statusBanner?.showNow(text: "🔊❌", sound: NSSound(named: NSSound.Name("Basso")),
+                                           visibleDuration: 8)
+            }
+        }
+        zoomSharePrep = zoomPrep
+        zoomPrep.start()
+
+        // 🎞️ Zoom/Teams running: the Retina at 60 Hz at most.
+        menuBarManager.onToggleRetinaCap = { [weak self] in self?.retinaCap.apply() }
+        retinaCap.start()
 
         // 🔍 ⌥⌘F flips the magnifier between Full screen and Picture-in-picture, and
         // the two look *identical* on screen — the difference is only where macOS
@@ -2663,6 +2706,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// mid-sentence is exactly when nobody would think to turn them off.
     func applicationWillTerminate(_ notification: Notification) {
         liveCaptions.shutdown()
+        retinaCap.restore()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

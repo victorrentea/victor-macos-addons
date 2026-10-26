@@ -2,12 +2,12 @@ import CoreGraphics
 import Foundation
 
 /// The door to **Victor Mirror** (`victor-mirror`, 🪞), the menu-bar app that owns
-/// the 🪞 Virtual Desktop and 🔊 Auto Share Faceover since 2026-10-26. They left
-/// so that redeploying this app no longer kills the invisible screen — and with
-/// it the Teams/Zoom share running on it.
+/// the 🪞 Virtual Desktop since 2026-10-26. It left so that redeploying this app
+/// no longer kills the invisible screen — and with it the Teams/Zoom share running
+/// on it. (🔊 Auto Share Faceover went along and came back the same evening.)
 ///
-/// Only the two historic test hooks are forwarded (`/test/virtual-desktop`,
-/// `/test/zoom-share`), so the curl lines in old notes still work on 55123. Like
+/// Only the historic test hook `/test/virtual-desktop` is forwarded, so the curl
+/// lines in old notes still work on 55123. Like
 /// `EffectsProxy`, it runs on the server queue, never the main thread.
 enum MirrorProxy {
     static let baseURL = "http://127.0.0.1:55127"

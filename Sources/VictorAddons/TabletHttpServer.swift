@@ -119,6 +119,10 @@ case testTerminalFont
         case testAsusSide(AsusSide?)
         /// JSON snapshot of the presenting state (meeting / unknown display).
         case testPresentation
+        /// JSON snapshot of Zoom's share picker + a forced re-prepare of it.
+        case testZoomShare
+        /// 🎞️ `RetinaRefreshCap`: pretend a meeting (`meeting=`), move the tick (`on=`).
+        case testRetinaCap([String: String])
         /// JSON snapshot of Zoom's join-preview dialog + a forced re-press of it.
         case testZoomJoin
         /// 🎥 Layout Zoom: start a run (unless `run=0`) and return the last report.
@@ -126,8 +130,8 @@ case testTerminalFont
         /// 🔎 `ShareZoom`: set the factor (1 = off), optionally pinning the focus point.
         case testShareZoom(factor: Double?, x: Double?, y: Double?, fps: Double?)
         case testZoomInput([String: String])
-        /// 🪞 Victor Mirror's hooks (`/test/virtual-desktop`, `/test/zoom-share`),
-        /// forwarded to 55127 with the query intact — they lived here until 2026-10-26.
+        /// 🪞 Victor Mirror's hook `/test/virtual-desktop`, forwarded to 55127 with
+        /// the query intact — it lived here until 2026-10-26.
         case mirrorProxied(String)
         /// 🪞 Victor Mirror telling us its silhouette's window ids, for `ShareZoom`.
         case mirrorExclusions([CGWindowID])
@@ -341,6 +345,10 @@ case testTerminalFont
     var onTestAsusSide: ((AsusSide?) -> String)?
     /// JSON snapshot of the presenting state + display classification.
     var onTestPresentation: (() -> String)?
+    /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
+    var onTestZoomShare: (() -> String)?
+    /// 🎞️ `RetinaRefreshCap` — the query, as given.
+    var onTestRetinaCap: (([String: String]) -> String)?
     var onTestZoomJoin: (() -> String)?
     /// 🎥 Layout Zoom — starts a run in the background when the flag is true,
     /// and answers the *previous* run's report right away (the run itself waits
@@ -630,6 +638,14 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
                 if self.onTestPresentation == nil { statusCode = 503 }
+            case .testZoomShare:
+                contentType = "application/json"
+                body = self.onTestZoomShare?() ?? "{\"error\":\"unavailable\"}"
+                if self.onTestZoomShare == nil { statusCode = 503 }
+            case .testRetinaCap(let query):
+                contentType = "application/json"
+                body = self.onTestRetinaCap?(query) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestRetinaCap == nil { statusCode = 503 }
             case .testZoomJoin:
                 contentType = "application/json"
                 body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
@@ -1017,7 +1033,12 @@ case testTerminalFont
             return .testAsusSide(queryItems.first(where: { $0.name == "side" })?.value.flatMap(AsusSide.init))
         case "/test/presentation":
             return .testPresentation
-        case "/test/zoom-share", "/test/virtual-desktop":
+        case "/test/zoom-share":
+            return .testZoomShare
+        case "/test/retina-cap":
+            return .testRetinaCap(Dictionary(queryItems.compactMap { i in i.value.map { (i.name, $0) } },
+                                             uniquingKeysWith: { _, last in last }))
+        case "/test/virtual-desktop":
             return .mirrorProxied(path)
         case "/mirror/exclusions":
             let ids = (queryItems.first(where: { $0.name == "ids" })?.value ?? "")

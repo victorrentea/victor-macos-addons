@@ -18,7 +18,9 @@ BUILD_TIMESTAMP=$(date "+%b %-d, %H:%M")
 sed -i '' "s/static let BUILD_TIME = .*/static let BUILD_TIME = \"$BUILD_TIMESTAMP\"/" "$DIR/Sources/VictorAddons/MenuBarManager.swift"
 echo "Build timestamp: $BUILD_TIMESTAMP"
 
-swift build -c "$BUILD_CONFIG"
+# --build-system native: Swift 6.4 defaults to swiftbuild, which writes to .build/out/Products
+# and left the paths below pointing at a stale binary (2026-10-26).
+swift build -c "$BUILD_CONFIG" --build-system native
 echo "VictorAddons built."
 
 # Dereference symlinked resources. Sources/VictorAddons/Resources/sounds is a
