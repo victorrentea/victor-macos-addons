@@ -5,6 +5,7 @@
 //   • feedback-form.js     clone/rename/publish the session's feedback survey
 //   • focus-tab.js         send ⌘⌃L/G/N/F to the tab that is already open
 //   • save-image.js        right-click an image → Save Image to Downloads (no socket)
+//   • google-gif.js        content script: GIF toggle on Google search (no socket)
 //
 // This file owns nothing but the transport. The Mac app (Victor Addons) pushes
 // commands over a WebSocket on 127.0.0.1:8766 and each feature module handles

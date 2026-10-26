@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Victor Chrome Addons",
-  "version": "2.1",
-  "description": "The Chrome half of Victor Addons: pauses the music while Wispr Flow is dictating, publishes the end-of-session feedback form on FreeOnlineSurveys when the Mac asks for one, and adds \"Save Image to Downloads\" to the right-click menu of every image.",
+  "version": "2.2",
+  "description": "The Chrome half of Victor Addons: pauses the music while Wispr Flow is dictating, publishes the end-of-session feedback form on FreeOnlineSurveys when the Mac asks for one, and adds \"Save Image to Downloads\" to the right-click menu of every image; on Google search it puts a GIF toggle next to Tools.",
   "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    { "matches": ["https://www.google.com/search*", "https://www.google.ro/search*"], "js": ["google-gif.js"], "run_at": "document_idle" }
+  ],
   "permissions": ["tabs", "scripting", "storage", "alarms", "contextMenus", "downloads"],
   "host_permissions": ["<all_urls>"]
 }
