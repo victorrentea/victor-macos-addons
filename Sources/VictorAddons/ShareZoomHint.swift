@@ -35,12 +35,13 @@ enum ZoomShareWindows {
 
 /// ⚠️ ⌥+scroll during a Zoom share — the hint that the wrong zoom is in hand.
 ///
-/// ⌥+scroll is the macOS full-screen magnifier, applied at scanout: Victor sees
-/// it, the share never does (`ZoomLensMode`). The one a share carries is ours,
-/// ⌥⇧+scroll (`ShareZoom`). The two gestures differ by one finger, so the habit
-/// wins mid-demo; the hint sits by the cursor because that is where the eye is
-/// while the wheel turns. The scroll itself is left alone — the local zoom still
-/// happens, the hint only says the room is not seeing it. Main thread only.
+/// With `ZoomEngine.system`, ⌥+scroll is the macOS full-screen magnifier, applied
+/// at scanout: Victor sees it, the share never does (`ZoomLensMode`). The one a
+/// share carries is ours (`ShareZoom`), one ⌥⇧ tap away; the hint sits by the
+/// cursor because that is where the eye is while the wheel turns. The scroll
+/// itself is left alone — the local zoom still happens, the hint only says the
+/// room is not seeing it. The same pill announces an engine flip (`announce`).
+/// Main thread only.
 final class ShareZoomHint {
     private var panel: NSPanel?
     private var followTimer: Timer?
@@ -49,7 +50,8 @@ final class ShareZoomHint {
     /// so the answer is reused for a second.
     private var sharingCache: (at: CFTimeInterval, sharing: Bool)?
 
-    private let text = "⚠️ Use ⌥⇧↕ for Zoom"
+    private let text = "⚠️ Tap ⌥⇧ for Zoom"
+    private static let warningColor = NSColor(calibratedRed: 0.75, green: 0.35, blue: 0.0, alpha: 0.95)
     /// Below-right of the hotspot, the quadrant the cursor's own artwork leaves free.
     private let offset = CGPoint(x: 16, y: -34)
     private let visibleFor: TimeInterval = 2.5
@@ -58,11 +60,25 @@ final class ShareZoomHint {
     func optionScrolled() {
         guard isZoomSharing() else { return }
         if panel == nil {
-            overlayInfo("⚠️ ⌥+scroll during a Zoom share → hint ⌥⇧↕")
-            show()
+            overlayInfo("⚠️ ⌥+scroll during a Zoom share → hint ⌥⇧")
+            show(text, color: Self.warningColor)
         }
+        hideAfter(visibleFor)
+    }
+
+    /// 🔍/🔎 The `ZoomEngine` just flipped: say which one ⌥+scroll drives now.
+    func announce(_ engine: ZoomEngine) {
+        hide()
+        let color = engine == .share
+            ? NSColor(calibratedRed: 0.10, green: 0.45, blue: 0.85, alpha: 0.95)
+            : NSColor(calibratedWhite: 0.25, alpha: 0.95)
+        show(engine.announcement, color: color)
+        hideAfter(1.2)
+    }
+
+    private func hideAfter(_ seconds: TimeInterval) {
         hideTimer?.invalidate()
-        let timer = Timer(timeInterval: visibleFor, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
             self?.hide()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -78,7 +94,7 @@ final class ShareZoomHint {
         return sharing
     }
 
-    private func show() {
+    private func show(_ text: String, color: NSColor) {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 15, weight: .semibold)
         label.textColor = .white
@@ -91,7 +107,7 @@ final class ShareZoomHint {
         bubble.wantsLayer = true
         // Fixed colours, not semantic ones: the bubble is drawn over whatever
         // app is under the cursor, in either appearance, and must read on both.
-        bubble.layer?.backgroundColor = NSColor(calibratedRed: 0.75, green: 0.35, blue: 0.0, alpha: 0.95).cgColor
+        bubble.layer?.backgroundColor = color.cgColor
         bubble.layer?.cornerRadius = size.height / 2
         bubble.addSubview(label)
 

@@ -44,11 +44,15 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// the call — can tell this is our zoom and not the system one (Victor,
         /// 2026-10-15). Never magnified: it sits over the picture, not in it.
         let badge = CALayer()
-        /// The same 🔍 riding at the drawn cursor's lower right, like a tooltip, for
-        /// as long as the zoom is on — the corner one is out of sight when the eyes
-        /// are on the pointer (Victor, 2026-10-17). Constant size, never magnified.
+        /// A ⊕/⊖ magnifier riding at the drawn cursor's lower right, like a tooltip —
+        /// the corner one is out of sight when the eyes are on the pointer (Victor,
+        /// 2026-10-17). Since 2026-10-26 only while the zoom changes: it shows which
+        /// way the wheel just turned and is gone `tipLinger` after the last notch.
+        /// Constant size, never magnified.
         let tip = CALayer()
         static let tipSide: CGFloat = 40
+        let tipIn: CGImage?
+        let tipOut: CGImage?
         var filter: SCContentFilter?
         /// Whether the filter really excludes our panel. If it does not, the stream
         /// would film its own output; the filter is rebuilt once the panel is on screen.
@@ -98,9 +102,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             badge.opacity = 0.5
             badge.actions = noAnimation
             tip.frame = CGRect(x: 0, y: 0, width: Self.tipSide, height: Self.tipSide)
-            tip.contents = Self.emojiImage("🔍", side: Self.tipSide, scale: screen.backingScaleFactor)
+            tipIn = Self.symbolImage("plus.magnifyingglass", side: Self.tipSide, scale: screen.backingScaleFactor)
+            tipOut = Self.symbolImage("minus.magnifyingglass", side: Self.tipSide, scale: screen.backingScaleFactor)
+            tip.contents = tipIn
             tip.contentsGravity = .resizeAspect
-            tip.opacity = 0.85
+            tip.opacity = 0.9
             tip.actions = noAnimation
             tip.isHidden = true
             view.layer?.addSublayer(image)
@@ -108,6 +114,27 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             view.layer?.addSublayer(cursor)
             view.layer?.addSublayer(tip)
             panel.contentView = view
+        }
+
+        /// An SF Symbol in white on a dark disc, so it reads over any picture.
+        static func symbolImage(_ name: String, side: CGFloat, scale: CGFloat) -> CGImage? {
+            let px = Int(side * scale)
+            let config = NSImage.SymbolConfiguration(pointSize: CGFloat(px) * 0.5, weight: .bold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
+            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config),
+                  let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            ctx.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.6).cgColor)
+            ctx.fillEllipse(in: CGRect(x: 0, y: 0, width: px, height: px))
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            let size = symbol.size
+            symbol.draw(in: CGRect(x: (CGFloat(px) - size.width) / 2, y: (CGFloat(px) - size.height) / 2,
+                                   width: size.width, height: size.height))
+            NSGraphicsContext.restoreGraphicsState()
+            return ctx.makeImage()
         }
 
         static func emojiImage(_ emoji: String, side: CGFloat, scale: CGFloat) -> CGImage? {
@@ -147,6 +174,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var cursorHidden: Bool { hideDepth > 0 }
     /// Until when the hide is re-asserted, after the pointer touched a screen edge.
     private var reassertUntil: CFAbsoluteTime = 0
+    /// Times the real cursor was found visible mid-zoom and hidden again, this zoom.
+    /// ScreenBrush does it: entering its drawing mode it finds the cursor hidden and
+    /// shows it (it imports `CGCursorIsVisible` + `CGDisplayShowCursor`), so the room
+    /// saw its brush cursor beside the drawn one (Victor, 2026-10-26).
+    private var rehides = 0
+    private static let maxRehides = 200
+    /// Which way the wheel last turned, and until when the ⊕/⊖ tip shows it.
+    private var zoomingIn = true
+    private var tipUntil: CFAbsoluteTime = 0
+    private static let tipLinger: CFTimeInterval = 0.5
     private var hotSpot = CGPoint.zero
     /// The system cursor's own size, in points. Kept here and never read back from
     /// the layer: the layer's bounds are the *magnified* size after the first frame,
@@ -166,7 +203,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Layer commits by `follow` since the zoom started — `/test/share-zoom` shows
     /// whether the zoom rests when nothing moves.
     private var commits = 0
-    private struct Written: Equatable { var rect: CGRect; var cursor: CGRect? }
+    private struct Written: Equatable { var rect: CGRect; var cursor: CGRect?; var tipIn: Bool? }
     private var lastWritten: Written?
     /// Capture rate; `/test/share-zoom?fps=` changes it for the next stream. 30, not
     /// 60, since 2026-10-15: panning and the drawn cursor move by `contentsRect` and
@@ -268,6 +305,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             target = keep
         }
         target = ShareZoomPolicy.step(target, delta: delta, source: source)
+        let notches = ShareZoomPolicy.notches(delta: delta, source: source)
+        if notches != 0 { flashTip(zoomingIn: notches > 0) }
         if target > 1, active == nil { activate(on: under) }
         // `follow` is what switches a finished zoom off, and it waits for the first
         // frame. A zoom scrolled back to 1× before any frame arrived would otherwise
@@ -288,11 +327,25 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             deactivate()
         } else if let under = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) {
             if let active, active.displayID != under.displayID { deactivate() }
-            target = min(factor, ShareZoomPolicy.maxFactor)
+            let next = min(factor, ShareZoomPolicy.maxFactor)
+            if next != target { flashTip(zoomingIn: next > target) }
+            target = next
             pinnedFocus = focus
             if active == nil { activate(on: under) }
         }
         return snapshotJSON()
+    }
+
+    /// The ⊕/⊖ tip at the cursor, for `tipLinger` from now.
+    private func flashTip(zoomingIn: Bool) {
+        self.zoomingIn = zoomingIn
+        tipUntil = CFAbsoluteTimeGetCurrent() + Self.tipLinger
+    }
+
+    /// 🔍 Back to 1× — the other `ZoomEngine` was just chosen.
+    func end() {
+        guard active != nil else { return }
+        deactivate()
     }
 
     private func echoJSON() -> String {
@@ -315,7 +368,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "screenFrame":[\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width)),\(Int(frame.height))],\
         "contentsRect":[\(String(format: "%.4f,%.4f,%.4f,%.4f", rect.minX, rect.minY, rect.width, rect.height))],\
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
-        "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"prepared":{\(prepared)},\
+        "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"rehides":\(rehides),"prepared":{\(prepared)},\
         "effectsExcluded":{\(effectsExcluded)},"filterRefreshes":\(filterRefreshes),\
         "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"ticks":\(tickCount),"fps":\(captureFPS)}
         """
@@ -381,6 +434,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         origin = .zero
         visible = false
         framesShown = 0
+        rehides = 0
         tickCount = 0
         commits = 0
         lastWritten = nil
@@ -525,6 +579,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         CGDisplayHideCursor(CGMainDisplayID())
         hideDepth += 1
     }
+
+    /// Whether the cursor is on screen, for every process — not just this one's hide
+    /// count (measured 2026-10-26: a probe saw another process's hide). Unavailable
+    /// to Swift since macOS 26's SDK, so resolved via dlsym; ~0 ms a call.
+    private static let cursorIsVisible: (() -> Bool)? = {
+        typealias VisibleFn = @convention(c) () -> Int32
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGCursorIsVisible") else { return nil }
+        let fn = unsafeBitCast(sym, to: VisibleFn.self)
+        return { fn() != 0 }
+    }()
 
     private func restoreCursor() {
         while hideDepth > 0 {
@@ -673,6 +737,18 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                 reassertUntil = now + 2
             }
             if now < reassertUntil, tickCount % 30 == 0 { hideCursor(again: true) }
+            // Anyone else may show it too — ScreenBrush does, on entering its drawing
+            // mode. Looked at 20×/s, hidden again at once. Capped: every hide is
+            // undone one by one at the end, and an app fighting back forever must not
+            // pile up thousands of them.
+            if tickCount % 6 == 3, rehides < Self.maxRehides, Self.cursorIsVisible?() == true {
+                hideCursor(again: true)
+                rehides += 1
+                if rehides == 1 || rehides == Self.maxRehides {
+                    let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+                    overlayInfo("🔎 ShareZoom: the real cursor came back (front: \(front)) — hidden again ×\(rehides)")
+                }
+            }
             if tickCount % 12 == 1 { refreshCursorImage(s) }
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
@@ -686,7 +762,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         // Compared with what was last written, not read back from the layers: a
         // CALayer's frame comes back from position/bounds and can differ by an ulp.
-        let written = Written(rect: rect, cursor: cursorFrame)
+        let showTip = cursorFrame != nil && CFAbsoluteTimeGetCurrent() < tipUntil
+        let written = Written(rect: rect, cursor: cursorFrame, tipIn: showTip ? zoomingIn : nil)
         guard written != lastWritten else { return }
         lastWritten = written
         commits += 1
@@ -699,7 +776,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             s.tip.frame = Self.tipFrame(beside: cursorFrame, in: size)
         }
         s.cursor.isHidden = cursorHidden
-        s.tip.isHidden = cursorHidden
+        if let tipIn = written.tipIn { s.tip.contents = tipIn ? s.tipIn : s.tipOut }
+        s.tip.isHidden = written.tipIn == nil
         CATransaction.commit()
     }
 

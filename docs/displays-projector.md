@@ -100,7 +100,21 @@ fence. Synthetic input cannot test any of this: while the magnifier is zoomed, p
 **The lens geometry is lost on display changes**: after unplugging the projector it came
 back as a 90×90 square; refit with the prefs-write + engine-restart recipe above.
 
-### 🔎 The fifth path: our own zoom, in a window (`ShareZoom`, ⌥⇧+scroll, 2026-10-01)
+### 🔎 The fifth path: our own zoom, in a window (`ShareZoom`, ⌥+scroll in Share mode, 2026-10-01)
+
+**⌥+scroll drives one zoom or the other, never both (`ZoomEngine`, 2026-10-26).** Victor:
+*"n-are sens vreodată să fac zoom și de un fel, și de altul"*. A short **⌥⇧ tap** (both
+keys, any order, down and up within 0.45 s, nothing typed or scrolled in between —
+`OptionShiftTap`; a longer hold is still the ⌥⇧ emoji sheet) flips between
+**macOS zoom** (⌥+scroll reaches the magnifier, as before) and **Share Zoom** (the HID
+⌥+scroll tap below swallows the event *before* `AXVisualSupportAgent`'s tap and feeds it
+here, so the magnifier never moves). A pill by the cursor names the new mode for 1.2 s
+(`ShareZoomHint.announce`); switching to macOS zoom ends a Share Zoom in progress. The
+choice is `ZoomEngine` in this app's defaults and survives restarts; default macOS.
+**⌥⇧+scroll does nothing since** (Victor's choice: one gesture, a switch). Not handled:
+a macOS zoom left zoomed in when switching to Share Zoom stays zoomed — the magnifier
+ignores synthetic input, so there is no way to scroll it back out from here.
+
 
 For the meetings where Zoom's unfiltered capture is not an option (another client,
 another machine's settings, a share of a single screen that filters anyway), the
@@ -108,8 +122,8 @@ magnification is done **by this app, inside a window**, which is the one thing e
 capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 `victor-effects`), but full-screen and live:
 
-- **⌥⇧+scroll** zooms in/out on the display under the pointer; back to 1× hides the
-  window. **Same direction as ⌥+scroll**: wheel up / fingers up = closer
+- **⌥+scroll** (Share mode; ⌥⇧+scroll until 2026-10-26) zooms in/out on the display
+  under the pointer; back to 1× hides the window. **Same direction as ⌥+scroll**: wheel up / fingers up = closer
   (`ShareZoomPolicy.Source`). Three sources, told apart by the event:
   a notched wheel (lines; positive after `ScrollReversal` = closer), a **smooth
   wheel** — Victor's Logi M650 under Logi Options+ scrolls `continuous=1` with **no
@@ -158,7 +172,17 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   **both** `NSCursor.hide()` and `CGDisplayHideCursor`, as the 💓 heartbeat does, and
   the hide is **re-asserted at 4 Hz while the pointer is within 100 pt of any edge and
   for 2 s after**; every hide is counted (`hideDepth`) and undone exactly that many
-  times when the zoom ends. Verifying this needs a ScreenCaptureKit capture with
+  times when the zoom ends.
+  **ScreenBrush gives it back too** (2026-10-26, "două mouse-uri" while drawing on a
+  zoomed screen): its binary imports `CGCursorIsVisible` + `CGDisplayShowCursor` and has
+  a `cursorWasHidden`, i.e. on entering drawing mode it finds the cursor hidden and shows
+  it. So the cursor is also *watched*: `CGCursorIsVisible` (unavailable to Swift since
+  the macOS 26 SDK, resolved via dlsym; ~0 ms) reports the cursor for **every** process —
+  measured with two probes, one hiding, one reading — and is read at 20 Hz while the
+  pointer is on the zoomed display; visible ⇒ hidden again at once. Capped at 200 per
+  zoom (each one is undone at the end), counted as `rehides` in `/test/share-zoom`, and
+  the first one logged with the frontmost app. A foreign `CGDisplayShowCursor` from a
+  *background* process does not reveal it (probed); a foreground one evidently does. Verifying this needs a ScreenCaptureKit capture with
   `showsCursor = true` (it omits a hidden cursor — calibrated with a probe process that
   hid it); `screencapture -C` draws the cursor even while it is hidden and lies.
 - **Effects (`victor-effects`) need only the cursor — and to be left out of the
@@ -194,9 +218,12 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **A faded 🔍 (104 pt — 26 was too small to notice — 50 %) sits in the zoomed screen's top-right corner** while the
   zoom is on, at constant size — over the picture, not in it — so the room and the
   call can tell it is this zoom and not the system one (2026-10-15).
-- **A second 🔍 (40 pt, 85 %) rides at the drawn cursor's lower right** like a
-  tooltip, for the whole zoom (2026-10-17): the corner one is out of sight when the
-  eyes are on the pointer. Flips to the cursor's left / top near the right / bottom
+- **A ⊕/⊖ magnifier (40 pt, SF Symbols `plus`/`minus.magnifyingglass` on a dark
+  disc) rides at the drawn cursor's lower right** like a tooltip (2026-10-17): the
+  corner one is out of sight when the eyes are on the pointer. Since 2026-10-26 it
+  shows **only while the zoom changes** — ⊕ for closer, ⊖ for farther, by the last
+  notch's sign — and is gone 0.5 s after the last notch (Victor: *"să reflecte
+  schimbarea de zoom… și să dispară la jumătate de secundă"*). Flips to the cursor's left / top near the right / bottom
   edge; hidden whenever the drawn cursor is (pointer on another display, pinned focus).
 - **It must not feed itself** (2026-10-15, found by an adversarial review, then
   measured). It films the display its own window covers, so anything it draws damages
@@ -247,11 +274,12 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   plus `&x=&y=` (global Cocoa points) to pin the focus — the real cursor is then left
   alone.
 
-### ⚠️ ⌥+scroll during a share → "Use ⌥⇧↕ for Zoom" (`ShareZoomHint`, 2026-10-01)
+### ⚠️ ⌥+scroll during a share → "Tap ⌥⇧ for Zoom" (`ShareZoomHint`, 2026-10-01)
 
-⌥+scroll is the macOS magnifier — the style a share never carries — and ⌥⇧+scroll is
-`ShareZoom`, which it does. One finger apart, so the habit wins mid-demo. While Zoom is
-sharing, every ⌥+scroll (⌥ alone, no ⇧/⌘/⌃) puts an orange **⚠️ Use ⌥⇧↕ for Zoom**
+In macOS-zoom mode ⌥+scroll is the magnifier — the style a share never carries — and
+`ShareZoom`, which it does, is one ⌥⇧ tap away (it was ⌥⇧+scroll until 2026-10-26). While
+Zoom is sharing, every ⌥+scroll (⌥ alone, no ⇧/⌘/⌃) in macOS-zoom mode puts an orange
+**⚠️ Tap ⌥⇧ for Zoom**
 pill beside the cursor, following it, gone 2.5 s after the last notch. The scroll
 itself is not touched: the local zoom still happens.
 
