@@ -165,6 +165,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private let shareZoomHint = ShareZoomHint()
     private let zoomSwitchEffect = ZoomSwitchEffect()
     private var zoomJoinAutoStart: ZoomJoinAutoStart?
+    /// 🔊 Ticks "Include sound" in Teams' Share flyout.
+    private let teamsShareSound = TeamsShareSound()
     private var pptPresenterPlacement: PowerPointPresenterPlacement?
     private var breakReminderTimer: Timer?
     /// Set by auto-restart paths (heartbeat-detected crash, post-wake) so
@@ -1653,6 +1655,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let zoomJoin = ZoomJoinAutoStart()
         zoomJoinAutoStart = zoomJoin
         zoomJoin.start()
+
+        // 🔊 Teams forgets "Include sound" on every share; tick it when the flyout opens.
+        teamsShareSound.start()
 
         // 🖥️ PowerPoint picks the slide-show screens by Quartz display id, which
         // macOS re-deals on every replug: put Presenter View left, slides on the Retina.

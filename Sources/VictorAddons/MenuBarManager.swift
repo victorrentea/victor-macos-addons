@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 26, 21:59"
+    static let BUILD_TIME = "Oct 27, 12:57"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -40,6 +40,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var pptPresenterItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var retinaCapItem: NSMenuItem!
+    private(set) var teamsShareSoundItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
     private(set) var homeAwakeItem: NSMenuItem!
@@ -583,6 +584,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         retinaCapItem.isEnabled = true
         retinaCapItem.toolTip = "While Zoom or Teams runs, the Retina refreshes at 60 Hz at most (120 Hz ProMotion otherwise). The share and the projector never get more than 60. Given back when the last of them quits."
 
+        // 🔊 Teams' "Include sound" ticked when its Share flyout opens (`TeamsShareSound`),
+        // ticked by default (2026-10-27).
+        teamsShareSoundItem = NSMenuItem(title: Self.ticked(Self.teamsShareSoundTitle, TeamsShareSoundSettings.isEnabled), action: #selector(toggleTeamsShareSoundAction), keyEquivalent: "")
+        teamsShareSoundItem.image = Self.emojiIcon("🔊")
+        teamsShareSoundItem.target = self
+        teamsShareSoundItem.isEnabled = true
+        teamsShareSoundItem.toolTip = "When Teams' Share content flyout opens, tick Include sound. Untick it by hand and it stays off until the flyout is reopened."
+
         // 🪞 Virtual Desktop (+ its Auto-start) left for Victor Mirror's own 🪞 menu
         // on 2026-10-26: a redeploy of this app killed the invisible screen, and
         // with it the share running on it.
@@ -707,6 +716,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         refreshLayoutZoomItem()
         menu.addItem(zoomSharePrepItem)
         menu.addItem(retinaCapItem)
+        menu.addItem(teamsShareSoundItem)
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
         // cheat-sheet already teaches that key, so the menu line was a third
@@ -781,6 +791,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     static let faceoverTitle = "Auto Share Faceover"
     static let retinaCapTitle = "Retina 60 Hz in Zoom/Teams"
+    static let teamsShareSoundTitle = "Teams Share with Sound"
 
 
     @discardableResult
@@ -1191,6 +1202,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         RetinaRefreshCapSettings.isEnabled.toggle()
         retinaCapItem.title = Self.ticked(Self.retinaCapTitle, RetinaRefreshCapSettings.isEnabled)
         onToggleRetinaCap?()
+    }
+
+    @objc private func toggleTeamsShareSoundAction() {
+        TeamsShareSoundSettings.isEnabled.toggle()
+        teamsShareSoundItem.title = Self.ticked(Self.teamsShareSoundTitle, TeamsShareSoundSettings.isEnabled)
     }
 
     /// 🏠 Home Wi-Fi keeps the screen on. The tick means "armed and watching",
