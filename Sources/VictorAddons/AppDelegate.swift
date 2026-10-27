@@ -1925,11 +1925,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // 🔍/🔎 ⌥ + wheel click: ⌥+scroll switches between the macOS magnifier and
         // ShareZoom — one or the other, never both (`ZoomEngine`).
+        ZoomEngine.current.applyToScrollGesture()
         eventTap.onZoomEngineToggle = { [weak self, weak eventTap] in
             guard let self else { return }
             let engine = ZoomEngine.current.toggled
             ZoomEngine.current = engine
             eventTap?.zoomEngine = engine
+            engine.applyToScrollGesture()
             if engine == .system { self.shareZoom.end() }
             self.zoomSwitchEffect.play(engine, at: NSEvent.mouseLocation)
             self.shareZoomHint.announce(engine)
@@ -2709,6 +2711,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationWillTerminate(_ notification: Notification) {
         liveCaptions.shutdown()
         retinaCap.restore()
+        // Without this app nobody takes ⌥+scroll: give it back to the magnifier.
+        ZoomEngine.system.applyToScrollGesture()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

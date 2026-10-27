@@ -23,6 +23,32 @@ enum ZoomEngine: String {
 
     var toggled: ZoomEngine { self == .system ? .share : .system }
 
+    /// Hand ⌥+scroll to this engine: the macOS magnifier's "Use scroll gesture with
+    /// modifier keys to zoom" is on for `system` and **off for `share`**. Swallowing
+    /// the event in our HID tap was not enough: a physical ⌥+scroll never reached
+    /// either of our taps on 2026-10-27 (traced) — the magnifier takes it below
+    /// every event tap, and only posted test events ever got through. Turning its
+    /// scroll gesture off is the one way to leave the wheel to us.
+    /// `UAScrollZoomSetEnabled` (private, `UniversalAccessCore`) is what System
+    /// Settings calls. Main thread.
+    func applyToScrollGesture() {
+        guard let set = Self.scrollZoomSetEnabled, let get = Self.scrollZoomIsEnabled else {
+            overlayError("🔍/🔎 UAScrollZoomSetEnabled not found — the magnifier keeps ⌥+scroll")
+            return
+        }
+        let want = self == .system
+        if get() != want { set(want) }
+        overlayInfo("🔍/🔎 macOS scroll-gesture zoom \(want ? "on" : "off") for \(rawValue) → reads \(get() ? "on" : "off")")
+    }
+
+    private static let universalAccessCore = dlopen(
+        "/System/Library/PrivateFrameworks/UniversalAccess.framework/Frameworks/UniversalAccessCore.framework/UniversalAccessCore",
+        RTLD_NOW)
+    private static let scrollZoomSetEnabled = dlsym(universalAccessCore, "UAScrollZoomSetEnabled")
+        .map { unsafeBitCast($0, to: (@convention(c) (Bool) -> Void).self) }
+    private static let scrollZoomIsEnabled = dlsym(universalAccessCore, "UAScrollZoomIsEnabled")
+        .map { unsafeBitCast($0, to: (@convention(c) () -> Bool).self) }
+
     /// The pill shown beside the cursor when the engine flips.
     var announcement: String {
         switch self {
