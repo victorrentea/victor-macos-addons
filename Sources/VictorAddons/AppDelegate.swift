@@ -621,7 +621,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)"
         }
         tabletServer?.onPromptCapture = { [weak self] rawPrompt, source, cwd in
-            let prompt = PromptCapturePolicy.unwrapPastes(rawPrompt)
+            let prompt = PromptCapturePolicy.unwrapSkillInvocation(PromptCapturePolicy.unwrapPastes(rawPrompt))
             guard let self else { return "{\"captured\":false,\"reason\":\"shutting-down\"}" }
             guard self.isSessionActive else {
                 return "{\"captured\":false,\"reason\":\"no-session\"}"

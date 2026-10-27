@@ -53,6 +53,25 @@ final class PromptCapturePolicyTests: XCTestCase {
         XCTAssertEqual(PromptCapturePolicy.unwrapPastes("fix <b>this</b>\n"), "fix <b>this</b>\n")
     }
 
+    // MARK: unwrapSkillInvocation
+
+    func testAVSCodeSkillExpansionFoldsBackIntoWhatWasTyped() {
+        // Shape of what VS Code's Copilot Chat sent the hook on 2026-10-27
+        // for "/grill-me on gh 25" (skill body shortened).
+        let raw = "The user explicitly invoked the \"/grill-me\" skill. Follow its instructions now.\n\n<skill-context name=\"grill-me\">\nBase directory for this skill: /Users/x/.github/skills/grill-me\n\nInterview me relentlessly.\nPass ARGUMENTS: through.\n\n\nARGUMENTS: on gh 25\n</skill-context>"
+        XCTAssertEqual(PromptCapturePolicy.unwrapSkillInvocation(raw), "/grill-me on gh 25")
+    }
+
+    func testASkillInvokedWithoutArgumentsIsJustItsCommand() {
+        let raw = "The user explicitly invoked the \"/openspec-apply-change\" skill. Follow its instructions now.\n\n<skill-context name=\"openspec-apply-change\">\nImplement tasks.\n</skill-context>"
+        XCTAssertEqual(PromptCapturePolicy.unwrapSkillInvocation(raw), "/openspec-apply-change")
+    }
+
+    func testARawSlashCommandIsUntouched() {
+        XCTAssertEqual(PromptCapturePolicy.unwrapSkillInvocation("/openspec-propose https://x/QA.md"),
+                       "/openspec-propose https://x/QA.md")
+    }
+
     func testARealPromptIsKeptTrimmedButOtherwiseVerbatim() {
         XCTAssertEqual(PromptCapturePolicy.normalize("  refactor this class  "), "refactor this class")
         XCTAssertEqual(PromptCapturePolicy.normalize("line one\nline two"), "line one\nline two")

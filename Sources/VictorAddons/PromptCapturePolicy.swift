@@ -98,6 +98,30 @@ enum PromptCapturePolicy {
                                   with: "", options: .regularExpression)
     }
 
+    /// VS Code's Copilot Chat expands a `/skill args` typed in its chat panel
+    /// *before* `UserPromptSubmit` sees it: the hook gets a preamble, the whole
+    /// SKILL.md inside `<skill-context name="…">`, and the typed arguments on a
+    /// last `ARGUMENTS:` line — hundreds of lines the room would then read as
+    /// "the prompt" (2026-10-27, Victor: *"Eu am scris doar open spec apply
+    /// change și atât. Ce mi-a turnat ăsta aici?"*). Fold it back into what was
+    /// typed: `/grill-me on gh 25`. Claude Code and Copilot CLI already send
+    /// the raw `/skill args`, so they never match. The LAST `ARGUMENTS:` wins,
+    /// because a skill body may well quote the word itself.
+    static func unwrapSkillInvocation(_ text: String) -> String {
+        let pattern = #"^\s*The user explicitly invoked the "(/[^"]+)" skill\. Follow its instructions now\.\s*<skill-context name="[^"]*">([\s\S]*)</skill-context>"#
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let command = Range(m.range(at: 1), in: text),
+              let body = Range(m.range(at: 2), in: text),
+              let whole = Range(m.range, in: text) else { return text }
+        var typed = String(text[command])
+        if let args = text[body].range(of: "\nARGUMENTS:", options: .backwards) {
+            let value = text[body][args.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty { typed += " " + value }
+        }
+        return typed + text[whole.upperBound...]
+    }
+
     /// Agent sessions whose prompts go to the notes **on their own**: the pill
     /// still shows, but its countdown running out sends instead of dropping,
     /// and a click (or a 2 s hover) is what holds a prompt back. These are the
