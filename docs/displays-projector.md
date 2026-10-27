@@ -169,10 +169,14 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   at 4× the drawn cursor otherwise crosses the glass four times as fast, and a small
   move on the table sent the slice running left and right (*"la o mișcare mică pe
   masă îmi fuge foarte rău"*). An HID tap, enabled only while the factor is > 1, takes
-  each move after WindowServer has applied it (accelerated) and warps the cursor to
-  `last + (new − last) / factor`, keeping the fractions in its own `pos`; the event's
-  location and deltas are scaled the same. So the acceleration curve stays, only
-  scaled. `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
+  each move after WindowServer has applied it and warps the cursor to
+  `last + delta / √factor` (`ShareZoomPolicy.pointerSlowdown`; the event's own
+  delta, already accelerated), keeping the fractions in its own `pos` and clamped to
+  the display; the event's location and deltas are told the same. So the acceleration
+  curve stays, only scaled. The first build divided `now − last` by the whole factor:
+  WindowServer rounds the warped position, the rounding ate most of every slow move,
+  and the cursor all but froze (*"abia dacă pot să mișc"*) — hence the event delta,
+  and √factor in case the full factor really is too much. `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
   mute a warp brings. A jump of ≥ 400 pt in one event is followed, not scaled.
   **Tried first, same day, no effect:** raising the M650's `HIDPointerResolution` to
   factor × 400 dpi through a *monitor* HID client (`IOHIDEventSystemClientCreateWithType`

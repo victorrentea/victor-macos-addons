@@ -6,11 +6,12 @@ import Foundation
 /// crossed the picture four times as fast and the slice ran off left and right under
 /// the hand (Victor, 2026-10-27: *"la o mișcare mică pe masă îmi fuge foarte rău"*).
 ///
-/// **How: every move is taken back to 1/factor of itself.** An HID tap sees each move
-/// after WindowServer has already put the cursor at its new place, accelerated; the
-/// cursor is warped to `last + (new − last) / factor` instead, and the event is told
-/// the same. The acceleration curve Victor is used to stays, only scaled. `pos` keeps
-/// the fractions a warp to whole points would lose, or slow moves would never add up.
+/// **How: every move is scaled down by `ShareZoomPolicy.pointerSlowdown`.** An HID tap
+/// sees each move after WindowServer has already put the cursor at its new place; the
+/// cursor is warped to `last + delta / slowdown` instead (the event's own delta,
+/// already accelerated), and the event is told the same. The acceleration curve Victor
+/// is used to stays, only scaled. `pos` keeps the fractions a warp to whole points
+/// would lose, or slow moves would never add up.
 ///
 /// **What did not work** (2026-10-27): raising the M650's `HIDPointerResolution`
 /// through a monitor HID client. Every set returned true and the mouse did not slow
@@ -86,14 +87,30 @@ final class ZoomPointerSpeed {
             pos = now
             return Unmanaged.passUnretained(event)
         }
-        let next = CGPoint(x: last.x + (now.x - last.x) / factor, y: last.y + (now.y - last.y) / factor)
+        // From the event's own delta, never from `now − last`: WindowServer rounds the
+        // warped position, and that rounding ate most of every slow move — the cursor
+        // all but froze (2026-10-27, the first build of this).
+        let slow = Double(ShareZoomPolicy.pointerSlowdown(factor))
+        let dx = event.getDoubleValueField(.mouseEventDeltaX) / slow
+        let dy = event.getDoubleValueField(.mouseEventDeltaY) / slow
+        let next = Self.clampToDisplay(CGPoint(x: last.x + dx, y: last.y + dy), from: last)
         pos = next
         CGWarpMouseCursorPosition(next)
         // A warp mutes the mouse for 0.25 s; re-associating lifts that at once.
         CGAssociateMouseAndMouseCursorPosition(1)
         event.location = next
-        event.setDoubleValueField(.mouseEventDeltaX, value: event.getDoubleValueField(.mouseEventDeltaX) / Double(factor))
-        event.setDoubleValueField(.mouseEventDeltaY, value: event.getDoubleValueField(.mouseEventDeltaY) / Double(factor))
+        event.setDoubleValueField(.mouseEventDeltaX, value: dx)
+        event.setDoubleValueField(.mouseEventDeltaY, value: dy)
         return Unmanaged.passUnretained(event)
+    }
+
+    /// `p` if some display holds it, else pulled back inside the display `from` is on —
+    /// or `pos` runs on past the edge and the hand has to undo it before the cursor moves.
+    private static func clampToDisplay(_ p: CGPoint, from: CGPoint) -> CGPoint {
+        var id = CGDirectDisplayID(0), n: UInt32 = 0
+        if CGGetDisplaysWithPoint(p, 1, &id, &n) == .success, n > 0 { return p }
+        guard CGGetDisplaysWithPoint(from, 1, &id, &n) == .success, n > 0 else { return from }
+        let r = CGDisplayBounds(id)
+        return CGPoint(x: min(max(p.x, r.minX), r.maxX - 1), y: min(max(p.y, r.minY), r.maxY - 1))
     }
 }
