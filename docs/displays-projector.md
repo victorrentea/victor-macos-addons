@@ -244,9 +244,10 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   (white at 55 %) on their inner edge, or they vanish into a dark terminal. Over the
   picture, never magnified, so the share carries it too (`Stage.zigzagRing`).
 - **While the zoom changes, a ⊕/⊖ magnifier stands in for the drawn cursor** (SF
-  Symbols `plus`/`minus.magnifyingglass`, **white with a black outline and nothing
-  behind** since 2026-10-27 — on a 60 % black disc until then — centred on the hot spot,
-  twice the drawn cursor within 88–192 pt; `ShareZoom.outlinedSymbol`): ⊕ closer, ⊖ farther, by the last notch's
+  a **drawn line-art lens** after Victor's reference picture since 2026-10-27 — big
+  see-through glass with a glint, thin neck, rounded handle, every line white edged in
+  black, nothing behind; an SF Symbol on a 60 % black disc until then — the glass on
+  the hot spot, twice the drawn cursor within 88–192 pt; `ShareZoom.lensArtwork`): ⊕ closer, ⊖ farther, by the last notch's
   sign; the cursor comes back 0.5 s after the last notch (Victor, 2026-10-26: *"să
   reflecte schimbarea de zoom… și să dispară la jumătate de secundă"*, then *"cursorul
   e înlocuit temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). From

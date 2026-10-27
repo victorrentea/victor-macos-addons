@@ -131,8 +131,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edgeLine.actions = noAnimation
             let tipSide = Self.tipSides.upperBound
             tip.frame = CGRect(x: 0, y: 0, width: tipSide, height: tipSide)
-            tipIn = Self.symbolImage("plus.magnifyingglass", side: tipSide, scale: screen.backingScaleFactor)
-            tipOut = Self.symbolImage("minus.magnifyingglass", side: tipSide, scale: screen.backingScaleFactor)
+            tipIn = ShareZoom.lensArtwork(sign: 1, side: tipSide, scale: screen.backingScaleFactor)
+            tipOut = ShareZoom.lensArtwork(sign: -1, side: tipSide, scale: screen.backingScaleFactor)
             tip.contents = tipIn
             tip.contentsGravity = .resizeAspect
             tip.opacity = 0.9
@@ -177,10 +177,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             return path
         }
 
-        static func symbolImage(_ name: String, side: CGFloat, scale: CGFloat) -> CGImage? {
-            ShareZoom.outlinedSymbol(name, side: side, scale: scale)
-        }
-
         static func emojiImage(_ emoji: String, side: CGFloat, scale: CGFloat) -> CGImage? {
             let px = Int(side * scale)
             guard let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
@@ -196,35 +192,65 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    /// An SF Symbol in **white with a black outline and nothing behind it** — the
-    /// magnifier's own shape, which reads on any picture without a disc (Victor,
-    /// 2026-10-27: *"nu pe un cerc negru… doar un contur negru"*; until then it sat
-    /// on a 60 % black disc). The outline is the glyph drawn in black at 16 offsets
-    /// round a circle, the white glyph on top. Shared with `ZoomSwitchEffect`.
-    static func outlinedSymbol(_ name: String, side: CGFloat, scale: CGFloat) -> CGImage? {
-        let px = CGFloat(Int(side * scale))
-        let outline = px * 0.035
-        func glyph(_ color: NSColor) -> NSImage? {
-            let config = NSImage.SymbolConfiguration(pointSize: (px - 2 * outline) * 0.72, weight: .bold)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-            return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+    /// The zoom's magnifier, drawn rather than taken from SF Symbols: Victor's own
+    /// reference (2026-10-27, a classic line-art lens — big round glass, a glint on
+    /// its left, a thin neck, a rounded handle; *"pleacă de la baza asta"*). Every
+    /// line is **white edged in black on both sides, nothing behind** (*"nu pe un
+    /// cerc negru… doar un contur negru"*), so it reads on any picture and the glass
+    /// stays see-through. `sign` puts a + (1) or − (−1) in the glass. Drawn on a
+    /// 512 grid, y down, like the reference; `lensCentre` is where the glass sits.
+    /// Shared with `ZoomSwitchEffect`. Until that day: an SF Symbol on a black disc.
+    static func lensArtwork(sign: Int, side: CGFloat, scale: CGFloat) -> CGImage? {
+        let px = Int(side * scale)
+        guard px > 0, let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.translateBy(x: 0, y: CGFloat(px))
+        ctx.scaleBy(x: CGFloat(px) / 512, y: -CGFloat(px) / 512)
+        let c = CGPoint(x: 176, y: 176)
+        let lines = CGMutablePath()
+        lines.addEllipse(in: CGRect(x: c.x - 150, y: c.y - 150, width: 300, height: 300))
+        // The glint: its own subpath, or `addArc` joins it to the rim with a line.
+        let glint: CGFloat = 112, from = CGFloat.pi * 0.76
+        lines.move(to: CGPoint(x: c.x + glint * cos(from), y: c.y + glint * sin(from)))
+        lines.addArc(center: c, radius: glint, startAngle: from, endAngle: .pi * 1.24, clockwise: false)
+        if sign != 0 {
+            lines.move(to: CGPoint(x: c.x - 52, y: c.y))
+            lines.addLine(to: CGPoint(x: c.x + 52, y: c.y))
         }
-        guard let white = glyph(.white), let black = glyph(.black),
-              let ctx = CGContext(data: nil, width: Int(px), height: Int(px), bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-        let size = white.size
-        let at = CGRect(x: (px - size.width) / 2, y: (px - size.height) / 2, width: size.width, height: size.height)
-        for i in 0..<16 {
-            let a = CGFloat(i) / 16 * 2 * .pi
-            black.draw(in: at.offsetBy(dx: cos(a) * outline, dy: sin(a) * outline))
+        if sign > 0 {
+            lines.move(to: CGPoint(x: c.x, y: c.y - 52))
+            lines.addLine(to: CGPoint(x: c.x, y: c.y + 52))
         }
-        white.draw(in: at)
-        NSGraphicsContext.restoreGraphicsState()
+        let neck = CGMutablePath()
+        neck.move(to: CGPoint(x: 286, y: 286))
+        neck.addLine(to: CGPoint(x: 340, y: 340))
+        let handle = CGMutablePath()
+        handle.move(to: CGPoint(x: 350, y: 350))
+        handle.addLine(to: CGPoint(x: 462, y: 462))
+
+        let line: CGFloat = 22, edge: CGFloat = 9
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        // All the black first, then all the white: where the neck meets the glass
+        // and the handle, the white runs on without a black seam across it.
+        for (color, extra) in [(NSColor.black, 2 * edge), (NSColor.white, 0)] {
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(line + extra)
+            ctx.addPath(lines); ctx.strokePath()
+            ctx.setLineWidth(30 + extra)
+            ctx.setLineCap(.butt)
+            ctx.addPath(neck); ctx.strokePath()
+            ctx.setLineCap(.round)
+            ctx.setLineWidth(76 + extra)
+            ctx.addPath(handle); ctx.strokePath()
+        }
         return ctx.makeImage()
     }
+
+    /// The glass's centre in `lensArtwork`, in unit coordinates of the image (y up,
+    /// as a layer's frame is): the ⊕/⊖ is placed with this point on the hot spot.
+    static let lensCentre = CGPoint(x: 176.0 / 512, y: 1 - 176.0 / 512)
 
     private var stages: [CGDirectDisplayID: Stage] = [:]
     /// The stage on screen right now.
@@ -861,7 +887,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// big as the drawn cursor, within `tipSides`.
     static func tipFrame(over hot: CGPoint, cursor: CGRect) -> CGRect {
         let side = min(max(cursor.height * 2, Stage.tipSides.lowerBound), Stage.tipSides.upperBound)
-        return CGRect(x: hot.x - side / 2, y: hot.y - side / 2, width: side, height: side)
+        // The glass, not the image's middle, goes on the hot spot: the handle hangs off it.
+        return CGRect(x: hot.x - side * lensCentre.x, y: hot.y - side * lensCentre.y, width: side, height: side)
     }
 
     // MARK: - Telling victor-effects where the cursor is

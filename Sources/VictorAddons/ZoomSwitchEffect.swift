@@ -151,9 +151,9 @@ final class ZoomSwitchEffect {
     // MARK: - Artwork
 
     /// The magnifier the zoom draws at the cursor (`ShareZoom`'s ⊕/⊖), plain: white
-    /// with a black outline, nothing behind it — the same artwork, twice the 72 pt
-    /// it had on its dark disc until 2026-10-27.
+    /// edged in black, nothing behind it — the same artwork, twice the 72 pt it
+    /// had on its dark disc until 2026-10-27.
     static func lensImage(side: CGFloat, scale: CGFloat) -> CGImage? {
-        ShareZoom.outlinedSymbol("magnifyingglass", side: side, scale: scale)
+        ShareZoom.lensArtwork(sign: 0, side: side, scale: scale)
     }
 }
