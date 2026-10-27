@@ -54,17 +54,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         static let edgeTooth: CGFloat = 28
         static let edgeDepth: CGFloat = 12
         static let edgeBand: CGFloat = 3
-        /// A ⊕/⊖ magnifier that **stands in for the drawn cursor while the zoom
-        /// changes** — centred on its hot spot, the cursor hidden — and gives it back
-        /// `tipLinger` after the last notch (Victor, 2026-10-26: *"cursorul e înlocuit
-        /// temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). It rode
-        /// beside the cursor for the whole zoom from 2026-10-17. Twice the drawn
-        /// cursor ×2, within `tipSides` (doubled on 2026-10-27, *"mai mare de două
-        /// ori"*, when the disc behind it went); never magnified.
-        let tip = CALayer()
-        static let tipSides: ClosedRange<CGFloat> = 88...192
-        let tipIn: CGImage?
-        let tipOut: CGImage?
+        /// No ⊕/⊖ in the cursor's place while the zoom changes any more (Victor,
+        /// 2026-10-27: *"nu mai e nevoie să afișez deloc lupa… câtă vreme păstrez
+        /// zig-zag-ul"*): the zigzag already says this is our zoom.
         var filter: SCContentFilter?
         /// Whether the filter really excludes our panel. If it does not, the stream
         /// would film its own output; the filter is rebuilt once the panel is on screen.
@@ -133,21 +125,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edgeLine.lineWidth = 1.5
             edgeLine.lineJoin = .miter
             edgeLine.actions = noAnimation
-            let tipSide = Self.tipSides.upperBound
-            tip.frame = CGRect(x: 0, y: 0, width: tipSide, height: tipSide)
-            tipIn = ShareZoom.lensArtwork(sign: 1, side: tipSide, scale: screen.backingScaleFactor)
-            tipOut = ShareZoom.lensArtwork(sign: -1, side: tipSide, scale: screen.backingScaleFactor)
-            tip.contents = tipIn
-            tip.contentsGravity = .resizeAspect
-            tip.opacity = 0.9
-            tip.actions = noAnimation
-            tip.isHidden = true
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
             view.layer?.addSublayer(edgeLine)
             view.layer?.addSublayer(badge)
             view.layer?.addSublayer(cursor)
-            view.layer?.addSublayer(tip)
             panel.contentView = view
         }
 
@@ -202,7 +184,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// line is **white edged in black on both sides, nothing behind** (*"nu pe un
     /// cerc negru… doar un contur negru"*), so it reads on any picture and the glass
     /// stays see-through. `sign` puts a + (1) or − (−1) in the glass. Drawn on a
-    /// 512 grid, y down, like the reference; `lensCentre` is where the glass sits.
+    /// 512 grid, y down, like the reference; The glass sits at (176, 176).
     /// Shared with `ZoomSwitchEffect`. Until that day: an SF Symbol on a black disc.
     static func lensArtwork(sign: Int, side: CGFloat, scale: CGFloat) -> CGImage? {
         let px = Int(side * scale)
@@ -263,10 +245,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         return ctx.makeImage()
     }
 
-    /// The glass's centre in `lensArtwork`, in unit coordinates of the image (y up,
-    /// as a layer's frame is): the ⊕/⊖ is placed with this point on the hot spot.
-    static let lensCentre = CGPoint(x: 176.0 / 512, y: 1 - 176.0 / 512)
-
     private var stages: [CGDirectDisplayID: Stage] = [:]
     /// The stage on screen right now.
     private var active: Stage?
@@ -297,10 +275,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// saw its brush cursor beside the drawn one (Victor, 2026-10-26).
     private var rehides = 0
     private static let maxRehides = 200
-    /// Which way the wheel last turned, and until when the ⊕/⊖ tip shows it.
-    private var zoomingIn = true
-    private var tipUntil: CFAbsoluteTime = 0
-    private static let tipLinger: CFTimeInterval = 0.5
     private var hotSpot = CGPoint.zero
     /// The system cursor's own size, in points. Kept here and never read back from
     /// the layer: the layer's bounds are the *magnified* size after the first frame,
@@ -320,7 +294,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Layer commits by `follow` since the zoom started — `/test/share-zoom` shows
     /// whether the zoom rests when nothing moves.
     private var commits = 0
-    private struct Written: Equatable { var rect: CGRect; var cursor: CGRect?; var tipIn: Bool? }
+    private struct Written: Equatable { var rect: CGRect; var cursor: CGRect? }
     private var lastWritten: Written?
     /// Capture rate; `/test/share-zoom?fps=` changes it for the next stream. 30, not
     /// 60, since 2026-10-15: panning and the drawn cursor move by `contentsRect` and
@@ -426,8 +400,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             target = keep
         }
         target = ShareZoomPolicy.step(target, delta: delta, source: source)
-        let notches = ShareZoomPolicy.notches(delta: delta, source: source)
-        if notches != 0 { flashTip(zoomingIn: notches > 0) }
         if target > 1, active == nil { activate(on: under) }
         // `follow` is what switches a finished zoom off, and it waits for the first
         // frame. A zoom scrolled back to 1× before any frame arrived would otherwise
@@ -449,18 +421,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         } else if let under = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) {
             if let active, active.displayID != under.displayID { deactivate() }
             let next = min(factor, ShareZoomPolicy.maxFactor)
-            if next != target { flashTip(zoomingIn: next > target) }
             target = next
             pinnedFocus = focus
             if active == nil { activate(on: under) }
         }
         return snapshotJSON()
-    }
-
-    /// The ⊕/⊖ tip at the cursor, for `tipLinger` from now.
-    private func flashTip(zoomingIn: Bool) {
-        self.zoomingIn = zoomingIn
-        tipUntil = CFAbsoluteTimeGetCurrent() + Self.tipLinger
     }
 
     /// 🔍 Back to 1× — the other `ZoomEngine` was just chosen.
@@ -841,7 +806,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         // (the adversarial review of 2026-10-15). Only what changed is written now.
         let rect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
         var cursorFrame: CGRect?
-        var hotPoint = CGPoint.zero
         if inside {
             let drawnAt = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             publishCursor(CGPoint(x: s.frame.minX + drawnAt.x, y: s.frame.minY + drawnAt.y))
@@ -876,7 +840,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             }
             if tickCount % 12 == 1 { refreshCursorImage(s) }
             let at = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
-            hotPoint = at
             // `hotSpot` is measured from the image's top-left; the layer's y grows up.
             let b = cursorSize
             cursorFrame = CGRect(x: at.x - hotSpot.x * current,
@@ -888,8 +851,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         // Compared with what was last written, not read back from the layers: a
         // CALayer's frame comes back from position/bounds and can differ by an ulp.
-        let showTip = cursorFrame != nil && CFAbsoluteTimeGetCurrent() < tipUntil
-        let written = Written(rect: rect, cursor: cursorFrame, tipIn: showTip ? zoomingIn : nil)
+        let written = Written(rect: rect, cursor: cursorFrame)
         guard written != lastWritten else { return }
         lastWritten = written
         commits += 1
@@ -897,22 +859,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         s.image.contentsRect = rect
-        if let cursorFrame {
-            s.cursor.frame = cursorFrame
-            s.tip.frame = Self.tipFrame(over: hotPoint, cursor: cursorFrame)
-        }
-        s.cursor.isHidden = cursorHidden || written.tipIn != nil
-        if let tipIn = written.tipIn { s.tip.contents = tipIn ? s.tipIn : s.tipOut }
-        s.tip.isHidden = written.tipIn == nil
+        if let cursorFrame { s.cursor.frame = cursorFrame }
+        s.cursor.isHidden = cursorHidden
         CATransaction.commit()
-    }
-
-    /// Centred on the drawn cursor's hot spot — where the eye already is — and as
-    /// big as the drawn cursor, within `tipSides`.
-    static func tipFrame(over hot: CGPoint, cursor: CGRect) -> CGRect {
-        let side = min(max(cursor.height * 2, Stage.tipSides.lowerBound), Stage.tipSides.upperBound)
-        // The glass, not the image's middle, goes on the hot spot: the handle hangs off it.
-        return CGRect(x: hot.x - side * lensCentre.x, y: hot.y - side * lensCentre.y, width: side, height: side)
     }
 
     // MARK: - Telling victor-effects where the cursor is

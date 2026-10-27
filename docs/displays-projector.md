@@ -265,17 +265,13 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   teeth 28 pt apart, 12 pt deep, on a 3 pt band, pointing in; a 1.5 pt light line
   (white at 55 %) on their inner edge, or they vanish into a dark terminal. Over the
   picture, never magnified, so the share carries it too (`Stage.zigzagRing`).
-- **While the zoom changes, a ⊕/⊖ magnifier stands in for the drawn cursor** (SF
-  a **drawn line-art lens** after Victor's reference picture since 2026-10-27 — big
-  see-through glass with a glint (at 50 % since 2026-10-27, *"arcul de cerc interior
-  să fie translucent 50%"*), thin neck, rounded handle, every line white edged in
-  black, nothing behind; an SF Symbol on a 60 % black disc until then — the glass on
-  the hot spot, twice the drawn cursor within 88–192 pt; `ShareZoom.lensArtwork`): ⊕ closer, ⊖ farther, by the last notch's
-  sign; the cursor comes back 0.5 s after the last notch (Victor, 2026-10-26: *"să
-  reflecte schimbarea de zoom… și să dispară la jumătate de secundă"*, then *"cursorul
-  e înlocuit temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). From
-  2026-10-17 a 🔍 rode beside the cursor for the whole zoom. Flips to the cursor's left / top near the right / bottom
-  edge; hidden whenever the drawn cursor is (pointer on another display, pinned focus).
+- **No ⊕/⊖ magnifier at the cursor while the zoom changes, since 2026-10-27 evening**
+  (Victor: *"nu mai e nevoie să afișez deloc lupa pe centru… câtă vreme păstrez
+  zig-zag-ul de pe margine… mouse-ul nu se mai schimbă în acea lupă"*): the drawn cursor
+  stays the cursor throughout. History: a 🔍 rode beside the cursor for the whole zoom
+  from 2026-10-17; from 2026-10-26 a ⊕/⊖ stood in for the cursor until 0.5 s after the
+  last notch (by then the drawn line-art lens, `ShareZoom.lensArtwork`, which
+  `ZoomSwitchEffect` still uses). The zigzag made it redundant.
 - **It must not feed itself** (2026-10-15, found by an adversarial review, then
   measured). It films the display its own window covers, so anything it draws damages
   that display and summons another frame — and `dirtyRects` report the *whole screen*
@@ -344,8 +340,7 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   the only screenshot that shows whether the real cursor is up beside the drawn one.
   Posted events arrive at ~80 ms each, not at the 30 ms they are sent at — wait on
   `target`, not on the clock. **Verified with it on 2026-10-26** on DELL (1): ⌥F1 (now `click`) →
-  `ZoomEngine=share` + the pill; ⌥+scroll → ShareZoom on, ⊕ at the cursor at 0.15 s,
-  gone at 0.65 s (in the cursor's place since the same evening), ⊖ zooming out; `open -a ScreenBrush` mid-zoom → the cursor came back
+  `ZoomEngine=share` + the pill; ⌥+scroll → ShareZoom on (a ⊕/⊖ at the cursor then, removed 2026-10-27); `open -a ScreenBrush` mid-zoom → the cursor came back
   and was hidden again within one look (`rehides: 1`, one cursor in the shot); flipped back →
   the zoom ends, and ⌥+scroll no longer starts it. Not provable synthetically: that a
   *physical* ⌥+scroll in Share mode leaves the magnifier still (it ignores synthetic
