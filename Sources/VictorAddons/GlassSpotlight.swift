@@ -625,7 +625,7 @@ final class GlassSpotlight {
         // Under ScreenBrush's canvas (29), so the ink lands on top of the glass —
         // Victor draws over what the box frames; above the menu bar (24/25) and
         // the Dock, so the glass is still everything but the box. Far under
-        // `ShareZoom`'s `.screenSaver`, so that zoom magnifies the glass with
+        // `ShareZoom.windowLevel`, so that zoom magnifies the glass with
         // everything else (see the type comment).
         panel.level = NSWindow.Level(rawValue: GlassSpotlight.windowLevel)
         panel.isOpaque = false

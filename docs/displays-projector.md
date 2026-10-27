@@ -298,8 +298,20 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **At 1× nothing of it is on screen**: the panel is ordered out and the stream stops
   10 s later. A zoom scrolled back to 1× before its first frame arrived used to stay
   armed (only the per-frame tick switched it off); `scroll` now ends it itself. The panel is
-  `.screenSaver` level, opaque, click-through, on every Space, invisible until it has
+  at `maximumWindow + 3` (`ShareZoom.windowLevel`), opaque, click-through, on every Space, invisible until it has
   a frame. It honours `closeViewSmoothImages` (off here → `.nearest`).
+- **The zoom is the topmost window; only Victor Effects and 🪞 Mirror's silhouette
+  are above it** (2026-10-27, Victor: *"zoom-ul cel mai topmost; deasupra lui sunt
+  doar efectele speciale… mărginite de ecranul curent"* — Walkie Talkie's modal
+  panel showed unzoomed over the zoom). Until then it sat at `.screenSaver`, and
+  every `maximumWindow` (± 2) window — Walkie's panels, this app's own hands-off
+  locks, break overlay, cheat-sheets — was drawn unzoomed on top *and* filmed
+  underneath. Now they are all magnified with the screen. The levels, one per repo:
+  zoom `maximumWindow + 3`, Mirror's silhouette `+ 4`, `EffectsLevel.overlay` in
+  victor-effects `+ 5` (its thumbnail panel `+ 4`, peek `+ 6`, captions `+ 7`).
+  The effects are left out of the capture (`isEffectsWindow`), so the alarm's red
+  edges sit on the Retina's edges over either zoom: over this one because they are
+  above it unzoomed, under the macOS magnifier through `ScreenZoom` in victor-effects.
 - **Startup latency**, measured with `startupMs` in the test hook: the first build
   took **~195 ms** from gesture to picture — ~100 ms for `SCShareableContent` (the
   window list the filter needs) and ~95 ms for the stream's first frame. Now one
@@ -523,7 +535,7 @@ crop"* — so it is the crop's gesture, read by the crop's code.
   annotates what the box frames, and at the first level (`.screenSaver − 1`) the ink
   went under the glass (2026-10-04). Still above the menu bar (24/25) and the Dock;
   the price is that pop-up and context menus (101) now draw over the glass.
-- **Both zooms work by where the panel sits**: under `ShareZoom`'s `.screenSaver`
+- **Both zooms work by where the panel sits**: under `ShareZoom`'s
   panel, so `ShareZoom`'s capture contains the glass and magnifies it
   together with what the box frames — exactly what the macOS magnifier (⌥-scroll) does
   to the whole framebuffer. The box is in desktop points in both cases, which is what

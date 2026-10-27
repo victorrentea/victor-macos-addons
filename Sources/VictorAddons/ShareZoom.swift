@@ -83,9 +83,13 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
             panel.setFrame(screen.frame, display: false)
-            // Above the menu bar, the Dock and pop-up menus: everything the stream
-            // captures has to end up *under* its own magnified picture.
-            panel.level = .screenSaver
+            // Above everything the stream captures, which has to end up *under* its
+            // own magnified picture: the menu bar, the Dock, pop-up menus, and — since
+            // 2026-10-27 — every `maximumWindow + 1` panel, Walkie Talkie's among them
+            // (it was `.screenSaver`, and they showed unzoomed on top). Only Victor
+            // Effects (`EffectsLevel`, + 5) and 🪞 Mirror's silhouette (+ 4) go higher:
+            // Victor, *"zoom-ul cel mai topmost; deasupra lui sunt doar efectele"*.
+            panel.level = ShareZoom.windowLevel
             panel.ignoresMouseEvents = true
             panel.isOpaque = true
             panel.backgroundColor = .black
@@ -357,8 +361,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// or they would show twice, once magnified: 🪞 `VirtualDesktop`'s silhouette.
     var alsoExcluded: () -> [CGWindowID] = { [] }
 
-    /// **Every** window of Victor Effects. They all sit at `maximumWindow` ± 2, far
-    /// above this zoom's `.screenSaver`, so each one is already drawn unmagnified
+    /// **Every** window of Victor Effects. They all sit at `EffectsLevel` (+ 4 … + 7),
+    /// above this zoom's `windowLevel`, so each one is already drawn unmagnified
     /// over the zoomed picture — the effect at the size it has unzoomed. Filmed as
     /// well, it showed twice: once live on top, once magnified behind it (Victor,
     /// 2026-10-16: the 💀 skull boom "duplicated"). Until then only the 💬 subtitle
@@ -366,6 +370,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// the effects app makes panels on demand (the green edge flash, a fresh one per
     /// flash), and a restart renumbers them all — `watchEffectsWindows` catches both.
     static let effectsBundleID = "ro.victorrentea.victor-effects"
+
+    /// The zoom's window level. Victor Effects and 🪞 Mirror's silhouette are set
+    /// above it in their own repos — change one, change them.
+    static let windowLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) + 3)
 
     static func isEffectsWindow(_ w: SCWindow) -> Bool {
         w.owningApplication?.bundleIdentifier == effectsBundleID
@@ -912,8 +920,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Where the room sees the cursor, for the effects drawn at it (`VisibleCursor` in
     /// victor-effects: the 💓 heartbeat's bulge, the 🔍 glass, the whip…). Those read
     /// the *real* pointer, which under this zoom is somewhere else on the glass as soon
-    /// as the picture has panned. The effects window sits above this one (maximum window
-    /// level), so they are drawn unmagnified over the zoomed picture and need nothing
+    /// as the picture has panned. The effects window sits above this one
+    /// (`EffectsLevel`), so they are drawn unmagnified over the zoomed picture and need nothing
     /// else — only this one point.
     ///
     /// A distributed notification, not HTTP: no reply is needed, it costs nothing when
