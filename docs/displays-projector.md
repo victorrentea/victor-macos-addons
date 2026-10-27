@@ -110,7 +110,7 @@ back as a 90×90 square; refit with the prefs-write + engine-restart recipe abov
 here, so the magnifier never moves). A pill by the cursor names the new mode for 1.2 s
 (`ShareZoomHint.announce`), and **the flip has a look of its own at the cursor**
 (`ZoomSwitchEffect`, Victor: *"explozia subtilă a lupei la trecerea la macOS zoom nativ,
-respectiv dissolve in la trecerea la zoom sintetic"*): → macOS, a 72 pt magnifier holds
+respectiv dissolve in la trecerea la zoom sintetic"*): → macOS, a 144 pt magnifier (72 pt on a disc until 2026-10-27; now the ⊕/⊖ artwork) holds
 0.18 s, then breaks into 6×6 shards that drift 25–45 pt out, turn and fade in 0.5 s; →
 Share, the magnifier dissolves in PowerPoint-style (8×8 cells, random order, 0.4 s),
 holds 0.45 s and fades. Its own click-through panel at the maximum window level, made
@@ -244,8 +244,9 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   (white at 55 %) on their inner edge, or they vanish into a dark terminal. Over the
   picture, never magnified, so the share carries it too (`Stage.zigzagRing`).
 - **While the zoom changes, a ⊕/⊖ magnifier stands in for the drawn cursor** (SF
-  Symbols `plus`/`minus.magnifyingglass` on a dark disc, centred on the hot spot, as
-  big as the drawn cursor within 44–96 pt): ⊕ closer, ⊖ farther, by the last notch's
+  Symbols `plus`/`minus.magnifyingglass`, **white with a black outline and nothing
+  behind** since 2026-10-27 — on a 60 % black disc until then — centred on the hot spot,
+  twice the drawn cursor within 88–192 pt; `ShareZoom.outlinedSymbol`): ⊕ closer, ⊖ farther, by the last notch's
   sign; the cursor comes back 0.5 s after the last notch (Victor, 2026-10-26: *"să
   reflecte schimbarea de zoom… și să dispară la jumătate de secundă"*, then *"cursorul
   e înlocuit temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). From

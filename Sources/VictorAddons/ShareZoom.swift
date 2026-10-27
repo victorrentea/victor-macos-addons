@@ -58,10 +58,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// changes** — centred on its hot spot, the cursor hidden — and gives it back
         /// `tipLinger` after the last notch (Victor, 2026-10-26: *"cursorul e înlocuit
         /// temporar cu lupa, nu mai apare lupa persistentă lângă mouse"*). It rode
-        /// beside the cursor for the whole zoom from 2026-10-17. As big as the drawn
-        /// cursor, within `tipSides`; never magnified.
+        /// beside the cursor for the whole zoom from 2026-10-17. Twice the drawn
+        /// cursor ×2, within `tipSides` (doubled on 2026-10-27, *"mai mare de două
+        /// ori"*, when the disc behind it went); never magnified.
         let tip = CALayer()
-        static let tipSides: ClosedRange<CGFloat> = 44...96
+        static let tipSides: ClosedRange<CGFloat> = 88...192
         let tipIn: CGImage?
         let tipOut: CGImage?
         var filter: SCContentFilter?
@@ -176,25 +177,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             return path
         }
 
-        /// An SF Symbol in white on a dark disc, so it reads over any picture.
         static func symbolImage(_ name: String, side: CGFloat, scale: CGFloat) -> CGImage? {
-            let px = Int(side * scale)
-            let config = NSImage.SymbolConfiguration(pointSize: CGFloat(px) * 0.5, weight: .bold)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
-            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(config),
-                  let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-            ctx.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.6).cgColor)
-            ctx.fillEllipse(in: CGRect(x: 0, y: 0, width: px, height: px))
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-            let size = symbol.size
-            symbol.draw(in: CGRect(x: (CGFloat(px) - size.width) / 2, y: (CGFloat(px) - size.height) / 2,
-                                   width: size.width, height: size.height))
-            NSGraphicsContext.restoreGraphicsState()
-            return ctx.makeImage()
+            ShareZoom.outlinedSymbol(name, side: side, scale: scale)
         }
 
         static func emojiImage(_ emoji: String, side: CGFloat, scale: CGFloat) -> CGImage? {
@@ -210,6 +194,36 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             NSGraphicsContext.restoreGraphicsState()
             return ctx.makeImage()
         }
+    }
+
+    /// An SF Symbol in **white with a black outline and nothing behind it** — the
+    /// magnifier's own shape, which reads on any picture without a disc (Victor,
+    /// 2026-10-27: *"nu pe un cerc negru… doar un contur negru"*; until then it sat
+    /// on a 60 % black disc). The outline is the glyph drawn in black at 16 offsets
+    /// round a circle, the white glyph on top. Shared with `ZoomSwitchEffect`.
+    static func outlinedSymbol(_ name: String, side: CGFloat, scale: CGFloat) -> CGImage? {
+        let px = CGFloat(Int(side * scale))
+        let outline = px * 0.035
+        func glyph(_ color: NSColor) -> NSImage? {
+            let config = NSImage.SymbolConfiguration(pointSize: (px - 2 * outline) * 0.72, weight: .bold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+            return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        }
+        guard let white = glyph(.white), let black = glyph(.black),
+              let ctx = CGContext(data: nil, width: Int(px), height: Int(px), bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        let size = white.size
+        let at = CGRect(x: (px - size.width) / 2, y: (px - size.height) / 2, width: size.width, height: size.height)
+        for i in 0..<16 {
+            let a = CGFloat(i) / 16 * 2 * .pi
+            black.draw(in: at.offsetBy(dx: cos(a) * outline, dy: sin(a) * outline))
+        }
+        white.draw(in: at)
+        NSGraphicsContext.restoreGraphicsState()
+        return ctx.makeImage()
     }
 
     private var stages: [CGDirectDisplayID: Stage] = [:]
@@ -846,7 +860,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Centred on the drawn cursor's hot spot — where the eye already is — and as
     /// big as the drawn cursor, within `tipSides`.
     static func tipFrame(over hot: CGPoint, cursor: CGRect) -> CGRect {
-        let side = min(max(cursor.height, Stage.tipSides.lowerBound), Stage.tipSides.upperBound)
+        let side = min(max(cursor.height * 2, Stage.tipSides.lowerBound), Stage.tipSides.upperBound)
         return CGRect(x: hot.x - side / 2, y: hot.y - side / 2, width: side, height: side)
     }
 

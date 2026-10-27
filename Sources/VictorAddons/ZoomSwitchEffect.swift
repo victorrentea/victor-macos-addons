@@ -16,8 +16,8 @@ final class ZoomSwitchEffect {
     private var panel: NSPanel?
     private var cleanup: DispatchWorkItem?
 
-    private static let side: CGFloat = 72
-    private static let canvas: CGFloat = 260
+    private static let side: CGFloat = 144
+    private static let canvas: CGFloat = 400
 
     func play(_ engine: ZoomEngine, at point: CGPoint) {
         stop()
@@ -150,25 +150,10 @@ final class ZoomSwitchEffect {
 
     // MARK: - Artwork
 
-    /// The magnifier the zoom draws at the cursor (`ShareZoom`'s ⊕/⊖), plain: a white
-    /// SF Symbol on a dark disc, so it reads on any background.
+    /// The magnifier the zoom draws at the cursor (`ShareZoom`'s ⊕/⊖), plain: white
+    /// with a black outline, nothing behind it — the same artwork, twice the 72 pt
+    /// it had on its dark disc until 2026-10-27.
     static func lensImage(side: CGFloat, scale: CGFloat) -> CGImage? {
-        let px = Int(side * scale)
-        let config = NSImage.SymbolConfiguration(pointSize: CGFloat(px) * 0.5, weight: .bold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
-        guard let symbol = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
-                .withSymbolConfiguration(config),
-              let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.6).cgColor)
-        ctx.fillEllipse(in: CGRect(x: 0, y: 0, width: px, height: px))
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-        let size = symbol.size
-        symbol.draw(in: CGRect(x: (CGFloat(px) - size.width) / 2, y: (CGFloat(px) - size.height) / 2,
-                               width: size.width, height: size.height))
-        NSGraphicsContext.restoreGraphicsState()
-        return ctx.makeImage()
+        ShareZoom.outlinedSymbol("magnifyingglass", side: side, scale: scale)
     }
 }
