@@ -117,6 +117,14 @@ holds 0.45 s and fades. Its own click-through panel at the maximum window level,
 per play; the pill moves to (44, −48) from the cursor so it clears the lens. Filmed with
 `/test/zoom-input` bursts on DELL (1), both ways; switching to macOS zoom ends a Share Zoom in progress. The
 choice is `ZoomEngine` in this app's defaults and survives restarts; default macOS.
+**A physical ⌥+scroll carries no ⌥ (2026-10-27).** Logi Options+ smooth scrolling
+diverts the M650's wheel and re-posts the scrolls with **no modifier flags**, so for
+a day Share mode never started from the real wheel — ⌥+scroll kept zooming the macOS
+magnifier, which evidently reads the keyboard, not the event — while every posted
+test event (flags set) worked. A trace on both taps during a hand test logged not one
+⌥+scroll. `EventTapManager.scrollModifiers` now takes the keyboard's modifiers
+(`CGEventSource.flagsState(.hidSystemState)`) for a scroll that carries none, and
+each ⌥+scroll burst in Share mode logs one line naming the tap and where ⌥ came from.
 **⌥⇧+scroll does nothing since** (Victor's choice: one gesture, a switch). The switch
 was a quick ⌥⇧ tap for its first hour and flipped by itself while typing (*"volatil…
 la întâmplare"*). Then ⌃⌥F1, then just ⌥F1 (*"doar opt-F1"*), and the same evening

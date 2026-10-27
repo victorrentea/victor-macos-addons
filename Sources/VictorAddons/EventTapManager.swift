@@ -21,8 +21,7 @@ private let optionScrollCallbackFunc: CGEventTapCallBack = { _, type, event, use
     let manager = Unmanaged<EventTapManager>.fromOpaque(ptr).takeUnretainedValue()
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let port = manager.optionScrollTapPort { CGEvent.tapEnable(tap: port, enable: true) }
-    } else if type == .scrollWheel,
-              event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]) == [.maskAlternate] {
+    } else if type == .scrollWheel, EventTapManager.scrollModifiers(event) == [.maskAlternate] {
         // 🔎 `ZoomEngine.share`: ⌥+scroll is ours, and swallowed here so the
         // magnifier's own HID tap never sees it — one zoom at a time.
         if manager.zoomEngine == .share {
@@ -430,6 +429,19 @@ private let VK_I: CGKeyCode = 0x22
             momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase)))
     }
 
+    /// The modifiers a scroll was made with. **Logi Options+ re-posts Victor's M650
+    /// wheel with no modifier flags at all** (smooth scrolling diverts the wheel and
+    /// synthesizes the scrolls): a physical ⌥+scroll arrived as a bare scroll at both
+    /// taps, so Share mode never saw one (2026-10-27, a hand test with a trace on
+    /// both taps: not one line). The macOS magnifier evidently reads the keyboard
+    /// rather than the event, which is why ⌥+scroll kept zooming it. So: an event
+    /// that carries no modifiers gets the keyboard's.
+    static func scrollModifiers(_ event: CGEvent) -> CGEventFlags {
+        let mods: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
+        let own = event.flags.intersection(mods)
+        return own.isEmpty ? CGEventSource.flagsState(.hidSystemState).intersection(mods) : own
+    }
+
     /// When the last ⌥+scroll for ShareZoom was traced, and how many came since.
     /// Tap thread only.
     private var zoomTraceAt: CFAbsoluteTime = 0
@@ -453,7 +465,8 @@ private let VK_I: CGKeyCode = 0x22
                             event.getIntegerValueField(.scrollWheelEventScrollPhase),
                             event.getIntegerValueField(.scrollWheelEventMomentumPhase))
         let took = zoom.map { "delta=\($0.0) \($0.1)" } ?? "no delta — swallowed for nothing"
-        overlayInfo("🔎 ⌥+scroll at the \(tap) tap (\(zoomTraceCount) since last line): \(fields) → \(took)")
+        let from = event.flags.contains(.maskAlternate) ? "event" : "keyboard"
+        overlayInfo("🔎 ⌥+scroll at the \(tap) tap (\(zoomTraceCount) since last line, ⌥ from the \(from)): \(fields) → \(took)")
         zoomTraceCount = 0
     }
 
@@ -858,7 +871,7 @@ private let VK_I: CGKeyCode = 0x22
             // Read after the reversal, so the direction moves with every other
             // scroll on this Mac. ⌥⇧+scroll was this zoom until 2026-10-26 and is
             // left alone now: ⌥ + wheel click is the engine switch.
-            let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+            let zoomFlags = Self.scrollModifiers(event)
             if zoomFlags == [.maskAlternate], zoomEngine == .share {
                 let zoom = zoomScroll(event)
                 traceZoomScroll("session", event, zoom)
