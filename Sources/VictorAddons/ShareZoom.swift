@@ -210,10 +210,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let c = CGPoint(x: 176, y: 176)
         let lines = CGMutablePath()
         lines.addEllipse(in: CGRect(x: c.x - 150, y: c.y - 150, width: 300, height: 300))
-        // The glint: its own subpath, or `addArc` joins it to the rim with a line.
+        // The glint: a path of its own, drawn at half opacity (Victor, 2026-10-27:
+        // *"arcul de cerc interior să fie translucent 50%"*).
+        let glintArc = CGMutablePath()
         let glint: CGFloat = 112, from = CGFloat.pi * 0.76
-        lines.move(to: CGPoint(x: c.x + glint * cos(from), y: c.y + glint * sin(from)))
-        lines.addArc(center: c, radius: glint, startAngle: from, endAngle: .pi * 1.24, clockwise: false)
+        glintArc.addArc(center: c, radius: glint, startAngle: from, endAngle: .pi * 1.24, clockwise: false)
         if sign != 0 {
             lines.move(to: CGPoint(x: c.x - 52, y: c.y))
             lines.addLine(to: CGPoint(x: c.x + 52, y: c.y))
@@ -245,6 +246,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             ctx.setLineWidth(76 + extra)
             ctx.addPath(handle); ctx.strokePath()
         }
+        // One transparency layer, so the white over the black is 50 % as a whole
+        // and the black does not show through it.
+        ctx.setAlpha(0.5)
+        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+        for (color, extra) in [(NSColor.black, 2 * edge), (NSColor.white, 0)] {
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(line + extra)
+            ctx.addPath(glintArc); ctx.strokePath()
+        }
+        ctx.endTransparencyLayer()
         return ctx.makeImage()
     }
 
@@ -263,6 +274,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var tick: Timer?
     private var tickCount = 0
+    /// The mouse slowed by the factor while zoomed — the room's slice no longer runs off.
+    private let pointerSpeed = ZoomPointerSpeed()
     private var target: CGFloat = 1
     private var current: CGFloat = 1
     /// Origin of the visible slice, in the active screen's own points.
@@ -596,6 +609,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         tick = nil
         publishCursor(nil)
         restoreCursor()
+        pointerSpeed.restore()
         active?.cursor.isHidden = true
         active?.panel.orderOut(nil)
         active = nil
@@ -802,6 +816,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             deactivate()
             return
         }
+        // A pinned focus is a test with the real mouse left alone — its speed too.
+        pointerSpeed.follow(factor: pinnedFocus == nil ? current : 1)
         let size = s.frame.size
         let focus = pinnedFocus ?? NSEvent.mouseLocation
         let inside = NSMouseInRect(focus, s.frame, false)

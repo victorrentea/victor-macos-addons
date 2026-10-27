@@ -165,6 +165,19 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   is about the pointer (`ShareZoomPolicy.rezoom` / `pan`). The first build kept the
   pointer as the fixed point of the magnification instead, so the whole desktop slid
   under every mouse move — "nu e aceeași experiență".
+- **The mouse is slowed by the factor while zoomed (`ZoomPointerSpeed`, 2026-10-27)** —
+  at 4× the drawn cursor otherwise crosses the glass four times as fast, and a small
+  move on the table sent the slice running left and right (*"la o mișcare mică pe
+  masă îmi fuge foarte rău"*). The M650's `HIDPointerResolution` is raised to
+  factor × 400 dpi on every ≥ 3 % change of the eased factor and put back at 1×: the
+  HID system divides by the resolution **before** the acceleration curve, so the curve
+  stays and only its scale changes — unlike `ZoomLensCursorFence`'s decoupled raw
+  deltas, which have no curve. Only a **monitor** HID client may set it
+  (`IOHIDEventSystemClientCreateWithType(…, 1, …)`, exported but undeclared, via
+  `dlsym`); the SDK's simple client is refused. Mice only — the trackpad's resolution
+  reads back empty, so it could not be put back faithfully. A `UserDefaults` marker
+  resets it at the next launch after a crash. Not under a pinned focus (tests).
+  ⚠️ **Unverified by hand** when written: that the M650 takes the change live.
 - **Input is still never remapped.** Edge panning means the desktop point under the
   real pointer is no longer drawn under it, so the **hardware cursor is hidden**
   (`CGDisplayHideCursor` + the `SetsCursorInBackground` connection flag, the
@@ -246,7 +259,8 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   picture, never magnified, so the share carries it too (`Stage.zigzagRing`).
 - **While the zoom changes, a ⊕/⊖ magnifier stands in for the drawn cursor** (SF
   a **drawn line-art lens** after Victor's reference picture since 2026-10-27 — big
-  see-through glass with a glint, thin neck, rounded handle, every line white edged in
+  see-through glass with a glint (at 50 % since 2026-10-27, *"arcul de cerc interior
+  să fie translucent 50%"*), thin neck, rounded handle, every line white edged in
   black, nothing behind; an SF Symbol on a 60 % black disc until then — the glass on
   the hot spot, twice the drawn cursor within 88–192 pt; `ShareZoom.lensArtwork`): ⊕ closer, ⊖ farther, by the last notch's
   sign; the cursor comes back 0.5 s after the last notch (Victor, 2026-10-26: *"să
