@@ -1,93 +1,99 @@
+import CoreGraphics
 import Foundation
-import IOKit.hidsystem
 
 /// 🔎 Slows the mouse down by the zoom factor while `ShareZoom` magnifies, so a small
 /// move on the table is a small move on the glass. Without it, at 4× the drawn cursor
 /// crossed the picture four times as fast and the slice ran off left and right under
 /// the hand (Victor, 2026-10-27: *"la o mișcare mică pe masă îmi fuge foarte rău"*).
 ///
-/// **How: the pointer services' `HIDPointerResolution`**, raised to `factor` × what it
-/// was — the knob LinearMouse turns. The HID system divides every move by the device's
-/// resolution *before* the acceleration curve, so the curve Victor is used to stays
-/// intact and only its scale changes. The other way that exists, decoupling the mouse
-/// from the cursor and warping it ourselves (`ZoomLensCursorFence`), gets **raw**
-/// deltas with no curve at all, and no constant over them ever felt right (2026-09-23).
+/// **How: every move is taken back to 1/factor of itself.** An HID tap sees each move
+/// after WindowServer has already put the cursor at its new place, accelerated; the
+/// cursor is warped to `last + (new − last) / factor` instead, and the event is told
+/// the same. The acceleration curve Victor is used to stays, only scaled. `pos` keeps
+/// the fractions a warp to whole points would lose, or slow moves would never add up.
 ///
-/// **It outlives a crash**: the property is the device's until it reconnects. So a
-/// marker in `UserDefaults` says "raised", and the next launch puts it back.
+/// **What did not work** (2026-10-27): raising the M650's `HIDPointerResolution`
+/// through a monitor HID client. Every set returned true and the mouse did not slow
+/// at all. Decoupling the mouse (`ZoomLensCursorFence`) was not tried here: its
+/// deltas are raw, with no curve, and no constant over them ever felt right.
+///
+/// **The tap is enabled only while zoomed**, from `ShareZoom.follow`'s 120 Hz tick.
 final class ZoomPointerSpeed {
 
-    /// The HID default when a device publishes none: 400 dpi, as an IOFixed.
-    static let defaultResolution = 400 << 16
-    private static let key = kIOHIDPointerResolutionKey as CFString
-    private static let marker = "ZoomPointerSpeed.raised"
+    private var tapPort: CFMachPort?
+    /// Shared between main (`follow`) and the tap thread (every move): hence the lock.
+    private let lock = NSLock()
+    private var factor: CGFloat = 1
+    /// Where the cursor was put last, with its fractions; nil until the first move.
+    private var pos: CGPoint?
 
-    private let queue = DispatchQueue(label: "ro.victorrentea.macos-addons.zoom-pointer-speed", qos: .userInteractive)
-    private let client = ZoomPointerSpeed.monitorClient() ?? IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
-    /// Each raised service and the resolution it had. Touched only on `queue`.
-    private var original: [(service: IOHIDServiceClient, resolution: Int)] = []
-    /// The factor last written, on main: `follow` runs at 120 Hz and the factor eases.
-    private var written: CGFloat = 1
+    init() { createTap() }
 
-    init() {
-        if UserDefaults.standard.bool(forKey: Self.marker) {
-            overlayInfo("🔎 pointer resolution left raised by the last run — reset to the default")
-            queue.async { [self] in
-                for s in pointerServices() { IOHIDServiceClientSetProperty(s, Self.key, Self.defaultResolution as CFNumber) }
-                UserDefaults.standard.set(false, forKey: Self.marker)
-            }
-        }
-    }
-
-    /// Main thread, every zoom tick. Writes only when the factor moved by 3 % or more,
-    /// or reached 1 — a few IPCs per wheel notch, none while the zoom holds still.
+    /// Main thread, every zoom tick.
     func follow(factor: CGFloat) {
         let k = max(factor, 1)
-        guard k == 1 ? written != 1 : abs(k / written - 1) >= 0.03 else { return }
-        written = k
-        queue.async { [self] in apply(k) }
+        lock.lock()
+        let was = self.factor
+        self.factor = k
+        if k == 1 { pos = nil }
+        lock.unlock()
+        guard let port = tapPort, (was > 1) != (k > 1) else { return }
+        CGEvent.tapEnable(tap: port, enable: k > 1)
+        overlayInfo("🔎 pointer slowed by the zoom factor: \(k > 1 ? "on" : "off")")
     }
 
     func restore() { follow(factor: 1) }
 
-    private func apply(_ k: CGFloat) {
-        if original.isEmpty {
-            guard k > 1 else { return }
-            original = pointerServices().map {
-                ($0, (IOHIDServiceClientCopyProperty($0, Self.key) as? NSNumber)?.intValue ?? Self.defaultResolution)
-            }
-            UserDefaults.standard.set(true, forKey: Self.marker)
+    private func createTap() {
+        let mask = [CGEventType.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+            .reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        guard let tap = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: { _, type, event, userInfo in
+                let me = Unmanaged<ZoomPointerSpeed>.fromOpaque(userInfo!).takeUnretainedValue()
+                return me.handle(type: type, event: event)
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            overlayError("ZoomPointerSpeed: could not create HID tap — check Accessibility")
+            return
         }
-        var refused = 0
-        for (service, resolution) in original {
-            let value = k > 1 ? Int((CGFloat(resolution) * k).rounded()) : resolution
-            if !IOHIDServiceClientSetProperty(service, Self.key, value as CFNumber) { refused += 1 }
+        CGEvent.tapEnable(tap: tap, enable: false)
+        tapPort = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        let thread = Thread {
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CFRunLoopRun()
         }
-        if refused > 0 { overlayError("🔎 pointer resolution refused by \(refused)/\(original.count) device(s) at \(k)×") }
-        if k == 1 {
-            overlayInfo("🔎 pointer speed restored on \(original.count) device(s)")
-            original = []
-            UserDefaults.standard.set(false, forKey: Self.marker)
-        }
+        thread.name = "ZoomPointerSpeed"
+        thread.start()
     }
 
-    /// A *simple* client — the only kind the SDK declares — may read a property but
-    /// not set one (`IOHIDServiceClientSetProperty` → false, measured 2026-10-27). A
-    /// *monitor* client may, with no entitlement; its constructor is exported, not
-    /// declared, hence `dlsym`. Type 1 = `kIOHIDEventSystemClientTypeMonitor`.
-    private static func monitorClient() -> IOHIDEventSystemClient? {
-        typealias Create = @convention(c) (CFAllocator?, Int32, CFDictionary?) -> Unmanaged<IOHIDEventSystemClient>?
-        guard let iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW),
-              let create = dlsym(iokit, "IOHIDEventSystemClientCreateWithType") else { return nil }
-        return unsafeBitCast(create, to: Create.self)(kCFAllocatorDefault, 1, nil)?.takeRetainedValue()
-    }
-
-    /// Every mouse — on this Mac, the M650 alone. The built-in trackpad publishes no
-    /// mouse service, and is left out on purpose: its resolution reads back empty, so
-    /// "restoring" it would mean guessing the 400 dpi default for a device that may
-    /// not use it.
-    private func pointerServices() -> [IOHIDServiceClient] {
-        guard let all = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] else { return [] }
-        return all.filter { IOHIDServiceClientConformsTo($0, UInt32(kHIDPage_GenericDesktop), UInt32(kHIDUsage_GD_Mouse)) != 0 }
+    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        lock.lock(); defer { lock.unlock() }
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if factor > 1, let port = tapPort { CGEvent.tapEnable(tap: port, enable: true) }
+            return Unmanaged.passUnretained(event)
+        }
+        guard factor > 1 else { return Unmanaged.passUnretained(event) }
+        let now = event.location
+        // The first move, or a jump no hand makes in one event (a warp by someone
+        // else, a display change): follow it rather than scale it.
+        guard let last = pos, hypot(now.x - last.x, now.y - last.y) < 400 else {
+            pos = now
+            return Unmanaged.passUnretained(event)
+        }
+        let next = CGPoint(x: last.x + (now.x - last.x) / factor, y: last.y + (now.y - last.y) / factor)
+        pos = next
+        CGWarpMouseCursorPosition(next)
+        // A warp mutes the mouse for 0.25 s; re-associating lifts that at once.
+        CGAssociateMouseAndMouseCursorPosition(1)
+        event.location = next
+        event.setDoubleValueField(.mouseEventDeltaX, value: event.getDoubleValueField(.mouseEventDeltaX) / Double(factor))
+        event.setDoubleValueField(.mouseEventDeltaY, value: event.getDoubleValueField(.mouseEventDeltaY) / Double(factor))
+        return Unmanaged.passUnretained(event)
     }
 }

@@ -168,16 +168,16 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **The mouse is slowed by the factor while zoomed (`ZoomPointerSpeed`, 2026-10-27)** —
   at 4× the drawn cursor otherwise crosses the glass four times as fast, and a small
   move on the table sent the slice running left and right (*"la o mișcare mică pe
-  masă îmi fuge foarte rău"*). The M650's `HIDPointerResolution` is raised to
-  factor × 400 dpi on every ≥ 3 % change of the eased factor and put back at 1×: the
-  HID system divides by the resolution **before** the acceleration curve, so the curve
-  stays and only its scale changes — unlike `ZoomLensCursorFence`'s decoupled raw
-  deltas, which have no curve. Only a **monitor** HID client may set it
-  (`IOHIDEventSystemClientCreateWithType(…, 1, …)`, exported but undeclared, via
-  `dlsym`); the SDK's simple client is refused. Mice only — the trackpad's resolution
-  reads back empty, so it could not be put back faithfully. A `UserDefaults` marker
-  resets it at the next launch after a crash. Not under a pinned focus (tests).
-  ⚠️ **Unverified by hand** when written: that the M650 takes the change live.
+  masă îmi fuge foarte rău"*). An HID tap, enabled only while the factor is > 1, takes
+  each move after WindowServer has applied it (accelerated) and warps the cursor to
+  `last + (new − last) / factor`, keeping the fractions in its own `pos`; the event's
+  location and deltas are scaled the same. So the acceleration curve stays, only
+  scaled. `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
+  mute a warp brings. A jump of ≥ 400 pt in one event is followed, not scaled.
+  **Tried first, same day, no effect:** raising the M650's `HIDPointerResolution` to
+  factor × 400 dpi through a *monitor* HID client (`IOHIDEventSystemClientCreateWithType`
+  type 1 — the SDK's simple client is refused). Every set returned true; Victor felt
+  no change at all. Not under a pinned focus (tests).
 - **Input is still never remapped.** Edge panning means the desktop point under the
   real pointer is no longer drawn under it, so the **hardware cursor is hidden**
   (`CGDisplayHideCursor` + the `SetsCursorInBackground` connection flag, the
