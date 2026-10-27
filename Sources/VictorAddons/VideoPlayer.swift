@@ -49,6 +49,12 @@ import Foundation
 /// 5. **The cursor is never hidden by us.** `setHiddenUntilMouseMoves` at most
 ///    — it restores itself on the first movement, so there is no hide/show
 ///    pair that an error path could leave unbalanced.
+///
+/// 6. **Seeking (2026-10-27).** A bar along the bottom of the picture
+///    (`SeekBar`: elapsed, knob, `0:34 / 0:58`) shows on any mouse move and fades
+///    2.5 s after the last one, so it does not sit on the projected clip. Click
+///    or drag on it to seek; ← / → jump 5 s. Scrubbing out of the end (rewound
+///    or held) is a replay from there, the same as SPACE.
 final class VideoPlayer {
     static let shared = VideoPlayer()
 
@@ -105,6 +111,8 @@ final class VideoPlayer {
         let win = VideoWindow(screenFrame: screen.frame, player: p)
         win.onSpace = { [weak self] in self?.togglePause() }
         win.onEscape = { [weak self] in self?.stop() }
+        win.onSeekBy = { [weak self] delta in self?.seek(by: delta) }
+        win.onScrub = { [weak self] seconds, final in self?.seek(to: seconds, exact: final) }
         if Self.subtitlesOn, let srt = Self.sidecarSubtitle(for: fileURL) {
             win.subtitles = SRTSubtitles.parse(file: srt)
             overlayInfo("VideoPlayer: subtitles \(srt.lastPathComponent) (\(win.subtitles.count) cues)")
@@ -112,10 +120,14 @@ final class VideoPlayer {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
         ) { [weak self] _ in self?.reachedEnd() }
-        if !win.subtitles.isEmpty {
-            timeObserver = p.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
-            ) { [weak win] t in win?.showSubtitle(at: CMTimeGetSeconds(t)) }
+        // Every clip now, not only a subtitled one: the seek bar follows it too.
+        timeObserver = p.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
+        ) { [weak win, weak item] t in
+            let now = CMTimeGetSeconds(t)
+            if win?.subtitles.isEmpty == false { win?.showSubtitle(at: now) }
+            let d = item.map { CMTimeGetSeconds($0.duration) } ?? 0
+            win?.showProgress(at: now, of: d.isFinite ? d : 0)
         }
 
         previousApp = NSWorkspace.shared.frontmostApplication
@@ -321,6 +333,38 @@ final class VideoPlayer {
         player.play()
     }
 
+    // MARK: - Seeking (← / → and the seek bar)
+
+    /// ← / →: five seconds back or forward from where the clip is now.
+    private func seek(by delta: Double) {
+        guard let player else { return }
+        seek(to: CMTimeGetSeconds(player.currentTime()) + delta, exact: true)
+        window?.revealSeekBar()
+    }
+
+    /// Jump to `seconds` in the file. While a drag is still moving (`exact`
+    /// false) a little tolerance keeps the picture following the mouse; the
+    /// release lands on the exact frame. A seek out of the held/rewound end is
+    /// a replay from there — its own auto-kill window, the tablet's page pinned
+    /// again — exactly as SPACE treats it.
+    private func seek(to seconds: Double, exact: Bool) {
+        guard let player, let item = player.currentItem else { return }
+        let duration = CMTimeGetSeconds(item.duration)
+        let target = max(0, duration.isFinite ? min(seconds, duration - 0.05) : seconds)
+        let slack = exact ? CMTime.zero : CMTime(seconds: 0.25, preferredTimescale: 600)
+        let resume = atEndPaused && exact
+        if resume {
+            atEndPaused = false
+            activeSince = Date()
+            activeDeadline = Date().addingTimeInterval(autoKillAfter)
+            scheduleAutoKill()
+        }
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
+                    toleranceBefore: slack, toleranceAfter: slack) { [weak player] done in
+            if done && resume { player?.play() }
+        }
+    }
+
     // MARK: - Lifetime
 
     private func scheduleAutoKill(after custom: TimeInterval? = nil) {
@@ -344,7 +388,19 @@ final class VideoPlayer {
 final class VideoWindow: NSWindow {
     var onSpace: (() -> Void)?
     var onEscape: (() -> Void)?
+    /// ← / →, in seconds (±`arrowStep`).
+    var onSeekBy: ((Double) -> Void)?
+    /// The seek bar was clicked or dragged: target second, and whether the
+    /// mouse is up (exact seek) or still moving.
+    var onScrub: ((Double, Bool) -> Void)?
     var subtitles: [SRTSubtitles.Cue] = []
+
+    static let arrowStep = 5.0
+    /// The bar shows on a mouse move / arrow / scrub and fades out this long
+    /// after the last one — a bar left up would sit on the projected picture.
+    static let seekBarLinger: TimeInterval = 2.5
+    private let seekBar = SeekBar()
+    private var hideSeekBar: DispatchWorkItem?
 
     private let caption = NSTextField(labelWithString: "")
     /// The same text stroked thick and black, right under `caption`: the
@@ -389,7 +445,14 @@ final class VideoWindow: NSWindow {
             label.isHidden = true
             view.addSubview(label)
         }
+        seekBar.alphaValue = 0
+        seekBar.onScrub = { [weak self] seconds, final in
+            self?.revealSeekBar()
+            self?.onScrub?(seconds, final)
+        }
+        view.addSubview(seekBar)
         contentView = view
+        acceptsMouseMovedEvents = true
     }
 
     override var canBecomeKey: Bool { true }
@@ -399,8 +462,51 @@ final class VideoWindow: NSWindow {
         switch event.keyCode {
         case 49: onSpace?()      // space
         case 53: onEscape?()     // esc
+        case 123: onSeekBy?(-Self.arrowStep)   // ←
+        case 124: onSeekBy?(Self.arrowStep)    // →
         default: super.keyDown(with: event)
         }
+    }
+
+    /// Any mouse movement over the clip brings the seek bar up.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .mouseMoved { revealSeekBar() }
+        super.sendEvent(event)
+    }
+
+    // MARK: Seek bar
+
+    func showProgress(at seconds: Double, of duration: Double) {
+        seekBar.duration = duration
+        if !seekBar.isScrubbing { seekBar.current = seconds }
+        layOutSeekBar()
+    }
+
+    /// Show the bar now and fade it out `seekBarLinger` after the last call;
+    /// never while the mouse is still holding the knob.
+    func revealSeekBar() {
+        layOutSeekBar()
+        seekBar.animator().alphaValue = 1
+        hideSeekBar?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if self.seekBar.isScrubbing { self.revealSeekBar(); return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.4
+                self.seekBar.animator().alphaValue = 0
+            }
+        }
+        hideSeekBar = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.seekBarLinger, execute: work)
+    }
+
+    /// Along the bottom of the picture (letterboxed on the 16:10 Retina), above
+    /// where a bottom caption would end.
+    private func layOutSeekBar() {
+        let video = playerLayer.videoRect.isEmpty ? contentView?.bounds ?? frame : playerLayer.videoRect
+        let height = max(36, video.height * 0.045)
+        seekBar.frame = NSRect(x: video.minX + video.width * 0.03, y: video.minY + video.height * 0.015,
+                               width: video.width * 0.94, height: height)
     }
 
     func showSubtitle(at seconds: Double) {
@@ -522,5 +628,82 @@ enum SRTSubtitles {
         else { return nil }
         let tag = String(body[r])
         return tag.range(of: #"[#A-Za-z0-9]+$"#, options: .regularExpression).map { String(tag[$0]) }
+    }
+}
+
+// MARK: - Seek bar
+
+/// The bar along the bottom of a clip: elapsed track, knob, `0:34 / 0:58`.
+/// Click or drag anywhere on it to seek. Drawn, not an `NSSlider`: a slider
+/// is sized for a settings pane, and this one is read off a projector.
+final class SeekBar: NSView {
+    var duration: Double = 0 { didSet { if duration != oldValue { needsDisplay = true } } }
+    var current: Double = 0 { didSet { if current != oldValue { needsDisplay = true } } }
+    var onScrub: ((Double, Bool) -> Void)?
+    private(set) var isScrubbing = false
+
+    override var isFlipped: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private var labelWidth: CGFloat { bounds.height * 3.6 }
+    private var track: NSRect {
+        let h = max(6, bounds.height * 0.18)
+        let inset = bounds.height / 2
+        return NSRect(x: inset, y: bounds.midY - h / 2,
+                      width: max(0, bounds.width - labelWidth - inset * 2), height: h)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.withAlphaComponent(0.45).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+
+        let t = track
+        let f = duration > 0 ? CGFloat(min(1, max(0, current / duration))) : 0
+        NSColor.white.withAlphaComponent(0.3).setFill()
+        NSBezierPath(roundedRect: t, xRadius: t.height / 2, yRadius: t.height / 2).fill()
+        var done = t
+        done.size.width = t.width * f
+        NSColor.systemOrange.setFill()
+        NSBezierPath(roundedRect: done, xRadius: t.height / 2, yRadius: t.height / 2).fill()
+        let r = t.height * 1.6
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: NSRect(x: t.minX + t.width * f - r, y: t.midY - r, width: 2 * r, height: 2 * r)).fill()
+
+        let font = NSFont.monospacedDigitSystemFont(ofSize: bounds.height * 0.42, weight: .medium)
+        let text = "\(Self.clock(current)) / \(Self.clock(duration))" as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+        let size = text.size(withAttributes: attrs)
+        text.draw(at: NSPoint(x: bounds.maxX - labelWidth + (labelWidth - size.width) / 2 - bounds.height / 4,
+                              y: bounds.midY - size.height / 2), withAttributes: attrs)
+    }
+
+    /// `m:ss`, the way a player shows it.
+    static func clock(_ seconds: Double) -> String {
+        let s = max(0, Int(seconds.isFinite ? seconds : 0))
+        return "\(s / 60):" + String(format: "%02d", s % 60)
+    }
+
+    /// Where in the clip an x on the bar lands, clamped to the track.
+    static func seconds(atX x: CGFloat, track: NSRect, duration: Double) -> Double {
+        guard track.width > 0, duration > 0 else { return 0 }
+        return Double(min(1, max(0, (x - track.minX) / track.width))) * duration
+    }
+
+    private func scrub(_ event: NSEvent, final: Bool) {
+        let x = convert(event.locationInWindow, from: nil).x
+        current = Self.seconds(atX: x, track: track, duration: duration)
+        onScrub?(current, final)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isScrubbing = true
+        scrub(event, final: false)
+    }
+
+    override func mouseDragged(with event: NSEvent) { scrub(event, final: false) }
+
+    override func mouseUp(with event: NSEvent) {
+        scrub(event, final: true)
+        isScrubbing = false
     }
 }
