@@ -170,14 +170,17 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   move on the table sent the slice running left and right (*"la o mișcare mică pe
   masă îmi fuge foarte rău"*). An HID tap, enabled only while the factor is > 1, takes
   each move after WindowServer has applied it and warps the cursor to
-  `last + delta / factor^1.25` (`ShareZoomPolicy.pointerSlowdown`; the event's own
+  `last + delta / factor^1.5` (`ShareZoomPolicy.pointerSlowdown`; the event's own
   delta, already accelerated), keeping the fractions in its own `pos` and clamped to
   the display; the event's location and deltas are told the same. So the acceleration
   curve stays, only scaled. The first build divided `now − last` by the whole factor:
   WindowServer rounds the warped position, the rounding ate most of every slow move,
   and the cursor all but froze (*"abia dacă pot să mișc"*) — hence the event delta.
   √factor came with that fix and was *"prea rapid"*; the whole factor was *"un pic
-  prea repede"*; factor^1.25 since (2.4× slower at 2×, 5.7× at 4×). `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
+  prea repede"*; factor^1.25 was *"prea rapid"* again; factor^1.5 since (2.8× slower
+  at 2×, 8× at 4×). The exponent is read at each zoom start from `UserDefaults`
+  (`defaults write ro.victorrentea.macos-addons ZoomPointerExponent -float 1.7`), so it
+  can be tuned without a redeploy. `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
   mute a warp brings. A jump of ≥ 400 pt in one event is followed, not scaled.
   **Tried first, same day, no effect:** raising the M650's `HIDPointerResolution` to
   factor × 400 dpi through a *monitor* HID client (`IOHIDEventSystemClientCreateWithType`

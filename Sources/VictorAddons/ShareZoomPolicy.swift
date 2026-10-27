@@ -100,13 +100,16 @@ enum ShareZoomPolicy {
     }
 
     /// How many times slower the mouse goes at `factor` (`ZoomPointerSpeed`):
-    /// factor^1.25 — at 2× 2.4 times slower, at 4× 5.7, so the drawn cursor crosses
-    /// the glass a little *slower* than an unzoomed one. The steps, all 2026-10-27:
-    /// the factor with slow moves lost to rounding (*"abia dacă pot să mișc"*), then
-    /// √factor with the rounding fixed (*"prea rapid"*), then the factor (*"un pic
-    /// prea repede"*). A power and not a multiple, so it starts from 1 at 1×.
-    static func pointerSlowdown(_ factor: CGFloat) -> CGFloat {
-        pow(max(factor, 1), 1.25)
+    /// factor^`exponent`. At 1 the drawn cursor crosses the glass as fast as an
+    /// unzoomed one; above 1, slower. The steps, all 2026-10-27: the factor with slow
+    /// moves lost to rounding (*"abia dacă pot să mișc"*), then √factor with the
+    /// rounding fixed (*"prea rapid"*), the factor (*"un pic prea repede"*), ^1.25
+    /// (*"prea rapid"*), now ^1.5 — 2.8× slower at 2×, 8× at 4×. A power and not a
+    /// multiple, so it starts from 1 at 1×.
+    static let defaultPointerExponent: CGFloat = 1.5
+
+    static func pointerSlowdown(_ factor: CGFloat, exponent: CGFloat = defaultPointerExponent) -> CGFloat {
+        pow(max(factor, 1), exponent)
     }
 
     // MARK: - Where the slice is

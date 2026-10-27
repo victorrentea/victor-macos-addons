@@ -25,6 +25,10 @@ final class ZoomPointerSpeed {
     /// Shared between main (`follow`) and the tap thread (every move): hence the lock.
     private let lock = NSLock()
     private var factor: CGFloat = 1
+    /// `ShareZoomPolicy.pointerSlowdown`'s exponent, re-read at each zoom start so it
+    /// can be tuned live: `defaults write ro.victorrentea.macos-addons ZoomPointerExponent -float 1.7`.
+    private var exponent = ShareZoomPolicy.defaultPointerExponent
+    static let exponentKey = "ZoomPointerExponent"
     /// Where the cursor was put last, with its fractions; nil until the first move.
     private var pos: CGPoint?
 
@@ -39,8 +43,13 @@ final class ZoomPointerSpeed {
         if k == 1 { pos = nil }
         lock.unlock()
         guard let port = tapPort, (was > 1) != (k > 1) else { return }
+        if k > 1 {
+            let stored = UserDefaults.standard.double(forKey: Self.exponentKey)
+            let e = stored > 0 ? CGFloat(stored) : ShareZoomPolicy.defaultPointerExponent
+            lock.lock(); exponent = e; lock.unlock()
+        }
         CGEvent.tapEnable(tap: port, enable: k > 1)
-        overlayInfo("🔎 pointer slowed by the zoom factor: \(k > 1 ? "on" : "off")")
+        overlayInfo("🔎 pointer slowed by factor^\(exponent): \(k > 1 ? "on" : "off")")
     }
 
     func restore() { follow(factor: 1) }
@@ -90,7 +99,7 @@ final class ZoomPointerSpeed {
         // From the event's own delta, never from `now − last`: WindowServer rounds the
         // warped position, and that rounding ate most of every slow move — the cursor
         // all but froze (2026-10-27, the first build of this).
-        let slow = Double(ShareZoomPolicy.pointerSlowdown(factor))
+        let slow = Double(ShareZoomPolicy.pointerSlowdown(factor, exponent: exponent))
         let dx = event.getDoubleValueField(.mouseEventDeltaX) / slow
         let dy = event.getDoubleValueField(.mouseEventDeltaY) / slow
         let next = Self.clampToDisplay(CGPoint(x: last.x + dx, y: last.y + dy), from: last)
