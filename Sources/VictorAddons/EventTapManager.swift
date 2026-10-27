@@ -27,7 +27,9 @@ private let optionScrollCallbackFunc: CGEventTapCallBack = { _, type, event, use
         // magnifier's own HID tap never sees it — one zoom at a time.
         if manager.zoomEngine == .share {
             ScrollReversal.apply(to: event)
-            if let (delta, source) = manager.zoomScroll(event) {
+            let zoom = manager.zoomScroll(event)
+            manager.traceZoomScroll("HID", event, zoom)
+            if let (delta, source) = zoom {
                 DispatchQueue.main.async { manager.onShareZoomScroll?(delta, source) }
             }
             return nil
@@ -426,6 +428,33 @@ private let VK_I: CGKeyCode = 0x22
             continuous: continuous,
             phase: event.getIntegerValueField(.scrollWheelEventScrollPhase),
             momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase)))
+    }
+
+    /// When the last ⌥+scroll for ShareZoom was traced, and how many came since.
+    /// Tap thread only.
+    private var zoomTraceAt: CFAbsoluteTime = 0
+    private var zoomTraceCount = 0
+
+    /// 🔎 One log line per ⌥+scroll burst (a gap of 1 s starts a new one): which tap
+    /// took it and what the event carried. A physical ⌥+scroll in Share mode never
+    /// started the zoom on 2026-10-27 while the posted ones in `/test/zoom-input`
+    /// always did, and nothing in the log said why.
+    fileprivate func traceZoomScroll(_ tap: String, _ event: CGEvent,
+                                     _ zoom: (Double, ShareZoomPolicy.Source)?) {
+        let now = CFAbsoluteTimeGetCurrent()
+        defer { zoomTraceAt = now }
+        zoomTraceCount += 1
+        guard now - zoomTraceAt > 1 else { return }
+        let fields = String(format: "cont=%lld d1=%lld pd1=%.1f fd1=%.2f phase=%lld momentum=%lld",
+                            event.getIntegerValueField(.scrollWheelEventIsContinuous),
+                            event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
+                            event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1),
+                            event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1),
+                            event.getIntegerValueField(.scrollWheelEventScrollPhase),
+                            event.getIntegerValueField(.scrollWheelEventMomentumPhase))
+        let took = zoom.map { "delta=\($0.0) \($0.1)" } ?? "no delta — swallowed for nothing"
+        overlayInfo("🔎 ⌥+scroll at the \(tap) tap (\(zoomTraceCount) since last line): \(fields) → \(took)")
+        zoomTraceCount = 0
     }
 
     func setGlassSpotlightUp(_ up: Bool) {
@@ -831,7 +860,9 @@ private let VK_I: CGKeyCode = 0x22
             // left alone now: ⌥ + wheel click is the engine switch.
             let zoomFlags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
             if zoomFlags == [.maskAlternate], zoomEngine == .share {
-                if let (delta, source) = zoomScroll(event) {
+                let zoom = zoomScroll(event)
+                traceZoomScroll("session", event, zoom)
+                if let (delta, source) = zoom {
                     DispatchQueue.main.async { [weak self] in self?.onShareZoomScroll?(delta, source) }
                 }
                 return nil

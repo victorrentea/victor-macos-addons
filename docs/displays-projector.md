@@ -230,6 +230,11 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
 - **A faded 🔍 (104 pt — 26 was too small to notice — 50 %) sits in the zoomed screen's top-right corner** while the
   zoom is on, at constant size — over the picture, not in it — so the room and the
   call can tell it is this zoom and not the system one (2026-10-15).
+- **A black zigzag runs all round the zoomed screen** for the whole zoom (Victor,
+  2026-10-27: *"niște zigzag negru la marginea ecranului… la orice moment de timp"*):
+  teeth 28 pt apart, 12 pt deep, on a 3 pt band, pointing in; a 1.5 pt light line
+  (white at 55 %) on their inner edge, or they vanish into a dark terminal. Over the
+  picture, never magnified, so the share carries it too (`Stage.zigzagRing`).
 - **While the zoom changes, a ⊕/⊖ magnifier stands in for the drawn cursor** (SF
   Symbols `plus`/`minus.magnifyingglass` on a dark disc, centred on the hot spot, as
   big as the drawn cursor within 44–96 pt): ⊕ closer, ⊖ farther, by the last notch's

@@ -44,6 +44,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// the call — can tell this is our zoom and not the system one (Victor,
         /// 2026-10-15). Never magnified: it sits over the picture, not in it.
         let badge = CALayer()
+        /// A black zigzag all round the screen while zoomed — the frame of a
+        /// magnifying glass, so it is plain at any moment, from any corner, that the
+        /// screen is this zoom and not the desktop (Victor, 2026-10-27: *"niște zigzag
+        /// negru la marginea ecranului… la orice moment de timp"*). A thin light line
+        /// rides its inner edge, or the teeth vanish into a dark terminal. Never magnified.
+        let edge = CAShapeLayer()
+        let edgeLine = CAShapeLayer()
+        static let edgeTooth: CGFloat = 28
+        static let edgeDepth: CGFloat = 12
+        static let edgeBand: CGFloat = 3
         /// A ⊕/⊖ magnifier that **stands in for the drawn cursor while the zoom
         /// changes** — centred on its hot spot, the cursor hidden — and gives it back
         /// `tipLinger` after the last notch (Victor, 2026-10-26: *"cursorul e înlocuit
@@ -102,6 +112,22 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             badge.contentsGravity = .resizeAspect
             badge.opacity = 0.5
             badge.actions = noAnimation
+            let ring = Self.zigzagRing(size: screen.frame.size)
+            let outer = CGMutablePath()
+            outer.addRect(view.bounds)
+            outer.addPath(ring)
+            edge.frame = view.bounds
+            edge.path = outer
+            edge.fillRule = .evenOdd
+            edge.fillColor = NSColor.black.cgColor
+            edge.actions = noAnimation
+            edgeLine.frame = view.bounds
+            edgeLine.path = ring
+            edgeLine.fillColor = nil
+            edgeLine.strokeColor = NSColor(calibratedWhite: 1, alpha: 0.55).cgColor
+            edgeLine.lineWidth = 1.5
+            edgeLine.lineJoin = .miter
+            edgeLine.actions = noAnimation
             let tipSide = Self.tipSides.upperBound
             tip.frame = CGRect(x: 0, y: 0, width: tipSide, height: tipSide)
             tipIn = Self.symbolImage("plus.magnifyingglass", side: tipSide, scale: screen.backingScaleFactor)
@@ -112,10 +138,42 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             tip.actions = noAnimation
             tip.isHidden = true
             view.layer?.addSublayer(image)
+            view.layer?.addSublayer(edge)
+            view.layer?.addSublayer(edgeLine)
             view.layer?.addSublayer(badge)
             view.layer?.addSublayer(cursor)
             view.layer?.addSublayer(tip)
             panel.contentView = view
+        }
+
+        /// The inner outline of the zigzag frame: a closed polygon just inside the
+        /// screen's edge, `edgeBand` deep at each tooth's root and `edgeBand +
+        /// edgeDepth` at its tip. Filled even-odd against the screen's rectangle, the
+        /// black is everything between the screen edge and this line: teeth pointing in.
+        static func zigzagRing(size: CGSize) -> CGPath {
+            let w = size.width, h = size.height, band = edgeBand, deep = edgeBand + edgeDepth
+            let path = CGMutablePath()
+            // One edge from corner `a` to corner `b`, the teeth on the side `inward`
+            // points to; both corners sit at the shallow inset, so the edges meet there.
+            func edge(_ a: CGPoint, _ b: CGPoint, inward: CGVector, first: Bool) {
+                let length = hypot(b.x - a.x, b.y - a.y)
+                let steps = max(2, 2 * Int((length / edgeTooth).rounded()))
+                for i in 0...steps where !(i == 0 && !first) {
+                    let t = CGFloat(i) / CGFloat(steps)
+                    let inset = i % 2 == 1 ? deep - band : 0
+                    let p = CGPoint(x: a.x + (b.x - a.x) * t + inward.dx * inset,
+                                    y: a.y + (b.y - a.y) * t + inward.dy * inset)
+                    if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
+                }
+            }
+            let tl = CGPoint(x: band, y: h - band), tr = CGPoint(x: w - band, y: h - band)
+            let br = CGPoint(x: w - band, y: band), bl = CGPoint(x: band, y: band)
+            edge(tl, tr, inward: CGVector(dx: 0, dy: -1), first: true)
+            edge(tr, br, inward: CGVector(dx: -1, dy: 0), first: false)
+            edge(br, bl, inward: CGVector(dx: 0, dy: 1), first: false)
+            edge(bl, tl, inward: CGVector(dx: 1, dy: 0), first: false)
+            path.closeSubpath()
+            return path
         }
 
         /// An SF Symbol in white on a dark disc, so it reads over any picture.
