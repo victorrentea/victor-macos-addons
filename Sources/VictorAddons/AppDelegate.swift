@@ -1977,16 +1977,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             overlayError("⌘⌃M reminder mail disabled: AGENTMAIL_API_KEY missing from secrets")
         }
 
-        eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control in
+        eventTap.onModifierFlagsChanged = { [weak self] option, shift, command, control, rightOptionOnly in
             guard self?.emojiPicker?.isVisible != true,
                   let sheet = KeymapHoldCoordinator.sheet(option: option, shift: shift,
-                                                          command: command, control: control),
+                                                          command: command, control: control,
+                                                          rightOptionOnly: rightOptionOnly),
                   KeymapOverlaySettings.allows(sheet) else {
                 self?.keymapHoldCoordinator?.reset()
                 return
             }
             self?.keymapHoldCoordinator?.modifierFlagsChanged(option: option, shift: shift,
-                                                              command: command, control: control)
+                                                              command: command, control: control,
+                                                              rightOptionOnly: rightOptionOnly)
         }
         eventTap.onKeyDownWhileModifierHeld = { [weak self] in
             self?.keymapHoldCoordinator?.keyDownWhileModifierHeld()

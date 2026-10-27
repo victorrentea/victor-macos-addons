@@ -299,6 +299,13 @@ final class KeymapOverlayTests: XCTestCase {
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: true, control: false))
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: false, control: true))
         XCTAssertNil(KeymapHoldCoordinator.sheet(option: false, shift: false, command: false, control: false))
+        // Right ⌥ alone is the picker's key (⌥ ×2): no ⌥ / ⌥⇧ sheet from it; ⌃⌥ still shows.
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: false,
+                                                 rightOptionOnly: true))
+        XCTAssertNil(KeymapHoldCoordinator.sheet(option: true, shift: true, command: false, control: false,
+                                                 rightOptionOnly: true))
+        XCTAssertEqual(KeymapHoldCoordinator.sheet(option: true, shift: false, command: false, control: true,
+                                                   rightOptionOnly: true), .controlOption)
     }
 
     /// The ⌃⌥ board is a palette like ⌥, not a menu like ⌘⌃: pressing a key on

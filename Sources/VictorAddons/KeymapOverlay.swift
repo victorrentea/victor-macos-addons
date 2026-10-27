@@ -580,10 +580,16 @@ final class KeymapHoldCoordinator {
     /// a board of characters, and a board nobody has memorised is exactly what
     /// a cheat-sheet is for — the two shortcuts left on it are the keys the
     /// sheet simply has nothing to say about.
-    static func sheet(option: Bool, shift: Bool, command: Bool, control: Bool) -> KeymapModifier? {
+    ///
+    /// ⌥ / ⌥⇧ held on the **right ⌥ alone** show nothing (2026-10-27): right
+    /// ⌥ ×2 is the emoji picker's gesture, and its second press may stay down,
+    /// so the ⌥ sheet kept opening instead of the picker. Victor: *"option-ul
+    /// din dreapta și option shift să nu triggerească"*. ⌃⌥ is untouched.
+    static func sheet(option: Bool, shift: Bool, command: Bool, control: Bool,
+                      rightOptionOnly: Bool = false) -> KeymapModifier? {
         if command { return control && !option ? .commandControl : nil }
         if option && control { return .controlOption }
-        if option { return shift ? .optionShift : .option }
+        if option { return rightOptionOnly ? nil : shift ? .optionShift : .option }
         return nil
     }
 
@@ -609,8 +615,10 @@ final class KeymapHoldCoordinator {
         self.hide = hide
     }
 
-    func modifierFlagsChanged(option: Bool, shift: Bool, command: Bool = false, control: Bool = false) {
-        guard let modifier = Self.sheet(option: option, shift: shift, command: command, control: control) else {
+    func modifierFlagsChanged(option: Bool, shift: Bool, command: Bool = false, control: Bool = false,
+                              rightOptionOnly: Bool = false) {
+        guard let modifier = Self.sheet(option: option, shift: shift, command: command, control: control,
+                                        rightOptionOnly: rightOptionOnly) else {
             reset()
             return
         }

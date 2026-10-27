@@ -189,7 +189,8 @@ class EventTapManager {
     /// hotkey-opened bezel pastes on release, and which one this is belongs to
     /// the app, not to the tap.
     var onClipboardHistoryCommandReleased: (() -> Void)?
-    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool) -> Void)?
+    var onModifierFlagsChanged: ((_ option: Bool, _ shift: Bool, _ command: Bool, _ control: Bool,
+                                  _ rightOptionOnly: Bool) -> Void)?
     var onKeyDownWhileModifierHeld: (() -> Void)?
 
     // Three rules left this tap in 2026-09 for `EffectsHotkeyTap` in Victor
@@ -645,6 +646,9 @@ private let VK_I: CGKeyCode = 0x22
             let hasCmdFlag = flags.contains(.maskCommand)
             let hasCtrlFlag = flags.contains(.maskControl)
             let historyOpen = isClipboardHistoryOpen
+            // Only the right ⌥'s device bit: a synthetic ⌥ carries neither, and counts as left.
+            let rightOptionOnly = flags.rawValue & UInt64(NX_DEVICERALTKEYMASK) != 0
+                && flags.rawValue & UInt64(NX_DEVICELALTKEYMASK) == 0
             // Never swallowed: ⌥ still has to reach apps as ⌥, the picker just
             // listens for the rhythm.
             if optionDoubleTap.flagsChanged(
@@ -663,7 +667,7 @@ private let VK_I: CGKeyCode = 0x22
                 DispatchQueue.main.async { [weak self] in self?.onControlShiftHeld?(controlShift) }
             }
             DispatchQueue.main.async { [weak self] in
-                self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag)
+                self?.onModifierFlagsChanged?(hasOpt, hasShift, hasCmdFlag, hasCtrlFlag, rightOptionOnly)
                 // Letting go of ⌘ is how ⌘⇧V ends — the same way it ends in
                 // Flycut, and the reason the shortcut is worth having: the
                 // whole thing is one uninterrupted hold, tap V until you see
