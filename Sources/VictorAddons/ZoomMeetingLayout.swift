@@ -93,11 +93,12 @@ enum ZoomMeetingLayoutPolicy {
 /// is popped out by its "Pop out" button.
 ///
 /// **While Victor shares his screen** the `Zoom Meeting` window is gone from
-/// the window list; the videos live in `zoom floating video window` instead.
-/// Until 2026-10-28 that read as "no meeting" and nothing moved. That window
-/// moves but refuses a size (`AXSize` not settable, a write fails with
-/// -25200), so it keeps the size Victor dragged it to and only its top-left
-/// corner is placed; the panels, raised last, sit over its right edge.
+/// the window list; the videos live in `zoom floating video window` instead,
+/// which moves but refuses a size (`AXSize` not settable, a write fails with
+/// -25200). So the run first presses that window's "Show full meeting window"
+/// button, which brings the resizable `Zoom Meeting` window back for the rest
+/// of the share. Only if that does not appear is the floating window used,
+/// moved but not sized; the panels, raised last, sit over its right edge.
 final class ZoomMeetingLayout {
 
     enum Outcome: String {
@@ -152,7 +153,9 @@ final class ZoomMeetingLayout {
         // that hang the caller.
         AXUIElementSetMessagingTimeout(axApp, 1.0)
 
+        var notes: [String] = []
         guard let meeting = window(of: axApp, where: { meetingTitles.contains($0) })
+                ?? fullMeetingWindowWhileSharing(axApp, notes: &notes)
                 ?? window(of: axApp, where: { $0 == sharingVideoTitle }) else {
             return Report(outcome: .noMeeting)
         }
@@ -161,7 +164,7 @@ final class ZoomMeetingLayout {
               var usable = onMain({ usableArea(ofDisplayBounds: display) }) else {
             return Report(outcome: .noDisplayAbove)
         }
-        var report = Report(outcome: .done, display: display)
+        var report = Report(outcome: .done, display: display, notes: notes)
         if !meetingResizable { report.notes.append("video window not resizable (sharing?), moved only") }
 
         // A full-screen meeting window ignores AXPosition/AXSize.
@@ -263,6 +266,29 @@ final class ZoomMeetingLayout {
         if let value = AXValueCreate(.cgPoint, &origin) {
             AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
         }
+    }
+
+    /// While sharing, the floating video window's own "Show full meeting
+    /// window" button brings the `Zoom Meeting` window back — a standard window
+    /// that takes a size, unlike the floating one (whose only resize handles,
+    /// two `AXIncrementor`s, exist in the tree only while the pointer hovers
+    /// it). Zoom docks the popped-out panels back into it; `ensurePanel` pops
+    /// them out again.
+    private static func fullMeetingWindowWhileSharing(_ axApp: AXUIElement,
+                                                      notes: inout [String]) -> AXUIElement? {
+        guard let floating = window(of: axApp, where: { $0 == sharingVideoTitle }),
+              let button = findButton(in: floating, depth: 0, matching: { $0.contains("Show full meeting window") })
+        else { return nil }
+        AXUIElementPerformAction(button, kAXPressAction as CFString)
+        for _ in 0..<15 {
+            Thread.sleep(forTimeInterval: 0.2)
+            if let w = window(of: axApp, where: { meetingTitles.contains($0) }) {
+                notes.append("full meeting window shown (sharing)")
+                Thread.sleep(forTimeInterval: 0.5)  // let Zoom finish docking the panels
+                return w
+            }
+        }
+        return nil
     }
 
     // MARK: - Panels
