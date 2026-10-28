@@ -52,9 +52,10 @@ enum ZoomMeetingLayoutPolicy {
     /// column split Participants (top) / Chat (bottom). All rounded to whole
     /// points, because Zoom rounds anyway and a half-point gap between the two
     /// panels shows as a hairline of desktop.
-    static func frames(in usable: CGRect) -> Frames {
+    /// `chatHeight` overrides the fraction when Zoom refused a shorter chat.
+    static func frames(in usable: CGRect, chatHeight: CGFloat? = nil) -> Frames {
         let column = min(columnWidth, (usable.width * 0.3).rounded())
-        let chatHeight = (usable.height * chatHeightFraction).rounded()
+        let chatHeight = (chatHeight ?? (usable.height * chatHeightFraction)).rounded()
         let columnX = usable.maxX - column
         return Frames(
             meeting: CGRect(x: usable.minX, y: usable.minY,
@@ -187,8 +188,18 @@ final class ZoomMeetingLayout {
             frames = ZoomMeetingLayoutPolicy.frames(in: usable)
             place(meeting, frames.meeting)
         }
+        // Chat first: Zoom holds it to a minimum height (435 pt on 2026-10-28,
+        // over the 378 asked), and a taller chat must grow upwards, off
+        // Participants, instead of hanging below the monitor.
+        if let chat {
+            place(chat, frames.chat)
+            if let got = AXWindows.frame(of: chat), got.height > frames.chat.height + tolerance {
+                frames = ZoomMeetingLayoutPolicy.frames(in: usable, chatHeight: got.height)
+                report.notes.append("chat min height \(Int(got.height))pt")
+                place(chat, frames.chat)
+            }
+        }
         if let participants { place(participants, frames.participants) }
-        if let chat { place(chat, frames.chat) }
 
         // Bring the three up together, panels last so they sit over the video
         // window's edge rather than under it.

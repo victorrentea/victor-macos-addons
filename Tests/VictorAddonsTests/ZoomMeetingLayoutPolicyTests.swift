@@ -43,6 +43,16 @@ final class ZoomMeetingLayoutPolicyTests: XCTestCase {
         XCTAssertEqual(f.chat.height, 380)
     }
 
+    /// Zoom refused a chat shorter than 435 pt (2026-10-28): the chat keeps its
+    /// bottom on the screen's bottom edge and grows up into Participants.
+    func testTallerChatGrowsUpwardsOffParticipants() {
+        let usable = CGRect(x: -96, y: -1050, width: 1920, height: 1050)
+        let f = ZoomMeetingLayoutPolicy.frames(in: usable, chatHeight: 435)
+        XCTAssertEqual(f.chat, CGRect(x: 1464, y: -435, width: 360, height: 435))
+        XCTAssertEqual(f.participants.maxY, f.chat.minY)
+        XCTAssertEqual(f.participants.minY, usable.minY)
+    }
+
     /// On a narrow display the column must not eat the video.
     func testColumnCappedAtThirtyPercentOfANarrowDisplay() {
         let f = ZoomMeetingLayoutPolicy.frames(in: CGRect(x: 0, y: 0, width: 1000, height: 700))
