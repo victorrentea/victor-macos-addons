@@ -15,6 +15,8 @@ class TranscriptionWatcher {
     private var timer: Timer?
     private var transcriptionStartTime: Date?
     private var lastIsStale: Bool = false
+    /// Injectable so the tests can walk past the threshold without waiting.
+    var clock: () -> Date = Date.init
 
     init(transcriptionFolder: URL,
          staleThreshold: TimeInterval = 180,
@@ -24,12 +26,19 @@ class TranscriptionWatcher {
         self.checkInterval = checkInterval
     }
 
+    /// A restart without a stop in between is normal: sleep SIGKILLs whisper
+    /// (`killImmediate`, which reports nothing) and wake starts it again. So
+    /// `lastIsStale` is NOT reset here — it used to be, silently, and a 🤐 raised
+    /// overnight then stayed in the menu bar all day while Victor talked
+    /// (2026-10-28). The immediate `check()` reports the fresh warm-up window as
+    /// "not stale", which clears whoever was told "stale" before.
     func startWatching() {
-        transcriptionStartTime = Date()
-        lastIsStale = false
+        timer?.invalidate()
+        transcriptionStartTime = clock()
         timer = Timer.scheduledTimer(withTimeInterval: checkInterval, repeats: true) { [weak self] _ in
             self?.check()
         }
+        check()
     }
 
     func stopWatching() {
@@ -55,8 +64,8 @@ class TranscriptionWatcher {
         return now.timeIntervalSince(lastActivity) > threshold
     }
 
-    private func check() {
-        let now = Date()
+    func check() {
+        let now = clock()
         let start = transcriptionStartTime ?? now
         // Deliberately NOT the file's mtime: whisper also writes `--- Victor →
         // 💻 ---` device markers into the transcript, and each one bumped the

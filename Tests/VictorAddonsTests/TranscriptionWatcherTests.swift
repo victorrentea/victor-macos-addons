@@ -55,4 +55,29 @@ final class TranscriptionWatcherTests: XCTestCase {
         let justOver = start.addingTimeInterval(threshold + 0.001)
         XCTAssertTrue(TranscriptionWatcher.isStale(mtime: nil, start: start, now: justOver, threshold: threshold))
     }
+
+    /// 2026-10-28: whisper went stale overnight (🤐), sleep SIGKILLed it with no
+    /// "stopped" event, wake started it again — and the restart reset the
+    /// watcher's state without telling the menu bar, so 🤐 stayed all morning
+    /// over a transcript filling up every minute.
+    func testRestartWithoutStopClearsAStaleReportedBefore() {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("watcher-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let watcher = TranscriptionWatcher(transcriptionFolder: folder, staleThreshold: threshold)
+        var now = start
+        watcher.clock = { now }
+        var reports: [Bool] = []
+        watcher.onStaleChanged = { reports.append($0) }
+
+        watcher.startWatching()
+        now = start.addingTimeInterval(threshold + 20)
+        watcher.check()
+        now = start.addingTimeInterval(threshold + 60)
+        watcher.startWatching()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        watcher.stopWatching()
+
+        XCTAssertEqual(reports, [true, false])
+    }
 }
