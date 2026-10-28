@@ -81,6 +81,7 @@ enum ZoomMeetingLayoutPolicy {
 /// AXWindow Subrole=AXStandardWindow Title="Zoom Meeting"      ← the video
 /// AXWindow Subrole=AXSystemDialog  Title="Participants (24)"  ← popped out
 /// AXWindow Subrole=AXSystemDialog  Title="Meeting chat"       ← popped out
+/// AXWindow Subrole=AXSystemDialog  Title="zoom floating video window" ← the video while sharing
 /// menu View → AXMenuItem id=onManageParticipants:  "Show/Close participants"
 /// menu View → AXMenuItem id=onChat:               "Show/Close chat"
 /// ```
@@ -89,6 +90,13 @@ enum ZoomMeetingLayoutPolicy {
 /// closed is opened through the View menu (by identifier, which does not change
 /// with the Show/Close wording); one that is docked inside the meeting window
 /// is popped out by its "Pop out" button.
+///
+/// **While Victor shares his screen** the `Zoom Meeting` window is gone from
+/// the window list; the videos live in `zoom floating video window` instead.
+/// Until 2026-10-28 that read as "no meeting" and nothing moved. That window
+/// moves but refuses a size (`AXSize` not settable, a write fails with
+/// -25200), so it keeps the size Victor dragged it to and only its top-left
+/// corner is placed; the panels, raised last, sit over its right edge.
 final class ZoomMeetingLayout {
 
     enum Outcome: String {
@@ -121,6 +129,7 @@ final class ZoomMeetingLayout {
 
     private static let zoomBundleID = "us.zoom.xos"
     private static let meetingTitles = ["Zoom Meeting", "Zoom Webinar"]
+    private static let sharingVideoTitle = "zoom floating video window"
     private static let participantsPrefix = "Participants"
     private static let chatPrefix = "Meeting chat"
     private static let participantsMenuID = "onManageParticipants"
@@ -142,14 +151,17 @@ final class ZoomMeetingLayout {
         // that hang the caller.
         AXUIElementSetMessagingTimeout(axApp, 1.0)
 
-        guard let meeting = window(of: axApp, where: { meetingTitles.contains($0) }) else {
+        guard let meeting = window(of: axApp, where: { meetingTitles.contains($0) })
+                ?? window(of: axApp, where: { $0 == sharingVideoTitle }) else {
             return Report(outcome: .noMeeting)
         }
+        let meetingResizable = sizeSettable(meeting)
         guard let display = displayAboveBuiltIn(),
               var usable = onMain({ usableArea(ofDisplayBounds: display) }) else {
             return Report(outcome: .noDisplayAbove)
         }
         var report = Report(outcome: .done, display: display)
+        if !meetingResizable { report.notes.append("video window not resizable (sharing?), moved only") }
 
         // A full-screen meeting window ignores AXPosition/AXSize.
         if boolAttr(meeting, "AXFullScreen") == true {
@@ -189,7 +201,10 @@ final class ZoomMeetingLayout {
         report.participants = participants.flatMap(AXWindows.frame(of:))
         report.chat = chat.flatMap(AXWindows.frame(of:))
 
-        let misses = [(report.meeting, frames.meeting, "meeting"),
+        // A window that refuses a size is judged by where it landed only.
+        let meetingTarget = meetingResizable ? frames.meeting
+            : report.meeting.map { CGRect(origin: frames.meeting.origin, size: $0.size) }
+        let misses = [(report.meeting, meetingTarget, "meeting"),
                       (report.participants, participants == nil ? nil : frames.participants, "participants"),
                       (report.chat, chat == nil ? nil : frames.chat, "chat")]
             .filter { got, want, _ in want != nil && !close(got, want!) }
@@ -212,6 +227,11 @@ final class ZoomMeetingLayout {
         for attempt in 0..<2 {
             if attempt > 0 { Thread.sleep(forTimeInterval: 0.3) }
             setPosition(window, rect.origin)
+            guard sizeSettable(window) else {
+                if let got = AXWindows.frame(of: window),
+                   abs(got.minX - rect.minX) <= tolerance, abs(got.minY - rect.minY) <= tolerance { return }
+                continue
+            }
             var size = rect.size
             if let value = AXValueCreate(.cgSize, &size) {
                 AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
@@ -219,6 +239,12 @@ final class ZoomMeetingLayout {
             setPosition(window, rect.origin)
             if close(AXWindows.frame(of: window), rect) { return }
         }
+    }
+
+    private static func sizeSettable(_ window: AXUIElement) -> Bool {
+        var settable: DarwinBoolean = false
+        AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &settable)
+        return settable.boolValue
     }
 
     private static func setPosition(_ window: AXUIElement, _ origin: CGPoint) {
