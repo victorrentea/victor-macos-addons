@@ -34,6 +34,17 @@ enum PowerPointPresenterPolicy {
         return screens.first { $0.isBuiltin }?.frame
     }
 
+    /// The displays to put back into the Retina's mirror set once a show is up:
+    /// those that mirrored it just before the show and no longer do. PowerPoint
+    /// breaks every mirror when Presenter View starts (measured 2026-10-29: the
+    /// room TV came out of the mirror 0.5 s before the show windows appeared,
+    /// parked right of the ASUS, and got Presenter View), so the room would see
+    /// the notes instead of the slides.
+    static func toRemirror(mirroredBefore: Set<UInt32>, online: Set<UInt32>,
+                           mirroringRetina: Set<UInt32>) -> Set<UInt32> {
+        mirroredBefore.intersection(online).subtracting(mirroringRetina)
+    }
+
     /// A window counts as on a screen when its centre is — PowerPoint sizes both
     /// windows to their screen, so anything else means it is on another one.
     static func isOn(_ target: CGRect, window: CGRect) -> Bool {

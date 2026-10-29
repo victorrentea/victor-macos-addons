@@ -22,6 +22,20 @@ final class PowerPointPresenterPolicyTests: XCTestCase {
         XCTAssertEqual(PowerPointPresenterPolicy.presenterTarget([retina, asus]), asus.frame)
     }
 
+    /// 2026-10-29 at a venue: PowerPoint took the room TV (4) out of the Retina's
+    /// mirror when the show started; it goes back, the ASUS (5) was never in it.
+    func testRoomTvBrokenOutOfTheMirrorGoesBack() {
+        XCTAssertEqual(PowerPointPresenterPolicy.toRemirror(mirroredBefore: [4], online: [1, 4, 5],
+                                                            mirroringRetina: []), [4])
+    }
+
+    func testNothingToRemirrorWhenStillMirroredOrUnplugged() {
+        XCTAssertEqual(PowerPointPresenterPolicy.toRemirror(mirroredBefore: [4], online: [1, 4, 5],
+                                                            mirroringRetina: [4]), [])
+        XCTAssertEqual(PowerPointPresenterPolicy.toRemirror(mirroredBefore: [4], online: [1, 5],
+                                                            mirroringRetina: []), [])
+    }
+
     func testLaptopAloneMovesNothing() {
         XCTAssertNil(PowerPointPresenterPolicy.presenterTarget([retina]))
         XCTAssertNil(PowerPointPresenterPolicy.slidesTarget([retina]))

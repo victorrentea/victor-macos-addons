@@ -46,6 +46,14 @@ final class PowerPointPresenterPlacement {
     /// Title prefix → when that window was first seen. Cleared when the window goes
     /// away, so the next show starts fresh.
     private var firstSeen: [String: Date] = [:]
+    /// Displays mirroring the Retina at the last scan without a show, and when
+    /// that was last true. PowerPoint breaks the mirror ~0.5 s before its windows
+    /// appear, so a scan landing in that gap must not forget the set at once.
+    private var mirroredBefore: Set<UInt32> = []
+    private var mirroredSeenAt = Date.distantPast
+    /// Once per show: a mirror Victor breaks by hand mid-show stays broken.
+    private var remirrored = false
+    private static let mirrorMemory: TimeInterval = 5
 
     // MARK: - Lifecycle
 
@@ -142,9 +150,16 @@ final class PowerPointPresenterPlacement {
             }
         }
         firstSeen = firstSeen.filter { present[$0.key] != nil }
-        guard !present.isEmpty else { return }
+        guard !present.isEmpty else {
+            rememberMirror()
+            return
+        }
 
-        let screens = Self.screens()
+        // While the show runs, the displays PowerPoint pulled out of the mirror are
+        // not screens for Presenter View: they go back to mirroring the Retina.
+        let stillRemembered = Date().timeIntervalSince(mirroredSeenAt) < Self.mirrorMemory || remirrored
+        let roomScreens = stillRemembered ? mirroredBefore : []
+        let screens = Self.screens().filter { !roomScreens.contains($0.id) }
         let targets = [Self.presenterPrefix: PowerPointPresenterPolicy.presenterTarget(screens),
                        Self.slidesPrefix: PowerPointPresenterPolicy.slidesTarget(screens)]
         let now = Date()
@@ -157,6 +172,54 @@ final class PowerPointPresenterPlacement {
             AXWindows.setFrame(window, target)
             overlayInfo("PowerPointPresenterPlacement: \(prefix) \(frame) → \(target), now \(AXWindows.frame(of: window).map { "\($0)" } ?? "?")")
         }
+
+        // Only once Presenter View exists and has been moved off the room screen.
+        if !remirrored, present[Self.presenterPrefix] != nil {
+            remirrored = true
+            remirror(roomScreens)
+            // The reconfiguration may shove the windows again: keep placing them.
+            for key in firstSeen.keys { firstSeen[key] = Date() }
+        }
+    }
+
+    private func rememberMirror() {
+        remirrored = false
+        let now = Self.mirroringRetina()
+        if !now.isEmpty {
+            mirroredBefore = now
+            mirroredSeenAt = Date()
+        } else if Date().timeIntervalSince(mirroredSeenAt) >= Self.mirrorMemory {
+            mirroredBefore = []
+        }
+    }
+
+    private func remirror(_ wanted: Set<UInt32>) {
+        guard let retina = Self.builtinID() else { return }
+        let ids = PowerPointPresenterPolicy.toRemirror(mirroredBefore: wanted,
+                                                       online: Self.onlineIDs(),
+                                                       mirroringRetina: Self.mirroringRetina())
+        guard !ids.isEmpty else { return }
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success, let config else { return }
+        for id in ids { CGConfigureDisplayMirrorOfDisplay(config, id, retina) }
+        let err = CGCompleteDisplayConfiguration(config, .forSession)
+        overlayInfo("PowerPointPresenterPlacement: PowerPoint broke the mirror → re-mirroring \(ids.sorted()) onto the Retina (\(err == .success ? "ok" : "error \(err.rawValue)"))")
+    }
+
+    private static func onlineIDs() -> Set<UInt32> {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(16, &ids, &count) == .success else { return [] }
+        return Set(physicalDisplayIDs(ids.prefix(Int(count))))
+    }
+
+    private static func builtinID() -> UInt32? {
+        onlineIDs().first { CGDisplayIsBuiltin($0) != 0 }
+    }
+
+    private static func mirroringRetina() -> Set<UInt32> {
+        guard let retina = builtinID() else { return [] }
+        return onlineIDs().filter { CGDisplayMirrorsDisplay($0) == retina }
     }
 
     /// Active displays a window can sit on: no mirror slaves, no 🪞 virtual desktop.
