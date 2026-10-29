@@ -148,11 +148,25 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   (`ShareZoomPolicy.Source`). Three sources, told apart by the event:
   a notched wheel (lines; positive after `ScrollReversal` = closer), a **smooth
   wheel** — Victor's Logi M650 under Logi Options+ scrolls `continuous=1` with **no
-  gesture phase**, positive = closer, and counts **one notch per event** (it reports
-  13–205 px per event; read as pixels, one flick slammed the zoom to 8× — the "hung
-  halfway" of 2026-10-15) — and a trackpad (continuous *with* a phase, natural sign,
+  gesture phase**, positive = closer, and zooms **by its delta, exactly like the macOS
+  magnifier: ×1.01 per 12 px** (`nativeFactorPerPixel`, since 2026-10-30) — and a trackpad (continuous *with* a phase, natural sign,
   negative = closer). Measured from an event log the same day, after a blind flip of
-  the notched sign changed nothing: his wheel never sends notched events. **One notch is
+  the notched sign changed nothing: his wheel never sends notched events.
+  **The smooth wheel, measured against the magnifier (2026-10-30).** Victor: *"al nostru vrea
+  să fie cât mai aproape de comportamentul ăluia"* — the magnifier felt "more elastic when
+  I spin faster". `ZoomScrollRecorder` (`/test/zoom-input?do=record-start|record-stop`) logs
+  a hand's ⌥+scroll and samples `closeViewZoomFactor` at 60 Hz, which macOS updates live;
+  the magnifier ignores synthetic scrolls, so a hand is the only way. One slow detent (12 px)
+  was **exactly ×1.01** (sixty took 1× to 1.83×); a fast spin, which Logi Options+ accelerates
+  to 400–1131 px per event, went **1× → 33× in 240 ms** and back as fast. Until then the smooth
+  wheel had counted one notch per event whatever its size (13–205 px read as pixels had
+  slammed the zoom to 8× before anything was on screen, the "hung halfway" of 2026-10-15,
+  before the per-display `Stage`), which made a slow detent ×1.062, six times the magnifier's,
+  and left a fast spin almost dead. The step-size tuning below is for the notched wheel and
+  the trackpad only now. Caveat: once the magnifier was driving, the HID tap saw only the
+  first ten events, so the per-event mapping is from the slow detents, and the fast-spin
+  match rests on the same law applied to the deltas the Share-mode log shows.
+  **For the notched wheel and the trackpad, one notch is
   ×1.15^0.432 ≈ 1.062** (1× → 2× in about twelve notches): the first build's ×1.15 was "pași
   prea mari", halved in the log domain, and then halved again the same evening (×⁴√1.15 ≈ 1.036);
   on 2026-10-29 it grew back 20 % in the log domain, "să meargă mai repede, un pic" (×1.043), and

@@ -27,6 +27,16 @@ enum ShareZoomPolicy {
     /// 1× → 2× in about twelve.
     static let notchFactor: CGFloat = pow(1.15, 0.432)
 
+    /// Victor's smooth wheel zooms **the way the macOS magnifier does**: ×1.01 per
+    /// 12 px of delta, so speed counts (2026-10-30, *"al nostru vrea să fie cât mai
+    /// aproape de comportamentul ăluia"*). Measured with `ZoomScrollRecorder` on a
+    /// hand's ⌥+scroll into the magnifier: one slow detent (12 px) was exactly ×1.01,
+    /// sixty of them took 1× to 1.83×; a fast spin — Logi Options+ accelerates it to
+    /// 400–1131 px per event — took 1× to 33× in 240 ms. The one-notch-per-event rule
+    /// before it made a slow detent six times too big and a fast spin nearly dead:
+    /// *"mai elastic când dau mai repede"* was the magnifier, not us.
+    static let nativeFactorPerPixel: CGFloat = pow(1.01, 1.0 / 12)
+
     /// Trackpad pixels worth one notch. Continuous scrolls arrive in many small
     /// deltas; without this a two-finger flick crosses the whole range at once.
     static let pixelsPerNotch: CGFloat = 12
@@ -81,15 +91,21 @@ enum ShareZoomPolicy {
     /// - **Trackpad: negative = closer.** `ScrollReversal` leaves it alone, so it
     ///   arrives in natural-scrolling sign: two fingers up is negative (2026-10-07,
     ///   *"inverse ca accessibility"*).
-    /// - **A smooth wheel counts one notch per event.** It reports 13–205 px per
-    ///   event (accelerated), i.e. up to 17 notches each: one flick slammed the zoom
-    ///   to 8× before anything was on screen — the "hung halfway" of 2026-10-15.
+    /// - **A smooth wheel follows its delta, like the macOS magnifier**
+    ///   (`nativeFactorPerPixel`). From 2026-10-15 to 10-30 it counted one notch per
+    ///   event, because a flick slammed the zoom to 8× before anything was on screen
+    ///   (the "hung halfway"); the `Stage` prepared per display has since cut a cold
+    ///   start to 78 ms, and the magnifier does exactly that slam.
     static func step(_ factor: CGFloat, delta: Double, source: Source) -> CGFloat {
         guard delta != 0 else { return factor }
-        let next = factor * pow(notchFactor, notches(delta: delta, source: source))
+        let next = source == .smoothWheel
+            ? factor * pow(nativeFactorPerPixel, CGFloat(delta))
+            : factor * pow(notchFactor, notches(delta: delta, source: source))
         // Ten notches up and ten down multiply out to 1.0000001, not 1 — and a
-        // target above 1 is a zoom that never switches itself off.
-        if next < 1.01 { return 1 }
+        // target above 1 is a zoom that never switches itself off. Only on the way
+        // out: a slow detent from 1× is ×1.01 exactly, and snapping that back to 1
+        // would leave the zoom unable to start.
+        if next < factor, next < 1.01 { return 1 }
         return min(next, maxFactor)
     }
 

@@ -14,10 +14,12 @@ final class ShareZoomPolicyTests: XCTestCase {
     }
 
     /// Victor's Logi M650 under Options+: continuous, no phase, wheel-up positive
-    /// (measured 2026-10-15). Closer, and one notch per event however big the delta.
-    func testSmoothWheelUpZoomsInOneNotchPerEvent() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 205, source: .smoothWheel),
-                       ShareZoomPolicy.notchFactor, accuracy: 0.0001)
+    /// (measured 2026-10-15). Closer, by its delta, as the macOS magnifier zooms:
+    /// one 12 px detent is ×1.01, a fast 1131 px event ×2.55 (2026-10-30).
+    func testSmoothWheelZoomsByItsDeltaLikeTheMagnifier() {
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 12, source: .smoothWheel), 1.01, accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 1131, source: .smoothWheel),
+                       pow(1.01, 1131.0 / 12), accuracy: 0.001)
         XCTAssertLessThan(ShareZoomPolicy.step(2, delta: -13, source: .smoothWheel), 2)
     }
 
