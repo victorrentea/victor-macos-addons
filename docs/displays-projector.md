@@ -153,10 +153,11 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   halfway" of 2026-10-15) — and a trackpad (continuous *with* a phase, natural sign,
   negative = closer). Measured from an event log the same day, after a blind flip of
   the notched sign changed nothing: his wheel never sends notched events. **One notch is
-  ×1.15^0.36 ≈ 1.052** (1× → 2× in about fourteen notches): the first build's ×1.15 was "pași
+  ×1.15^0.432 ≈ 1.062** (1× → 2× in about twelve notches): the first build's ×1.15 was "pași
   prea mari", halved in the log domain, and then halved again the same evening (×⁴√1.15 ≈ 1.036);
   on 2026-10-29 it grew back 20 % in the log domain, "să meargă mai repede, un pic" (×1.043), and
-  another 20 % on 2026-10-30, "un step de zoom … cu 20% mai mare". The
+  another 20 % twice on 2026-10-30, "un step de zoom … cu 20% mai mare" (×1.052), then
+  "+20% larger increments on wheel". The
   ceiling is **8×** (80 % of the first build's 10×). The factor eases at 120 Hz and the easing starts
   with the first visible frame, not with the gesture — eased while still invisible it
   was over before anything was on screen. On another display, ⌥⇧+scroll moves the

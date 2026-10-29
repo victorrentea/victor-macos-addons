@@ -28,12 +28,12 @@ final class ShareZoomPolicyTests: XCTestCase {
         XCTAssertEqual(ShareZoomPolicy.Source.of(continuous: false, phase: 0, momentumPhase: 0), .wheel)
     }
 
-    /// Halved twice, then 20 % bigger twice (all in the log domain): one notch is
-    /// 1.15^0.36, so ten notches make 3.6 of the first build's.
-    func testTenNotchesMakeThreeAndAHalfOfTheFirstBuildsSteps() {
+    /// Halved twice, then 20 % bigger three times (all in the log domain): one notch
+    /// is 1.15^0.432, so ten notches make 4.32 of the first build's.
+    func testTenNotchesMakeOverFourOfTheFirstBuildsSteps() {
         var f: CGFloat = 1
         for _ in 0..<10 { f = ShareZoomPolicy.step(f, delta: 1, source: .wheel) }
-        XCTAssertEqual(f, pow(1.15, 3.6), accuracy: 0.0001)
+        XCTAssertEqual(f, pow(1.15, 4.32), accuracy: 0.0001)
     }
 
     /// Sensitivity proportional to the zoom: from 2× up, the drawn cursor crosses the
