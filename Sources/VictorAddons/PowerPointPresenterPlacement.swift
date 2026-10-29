@@ -51,11 +51,8 @@ final class PowerPointPresenterPlacement {
     /// appear, so a scan landing in that gap must not forget the set at once.
     private var mirroredBefore: Set<UInt32> = []
     private var mirroredSeenAt = Date.distantPast
-    /// Re-mirrors done in this show. PowerPoint breaks the mirror again mid-show
-    /// (e.g. when the pen starts drawing), so the TV is put back every time — up to
-    /// a cap, so a fight with PowerPoint cannot loop forever.
-    private var remirrorCount = 0
-    private static let maxRemirrors = 30
+    /// Once per show: a mirror Victor breaks by hand mid-show stays broken.
+    private var remirrored = false
     private static let mirrorMemory: TimeInterval = 5
 
     // MARK: - Lifecycle
@@ -82,12 +79,6 @@ final class PowerPointPresenterPlacement {
         t.setEventHandler { [weak self] in self?.scan() }
         t.resume()
         safetyTimer = t
-
-        // A mirror PowerPoint breaks mid-show must come back at once, not at the next poll.
-        CGDisplayRegisterReconfigurationCallback({ _, flags, refcon in
-            guard let refcon, !flags.contains(.beginConfigurationFlag) else { return }
-            Unmanaged<PowerPointPresenterPlacement>.fromOpaque(refcon).takeUnretainedValue().scanSoon()
-        }, Unmanaged.passUnretained(self).toOpaque())
     }
 
     deinit {
@@ -166,10 +157,8 @@ final class PowerPointPresenterPlacement {
 
         // While the show runs, the displays PowerPoint pulled out of the mirror are
         // not screens for Presenter View: they go back to mirroring the Retina.
-        let stillRemembered = Date().timeIntervalSince(mirroredSeenAt) < Self.mirrorMemory || remirrorCount > 0
+        let stillRemembered = Date().timeIntervalSince(mirroredSeenAt) < Self.mirrorMemory || remirrored
         let roomScreens = stillRemembered ? mirroredBefore : []
-        // Keep the room screens for the whole show, not just its first seconds.
-        if stillRemembered { mirroredSeenAt = Date() }
         let screens = Self.screens().filter { !roomScreens.contains($0.id) }
         let targets = [Self.presenterPrefix: PowerPointPresenterPolicy.presenterTarget(screens),
                        Self.slidesPrefix: PowerPointPresenterPolicy.slidesTarget(screens)]
@@ -184,11 +173,9 @@ final class PowerPointPresenterPlacement {
             overlayInfo("PowerPointPresenterPlacement: \(prefix) \(frame) → \(target), now \(AXWindows.frame(of: window).map { "\($0)" } ?? "?")")
         }
 
-        // Only once Presenter View exists — and again whenever PowerPoint pulls the TV out.
-        if present[Self.presenterPrefix] != nil, remirrorCount < Self.maxRemirrors,
-           !PowerPointPresenterPolicy.toRemirror(mirroredBefore: roomScreens, online: Self.onlineIDs(),
-                                                 mirroringRetina: Self.mirroringRetina()).isEmpty {
-            remirrorCount += 1
+        // Only once Presenter View exists and has been moved off the room screen.
+        if !remirrored, present[Self.presenterPrefix] != nil {
+            remirrored = true
             remirror(roomScreens)
             // The reconfiguration may shove the windows again: keep placing them.
             for key in firstSeen.keys { firstSeen[key] = Date() }
@@ -196,7 +183,7 @@ final class PowerPointPresenterPlacement {
     }
 
     private func rememberMirror() {
-        remirrorCount = 0
+        remirrored = false
         let now = Self.mirroringRetina()
         if !now.isEmpty {
             mirroredBefore = now
