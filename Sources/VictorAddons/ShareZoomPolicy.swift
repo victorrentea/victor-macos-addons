@@ -21,7 +21,9 @@ enum ShareZoomPolicy {
     /// ⁴√1.15 ≈ 1.036, so four notches did what one did and 1× → 2× was twenty.
     /// Then 20 % bigger, again in the log domain (2026-10-29, *"să meargă mai repede
     /// zoom in și zoom out, un pic"*): 1.15^0.3 ≈ 1.043, 1× → 2× in about seventeen.
-    static let notchFactor: CGFloat = pow(1.15, 0.3)
+    /// And 20 % again the next night (2026-10-30, *"un step de zoom … cu 20% mai
+    /// mare"*): 1.15^0.36 ≈ 1.052, 1× → 2× in about fourteen.
+    static let notchFactor: CGFloat = pow(1.15, 0.36)
 
     /// Trackpad pixels worth one notch. Continuous scrolls arrive in many small
     /// deltas; without this a two-finger flick crosses the whole range at once.
