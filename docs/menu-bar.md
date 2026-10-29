@@ -102,7 +102,7 @@ That last case is what put the row here, on 2026-09-22: a Codex run was driving 
 
 ## 🖥️ tart VM running
 
-**A second status item, separate from 💬, that exists only while a `tart run` process does** (`TartVMIndicator` + `TartVMPolicy`, 2026-10-05). It reads `🖥️ wt-lab` (or `🖥️ 2 VMs`); its menu has one greyed row per VM (`wt-lab — up 13h 36m · ~/tart`) and a **⏹ Stop wt-lab** row, plus **⏹ Stop all** when there are several.
+**A second status item, separate from 💬, that exists only while a `tart run` process does** (`TartVMIndicator` + `TartVMPolicy`, 2026-10-05). It reads `🖥️ VM` (or `🖥️ 2 VMs`) — the name only in the tooltip and the menu since 2026-10-30 (Victor: *"în loc de wt-lab să scrie VM"*); its menu has one greyed row per VM (`wt-lab — up 13h 36m · ~/tart`) and a **⏹ Stop wt-lab** row, plus **⏹ Stop all** when there are several.
 
 Why its own item rather than a row in 💬: the VM is invisible by construction — `tart run --no-graphics` has no window and no Dock icon — and on 2026-10-05 the walkie lab VM (8 GB) had been up for 13½ hours unnoticed, on a morning when Docker held another 12 GB, swap was full (4.75 / 5 GB) and WindowServer was dropping frames in the mouse and in video capture. A row inside a menu you have to open would have been just as invisible. An item that *appears* is the alarm; it disappears on its own when the VM stops.
 

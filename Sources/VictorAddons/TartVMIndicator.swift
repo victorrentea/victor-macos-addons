@@ -53,12 +53,13 @@ enum TartVMPolicy {
         return "\(hours / 24)d \(hours % 24)h"
     }
 
-    /// The text beside 🖥️: the VM's name (or how many), so it is never just an
-    /// icon you learn to stop seeing.
+    /// The text beside 🖥️: "VM" (or how many), so it is never just an icon you
+    /// learn to stop seeing. The name is in the tooltip and the menu — on the bar
+    /// it read as jargon (Victor, 2026-10-30: "în loc de wt-lab să scrie VM").
     static func statusTitle(_ vms: [RunningTartVM]) -> String {
         switch vms.count {
         case 0: return ""
-        case 1: return "🖥️ \(vms[0].name)"
+        case 1: return "🖥️ VM"
         default: return "🖥️ \(vms.count) VMs"
         }
     }
