@@ -105,6 +105,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 📱 Watches Soduto's low-battery notification for the paired Android and
     /// feeds it into `/ping` so the tablet can blink about it.
     private var phoneBattery: PhoneBatteryMonitor?
+    /// 🔋 The phone's charge at any level, from Victor Net, for the tablet's top bar.
+    private let phoneCharge = PhoneCharge()
     /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
     private var checkInWatch: CheckInMailWatch?
     private var memoryPressure: MemoryPressureMonitor?
@@ -611,6 +613,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // exactly what gets missed while presenting — the tablet is the
             // screen that's always in view.
             let phone = PhoneBatteryPolicy.pingFields(for: self?.phoneBattery?.reading, now: Date())
+                + PhoneCharge.pingFields(self?.phoneCharge.reading, now: Date())
             // 🔒 A locked Mac screen means nobody is looking at either screen —
             // the tablet dims itself to a sketch instead of lighting the room all
             // night. Only the lock says this; a Mac that simply stopped answering
@@ -1024,6 +1027,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         phoneBatteryMonitor.start()
         self.phoneBattery = phoneBatteryMonitor
+        phoneCharge.start()
         tabletServer?.onTestPhoneBattery = { [weak phoneBatteryMonitor] in
             phoneBatteryMonitor?.pollNow()
             return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
