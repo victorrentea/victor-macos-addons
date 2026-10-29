@@ -90,18 +90,21 @@ final class ZoomPointerSpeed {
         }
         guard factor > 1 else { return Unmanaged.passUnretained(event) }
         let now = event.location
-        // The first move, or a jump no hand makes in one event (a warp by someone
-        // else, a display change): follow it rather than scale it.
-        guard let last = pos, hypot(now.x - last.x, now.y - last.y) < 400 else {
-            pos = now
-            return Unmanaged.passUnretained(event)
-        }
         // From the event's own delta, never from `now − last`: WindowServer rounds the
         // warped position, and that rounding ate most of every slow move — the cursor
         // all but froze (2026-10-27, the first build of this).
+        let rawDX = event.getDoubleValueField(.mouseEventDeltaX)
+        let rawDY = event.getDoubleValueField(.mouseEventDeltaY)
+        // The first move, or the cursor put somewhere by someone else (a warp, a
+        // display change): follow it rather than scale it.
+        guard let last = pos, !ShareZoomPolicy.followsUnscaled(
+            now: now, last: last, delta: CGVector(dx: rawDX, dy: rawDY)) else {
+            pos = now
+            return Unmanaged.passUnretained(event)
+        }
         let slow = Double(ShareZoomPolicy.pointerSlowdown(factor, glassSpeed: glassSpeed))
-        let dx = event.getDoubleValueField(.mouseEventDeltaX) / slow
-        let dy = event.getDoubleValueField(.mouseEventDeltaY) / slow
+        let dx = rawDX / slow
+        let dy = rawDY / slow
         let next = Self.clampToDisplay(CGPoint(x: last.x + dx, y: last.y + dy), from: last)
         pos = next
         CGWarpMouseCursorPosition(next)

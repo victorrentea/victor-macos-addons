@@ -126,6 +126,22 @@ enum ShareZoomPolicy {
         return min(k * k, k / s)
     }
 
+    /// Is this move one `ZoomPointerSpeed` should follow rather than slow down — the
+    /// cursor put somewhere by someone else (a warp, a display change) instead of
+    /// moved by the hand? Told apart by the event's own delta: a hand's move lands
+    /// at `last + delta` (`now` is where WindowServer put it, from our last warp), a
+    /// foreign one lands somewhere the delta does not explain. Never by the size of
+    /// the jump: until 2026-10-29 every move of ≥ 400 pt went through unscaled, and
+    /// slowed 4× the hand throws the pointer to the other monitor in moves that big
+    /// — it came back at full speed (*"vine cu foarte mare sensibilitate"*). The
+    /// `|delta|` margin covers an event placed before our last warp had landed: it
+    /// is off by at most that warp's step, which is shorter than its delta.
+    static func followsUnscaled(now: CGPoint, last: CGPoint, delta: CGVector) -> Bool {
+        let missed = hypot(now.x - last.x - delta.dx, now.y - last.y - delta.dy)
+        return missed > max(foreignJump, hypot(delta.dx, delta.dy))
+    }
+    static let foreignJump: CGFloat = 400
+
     // MARK: - Where the slice is
 
     /// After the factor changes from `from` to `to`, the slice origin that keeps the

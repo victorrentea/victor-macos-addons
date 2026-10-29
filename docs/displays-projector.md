@@ -190,7 +190,7 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   = faster), so it can be tuned without a redeploy. Measured with
   `/test/zoom-input?do=move&dx=10&n=20` (synthetic HID moves; desktop distance × factor =
   glass distance). `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
-  mute a warp brings. A jump of ≥ 400 pt in one event is followed, not scaled.
+  mute a warp brings. A move is followed, not scaled, only when its own delta does not explain where the cursor landed (a warp by someone else, a display change: `ShareZoomPolicy.followsUnscaled`). Until 2026-10-29 it was any jump of ≥ 400 pt — and slowed 4× the hand throws the pointer to the other monitor in moves that big, so it came back at full speed (*"vine cu foarte mare sensibilitate"*; three synthetic 450 pt moves at 2× travelled 1350 pt instead of 337).
   **Tried first, same day, no effect:** raising the M650's `HIDPointerResolution` to
   factor × 400 dpi through a *monitor* HID client (`IOHIDEventSystemClientCreateWithType`
   type 1 — the SDK's simple client is refused). Every set returned true; Victor felt

@@ -214,7 +214,8 @@ final class MemoryPressurePolicyTests: XCTestCase {
         let first = try XCTUnwrap(MemoryPressureMonitor.readCounters(),
                                   "host_statistics64(HOST_VM_INFO64) failed")
         let second = try XCTUnwrap(MemoryPressureMonitor.readCounters(now: first.at.addingTimeInterval(1)))
-        XCTAssertGreaterThan(first.decompressions, 0)
+        // Not `> 0`: after a reboot with RAM to spare the compressor is empty and every
+        // counter reads 0 for hours (2026-10-29, `vm_stat` all zeros at 16:38).
         XCTAssertGreaterThanOrEqual(second.decompressions, first.decompressions)
         XCTAssertGreaterThanOrEqual(second.swapins, first.swapins)
     }

@@ -58,6 +58,25 @@ final class ShareZoomPolicyTests: XCTestCase {
         }
     }
 
+    /// A hard throw to the other monitor is still the hand: slowed, however big.
+    func testABigMoveTheDeltaExplainsIsScaled() {
+        let last = CGPoint(x: 500, y: 700)
+        XCTAssertFalse(ShareZoomPolicy.followsUnscaled(
+            now: CGPoint(x: 1400, y: 700), last: last, delta: CGVector(dx: 900, dy: 0)))
+        // Placed before our last warp landed: off by that warp's step, still the hand.
+        XCTAssertFalse(ShareZoomPolicy.followsUnscaled(
+            now: CGPoint(x: 1400 + 337, y: 700), last: last, delta: CGVector(dx: 450 + 450, dy: 0)))
+    }
+
+    /// A warp by someone else or a display change: the delta says a few points, the
+    /// cursor is somewhere else entirely.
+    func testAJumpTheDeltaDoesNotExplainIsFollowed() {
+        XCTAssertTrue(ShareZoomPolicy.followsUnscaled(
+            now: CGPoint(x: -1500, y: 300), last: CGPoint(x: 500, y: 700), delta: CGVector(dx: 3, dy: 0)))
+        XCTAssertFalse(ShareZoomPolicy.followsUnscaled(
+            now: CGPoint(x: 503, y: 701), last: CGPoint(x: 500, y: 700), delta: CGVector(dx: 3, dy: 0)))
+    }
+
     func testTheGlassSpeedIsTunable() {
         XCTAssertEqual(4 / ShareZoomPolicy.pointerSlowdown(4, glassSpeed: 0.7), 0.7, accuracy: 0.0001)
     }
