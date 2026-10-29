@@ -23,6 +23,10 @@ tell application "Microsoft PowerPoint"
             set slideNumber to current show position of slide show view of slide show window 1
             try
                 set slideIdent to slide ID of slide of slide show view of slide show window 1
+            on error
+                try
+                    set slideIdent to slide ID of slide slideNumber of active presentation
+                end try
             end try
         else
             try
