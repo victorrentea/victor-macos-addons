@@ -1701,10 +1701,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return Self.transcriptSilenceSeconds(in: self.transcriptionFolder)
         }
         // ☕ The voted UNTIL BREAK watch ran out → the break is due: offer its
-        // length straight away. Async: the menu's tracking loop holds the main
-        // thread until it closes, and the expiry sequence must finish scheduling.
+        // length straight away. `openBreakMenu` defers its own click, so the
+        // expiry sequence finishes scheduling first.
         breakTimer.onUntilBreakExpired = { [weak self] in
-            DispatchQueue.main.async { self?.menuBarManager.openBreakMenu() }
+            self?.menuBarManager.openBreakMenu()
         }
         breakTimer.onEnded = { [weak self] in
             DispatchQueue.main.async {

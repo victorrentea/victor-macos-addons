@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 29, 13:01"
+    static let BUILD_TIME = "Oct 29, 13:38"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -844,17 +844,25 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// Open the 💬 menu with the ☕️ Break submenu already unfolded, so a break
     /// length is one click away. Called when the ☕-voted UNTIL BREAK watch
     /// runs out (2026-10-22, Victor). Left untouched, it closes itself after
-    /// `breakMenuTimeout`: while a menu tracks, the main queue is not drained,
-    /// so a menu forgotten open would hold everything else in the app.
+    /// `breakMenuTimeout`.
+    ///
+    /// The click runs from a run-loop block, never from inside a main-queue
+    /// block: `performClick` only returns when the menu closes, and the main
+    /// queue is serial, so a menu opened from one of its blocks held back every
+    /// other `DispatchQueue.main` block until then — at zero that was both gongs
+    /// and the watch's auto-close (2026-10-29, *"nu dispare timerul … nici gong,
+    /// nimica"*). From a run-loop block the tracking loop drains the queue.
     func openBreakMenu(closeAfter seconds: TimeInterval = breakMenuTimeout) {
-        guard !isMenuOpen else { return }        // a click would CLOSE an open menu
-        unfoldBreakOnOpen = true
-        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
-            self?.menu.cancelTracking()
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            guard let self, !self.isMenuOpen else { return }   // a click would CLOSE an open menu
+            self.unfoldBreakOnOpen = true
+            let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+                self?.menu.cancelTracking()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            self.statusItem.button?.performClick(nil)
+            timer.invalidate()                   // performClick returns once the menu closed
         }
-        RunLoop.main.add(timer, forMode: .common)
-        statusItem.button?.performClick(nil)
-        timer.invalidate()                       // performClick returns once the menu closed
     }
     static let breakMenuTimeout: TimeInterval = 60
 

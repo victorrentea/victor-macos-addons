@@ -828,7 +828,12 @@ final class BreakTimerController {
         // everyone can see it, and it never expires forgotten on a side monitor.
         returnToRetinaIfNeeded()
         let myEpoch = epoch
-        if !isStopwatch && titleText == BreakTimerModel.untilBreakTitle { onUntilBreakExpired?() }
+        if !isStopwatch && titleText == BreakTimerModel.untilBreakTitle {
+            // The room just voted, so nobody left: no blackout after the gongs,
+            // which would also cover the ☕️ Break menu this opens.
+            skipBlackoutOnClose = true
+            onUntilBreakExpired?()
+        }
         // Play the FULL gong (exact same mp3 as tablet effect #50 — not a clip),
         // then the second strike after the first finishes.
         let gong = AddonSounds.shared.soundDuration("50_gong.mp3") ?? 8.6
