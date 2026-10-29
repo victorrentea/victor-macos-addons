@@ -22,6 +22,7 @@ private let optionScrollCallbackFunc: CGEventTapCallBack = { _, type, event, use
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let port = manager.optionScrollTapPort { CGEvent.tapEnable(tap: port, enable: true) }
     } else if type == .scrollWheel, EventTapManager.scrollModifiers(event) == [.maskAlternate] {
+        ZoomScrollRecorder.shared.record(event)
         // 🔎 `ZoomEngine.share`: ⌥+scroll is ours, and swallowed here so the
         // magnifier's own HID tap never sees it — one zoom at a time.
         if manager.zoomEngine == .share {

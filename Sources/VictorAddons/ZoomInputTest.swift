@@ -6,6 +6,8 @@ import ScreenCaptureKit
 /// same two taps a hand would: the ⌥+scroll HID tap and the session tap.
 ///
 /// - `do=click` — ⌥ + wheel click at the pointer, the `ZoomEngine` flip.
+/// - `do=record-start` / `do=record-stop` — `ZoomScrollRecorder`: a hand's ⌥+scroll and
+///   the magnifier's factor, written to a JSON file.
 /// - `do=scroll&lines=N&n=K` — K ⌥+scroll events of N lines each (notched wheel).
 /// - `do=move&dx=N&n=K` — K mouse moves of N points right each, from where the pointer
 ///   is; answers where it started and ended, so `ZoomPointerSpeed`'s scaling can be read
@@ -21,6 +23,10 @@ enum ZoomInputTest {
     static func run(_ q: [String: String]) -> String {
         let src = CGEventSource(stateID: .hidSystemState)
         switch q["do"] {
+        case "record-start":
+            return ZoomScrollRecorder.shared.start()
+        case "record-stop":
+            return ZoomScrollRecorder.shared.stop()
         case "click":
             let at = CGEvent(source: nil)?.location ?? .zero
             for type in [CGEventType.otherMouseDown, .otherMouseUp] {
