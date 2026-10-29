@@ -180,7 +180,7 @@ enum CommandControlShortcuts {
     static func artworkImages(bundle: Bundle = .module) -> [Int: NSImage] {
         var images: [Int: NSImage] = [:]
         for (code, name) in artworkNames {
-            guard let url = bundle.url(forResource: name, withExtension: "png"),
+            guard let url = bundle.url(forResource: name, withExtension: "png", subdirectory: "Resources"),
                   let image = NSImage(contentsOf: url) else { continue }
             images[code] = image
         }

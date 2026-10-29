@@ -22,7 +22,7 @@ final class ZoomSwitchEffect {
     func play(_ engine: ZoomEngine, at point: CGPoint) {
         stop()
         let canvas = Self.canvas
-        let screen = NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
+        let screen = NSScreen.physical.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
         let scale = screen?.backingScaleFactor ?? 2
         guard let image = Self.lensImage(side: Self.side, scale: scale) else { return }
 

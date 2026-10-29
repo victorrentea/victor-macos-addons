@@ -77,7 +77,7 @@ enum ZoomInputTest {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             let screen = await MainActor.run {
-                NSScreen.screens.first { $0.localizedName.contains(part) }
+                NSScreen.physical.first { $0.localizedName.contains(part) }
                     .flatMap { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID }
             }
             guard let id = screen, let display = content.displays.first(where: { $0.displayID == id }) else {

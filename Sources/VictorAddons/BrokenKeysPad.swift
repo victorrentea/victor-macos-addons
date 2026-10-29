@@ -72,7 +72,7 @@ final class BrokenKeysPad {
     func show(at center: NSPoint) {
         close()
         let size = Self.padSize
-        let screen = NSScreen.screens.first { NSMouseInRect(center, $0.frame, false) } ?? NSScreen.main
+        let screen = NSScreen.physical.first { NSMouseInRect(center, $0.frame, false) } ?? NSScreen.main
         var origin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
         if let visible = screen?.visibleFrame {
             origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
