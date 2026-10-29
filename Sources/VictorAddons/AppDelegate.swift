@@ -70,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // pinging) went to Victor Effects with the player it guards — that app sees
     // every /ping through the proxy, so it keeps its own clock.
     private var pptMonitor: PowerPointMonitor?
+    private var slidesSeen: SlidesSeenRecorder?
     private var driveShareCache: GoogleDriveShareCache?
     private var portKiller: PortKiller?
     private var whisperManager: WhisperProcessManager?
@@ -2065,6 +2066,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         pptMonitor.onSlidesViewed = { [weak self] slides in
             self?.wsServer?.pushSlidesViewed(slides)
         }
+        // 📑 Every slide shown ≥ 7 s → day log + a copy of the deck, for the summaries' PDFs.
+        let slidesSeen = SlidesSeenRecorder()
+        pptMonitor.onSample = { slidesSeen.consume($0) }
+        self.slidesSeen = slidesSeen
         pptMonitor.start()
         self.pptMonitor = pptMonitor
 

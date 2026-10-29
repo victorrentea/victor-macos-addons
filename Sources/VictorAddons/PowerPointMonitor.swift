@@ -16,16 +16,26 @@ tell application "Microsoft PowerPoint"
     end try
     set slideNumber to 1
     set isPresenting to "false"
+    set slideIdent to ""
     try
         if (count of slide show windows) > 0 then
             set isPresenting to "true"
             set slideNumber to current show position of slide show view of slide show window 1
+            try
+                set slideIdent to slide ID of slide of slide show view of slide show window 1
+            end try
         else
             try
                 set slideNumber to slide index of slide of view of active window
+                try
+                    set slideIdent to slide ID of slide of view of active window
+                end try
             on error
                 try
                     set slideNumber to slide index of slide of view of document window 1
+                    try
+                        set slideIdent to slide ID of slide of view of document window 1
+                    end try
                 on error
                     set slideNumber to "__SLIDE_UNKNOWN__"
                 end try
@@ -34,13 +44,19 @@ tell application "Microsoft PowerPoint"
     on error
         set slideNumber to "__SLIDE_UNKNOWN__"
     end try
-    return presentationName & tab & isPresenting & tab & (slideNumber as string) & tab & presentationPath
+    set isSaved to "true"
+    try
+        set isSaved to (saved of active presentation) as string
+    end try
+    return presentationName & tab & isPresenting & tab & (slideNumber as string) & tab & presentationPath & tab & (slideIdent as string) & tab & isSaved
 end tell
 """
 
 class PowerPointMonitor {
     var onSlideChange: (([String: Any]) -> Void)?
     var onSlidesViewed: (([[String: Any]]) -> Void)?
+    /// Every probe, raw: the 📑 slides-seen recorder decides what was "shown".
+    var onSample: ((PowerPointSample) -> Void)?
 
     private var timer: Timer?
 
@@ -93,6 +109,7 @@ class PowerPointMonitor {
         let now = Date()
 
         if raw == "__NO_PPT__" || raw == "__NO_PRESENTATION__" {
+            onSample?(.gone(at: now))
             lastProbeTime = nil
             return
         }
@@ -119,6 +136,11 @@ class PowerPointMonitor {
 
         // Only count time when PowerPoint was frontmost at the previous probe
         let isFrontmostNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased().contains("powerpoint") == true
+
+        let field = { (i: Int) -> String in parts.count > i ? parts[i].trimmingCharacters(in: .whitespaces) : "" }
+        onSample?(PowerPointSample(at: now, deck: deck, path: deckPath, slide: slide,
+                                   slideID: Int(field(4)), presenting: isPresenting,
+                                   frontmost: isFrontmostNow, saved: field(5) != "false"))
 
         // Accumulate time on previous slide
         if let lastTime = lastProbeTime, currentDeck != nil, lastWasFrontmost {

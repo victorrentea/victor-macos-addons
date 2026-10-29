@@ -52,3 +52,31 @@ never flashes again at 16:00, short enough that tomorrow starts clean. It lives
 in `UserDefaults` so a `build-app.sh` restart doesn't replay the morning; the log
 prunes expired entries on every write and caps at 500 paths, newest kept.
 `OpenedFileBannerLog.reset()` forgets everything.
+
+## 📑 Slides seen (`SlidesSeenRecorder`, since 2026-10-29)
+
+Every slide that stays on screen **≥ 7 s with PowerPoint in front** is recorded, so
+`call-summary` and `training-summarizer` can attach / embed exactly the slides shown,
+as PDF pages **exported by PowerPoint itself, links clickable** (`slides_seen.py` in
+`victor-skills-private/skills/training-summarizer/`).
+
+- **Rides on `PowerPointMonitor`'s 2 s probe** — the same AppleScript now also returns
+  `slide ID` and `saved`; `onSample` hands every probe to the recorder. The thresholds
+  live in the pure `SlidesSeenPolicy` (`SlidesSeenPolicyTests`): same deck path + same
+  slide ID + frontmost, uninterrupted; the span closes when the slide changes,
+  PowerPoint leaves the front, or quits. Always on — no share detection: the summary's
+  time window is the filter (Victor, 2026-10-29: „mereu").
+- **Why slide ID, not position:** Victor inserts slides mid-course; positions shift and a
+  summary once embedded the wrong slide. The `<p:sldId id>` survives insert/reorder.
+- **At 7 s:** if the presentation has unsaved edits → `save` (Victor asked for it,
+  knowing Google Drive sometimes refuses a save); then a content-addressed copy of the
+  deck (`decks/<sha256[:16]>.pptx`; unchanged size+mtime → no re-hash). **On close:** one
+  JSON line in `log/<day>.jsonl` — start, end, seconds, deck, path, slide, slide_id,
+  snapshot, presenting.
+- **Where:** `~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/slides-seen/`,
+  PowerPoint's own sandbox container — the only place PowerPoint opens and writes files
+  driven by AppleScript **without "Grant File Access"** (it asks per file anywhere else,
+  Full Disk Access does not lift it; measured 2026-10-29). Writing there needs this app's
+  "access data from other apps" (App Data) grant once. 30-day retention, pruned at launch.
+- **Measured export (2026-10-29):** 5 slides by ID out of 182 → 7 s; a 117-slide deck → 8 s,
+  277 distinct URLs in the PDF vs 275 in the deck. LibreOffice dropped some links.
