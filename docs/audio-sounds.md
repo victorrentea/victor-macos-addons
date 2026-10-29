@@ -71,6 +71,33 @@ else.
 `OutputRouter` and `SystemOutputVolume` still use it. The keep-alive's continuous-warm half went
 with the whip.
 
+## 🔊 The old volume HUD, bottom centre (`VolumeHUD`, 2026-10-29)
+
+macOS 26 Tahoe replaced the 200 × 200 volume square at the bottom centre with a small pill
+in the top-right corner, which Victor could barely see (*"abia îl văd în colțul sus"*). There
+is no setting for it, so this app brings the old square back.
+
+**How, reverse-engineered from [volumeHUD](https://github.com/dannystewart/volumeHUD) (MIT).**
+Media keys arrive as `NX_SYSDEFINED` events (type 14), subtype 8, not as keyDown. An HID tap
+(`.cghidEventTap`, `.defaultTap`) reads key code 0/1/7 (sound up/down/mute) from `data1`'s
+high 16 bits and the key-down state (`0x0A`) from bits 8–15, **returns nil** so macOS never
+sees the key, sets the default output's volume itself through `SystemOutputVolume`, and
+shows its own panel. Swallowing the key is the only way to keep the system pill away; no
+public API hides it. Key-ups go through, and macOS ignores them on their own.
+
+- Steps of 1/16, or 1/64 with ⌥⇧, snapped to the grid (`VolumeKeyPolicy`, tested). A device
+  that rounds to its own hardware steps is continued from the *requested* level, not the
+  read-back, or it would stick.
+- Mute at 0 and unmute on the way up, as macOS does.
+- **An output with no settable volume** (HDMI to the room TV) gets the key passed through,
+  so macOS shows its own "cannot change" indicator.
+- **The HUD shows only for the keys**, never for changes made elsewhere. A CoreAudio
+  listener would also fire on `CoreAudioManager` ducking the output for every dictation.
+- The panel goes on the screen under the pointer, 140 pt above the bottom, at
+  `.screenSaver` level (above a PowerPoint slide show). It stays 1.5 s and fades out in 0.25 s.
+- The macOS "feedback when volume is changed" click is not replayed (it is off on this Mac).
+- Off: `defaults write ro.victorrentea.macos-addons VolumeHUDEnabled -bool NO`, then restart.
+
 ## 🎚️ "From Walkie" watchdog (2026-09-29)
 
 `FromWalkieWatchdog` polls every **5 s**: if Walkie Talkie (`ro.victorrentea.wispr-relay`) is not

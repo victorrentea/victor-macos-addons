@@ -151,6 +151,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomSharePrep: ZoomSharePrep?
     /// 🎞️ The Retina at 60 Hz while Zoom or Teams runs.
     private let retinaCap = RetinaRefreshCap()
+    /// 🔊 The old volume HUD, bottom centre, instead of Tahoe's corner pill.
+    private let volumeHUD = VolumeHUD()
     /// 🎥 Layout Zoom/Teams runs here: it waits on the app opening panels, and a second
     /// click while one is running must queue behind it, not race it.
     private let zoomLayoutQueue = DispatchQueue(label: "ro.victorrentea.macos-addons.zoom-layout",
@@ -1571,6 +1573,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         homeAwake.startIfEnabled()
         self.homeAwake = homeAwake
         tabletServer?.onTestHomeAwake = { [weak homeAwake] in homeAwake?.stateJSON() ?? "{}" }
+
+        // 🔊 Volume keys → our own HUD at the bottom centre; macOS never sees them.
+        volumeHUD.start()
+        tabletServer?.onTestVolumeHUD = { [weak self] level, muted in
+            guard let self else { return "{}" }
+            if let level { self.volumeHUD.show(level: level, muted: muted) }
+            return self.volumeHUD.stateJSON()
+        }
 
         // 🎚️ "From Walkie" off whenever Walkie Talkie is not running (5 s poll).
         let fromWalkieWatchdog = FromWalkieWatchdog()

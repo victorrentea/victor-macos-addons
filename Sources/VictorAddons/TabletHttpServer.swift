@@ -52,6 +52,8 @@ case testTerminalFont
     case testMenuBreak(closeAfter: Double)
     case testDjiEvent(kind: String, level: Int?, screens: String?)
         case testHomeAwake
+        /// 🔊 Show the volume HUD at `level` (no volume change), or just report its state.
+        case testVolumeHUD(level: Float?, muted: Bool)
         /// Is any Chrome tab audible? Asked by Victor Insomnia before it takes the
         /// output up for its lid-shut heartbeat — this app owns the extension's socket.
         case chromeAudible
@@ -304,6 +306,7 @@ case testTerminalFont
     var onTestMenuBreak: ((Double) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
     var onTestHomeAwake: (() -> String)?
+    var onTestVolumeHUD: ((Float?, Bool) -> String)?
     var onChromeAudible: (() -> Bool?)?
     var onTestWisprRecording: (() -> String)?
     var onTestBreakStart: ((Int) -> Void)?
@@ -575,6 +578,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestMicDeadState?() ?? "{\"error\":\"mic alarm unavailable\"}"
                 if self.onTestMicDeadState == nil { statusCode = 503 }
+            case let .testVolumeHUD(level, muted):
+                contentType = "application/json"
+                body = self.onTestVolumeHUD?(level, muted) ?? "{\"error\":\"volume hud unavailable\"}"
+                if self.onTestVolumeHUD == nil { statusCode = 503 }
             case .testHomeAwake:
                 contentType = "application/json"
                 body = self.onTestHomeAwake?() ?? "{\"error\":\"home awake unavailable\"}"
@@ -977,6 +984,9 @@ case testTerminalFont
             return .testDjiEvent(kind: String(p.dropFirst("/test/dji/".count)),
                                  level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Int($0) },
                                  screens: queryItems.first(where: { $0.name == "screens" })?.value)
+        case "/test/volume-hud":
+            return .testVolumeHUD(level: queryItems.first(where: { $0.name == "level" })?.value.flatMap { Float($0) },
+                                  muted: queryItems.first(where: { $0.name == "muted" })?.value == "1")
         case "/test/home-awake":
             return .testHomeAwake
         case "/chrome/audible":
