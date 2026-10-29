@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 27, 12:57"
+    static let BUILD_TIME = "Oct 29, 13:01"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -222,7 +222,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         killItem.isEnabled = true
         killSubmenu = NSMenu()
         killItem.submenu = killSubmenu
-        // Added to 👩🏻‍💻 Extras further down (2026-09-23, Victor).
+        // In 👩🏻‍💻 Extras from 2026-09-23, back at the top level since 2026-10-29
+        // (Victor) — added next to 📬 Check Inbox further down.
 
         // ☕️ Break — countdown "watch" overlay. The seven durations used to be
         // seven FLAT rows carrying the same "Break: " prefix seven times; they are
@@ -555,11 +556,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // 🖥️ PowerPoint Presenter View → left screen (`PowerPointPresenterPlacement`).
         // A row for the same reason as Auto Share Faceover: it acts on its own,
         // whenever a slide show starts, so it needs a visible way to be told to stop.
-        // No key. Default on.
-        pptPresenterItem = NSMenuItem(title: "🖥️ PowerPoint Presenter View → left screen", action: #selector(togglePptPresenterAction), keyEquivalent: "")
+        // No key. Default on. Top level since 2026-10-29 (Victor), in the screens
+        // section — so drawn icon + tick in the title, like its neighbours there.
+        pptPresenterItem = NSMenuItem(title: Self.ticked(Self.pptPresenterTitle, PowerPointPresenterSettings.isEnabled), action: #selector(togglePptPresenterAction), keyEquivalent: "")
+        pptPresenterItem.image = Self.emojiIcon("🖥️")
         pptPresenterItem.target = self
         pptPresenterItem.isEnabled = true
-        pptPresenterItem.state = PowerPointPresenterSettings.isEnabled ? .on : .off
 
         // 🔊 Auto Share Faceover (was "Zoom Share Prep", renamed and brought to the
         // top level next to the other meeting rows on 2026-10-15) — the picker
@@ -610,10 +612,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         //
         // The SSID is not in the label. It lives in `HomeAwake.ssids`, and a
         // label naming one network would go stale the day a second one is added.
-        homeAwakeItem = NSMenuItem(title: "🏠 Home Wi-Fi keeps the screen on", action: #selector(toggleHomeAwakeAction), keyEquivalent: "")
+        //
+        // Top level since 2026-10-29 (Victor), next to 📬 Check Inbox; its tick is
+        // in the title, because a native `.state` tick pulls the row out of the
+        // column its emoji-titled neighbours start in (see `emojiIcon`).
+        homeAwakeItem = NSMenuItem(title: Self.ticked(Self.homeAwakeTitle, HomeAwakeSettings.isEnabled), action: #selector(toggleHomeAwakeAction), keyEquivalent: "")
         homeAwakeItem.target = self
         homeAwakeItem.isEnabled = true
-        homeAwakeItem.state = HomeAwakeSettings.isEnabled ? .on : .off
         homeAwakeItem.toolTip = "While on \(HomeAwakeSettings.ssids.joined(separator: " / ")) the screen never idles, so it never locks itself. ⌃⌘Q and the lid still lock it."
 
         // Dark Mode (⌘⌃⌥D) — a checkbox like every other row in here
@@ -649,14 +654,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // written; added here in the order they are read — what the clipboard
         // holds, the two utilities, the keyboard's sheets, the screen, the
         // mouse, and what keeps this Mac and Claude up. (The phone's hotspot
-        // left for the top level on 2026-09-25.)
+        // left for the top level on 2026-09-25; ☠️ Kill by port, 🖥️ PowerPoint
+        // Presenter View and 🏠 Home Wi-Fi on 2026-10-29.)
         let extraGroups: [[NSMenuItem]] = [
             [historyItem, reminderMailItem, screenshotItem, appendNotesItem, appendPromptItem],
-            [killItem],
             [emojiOverlayItem, commandOverlayItem],
             [darkModeItem, scrollReversalItem],
-            [windowHalfItem, windowScreenItem, windowFillItem, pptPresenterItem],
-            [homeAwakeItem],
+            [windowHalfItem, windowScreenItem, windowFillItem],
         ]
         for (i, group) in extraGroups.enumerated() {
             if i > 0 { extraSubmenu.addItem(.separator()) }
@@ -677,6 +681,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // opens claude where the work is anyway.
 
         menu.addItem(fluxInboxItem)
+        menu.addItem(killItem)
+        menu.addItem(homeAwakeItem)
 
         menu.addItem(extraItem)
 
@@ -714,6 +720,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         layoutZoomItem = addItem("Layout Zoom", action: #selector(layoutZoomAction))
         layoutZoomItem.image = Self.zoomLayoutIcon
         refreshLayoutZoomItem()
+        menu.addItem(pptPresenterItem)
         menu.addItem(zoomSharePrepItem)
         menu.addItem(retinaCapItem)
         menu.addItem(teamsShareSoundItem)
@@ -792,6 +799,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     static let faceoverTitle = "Auto Share Faceover"
     static let retinaCapTitle = "Retina 60 Hz in Zoom/Teams"
     static let teamsShareSoundTitle = "Teams Share with Sound"
+    static let pptPresenterTitle = "PowerPoint Presenter View → left screen"
+    static let homeAwakeTitle = "🏠 Home Wi-Fi keeps the screen on"
 
 
     @discardableResult
@@ -1184,7 +1193,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func togglePptPresenterAction() {
         let enabled = !PowerPointPresenterSettings.isEnabled
         PowerPointPresenterSettings.isEnabled = enabled
-        pptPresenterItem.state = enabled ? .on : .off
+        pptPresenterItem.title = Self.ticked(Self.pptPresenterTitle, enabled)
     }
 
     /// 🔊 Auto Share Faceover (`ZoomSharePrep`). Notifies nobody, for the same reason as its
@@ -1215,7 +1224,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// this instant is in `GET /test/home-awake` (`at_home`, `holding`).
     @objc private func toggleHomeAwakeAction() {
         let enabled = !HomeAwakeSettings.isEnabled
-        homeAwakeItem.state = enabled ? .on : .off
+        homeAwakeItem.title = Self.ticked(Self.homeAwakeTitle, enabled)
         onHomeAwakeEnabledChanged?(enabled)
     }
 
