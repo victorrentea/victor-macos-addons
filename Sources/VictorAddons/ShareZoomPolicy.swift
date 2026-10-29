@@ -99,17 +99,29 @@ enum ShareZoomPolicy {
         target <= 1 && current < 1.005
     }
 
-    /// How many times slower the mouse goes at `factor` (`ZoomPointerSpeed`):
-    /// factor^`exponent`. At 1 the drawn cursor crosses the glass as fast as an
-    /// unzoomed one; above 1, slower. The steps, all 2026-10-27: the factor with slow
-    /// moves lost to rounding (*"abia dacă pot să mișc"*), then √factor with the
-    /// rounding fixed (*"prea rapid"*), the factor (*"un pic prea repede"*), ^1.25
-    /// (*"prea rapid"*), now ^1.5 — 2.8× slower at 2×, 8× at 4×. A power and not a
-    /// multiple, so it starts from 1 at 1×.
-    static let defaultPointerExponent: CGFloat = 1.5
+    /// How fast the drawn cursor crosses the **glass** while zoomed, as a share of how
+    /// fast an unzoomed one crosses the screen (`ZoomPointerSpeed`). One number for
+    /// every factor: the hand covers the same stretch of glass per centimetre whether
+    /// the zoom is 2× or 8×, so on the desktop the pointer goes exactly 1/factor as far,
+    /// times this — sensitivity **proportional** to the zoom.
+    ///
+    /// The steps, all 2026-10-27: the factor with slow moves lost to rounding (*"abia
+    /// dacă pot să mișc"*), then √factor with the rounding fixed (*"prea rapid"*), the
+    /// factor (*"un pic prea repede"*), ^1.25 (*"prea rapid"*), ^1.5. A power is never
+    /// proportional: on the glass ^1.5 is 1/√factor — 0.82 at 1.5×, 0.5 at 4×, 0.35 at
+    /// 8× — and Victor, 2026-10-29: *"la un zoom mic mouse-ul se mișcă foarte rapid, la
+    /// un zoom adânc abia se mișcă"*. 0.5 is what ^1.5 gave at 4×, the middle of the dial.
+    static let defaultGlassSpeed: CGFloat = 0.5
 
-    static func pointerSlowdown(_ factor: CGFloat, exponent: CGFloat = defaultPointerExponent) -> CGFloat {
-        pow(max(factor, 1), exponent)
+    /// How many times slower the mouse goes at `factor`: `factor / glassSpeed`, so the
+    /// glass sees `glassSpeed` at every factor — except at the bottom of the dial, where
+    /// that would jump from 1 to 2 the instant the zoom starts. There it is `factor²`
+    /// (the glass sees 1/factor), which starts from 1 at 1× and meets `factor / glassSpeed`
+    /// at factor = 1/glassSpeed (2× for 0.5); the smaller of the two is always the one.
+    static func pointerSlowdown(_ factor: CGFloat, glassSpeed: CGFloat = defaultGlassSpeed) -> CGFloat {
+        let k = max(factor, 1)
+        let s = min(max(glassSpeed, 0.05), 1)
+        return min(k * k, k / s)
     }
 
     // MARK: - Where the slice is

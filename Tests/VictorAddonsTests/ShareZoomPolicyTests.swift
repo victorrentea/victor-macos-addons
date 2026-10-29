@@ -35,6 +35,32 @@ final class ShareZoomPolicyTests: XCTestCase {
         XCTAssertEqual(f, 1.15, accuracy: 0.0001)
     }
 
+    /// Sensitivity proportional to the zoom: from 2× up, the drawn cursor crosses the
+    /// glass at the same speed whatever the factor (2026-10-29, ^1.5 was 0.71 at 2× and
+    /// 0.35 at 8×).
+    func testTheGlassSpeedIsTheSameAtEveryFactorFromTwoUp() {
+        for f: CGFloat in [2, 3, 4, 6, 8] {
+            XCTAssertEqual(f / ShareZoomPolicy.pointerSlowdown(f), ShareZoomPolicy.defaultGlassSpeed, accuracy: 0.0001)
+        }
+    }
+
+    /// Below 2× it eases in from the unzoomed speed instead of halving at the first notch.
+    func testTheSlowdownStartsFromOneAtOneAndNeverJumps() {
+        XCTAssertEqual(ShareZoomPolicy.pointerSlowdown(1), 1)
+        XCTAssertEqual(ShareZoomPolicy.pointerSlowdown(1.036), 1.036 * 1.036, accuracy: 0.0001)
+        var last: CGFloat = 1
+        for i in 1...700 {
+            let s = ShareZoomPolicy.pointerSlowdown(1 + CGFloat(i) / 100)
+            XCTAssertGreaterThan(s, last)
+            XCTAssertLessThan(s - last, 0.05)
+            last = s
+        }
+    }
+
+    func testTheGlassSpeedIsTunable() {
+        XCTAssertEqual(4 / ShareZoomPolicy.pointerSlowdown(4, glassSpeed: 0.7), 0.7, accuracy: 0.0001)
+    }
+
     func testTheCeilingIsEightyPercentOfTheOldTen() {
         XCTAssertEqual(ShareZoomPolicy.maxFactor, 8)
     }

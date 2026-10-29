@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// 🔎 Slows the mouse down by the zoom factor while `ShareZoom` magnifies, so a small
-/// move on the table is a small move on the glass. Without it, at 4× the drawn cursor
+/// 🔎 Slows the mouse down in proportion to the zoom while `ShareZoom` magnifies, so a
+/// move on the table covers the same stretch of glass at every factor. Without it, at 4× the drawn cursor
 /// crossed the picture four times as fast and the slice ran off left and right under
 /// the hand (Victor, 2026-10-27: *"la o mișcare mică pe masă îmi fuge foarte rău"*).
 ///
@@ -25,10 +25,10 @@ final class ZoomPointerSpeed {
     /// Shared between main (`follow`) and the tap thread (every move): hence the lock.
     private let lock = NSLock()
     private var factor: CGFloat = 1
-    /// `ShareZoomPolicy.pointerSlowdown`'s exponent, re-read at each zoom start so it
-    /// can be tuned live: `defaults write ro.victorrentea.macos-addons ZoomPointerExponent -float 1.7`.
-    private var exponent = ShareZoomPolicy.defaultPointerExponent
-    static let exponentKey = "ZoomPointerExponent"
+    /// `ShareZoomPolicy.pointerSlowdown`'s glass speed, re-read at each zoom start so it
+    /// can be tuned live: `defaults write ro.victorrentea.macos-addons ZoomPointerGlassSpeed -float 0.6`.
+    private var glassSpeed = ShareZoomPolicy.defaultGlassSpeed
+    static let glassSpeedKey = "ZoomPointerGlassSpeed"
     /// Where the cursor was put last, with its fractions; nil until the first move.
     private var pos: CGPoint?
 
@@ -44,12 +44,12 @@ final class ZoomPointerSpeed {
         lock.unlock()
         guard let port = tapPort, (was > 1) != (k > 1) else { return }
         if k > 1 {
-            let stored = UserDefaults.standard.double(forKey: Self.exponentKey)
-            let e = stored > 0 ? CGFloat(stored) : ShareZoomPolicy.defaultPointerExponent
-            lock.lock(); exponent = e; lock.unlock()
+            let stored = UserDefaults.standard.double(forKey: Self.glassSpeedKey)
+            let g = stored > 0 ? CGFloat(stored) : ShareZoomPolicy.defaultGlassSpeed
+            lock.lock(); glassSpeed = g; lock.unlock()
         }
         CGEvent.tapEnable(tap: port, enable: k > 1)
-        overlayInfo("🔎 pointer slowed by factor^\(exponent): \(k > 1 ? "on" : "off")")
+        overlayInfo("🔎 pointer at \(glassSpeed)× on the glass: \(k > 1 ? "on" : "off")")
     }
 
     func restore() { follow(factor: 1) }
@@ -99,7 +99,7 @@ final class ZoomPointerSpeed {
         // From the event's own delta, never from `now − last`: WindowServer rounds the
         // warped position, and that rounding ate most of every slow move — the cursor
         // all but froze (2026-10-27, the first build of this).
-        let slow = Double(ShareZoomPolicy.pointerSlowdown(factor, exponent: exponent))
+        let slow = Double(ShareZoomPolicy.pointerSlowdown(factor, glassSpeed: glassSpeed))
         let dx = event.getDoubleValueField(.mouseEventDeltaX) / slow
         let dy = event.getDoubleValueField(.mouseEventDeltaY) / slow
         let next = Self.clampToDisplay(CGPoint(x: last.x + dx, y: last.y + dy), from: last)

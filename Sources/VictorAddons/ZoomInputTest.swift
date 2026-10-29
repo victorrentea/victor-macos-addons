@@ -7,6 +7,9 @@ import ScreenCaptureKit
 ///
 /// - `do=click` — ⌥ + wheel click at the pointer, the `ZoomEngine` flip.
 /// - `do=scroll&lines=N&n=K` — K ⌥+scroll events of N lines each (notched wheel).
+/// - `do=move&dx=N&n=K` — K mouse moves of N points right each, from where the pointer
+///   is; answers where it started and ended, so `ZoomPointerSpeed`'s scaling can be read
+///   off (desktop distance × factor = glass distance).
 /// - `do=shot&display=<name part>&path=<png>` — a ScreenCaptureKit screenshot of that
 ///   display **with the cursor** (`showsCursor`), written asynchronously. The one capture
 ///   that shows whether the real cursor is up beside ShareZoom's drawn one;
@@ -41,6 +44,23 @@ enum ZoomInputTest {
                 }
             }
             return "{\"posting\":\(n),\"lines\":\(lines)}"
+        case "move":
+            let dx = Double(q["dx"] ?? "10") ?? 10
+            let n = Int(q["n"] ?? "20") ?? 20
+            let start = CGEvent(source: nil)?.location ?? .zero
+            for _ in 0..<n {
+                let at = CGEvent(source: nil)?.location ?? .zero
+                guard let e = CGEvent(mouseEventSource: src, mouseType: .mouseMoved,
+                                      mouseCursorPosition: CGPoint(x: at.x + dx, y: at.y),
+                                      mouseButton: .left) else { continue }
+                e.setDoubleValueField(.mouseEventDeltaX, value: dx)
+                e.setDoubleValueField(.mouseEventDeltaY, value: 0)
+                e.post(tap: .cghidEventTap)
+                usleep(30_000)
+            }
+            usleep(100_000)
+            let end = CGEvent(source: nil)?.location ?? .zero
+            return "{\"start\":[\(start.x),\(start.y)],\"end\":[\(end.x),\(end.y)],\"posted\":\(Double(n) * dx)}"
         case "shot":
             let part = q["display"] ?? "DELL"
             let path = q["path"] ?? "/tmp/zoom-shot.png"
@@ -48,7 +68,7 @@ enum ZoomInputTest {
             Task { await shot(displayNamed: part, to: path) }
             return "{\"shooting\":\"\(path)\"}"
         default:
-            return "{\"error\":\"do=click|scroll|shot\"}"
+            return "{\"error\":\"do=click|scroll|move|shot\"}"
         }
     }
 

@@ -165,22 +165,30 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   is about the pointer (`ShareZoomPolicy.rezoom` / `pan`). The first build kept the
   pointer as the fixed point of the magnification instead, so the whole desktop slid
   under every mouse move — "nu e aceeași experiență".
-- **The mouse is slowed by the factor while zoomed (`ZoomPointerSpeed`, 2026-10-27)** —
-  at 4× the drawn cursor otherwise crosses the glass four times as fast, and a small
-  move on the table sent the slice running left and right (*"la o mișcare mică pe
-  masă îmi fuge foarte rău"*). An HID tap, enabled only while the factor is > 1, takes
-  each move after WindowServer has applied it and warps the cursor to
-  `last + delta / factor^1.5` (`ShareZoomPolicy.pointerSlowdown`; the event's own
-  delta, already accelerated), keeping the fractions in its own `pos` and clamped to
-  the display; the event's location and deltas are told the same. So the acceleration
-  curve stays, only scaled. The first build divided `now − last` by the whole factor:
-  WindowServer rounds the warped position, the rounding ate most of every slow move,
-  and the cursor all but froze (*"abia dacă pot să mișc"*) — hence the event delta.
-  √factor came with that fix and was *"prea rapid"*; the whole factor was *"un pic
-  prea repede"*; factor^1.25 was *"prea rapid"* again; factor^1.5 since (2.8× slower
-  at 2×, 8× at 4×). The exponent is read at each zoom start from `UserDefaults`
-  (`defaults write ro.victorrentea.macos-addons ZoomPointerExponent -float 1.7`), so it
-  can be tuned without a redeploy. `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
+- **The mouse is slowed in proportion to the zoom (`ZoomPointerSpeed`, 2026-10-27, made
+  proportional 2026-10-29)** — at 4× the drawn cursor otherwise crosses the glass four
+  times as fast, and a small move on the table sent the slice running left and right
+  (*"la o mișcare mică pe masă îmi fuge foarte rău"*). An HID tap, enabled only while the
+  factor is > 1, takes each move after WindowServer has applied it and warps the cursor to
+  `last + delta / slowdown` (`ShareZoomPolicy.pointerSlowdown`; the event's own delta,
+  already accelerated), keeping the fractions in its own `pos` and clamped to the display;
+  the event's location and deltas are told the same. So the acceleration curve stays, only
+  scaled. **The rule: `slowdown = min(factor², factor / glassSpeed)`**, `glassSpeed = 0.5`.
+  From 2× up the drawn cursor crosses the *glass* at half the unzoomed speed whatever the
+  factor — the hand covers the same stretch of glass per centimetre, the desktop pointer
+  exactly 1/factor of it; below 2× it eases in from the unzoomed speed (the glass sees
+  1/factor) instead of halving at the first notch. History: the first build divided
+  `now − last` by the whole factor: WindowServer rounds the warped position, the rounding
+  ate most of every slow move, and the cursor all but froze (*"abia dacă pot să mișc"*) —
+  hence the event delta. Then powers of the factor: √ (*"prea rapid"*), ^1 (*"un pic prea
+  repede"*), ^1.25 (*"prea rapid"*), ^1.5. **A power is never proportional**: on the glass
+  ^1.5 is 1/√factor — 0.82 at 1.5×, 0.5 at 4×, 0.35 at 8× — which is exactly 2026-10-29's
+  *"la un zoom mic mouse-ul se mișcă foarte rapid, la un zoom adânc abia se mișcă"*. 0.5 is
+  what ^1.5 gave at 4×. The glass speed is read at each zoom start from `UserDefaults`
+  (`defaults write ro.victorrentea.macos-addons ZoomPointerGlassSpeed -float 0.6`; higher
+  = faster), so it can be tuned without a redeploy. Measured with
+  `/test/zoom-input?do=move&dx=10&n=20` (synthetic HID moves; desktop distance × factor =
+  glass distance). `CGAssociateMouseAndMouseCursorPosition(1)` after each warp lifts the 0.25 s
   mute a warp brings. A jump of ≥ 400 pt in one event is followed, not scaled.
   **Tried first, same day, no effect:** raising the M650's `HIDPointerResolution` to
   factor × 400 dpi through a *monitor* HID client (`IOHIDEventSystemClientCreateWithType`
