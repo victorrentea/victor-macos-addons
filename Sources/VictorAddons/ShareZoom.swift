@@ -40,10 +40,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let panel: NSPanel
         let image = CALayer()
         let cursor = CALayer()
-        /// 🔍 in the top-right corner while zoomed, so anyone looking — the room or
-        /// the call — can tell this is our zoom and not the system one (Victor,
-        /// 2026-10-15). Never magnified: it sits over the picture, not in it.
-        let badge = CALayer()
         /// A black zigzag all round the screen while zoomed — the frame of a
         /// magnifying glass, so it is plain at any moment, from any corner, that the
         /// screen is this zoom and not the desktop (Victor, 2026-10-27: *"niște zigzag
@@ -102,13 +98,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             cursor.magnificationFilter = .linear
             cursor.actions = noAnimation
             cursor.isHidden = true
-            let side: CGFloat = 104, margin: CGFloat = 16  // 26 pt was too small to notice (Victor, 2026-10-15)
-            badge.frame = CGRect(x: screen.frame.width - side - margin, y: screen.frame.height - side - margin,
-                                 width: side, height: side)
-            badge.contents = Self.emojiImage("🔍", side: side, scale: screen.backingScaleFactor)
-            badge.contentsGravity = .resizeAspect
-            badge.opacity = 0.5
-            badge.actions = noAnimation
             let ring = Self.zigzagRing(size: screen.frame.size)
             let outer = CGMutablePath()
             outer.addRect(view.bounds)
@@ -128,7 +117,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
             view.layer?.addSublayer(edgeLine)
-            view.layer?.addSublayer(badge)
             view.layer?.addSublayer(cursor)
             panel.contentView = view
         }
@@ -161,20 +149,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edge(bl, tl, inward: CGVector(dx: 1, dy: 0), first: false)
             path.closeSubpath()
             return path
-        }
-
-        static func emojiImage(_ emoji: String, side: CGFloat, scale: CGFloat) -> CGImage? {
-            let px = Int(side * scale)
-            guard let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-            let text = NSAttributedString(string: emoji, attributes: [.font: NSFont.systemFont(ofSize: CGFloat(px) * 0.8)])
-            let size = text.size()
-            text.draw(at: CGPoint(x: (CGFloat(px) - size.width) / 2, y: (CGFloat(px) - size.height) / 2))
-            NSGraphicsContext.restoreGraphicsState()
-            return ctx.makeImage()
         }
     }
 
