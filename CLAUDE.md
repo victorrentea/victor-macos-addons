@@ -112,3 +112,8 @@ load-bearing, not commentary.
 - Backend repo: `training-assistant` (FastAPI, provides WebSocket server)
 - The `start.sh` in training-assistant also builds and launches the desktop-overlay during workshop sessions
 - Transcription output is consumed by training-assistant daemon for summaries and quizzes
+
+## Memoria lui Claude
+
+Memoria generală (cine e Victor, cum vrea să lucrezi) e în repo-ul privat `victorrentea/assistant`.
+Într-o sesiune din cloud, atașează-l la sesiune și urmează-i `CLAUDE.md`-ul. Pe Mac se încarcă singură.
