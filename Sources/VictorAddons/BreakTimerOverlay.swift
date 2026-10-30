@@ -149,6 +149,14 @@ final class BreakTimerController {
         view?.openPickerForTest(query: query)
     }
 
+    /// Headless test hook (`/test/break/leak-scroll-capture`): leave the scroll
+    /// capture armed as a lost `mouseUp` would. False with no break showing.
+    func leakScrollCaptureForTest() -> Bool {
+        guard let view else { return false }
+        view.leakScrollCaptureForTest()
+        return true
+    }
+
     /// Fired when a break *ends* — i.e. whenever the window is closed: the ✕
     /// button, the countdown expiring (which auto-closes after the gong), or a
     /// programmatic stop. NOT fired by re-opening or +minutes (those reuse the
@@ -1722,6 +1730,33 @@ final class BreakTimerView: NSView {
     // adjust keeps working wherever the cursor goes during a drag AND the scroll
     // is consumed (it never leaks to the app underneath). A tap (unlike an
     // NSEvent global monitor) can swallow the event.
+    //
+    // ⚠️ This tap eats EVERY scroll on the Mac, so it must never outlive the
+    // press. `mouseUp` is not enough: a release that never reaches this view
+    // (the window closed or hidden mid-press, a posted click) leaves it armed,
+    // and the trackpad and the mouse wheel go dead everywhere until the app is
+    // restarted — 2026-10-30, mid-training. So the capture also checks that
+    // the left button is still down: on every scroll it eats, and every
+    // `scrollCaptureCheckSeconds` without one. `/test/break/leak-scroll-capture`
+    // arms it without a press, to prove that.
+    private static let scrollCaptureCheckSeconds: TimeInterval = 0.5
+    private var scrollCaptureCheck: Timer?
+
+    private static var leftButtonDown: Bool {
+        CGEventSource.buttonState(.combinedSessionState, button: .left)
+    }
+
+    /// The capture outlived its press: let go of the wheel, loudly.
+    private func releaseLeakedScrollCapture(_ why: String) {
+        guard scrollTap != nil else { return }
+        overlayError("☕🛟 break timer's scroll capture outlived its press (\(why)) — released, scroll is back")
+        stopScrollMonitor()
+    }
+
+    /// Headless test hook (`/test/break/leak-scroll-capture`): arm the capture
+    /// with no press, as a lost `mouseUp` would leave it.
+    func leakScrollCaptureForTest() { startScrollMonitor() }
+
     private func startScrollMonitor() {
         stopScrollMonitor()
         let mask = CGEventMask(1 << CGEventType.scrollWheel.rawValue)
@@ -1731,6 +1766,12 @@ final class BreakTimerView: NSView {
             let view = Unmanaged<BreakTimerView>.fromOpaque(refcon).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                 if let tap = view.scrollTap { CGEvent.tapEnable(tap: tap, enable: true) }
+                return Unmanaged.passUnretained(event)
+            }
+            if type == .scrollWheel, !BreakTimerView.leftButtonDown {
+                // Main run loop, so the release can't race `mouseUp`; deferred
+                // only to keep the tap out of its own callback.
+                DispatchQueue.main.async { view.releaseLeakedScrollCapture("a scroll with the button up") }
                 return Unmanaged.passUnretained(event)
             }
             if type == .scrollWheel {
@@ -1747,9 +1788,16 @@ final class BreakTimerView: NSView {
         CGEvent.tapEnable(tap: tap, enable: true)
         scrollTap = tap
         scrollTapSource = src
+        let check = Timer(timeInterval: Self.scrollCaptureCheckSeconds, repeats: true) { [weak self] _ in
+            if !BreakTimerView.leftButtonDown { self?.releaseLeakedScrollCapture("the button is up") }
+        }
+        RunLoop.main.add(check, forMode: .common)
+        scrollCaptureCheck = check
     }
 
     private func stopScrollMonitor() {
+        scrollCaptureCheck?.invalidate()
+        scrollCaptureCheck = nil
         if let tap = scrollTap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
         if let src = scrollTapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), src, .commonModes) }
         scrollTap = nil

@@ -69,6 +69,8 @@ case testTerminalFont
         case testBreakState
         /// Open the country picker on the Break overlay, optionally pre-filtered (test hook).
         case testBreakPicker(String?)
+        /// Arm the Break overlay's scroll capture with no press, as a lost mouseUp would (test hook).
+        case testBreakLeakScrollCapture
         /// ⏱️ Timer: start / pause / close / state — answers the resulting state (test hook).
         case testStopwatch(String)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
@@ -313,6 +315,7 @@ case testTerminalFont
     var onTestBreakUntil: (() -> Void)?
     var onTestBreakClose: (() -> Void)?
     var onTestBreakPicker: ((String?) -> Void)?
+    var onTestBreakLeakScrollCapture: (() -> String)?
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
     var onTestStopwatch: ((String) -> String)?
@@ -610,6 +613,9 @@ case testTerminalFont
                 body = self.onTestBreakState?() ?? "{\"error\":\"break timer unavailable\"}"
             case .testBreakPicker(let q):
                 self.onTestBreakPicker?(q)
+            case .testBreakLeakScrollCapture:
+                contentType = "application/json"
+                body = self.onTestBreakLeakScrollCapture?() ?? "{\"error\":\"break timer unavailable\"}"
             case .testStopwatch(let action):
                 contentType = "application/json"
                 body = self.onTestStopwatch?(action) ?? "{\"error\":\"stopwatch unavailable\"}"
@@ -1001,6 +1007,8 @@ case testTerminalFont
             return .testBreakState
         case "/test/break/picker":
             return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
+        case "/test/break/leak-scroll-capture":
+            return .testBreakLeakScrollCapture
         case let p where p.hasPrefix("/test/stopwatch/"):
             return .testStopwatch(String(p.dropFirst("/test/stopwatch/".count)))
         case "/test/tile":
