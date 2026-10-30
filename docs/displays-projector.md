@@ -569,7 +569,17 @@ crop"* — so it is the crop's gesture, read by the crop's code.
 - Headless: `GET /test/glass-spotlight?x=&y=&w=&h=` (global Cocoa points) puts a box
   up, `?zoom=0…1` sets the scroll zoom's target, `?off=1` takes it down, no query
   reports (`glass` = the fade level, `zoom`/`zoomTarget`/`zoomFrame`, `lensLive`,
-  `lensFrames`).
+  `lensFrames`, `visible`), `?moved=1` with a box rebuilds it as a display change would.
+- **🛟 An up glass is never left invisible (2026-10-31).** While the glass is up, the
+  session tap eats every bare scroll outside the box on its screen — that is the
+  feature. A new ⇧+wheel-drag on a screen whose frame differs from the glass's (another
+  monitor, or the same one after PowerPoint / the projector / `AsusSide` rearranged the
+  displays) rebuilds the panel in `ensurePanel`, but with `isShowing` still set the new
+  panel was **never ordered in**: nothing on screen, the gate still armed, and wheel and
+  trackpad dead on that screen until a restart (Esc was eaten too). This is the most
+  likely cause of the 10/30 scroll outage. The rebuild now drops `isShowing` so the new
+  glass is shown like any other; `moved=1` reproduced `showing:true, visible:false`
+  before the fix and `visible:true` after.
 
 ### The fourth path, and the one actually in use: Zoom's unfiltered capture mode
 

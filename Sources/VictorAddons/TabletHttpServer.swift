@@ -70,7 +70,7 @@ case testTerminalFont
         /// Open the country picker on the Break overlay, optionally pre-filtered (test hook).
         case testBreakPicker(String?)
         /// Arm the Break overlay's scroll capture with no press, as a lost mouseUp would (test hook).
-        case testBreakLeakScrollCapture
+        case testBreakLeakScrollCapture(buttonStuck: Bool, maxSeconds: Double?)
         /// ⏱️ Timer: start / pause / close / state — answers the resulting state (test hook).
         case testStopwatch(String)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
@@ -140,7 +140,7 @@ case testTerminalFont
         /// 🪞 Victor Mirror telling us its silhouette's window ids, for `ShareZoom`.
         case mirrorExclusions([CGWindowID])
         /// 🔦 `GlassSpotlight`: a box (global Cocoa points), or off.
-        case testGlassSpotlight(rect: CGRect?, off: Bool, zoom: Double?)
+        case testGlassSpotlight(rect: CGRect?, off: Bool, zoom: Double?, moved: Bool)
         /// JSON snapshot of the ⌥ emoji layer (`EmojiKeyLayer`): whether it is
         /// on, the map file it is serving and how many bindings it holds.
         case testEmojiLayer
@@ -315,7 +315,7 @@ case testTerminalFont
     var onTestBreakUntil: (() -> Void)?
     var onTestBreakClose: (() -> Void)?
     var onTestBreakPicker: ((String?) -> Void)?
-    var onTestBreakLeakScrollCapture: (() -> String)?
+    var onTestBreakLeakScrollCapture: ((Bool, Double?) -> String)?
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
     var onTestStopwatch: ((String) -> String)?
@@ -365,7 +365,7 @@ case testTerminalFont
     /// 🪞 Victor Mirror's silhouette windows, which `ShareZoom` must not magnify.
     var onMirrorExclusions: (([CGWindowID]) -> Void)?
     /// 🔦 `GlassSpotlight` — box in global Cocoa points (nil = just report), or off.
-    var onTestGlassSpotlight: ((CGRect?, Bool, Double?) -> String)?
+    var onTestGlassSpotlight: ((CGRect?, Bool, Double?, Bool) -> String)?
     /// Force-show the aggressive silent-transcription warning.
     var onTestPresentationWarn: (() -> Void)?
     var onTestBreakSummary: (() -> Void)?
@@ -613,9 +613,9 @@ case testTerminalFont
                 body = self.onTestBreakState?() ?? "{\"error\":\"break timer unavailable\"}"
             case .testBreakPicker(let q):
                 self.onTestBreakPicker?(q)
-            case .testBreakLeakScrollCapture:
+            case .testBreakLeakScrollCapture(let stuck, let maxSeconds):
                 contentType = "application/json"
-                body = self.onTestBreakLeakScrollCapture?() ?? "{\"error\":\"break timer unavailable\"}"
+                body = self.onTestBreakLeakScrollCapture?(stuck, maxSeconds) ?? "{\"error\":\"break timer unavailable\"}"
             case .testStopwatch(let action):
                 contentType = "application/json"
                 body = self.onTestStopwatch?(action) ?? "{\"error\":\"stopwatch unavailable\"}"
@@ -674,9 +674,9 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestShareZoom?(factor, x, y, fps) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestShareZoom == nil { statusCode = 503 }
-            case .testGlassSpotlight(let rect, let off, let zoom):
+            case .testGlassSpotlight(let rect, let off, let zoom, let moved):
                 contentType = "application/json"
-                body = self.onTestGlassSpotlight?(rect, off, zoom) ?? "{\"error\":\"unavailable\"}"
+                body = self.onTestGlassSpotlight?(rect, off, zoom, moved) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestGlassSpotlight == nil { statusCode = 503 }
             case .testZoomLayout(let run):
                 contentType = "application/json"
@@ -1008,7 +1008,9 @@ case testTerminalFont
         case "/test/break/picker":
             return .testBreakPicker(queryItems.first(where: { $0.name == "q" })?.value)
         case "/test/break/leak-scroll-capture":
-            return .testBreakLeakScrollCapture
+            return .testBreakLeakScrollCapture(
+                buttonStuck: queryItems.first(where: { $0.name == "held" })?.value == "1",
+                maxSeconds: queryItems.first(where: { $0.name == "max" })?.value.flatMap(Double.init))
         case let p where p.hasPrefix("/test/stopwatch/"):
             return .testStopwatch(String(p.dropFirst("/test/stopwatch/".count)))
         case "/test/tile":
@@ -1075,7 +1077,8 @@ case testTerminalFont
             let rect = num("x").flatMap { x in num("y").flatMap { y in num("w").flatMap { w in num("h").map { h in
                 CGRect(x: x, y: y, width: w, height: h) } } } }
             return .testGlassSpotlight(rect: rect, off: queryItems.first(where: { $0.name == "off" })?.value == "1",
-                                       zoom: num("zoom"))
+                                       zoom: num("zoom"),
+                                       moved: queryItems.first(where: { $0.name == "moved" })?.value == "1")
         case "/test/zoom-layout":
             return .testZoomLayout(run: queryItems.first(where: { $0.name == "run" })?.value != "0")
         case "/test/emoji-layer":

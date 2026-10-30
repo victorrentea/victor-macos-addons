@@ -328,6 +328,12 @@ final class GlassSpotlight {
         return snapshotJSON()
     }
 
+    /// `?moved=1`: the glass's screen "moved" under it, as a projector re-plug or
+    /// a display re-arrangement leaves it — so the next box rebuilds the panel
+    /// while the glass is up. That rebuild once left it up, invisible, and eating
+    /// every scroll; `visible` in the JSON is what proves it doesn't any more.
+    func testDisplaysMoved() { screenFrame = .zero }
+
     /// `?zoom=0…1`: the wheel's target, set directly.
     func testZoom(_ target: CGFloat) -> String {
         if isShowing, drag == nil, let box = hole { setZoom(min(1, max(0, target)), box: box) }
@@ -338,7 +344,7 @@ final class GlassSpotlight {
         let r = hole ?? .zero
         let z = zoomBox.map { GlassSpotlightZoom.frame(box: $0, screen: screenFrame, progress: zoom) } ?? .zero
         return """
-        {"showing":\(isShowing),"dragging":\(drag != nil),\
+        {"showing":\(isShowing),"visible":\(panel?.isVisible ?? false),"dragging":\(drag != nil),\
         "hole":[\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))],\
         "screen":[\(Int(screenFrame.minX)),\(Int(screenFrame.minY)),\(Int(screenFrame.width)),\(Int(screenFrame.height))],\
         "level":\(panel?.level.rawValue ?? 0),"glass":\(String(format: "%.2f", level)),\
@@ -449,6 +455,12 @@ final class GlassSpotlight {
             panel?.orderOut(nil)
             build(on: screen)
             level = 0
+            // ⚠️ A glass already up — on another screen, or on this one before the
+            // displays moved — is a new glass now, and has to be shown like one.
+            // Left `isShowing`, the block below was skipped: the new panel was never
+            // ordered in, the tap kept eating every bare scroll outside a box nobody
+            // could see, and only a restart brought scroll back (2026-10-30).
+            if isShowing { isShowing = false }
         }
         guard let panel else { return }
         if !isShowing {

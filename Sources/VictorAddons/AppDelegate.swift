@@ -1210,9 +1210,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // killing every scroll on the Mac. Already on main (the route switch runs in
         // `DispatchQueue.main.sync`). The ⏱️ stopwatch is the same view, and the one
         // to test on: closing it leaves no `ScreenBlackout` behind.
-        tabletServer?.onTestBreakLeakScrollCapture = { [weak self] in
+        tabletServer?.onTestBreakLeakScrollCapture = { [weak self] stuck, maxSeconds in
             guard let self else { return "{\"armed\":false}" }
-            return self.stopwatch.leakScrollCaptureForTest() || self.breakTimer.leakScrollCaptureForTest()
+            return self.stopwatch.leakScrollCaptureForTest(buttonStuck: stuck, maxSeconds: maxSeconds)
+                || self.breakTimer.leakScrollCaptureForTest(buttonStuck: stuck, maxSeconds: maxSeconds)
                 ? "{\"armed\":true}" : "{\"armed\":false,\"error\":\"no break showing\"}"
         }
         // /test/break/pause + /test/break/state — the ⏸ button and a read of what the
@@ -1351,8 +1352,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // /test/glass-spotlight?x=&y=&w=&h= — 🔦 a box without the mouse
         // (global Cocoa points); ?off=1 takes it down; ?zoom=0…1 sets the
         // scroll zoom's target; nothing just reports.
-        tabletServer?.onTestGlassSpotlight = { [weak self] rect, off, zoom in
+        tabletServer?.onTestGlassSpotlight = { [weak self] rect, off, zoom, moved in
             guard let self else { return "{\"error\":\"unavailable\"}" }
+            if moved { self.glassSpotlight.testDisplaysMoved() }
             if off { return self.glassSpotlight.testShow(nil) }
             if let zoom { return self.glassSpotlight.testZoom(CGFloat(zoom)) }
             guard let rect else { return self.glassSpotlight.snapshotJSON() }

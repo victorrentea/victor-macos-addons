@@ -151,9 +151,9 @@ final class BreakTimerController {
 
     /// Headless test hook (`/test/break/leak-scroll-capture`): leave the scroll
     /// capture armed as a lost `mouseUp` would. False with no break showing.
-    func leakScrollCaptureForTest() -> Bool {
+    func leakScrollCaptureForTest(buttonStuck: Bool, maxSeconds: TimeInterval?) -> Bool {
         guard let view else { return false }
-        view.leakScrollCaptureForTest()
+        view.leakScrollCaptureForTest(buttonStuck: buttonStuck, maxSeconds: maxSeconds)
         return true
     }
 
@@ -1735,12 +1735,30 @@ final class BreakTimerView: NSView {
     // press. `mouseUp` is not enough: a release that never reaches this view
     // (the window closed or hidden mid-press, a posted click) leaves it armed,
     // and the trackpad and the mouse wheel go dead everywhere until the app is
-    // restarted — 2026-10-30, mid-training. So the capture also checks that
-    // the left button is still down: on every scroll it eats, and every
-    // `scrollCaptureCheckSeconds` without one. `/test/break/leak-scroll-capture`
-    // arms it without a press, to prove that.
+    // restarted. So the capture also checks that the left button is still
+    // down: on every scroll it eats, and every `scrollCaptureCheckSeconds`
+    // without one. The button state is the window server's, and a release
+    // eaten by another app's tap (ScreenBrush, Walkie Talkie, an agent's
+    // unpaired click) never reaches it — so the capture also lets go once the
+    // watch is off screen, and after `scrollCaptureMaxSeconds` whatever the
+    // button says: nobody nudges minutes for half a minute in one press.
+    // `/test/break/leak-scroll-capture` arms it without a press, to prove it.
     private static let scrollCaptureCheckSeconds: TimeInterval = 0.5
+    private var scrollCaptureMaxSeconds: TimeInterval = 30
     private var scrollCaptureCheck: Timer?
+    /// Test only: the window server still believes the button is down.
+    private var scrollCaptureButtonStuckForTest = false
+    private var scrollCaptureSince: CFAbsoluteTime = 0
+
+    /// Why the capture must let go now, or nil while the press is still real.
+    private var scrollCaptureStale: String? {
+        if !Self.leftButtonDown, !scrollCaptureButtonStuckForTest { return "the button is up" }
+        if window?.isVisible != true { return "the watch is off screen" }
+        if CFAbsoluteTimeGetCurrent() - scrollCaptureSince > scrollCaptureMaxSeconds {
+            return "held over \(Int(scrollCaptureMaxSeconds)) s"
+        }
+        return nil
+    }
 
     private static var leftButtonDown: Bool {
         CGEventSource.buttonState(.combinedSessionState, button: .left)
@@ -1754,8 +1772,13 @@ final class BreakTimerView: NSView {
     }
 
     /// Headless test hook (`/test/break/leak-scroll-capture`): arm the capture
-    /// with no press, as a lost `mouseUp` would leave it.
-    func leakScrollCaptureForTest() { startScrollMonitor() }
+    /// with no press, as a lost `mouseUp` would leave it. `buttonStuck`: as if
+    /// another tap ate the release too; `maxSeconds` shortens the hard limit.
+    func leakScrollCaptureForTest(buttonStuck: Bool, maxSeconds: TimeInterval?) {
+        startScrollMonitor()
+        scrollCaptureButtonStuckForTest = buttonStuck
+        scrollCaptureMaxSeconds = maxSeconds ?? 30
+    }
 
     private func startScrollMonitor() {
         stopScrollMonitor()
@@ -1768,10 +1791,10 @@ final class BreakTimerView: NSView {
                 if let tap = view.scrollTap { CGEvent.tapEnable(tap: tap, enable: true) }
                 return Unmanaged.passUnretained(event)
             }
-            if type == .scrollWheel, !BreakTimerView.leftButtonDown {
+            if type == .scrollWheel, let why = view.scrollCaptureStale {
                 // Main run loop, so the release can't race `mouseUp`; deferred
                 // only to keep the tap out of its own callback.
-                DispatchQueue.main.async { view.releaseLeakedScrollCapture("a scroll with the button up") }
+                DispatchQueue.main.async { view.releaseLeakedScrollCapture("a scroll, \(why)") }
                 return Unmanaged.passUnretained(event)
             }
             if type == .scrollWheel {
@@ -1788,14 +1811,17 @@ final class BreakTimerView: NSView {
         CGEvent.tapEnable(tap: tap, enable: true)
         scrollTap = tap
         scrollTapSource = src
+        scrollCaptureSince = CFAbsoluteTimeGetCurrent()
         let check = Timer(timeInterval: Self.scrollCaptureCheckSeconds, repeats: true) { [weak self] _ in
-            if !BreakTimerView.leftButtonDown { self?.releaseLeakedScrollCapture("the button is up") }
+            if let why = self?.scrollCaptureStale { self?.releaseLeakedScrollCapture(why) }
         }
         RunLoop.main.add(check, forMode: .common)
         scrollCaptureCheck = check
     }
 
     private func stopScrollMonitor() {
+        scrollCaptureButtonStuckForTest = false
+        scrollCaptureMaxSeconds = 30
         scrollCaptureCheck?.invalidate()
         scrollCaptureCheck = nil
         if let tap = scrollTap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
