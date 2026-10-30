@@ -626,7 +626,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // countdown runs out. Reporting it here is what keeps the chip from
             // going stale into an inverted toggle after the session actually ended.
             let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
-            return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)"
+            // 💻🔌 The tablet blinks a laptop + plug while this Mac runs on
+            // battery: its own battery icon sits on the screen being projected.
+            let power = ",\"macOnAC\":\(PowerMonitor.isOnAC())"
+            return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)\(power)"
         }
         tabletServer?.onPromptCapture = { [weak self] rawPrompt, source, cwd in
             let prompt = PromptCapturePolicy.unwrapSkillInvocation(PromptCapturePolicy.unwrapPastes(rawPrompt))
