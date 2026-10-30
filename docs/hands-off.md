@@ -173,7 +173,8 @@ same locks for any synthetic input, announced or not.
 
 - **Synthetic = `.eventSourceUnixProcessID` non-zero.** Hardware events arrive with 0.
 - **Allowlist** (`SyntheticInputWatch.allowlist`): Wispr Flow, Walkie Talkie, this app,
-  Karabiner, Raycast, Alfred, Logi, Hammerspoon, Keyboard Maestro — software that types
+  Victor Effects (added 2026-10-31, after it raised the locks 61 times in one evening —
+  nobody had put it on the list when the effects left this process), Karabiner, Raycast, Alfred, Logi, Hammerspoon, Keyboard Maestro — software that types
   *for* Victor at the moment he asks it to. Raising locks for his own dictation would
   train him to ignore locks. **That list is the whole false-positive risk; extend it
   rather than widening the pid test.**

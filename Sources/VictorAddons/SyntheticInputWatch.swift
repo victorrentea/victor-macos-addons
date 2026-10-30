@@ -40,6 +40,7 @@ final class SyntheticInputWatch {
         "wispr",            // his dictation — types into whatever is focused
         "walkie talkie",    // the relay's own paste + shutter Return
         "victor addons",    // us: snippet paste, ⌘⌃ launchers, BackButtonEnter
+        "victor effects",   // 🎆 split out of us: the whip's Ctrl+C + "FASTER" — 61 false raises on 30 Oct 2026
         "karabiner",
         "raycast",
         "alfred",
