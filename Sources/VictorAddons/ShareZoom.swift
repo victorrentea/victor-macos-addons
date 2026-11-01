@@ -50,6 +50,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         static let edgeTooth: CGFloat = 28
         static let edgeDepth: CGFloat = 12
         static let edgeBand: CGFloat = 3
+        /// The zigzag fades in with the zoom and out as it heads back to 1×, never
+        /// popping (Victor, 2026-11-01). Shorter than a zoom-out (~0.22 s from 2×,
+        /// `ShareZoomPolicy.ease`), so it is gone before the panel is.
+        static let edgeFade: CFTimeInterval = 0.18
+        var edgeShown = false
         /// No ⊕/⊖ in the cursor's place while the zoom changes any more (Victor,
         /// 2026-10-27: *"nu mai e nevoie să afișez deloc lupa… câtă vreme păstrez
         /// zig-zag-ul"*): the zigzag already says this is our zoom.
@@ -114,11 +119,36 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edgeLine.lineWidth = 1.5
             edgeLine.lineJoin = .miter
             edgeLine.actions = noAnimation
+            edge.opacity = 0
+            edgeLine.opacity = 0
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
             view.layer?.addSublayer(edgeLine)
             view.layer?.addSublayer(cursor)
             panel.contentView = view
+        }
+
+        /// Fades the zigzag in or out from wherever it is now (a zoom-out reversed
+        /// mid-fade turns back); `animated: false` just sets it.
+        func showEdge(_ on: Bool, animated: Bool = true) {
+            guard on != edgeShown || !animated else { return }
+            edgeShown = on
+            let to: Float = on ? 1 : 0
+            for layer in [edge, edgeLine] {
+                let from = layer.presentation()?.opacity ?? layer.opacity
+                layer.removeAnimation(forKey: "fade")
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                layer.opacity = to
+                CATransaction.commit()
+                guard animated, from != to else { continue }
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = from
+                fade.toValue = to
+                fade.duration = Self.edgeFade * CFTimeInterval(abs(to - from))
+                fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                layer.add(fade, forKey: "fade")
+            }
         }
 
         /// The inner outline of the zigzag frame: a closed polygon just inside the
@@ -546,6 +576,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let s = active, !visible else { return }
         visible = true
         s.panel.alphaValue = 1
+        s.showEdge(target > 1)
         lastStartupMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         overlayInfo("🔎 ShareZoom: on \(s.name), visible after \(lastStartupMs) ms")
     }
@@ -558,6 +589,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         restoreCursor()
         pointerSpeed.restore()
         active?.cursor.isHidden = true
+        active?.showEdge(false, animated: false)
         active?.panel.orderOut(nil)
         active = nil
         visible = false
@@ -759,6 +791,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         if tickCount % Self.effectsWatchEvery == 0 { watchEffectsWindows(s) }
         let previous = current
         current = ShareZoomPolicy.ease(current, toward: target)
+        s.showEdge(target > 1)
         if ShareZoomPolicy.isOff(current: current, target: target) {
             deactivate()
             return
