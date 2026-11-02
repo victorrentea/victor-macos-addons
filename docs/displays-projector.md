@@ -120,7 +120,9 @@ care se ascut / aplatizează"*, then *"fadeout/fadein după/înainte de aplatiza
 depth (`zigzagRing(sharpness:)` only scales the teeth), so a `path` animation moves each
 tooth straight in or out. The real zoom wears the same two beats: the first ⌥+scroll brings
 the frame in by fade-then-sharpen, and back at 1× it flattens and fades **on the zoom's own
-panel**, picture hidden so the desktop shows through, then the panel goes. **Exactly the way
+panel**, its live picture snapped to exactly 1× so it *is* the desktop, then the panel goes
+(not hidden on a see-through panel: that flashed the screen black for a frame, and the
+picture left at ~1.004× jumped when the panel went — `Stage.settleAtOne`). **Exactly the way
 in, backwards** (*"simetrică invers"*): flatten = sharpen = 0.3 s, fade out = fade in =
 0.12 s, ease-in for ease-out. Filmed 2026-11-02 before the fix: on a new panel the frame
 blinked out for 7 frames at 60 Hz (a new window reaches the screen ~0.12 s after

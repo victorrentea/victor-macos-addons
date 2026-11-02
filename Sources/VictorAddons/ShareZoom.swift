@@ -127,16 +127,19 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             panel.contentView = view
         }
 
-        /// The magnified picture, or — while the frame flattens away at 1× — nothing,
-        /// the desktop showing through around the frame.
-        func showPicture(_ on: Bool) {
+        /// While the frame flattens away at 1×: the live picture snapped to exactly 1×,
+        /// so it *is* the desktop and the panel's going changes nothing under it, and
+        /// no drawn cursor (the real one is back). The panel stays opaque and the
+        /// picture stays up: hiding it on the panel's black and flipping `isOpaque` for
+        /// a see-through panel flashed the whole screen black for a frame, and leaving
+        /// it at the last eased factor (~1.004×) jumped when the panel went — the
+        /// "tremor + flash" of 2026-11-02.
+        func settleAtOne() {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            image.isHidden = !on
-            if !on { cursor.isHidden = true }
+            image.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            cursor.isHidden = true
             CATransaction.commit()
-            panel.isOpaque = on
-            panel.backgroundColor = on ? .black : .clear
         }
 
         /// Brings the zigzag in (fade in flat, then sharpen) or takes it away at once;
@@ -538,7 +541,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         pointerSpeed.restore()
         active?.cursor.isHidden = true
         active?.showEdge(false, animated: false)
-        active?.showPicture(true)
         leavingUntil = nil
         active?.panel.orderOut(nil)
         active = nil
@@ -778,15 +780,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         current = ShareZoomPolicy.ease(current, toward: target)
         if target > 1 { s.showEdge(true) }
         if ShareZoomPolicy.isOff(current: current, target: target) {
-            // Back at 1×: the picture goes, the desktop shows through, and the frame
-            // flattens and fades on this same panel — the way it came, backwards
-            // (`ZigzagFrame`). Not on a new panel: a new window takes ~0.12 s to reach
-            // the screen, and the frame blinked out for 7 frames in between (filmed
-            // 2026-11-02).
+            // Back at 1×: the picture snaps to exactly 1× (it is the desktop now) and
+            // the frame flattens and fades on this same panel — the way it came,
+            // backwards (`ZigzagFrame`). Not on a new panel: a new window takes ~0.12 s
+            // to reach the screen, and the frame blinked out for 7 frames in between
+            // (filmed 2026-11-02).
             let now = CFAbsoluteTimeGetCurrent()
             if s.edgeShown {
                 s.edgeShown = false
-                s.showPicture(false)
+                s.settleAtOne()
+                lastWritten = nil
                 publishCursor(nil)
                 restoreCursor()
                 pointerSpeed.restore()
@@ -800,7 +803,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         if leavingUntil != nil {
             // Scrolled back in while the frame was leaving.
             leavingUntil = nil
-            s.showPicture(true)
             s.showEdge(true)
         }
         let size = s.frame.size
