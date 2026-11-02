@@ -44,6 +44,10 @@ enum ZigzagFrame {
     /// Answers how long it takes, delay included.
     @discardableResult
     static func appear(edge: CAShapeLayer, line: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
+        // One transaction for the end state and the animations: committed apart, the
+        // end state reached the screen a frame early — the frame blinked (2026-11-02).
+        CATransaction.begin()
+        defer { CATransaction.commit() }
         set(edge: edge, line: line, sharp: true, visible: true)
         let now = CACurrentMediaTime() + delay
         for (layer, flat, sharp) in [(edge, fill(edge.bounds, sharpness: 0), fill(edge.bounds, sharpness: 1)),
@@ -59,6 +63,8 @@ enum ZigzagFrame {
     /// how long it takes, delay included.
     @discardableResult
     static func disappear(edge: CAShapeLayer, line: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
+        CATransaction.begin()
+        defer { CATransaction.commit() }
         let now = CACurrentMediaTime() + delay
         CATransaction.begin()
         CATransaction.setDisableActions(true)

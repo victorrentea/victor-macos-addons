@@ -127,17 +127,13 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             panel.contentView = view
         }
 
-        /// While the frame flattens away at 1×: the live picture snapped to exactly 1×,
-        /// so it *is* the desktop and the panel's going changes nothing under it, and
-        /// no drawn cursor (the real one is back). The panel stays opaque and the
-        /// picture stays up: hiding it on the panel's black and flipping `isOpaque` for
-        /// a see-through panel flashed the whole screen black for a frame, and leaving
-        /// it at the last eased factor (~1.004×) jumped when the panel went — the
-        /// "tremor + flash" of 2026-11-02.
-        func settleAtOne() {
+        /// While the frame flattens away at 1× the real cursor is back. The panel
+        /// stays opaque and the picture stays up (easing on to exactly 1×): hiding it
+        /// on the panel's black and flipping `isOpaque` for a see-through panel flashed
+        /// the whole screen black for a frame (2026-11-02).
+        func hideDrawnCursor() {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            image.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
             cursor.isHidden = true
             CATransaction.commit()
         }
@@ -780,23 +776,32 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         current = ShareZoomPolicy.ease(current, toward: target)
         if target > 1 { s.showEdge(true) }
         if ShareZoomPolicy.isOff(current: current, target: target) {
-            // Back at 1×: the picture snaps to exactly 1× (it is the desktop now) and
-            // the frame flattens and fades on this same panel — the way it came,
-            // backwards (`ZigzagFrame`). Not on a new panel: a new window takes ~0.12 s
-            // to reach the screen, and the frame blinked out for 7 frames in between
-            // (filmed 2026-11-02).
+            // Back at 1×: the frame flattens and fades on this same panel — the way it
+            // came, backwards (`ZigzagFrame`). Not on a new panel: a new window takes
+            // ~0.12 s to reach the screen, and the frame blinked out for 7 frames in
+            // between (filmed 2026-11-02).
             let now = CFAbsoluteTimeGetCurrent()
             if s.edgeShown {
                 s.edgeShown = false
-                s.settleAtOne()
-                lastWritten = nil
+                s.hideDrawnCursor()
                 publishCursor(nil)
                 restoreCursor()
                 pointerSpeed.restore()
                 leavingUntil = now + ZigzagFrame.disappear(edge: s.edge, line: s.edgeLine)
+            }
+            if let until = leavingUntil, now < until {
+                // Meanwhile the picture keeps easing its last half-percent down to
+                // 1×, where it *is* the desktop: snapped there in one frame, it was
+                // the exit's tremor (filmed 2026-11-02: one frame, 23/255 mean change).
+                let size = s.frame.size
+                origin = ShareZoomPolicy.clamp(origin: origin, factor: current, screenSize: size)
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                s.image.contentsRect = ShareZoomPolicy.contentsRect(origin: origin, factor: current, screenSize: size)
+                CATransaction.commit()
+                lastWritten = nil
                 return
             }
-            if let until = leavingUntil, now < until { return }
             deactivate()
             return
         }
