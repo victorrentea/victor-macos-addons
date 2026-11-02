@@ -43,10 +43,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// A black zigzag all round the screen while zoomed — the frame of a
         /// magnifying glass, so it is plain at any moment, from any corner, that the
         /// screen is this zoom and not the desktop (Victor, 2026-10-27: *"niște zigzag
-        /// negru la marginea ecranului… la orice moment de timp"*). A thin light line
-        /// rides its inner edge, or the teeth vanish into a dark terminal. Never magnified.
+        /// negru la marginea ecranului… la orice moment de timp"*). Black only: the thin
+        /// light line that rode its inner edge went on 2026-11-02 (*"scoate linia gri…
+        /// lasă doar negru"*). Never magnified.
         let edge = CAShapeLayer()
-        let edgeLine = CAShapeLayer()
         static let edgeTooth: CGFloat = 28
         static let edgeDepth: CGFloat = 12
         static let edgeBand: CGFloat = 3
@@ -115,18 +115,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edge.fillRule = .evenOdd
             edge.fillColor = NSColor.black.cgColor
             edge.actions = noAnimation
-            edgeLine.frame = view.bounds
-            edgeLine.path = ring
-            edgeLine.fillColor = nil
-            edgeLine.strokeColor = NSColor(calibratedWhite: 1, alpha: 0.55).cgColor
-            edgeLine.lineWidth = 1.5
-            edgeLine.lineJoin = .miter
-            edgeLine.actions = noAnimation
             edge.opacity = 0
-            edgeLine.opacity = 0
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
-            view.layer?.addSublayer(edgeLine)
             view.layer?.addSublayer(cursor)
             panel.contentView = view
         }
@@ -148,9 +139,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             guard on != edgeShown else { return }
             edgeShown = on
             if on, animated {
-                ZigzagFrame.appear(edge: edge, line: edgeLine)
+                ZigzagFrame.appear(edge: edge)
             } else {
-                ZigzagFrame.set(edge: edge, line: edgeLine, sharp: true, visible: on)
+                ZigzagFrame.set(edge: edge, sharp: true, visible: on)
             }
         }
 
@@ -791,7 +782,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                 publishCursor(nil)
                 restoreCursor()
                 pointerSpeed.restore()
-                leavingUntil = now + ZigzagFrame.disappear(edge: s.edge, line: s.edgeLine)
+                leavingUntil = now + ZigzagFrame.disappear(edge: s.edge)
             }
             if let until = leavingUntil, now < until {
                 // Meanwhile the picture keeps easing its last half-percent down to

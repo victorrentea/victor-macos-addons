@@ -55,20 +55,13 @@ final class ZoomSwitchEffect {
         edge.frame = view.bounds
         edge.fillRule = .evenOdd
         edge.fillColor = NSColor.black.cgColor
-        let line = CAShapeLayer()
-        line.frame = view.bounds
-        line.fillColor = nil
-        line.strokeColor = NSColor(calibratedWhite: 1, alpha: 0.55).cgColor
-        line.lineWidth = 1.5
-        line.lineJoin = .miter
         root.addSublayer(edge)
-        root.addSublayer(line)
 
         let total: CFTimeInterval
         if engine == .share {
-            let shown = ZigzagFrame.appear(edge: edge, line: line, after: Self.lead)
+            let shown = ZigzagFrame.appear(edge: edge, after: Self.lead)
             let start = CACurrentMediaTime() + shown + Self.hold
-            for layer in [edge, line] {
+            for layer in [edge] {
                 let out = CABasicAnimation(keyPath: "opacity")
                 out.fromValue = 1
                 out.toValue = 0
@@ -80,7 +73,7 @@ final class ZoomSwitchEffect {
             }
             total = shown + Self.hold + Self.fade
         } else {
-            total = ZigzagFrame.disappear(edge: edge, line: line, after: Self.lead)
+            total = ZigzagFrame.disappear(edge: edge, after: Self.lead)
         }
         self.panel = panel
         panel.orderFrontRegardless()

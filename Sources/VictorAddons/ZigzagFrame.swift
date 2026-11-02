@@ -25,60 +25,46 @@ enum ZigzagFrame {
         return p
     }
 
-    static func line(_ bounds: CGRect, sharpness: CGFloat) -> CGPath {
-        ShareZoom.zigzagRing(size: bounds.size, sharpness: sharpness)
-    }
-
-    /// Sets both layers sharp or flat, visible or not, with no animation left on them.
-    static func set(edge: CAShapeLayer, line: CAShapeLayer, sharp: Bool, visible: Bool) {
-        let b = edge.bounds
+    /// Sets the frame sharp or flat, visible or not, with no animation left on it.
+    static func set(edge: CAShapeLayer, sharp: Bool, visible: Bool) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for l in [edge, line] { l.removeAllAnimations(); l.opacity = visible ? 1 : 0 }
-        edge.path = fill(b, sharpness: sharp ? 1 : 0)
-        line.path = Self.line(b, sharpness: sharp ? 1 : 0)
+        edge.removeAllAnimations()
+        edge.opacity = visible ? 1 : 0
+        edge.path = fill(edge.bounds, sharpness: sharp ? 1 : 0)
         CATransaction.commit()
     }
 
     /// Fade in flat, then sharpen, starting `delay` from now (nothing shows before).
     /// Answers how long it takes, delay included.
     @discardableResult
-    static func appear(edge: CAShapeLayer, line: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
+    static func appear(edge: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
         // One transaction for the end state and the animations: committed apart, the
         // end state reached the screen a frame early — the frame blinked (2026-11-02).
         CATransaction.begin()
         defer { CATransaction.commit() }
-        set(edge: edge, line: line, sharp: true, visible: true)
+        set(edge: edge, sharp: true, visible: true)
         let now = CACurrentMediaTime() + delay
-        for (layer, flat, sharp) in [(edge, fill(edge.bounds, sharpness: 0), fill(edge.bounds, sharpness: 1)),
-                                     (line, Self.line(line.bounds, sharpness: 0), Self.line(line.bounds, sharpness: 1))] {
-            layer.add(anim("opacity", 0, 1, at: now, for: fadeIn, ease: .easeOut, holdBefore: true), forKey: "fade")
-            layer.add(anim("path", flat, sharp, at: now + fadeIn, for: sharpen, ease: .easeOut, holdBefore: true),
-                      forKey: "sharpness")
-        }
+        let flat = fill(edge.bounds, sharpness: 0), sharp = fill(edge.bounds, sharpness: 1)
+        edge.add(anim("opacity", 0, 1, at: now, for: fadeIn, ease: .easeOut, holdBefore: true), forKey: "fade")
+        edge.add(anim("path", flat, sharp, at: now + fadeIn, for: sharpen, ease: .easeOut, holdBefore: true),
+                 forKey: "sharpness")
         return delay + fadeIn + sharpen
     }
 
     /// Flatten, then fade out, starting `delay` from now (sharp until then). Answers
     /// how long it takes, delay included.
     @discardableResult
-    static func disappear(edge: CAShapeLayer, line: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
+    static func disappear(edge: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
         CATransaction.begin()
         defer { CATransaction.commit() }
+        set(edge: edge, sharp: false, visible: false)
         let now = CACurrentMediaTime() + delay
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for l in [edge, line] { l.opacity = 0 }
-        edge.path = fill(edge.bounds, sharpness: 0)
-        line.path = Self.line(line.bounds, sharpness: 0)
-        CATransaction.commit()
-        for (layer, sharp, flat) in [(edge, fill(edge.bounds, sharpness: 1), fill(edge.bounds, sharpness: 0)),
-                                     (line, Self.line(line.bounds, sharpness: 1), Self.line(line.bounds, sharpness: 0))] {
-            layer.add(anim("path", sharp, flat, at: now, for: flatten, ease: .easeIn, holdBefore: true),
-                      forKey: "sharpness")
-            layer.add(anim("opacity", 1, 0, at: now + flatten, for: fadeOut, ease: .easeIn, holdBefore: true),
-                      forKey: "fade")
-        }
+        let flat = fill(edge.bounds, sharpness: 0), sharp = fill(edge.bounds, sharpness: 1)
+        edge.add(anim("path", sharp, flat, at: now, for: flatten, ease: .easeIn, holdBefore: true),
+                 forKey: "sharpness")
+        edge.add(anim("opacity", 1, 0, at: now + flatten, for: fadeOut, ease: .easeIn, holdBefore: true),
+                 forKey: "fade")
         return delay + flatten + fadeOut
     }
 

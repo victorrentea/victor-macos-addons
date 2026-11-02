@@ -331,8 +331,9 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   could tell this zoom from the system one; the zigzag below says that on its own now.
 - **A black zigzag runs all round the zoomed screen** for the whole zoom (Victor,
   2026-10-27: *"niște zigzag negru la marginea ecranului… la orice moment de timp"*):
-  teeth 28 pt apart, 12 pt deep, on a 3 pt band, pointing in; a 1.5 pt light line
-  (white at 55 %) on their inner edge, or they vanish into a dark terminal. Over the
+  teeth 28 pt apart, 12 pt deep, on a 3 pt band, pointing in, **black only** (a 1.5 pt light
+  line on their inner edge, there so the teeth showed over a dark terminal, was removed on
+  2026-11-02: *"scoate linia gri… lasă doar negru"*). Over the
   picture, never magnified, so the share carries it too (`Stage.zigzagRing`). It comes
   and goes in two beats, never a pop: in, a flat band fades in and its teeth grow; out,
   they flatten and the band fades (`ZigzagFrame`, 2026-11-02; a 0.18 s fade from 11-01).
