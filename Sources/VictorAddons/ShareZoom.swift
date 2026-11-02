@@ -83,6 +83,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             // Victor, *"zoom-ul cel mai topmost; deasupra lui sunt doar efectele"*.
             panel.level = ShareZoom.windowLevel
             panel.ignoresMouseEvents = true
+            // No system fade-and-shrink on `orderOut`: at the end of a zoom it played
+            // over the desktop as a blurred, doubled picture for 2–3 frames — the blink
+            // filmed on 2026-11-02 after every other cause was gone.
+            panel.animationBehavior = .none
             panel.isOpaque = true
             panel.backgroundColor = .black
             panel.hasShadow = false

@@ -125,7 +125,9 @@ desktop), then the panel goes. Three things filmed and fixed on 2026-11-02: hidi
 picture on a see-through panel flashed the screen black for a frame; snapping it to 1× in
 one frame was the exit's tremor; and the frame's end state committed in a transaction of
 its own reached the screen a frame before its animation — a blink. Model and animations
-now go in one `CATransaction`. **Exactly the way
+now go in one `CATransaction`. And the last one: the panel's own **`orderOut` animation**
+(AppKit's default fade-and-shrink) played a blurred, doubled desktop for 2–3 frames as the
+panel left — `animationBehavior = .none` on it and on the flip's panel. **Exactly the way
 in, backwards** (*"simetrică invers"*): flatten = sharpen = 0.3 s, fade out = fade in =
 0.12 s, ease-in for ease-out. Filmed 2026-11-02 before the fix: on a new panel the frame
 blinked out for 7 frames at 60 Hz (a new window reaches the screen ~0.12 s after

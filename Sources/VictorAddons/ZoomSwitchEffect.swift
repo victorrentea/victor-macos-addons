@@ -42,6 +42,7 @@ final class ZoomSwitchEffect {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
+        panel.animationBehavior = .none
         panel.level = ShareZoom.windowLevel
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         let view = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
