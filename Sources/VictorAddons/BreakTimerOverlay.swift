@@ -380,6 +380,17 @@ final class BreakTimerController {
                "\"finish\":\"\(finish)\",\"title\":\"\(titleText)\"}"
     }
 
+    /// What the ☕️🔒 lock-screen card should say right now — nil unless a real break
+    /// is on screen (not the ⏱️ Timer, not the ☕ "UNTIL BREAK" vote).
+    var lockNoticeContent: LockScreenBreakNotice.Content? {
+        guard panel != nil, !isStopwatch, BreakTimerModel.endsABreak(title: titleText) else { return nil }
+        let finish = BreakTimerModel.finishLabel(now: Date(), remaining: remaining,
+                                                 timeZone: selectedCountry.timeZone)
+        return .init(digits: BreakTimerModel.format(remaining: remaining),
+                     finish: String(finish.split(separator: " ").first ?? ""),
+                     flag: selectedCountry.flag, paused: paused)
+    }
+
     func close() {
         epoch += 1                                       // cancels pending gong/expiry blocks
         let wasShowing = panel != nil

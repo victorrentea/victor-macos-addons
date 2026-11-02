@@ -112,6 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var memoryPressure: MemoryPressureMonitor?
     /// 🔒 Mac screen locked → the tablet goes into standby (dim, no thumbnails).
     private var screenLock: ScreenLockMonitor?
+    private let lockScreenBreakNotice = LockScreenBreakNotice()
     /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
@@ -1094,8 +1095,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 🔒 Screen lock → tablet standby. Nothing to poll: macOS posts the two
         // distributed notifications, and the state is seeded once at startup.
         let screenLockMonitor = ScreenLockMonitor()
+        // ☕️🔒 The break's countdown on the lock screen of every display, so the
+        // room still reads when to be back once Victor locks the Mac and leaves.
+        lockScreenBreakNotice.content = { [weak self] in self?.breakTimer.lockNoticeContent }
+        screenLockMonitor.onChange = { [weak self, weak screenLockMonitor] _ in
+            self?.lockScreenBreakNotice.setLocked(screenLockMonitor?.isReallyLocked ?? false)
+        }
         screenLockMonitor.start()
         self.screenLock = screenLockMonitor
+        lockScreenBreakNotice.setLocked(screenLockMonitor.isReallyLocked)
+        // /test/break/lock-notice?seconds=8 — the card without locking, on the
+        // external screens only (never the projected retina). Live break if one runs.
+        tabletServer?.onTestBreakLockNotice = { [weak self] seconds in
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            let external = NSScreen.screens.filter { s in
+                guard let id = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+                else { return false }
+                return CGDisplayIsBuiltin(id.uint32Value) == 0
+            }
+            return self.lockScreenBreakNotice.preview(
+                on: external, seconds: seconds ?? 8,
+                fallback: .init(digits: "12:34", finish: "16:45", flag: "🇷🇴", paused: false))
+        }
         tabletServer?.onTestScreenLock = { [weak screenLockMonitor] in
             screenLockMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
         }

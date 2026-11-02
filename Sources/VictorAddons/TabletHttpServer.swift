@@ -71,6 +71,7 @@ case testTerminalFont
         case testBreakPicker(String?)
         /// Arm the Break overlay's scroll capture with no press, as a lost mouseUp would (test hook).
         case testBreakLeakScrollCapture(buttonStuck: Bool, maxSeconds: Double?)
+        case testBreakLockNotice(seconds: Double?)
         /// ⏱️ Timer: start / pause / close / state — answers the resulting state (test hook).
         case testStopwatch(String)
         /// Tile Terminal windows — same action as ⌘⌃A (test hook).
@@ -318,6 +319,7 @@ case testTerminalFont
     var onTestBreakLeakScrollCapture: ((Bool, Double?) -> String)?
     var onTestBreakPause: (() -> String)?
     var onTestBreakState: (() -> String)?
+    var onTestBreakLockNotice: ((Double?) -> String)?
     var onTestStopwatch: ((String) -> String)?
     var onTestTile: (() -> Void)?
     var onTestTranscriptPicker: ((String?, Int?) -> Void)?
@@ -616,6 +618,9 @@ case testTerminalFont
             case .testBreakLeakScrollCapture(let stuck, let maxSeconds):
                 contentType = "application/json"
                 body = self.onTestBreakLeakScrollCapture?(stuck, maxSeconds) ?? "{\"error\":\"break timer unavailable\"}"
+            case .testBreakLockNotice(let seconds):
+                contentType = "application/json"
+                body = self.onTestBreakLockNotice?(seconds) ?? "{\"error\":\"lock notice unavailable\"}"
             case .testStopwatch(let action):
                 contentType = "application/json"
                 body = self.onTestStopwatch?(action) ?? "{\"error\":\"stopwatch unavailable\"}"
@@ -1011,6 +1016,8 @@ case testTerminalFont
             return .testBreakLeakScrollCapture(
                 buttonStuck: queryItems.first(where: { $0.name == "held" })?.value == "1",
                 maxSeconds: queryItems.first(where: { $0.name == "max" })?.value.flatMap(Double.init))
+        case "/test/break/lock-notice":
+            return .testBreakLockNotice(seconds: queryItems.first(where: { $0.name == "seconds" })?.value.flatMap(Double.init))
         case let p where p.hasPrefix("/test/stopwatch/"):
             return .testStopwatch(String(p.dropFirst("/test/stopwatch/".count)))
         case "/test/tile":

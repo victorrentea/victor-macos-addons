@@ -48,6 +48,15 @@ final class ScreenLockMonitor {
         return _isLocked
     }
 
+    /// The lock as macOS reports it, ignoring `/test/screen-lock/simulate`. The
+    /// ☕️🔒 lock-screen break card reads this: a simulation is for the tablet's
+    /// standby, and a card on every screen — the projected retina included — that
+    /// never comes down (simulations expire without an `onChange`) is not.
+    var isReallyLocked: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _isLocked
+    }
+
     func start() {
         seedFromSession()
         #if canImport(AppKit)
