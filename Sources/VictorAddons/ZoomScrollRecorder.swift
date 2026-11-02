@@ -19,6 +19,16 @@ final class ZoomScrollRecorder {
     private var startedAt: CFAbsoluteTime = 0
     private var events: [[String: Any]] = []
     private var factors: [[String: Double]] = []
+    /// `ShareZoom`'s target after each scroll it took, so a take in Share mode can be
+    /// laid beside one into the magnifier (2026-11-02).
+    private var shareTargets: [[String: Double]] = []
+
+    /// Main thread, from `ShareZoom.scroll`.
+    func noteShareTarget(_ target: Double, delta: Double) {
+        lock.lock(); defer { lock.unlock() }
+        guard recording else { return }
+        shareTargets.append(["t": CFAbsoluteTimeGetCurrent() - startedAt, "target": target, "delta": delta])
+    }
     private var timer: DispatchSourceTimer?
 
     /// Tap thread. Cheap when not recording: one lock, one bool.
@@ -42,6 +52,7 @@ final class ZoomScrollRecorder {
         startedAt = CFAbsoluteTimeGetCurrent()
         events = []
         factors = []
+        shareTargets = []
         lock.unlock()
         let t = DispatchSource.makeTimerSource(queue: .global(qos: .userInteractive))
         t.schedule(deadline: .now(), repeating: .milliseconds(16))
@@ -56,7 +67,7 @@ final class ZoomScrollRecorder {
         timer = nil
         lock.lock()
         recording = false
-        let dump: [String: Any] = ["events": events, "factors": factors]
+        let dump: [String: Any] = ["events": events, "factors": factors, "shareTargets": shareTargets]
         let counts = (events.count, factors.count)
         lock.unlock()
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".victor-addons")

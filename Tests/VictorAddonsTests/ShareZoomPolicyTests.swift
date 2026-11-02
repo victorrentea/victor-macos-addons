@@ -15,12 +15,12 @@ final class ShareZoomPolicyTests: XCTestCase {
 
     /// Victor's Logi M650 under Options+: continuous, no phase, wheel-up positive
     /// (measured 2026-10-15). Closer, by its delta in lines, as the macOS magnifier
-    /// zooms: +1 % a line, capped at 20 lines — the ratios of the 2026-10-30 recording.
+    /// zooms: +1 % a line, uncapped — the ratios of the 2026-10-30 and 11-02 recordings.
     func testSmoothWheelZoomsByItsLinesLikeTheMagnifier() {
         XCTAssertEqual(ShareZoomPolicy.step(1, delta: 1, source: .smoothWheel), 1.01, accuracy: 0.0001)
         XCTAssertEqual(ShareZoomPolicy.step(1, delta: 3, source: .smoothWheel), 1.03, accuracy: 0.0001)
         XCTAssertEqual(ShareZoomPolicy.step(1, delta: 10, source: .smoothWheel), 1.10, accuracy: 0.0001)
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 113, source: .smoothWheel), 1.20, accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 41, source: .smoothWheel), 1.41, accuracy: 0.0001)
         XCTAssertEqual(ShareZoomPolicy.step(2, delta: -10, source: .smoothWheel), 2 / 1.10, accuracy: 0.0001)
     }
 

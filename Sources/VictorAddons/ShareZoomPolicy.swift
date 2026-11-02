@@ -28,25 +28,21 @@ enum ShareZoomPolicy {
     static let notchFactor: CGFloat = pow(1.15, 0.432)
 
     /// Victor's smooth wheel zooms **the way the macOS magnifier does**: each event
-    /// multiplies the factor by **1 + 1 % per line, at most 20 lines** (×1.01 … ×1.20),
-    /// and zooming out divides by the same — fitted on 2026-11-02 to the
-    /// `ZoomScrollRecorder` take of 2026-10-30 (a hand's ⌥+scroll into the magnifier,
-    /// `closeViewZoomFactor` sampled at 60 Hz). Every jump in it is a product of
-    /// ×1.01, ×1.03, ×1.05, ×1.10 and ×1.20 — exactly 1.100, not 1.01¹⁰ = 1.105, so
-    /// it is **additive in lines** (`scrollWheelEventDeltaAxis1`: a d1 = 3 event gave
-    /// 1.03 while its fixed-point delta said 4), and nothing above ×1.20 ever, though
-    /// Logi Options+ accelerates a spin to 41, 102, 113 lines per event: **capped at 20**.
-    /// The 2026-10-30 law (×1.01 per 12 px, uncapped) agreed on slow detents but made
-    /// one 1131 px event ×2.55 where the magnifier does ×1.20, so a quick spin slammed
-    /// the 8× ceiling in two events (2026-11-02, *"sensibilitatea … mult mai mare față
-    /// de zoom-ul de accesibilitate"*). 1× → 33× in 240 ms is still reachable — at
-    /// ×1.2 a step, like the magnifier.
+    /// multiplies the factor by **1 + 1 % per line** (`scrollWheelEventDeltaAxis1`),
+    /// and zooming out divides by the same. Fitted on 2026-11-02 to two
+    /// `ZoomScrollRecorder` takes of a hand's ⌥+scroll into the magnifier
+    /// (`closeViewZoomFactor` sampled at 60 Hz): every jump is ×1.01, ×1.03, ×1.05,
+    /// ×1.07, ×1.10, ×1.20, ×1.30, ×1.41 or a product of them — exactly 1.100, not
+    /// 1.01¹⁰ = 1.105, so **additive in lines** (a d1 = 3 / fd1 = 4 event gave 1.03:
+    /// lines, not fixed-point), and **uncapped** (30- and 41-line events gave ×1.30
+    /// and ×1.41; a cap at 20, guessed from the first take, was wrong the same day).
+    /// The 2026-10-30 law (×1.01 per 12 px) is within 1–2 % of this up to ~40 lines
+    /// and overshoots past it (113 lines: ×2.55 against ×2.13).
     static let nativeStepPerLine: CGFloat = 0.01
-    static let nativeMaxLinesPerEvent: CGFloat = 20
 
     /// The magnifier's multiplier for one smooth-wheel event of `lines` lines.
     static func nativeStep(lines: Double) -> CGFloat {
-        1 + nativeStepPerLine * min(abs(CGFloat(lines)), nativeMaxLinesPerEvent)
+        1 + nativeStepPerLine * abs(CGFloat(lines))
     }
 
     /// Trackpad pixels worth one notch. Continuous scrolls arrive in many small

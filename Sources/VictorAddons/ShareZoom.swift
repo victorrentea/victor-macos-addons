@@ -404,6 +404,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             target = keep
         }
         target = ShareZoomPolicy.step(target, delta: delta, source: source)
+        ZoomScrollRecorder.shared.noteShareTarget(Double(target), delta: delta)
         if target > 1, active == nil { activate(on: under) }
         // `follow` is what switches a finished zoom off, and it waits for the first
         // frame. A zoom scrolled back to 1× before any frame arrived would otherwise

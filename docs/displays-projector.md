@@ -149,7 +149,7 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   a notched wheel (lines; positive after `ScrollReversal` = closer), a **smooth
   wheel** — Victor's Logi M650 under Logi Options+ scrolls `continuous=1` with **no
   gesture phase**, positive = closer, and zooms **by its delta in lines, exactly like the macOS
-  magnifier: ×(1 + 1 % per line), capped at 20 lines = ×1.20 per event** (`nativeStep`, since 2026-11-02) — and a trackpad (continuous *with* a phase, natural sign,
+  magnifier: ×(1 + 1 % per line) per event** (`nativeStep`, since 2026-11-02) — and a trackpad (continuous *with* a phase, natural sign,
   negative = closer). Measured from an event log the same day, after a blind flip of
   the notched sign changed nothing: his wheel never sends notched events.
   **The smooth wheel, measured against the magnifier (2026-10-30).** Victor: *"al nostru vrea
@@ -167,14 +167,14 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   first ten events, so the per-event mapping is from the slow detents, and the fast-spin
   match rests on the same law applied to the deltas the Share-mode log shows.
   **Refitted 2026-11-02** (*"sensibilitatea … mult mai mare față de zoom-ul de accesibilitate"*).
-  The 10-30 law (×1.01 per 12 px, uncapped) was right for slow detents only: the Share-mode
-  log showed spins of 41, 102, 113 lines per event, which it turned into ×1.41, ×2.3, ×2.55
-  each — the 8× ceiling in two events. Re-reading the same recording, every jump of the
-  magnifier is a product of ×1.01, ×1.03, ×1.05, **×1.100** and **×1.200**: additive in
-  `DeltaAxis1` lines (1.100, not 1.01¹⁰ = 1.105; a d1 = 3 / fd1 = 4 event gave 1.03, so
-  lines, not fixed-point), out divides by the same, and nothing above ×1.20 though Logi
-  sends far more than 20 lines — hence the cap. The fast spin's 1× → 33× in 240 ms is
-  exactly ×1.2 steps at Logi's event rate.
+  Two takes into the magnifier: every jump is ×1.01, ×1.03, ×1.05, ×1.07, **×1.100**, ×1.20,
+  ×1.30, ×1.41 or a product of them — additive in `DeltaAxis1` lines (1.100, not
+  1.01¹⁰ = 1.105; a d1 = 3 / fd1 = 4 event gave 1.03, so lines, not fixed-point), out divides
+  by the same, **uncapped** (a cap at 20 lines, guessed from the first take alone, was refuted
+  by the second the same hour). The 10-30 pixel law is within 1–2 % of it up to ~40 lines,
+  so it did **not** explain the felt difference by itself. `ZoomScrollRecorder` now also
+  writes `shareTargets` (ShareZoom's target after each scroll) so a take in Share mode can
+  be laid beside one into the magnifier.
   **For the notched wheel and the trackpad, one notch is
   ×1.15^0.432 ≈ 1.062** (1× → 2× in about twelve notches): the first build's ×1.15 was "pași
   prea mari", halved in the log domain, and then halved again the same evening (×⁴√1.15 ≈ 1.036);
