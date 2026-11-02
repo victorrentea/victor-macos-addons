@@ -119,8 +119,13 @@ care se ascut / aplatizează"*, then *"fadeout/fadein după/înainte de aplatiza
 (0.35 s) and the straight band fades (0.15 s). The tooth count never changes with the
 depth (`zigzagRing(sharpness:)` only scales the teeth), so a `path` animation moves each
 tooth straight in or out. The real zoom wears the same two beats: the first ⌥+scroll brings
-the frame in by fade-then-sharpen, and back at 1× it flattens and fades over the desktop on
-a panel of its own (`ZoomSwitchEffect.flattenAway`) after the zoom panel is gone. Until
+the frame in by fade-then-sharpen, and back at 1× it flattens and fades **on the zoom's own
+panel**, picture hidden so the desktop shows through, then the panel goes. **Exactly the way
+in, backwards** (*"simetrică invers"*): flatten = sharpen = 0.3 s, fade out = fade in =
+0.12 s, ease-in for ease-out. Filmed 2026-11-02 before the fix: on a new panel the frame
+blinked out for 7 frames at 60 Hz (a new window reaches the screen ~0.12 s after
+`orderFront`) and came back a third of the way flattened. The engine-flip panel, which is
+new by nature, holds its first state for that 0.15 s lead. Until
 that day it was a 144 pt magnifier at the cursor that broke into shards (→ macOS) or
 dissolved in (→ Share). Filmed with
 `/test/zoom-input` bursts on DELL (1), both ways; switching to macOS zoom ends a Share Zoom in progress. The

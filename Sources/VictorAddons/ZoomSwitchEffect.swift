@@ -10,8 +10,8 @@ import QuartzCore
 /// - → `share`: a flat black band fades in along the edge, its teeth grow
 ///   (`ZigzagFrame.appear`), it holds for a beat, and the whole frame fades.
 /// - → `system`: the frame is there sharp, its teeth sink back into the edge, and the
-///   straight band fades (`ZigzagFrame.disappear`). ShareZoom plays the same thing on
-///   its own when a zoom ends (`flattenAway`).
+///   straight band fades (`ZigzagFrame.disappear`). A zoom that ends at 1× plays the
+///   same on its own panel (`ShareZoom.follow`).
 ///
 /// Until that day: a drawn magnifier at the cursor that exploded into shards or
 /// dissolved in (2026-10-26). One borderless, click-through panel per play, at
@@ -22,15 +22,16 @@ final class ZoomSwitchEffect {
 
     static let hold: CFTimeInterval = 0.6
     static let fade: CFTimeInterval = 0.25
+    /// A new window reaches the screen ~0.12 s after `orderFront` (filmed 2026-11-02:
+    /// 7 frames at 60 Hz with no frame at all, then the flattening already a third
+    /// through). The animation waits that out, holding its first state.
+    static let lead: CFTimeInterval = 0.15
 
     func play(_ engine: ZoomEngine, at point: CGPoint) {
         guard let screen = NSScreen.physical.first(where: { NSMouseInRect(point, $0.frame, false) })
                 ?? NSScreen.main else { return }
         play(engine, on: screen)
     }
-
-    /// The flattening alone, on `screen` — a ShareZoom that just went back to 1×.
-    func flattenAway(on screen: NSScreen) { play(.system, on: screen) }
 
     private func play(_ engine: ZoomEngine, on screen: NSScreen) {
         stop()
@@ -64,7 +65,7 @@ final class ZoomSwitchEffect {
 
         let total: CFTimeInterval
         if engine == .share {
-            let shown = ZigzagFrame.appear(edge: edge, line: line)
+            let shown = ZigzagFrame.appear(edge: edge, line: line, after: Self.lead)
             let start = CACurrentMediaTime() + shown + Self.hold
             for layer in [edge, line] {
                 let out = CABasicAnimation(keyPath: "opacity")
@@ -78,7 +79,7 @@ final class ZoomSwitchEffect {
             }
             total = shown + Self.hold + Self.fade
         } else {
-            total = ZigzagFrame.disappear(edge: edge, line: line)
+            total = ZigzagFrame.disappear(edge: edge, line: line, after: Self.lead)
         }
         self.panel = panel
         panel.orderFrontRegardless()

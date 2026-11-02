@@ -127,9 +127,20 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             panel.contentView = view
         }
 
+        /// The magnified picture, or — while the frame flattens away at 1× — nothing,
+        /// the desktop showing through around the frame.
+        func showPicture(_ on: Bool) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            image.isHidden = !on
+            if !on { cursor.isHidden = true }
+            CATransaction.commit()
+            panel.isOpaque = on
+            panel.backgroundColor = on ? .black : .clear
+        }
+
         /// Brings the zigzag in (fade in flat, then sharpen) or takes it away at once;
-        /// going away *animated* is `ZoomSwitchEffect.flattenAway`'s job, on a panel
-        /// that outlives this one.
+        /// going away *animated* is `ShareZoom.follow`'s, once the zoom is at 1×.
         func showEdge(_ on: Bool, animated: Bool = true) {
             guard on != edgeShown else { return }
             edgeShown = on
@@ -196,8 +207,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var tickCount = 0
     /// The mouse slowed by the factor while zoomed — the room's slice no longer runs off.
     private let pointerSpeed = ZoomPointerSpeed()
-    /// Plays the zigzag's flattening when a zoom ends at 1×.
-    private let edgeOut = ZoomSwitchEffect()
+    /// Until when the frame is flattening on a zoom already back at 1×.
+    private var leavingUntil: CFAbsoluteTime?
     private var target: CGFloat = 1
     private var current: CGFloat = 1
     /// Origin of the visible slice, in the active screen's own points.
@@ -527,6 +538,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         pointerSpeed.restore()
         active?.cursor.isHidden = true
         active?.showEdge(false, animated: false)
+        active?.showPicture(true)
+        leavingUntil = nil
         active?.panel.orderOut(nil)
         active = nil
         visible = false
@@ -765,13 +778,30 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         current = ShareZoomPolicy.ease(current, toward: target)
         if target > 1 { s.showEdge(true) }
         if ShareZoomPolicy.isOff(current: current, target: target) {
-            // Back at 1×: the picture is the desktop again, and the frame flattens
-            // and fades over it on a panel of its own (`ZigzagFrame`).
-            if s.edgeShown, let screen = NSScreen.screens.first(where: { $0.displayID == s.displayID }) {
-                edgeOut.flattenAway(on: screen)
+            // Back at 1×: the picture goes, the desktop shows through, and the frame
+            // flattens and fades on this same panel — the way it came, backwards
+            // (`ZigzagFrame`). Not on a new panel: a new window takes ~0.12 s to reach
+            // the screen, and the frame blinked out for 7 frames in between (filmed
+            // 2026-11-02).
+            let now = CFAbsoluteTimeGetCurrent()
+            if s.edgeShown {
+                s.edgeShown = false
+                s.showPicture(false)
+                publishCursor(nil)
+                restoreCursor()
+                pointerSpeed.restore()
+                leavingUntil = now + ZigzagFrame.disappear(edge: s.edge, line: s.edgeLine)
+                return
             }
+            if let until = leavingUntil, now < until { return }
             deactivate()
             return
+        }
+        if leavingUntil != nil {
+            // Scrolled back in while the frame was leaving.
+            leavingUntil = nil
+            s.showPicture(true)
+            s.showEdge(true)
         }
         let size = s.frame.size
         let focus = pinnedFocus ?? NSEvent.mouseLocation

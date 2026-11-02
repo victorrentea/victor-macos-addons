@@ -10,10 +10,12 @@ import QuartzCore
 /// (`ZoomSwitchEffect`), so the frame always says the same thing the same way:
 /// sharpening = our zoom, flattening = not any more.
 enum ZigzagFrame {
+    /// The way out is the way in played backwards (Victor, 2026-11-02: *"simetrică
+    /// invers"*): same durations, and ease-in is ease-out reversed in time.
     static let fadeIn: CFTimeInterval = 0.12
     static let sharpen: CFTimeInterval = 0.3
-    static let flatten: CFTimeInterval = 0.35
-    static let fadeOut: CFTimeInterval = 0.15
+    static let flatten: CFTimeInterval = sharpen
+    static let fadeOut: CFTimeInterval = fadeIn
 
     /// The black: the screen's rectangle minus the ring, even-odd.
     static func fill(_ bounds: CGRect, sharpness: CGFloat) -> CGPath {
@@ -38,21 +40,23 @@ enum ZigzagFrame {
         CATransaction.commit()
     }
 
-    /// Fade in flat, then sharpen. Answers how long it takes.
+    /// Fade in flat, then sharpen, starting `delay` from now (nothing shows before).
+    /// Answers how long it takes, delay included.
     @discardableResult
-    static func appear(edge: CAShapeLayer, line: CAShapeLayer) -> CFTimeInterval {
+    static func appear(edge: CAShapeLayer, line: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
         set(edge: edge, line: line, sharp: true, visible: true)
-        let now = CACurrentMediaTime()
+        let now = CACurrentMediaTime() + delay
         for (layer, flat, sharp) in [(edge, fill(edge.bounds, sharpness: 0), fill(edge.bounds, sharpness: 1)),
                                      (line, Self.line(line.bounds, sharpness: 0), Self.line(line.bounds, sharpness: 1))] {
-            layer.add(anim("opacity", 0, 1, at: now, for: fadeIn, ease: .easeOut), forKey: "fade")
+            layer.add(anim("opacity", 0, 1, at: now, for: fadeIn, ease: .easeOut, holdBefore: true), forKey: "fade")
             layer.add(anim("path", flat, sharp, at: now + fadeIn, for: sharpen, ease: .easeOut, holdBefore: true),
                       forKey: "sharpness")
         }
-        return fadeIn + sharpen
+        return delay + fadeIn + sharpen
     }
 
-    /// Flatten, then fade out. Answers how long it takes.
+    /// Flatten, then fade out, starting `delay` from now (sharp until then). Answers
+    /// how long it takes, delay included.
     @discardableResult
     static func disappear(edge: CAShapeLayer, line: CAShapeLayer, after delay: CFTimeInterval = 0) -> CFTimeInterval {
         let now = CACurrentMediaTime() + delay
