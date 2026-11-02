@@ -54,8 +54,9 @@ final class ShareZoomHint {
     private static let warningColor = NSColor(calibratedRed: 0.75, green: 0.35, blue: 0.0, alpha: 0.95)
     /// Below-right of the hotspot, the quadrant the cursor's own artwork leaves free.
     private let offset = CGPoint(x: 16, y: -34)
-    /// The engine flip's pill sits clear of `ZoomSwitchEffect`'s 144 pt lens.
-    private let announceOffset = CGPoint(x: 80, y: -84)
+    /// The engine flip's pill, by the cursor like the warning (the 144 pt lens it
+    /// once had to clear is gone since 2026-11-02 — the frame flip says it now).
+    private let announceOffset = CGPoint(x: 16, y: -34)
     private var currentOffset = CGPoint(x: 16, y: -34)
     private let visibleFor: TimeInterval = 2.5
 

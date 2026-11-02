@@ -31,15 +31,21 @@ final class ZoomPointerSpeed {
     static let glassSpeedKey = "ZoomPointerGlassSpeed"
     /// Where the cursor was put last, with its fractions; nil until the first move.
     private var pos: CGPoint?
+    /// The zoomed display and the slice of it on the glass, CG global, from the last
+    /// tick (`ShareZoomEdge`). Nil = no edge rules, only the slowdown.
+    private var display: CGRect?
+    private var slice: CGRect?
 
     init() { createTap() }
 
     /// Main thread, every zoom tick.
-    func follow(factor: CGFloat) {
+    func follow(factor: CGFloat, display: CGRect? = nil, slice: CGRect? = nil) {
         let k = max(factor, 1)
         lock.lock()
         let was = self.factor
         self.factor = k
+        self.display = k > 1 ? display : nil
+        self.slice = k > 1 ? slice : nil
         if k == 1 { pos = nil }
         lock.unlock()
         guard let port = tapPort, (was > 1) != (k > 1) else { return }
@@ -53,6 +59,17 @@ final class ZoomPointerSpeed {
     }
 
     func restore() { follow(factor: 1) }
+
+    /// The edge pan moved the picture by `d` (desktop units, CG): the pointer goes with
+    /// it, so it stays at the same spot on the glass. Main thread.
+    func shift(by d: CGVector) {
+        lock.lock(); defer { lock.unlock() }
+        guard factor > 1, let p = pos ?? CGEvent(source: nil)?.location else { return }
+        let next = CGPoint(x: p.x + d.dx, y: p.y + d.dy)
+        pos = next
+        CGWarpMouseCursorPosition(next)
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
 
     private func createTap() {
         let mask = [CGEventType.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
@@ -95,6 +112,20 @@ final class ZoomPointerSpeed {
         // all but froze (2026-10-27, the first build of this).
         let rawDX = event.getDoubleValueField(.mouseEventDeltaX)
         let rawDY = event.getDoubleValueField(.mouseEventDeltaY)
+        // Off the zoomed display the mouse is its own, at normal speed; coming back
+        // onto it, it enters the slice where the hand crosses the glass edge.
+        if let display, let slice, let last = pos, !display.contains(last) {
+            guard display.contains(now) else {
+                pos = now
+                return Unmanaged.passUnretained(event)
+            }
+            let entry = ShareZoomEdge.fromGlass(now, slice: slice, display: display)
+            pos = entry
+            CGWarpMouseCursorPosition(entry)
+            CGAssociateMouseAndMouseCursorPosition(1)
+            event.location = entry
+            return Unmanaged.passUnretained(event)
+        }
         // The first move, or the cursor put somewhere by someone else (a warp, a
         // display change): follow it rather than scale it.
         guard let last = pos, !ShareZoomPolicy.followsUnscaled(
@@ -105,7 +136,18 @@ final class ZoomPointerSpeed {
         let slow = Double(ShareZoomPolicy.pointerSlowdown(factor, glassSpeed: glassSpeed))
         let dx = rawDX / slow
         let dy = rawDY / slow
-        let next = Self.clampToDisplay(CGPoint(x: last.x + dx, y: last.y + dy), from: last)
+        let moved = CGPoint(x: last.x + dx, y: last.y + dy)
+        let next: CGPoint
+        if let display, let slice, slice.contains(last) {
+            // The slice's edge is the screen's edge: across it, onto the next display
+            // at the matching glass spot, the picture left where it was (`ShareZoomEdge`).
+            next = ShareZoomEdge.confine(moved, slice: slice, display: display) { p in
+                var id = CGDirectDisplayID(0), n: UInt32 = 0
+                return CGGetDisplaysWithPoint(p, 1, &id, &n) == .success && n > 0
+            }
+        } else {
+            next = Self.clampToDisplay(moved, from: last)
+        }
         pos = next
         CGWarpMouseCursorPosition(next)
         // A warp mutes the mouse for 0.25 s; re-associating lifts that at once.

@@ -109,13 +109,20 @@ back as a 90×90 square; refit with the prefs-write + engine-restart recipe abov
 **macOS zoom** (⌥+scroll reaches the magnifier, as before) and **Share Zoom** (the HID
 ⌥+scroll tap below swallows the event *before* `AXVisualSupportAgent`'s tap and feeds it
 here, so the magnifier never moves). A pill by the cursor names the new mode for 1.2 s
-(`ShareZoomHint.announce`), and **the flip has a look of its own at the cursor**
-(`ZoomSwitchEffect`, Victor: *"explozia subtilă a lupei la trecerea la macOS zoom nativ,
-respectiv dissolve in la trecerea la zoom sintetic"*): → macOS, a 144 pt magnifier (72 pt on a disc until 2026-10-27; now the ⊕/⊖ artwork) holds
-0.18 s, then breaks into 6×6 shards that drift 25–45 pt out, turn and fade in 0.5 s; →
-Share, the magnifier dissolves in PowerPoint-style (8×8 cells, random order, 0.4 s),
-holds 0.45 s and fades. Its own click-through panel at the maximum window level, made
-per play; the pill moves to (44, −48) from the cursor so it clears the lens. Filmed with
+(`ShareZoomHint.announce`), and **the flip is told by ShareZoom's zigzag frame** on the
+screen under the pointer (`ZoomSwitchEffect` + `ZigzagFrame`, 2026-11-02, Victor: *"acele
+triunghiuri să apară prin adâncirea marginilor la trecerea pe sintetic, respectiv să se
+aplatizeze până la dispariție… iar lupa să fie eliminată: mă voi orienta după marginile
+care se ascut / aplatizează"*, then *"fadeout/fadein după/înainte de aplatizare/ascuțire"*):
+→ Share, a flat 3 pt black band fades in along the edge (0.12 s), its teeth grow out of it
+(0.3 s), it holds 0.6 s and fades; → macOS, the sharp frame's teeth sink back into the band
+(0.35 s) and the straight band fades (0.15 s). The tooth count never changes with the
+depth (`zigzagRing(sharpness:)` only scales the teeth), so a `path` animation moves each
+tooth straight in or out. The real zoom wears the same two beats: the first ⌥+scroll brings
+the frame in by fade-then-sharpen, and back at 1× it flattens and fades over the desktop on
+a panel of its own (`ZoomSwitchEffect.flattenAway`) after the zoom panel is gone. Until
+that day it was a 144 pt magnifier at the cursor that broke into shards (→ macOS) or
+dissolved in (→ Share). Filmed with
 `/test/zoom-input` bursts on DELL (1), both ways; switching to macOS zoom ends a Share Zoom in progress. The
 choice is `ZoomEngine` in this app's defaults and survives restarts; default macOS.
 **A physical ⌥+scroll carries no ⌥ (2026-10-27).** Logi Options+ smooth scrolling
@@ -185,12 +192,28 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   with the first visible frame, not with the gesture — eased while still invisible it
   was over before anything was on screen. On another display, ⌥⇧+scroll moves the
   zoom there.
-- **It pans the way the system magnifier is set up here** (`closeViewPanningMode = 1`,
-  "only when the pointer reaches an edge"): the picture stays put while the pointer
-  moves inside it and is dragged along only when the pointer pushes an edge; zooming
-  is about the pointer (`ShareZoomPolicy.rezoom` / `pan`). The first build kept the
-  pointer as the fixed point of the magnification instead, so the whole desktop slid
-  under every mouse move — "nu e aceeași experiență".
+- **The picture stays put while the pointer moves inside it**; zooming is about the
+  pointer (`ShareZoomPolicy.rezoom`). The first build kept the pointer as the fixed point
+  of the magnification instead, so the whole desktop slid under every mouse move — "nu e
+  aceeași experiență".
+- **It pans only when the cursor rests at an edge (`ShareZoomEdge`, 2026-11-02)** —
+  Victor: *"dacă mut mouse-ul repede peste edge, să nu facă pan. Dacă-l las în zona
+  magnificată adiacentă marginii (undeva pe 10 % din suprafață), panul să înceapă după
+  300 ms"*; the point is a quick trip to the next monitor (to fetch an animation) that
+  leaves the picture where it was. Until then the slice followed the pointer the moment it
+  pushed an edge (macOS's `closeViewPanningMode = 1`), so the way out dragged the picture
+  all the way to that side. Now:
+  - **The slice's edge is the screen's edge.** `ZoomPointerSpeed` confines the slowed
+    pointer to the slice; a move across a slice edge lands on the adjacent display at the
+    spot where the drawn cursor touched the glass (`ShareZoomEdge.confine`), with no
+    display there it stops at the edge. Off the zoomed display the mouse runs at normal
+    speed (it was slowed on every display before); coming back, it enters the slice where
+    the hand crosses the glass edge (`fromGlass`). Away, the picture is not touched.
+  - **Resting in the outer 10 % of the glass for 300 ms pans that way**, per axis, at
+    0.3 glass widths/s at the band's inner border up to 1.2 against the edge; the pointer
+    is warped along with the picture (`ZoomPointerSpeed.shift`) so it keeps its spot on the
+    glass. `ShareZoomPolicy.pan` is only the fallback for a pointer someone else warped
+    out of the slice. `/test/share-zoom` reports `edgePans` and `origin`.
 - **The mouse is slowed in proportion to the zoom (`ZoomPointerSpeed`, 2026-10-27, made
   proportional 2026-10-29)** — at 4× the drawn cursor otherwise crosses the glass four
   times as fast, and a small move on the table sent the slice running left and right
@@ -298,14 +321,16 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   2026-10-27: *"niște zigzag negru la marginea ecranului… la orice moment de timp"*):
   teeth 28 pt apart, 12 pt deep, on a 3 pt band, pointing in; a 1.5 pt light line
   (white at 55 %) on their inner edge, or they vanish into a dark terminal. Over the
-  picture, never magnified, so the share carries it too (`Stage.zigzagRing`).
+  picture, never magnified, so the share carries it too (`Stage.zigzagRing`). It comes
+  and goes in two beats, never a pop: in, a flat band fades in and its teeth grow; out,
+  they flatten and the band fades (`ZigzagFrame`, 2026-11-02; a 0.18 s fade from 11-01).
 - **No ⊕/⊖ magnifier at the cursor while the zoom changes, since 2026-10-27 evening**
   (Victor: *"nu mai e nevoie să afișez deloc lupa pe centru… câtă vreme păstrez
   zig-zag-ul de pe margine… mouse-ul nu se mai schimbă în acea lupă"*): the drawn cursor
   stays the cursor throughout. History: a 🔍 rode beside the cursor for the whole zoom
   from 2026-10-17; from 2026-10-26 a ⊕/⊖ stood in for the cursor until 0.5 s after the
-  last notch (by then the drawn line-art lens, `ShareZoom.lensArtwork`, which
-  `ZoomSwitchEffect` still uses). The zigzag made it redundant.
+  last notch (by then a drawn line-art lens, deleted 2026-11-02 with the last effect
+  that used it). The zigzag made it redundant.
 - **It must not feed itself** (2026-10-15, found by an adversarial review, then
   measured). It films the display its own window covers, so anything it draws damages
   that display and summons another frame — and `dirtyRects` report the *whole screen*

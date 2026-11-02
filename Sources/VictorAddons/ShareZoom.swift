@@ -50,10 +50,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         static let edgeTooth: CGFloat = 28
         static let edgeDepth: CGFloat = 12
         static let edgeBand: CGFloat = 3
-        /// The zigzag fades in with the zoom and out as it heads back to 1×, never
-        /// popping (Victor, 2026-11-01). Shorter than a zoom-out (~0.22 s from 2×,
-        /// `ShareZoomPolicy.ease`), so it is gone before the panel is.
-        static let edgeFade: CFTimeInterval = 0.18
+        /// The zigzag comes in two beats with the zoom — a flat band fades in, then
+        /// its teeth grow — and goes the other way once the zoom is back at 1×
+        /// (`ZigzagFrame`, 2026-11-02; a plain 0.18 s fade from 2026-11-01).
         var edgeShown = false
         /// No ⊕/⊖ in the cursor's place while the zoom changes any more (Victor,
         /// 2026-10-27: *"nu mai e nevoie să afișez deloc lupa… câtă vreme păstrez
@@ -128,26 +127,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             panel.contentView = view
         }
 
-        /// Fades the zigzag in or out from wherever it is now (a zoom-out reversed
-        /// mid-fade turns back); `animated: false` just sets it.
+        /// Brings the zigzag in (fade in flat, then sharpen) or takes it away at once;
+        /// going away *animated* is `ZoomSwitchEffect.flattenAway`'s job, on a panel
+        /// that outlives this one.
         func showEdge(_ on: Bool, animated: Bool = true) {
-            guard on != edgeShown || !animated else { return }
+            guard on != edgeShown else { return }
             edgeShown = on
-            let to: Float = on ? 1 : 0
-            for layer in [edge, edgeLine] {
-                let from = layer.presentation()?.opacity ?? layer.opacity
-                layer.removeAnimation(forKey: "fade")
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                layer.opacity = to
-                CATransaction.commit()
-                guard animated, from != to else { continue }
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = from
-                fade.toValue = to
-                fade.duration = Self.edgeFade * CFTimeInterval(abs(to - from))
-                fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                layer.add(fade, forKey: "fade")
+            if on, animated {
+                ZigzagFrame.appear(edge: edge, line: edgeLine)
+            } else {
+                ZigzagFrame.set(edge: edge, line: edgeLine, sharp: true, visible: on)
             }
         }
 
@@ -155,8 +144,14 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// screen's edge, `edgeBand` deep at each tooth's root and `edgeBand +
         /// edgeDepth` at its tip. Filled even-odd against the screen's rectangle, the
         /// black is everything between the screen edge and this line: teeth pointing in.
-        static func zigzagRing(size: CGSize) -> CGPath {
-            let w = size.width, h = size.height, band = edgeBand, deep = edgeBand + edgeDepth
+        ///
+        /// `sharpness` 0…1 scales the teeth: at 0 every tooth lies flat on the band,
+        /// a straight black strip along the edge; at 1 it is the frame above.
+        /// The point count never changes with it, so a `path` animation between two
+        /// sharpnesses moves each tooth straight in or out (`ZoomSwitchEffect`).
+        static func zigzagRing(size: CGSize, sharpness: CGFloat = 1) -> CGPath {
+            let k = min(max(sharpness, 0), 1)
+            let w = size.width, h = size.height, band = edgeBand, deep = edgeBand + edgeDepth * k
             let path = CGMutablePath()
             // One edge from corner `a` to corner `b`, the teeth on the side `inward`
             // points to; both corners sit at the shallow inset, so the edges meet there.
@@ -182,72 +177,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    /// The zoom's magnifier, drawn rather than taken from SF Symbols: Victor's own
-    /// reference (2026-10-27, a classic line-art lens — big round glass, a glint on
-    /// its left, a thin neck, a rounded handle; *"pleacă de la baza asta"*). Every
-    /// line is **white edged in black on both sides, nothing behind** (*"nu pe un
-    /// cerc negru… doar un contur negru"*), so it reads on any picture and the glass
-    /// stays see-through. `sign` puts a + (1) or − (−1) in the glass. Drawn on a
-    /// 512 grid, y down, like the reference; The glass sits at (176, 176).
-    /// Shared with `ZoomSwitchEffect`. Until that day: an SF Symbol on a black disc.
-    static func lensArtwork(sign: Int, side: CGFloat, scale: CGFloat) -> CGImage? {
-        let px = Int(side * scale)
-        guard px > 0, let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
-                                          space: CGColorSpaceCreateDeviceRGB(),
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.translateBy(x: 0, y: CGFloat(px))
-        ctx.scaleBy(x: CGFloat(px) / 512, y: -CGFloat(px) / 512)
-        let c = CGPoint(x: 176, y: 176)
-        let lines = CGMutablePath()
-        lines.addEllipse(in: CGRect(x: c.x - 150, y: c.y - 150, width: 300, height: 300))
-        // The glint: a path of its own, drawn at half opacity (Victor, 2026-10-27:
-        // *"arcul de cerc interior să fie translucent 50%"*).
-        let glintArc = CGMutablePath()
-        let glint: CGFloat = 112, from = CGFloat.pi * 0.76
-        glintArc.addArc(center: c, radius: glint, startAngle: from, endAngle: .pi * 1.24, clockwise: false)
-        if sign != 0 {
-            lines.move(to: CGPoint(x: c.x - 52, y: c.y))
-            lines.addLine(to: CGPoint(x: c.x + 52, y: c.y))
-        }
-        if sign > 0 {
-            lines.move(to: CGPoint(x: c.x, y: c.y - 52))
-            lines.addLine(to: CGPoint(x: c.x, y: c.y + 52))
-        }
-        let neck = CGMutablePath()
-        neck.move(to: CGPoint(x: 286, y: 286))
-        neck.addLine(to: CGPoint(x: 340, y: 340))
-        let handle = CGMutablePath()
-        handle.move(to: CGPoint(x: 350, y: 350))
-        handle.addLine(to: CGPoint(x: 462, y: 462))
-
-        let line: CGFloat = 22, edge: CGFloat = 9
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-        // All the black first, then all the white: where the neck meets the glass
-        // and the handle, the white runs on without a black seam across it.
-        for (color, extra) in [(NSColor.black, 2 * edge), (NSColor.white, 0)] {
-            ctx.setStrokeColor(color.cgColor)
-            ctx.setLineWidth(line + extra)
-            ctx.addPath(lines); ctx.strokePath()
-            ctx.setLineWidth(30 + extra)
-            ctx.setLineCap(.butt)
-            ctx.addPath(neck); ctx.strokePath()
-            ctx.setLineCap(.round)
-            ctx.setLineWidth(76 + extra)
-            ctx.addPath(handle); ctx.strokePath()
-        }
-        // One transparency layer, so the white over the black is 50 % as a whole
-        // and the black does not show through it.
-        ctx.setAlpha(0.5)
-        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-        for (color, extra) in [(NSColor.black, 2 * edge), (NSColor.white, 0)] {
-            ctx.setStrokeColor(color.cgColor)
-            ctx.setLineWidth(line + extra)
-            ctx.addPath(glintArc); ctx.strokePath()
-        }
-        ctx.endTransparencyLayer()
-        return ctx.makeImage()
+    /// The zigzag frame's inner outline (`Stage.zigzagRing`), for `ZigzagFrame`.
+    static func zigzagRing(size: CGSize, sharpness: CGFloat) -> CGPath {
+        Stage.zigzagRing(size: size, sharpness: sharpness)
     }
+
 
     private var stages: [CGDirectDisplayID: Stage] = [:]
     /// The stage on screen right now.
@@ -262,6 +196,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var tickCount = 0
     /// The mouse slowed by the factor while zoomed — the room's slice no longer runs off.
     private let pointerSpeed = ZoomPointerSpeed()
+    /// Plays the zigzag's flattening when a zoom ends at 1×.
+    private let edgeOut = ZoomSwitchEffect()
     private var target: CGFloat = 1
     private var current: CGFloat = 1
     /// Origin of the visible slice, in the active screen's own points.
@@ -461,7 +397,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"rehides":\(rehides),"prepared":{\(prepared)},\
         "effectsExcluded":{\(effectsExcluded)},"filterRefreshes":\(filterRefreshes),\
-        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"ticks":\(tickCount),"fps":\(captureFPS)}
+        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"edgePans":\(edgePans),"origin":[\(Int(origin.x)),\(Int(origin.y))],"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
 
@@ -577,7 +513,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let s = active, !visible else { return }
         visible = true
         s.panel.alphaValue = 1
-        s.showEdge(target > 1)
+        if target > 1 { s.showEdge(true) }
         lastStartupMs = Int((CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
         overlayInfo("🔎 ShareZoom: on \(s.name), visible after \(lastStartupMs) ms")
     }
@@ -779,6 +715,41 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Follow the pointer
 
+    /// When the drawn cursor came to rest in the band of each axis (`ShareZoomEdge`).
+    private var dwellX = ShareZoomEdge.Dwell()
+    private var dwellY = ShareZoomEdge.Dwell()
+    private var lastEdgeTick: CFTimeInterval = 0
+
+    /// 🔎 The cursor resting in the outer 10 % of the glass for 300 ms pans that way,
+    /// and the pointer goes with the picture. `p` and the answer are display-local,
+    /// Cocoa (y up). Main thread.
+    private func edgePan(_ p: CGPoint, size: CGSize) -> CGPoint {
+        let now = CFAbsoluteTimeGetCurrent()
+        let dt = CGFloat(min(max(now - lastEdgeTick, 0), 0.05))
+        lastEdgeTick = now
+        let k = max(current, 1)
+        guard k > 1 else { return p }
+        let glass = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: k)
+        let depthX = ShareZoomEdge.depth(glass.x, length: size.width)
+        let depthY = ShareZoomEdge.depth(glass.y, length: size.height)
+        var want = origin
+        if dwellX.due(depth: depthX, now: now), let d = depthX {
+            want.x += ShareZoomEdge.step(depth: d, length: size.width, factor: k, dt: dt)
+        }
+        if dwellY.due(depth: depthY, now: now), let d = depthY {
+            want.y += ShareZoomEdge.step(depth: d, length: size.height, factor: k, dt: dt)
+        }
+        let next = ShareZoomPolicy.clamp(origin: want, factor: k, screenSize: size)
+        let moved = CGVector(dx: next.x - origin.x, dy: next.y - origin.y)
+        guard moved.dx != 0 || moved.dy != 0 else { return p }
+        origin = next
+        edgePans += 1
+        // Cocoa's y grows up, CG's down.
+        pointerSpeed.shift(by: CGVector(dx: moved.dx, dy: -moved.dy))
+        return CGPoint(x: p.x + moved.dx, y: p.y + moved.dy)
+    }
+    private var edgePans = 0
+
     private func startTick() {
         tick?.invalidate()
         let t = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in self?.follow() }
@@ -792,20 +763,39 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         if tickCount % Self.effectsWatchEvery == 0 { watchEffectsWindows(s) }
         let previous = current
         current = ShareZoomPolicy.ease(current, toward: target)
-        s.showEdge(target > 1)
+        if target > 1 { s.showEdge(true) }
         if ShareZoomPolicy.isOff(current: current, target: target) {
+            // Back at 1×: the picture is the desktop again, and the frame flattens
+            // and fades over it on a panel of its own (`ZigzagFrame`).
+            if s.edgeShown, let screen = NSScreen.screens.first(where: { $0.displayID == s.displayID }) {
+                edgeOut.flattenAway(on: screen)
+            }
             deactivate()
             return
         }
-        // A pinned focus is a test with the real mouse left alone — its speed too.
-        pointerSpeed.follow(factor: pinnedFocus == nil ? current : 1)
         let size = s.frame.size
         let focus = pinnedFocus ?? NSEvent.mouseLocation
         let inside = NSMouseInRect(focus, s.frame, false)
-        let p = CGPoint(x: min(max(focus.x - s.frame.minX, 0), size.width),
+        var p = CGPoint(x: min(max(focus.x - s.frame.minX, 0), size.width),
                         y: min(max(focus.y - s.frame.minY, 0), size.height))
-        origin = ShareZoomPolicy.rezoom(origin: origin, from: previous, to: current, pointer: p, screenSize: size)
-        origin = ShareZoomPolicy.pan(origin: origin, pointer: p, factor: current, screenSize: size)
+        // Away on another display the picture stays where it was left
+        // (`ShareZoomEdge`): until 2026-11-02 the pointer clamped to the edge it left
+        // by dragged the slice all the way to that side on the way out.
+        if inside {
+            origin = ShareZoomPolicy.rezoom(origin: origin, from: previous, to: current, pointer: p, screenSize: size)
+            if pinnedFocus == nil { p = edgePan(p, size: size) }
+            // A pointer outside the slice can only be someone else's warp now.
+            origin = ShareZoomPolicy.pan(origin: origin, pointer: p, factor: current, screenSize: size)
+        } else {
+            dwellX = .init(); dwellY = .init()
+        }
+        // A pinned focus is a test with the real mouse left alone — its speed too.
+        let bounds = CGDisplayBounds(s.displayID)
+        let k = max(current, 1)
+        let slice = CGRect(x: bounds.minX + origin.x,
+                           y: bounds.minY + (size.height - origin.y - size.height / k),
+                           width: size.width / k, height: size.height / k)
+        pointerSpeed.follow(factor: pinnedFocus == nil ? current : 1, display: bounds, slice: slice)
 
         // Every layer write is a commit, and every commit makes WindowServer recompose
         // the whole Retina — which the stream then films again (it excludes a window,
