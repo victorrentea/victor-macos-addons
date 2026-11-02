@@ -414,20 +414,28 @@ private let VK_I: CGKeyCode = 0x22
     /// it. ⇧ may already have turned the wheel into a horizontal scroll by the
     /// time a session tap sees it, so whichever axis moved is the delta.
     fileprivate func zoomScroll(_ event: CGEvent) -> (Double, ShareZoomPolicy.Source)? {
-        let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+        let source = ShareZoomPolicy.Source.of(
+            continuous: event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
+            phase: event.getIntegerValueField(.scrollWheelEventScrollPhase),
+            momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase))
+        func axis(_ y: CGEventField, _ x: CGEventField) -> Double {
+            let v = event.getDoubleValueField(y)
+            return v != 0 ? v : event.getDoubleValueField(x)
+        }
         let delta: Double
-        if continuous {
-            let y = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
-            delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2)
-        } else {
-            let y = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
-            delta = y != 0 ? y : event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
+        switch source {
+        case .trackpad:
+            delta = axis(.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2)
+        case .smoothWheel:
+            // Lines, as the magnifier counts them (`ShareZoomPolicy.nativeStep`); the
+            // fixed-point delta only when a sub-line nudge rounds to 0 lines.
+            let lines = axis(.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2)
+            delta = lines != 0 ? lines : axis(.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2)
+        case .wheel:
+            delta = axis(.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2)
         }
         guard delta != 0 else { return nil }
-        return (delta, ShareZoomPolicy.Source.of(
-            continuous: continuous,
-            phase: event.getIntegerValueField(.scrollWheelEventScrollPhase),
-            momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase)))
+        return (delta, source)
     }
 
     /// The modifiers a scroll was made with. **Logi Options+ re-posts Victor's M650

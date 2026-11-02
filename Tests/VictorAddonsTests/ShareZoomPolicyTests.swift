@@ -14,13 +14,14 @@ final class ShareZoomPolicyTests: XCTestCase {
     }
 
     /// Victor's Logi M650 under Options+: continuous, no phase, wheel-up positive
-    /// (measured 2026-10-15). Closer, by its delta, as the macOS magnifier zooms:
-    /// one 12 px detent is ×1.01, a fast 1131 px event ×2.55 (2026-10-30).
-    func testSmoothWheelZoomsByItsDeltaLikeTheMagnifier() {
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 12, source: .smoothWheel), 1.01, accuracy: 0.0001)
-        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 1131, source: .smoothWheel),
-                       pow(1.01, 1131.0 / 12), accuracy: 0.001)
-        XCTAssertLessThan(ShareZoomPolicy.step(2, delta: -13, source: .smoothWheel), 2)
+    /// (measured 2026-10-15). Closer, by its delta in lines, as the macOS magnifier
+    /// zooms: +1 % a line, capped at 20 lines — the ratios of the 2026-10-30 recording.
+    func testSmoothWheelZoomsByItsLinesLikeTheMagnifier() {
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 1, source: .smoothWheel), 1.01, accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 3, source: .smoothWheel), 1.03, accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 10, source: .smoothWheel), 1.10, accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(1, delta: 113, source: .smoothWheel), 1.20, accuracy: 0.0001)
+        XCTAssertEqual(ShareZoomPolicy.step(2, delta: -10, source: .smoothWheel), 2 / 1.10, accuracy: 0.0001)
     }
 
     func testAPhaselessContinuousScrollIsASmoothWheel() {

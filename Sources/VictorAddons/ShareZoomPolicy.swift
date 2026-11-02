@@ -27,15 +27,27 @@ enum ShareZoomPolicy {
     /// 1× → 2× in about twelve.
     static let notchFactor: CGFloat = pow(1.15, 0.432)
 
-    /// Victor's smooth wheel zooms **the way the macOS magnifier does**: ×1.01 per
-    /// 12 px of delta, so speed counts (2026-10-30, *"al nostru vrea să fie cât mai
-    /// aproape de comportamentul ăluia"*). Measured with `ZoomScrollRecorder` on a
-    /// hand's ⌥+scroll into the magnifier: one slow detent (12 px) was exactly ×1.01,
-    /// sixty of them took 1× to 1.83×; a fast spin — Logi Options+ accelerates it to
-    /// 400–1131 px per event — took 1× to 33× in 240 ms. The one-notch-per-event rule
-    /// before it made a slow detent six times too big and a fast spin nearly dead:
-    /// *"mai elastic când dau mai repede"* was the magnifier, not us.
-    static let nativeFactorPerPixel: CGFloat = pow(1.01, 1.0 / 12)
+    /// Victor's smooth wheel zooms **the way the macOS magnifier does**: each event
+    /// multiplies the factor by **1 + 1 % per line, at most 20 lines** (×1.01 … ×1.20),
+    /// and zooming out divides by the same — fitted on 2026-11-02 to the
+    /// `ZoomScrollRecorder` take of 2026-10-30 (a hand's ⌥+scroll into the magnifier,
+    /// `closeViewZoomFactor` sampled at 60 Hz). Every jump in it is a product of
+    /// ×1.01, ×1.03, ×1.05, ×1.10 and ×1.20 — exactly 1.100, not 1.01¹⁰ = 1.105, so
+    /// it is **additive in lines** (`scrollWheelEventDeltaAxis1`: a d1 = 3 event gave
+    /// 1.03 while its fixed-point delta said 4), and nothing above ×1.20 ever, though
+    /// Logi Options+ accelerates a spin to 41, 102, 113 lines per event: **capped at 20**.
+    /// The 2026-10-30 law (×1.01 per 12 px, uncapped) agreed on slow detents but made
+    /// one 1131 px event ×2.55 where the magnifier does ×1.20, so a quick spin slammed
+    /// the 8× ceiling in two events (2026-11-02, *"sensibilitatea … mult mai mare față
+    /// de zoom-ul de accesibilitate"*). 1× → 33× in 240 ms is still reachable — at
+    /// ×1.2 a step, like the magnifier.
+    static let nativeStepPerLine: CGFloat = 0.01
+    static let nativeMaxLinesPerEvent: CGFloat = 20
+
+    /// The magnifier's multiplier for one smooth-wheel event of `lines` lines.
+    static func nativeStep(lines: Double) -> CGFloat {
+        1 + nativeStepPerLine * min(abs(CGFloat(lines)), nativeMaxLinesPerEvent)
+    }
 
     /// Trackpad pixels worth one notch. Continuous scrolls arrive in many small
     /// deltas; without this a two-finger flick crosses the whole range at once.
@@ -91,16 +103,20 @@ enum ShareZoomPolicy {
     /// - **Trackpad: negative = closer.** `ScrollReversal` leaves it alone, so it
     ///   arrives in natural-scrolling sign: two fingers up is negative (2026-10-07,
     ///   *"inverse ca accessibility"*).
-    /// - **A smooth wheel follows its delta, like the macOS magnifier**
-    ///   (`nativeFactorPerPixel`). From 2026-10-15 to 10-30 it counted one notch per
+    /// - **A smooth wheel follows its delta in lines, like the macOS magnifier**
+    ///   (`nativeStep`). From 2026-10-15 to 10-30 it counted one notch per
     ///   event, because a flick slammed the zoom to 8× before anything was on screen
     ///   (the "hung halfway"); the `Stage` prepared per display has since cut a cold
     ///   start to 78 ms, and the magnifier does exactly that slam.
     static func step(_ factor: CGFloat, delta: Double, source: Source) -> CGFloat {
         guard delta != 0 else { return factor }
-        let next = source == .smoothWheel
-            ? factor * pow(nativeFactorPerPixel, CGFloat(delta))
-            : factor * pow(notchFactor, notches(delta: delta, source: source))
+        let next: CGFloat
+        if source == .smoothWheel {
+            let k = nativeStep(lines: delta)
+            next = delta > 0 ? factor * k : factor / k
+        } else {
+            next = factor * pow(notchFactor, notches(delta: delta, source: source))
+        }
         // Ten notches up and ten down multiply out to 1.0000001, not 1 — and a
         // target above 1 is a zoom that never switches itself off. Only on the way
         // out: a slow detent from 1× is ×1.01 exactly, and snapping that back to 1
