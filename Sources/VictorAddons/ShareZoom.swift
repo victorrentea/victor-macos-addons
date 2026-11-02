@@ -727,17 +727,25 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
     private var lastEdgeTick: CFTimeInterval = 0
 
     /// 🔎 The cursor resting in the outer 10 % of the glass for 300 ms pans that way,
-    /// and the pointer goes with the picture. `p` and the answer are display-local,
-    /// Cocoa (y up). Main thread.
-    private func edgePan(_ p: CGPoint, size: CGSize) -> CGPoint {
+    /// and the pointer goes with the picture — only toward a side with another display
+    /// beyond it (`ShareZoomEdge.neighbour`); elsewhere the pointer pushing past the
+    /// slice pans it, as it always did. `p` and the answer are display-local, Cocoa
+    /// (y up); `bounds` is the display, CG global. Main thread.
+    private func edgePan(_ p: CGPoint, size: CGSize, bounds: CGRect) -> CGPoint {
         let now = CFAbsoluteTimeGetCurrent()
         let dt = CGFloat(min(max(now - lastEdgeTick, 0), 0.05))
         lastEdgeTick = now
         let k = max(current, 1)
         guard k > 1 else { return p }
         let glass = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: k)
-        let depthX = ShareZoomEdge.depth(glass.x, length: size.width)
-        let depthY = ShareZoomEdge.depth(glass.y, length: size.height)
+        var depthX = ShareZoomEdge.depth(glass.x, length: size.width)
+        var depthY = ShareZoomEdge.depth(glass.y, length: size.height)
+        // Cocoa's y grows up, CG's down: depthY > 0 is the top.
+        let g = CGPoint(x: bounds.minX + glass.x, y: bounds.minY + (size.height - glass.y))
+        if let d = depthX, !ShareZoomEdge.neighbour(d > 0 ? .right : .left, glass: g, display: bounds,
+                                                    hasDisplay: ShareZoomEdge.anyDisplay(at:)) { depthX = nil }
+        if let d = depthY, !ShareZoomEdge.neighbour(d > 0 ? .top : .bottom, glass: g, display: bounds,
+                                                    hasDisplay: ShareZoomEdge.anyDisplay(at:)) { depthY = nil }
         var want = origin
         if dwellX.due(depth: depthX, now: now), let d = depthX {
             want.x += ShareZoomEdge.step(depth: d, length: size.width, factor: k, dt: dt)
@@ -808,6 +816,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let size = s.frame.size
         let focus = pinnedFocus ?? NSEvent.mouseLocation
         let inside = NSMouseInRect(focus, s.frame, false)
+        let bounds = CGDisplayBounds(s.displayID)
         var p = CGPoint(x: min(max(focus.x - s.frame.minX, 0), size.width),
                         y: min(max(focus.y - s.frame.minY, 0), size.height))
         // Away on another display the picture stays where it was left
@@ -815,14 +824,14 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         // by dragged the slice all the way to that side on the way out.
         if inside {
             origin = ShareZoomPolicy.rezoom(origin: origin, from: previous, to: current, pointer: p, screenSize: size)
-            if pinnedFocus == nil { p = edgePan(p, size: size) }
-            // A pointer outside the slice can only be someone else's warp now.
+            if pinnedFocus == nil { p = edgePan(p, size: size, bounds: bounds) }
+            // A pointer past the slice's edge on a side with no display beyond (pushed
+            // there by `ShareZoomEdge.confine`), or someone else's warp: the slice follows.
             origin = ShareZoomPolicy.pan(origin: origin, pointer: p, factor: current, screenSize: size)
         } else {
             dwellX = .init(); dwellY = .init()
         }
         // A pinned focus is a test with the real mouse left alone — its speed too.
-        let bounds = CGDisplayBounds(s.displayID)
         let k = max(current, 1)
         let slice = CGRect(x: bounds.minX + origin.x,
                            y: bounds.minY + (size.height - origin.y - size.height / k),

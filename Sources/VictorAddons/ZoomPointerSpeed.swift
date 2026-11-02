@@ -141,10 +141,9 @@ final class ZoomPointerSpeed {
         if let display, let slice, slice.contains(last) {
             // The slice's edge is the screen's edge: across it, onto the next display
             // at the matching glass spot, the picture left where it was (`ShareZoomEdge`).
-            next = ShareZoomEdge.confine(moved, slice: slice, display: display) { p in
-                var id = CGDirectDisplayID(0), n: UInt32 = 0
-                return CGGetDisplaysWithPoint(p, 1, &id, &n) == .success && n > 0
-            }
+            // With no display that way, it pushes past the slice and the slice follows.
+            next = ShareZoomEdge.confine(moved, slice: slice, display: display,
+                                         hasDisplay: ShareZoomEdge.anyDisplay(at:))
         } else {
             next = Self.clampToDisplay(moved, from: last)
         }

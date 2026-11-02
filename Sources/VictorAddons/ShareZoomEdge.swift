@@ -12,12 +12,18 @@ import Foundation
 ///
 /// - **The edge of the slice is the edge of the screen.** A move that would leave the
 ///   slice lands on the adjacent display, at the spot where the drawn cursor touched the
-///   glass, and the picture stays put. With no display on that side the pointer stops
-///   at the edge (`confine`). Coming back, the pointer enters the slice where the hand
-///   crosses the glass edge (`fromGlass`).
-/// - **Dwelling pans.** The drawn cursor inside the outer `band` of the glass for
-///   `dwell` seconds pans that way, faster the deeper in the band (`speed`), and the
-///   pointer travels with the picture so it stays at the same spot on the glass.
+///   glass, and the picture stays put. Coming back, the pointer enters the slice where
+///   the hand crosses the glass edge (`fromGlass`).
+/// - **Dwelling pans — only toward a display.** The drawn cursor inside the outer `band`
+///   of the glass for `dwell` seconds pans that way, faster the deeper in the band
+///   (`speed`), and the pointer travels with the picture so it stays at the same spot on
+///   the glass. Only on a side with a display beyond it (`neighbour`): the dwell is there
+///   so a fast trip across the edge does not pan, and with nothing to reach on that side
+///   it only stole the pan from the edge (Victor, 2026-11-02: *"fără ecrane laterale,
+///   nu trebuie să se facă pan decât la împingerea în edge, ca până azi"*).
+/// - **With no display on that side, pushing pans** — as before 2026-11-02: the pointer
+///   runs on past the slice's edge (`confine`) and the slice follows it
+///   (`ShareZoomPolicy.pan`), right away, no dwell.
 ///
 /// All rects are CG global (origin top-left, y down) unless said otherwise.
 enum ShareZoomEdge {
@@ -45,22 +51,53 @@ enum ShareZoomEdge {
         return clampInside(p, slice)
     }
 
+    /// A side of the zoomed display, in CG terms (top = low y).
+    enum Side { case left, right, top, bottom }
+
+    /// The point just past the zoomed display's `side` that a drawn cursor at glass `g`
+    /// (CG global) crosses onto.
+    static func probe(_ side: Side, glass g: CGPoint, display: CGRect) -> CGPoint {
+        let gx = min(max(g.x, display.minX), display.maxX - 1)
+        let gy = min(max(g.y, display.minY), display.maxY - 1)
+        switch side {
+        case .right: return CGPoint(x: display.maxX, y: gy)
+        case .left: return CGPoint(x: display.minX - 1, y: gy)
+        case .bottom: return CGPoint(x: gx, y: display.maxY)
+        case .top: return CGPoint(x: gx, y: display.minY - 1)
+        }
+    }
+
+    /// Whether crossing `side` at glass `g` would land on another display.
+    static func neighbour(_ side: Side, glass g: CGPoint, display: CGRect,
+                          hasDisplay: (CGPoint) -> Bool) -> Bool {
+        hasDisplay(probe(side, glass: g, display: display))
+    }
+
+    /// Whether some display holds CG global point `p`.
+    static func anyDisplay(at p: CGPoint) -> Bool {
+        var id = CGDirectDisplayID(0), n: UInt32 = 0
+        return CGGetDisplaysWithPoint(p, 1, &id, &n) == .success && n > 0
+    }
+
     /// Where a (slowed) move to `next` ends: `next` itself inside the slice; across a
     /// slice edge, on the display beyond the zoomed one at the matching glass spot, if
-    /// `hasDisplay` finds one there; otherwise held at the edge.
+    /// `hasDisplay` finds one there; otherwise `next`, kept on the zoomed display — past
+    /// the slice's edge, so the slice follows it (`ShareZoomPolicy.pan`).
     static func confine(_ next: CGPoint, slice: CGRect, display: CGRect,
                         hasDisplay: (CGPoint) -> Bool) -> CGPoint {
         let inside = clampInside(next, slice)
         if inside == next { return next }
         let g = toGlass(next, slice: slice, display: display)
-        let gx = min(max(g.x, display.minX), display.maxX - 1)
-        let gy = min(max(g.y, display.minY), display.maxY - 1)
-        var probes: [CGPoint] = []
-        if next.x > inside.x { probes.append(CGPoint(x: display.maxX, y: gy)) }
-        if next.x < inside.x { probes.append(CGPoint(x: display.minX - 1, y: gy)) }
-        if next.y > inside.y { probes.append(CGPoint(x: gx, y: display.maxY)) }
-        if next.y < inside.y { probes.append(CGPoint(x: gx, y: display.minY - 1)) }
-        return probes.first(where: hasDisplay) ?? inside
+        var sides: [Side] = []
+        if next.x > inside.x { sides.append(.right) }
+        if next.x < inside.x { sides.append(.left) }
+        if next.y > inside.y { sides.append(.bottom) }
+        if next.y < inside.y { sides.append(.top) }
+        if let p = sides.lazy.map({ probe($0, glass: g, display: display) }).first(where: hasDisplay) {
+            return p
+        }
+        return CGPoint(x: min(max(next.x, display.minX), display.maxX - 1),
+                       y: min(max(next.y, display.minY), display.maxY - 1))
     }
 
     static func clampInside(_ p: CGPoint, _ r: CGRect) -> CGPoint {

@@ -217,15 +217,18 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   all the way to that side. Now:
   - **The slice's edge is the screen's edge.** `ZoomPointerSpeed` confines the slowed
     pointer to the slice; a move across a slice edge lands on the adjacent display at the
-    spot where the drawn cursor touched the glass (`ShareZoomEdge.confine`), with no
-    display there it stops at the edge. Off the zoomed display the mouse runs at normal
+    spot where the drawn cursor touched the glass (`ShareZoomEdge.confine`); with no
+    display there it runs on past the slice's edge and the slice follows it at once
+    (`ShareZoomPolicy.pan`) — the push pan of before. Off the zoomed display the mouse runs at normal
     speed (it was slowed on every display before); coming back, it enters the slice where
     the hand crosses the glass edge (`fromGlass`). Away, the picture is not touched.
-  - **Resting in the outer 10 % of the glass for 300 ms pans that way**, per axis, at
+  - **Resting in the outer 10 % of the glass for 300 ms pans that way — only toward a
+    side with another display beyond it** (`ShareZoomEdge.neighbour`, same day: *"fără
+    ecrane laterale, nu trebuie să se facă pan decât la împingerea în edge, ca până
+    azi"*; the dwell only exists so a fast move onto a neighbour does not pan). Per axis, at
     0.3 glass widths/s at the band's inner border up to 1.2 against the edge; the pointer
     is warped along with the picture (`ZoomPointerSpeed.shift`) so it keeps its spot on the
-    glass. `ShareZoomPolicy.pan` is only the fallback for a pointer someone else warped
-    out of the slice. `/test/share-zoom` reports `edgePans` and `origin`.
+    glass. On the sides with no display, `ShareZoomPolicy.pan` is the pan. `/test/share-zoom` reports `edgePans` and `origin`.
 - **The mouse is slowed in proportion to the zoom (`ZoomPointerSpeed`, 2026-10-27, made
   proportional 2026-10-29)** — at 4× the drawn cursor otherwise crosses the glass four
   times as fast, and a small move on the table sent the slice running left and right

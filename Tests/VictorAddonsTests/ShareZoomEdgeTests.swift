@@ -20,10 +20,27 @@ final class ShareZoomEdgeTests: XCTestCase {
         XCTAssertEqual(out.y, 300, accuracy: 0.01)   // 225 + 75 → glass (75 × 4) = 300
     }
 
-    /// No display on the left: held at the slice's edge, so the dwell can take over.
-    func testNoDisplayBeyondHoldsThePointerAtTheEdge() {
+    /// No display on the left: the pointer pushes on past the slice's edge, so the
+    /// slice follows it (`ShareZoomPolicy.pan`) — no dwell on that side.
+    func testNoDisplayBeyondLetsThePointerPushPastTheSlice() {
         let out = ShareZoomEdge.confine(CGPoint(x: 360, y: 300), slice: slice, display: display, hasDisplay: rightOnly)
-        XCTAssertEqual(out, CGPoint(x: 375, y: 300))
+        XCTAssertEqual(out, CGPoint(x: 360, y: 300))
+    }
+
+    /// …but never off the zoomed display itself.
+    func testPushingStaysOnTheZoomedDisplay() {
+        let s = CGRect(x: 0, y: 225, width: 250, height: 150)
+        let out = ShareZoomEdge.confine(CGPoint(x: -5, y: 300), slice: s, display: display, hasDisplay: rightOnly)
+        XCTAssertEqual(out, CGPoint(x: 0, y: 300))
+    }
+
+    /// The dwell pans only toward a side with a display beyond it (2026-11-02).
+    func testOnlyASideWithANeighbourDwells() {
+        let g = CGPoint(x: 500, y: 300)
+        XCTAssertTrue(ShareZoomEdge.neighbour(.right, glass: g, display: display, hasDisplay: rightOnly))
+        XCTAssertFalse(ShareZoomEdge.neighbour(.left, glass: g, display: display, hasDisplay: rightOnly))
+        XCTAssertFalse(ShareZoomEdge.neighbour(.top, glass: g, display: display, hasDisplay: rightOnly))
+        XCTAssertFalse(ShareZoomEdge.neighbour(.bottom, glass: g, display: display, hasDisplay: rightOnly))
     }
 
     func testComingBackEntersWhereTheHandCrossesTheGlass() {
