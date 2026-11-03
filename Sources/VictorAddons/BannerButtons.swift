@@ -21,7 +21,7 @@ enum BannerAction: String, CaseIterable {
 
     var title: String { rawValue }
 
-    /// A picture left of the word, where one says it faster (Victor: *"drop
+    /// A picture right after the word, where one says it faster (Victor: *"drop
     /// să aibă un 🗑️, iar send … un glyph de avion de hârtie"*).
     enum Glyph: Equatable {
         case emoji(String)
@@ -37,16 +37,17 @@ enum BannerAction: String, CaseIterable {
         }
     }
 
-    /// The button's whole title: glyph, a space, the word.
+    /// The button's whole title: the word, a space, the glyph (after the word,
+    /// Victor: *"emojiul să fie după label"*).
     func attributedTitle(font: NSFont, color: NSColor) -> NSAttributedString {
         let centred = NSMutableParagraphStyle()
         centred.alignment = .center
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color,
                                                     .paragraphStyle: centred]
-        let out = NSMutableAttributedString()
+        let out = NSMutableAttributedString(string: title, attributes: attrs)
         switch glyph {
         case .emoji(let e)?:
-            out.append(NSAttributedString(string: e + " ", attributes: attrs))
+            out.append(NSAttributedString(string: " " + e, attributes: attrs))
         case .symbol(let name)?:
             let config = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .semibold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
@@ -57,13 +58,14 @@ enum BannerAction: String, CaseIterable {
                 // Sit the symbol on the text's optical centre, not its baseline.
                 att.bounds = NSRect(x: 0, y: (font.capHeight - img.size.height) / 2,
                                     width: img.size.width, height: img.size.height)
-                out.append(NSAttributedString(attachment: att))
                 out.append(NSAttributedString(string: " ", attributes: attrs))
+                out.append(NSAttributedString(attachment: att))
             }
         case nil:
             break
         }
-        out.append(NSAttributedString(string: title, attributes: attrs))
+        // An attachment carries no paragraph style of its own: re-centre the lot.
+        out.addAttribute(.paragraphStyle, value: centred, range: NSRange(location: 0, length: out.length))
         return out
     }
 }
