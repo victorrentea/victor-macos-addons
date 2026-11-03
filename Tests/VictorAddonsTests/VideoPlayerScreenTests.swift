@@ -54,6 +54,21 @@ final class VideoPlayerScreenTests: XCTestCase {
 /// The sidecar subtitles a clip may carry, parsed in-process now that no
 /// external player reads them.
 final class SRTSubtitlesTests: XCTestCase {
+    func testAMusicNoteNeverReachesTheScreen() {
+        let srt = """
+        1
+        00:00:01,000 --> 00:00:02,000
+        ♪ Though it seemed to the world
+        they were all I desired ♪
+
+        2
+        00:00:02,000 --> 00:00:03,000
+        ♪
+        """
+        let cues = SRTSubtitles.parse(srt)
+        XCTAssertEqual(cues.map(\.text), ["Though it seemed to the world\nthey were all I desired"])
+    }
+
     func testParsesCuesAndStripsTags() {
         let srt = """
         1

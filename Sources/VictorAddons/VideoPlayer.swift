@@ -604,6 +604,10 @@ enum SRTSubtitles {
             let text = body
                 .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                 .replacingOccurrences(of: "\\{\\\\[^}]*\\}", with: "", options: .regularExpression)
+                // No subtitle carries a music note (Victor, 2026-11-04). Taken out here,
+                // not from the files: a changed `.srt` would owe a YouTube re-upload.
+                .replacingOccurrences(of: "[♪♫♬] ?| ?[♪♫♬]", with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             cues.append(Cue(start: start, end: end, text: text,
                             color: fontColor(body), top: body.contains("{\\an8}")))
