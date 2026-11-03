@@ -235,8 +235,13 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
     (`followsUnscaled`), so the pointer ran at full speed outside the slice and the picture
     raced after it (*"reintră foarte accelerat uneori"*, the same day; traced at 3× with the
     picture far from the entry: 434 pt off, 1 return in 3), and on the way out one such event
-    read as coming back. For 80 ms after a warp across the edge `ZoomPointerSpeed` trusts
-    only the delta (`settleUntil`). Reproduce with `/test/zoom-input?do=move&gapMs=4`.
+    read as coming back. Moving by the delta alone for those ms was no better: the very next
+    build flew a quarter to a third of the next monitor's width on the slowest of crossings
+    (*"îmi zboară la un sfert sau o treime din lățime"*); synthetic moves set their own delta,
+    so they could not show it. So after a warp across the edge `ZoomPointerSpeed` believes
+    neither: the pointer waits where it was put (`settling`) until an event lands within
+    40 pt of it or real on the other display, at most 80 ms. Each crossing logs
+    `🔎 crossing settled: N event(s) held, largest delta D`. Reproduce with `/test/zoom-input?do=move&gapMs=4`.
   - **Gone, the 2026-11-02 dwell** (300 ms in the outer 10 % of the glass panned toward a
     side with a monitor, 0.3–1.2 glass widths/s, pointer warped along). It existed so a fast
     trip to the next monitor did not drag the picture, which the door now does; meanwhile it

@@ -36,10 +36,15 @@ final class ZoomPointerSpeed {
     private var display: CGRect?
     private var slice: CGRect?
     private var doors: [ShareZoomEdge.Door] = []
-    /// Until when events may still carry a location from before our last warp across
-    /// the display's edge (see `handle`).
+    /// Right after our warp across the display's edge, until the events tell the truth
+    /// again (see `handle`).
+    private var settling = false
     private var settleUntil: CFTimeInterval = 0
+    private var heldEvents = 0
+    private var heldDelta = 0.0
     private static let settle: CFTimeInterval = 0.08
+    /// Closer than this to where we put it, an event's location is not a stale one.
+    private static let caughtUp: CGFloat = 40
 
     init() { createTap() }
 
@@ -108,32 +113,45 @@ final class ZoomPointerSpeed {
         // all but froze (2026-10-27, the first build of this).
         let rawDX = event.getDoubleValueField(.mouseEventDeltaX)
         let rawDY = event.getDoubleValueField(.mouseEventDeltaY)
-        // A warp across the display's edge jumps by up to a screen, and for a few ms the
-        // events already on their way still carry locations from before it. Read as
-        // positions they say the pointer was thrown somewhere else: back on the Retina
-        // it then ran at full speed outside the slice, which raced after it (Victor,
-        // 2026-11-04: *"reintră foarte accelerat uneori"*; traced: 15 ms of stale
-        // locations, the picture 434 pt off). Until they drain, only the delta counts.
+        // A warp across the display's edge jumps by up to a screen, and neither half of
+        // the events right after it can be believed. Those already on their way carry
+        // locations from before it: read as positions they said the pointer was thrown
+        // somewhere else, so back on the Retina it ran at full speed outside the slice,
+        // which raced after it (Victor, 2026-11-04: *"reintră foarte accelerat uneori"*;
+        // traced: 15 ms of them, the picture 434 pt off). And the delta does not help: moving
+        // by it for those ms flew a third of the way across the next monitor on the
+        // slowest of crossings (*"îmi zboară la un sfert sau o treime din lățime"*). So the
+        // pointer simply waits where it was put, until an event lands next to it.
         let clock = CFAbsoluteTimeGetCurrent()
-        let settling = clock < settleUntil
+        if settling, let last = pos {
+            heldEvents += 1
+            heldDelta = max(heldDelta, hypot(rawDX, rawDY))
+            let offZoomed = display.map { !$0.contains(last) && !$0.contains(now) } ?? false
+            if offZoomed || hypot(now.x - last.x, now.y - last.y) < Self.caughtUp || clock >= settleUntil {
+                settling = false
+                overlayInfo("🔎 crossing settled: \(heldEvents) event(s) held, largest delta \(Int(heldDelta))")
+            }
+            if offZoomed {
+                pos = now
+                return Unmanaged.passUnretained(event)
+            }
+            CGWarpMouseCursorPosition(last)
+            CGAssociateMouseAndMouseCursorPosition(1)
+            event.location = last
+            event.setDoubleValueField(.mouseEventDeltaX, value: 0)
+            event.setDoubleValueField(.mouseEventDeltaY, value: 0)
+            return Unmanaged.passUnretained(event)
+        }
         // Off the zoomed display the mouse is its own, at normal speed; coming back
         // onto it, it enters the slice where the hand crosses the glass edge.
         if let display, let slice, let last = pos, !display.contains(last) {
-            if settling {
-                let next = Self.clampToDisplay(CGPoint(x: last.x + rawDX, y: last.y + rawDY), from: last)
-                pos = next
-                CGWarpMouseCursorPosition(next)
-                CGAssociateMouseAndMouseCursorPosition(1)
-                event.location = next
-                return Unmanaged.passUnretained(event)
-            }
             guard display.contains(now) else {
                 pos = now
                 return Unmanaged.passUnretained(event)
             }
             let entry = ShareZoomEdge.fromGlass(now, slice: slice, display: display)
             pos = entry
-            settleUntil = clock + Self.settle
+            startSettling(at: clock)
             CGWarpMouseCursorPosition(entry)
             CGAssociateMouseAndMouseCursorPosition(1)
             event.location = entry
@@ -141,7 +159,7 @@ final class ZoomPointerSpeed {
         }
         // The first move, or the cursor put somewhere by someone else (a warp, a
         // display change): follow it rather than scale it.
-        guard let last = pos, settling || !ShareZoomPolicy.followsUnscaled(
+        guard let last = pos, !ShareZoomPolicy.followsUnscaled(
             now: now, last: last, delta: CGVector(dx: rawDX, dy: rawDY)) else {
             pos = now
             return Unmanaged.passUnretained(event)
@@ -157,7 +175,7 @@ final class ZoomPointerSpeed {
             // the slice and the slice follows. Also while the pointer is already past
             // the slice, waiting for the next tick: a push must not slip out there.
             next = ShareZoomEdge.confine(moved, slice: slice, display: display, doors: doors)
-            if !display.contains(next) { settleUntil = clock + Self.settle }
+            if !display.contains(next) { startSettling(at: clock) }
         } else {
             next = Self.clampToDisplay(moved, from: last)
         }
@@ -169,6 +187,13 @@ final class ZoomPointerSpeed {
         event.setDoubleValueField(.mouseEventDeltaX, value: dx)
         event.setDoubleValueField(.mouseEventDeltaY, value: dy)
         return Unmanaged.passUnretained(event)
+    }
+
+    private func startSettling(at clock: CFTimeInterval) {
+        settling = true
+        settleUntil = clock + Self.settle
+        heldEvents = 0
+        heldDelta = 0
     }
 
     /// `p` if some display holds it, else pulled back inside the display `from` is on —
