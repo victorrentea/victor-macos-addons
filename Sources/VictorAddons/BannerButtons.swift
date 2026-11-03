@@ -19,7 +19,7 @@ enum BannerAction: String, CaseIterable {
     case snooze = "Snooze"
     case snoozeHour = "Snooze 1h"
     /// The 👂/🔋 pill: stops the battery recording until the charger is back.
-    case stopUntilAC = "Stop ❌ until 🔌"
+    case stopUntilAC = "Stop (until AC)"
 
     var title: String { rawValue }
 
@@ -36,6 +36,7 @@ enum BannerAction: String, CaseIterable {
         case .drop: return .emoji("🗑️")
         case .send: return .symbol("paperplane.fill")
         case .snoozeHour: return .emoji("⏱️")
+        case .stopUntilAC: return .emoji("❌")
         default: return nil
         }
     }
