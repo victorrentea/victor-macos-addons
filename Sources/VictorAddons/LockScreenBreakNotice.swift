@@ -24,6 +24,14 @@ import AppKit
 /// a window back in the user's space instead). While unlocked the watch itself is on
 /// screen and a second copy of it would be noise.
 ///
+/// **Lit, on a screen that isn't Victor's.** Locked and walked away, the Mac idles and
+/// the display goes dark — and with it the card the room was meant to read. So while
+/// the card is up *and* a display other than his own is plugged in (the room's TV or
+/// projector: external, not in `KnownDisplays`, not the 🪞 one), a
+/// `PreventUserIdleDisplaySleep` assertion keeps every screen on until the unlock or
+/// the end of the break. At home or on the travel ASUS nobody else is reading it, so
+/// the screen sleeps as usual. Asked for on 3 Nov 2026, on a client's TV.
+///
 /// **Every screen, the 🪞 one included.** Unlike the overlays that go through
 /// `NSScreen.physical`, this one wants the shared screen too: it is meant for every
 /// participant, the remote ones as much as the room.
@@ -49,6 +57,11 @@ final class LockScreenBreakNotice {
     private var previewScreens: [NSScreen]?
     private var previewUntil = Date.distantPast
     private var previewContent: Content?
+    /// Held while locked, a break is on, and a foreign display is online.
+    private let keepLit = DisplaySleepAssertion(
+        // ASCII: `pmset -g assertions` turns anything else into "?".
+        name: "Victor Addons - break card on the lock screen, foreign display",
+        logPrefix: "☕🔒")
 
     /// Fed from `ScreenLockMonitor.onChange` (main thread).
     func setLocked(_ isLocked: Bool) {
@@ -69,7 +82,8 @@ final class LockScreenBreakNotice {
 
     var diagnosticsJSON: String {
         "{\"locked\":\(locked),\"cards\":\(cards.count),\"skylight\":\(SkyLightLockSpace.shared != nil)," +
-        "\"preview\":\(previewScreens != nil)}"
+        "\"preview\":\(previewScreens != nil),\"keeping_display_on\":\(keepLit.isHeld)," +
+        "\"foreign_display\":\(Self.foreignDisplayOnline())}"
     }
 
     // MARK: - State
@@ -89,6 +103,10 @@ final class LockScreenBreakNotice {
             timer?.invalidate(); timer = nil
         }
         let shown: Content? = active ? (content?() ?? (previewing ? previewContent : nil)) : nil
+        let breakOnLock = locked && content?() != nil
+        keepLit.hold(Self.keepsDisplayOn(breakOnLock: breakOnLock,
+                                         foreignDisplay: breakOnLock && Self.foreignDisplayOnline()),
+                     reason: breakOnLock ? "break on, a display that isn't mine is plugged in" : "unlocked or break over")
         guard let shown else { tearDown(); return }
         let screens = locked ? NSScreen.screens : (previewScreens ?? [])
         let frames = screens.map(\.frame)
@@ -111,6 +129,23 @@ final class LockScreenBreakNotice {
         cards.forEach { $0.close() }
         cards = []
         builtFor = []
+    }
+
+    // MARK: - Keeping the screen lit
+
+    /// Pure: the screen stays on only for a real break on a locked Mac with a
+    /// foreign display — never for a preview, never at home.
+    static func keepsDisplayOn(breakOnLock: Bool, foreignDisplay: Bool) -> Bool {
+        breakOnLock && foreignDisplay
+    }
+
+    /// An external display that is neither one of Victor's (`KnownDisplays`) nor the
+    /// 🪞 virtual one. Online list, not `NSScreen`, so a TV in a mirror set counts.
+    static func foreignDisplayOnline() -> Bool {
+        let known = KnownDisplays()
+        return physicalDisplayIDs(KnownDisplays.onlineDisplayIDs()).contains { id in
+            CGDisplayIsBuiltin(id) == 0 && !known.isKnown(id)
+        }
     }
 
     // MARK: - Geometry (pure)

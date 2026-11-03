@@ -23,4 +23,11 @@ final class LockScreenBreakNoticeTests: XCTestCase {
         var held = c; held.paused = true
         XCTAssertEqual(LockScreenBreakNotice.subtitle(held), "⏸ paused")
     }
+
+    /// Only a break on a locked Mac in front of someone else's screen keeps it lit.
+    func testDisplayStaysOnOnlyForABreakOnAForeignScreen() {
+        XCTAssertTrue(LockScreenBreakNotice.keepsDisplayOn(breakOnLock: true, foreignDisplay: true))
+        XCTAssertFalse(LockScreenBreakNotice.keepsDisplayOn(breakOnLock: true, foreignDisplay: false))   // home / ASUS
+        XCTAssertFalse(LockScreenBreakNotice.keepsDisplayOn(breakOnLock: false, foreignDisplay: true))   // unlocked or no break
+    }
 }
