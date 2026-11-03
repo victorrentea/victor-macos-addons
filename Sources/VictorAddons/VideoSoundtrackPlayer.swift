@@ -72,7 +72,7 @@ final class VideoSoundtrackPlayer {
         let id = playingId.map { "\"\($0)\"" } ?? "null"
         let remaining = isPlaying ? (deadline.map { max(0, Int($0.timeIntervalSinceNow * 1000)) } ?? 0) : 0
         return "{\"playing\":\(isPlaying),\"kind\":\"sound\",\"id\":\(id),\"remainingMs\":\(remaining)," +
-               "\"rate\":\(rate),\"maxSeconds\":\(Int(Self.maxSeconds))}"
+               "\"rate\":\(rate),\"volume\":\(player?.volume ?? 0),\"maxSeconds\":\(Int(Self.maxSeconds))}"
     }
 
     /// Start (or replace) the soundtrack of `fileURL` at `startSeconds`.
@@ -121,9 +121,10 @@ final class VideoSoundtrackPlayer {
     }
 
     /// 🔉 The tablet moved this snippet's volume bar while it sounds. Ignored
-    /// mid-fade-out: the fade is already taking it to silence.
+    /// mid-fade-out (the player is then in `fadingOut`): the fade is already
+    /// taking it to silence, and its timer would overwrite this anyway.
     func setVolume(_ volume: Float, forId id: String) {
-        guard playingId == id, fadeWork == nil, let player else { return }
+        guard playingId == id, let player, !fadingOut.contains(where: { $0 === player }) else { return }
         player.volume = volume
     }
 
