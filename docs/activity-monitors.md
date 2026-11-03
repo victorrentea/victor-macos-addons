@@ -95,3 +95,21 @@ as PDF pages **exported by PowerPoint itself, links clickable** (`slides_seen.py
   - New fonts or an expired sign-in: `tart run wt-lab --no-audio --dir="share:$HOME/.victor-addons/vm-share"`
     opens its window; copy the fonts or sign in there, then shut it down from inside.
     `vm-lab.sh reset` would lose PowerPoint and that sign-in.
+
+## 💾 PowerPoint auto-save (`PowerPointAutoSave`, since 2026-11-04)
+
+A deck on Google Drive stayed as it was until ⌘S: PowerPoint's own *AutoSave* only works on
+OneDrive and SharePoint, and *Save AutoRecover info every N minutes* writes a separate recovery
+file, whole minutes at best. So this app does a real save.
+
+- **Rides on the same 2 s probe**, which already reads `saved` of the active presentation. The
+  rules are in the pure `PowerPointAutoSavePolicy` (`PowerPointAutoSavePolicyTests`).
+- **When:** unsaved for 60 s **and** no mouse or keyboard input for 3 s, so a save never lands
+  mid-word. Victor picked the minute over 20 s on 2026-11-04.
+- **Never:** during a slide show (saved right after it), or for a deck with no file yet.
+- **A refused save** (Drive does that sometimes) is retried a full minute later, and only shows in
+  the log, as `AutoSave: save <deck> → …`.
+- Only the **active** presentation is watched; a second edited deck waits until it is in front.
+- **Measured in the VM:** `saved` flips to false on a scripted edit and back on save, under 1 s for
+  a 182-slide deck on local disk. **Not measured yet:** the cost on the Drive folder, and what
+  PowerPoint shows when Drive refuses a save.

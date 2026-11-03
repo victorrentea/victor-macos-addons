@@ -97,7 +97,9 @@ final class SlidesSeenRecorder {
                 case .qualified(let span):
                     pendingSnapshot = nil
                     if let path = span.path {
-                        if !sample.saved { save(path) }
+                        // Unsaved edits are not on disk, and the copy is taken from disk: save first.
+                        // Victor asked for it (2026-10-29), knowing Google Drive sometimes refuses a save.
+                        if !sample.saved { PowerPointDeck.save(path, reason: "SlidesSeen") }
                         pendingSnapshot = snapshot(path)
                     }
                 case .closed(let span):
@@ -106,25 +108,6 @@ final class SlidesSeenRecorder {
                 }
             }
         }
-    }
-
-    /// Unsaved edits are not on disk, and the copy is taken from disk: save first.
-    /// Victor asked for it (2026-10-29), knowing Google Drive sometimes refuses a save.
-    private func save(_ path: String) {
-        let escaped = path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-        tell application "Microsoft PowerPoint"
-            repeat with k from 1 to (count of presentations)
-                if (full name of presentation k) is "\(escaped)" then
-                    save presentation k
-                    return "saved"
-                end if
-            end repeat
-        end tell
-        return "not open"
-        """
-        let r = AppleScriptRunner.runDetailed(script, timeout: 30)
-        overlayInfo("SlidesSeen: save \(URL(fileURLWithPath: path).lastPathComponent) → \(r.output ?? r.error ?? "?")")
     }
 
     /// Content-addressed copy: one file per distinct version of a deck.
