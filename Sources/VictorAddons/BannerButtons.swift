@@ -33,6 +33,7 @@ enum BannerAction: String, CaseIterable {
         switch self {
         case .drop: return .emoji("🗑️")
         case .send: return .symbol("paperplane.fill")
+        case .snoozeHour: return .emoji("⏱️")
         default: return nil
         }
     }

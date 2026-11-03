@@ -68,10 +68,12 @@ final class BreakTimerController {
     private var bgView: NSView?              // opaque backdrop, faded in/out
     private var bgOpaque = true              // current backdrop state
     private var epoch = 0                      // invalidates in-flight expiry blocks
-    /// Decided when the countdown hits zero: Victor was at the Mac, so the close
-    /// that follows the gong must NOT black the displays out (see
-    /// `ScreenBlackout.Policy.shouldBlackoutOnExpiry`). Cleared by every close
-    /// and by every (re)start, so it can never leak into a later ✕.
+    /// Set when the countdown hits zero: the close that follows the gong must
+    /// NOT black the displays out (since 2026-11-03 — Victor: *"când timerul
+    /// expiră să nu mai înnegrească ecranul"*; before, it did unless he had
+    /// touched the Mac in the last 10 s). Only a ✕ / programmatic close still
+    /// blacks out. Cleared by every close and every (re)start, so it can never
+    /// leak into a later ✕.
     private var skipBlackoutOnClose = false
 
     // Title + size for the NEXT fresh window. The menu opens a full-size "BREAK";
@@ -367,7 +369,9 @@ final class BreakTimerController {
     /// paused" can be asserted from a script instead of read off the projector,
     /// which during a workshop is the wall in front of the room.
     func stateJSON() -> String {
-        guard panel != nil else { return "{\"showing\":false}" }
+        // `blackout`: whether the post-close black covers are up — so "an
+        // expired break leaves the screen alone" can be asserted too.
+        guard panel != nil else { return "{\"showing\":false,\"blackout\":\(ScreenBlackout.shared.isShowing)}" }
         if isStopwatch {
             return "{\"showing\":true,\"paused\":\(paused),\"elapsed\":\(remaining)," +
                    "\"digits\":\"\(BreakTimerModel.formatElapsed(remaining))\"," +
@@ -427,9 +431,9 @@ final class BreakTimerController {
         // close — ✕, expiry after the gong, or programmatic — and only when a
         // timer was really on screen. When the panel was the fullscreen break
         // screen the screen is already black, so skip the fade-in (no flash of
-        // desktop between the two blacks). The one exception: an expiry that
-        // found Victor already working at the Mac (`skipBlackoutOnClose`) —
-        // there is no empty room to protect.
+        // desktop between the two blacks). The exception, since 2026-11-03:
+        // an expiry (`skipBlackoutOnClose`) — the room is coming back, and the
+        // screen should already be showing it the slides.
         if wasShowing && !skipBlackoutOnClose && !isStopwatch {
             ScreenBlackout.shared.show(fadeIn: wasFullscreen ? 0 : 0.35)
         }
@@ -835,12 +839,8 @@ final class BreakTimerController {
     private func beginExpiry() {
         timer?.invalidate(); timer = nil
         clearPersisted()
-        // Was he already back at the Mac when the time ran out? Then skip the
-        // post-break blackout entirely — read it HERE, at zero, because the
-        // close is ~2 gongs away and by then any hand on the mouse would answer
-        // "yes" for the wrong reason.
-        skipBlackoutOnClose = !ScreenBlackout.Policy.shouldBlackoutOnExpiry(
-            idleSecondsAtExpiry: ScreenBlackout.secondsSinceLastInput())
+        // An expired break never blacks the screens out (see the flag's doc).
+        skipBlackoutOnClose = true
         // If the timer was dragged onto another display (e.g. the external monitor
         // during a course), bring it home to the retina before the gong + blink —
         // the retina is what's projected to the room, so "break's over!" lands where
