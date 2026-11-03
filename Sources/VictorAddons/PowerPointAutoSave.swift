@@ -51,7 +51,8 @@ final class PowerPointAutoSave {
 }
 
 enum PowerPointDeck {
-    /// Saves the open deck at `path`. Drive sometimes refuses a save: that only shows in the log.
+    /// Saves the open deck at `path`. A refused save raises nothing and `save` itself reports no
+    /// error, measured on a locked file: only the deck still being unsaved afterwards tells.
     static func save(_ path: String, reason: String) {
         let escaped = path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
@@ -59,7 +60,8 @@ enum PowerPointDeck {
             repeat with k from 1 to (count of presentations)
                 if (full name of presentation k) is "\(escaped)" then
                     save presentation k
-                    return "saved"
+                    if saved of presentation k then return "saved"
+                    return "refused"
                 end if
             end repeat
         end tell

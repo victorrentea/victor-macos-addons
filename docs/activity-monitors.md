@@ -108,8 +108,10 @@ file, whole minutes at best. So this app does a real save.
   mid-word. Victor picked the minute over 20 s on 2026-11-04.
 - **Never:** during a slide show (saved right after it), or for a deck with no file yet.
 - **A refused save** (Drive does that sometimes) is retried a full minute later, and only shows in
-  the log, as `AutoSave: save <deck> → …`.
+  the log (`/tmp/victor-macos-addons.log`), as `AutoSave: save <deck> → refused`.
 - Only the **active** presentation is watched; a second edited deck waits until it is in front.
-- **Measured in the VM:** `saved` flips to false on a scripted edit and back on save, under 1 s for
-  a 182-slide deck on local disk. **Not measured yet:** the cost on the Drive folder, and what
-  PowerPoint shows when Drive refuses a save.
+- **Measured on a 182-slide, 14 MB deck in `~/My Drive` (2026-11-04):** saved 63 s after the edit,
+  PowerPoint answering 0.7 s late at worst during the save, undo still working after it. On a file
+  locked with `chflags uchg` the save fails silently: no dialog, the deck stays unsaved, and
+  AppleScript's `save` reports no error, hence the `saved` check after it. `chmod 444` does not
+  block a save. A real refusal by Drive itself was not reproduced.
