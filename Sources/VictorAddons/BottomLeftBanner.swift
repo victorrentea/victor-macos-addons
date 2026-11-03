@@ -30,13 +30,15 @@ final class BottomLeftBanner {
     enum Style {
         // Bottom-left overlay geometry, scaled ×1.5 from the original (font +
         // box) for presentation visibility.
-        static let fontSize: CGFloat = 54
-        static let leftPadding: CGFloat = 30
-        static let rightPadding: CGFloat = 18
-        static let textRenderHeight: CGFloat = 75
+        // 70 % of the 2026-09 size since 2026-11-03 (Victor: *"70% din
+        // înălțimea curentă"*) — box 90 → 63, and the type with it.
+        static let fontSize: CGFloat = 38
+        static let leftPadding: CGFloat = 21
+        static let rightPadding: CGFloat = 14
+        static let textRenderHeight: CGFloat = 53
         /// Lower bound so a single glyph (e.g. a lone emoji) never collapses to
         /// a sliver. The box hugs the text above this and caps at `maxWidthFraction`.
-        static let minBoxWidth: CGFloat = 120
+        static let minBoxWidth: CGFloat = 84
         /// Hard cap as a fraction of the screen width — past this the text
         /// truncates with an ellipsis instead of the box growing further.
         static let maxWidthFraction: CGFloat = 0.5
@@ -48,7 +50,24 @@ final class BottomLeftBanner {
         // Pill height, snug around the centered main text so its bottom sits
         // flush on the screen's bottom edge with no dead strip below (the old
         // hint text + progress bar that used to fill that strip are gone).
-        static let boxHeight: CGFloat = 90
+        static let boxHeight: CGFloat = 63
+        /// Only the top-right corner is round: the other three sit on the
+        /// screen's edges, where a curve would just leave a notch of desktop.
+        /// The buttons use the same radius (Victor: *"curbura butoanelor să fie
+        /// identică cu cea a colțului"*), which caps it at half a button's height.
+        static let cornerRadius: CGFloat = 12
+
+        // MARK: Buttons — a column at the pill's right edge (2026-11-03). Top:
+        // the action that happens by itself when the countdown runs out, with
+        // the countdown as its background. Below it: the other one.
+        /// One gap everywhere around the column — above, between, below and to
+        /// the right (Victor: *"spațiul între butoane și sus egal cu cel între
+        /// ele și marginea dreaptă"*).
+        static let buttonGap: CGFloat = 6
+        static var buttonTrailing: CGFloat { buttonGap }
+        /// Between the text and the button column.
+        static let buttonLeading: CGFloat = 12
+        static let singleButtonHeight: CGFloat = 30
         /// No extra tint by default — the NSVisualEffectView glass handles
         /// the gray-translucent look on its own. Callers that need a
         /// specific color (e.g. countdown red) pass their own NSColor.
@@ -186,6 +205,12 @@ final class BottomLeftBanner {
         let borderUp: CAShapeLayer
         let borderRight: CAShapeLayer
         let label: NSTextField
+        /// Top (auto, with the countdown) and bottom (click) buttons; hidden
+        /// when the presentation has none.
+        let autoButton: BannerButtonView
+        let clickButton: BannerButtonView
+        /// The hairline on the top + right edges (see `edgePath`).
+        let edge: CAShapeLayer
         /// Built on every panel, hidden while `icon` is nil, so a pill that is
         /// re-shown in place can gain, lose or swap its picture (`applyIcon`).
         let iconView: NSImageView
@@ -195,6 +220,33 @@ final class BottomLeftBanner {
         let screen: NSScreen
     }
     private var panels: [PanelEntry] = []
+
+    /// The two buttons of the current presentation (see `show`). `auto` is the
+    /// countdown's own outcome (`onHoverCountdownExpired`), drawn on top with
+    /// the countdown filling its background; `click` is `onHover`'s. Nil = no
+    /// button for that outcome.
+    private var autoAction: BannerAction?
+    private var clickAction: BannerAction?
+    private var isDarkPresentation = true
+    private var textColor: NSColor = .white
+
+    /// The buttons that will actually be drawn, top first.
+    private var visibleActions: [(BannerAction, isAuto: Bool)] {
+        guard hoverable else { return [] }
+        var out: [(BannerAction, isAuto: Bool)] = []
+        if let a = autoAction, hasCountdown, onHoverCountdownExpired != nil { out.append((a, true)) }
+        if let c = clickAction, onHover != nil { out.append((c, false)) }
+        return out
+    }
+    private var hasButtons: Bool { !visibleActions.isEmpty }
+    private var buttonColumnWidth: CGFloat {
+        let actions = visibleActions.map(\.0)
+        return actions.isEmpty ? 0 : BannerButtonView.width(for: actions)
+    }
+    /// What the buttons take off the text's width.
+    private var buttonInset: CGFloat {
+        hasButtons ? buttonColumnWidth + Style.buttonLeading + Style.buttonTrailing - Style.rightPadding : 0
+    }
 
     /// A picture in front of the words, for banners whose subject is an app
     /// rather than an event.
@@ -217,8 +269,8 @@ final class BottomLeftBanner {
     /// rather than off the font: it is a picture, not a letter, and it reads as
     /// part of the same object as the words only if it is as tall as they are
     /// loud.
-    private static let iconSize: CGFloat = 40
-    private static let iconGap: CGFloat = 14
+    private static let iconSize: CGFloat = 28
+    private static let iconGap: CGFloat = 10
     private var iconInset: CGFloat { icon == nil ? 0 : Self.iconSize + Self.iconGap }
 
     /// Fires once per `show()` after the cursor has *dwelled* inside the
@@ -278,7 +330,7 @@ final class BottomLeftBanner {
     /// an actionable countdown banner with a nudge direction. Drives both the
     /// arrow itself and the extra gutter width the panel reserves on the right.
     private var arrowVisible: Bool {
-        hoverable && onHover != nil && hasCountdown && hoverNudge != .none
+        hoverable && onHover != nil && hasCountdown && hoverNudge != .none && !hasButtons
     }
 
     /// Base color the hover-dwell overlay ramps up (see `Palette.hoverTintBase`).
@@ -288,7 +340,9 @@ final class BottomLeftBanner {
 
     /// Final window opacity when visible. Below 1.0 to add an extra layer
     /// of see-through on top of the NSVisualEffectView glass.
-    private static let visibleAlpha: CGFloat = 0.75
+    /// Opaque since 2026-11-03 (Victor: *"să fie opac"*): the glass stays,
+    /// the extra see-through on top of it is gone.
+    private static let visibleAlpha: CGFloat = 1.0
 
     /// Drives the entrance wipe (see `Style.wipeFullWidthDuration`). Non-nil
     /// only while a freshly-shown banner is still sliding out of the left edge.
@@ -325,7 +379,9 @@ final class BottomLeftBanner {
               backgroundColor: NSColor = Style.defaultBackground,
               font: NSFont = Style.defaultFont(),
               hoverCountdown: TimeInterval? = nil,
-              hoverNudge: HoverNudge = .none) {
+              hoverNudge: HoverNudge = .none,
+              autoAction: BannerAction? = nil,
+              clickAction: BannerAction? = nil) {
         // Each show() presents new content → re-arm hover and clear any leftover
         // dwell whitening (e.g. after a previous fire on a banner being reused).
         cancelHoverDwell()
@@ -334,16 +390,24 @@ final class BottomLeftBanner {
         hasCountdown = hoverCountdown != nil
         // Direction the pill drifts on dwell (up = confirm, down = cancel).
         self.hoverNudge = hoverNudge
+        // Per show, never inherited: a shared pill re-shown for a plain flash
+        // must not keep the previous offer's buttons.
+        self.autoAction = autoAction
+        self.clickAction = clickAction
         // A glass-only (light/dark themed) pill gets NO hover background tint —
         // only the nudge; a caller-colored pill still tints on hover.
         glassOnly = Self.isGlassOnly(backgroundColor)
         // Resolve the OS-theme palette for this presentation: a glass-only pill
         // flips (dark text on the light Mac theme), a colored pill keeps its look.
-        let palette = Self.palette(isDark: Self.isDarkNow(), glassOnly: glassOnly)
+        let isDark = Self.isDarkNow()
+        let palette = Self.palette(isDark: isDark, glassOnly: glassOnly)
+        isDarkPresentation = glassOnly ? isDark : true
+        textColor = palette.text
         applyPalette(palette)
         if isVisible {
             applyIcon()
-            updateText(text)
+            applyButtons()
+            updateText(text, force: true)
             updateBackgroundColor(backgroundColor)
             applyArrow(hoverNudge)
             applyHoverCountdown(hoverCountdown)
@@ -360,19 +424,94 @@ final class BottomLeftBanner {
             entry.panel.alphaValue = Self.visibleAlpha
             entry.panel.orderFrontRegardless()
         }
+        applyButtons()
         startEntranceWipe()
         applyArrow(hoverNudge)
         applyHoverCountdown(hoverCountdown)
+    }
+
+    /// Configure and lay out the button column on every panel for the current
+    /// presentation.
+    private func applyButtons() {
+        let actions = visibleActions
+        for entry in panels {
+            let auto = actions.first(where: { $0.isAuto })?.0
+            let click = actions.first(where: { !$0.isAuto })?.0
+            entry.autoButton.isHidden = auto == nil
+            entry.clickButton.isHidden = click == nil
+            if let auto { entry.autoButton.configure(auto, textColor: textColor, isDark: isDarkPresentation) }
+            if let click { entry.clickButton.configure(click, textColor: textColor, isDark: isDarkPresentation) }
+            entry.autoButton.onPress = { [weak self] in self?.fireAutoAction() }
+            entry.clickButton.onPress = { [weak self] in self?.fireClickAction() }
+            layoutButtons(entry)
+        }
+    }
+
+    /// Right-aligned column, vertically centred: two buttons share the height,
+    /// one sits alone at `singleButtonHeight`.
+    private func layoutButtons(_ entry: PanelEntry) {
+        let w = buttonColumnWidth
+        let x = entry.pill.frame.width - Style.buttonTrailing - w
+        let shown = [entry.autoButton, entry.clickButton].filter { !$0.isHidden }
+        if shown.count == 2 {
+            let h = (Style.boxHeight - 3 * Style.buttonGap) / 2
+            entry.autoButton.frame = NSRect(x: x, y: Style.buttonGap * 2 + h, width: w, height: h)
+            entry.clickButton.frame = NSRect(x: x, y: Style.buttonGap, width: w, height: h)
+        } else if let only = shown.first {
+            let h = Style.singleButtonHeight
+            only.frame = NSRect(x: x, y: (Style.boxHeight - h) / 2, width: w, height: h)
+        }
+    }
+
+    /// The top button: take the countdown's outcome now.
+    private func fireAutoAction() {
+        guard hoverable, !hoverFired else { return }
+        hoverFired = true
+        cancelHoverDwell(resetNudge: false)
+        clearHoverCountdown()
+        onHoverCountdownExpired?()
+    }
+
+    /// The bottom button: what a click on the pill used to do.
+    private func fireClickAction() {
+        guard hoverable, onHover != nil, !hoverFired else { return }
+        cancelHoverDwell(resetNudge: false)
+        clearHoverCountdown()
+        fireHover()
     }
 
     /// Apply the resolved OS-theme `palette` to every panel: the main label color
     /// and the hover-tint base. Called from `show()` on both the fresh-build path
     /// (via `buildPanel`) and the reuse path (an already-visible banner re-shown
     /// after the user toggled the system theme picks up the new colors).
+    /// The solid colour under the glass: the dark/light `.hudWindow` look,
+    /// without the see-through.
+    /// Top edge, the round corner, the right edge — inset half a line so the
+    /// stroke stays inside the pill's mask.
+    static func edgePath(width w: CGFloat, height h: CGFloat = Style.boxHeight) -> CGPath {
+        let i: CGFloat = 0.5, r = Style.cornerRadius
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: h - i))
+        path.addLine(to: CGPoint(x: w - r, y: h - i))
+        path.addArc(tangent1End: CGPoint(x: w - i, y: h - i), tangent2End: CGPoint(x: w - i, y: 0), radius: r - i)
+        path.addLine(to: CGPoint(x: w - i, y: 0))
+        return path
+    }
+
+    private static func edgeColor(dark: Bool) -> NSColor {
+        dark ? NSColor.white.withAlphaComponent(0.22) : NSColor.black.withAlphaComponent(0.18)
+    }
+
+    private static func opaqueBase(dark: Bool) -> NSColor {
+        dark ? NSColor(calibratedWhite: 0.16, alpha: 1) : NSColor(calibratedWhite: 0.93, alpha: 1)
+    }
+
     private func applyPalette(_ palette: Palette) {
         hoverTintBase = palette.hoverTintBase
         for entry in panels {
             entry.label.textColor = palette.text
+            entry.pill.layer?.backgroundColor = Self.opaqueBase(dark: isDarkPresentation).cgColor
+            entry.edge.strokeColor = Self.edgeColor(dark: isDarkPresentation).cgColor
         }
     }
 
@@ -389,11 +528,13 @@ final class BottomLeftBanner {
         }
     }
 
-    func updateText(_ text: String) {
+    func updateText(_ text: String) { updateText(text, force: false) }
+
+    private func updateText(_ text: String, force: Bool) {
         finishWipe()
         for entry in panels {
             entry.label.stringValue = text
-            resize(entry, to: panelWidth(for: text, font: entry.font, screen: entry.screen))
+            resize(entry, to: panelWidth(for: text, font: entry.font, screen: entry.screen), force: force)
         }
     }
 
@@ -411,6 +552,7 @@ final class BottomLeftBanner {
         probe.lineBreakMode = .byClipping
         probe.sizeToFit()
         let content = ceil(probe.frame.width) + Style.leftPadding + Style.rightPadding + iconInset
+            + buttonInset
         let maxWidth = screen.frame.width * Style.maxWidthFraction
         // Countdown banners get a 30%-screen floor so the fixed hint chip and
         // the progress bar to its right both fit; plain banners hug their text.
@@ -423,16 +565,22 @@ final class BottomLeftBanner {
     /// Resize a panel (anchored bottom-left) to hold a glass pill of `pillWidth`,
     /// in place. The panel gains `arrowGutter` on the right when an arrow shows so
     /// the arrow floats just outside the pill.
-    private func resize(_ entry: PanelEntry, to pillWidth: CGFloat) {
+    private func resize(_ entry: PanelEntry, to pillWidth: CGFloat, force: Bool = false) {
         let panelWidth = pillWidth + (arrowVisible ? Style.arrowGutter : 0)
-        guard abs(entry.panel.frame.width - panelWidth) > 0.5 else { return }
+        guard force || abs(entry.panel.frame.width - panelWidth) > 0.5 else { return }
         let f = entry.screen.frame
         entry.panel.setFrame(NSRect(x: f.minX, y: f.minY, width: panelWidth, height: Style.boxHeight),
                              display: true)
+        entry.panel.invalidateShadow()
         // The glass pill occupies the left region; its subviews autoresize with it.
         entry.pill.frame = NSRect(x: 0, y: 0, width: pillWidth, height: Style.boxHeight)
         entry.label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: entry.font,
-                                                iconInset: iconInset)
+                                                iconInset: iconInset, trailingInset: buttonInset)
+        layoutButtons(entry)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        entry.edge.path = Self.edgePath(width: pillWidth)
+        CATransaction.commit()
         // Border host autoresizes within the pill, but its stroke paths are
         // absolute — rebuild them (and the gutter arrow) for the new width.
         updateBorderPaths(entry)
@@ -489,6 +637,8 @@ final class BottomLeftBanner {
                 var f = target.panel.frame
                 f.size.width = width
                 target.panel.setFrame(f, display: true)
+                // The shadow follows the pill's shape only when told to.
+                target.panel.invalidateShadow()
                 if width < target.width { allDone = false }
             }
             if allDone { self.finishWipe() }
@@ -509,6 +659,7 @@ final class BottomLeftBanner {
             f.size.width = width
             panel.setFrame(f, display: true)
         }
+        for (panel, _) in wipeTargets { panel.invalidateShadow() }
         wipeTargets.removeAll()
     }
 
@@ -642,7 +793,8 @@ final class BottomLeftBanner {
     fileprivate func startHoverDwell() {
         // Only arm the dwell when hovering actually does something — error
         // flashes (onHover == nil) must not whiten or fire.
-        guard hoverable, onHover != nil, !clickOnly, !hoverFired, hoverDwellTimer == nil else { return }
+        // With buttons the decision is theirs: the body neither dwells nor clicks.
+        guard hoverable, onHover != nil, !clickOnly, !hasButtons, !hoverFired, hoverDwellTimer == nil else { return }
         hoverDwellCount = 0
         hoverMotion = HoverMotionGate(position: NSEvent.mouseLocation,
                                       now: Date.timeIntervalSinceReferenceDate)
@@ -839,7 +991,7 @@ final class BottomLeftBanner {
     /// never reaches the app underneath: that is what `ignoresMouseEvents =
     /// false` on a hoverable banner already buys us.
     fileprivate func commitFromClick() {
-        guard hoverable, onHover != nil, !hoverFired else { return }
+        guard hoverable, onHover != nil, !hasButtons, !hoverFired else { return }
         cancelHoverDwell(resetNudge: false)   // keep the y the nudge reached
         clearHoverCountdown()
         fireHover()
@@ -870,7 +1022,7 @@ final class BottomLeftBanner {
     /// projected red silent-transcription warning) gets no arrow.
     private func applyArrow(_ nudge: HoverNudge) {
         clearArrow()
-        guard hoverable, onHover != nil, hasCountdown, nudge != .none else { return }
+        guard hoverable, onHover != nil, hasCountdown, nudge != .none, !hasButtons else { return }
         for entry in panels {
             entry.arrow.path = Self.arrowPath(pillWidth: entry.pill.frame.width, up: nudge == .up)
             entry.arrow.isHidden = false
@@ -969,7 +1121,7 @@ final class BottomLeftBanner {
         guard hoverable, onHover != nil, duration > 0 else { return }
         countdownDuration = duration
         countdownElapsed = 0
-        for entry in panels {
+        for entry in panels where !hasButtons {
             entry.borderUp.isHidden = false
             entry.borderRight.isHidden = false
             updateBorderPaths(entry)
@@ -988,12 +1140,18 @@ final class BottomLeftBanner {
         }
         let progress = countdownDuration > 0 ? min(1.0, countdownElapsed / countdownDuration) : 1.0
         for entry in panels {
-            // Both border strokes reach the top-right corner exactly as the
-            // countdown completes.
-            setBorderProgress(entry, CGFloat(progress))
+            if hasButtons {
+                // The countdown is the top button's background.
+                entry.autoButton.setProgress(CGFloat(progress))
+            } else {
+                // Both border strokes reach the top-right corner exactly as the
+                // countdown completes.
+                setBorderProgress(entry, CGFloat(progress))
+            }
         }
         if countdownElapsed >= countdownDuration {
             countdownTimer?.invalidate(); countdownTimer = nil
+            if hasButtons { hoverFired = true }
             onHoverCountdownExpired?()
         }
     }
@@ -1068,6 +1226,7 @@ final class BottomLeftBanner {
             setBorderProgress(entry, 0)
             entry.borderUp.isHidden = true
             entry.borderRight.isHidden = true
+            entry.autoButton.setProgress(0)
         }
     }
 
@@ -1094,7 +1253,10 @@ final class BottomLeftBanner {
         panel.isFloatingPanel = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = false
+        // A shadow (2026-11-03, Victor: *"pune și o bordură la overlay sau
+        // umbră"*): the window's, which follows the pill's opaque shape —
+        // visible on the top and right edges, the other two are the screen's.
+        panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.ignoresMouseEvents = !hoverable
 
@@ -1112,14 +1274,36 @@ final class BottomLeftBanner {
         // arrow lives inside it and autoresizes with it.
         let pill = NSView(frame: NSRect(x: 0, y: 0, width: pillWidth, height: Style.boxHeight))
         pill.wantsLayer = true
+        // Round top-right corner only (layer y points up: maxY is the top).
+        pill.layer?.cornerRadius = Style.cornerRadius
+        pill.layer?.maskedCorners = [.layerMaxXMaxYCorner]
+        pill.layer?.masksToBounds = true
+        // Opaque (Victor: *"să fie opac"*): a solid base under the material, so
+        // nothing behind the pill shows through; the material keeps its sheen
+        // but blends within the window rather than with the desktop behind it.
+        pill.layer?.backgroundColor = Self.opaqueBase(dark: isDarkPresentation).cgColor
         content.addSubview(pill)
+        // …and a hairline edge, so the pill reads as an object on a backdrop of
+        // the same grey — on the top and right edges only, around the curve:
+        // the bottom and left ones are the screen's (Victor: *"doar pe cea curbă"*).
+        let edge = CAShapeLayer()
+        edge.fillColor = NSColor.clear.cgColor
+        edge.lineWidth = 1
+        edge.strokeColor = Self.edgeColor(dark: isDarkPresentation).cgColor
+        edge.path = Self.edgePath(width: pillWidth)
 
         let effect = NSVisualEffectView(frame: pill.bounds)
         effect.autoresizingMask = [.width, .height]
         effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
+        effect.blendingMode = .withinWindow
         effect.state = .active
         effect.isEmphasized = true
+        // The glass draws its own backdrop, which the pill's mask does not
+        // always reach; give it the same corner.
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = Style.cornerRadius
+        effect.layer?.maskedCorners = [.layerMaxXMaxYCorner]
+        effect.layer?.masksToBounds = true
         pill.addSubview(effect)
 
         let tint = NSView(frame: pill.bounds)
@@ -1144,9 +1328,15 @@ final class BottomLeftBanner {
         label.isEditable = false
         label.drawsBackground = false
         label.lineBreakMode = .byTruncatingTail
-        label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: font, iconInset: iconInset)
+        label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: font, iconInset: iconInset,
+                                          trailingInset: buttonInset)
         label.autoresizingMask = [.width]
         pill.addSubview(label)
+
+        let autoButton = BannerButtonView(frame: .zero)
+        let clickButton = BannerButtonView(frame: .zero)
+        autoButton.isHidden = true
+        clickButton.isHidden = true
 
         // Left of the text, vertically centred in the pill, and pinned to the
         // left edge so it does not drift when the pill resizes around a longer
@@ -1175,6 +1365,10 @@ final class BottomLeftBanner {
         borderHost.layer?.addSublayer(borderUp)
         borderHost.layer?.addSublayer(borderRight)
         pill.addSubview(borderHost)
+        // Above the border host, so a click lands on the button.
+        pill.addSubview(autoButton)
+        pill.addSubview(clickButton)
+        pill.layer?.addSublayer(edge)
 
         // Send/cancel arrow: a sublayer of the full-width content (NOT the pill),
         // so it draws in the transparent gutter to the pill's right. Its path is
@@ -1187,7 +1381,8 @@ final class BottomLeftBanner {
         return PanelEntry(panel: panel, pill: pill, tint: tint, whitenTint: whitenTint,
                           arrow: arrow,
                           borderUp: borderUp, borderRight: borderRight,
-                          label: label, iconView: iconView,
+                          label: label, autoButton: autoButton, clickButton: clickButton, edge: edge,
+                          iconView: iconView,
                           font: font, screen: screen)
     }
 
@@ -1218,7 +1413,8 @@ final class BottomLeftBanner {
     /// emoji-bearing line neither clips nor throws off the centering. Shared by
     /// build + resize.
     private static func mainLabelFrame(pillWidth: CGFloat, font: NSFont,
-                                       iconInset: CGFloat = 0) -> NSRect {
+                                       iconInset: CGFloat = 0,
+                                       trailingInset: CGFloat = 0) -> NSRect {
         let lm = NSLayoutManager()
         var h = lm.defaultLineHeight(for: font)
         if let emoji = NSFont(name: "AppleColorEmoji", size: font.pointSize) {
@@ -1228,7 +1424,7 @@ final class BottomLeftBanner {
         return NSRect(
             x: Style.leftPadding + iconInset,
             y: (Style.boxHeight - h) / 2,
-            width: pillWidth - Style.leftPadding - Style.rightPadding - iconInset,
+            width: pillWidth - Style.leftPadding - Style.rightPadding - iconInset - trailingInset,
             height: h)
     }
 }

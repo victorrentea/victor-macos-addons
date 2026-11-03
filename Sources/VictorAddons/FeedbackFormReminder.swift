@@ -107,7 +107,8 @@ final class FeedbackFormReminder {
         }
         banner.show(text: "Feedback form?",
                     hoverCountdown: Self.hoverWindow,
-                    hoverNudge: .up)
+                    hoverNudge: .up,
+                    autoAction: .later, clickAction: .open)
         StatusBannerSound.start?.play()
     }
 }

@@ -17,7 +17,7 @@ import Cocoa
 final class CheckInAlarm {
     static let color = NSColor.systemOrange.withAlphaComponent(0.9)
     /// The corner pill's 54 pt cuts a sentence on the retina; same as the 🎤 alarm.
-    static let fontSize: CGFloat = 34
+    static let fontSize: CGFloat = 24   // 34 before the pill shrank to 70 % (2026-11-03)
     private static let pendingKey = "checkin.pending"
 
     private let screensProvider: () -> [NSScreen]
@@ -96,7 +96,8 @@ final class CheckInAlarm {
         // Right-click is the pill's "other exit": seen, but don't open it.
         b.onHoverCountdownExpired = { [weak self] in self?.acknowledge(open: false) }
         b.show(text: text, backgroundColor: Self.color,
-               font: NSFont.boldSystemFont(ofSize: Self.fontSize))
+               font: NSFont.boldSystemFont(ofSize: Self.fontSize),
+               clickAction: .open)
     }
 
     /// The pill was clicked: open that mail (or not) and move to the next one.

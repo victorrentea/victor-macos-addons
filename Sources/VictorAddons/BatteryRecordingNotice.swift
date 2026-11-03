@@ -71,7 +71,7 @@ final class BatteryRecordingNotice {
             b.clickOnly = true
             b.onHover = { [weak self] in self?.snoozeNow() }
             b.onHoverCountdownExpired = { [weak self] in self?.snoozeNow() }
-            b.show(text: Self.text, backgroundColor: Self.color)
+            b.show(text: Self.text, backgroundColor: Self.color, clickAction: .snoozeHour)
             banner = b
         } else if !show, let b = banner {
             b.dismissSinking()

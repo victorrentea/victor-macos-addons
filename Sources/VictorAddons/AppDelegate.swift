@@ -91,6 +91,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var transcriptionController: TranscriptionController?
     /// 👂/🔋 while the microphones are recorded on battery.
     private let batteryRecordingNotice = BatteryRecordingNotice()
+    private var testButtonsBanner: BottomLeftBanner?
+    private var testButtonsOutcome = "none"
     /// Re-reads the 🔴 raw-capture flag for the menu row. Stored because the
     /// flag is a *file* — armable from outside this process — so the row cannot
     /// be updated only when it is clicked.
@@ -1204,6 +1206,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // `?hover=1` it instead reproduces the REAL prompt-capture pill (hoverable,
         // .up nudge, live countdown), whose exit is driven by the hover dwell —
         // that's the path where the flicker shows up.
+        // /test/banner/buttons?auto=send&click=cancel&countdown=8&text=…&dark=0|1
+        // — a fresh pill with the enum buttons; `?hide=1` takes it down.
+        // Answers what was pressed / expired so far.
+        tabletServer?.onTestBannerButtons = { [weak self] q in
+            let work: () -> String = {
+                guard let self else { return "{}" }
+                if q["hide"] == "1" { self.testButtonsBanner?.dismiss(animated: false); return "{\"hidden\":true}" }
+                if q["text"] == nil {
+                    let hand = NSCursor.current == NSCursor.pointingHand
+                    return "{\"last\":\"\(self.testButtonsOutcome)\",\"cursor_hand\":\(hand)}"
+                }
+                let banner = self.testButtonsBanner ?? BottomLeftBanner(screensProvider: { NSScreen.physical }, hoverable: true)
+                self.testButtonsBanner = banner
+                self.testButtonsOutcome = "none"
+                banner.onHover = { [weak self, weak banner] in
+                    self?.testButtonsOutcome = "click"; banner?.dismissSinking() }
+                banner.onHoverCountdownExpired = { [weak self, weak banner] in
+                    self?.testButtonsOutcome = "auto"; banner?.dismissRisingFade() }
+                let auto = q["auto"].flatMap { a in BannerAction.allCases.first { "\($0)" == a } }
+                let click = q["click"].flatMap { a in BannerAction.allCases.first { "\($0)" == a } }
+                banner.show(text: q["text"] ?? "", hoverCountdown: q["countdown"].flatMap(Double.init),
+                            autoAction: auto, clickAction: click)
+                return "{\"shown\":true}"
+            }
+            return Thread.isMainThread ? work() : DispatchQueue.main.sync(execute: work)
+        }
         tabletServer?.onTestBannerRise = { [weak self] mode in
             DispatchQueue.main.async {
                 guard let banner = self?.promptCaptureBanner else { return }
@@ -1212,7 +1240,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     banner.onHover = { [weak banner] in banner?.dismissRisingFade() }
                     banner.onHoverCountdownExpired = { [weak banner] in banner?.dismissRisingFade() }
                     banner.show(text: "Rising-fade hover test — nudge me, then let go",
-                                hoverCountdown: 7.5, hoverNudge: mode == "down" ? .down : .up)
+                                hoverCountdown: 7.5, hoverNudge: mode == "down" ? .down : .up,
+                                autoAction: .send, clickAction: .cancel)
                 } else {
                     banner.onHover = nil
                     banner.onHoverCountdownExpired = nil

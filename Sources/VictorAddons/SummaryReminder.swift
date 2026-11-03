@@ -82,7 +82,8 @@ final class SummaryReminder {
         }
         banner.show(text: "Start summarization?",
                     hoverCountdown: Self.hoverWindow,
-                    hoverNudge: .up)
+                    hoverNudge: .up,
+                    autoAction: .later, clickAction: .start)
         StatusBannerSound.start?.play()
     }
 

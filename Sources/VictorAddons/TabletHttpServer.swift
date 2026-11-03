@@ -49,6 +49,8 @@ case testTerminalFont
     case testDjiState
     /// 🔋 Fake the power source / drive the battery recording — see docs/testing.md.
     case testBattery([String: String])
+    /// Show a pill with the enum buttons — see docs/testing.md.
+    case testBannerButtons([String: String])
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
     case testMenuOpen(closeAfter: Double, appearance: String?)
     case testMenuBreak(closeAfter: Double)
@@ -309,6 +311,7 @@ case testTerminalFont
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
     var onTestBattery: (([String: String]) -> String)?
+    var onTestBannerButtons: (([String: String]) -> String)?
     var onTestMenuOpen: ((Double, String?) -> Void)?
     var onTestMenuBreak: ((Double) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
@@ -585,6 +588,9 @@ case testTerminalFont
                 DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance) }
             case .testMenuBreak(let closeAfter):
                 DispatchQueue.main.async { self.onTestMenuBreak?(closeAfter) }
+            case .testBannerButtons(let q):
+                contentType = "application/json"
+                body = self.onTestBannerButtons?(q) ?? "{\"error\":\"unavailable\"}"
             case .testBattery(let q):
                 contentType = "application/json"
                 body = self.onTestBattery?(q) ?? "{\"error\":\"unavailable\"}"
@@ -1002,6 +1008,10 @@ case testTerminalFont
             return .testMicDeadState
         case "/test/dji/state":
             return .testDjiState
+        case "/test/banner/buttons":
+            var q: [String: String] = [:]
+            for item in queryItems { q[item.name] = item.value ?? "" }
+            return .testBannerButtons(q)
         case "/test/battery":
             var q: [String: String] = [:]
             for item in queryItems { q[item.name] = item.value ?? "" }

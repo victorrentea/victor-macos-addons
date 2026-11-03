@@ -98,7 +98,8 @@ final class SilentTranscriptionWarning {
         // sinking "put away" exit that snoozing triggers.
         banner.show(text: Self.warningText,
                     backgroundColor: Self.warningColor,
-                    hoverNudge: .down)
+                    hoverNudge: .down,
+                    clickAction: .snooze)
     }
 
     private func snooze() {

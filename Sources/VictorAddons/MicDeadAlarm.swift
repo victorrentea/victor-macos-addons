@@ -24,7 +24,7 @@ final class MicDeadAlarm {
     static let color = NSColor.systemRed.withAlphaComponent(0.85)
     /// Smaller than the corner pill's 54 pt: the message is a sentence, and the
     /// pill caps at half the screen — at 54 pt it would be cut on the retina.
-    static let fontSize: CGFloat = 34
+    static let fontSize: CGFloat = 24   // 34 before the pill shrank to 70 % (2026-11-03)
 
     private let screensProvider: () -> [NSScreen]
     /// The Basso that goes with it — injectable so the tests stay silent.
@@ -86,7 +86,8 @@ final class MicDeadAlarm {
         b.onHoverCountdownExpired = { [weak self] in self?.acknowledge(by: "right-click") }
         b.show(text: text,
                backgroundColor: Self.color,
-               font: NSFont.boldSystemFont(ofSize: Self.fontSize))
+               font: NSFont.boldSystemFont(ofSize: Self.fontSize),
+               clickAction: .dismiss)
         sound()
     }
 

@@ -21,7 +21,7 @@ enum SessionNotesAppender {
     /// are silently dropped.
     static weak var promptBanner: BottomLeftBanner?
 
-    private static let promptFont = NSFont.monospacedSystemFont(ofSize: 36, weight: .bold)
+    private static let promptFont = NSFont.monospacedSystemFont(ofSize: 26, weight: .bold)   // 36 before the 70 % pill
     /// How long any *actionable* (hoverable) banner stays up so the user has a
     /// uniform window to react — hover-to-Send on a prompt offer, hover-to-undo
     /// after an append. Kept equal to the countdown's window for consistency.
@@ -182,7 +182,8 @@ enum SessionNotesAppender {
                 }
             }
             banner.show(text: display, font: promptFont,
-                        hoverCountdown: hoverActionDuration, hoverNudge: .down)
+                        hoverCountdown: hoverActionDuration, hoverNudge: .down,
+                        autoAction: .send, clickAction: .cancel)
             return
         }
         banner.onHover = { [weak banner] in
@@ -211,7 +212,8 @@ enum SessionNotesAppender {
             banner?.dismissSinking()
         }
         banner.show(text: display, font: promptFont,
-                    hoverCountdown: hoverActionDuration, hoverNudge: .up)
+                    hoverCountdown: hoverActionDuration, hoverNudge: .up,
+                    autoAction: .drop, clickAction: .send)
     }
 
     /// Flatten newlines/tabs to single spaces so a multi-line selection shows
@@ -377,7 +379,8 @@ enum SessionNotesAppender {
             // ride along on a paste of Victor's own.
             banner.icon = nil
             banner.show(text: text, font: promptFont,
-                        hoverCountdown: hoverActionDuration, hoverNudge: .down)
+                        hoverCountdown: hoverActionDuration, hoverNudge: .down,
+                        autoAction: .keep, clickAction: .undo)
         }
     }
 
