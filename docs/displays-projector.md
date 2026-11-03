@@ -215,7 +215,8 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   now has its own place:
   - **The door.** One per monitor touching the zoomed display (`ShareZoomEdge.doors`, from
     `NSScreen.physical`, so never the invisible 🪞 screen): the middle 10 % of the stretch
-    the two share, its stretch of the zigzag lined in red: a 1.5 pt `systemRed` stroke along
+    the two share (on a display with a notch the top door sits two thirds along it instead,
+    its middle being right over the camera), its stretch of the zigzag lined in red: a 1.5 pt `systemRed` stroke along
     the frame's inner edge, like the grey line of before 2026-11-02 (`doorLine`, a sublayer
     masked to the doors, so it fades with the frame, and `ZigzagFrame` grows its teeth with
     the frame's; the share carries it). The first build was a solid 15 pt red strip:

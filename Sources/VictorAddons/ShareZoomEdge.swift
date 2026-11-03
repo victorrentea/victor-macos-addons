@@ -57,8 +57,14 @@ enum ShareZoomEdge {
         }
     }
 
-    /// One door per monitor touching `display`, in the middle of the stretch they share.
-    static func doors(display: CGRect, others: [CGRect]) -> [Door] {
+    /// Where along the top side a door sits on a display with a notch: its middle would
+    /// be right over the camera (Victor, 2026-11-04: *"două treimi față de marginea din
+    /// stânga și o treime față de marginea din dreapta"*).
+    static let notchedTopDoorAt: CGFloat = 2.0 / 3
+
+    /// One door per monitor touching `display`, in the middle of the stretch they share
+    /// (`notched`: the top one past the notch, at `notchedTopDoorAt` of it).
+    static func doors(display: CGRect, others: [CGRect], notched: Bool = false) -> [Door] {
         others.compactMap { o in
             let side: Side
             if o.minX == display.maxX { side = .right }
@@ -71,7 +77,7 @@ enum ShareZoomEdge {
             let to = horizontal ? min(o.maxX, display.maxX) : min(o.maxY, display.maxY)
             guard to > from else { return nil }
             let half = (to - from) * doorShare / 2
-            let middle = (from + to) / 2
+            let middle = from + (to - from) * (notched && side == .top ? notchedTopDoorAt : 0.5)
             return Door(side: side, span: (middle - half)...(middle + half))
         }
     }

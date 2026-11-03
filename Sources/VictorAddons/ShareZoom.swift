@@ -81,7 +81,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             name = screen.localizedName
             // The 🪞 screen is no door: nobody can see the pointer once it is there.
             let bounds = CGDisplayBounds(displayID)
-            doors = ShareZoomEdge.doors(display: bounds, others: NSScreen.physical.map { CGDisplayBounds($0.displayID) })
+            doors = ShareZoomEdge.doors(display: bounds, others: NSScreen.physical.map { CGDisplayBounds($0.displayID) },
+                                       notched: screen.safeAreaInsets.top > 0)
             panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
             panel.setFrame(screen.frame, display: false)

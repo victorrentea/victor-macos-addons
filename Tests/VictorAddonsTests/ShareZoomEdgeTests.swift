@@ -83,6 +83,17 @@ final class ShareZoomEdgeTests: XCTestCase {
         XCTAssertEqual(doors, [ShareZoomEdge.Door(side: .top, span: 450...550)])
     }
 
+    /// Under the notch the top door sits two thirds along; the other sides keep their middle.
+    func testANotchMovesOnlyTheTopDoor() {
+        let doors = ShareZoomEdge.doors(display: display, others: [
+            CGRect(x: 0, y: -600, width: 1000, height: 600),
+            CGRect(x: 1000, y: 0, width: 800, height: 600)], notched: true)
+        XCTAssertEqual(doors[0].side, .top)
+        XCTAssertEqual((doors[0].span.lowerBound + doors[0].span.upperBound) / 2, 666.67, accuracy: 0.01)
+        XCTAssertEqual(doors[0].span.upperBound - doors[0].span.lowerBound, 100, accuracy: 0.01)
+        XCTAssertEqual(doors[1], ShareZoomEdge.Door(side: .right, span: 270...330))
+    }
+
     func testEveryNeighbourHasItsDoorAndADistantOneNone() {
         let doors = ShareZoomEdge.doors(display: display, others: [
             CGRect(x: -800, y: 0, width: 800, height: 600),
