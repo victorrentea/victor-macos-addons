@@ -80,3 +80,15 @@ as PDF pages **exported by PowerPoint itself, links clickable** (`slides_seen.py
   "access data from other apps" (App Data) grant once. 30-day retention, pruned at launch.
 - **Measured export (2026-10-29):** 5 slides by ID out of 182 → 7 s; a 117-slide deck → 8 s,
   277 distinct URLs in the PDF vs 275 in the deck. LibreOffice dropped some links.
+- **The export runs in the tart VM `ppt-lab` since 2026-11-04**, never on this Mac: it used to
+  open a PowerPoint window and raise the 🔒 locks in front of the presentation at the end of
+  the day. `slides_seen.py` boots the VM headless (~30 s), exports, shuts it down; 8 deck
+  versions took 54 s end to end. A slide came out pixel-identical to the host's export, 278
+  URLs in the PDF of a deck with 276. The recording above stays on the host, only the export moved.
+  - The VM (in `~/tart`, so `TART_HOME=~/tart`) is a clone of `wt-lab` holding a copy of this
+    Mac's PowerPoint and `~/Library/Fonts`, signed into Victor's Microsoft account. Exchange
+    folder: `~/.victor-addons/ppt-lab-share`.
+  - No VM or a failed export → LibreOffice plus `⚠️` on stderr: fewer links, but nothing on
+    screen. **Never fall back to the host's PowerPoint.**
+  - New fonts or a sign-in that expired: `tart run ppt-lab --dir="share:$HOME/.victor-addons/ppt-lab-share"`
+    opens its window; copy the fonts or sign in there, then shut it down from inside.
