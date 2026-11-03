@@ -48,8 +48,8 @@ after = json.loads(sys.argv[1])
 ok = True
 messages = []
 
-# On AC, a force-start must bring Whisper up. On battery it stays paused
-# (the controller refuses to run on battery), which is also correct.
+# On AC, a force-start must bring Whisper up. On battery it comes up in
+# capture-only mode (🔋), unless the menu switched that off.
 if after.get("on_ac") and not after.get("running"):
     ok = False
     messages.append("on AC but not running after force-start")

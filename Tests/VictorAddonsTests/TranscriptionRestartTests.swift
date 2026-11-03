@@ -1,60 +1,131 @@
 import XCTest
 @testable import VictorAddons
 
+/// The power rule since 2026-11-03: **AC transcribes, battery only records**,
+/// and the menu can switch the battery recording off until the next AC.
+///
 /// `restartIfShouldBeRunning` exists because a bare stop/start had a failure
-/// nobody would ever notice: on battery it *started* Whisper, and then nothing
-/// stopped it again. The heartbeat returns immediately off AC, and the power
-/// rule only re-applies on a transition — so a 1.8 GB model would sit there
-/// draining the battery until the charger was next plugged in, with the menu
-/// still reading "paused on battery".
+/// nobody would ever notice: on battery it started a *full* Whisper, and nothing
+/// stopped it again — a 1.8 GB model draining the battery until the charger came
+/// back. It must restart in the mode the power source asks for, or not at all.
 final class TranscriptionRestartTests: XCTestCase {
-    private func controller(onAC: Bool, running: Bool) -> TranscriptionController {
-        TranscriptionController(
-            isOnAC: { onAC },
-            isWhisperRunning: { running })
-    }
-
-    func testOnACItStopsAndThenStarts() {
-        let c = controller(onAC: true, running: true)
+    private final class Fake {
+        var onAC: Bool
+        var running = false
         var events: [String] = []
-        let expectation = expectation(description: "restarted")
-
-        c.restartIfShouldBeRunning(
-            stop: { events.append("stop") },
-            start: { events.append("start"); expectation.fulfill() },
-            delay: 0.01)
-
-        wait(for: [expectation], timeout: 2)
-        XCTAssertEqual(events, ["stop", "start"])
+        init(onAC: Bool) { self.onAC = onAC }
     }
 
-    func testOnBatteryItNeverStarts() {
-        let c = controller(onAC: false, running: true)
+    private func make(_ fake: Fake) -> TranscriptionController {
+        let c = TranscriptionController(isOnAC: { fake.onAC },
+                                        isWhisperRunning: { fake.running },
+                                        switchDelay: 0.01)
+        c.onStart = { mode in
+            fake.events.append(mode == .full ? "start full" : "start capture")
+            fake.running = true
+        }
+        c.onStop = { fake.events.append("stop"); fake.running = false }
+        return c
+    }
+
+    private func spin(_ seconds: TimeInterval = 0.15) {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    }
+
+    func testTheRuleItself() {
+        XCTAssertEqual(TranscriptionController.desiredMode(onAC: true, batteryRecordingEnabled: false), .full)
+        XCTAssertEqual(TranscriptionController.desiredMode(onAC: false, batteryRecordingEnabled: true), .captureOnly)
+        XCTAssertNil(TranscriptionController.desiredMode(onAC: false, batteryRecordingEnabled: false))
+    }
+
+    func testUnpluggingSwitchesAFullWhisperToCaptureOnly() {
+        let fake = Fake(onAC: true)
+        let c = make(fake)
+        var states: [TranscriptionController.State] = []
+        c.onStateChanged = { states.append($0) }
+        c.start(); spin()
+        fake.onAC = false
+        c.powerDidChange(); spin()
+        XCTAssertEqual(fake.events, ["start full", "stop", "start capture"])
+        XCTAssertEqual(states, [.onAC, .recordingOnBattery])
+    }
+
+    func testPluggingInTranscribesAgainAndResetsTheMenuSwitch() {
+        let fake = Fake(onAC: false)
+        let c = make(fake)
+        c.start(); spin()
+        c.setBatteryRecording(false); spin()
+        XCTAssertEqual(fake.events, ["start capture", "stop"])
+        XCTAssertFalse(fake.running)
+
+        fake.onAC = true
+        c.powerDidChange(); spin()
+        XCTAssertEqual(fake.events.last, "start full")
+        XCTAssertTrue(c.batteryRecordingEnabled, "the charger resets the menu's stop")
+
+        fake.onAC = false
+        c.powerDidChange(); spin()
+        XCTAssertEqual(fake.events.last, "start capture", "the next unplugging records again")
+    }
+
+    func testTheMenuSwitchDoesNothingOnAC() {
+        let fake = Fake(onAC: true)
+        let c = make(fake)
+        c.start(); spin()
+        c.setBatteryRecording(false); spin()
+        XCTAssertEqual(fake.events, ["start full"])
+        XCTAssertTrue(c.batteryRecordingEnabled)
+    }
+
+    func testRestartOnBatteryComesBackCaptureOnly() {
+        let fake = Fake(onAC: false)
+        fake.running = true
+        let c = make(fake)
+        var started: [TranscriptionController.Mode] = []
+        let done = expectation(description: "restarted")
+        c.restartIfShouldBeRunning(stop: { fake.running = false },
+                                   start: { started.append($0); done.fulfill() },
+                                   delay: 0.01)
+        wait(for: [done], timeout: 2)
+        XCTAssertEqual(started, [.captureOnly], "never a full whisper on battery")
+    }
+
+    func testRestartWithBatteryRecordingOffOnlyStops() {
+        let fake = Fake(onAC: false)
+        let c = make(fake)
+        c.start(); spin()
+        c.setBatteryRecording(false); spin()
+        fake.running = true  // something started it behind our back
         var started = false
         var stopped = false
+        c.restartIfShouldBeRunning(stop: { stopped = true }, start: { _ in started = true }, delay: 0.01)
+        spin(0.2)
+        XCTAssertTrue(stopped)
+        XCTAssertFalse(started)
+    }
+}
 
-        c.restartIfShouldBeRunning(
-            stop: { stopped = true }, start: { started = true }, delay: 0.01)
-
-        // Give the delayed start every chance to fire if it were going to.
-        let deadline = Date().addingTimeInterval(0.3)
-        while Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertTrue(stopped, "a running whisper on battery should still be stopped")
-        XCTAssertFalse(started, "nothing may start whisper while unplugged")
+final class BatteryRecordingNoticeTests: XCTestCase {
+    func testShownWhileRecordingAndHiddenWhileSnoozed() {
+        let now = Date()
+        XCTAssertTrue(BatteryRecordingNotice.shouldShow(recording: true, snoozedUntil: nil, now: now))
+        XCTAssertFalse(BatteryRecordingNotice.shouldShow(recording: false, snoozedUntil: nil, now: now))
+        XCTAssertFalse(BatteryRecordingNotice.shouldShow(
+            recording: true, snoozedUntil: now.addingTimeInterval(60), now: now))
+        XCTAssertTrue(BatteryRecordingNotice.shouldShow(
+            recording: true, snoozedUntil: now.addingTimeInterval(-1), now: now), "the hour is over")
     }
 
-    func testOnBatteryWithNothingRunningItDoesNothingAtAll() {
-        let c = controller(onAC: false, running: false)
-        var touched = false
-        c.restartIfShouldBeRunning(
-            stop: { touched = true }, start: { touched = true }, delay: 0.01)
-
-        let deadline = Date().addingTimeInterval(0.2)
-        while Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-        }
-        XCTAssertFalse(touched)
+    func testTheChargerEndsTheSnooze() {
+        // Not `.recordingOnBattery`: that would draw a real panel, which a
+        // test process without NSApp cannot. The snooze bookkeeping is the same.
+        let n = BatteryRecordingNotice(screensProvider: { [] })
+        n.update(.pausedOnBattery)
+        n.snoozeNow()
+        XCTAssertNotNil(n.snoozedUntil)
+        n.update(.onAC)
+        XCTAssertNil(n.snoozedUntil)
+        XCTAssertEqual(BatteryRecordingNotice.snooze, 3600)
     }
 }

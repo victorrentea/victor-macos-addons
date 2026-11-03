@@ -89,6 +89,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
+    /// 👂/🔋 while the microphones are recorded on battery.
+    private let batteryRecordingNotice = BatteryRecordingNotice()
     /// Re-reads the 🔴 raw-capture flag for the menu row. Stored because the
     /// flag is a *file* — armable from outside this process — so the row cannot
     /// be updated only when it is clicked.
@@ -808,8 +810,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
             return self.djiReceiver.stateJSON()
         }
-        let startWhisper: () -> Void = { [weak whisperManager, weak self] in
+        let startWhisper: (TranscriptionController.Mode) -> Void = { [weak whisperManager, weak self] mode in
             var env: [String: String] = [:]
+            // 🔋 On battery: microphones to disk, no model. The full process
+            // that starts on AC transcribes what was recorded.
+            if mode == .captureOnly { env["WHISPER_CAPTURE_ONLY"] = "1" }
             if let folder = self?.transcriptionFolder {
                 env["TRANSCRIPTION_FOLDER"] = folder.path
                 env["WHISPER_PREFERRED_SOURCE_FILE"] = folder.appendingPathComponent(".preferred-me-source").path
@@ -833,20 +838,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             whisperManager?.stop()
         }
 
-        // Whisper runs whenever we're on AC and pauses on battery — nothing
-        // else. The controller owns that decision plus a 60s heartbeat that
-        // restarts Whisper if it died while still plugged in.
+        // On AC Whisper transcribes; on battery it only records (🔋, unless
+        // switched off in the menu until the next AC). The controller owns that
+        // decision plus a 60s heartbeat that restarts Whisper if it died.
         let controller = TranscriptionController(
             isWhisperRunning: { [weak whisperManager] in whisperManager?.isRunning == true })
         controller.onStart = startWhisper
         controller.onStop = stopWhisper
-        controller.onAutoRestart = { [weak self] in
-            // Whisper died while on AC — the heartbeat is bringing it back.
-            // Arm the "started" banner; it fires once whisper is confirmed running.
-            self?.pendingAutoRestartBanner = true
+        controller.onAutoRestart = { [weak self] mode in
+            // Whisper died — the heartbeat is bringing it back. Arm the
+            // "started" banner (on AC only: on battery the 👂/🔋 pill says it).
+            if mode == .full { self?.pendingAutoRestartBanner = true }
         }
-        controller.onPausedByBatteryChanged = { [weak self] paused in
-            self?.menuBarManager.setTranscriptionPausedByBattery(paused)
+        controller.onStateChanged = { [weak self] state in
+            self?.menuBarManager.setTranscriptionPowerState(state)
+            self?.batteryRecordingNotice.update(state)
+        }
+        menuBarManager.onToggleBatteryRecording = { [weak controller] in
+            guard let controller else { return }
+            controller.setBatteryRecording(!controller.batteryRecordingEnabled)
         }
         self.transcriptionController = controller
 
@@ -947,9 +957,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.refreshVoiceCorpusTitle = refreshVoiceCorpusTitle
 
         let pm = PowerMonitor()
-        pm.onSwitchToBattery = { [weak self, weak controller] in
+        pm.onSwitchToBattery = { [weak controller] in
+            // No banner: the 👂/🔋 pill that the controller raises says it.
             controller?.powerDidChange()
-            self?.statusBanner?.showOnPresence(text: "paused on battery", sound: StatusBannerSound.stop)
         }
         pm.onSwitchToAC = { [weak self, weak controller] in
             controller?.powerDidChange()
@@ -962,6 +972,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         pm.start()
         self.powerMonitor = pm
+        tabletServer?.onTestBattery = { [weak self, weak pm, weak controller] q in
+            // The server may already call us on main; `main.sync` there traps.
+            func onMain<T>(_ body: () -> T) -> T {
+                Thread.isMainThread ? body() : DispatchQueue.main.sync(execute: body)
+            }
+            return onMain {
+                guard let self, let pm, let controller else { return "{}" }
+                switch q["ac"] {
+                case "0": PowerMonitor.testOverride = false; pm.powerSourceChanged()
+                case "1": PowerMonitor.testOverride = true; pm.powerSourceChanged()
+                case "auto": PowerMonitor.testOverride = nil; pm.powerSourceChanged()
+                default: break
+                }
+                if let r = q["record"] { controller.setBatteryRecording(r == "1") }
+                if q["snooze"] == "1" { self.batteryRecordingNotice.snoozeNow() }
+                let mode = controller.runningMode.map { $0 == .full ? "\"full\"" : "\"capture-only\"" } ?? "null"
+                return "{\"on_ac\":\(PowerMonitor.isOnAC()),\"forced\":\(PowerMonitor.testOverride.map { String($0) } ?? "null"),"
+                    + "\"mode\":\(mode),\"whisper_running\":\(self.whisperManager?.isRunning == true),"
+                    + "\"notice\":\(self.batteryRecordingNotice.stateJSON())}"
+            }
+        }
 
         // Auto display arrangement for the projector workflow. On projector
         // connect: mirror the Retina at 1080p + make the ASUS primary; on
@@ -1214,7 +1245,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestTranscriptionStart = {
             // Headless force-(re)start of Whisper for E2E checks. The start
             // call is a no-op if it's already running.
-            startWhisper()
+            if let mode = self.transcriptionController?.desiredMode { startWhisper(mode) }
         }
         tabletServer?.onTestWisprRecording = { [weak self] in
             guard let manager = self?.coreAudioManager else {
@@ -2476,7 +2507,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         guard wasTranscribingBeforeSleep else { return }
         wasTranscribingBeforeSleep = false
-        guard PowerMonitor.isOnAC() else { return }
+        guard PowerMonitor.isOnAC() else {
+            // 🔋 Woke on battery: the recording resumes once CoreAudio settles,
+            // not at the heartbeat's next minute.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                overlayInfo("System woke on battery — resuming the 👂 recording")
+                self?.transcriptionController?.ensureRunning()
+            }
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self else { return }
             guard PowerMonitor.isOnAC(), self.whisperManager?.isRunning != true else { return }

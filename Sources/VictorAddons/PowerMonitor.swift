@@ -20,7 +20,12 @@ class PowerMonitor {
         overlayInfo("PowerMonitor started, on AC: \(Self.isOnAC())")
     }
 
-    private func powerSourceChanged() {
+    /// `GET /test/battery?ac=0|1` pretends the power source changed, so the
+    /// battery path can be tested at the desk; `ac=auto` hands back to the
+    /// hardware. Main thread.
+    static var testOverride: Bool?
+
+    func powerSourceChanged() {
         let isAC = Self.isOnAC()
         guard isAC != lastIsAC else { return }
         lastIsAC = isAC
@@ -29,6 +34,7 @@ class PowerMonitor {
     }
 
     static func isOnAC() -> Bool {
+        if let forced = testOverride { return forced }
         let info = IOPSCopyPowerSourcesInfo().takeRetainedValue()
         let list = IOPSCopyPowerSourcesList(info).takeRetainedValue() as! [CFTypeRef]
         for src in list {

@@ -192,6 +192,14 @@ _RECORD_RAW_ON = _RECORD_RAW in {"1", "true", "yes", "on", "all"}
 # Bounded on purpose — see `_RawRecorder`. 600 blocks ≈ 60 s of slack.
 _RECORD_QUEUE_BLOCKS = int(os.environ.get("WHISPER_RECORD_QUEUE_BLOCKS", "600"))
 
+# 🔋 On battery the app launches us with this set: open the microphones, write
+# each channel to `battery-audio/` and never load the model. The full process
+# that starts on AC transcribes that audio (`battery_audio.BacklogTranscriber`).
+# An allow-list for the same reason as `WHISPER_RECORD_RAW`.
+_CAPTURE_ONLY = os.environ.get("WHISPER_CAPTURE_ONLY", "0").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+
 # Collect utterance-sized WAVs of Victor's voice all workday long, for the
 # fine-tune. A *different* feature from `WHISPER_RECORD_RAW` above and the
 # difference is the unit: that one keeps a day in one undifferentiated file to
@@ -682,6 +690,7 @@ class _ChannelCapture:
         recorder: "_RawRecorder | None" = None,
         corpus=None,
         on_open=None,
+        battery=None,
     ):
         self.device = device
         self.label = label
@@ -694,6 +703,9 @@ class _ChannelCapture:
         # spot both go through is what keeps the menu-bar glyph honest.
         self._on_open = on_open
         self._recorder = recorder
+        # `battery_audio.SessionRecorder | None` — set only in capture-only
+        # mode, where it is the whole job; `tx_queue` is then None.
+        self._battery = battery
         # `UtteranceRecorder | None` — the training corpus. Typed loosely so the
         # import stays optional: a missing `corpus_recorder` module must not be
         # able to stop transcription.
@@ -752,6 +764,8 @@ class _ChannelCapture:
         self._running = False
         if self._recorder is not None:
             self._recorder.stop()
+        if self._battery is not None:
+            self._battery.stop()
         if self._corpus is not None:
             self._corpus.stop()
         if self._stream:
@@ -925,8 +939,16 @@ class _ChannelCapture:
         # the speaker work may want to change.
         if self._recorder is not None:
             self._recorder.write(block)
-        self._buf = np.concatenate([self._buf, block])
         threshold = self._current_threshold()
+        if self._battery is not None:
+            self._battery.write(block, self.device_name, threshold)
+        if self._queue is None:
+            # 🔋 capture-only: nothing to cut or send. The voice pulse still
+            # goes out — "somebody is talking" means the same thing on battery.
+            if float(np.sqrt(np.mean(block**2))) >= threshold:
+                self._report_voice()
+            return
+        self._buf = np.concatenate([self._buf, block])
         # The training corpus gets the same block and the same threshold the
         # transcription is about to use, so there is one definition of "somebody
         # is talking" in this process rather than a second one that disagrees on
@@ -1187,11 +1209,18 @@ def _mlx_memory() -> str:
 
 
 # ── Transcription thread ────────────────────────────────────────────────────
+# Two threads call the model since 2026-11-03: the live loop and the 🔋 battery
+# backlog. One lock, so mlx never runs two inferences at once and the stdout
+# swap below is never nested across threads.
+_MODEL_LOCK = threading.Lock()
+
+
 def _transcribe(audio, language=None, initial_prompt=None, model=None):
     import mlx_whisper
 
     model = model or _MODEL_BALANCED
     with (
+        _MODEL_LOCK,
         open(os.devnull, "w") as dev,
         contextlib.redirect_stdout(dev),
         contextlib.redirect_stderr(dev),
@@ -1452,6 +1481,25 @@ class WhisperTranscriptionRunner:
         # channel lands on is announced once, whichever path landed it there.
         self._announced_source: str | None = None
         self._announce_lock = threading.Lock()
+        # Every write to the day's transcript goes through this: the 🔋 backlog
+        # rewrites the file to slot old lines in, and a live append landing
+        # between its read and its replace would be lost.
+        self._transcript_lock = threading.Lock()
+
+    def _make_battery(self, label: str):
+        """The capture-only recorder for one channel, or None — in which case
+        capture-only mode records nothing and says so, loudly."""
+        if not _CAPTURE_ONLY:
+            return None
+        try:
+            from battery_audio import DIR_NAME, SessionRecorder
+
+            return SessionRecorder(
+                self.output_dir / DIR_NAME, label, log=log, queue_blocks=_RECORD_QUEUE_BLOCKS
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("transcript", f"🔋 battery recorder unavailable: {exc!r}")
+            return None
 
     def _make_recorder(self, label: str) -> "_RawRecorder | None":
         if not _RECORD_RAW_ON:
@@ -1502,7 +1550,11 @@ class WhisperTranscriptionRunner:
             return None
 
     def start(self):
-        tx_queue: queue.Queue = queue.Queue()
+        # Capture-only (🔋) has nothing to transcribe, so nothing to queue: a
+        # `None` queue is what tells each channel to stop at the recorder.
+        tx_queue: queue.Queue | None = None if _CAPTURE_ONLY else queue.Queue()
+        if _CAPTURE_ONLY:
+            log.info("transcript", "🔋 capture-only mode: recording on battery, no model loaded")
 
         # Victor channel
         resolved = _resolve_device_coreaudio(_ME_PATTERNS)
@@ -1521,8 +1573,9 @@ class WhisperTranscriptionRunner:
                 # Victor's channel only. The audience channel is the Zoom
                 # loopback — other people's voices, and the wrong training data
                 # for a model being fine-tuned on one speaker.
-                corpus=self._make_corpus(_ME_SPEAKER),
+                corpus=None if _CAPTURE_ONLY else self._make_corpus(_ME_SPEAKER),
                 on_open=self._announce_source,
+                battery=self._make_battery(_ME_SPEAKER),
             )
             self._channels.append(self._me_channel)
         else:
@@ -1542,6 +1595,9 @@ class WhisperTranscriptionRunner:
                     recorder=(
                         self._make_recorder(_AUD_SPEAKER) if _RECORD_RAW_ALL else None
                     ),
+                    # The room channel too: a meeting's other side arrives
+                    # here, through the Zoom loopback, and nowhere else.
+                    battery=self._make_battery(_AUD_SPEAKER),
                 )
             )
         else:
@@ -1563,12 +1619,14 @@ class WhisperTranscriptionRunner:
             name="capture-watchdog",
         ).start()
 
-        threading.Thread(
-            target=_supervised_transcriber_loop,
-            args=(tx_queue, self._on_segment, _make_speaker_scorer(self.output_dir)),
-            daemon=True,
-            name="transcriber",
-        ).start()
+        if tx_queue is not None:
+            threading.Thread(
+                target=_supervised_transcriber_loop,
+                args=(tx_queue, self._on_segment, _make_speaker_scorer(self.output_dir)),
+                daemon=True,
+                name="transcriber",
+            ).start()
+            self._start_battery_backlog(tx_queue)
 
         self.enabled = True
 
@@ -1724,8 +1782,45 @@ class WhisperTranscriptionRunner:
         day_str = now.strftime("%Y-%m-%d")
         out_file = self.output_dir / f"{day_str}-transcription.txt"
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        with out_file.open("a", encoding="utf-8") as f:
+        with self._transcript_lock, out_file.open("a", encoding="utf-8") as f:
             f.write(text + "\n")
+
+    def _insert_backlog_lines(self, day: str, lines: list[str]):
+        """Slot 🔋 recovered lines into `day`'s transcript at their minute.
+
+        Rewritten through a temp file and `os.replace`, under the same lock as
+        every live append, so a reader sees the old file or the new one and a
+        live line is never lost between the read and the replace.
+        """
+        from battery_audio import merge_into_transcript
+
+        out_file = self.output_dir / f"{day}-transcription.txt"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with self._transcript_lock:
+            try:
+                existing = out_file.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError:
+                existing = []
+            merged = merge_into_transcript(existing, lines)
+            tmp = out_file.with_name(out_file.name + ".tmp")
+            tmp.write_text("\n".join(merged) + "\n", encoding="utf-8")
+            os.replace(tmp, out_file)
+
+    def _start_battery_backlog(self, tx_queue: queue.Queue):
+        try:
+            from battery_audio import BacklogTranscriber
+
+            BacklogTranscriber(
+                self.output_dir,
+                tx_queue,
+                transcribe=lambda audio, **kw: _transcribe(audio, model=_MODEL_BALANCED, **kw),
+                write_lines=self._insert_backlog_lines,
+                is_garbage=_is_garbage,
+                me_label=_ME_SPEAKER,
+                log=log,
+            ).start()
+        except Exception as exc:  # noqa: BLE001 — a backlog must never cost live text
+            log.error("transcript", f"🔋 battery backlog unavailable: {exc!r}")
 
     def _is_duplicate_of_victor(self, text: str) -> bool:
         """Check if audience text is a near-duplicate of recent Victor text."""

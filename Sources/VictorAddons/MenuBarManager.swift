@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Oct 30, 01:29"
+    static let BUILD_TIME = "Nov 3, 19:33"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -82,7 +82,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private var isMemoryHurting: Bool = false
     private var isTranscribing: Bool = false
     private var isTranscriptionStale: Bool = false
-    private var isTranscriptionPausedByBattery: Bool = false
+    /// 🔋 What the power source and the menu switch say whisper should do.
+    private var powerState: TranscriptionController.State = .onAC
+    /// On battery with the recording switched off: nothing runs (the leaf).
+    private var isTranscriptionPausedByBattery: Bool { powerState == .pausedOnBattery }
+    /// On battery, microphones to disk, transcribed on AC (👂).
+    private var isRecordingOnBattery: Bool { powerState == .recordingOnBattery }
+    /// The 🔋 row's click. Shown only off AC.
+    var onToggleBatteryRecording: (() -> Void)?
     private var transcribeSource: String = ""
     private var availableSources: [String] = []
     /// `auto`, or one of `MicRoster.ids`. See `setChosenMic`.
@@ -1648,10 +1655,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         refreshMenuIcon()
     }
 
-    func setTranscriptionPausedByBattery(_ paused: Bool) {
-        isTranscriptionPausedByBattery = paused
+    func setTranscriptionPowerState(_ state: TranscriptionController.State) {
+        powerState = state
         refreshMenuIcon()
-        updateTranscribeTitle()
+        updateStopBlinkTimer()
+        if transcribeItem != nil { updateTranscribeTitle() }
+    }
+
+    /// The 🔋 row's title. Like the 🔴 row, the state is in the words.
+    enum BatteryRecordingMenu {
+        static let stop = "⏹ Stop recording on battery (until AC)"
+        static let start = "👂 Record on battery"
+    }
+
+    @objc private func toggleBatteryRecordingAction() {
+        onToggleBatteryRecording?()
     }
 
     private func refreshMenuIcon() {
@@ -1665,7 +1683,11 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // picture for, and a glyph that means something different twenty times
         // an hour is one he has to stop and decode. `CoreAudioManager` still
         // knows which app holds the microphone; nothing draws it.
-        if !isTranscribing && isTranscriptionPausedByBattery {
+        if isRecordingOnBattery {
+            // 👂 whatever the process is doing this second: on battery the ear
+            // is the state, and a starting-up gap is not an error worth a red stop.
+            button.image = makeEmojiIcon("👂", badge: badge) ?? makePngIcon("icon_leaf", badge: badge)
+        } else if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makePngIcon("icon_leaf", badge: badge)
         } else if !isTranscribing {
             let asset = stopBlinkAlt ? "icon_stop_blue" : "icon_stop"
@@ -1756,7 +1778,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // state in the auto-on model (it should always run on AC). Blink the
         // red stop icon to flag it, at any hour. On battery we show the leaf
         // instead, so this never fires there.
-        let isStopped = !isTranscribing && !isTranscriptionPausedByBattery
+        let isStopped = !isTranscribing && powerState == .onAC
         if isStopped {
             if stopBlinkTimer == nil {
                 let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
@@ -1888,6 +1910,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             transcribeItem.image = loadResourceIcon("icon_leaf")
             return
         }
+        if isRecordingOnBattery {
+            // 🔋 The microphones go to disk; the text comes when AC does.
+            let mic = isTranscribing ? MicRoster.byGlyph(transcribeSource) : nil
+            transcribeItem.title = raw + "👂 Recording on battery" + (mic.map { ": \($0.glyph) \($0.short)" } ?? "")
+            transcribeItem.image = nil
+            return
+        }
 
         if isTranscribing {
             // **The device's short name rides on the parent row** (2026-09-22),
@@ -1925,6 +1954,15 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // — so the line is what keeps a readout from being read as one.
         transcribeSubmenu.addItem(tailItem)
         transcribeSubmenu.addItem(.separator())
+        // 🔋 Only off AC, and first among the settings: it is the one he
+        // reaches for in a hurry, and on AC there is nothing to switch.
+        if powerState != .onAC {
+            let item = NSMenuItem(title: isRecordingOnBattery ? BatteryRecordingMenu.stop : BatteryRecordingMenu.start,
+                                  action: #selector(toggleBatteryRecordingAction), keyEquivalent: "")
+            item.target = self
+            transcribeSubmenu.addItem(item)
+            transcribeSubmenu.addItem(.separator())
+        }
         // **Automatic first, and it spells the ladder out** — the same row, in
         // the same words, as Walkie Talkie's mic menu. `Automatic — 🎙️ ▸ 🎤 ▸
         // 📡 ▸ 🏛️ ▸ 🎧 ▸ 💻` is the order of the rows under it, which is the

@@ -47,6 +47,8 @@ case testTerminalFont
     case testMicDeadState
     /// The 🎤 DJI receiver's status stream / a replayed reading — see docs/testing.md.
     case testDjiState
+    /// 🔋 Fake the power source / drive the battery recording — see docs/testing.md.
+    case testBattery([String: String])
     /// Open / close the 💬 menu without the mouse — see docs/testing.md.
     case testMenuOpen(closeAfter: Double, appearance: String?)
     case testMenuBreak(closeAfter: Double)
@@ -306,6 +308,7 @@ case testTerminalFont
     var onTestMicDead: ((String?) -> String)?
     var onTestMicDeadState: (() -> String)?
     var onTestDjiState: (() -> String)?
+    var onTestBattery: (([String: String]) -> String)?
     var onTestMenuOpen: ((Double, String?) -> Void)?
     var onTestMenuBreak: ((Double) -> Void)?
     var onTestDjiEvent: ((String, Int?, String?) -> String)?
@@ -582,6 +585,10 @@ case testTerminalFont
                 DispatchQueue.main.async { self.onTestMenuOpen?(closeAfter, appearance) }
             case .testMenuBreak(let closeAfter):
                 DispatchQueue.main.async { self.onTestMenuBreak?(closeAfter) }
+            case .testBattery(let q):
+                contentType = "application/json"
+                body = self.onTestBattery?(q) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestBattery == nil { statusCode = 503 }
             case .testDjiState:
                 contentType = "application/json"
                 body = self.onTestDjiState?() ?? "{\"error\":\"dji monitor unavailable\"}"
@@ -995,6 +1002,10 @@ case testTerminalFont
             return .testMicDeadState
         case "/test/dji/state":
             return .testDjiState
+        case "/test/battery":
+            var q: [String: String] = [:]
+            for item in queryItems { q[item.name] = item.value ?? "" }
+            return .testBattery(q)
         case "/test/menu/open":
             let secs = queryItems.first(where: { $0.name == "close" })?.value.flatMap { Double($0) } ?? 3
             return .testMenuOpen(closeAfter: min(max(secs, 0.5), 10),
