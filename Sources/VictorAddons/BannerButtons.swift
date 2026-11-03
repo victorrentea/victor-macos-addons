@@ -19,7 +19,7 @@ enum BannerAction: String, CaseIterable {
     case snooze = "Snooze"
     case snoozeHour = "Snooze 1h"
     /// The 👂/🔋 pill: stops the battery recording until the charger is back.
-    case stopUntilAC = "Stop (until AC)"
+    case stopUntilAC = "Stop"
 
     var title: String { rawValue }
 

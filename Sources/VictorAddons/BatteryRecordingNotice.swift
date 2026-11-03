@@ -8,13 +8,13 @@ import Cocoa
 /// bottom-left pill says `👂/🔋` (Victor, 2026-11-03).
 ///
 /// **Two buttons** (Victor, 2026-11-03: *"să aibă 2 butoane: snooze 1h ⏱️ +
-/// Stop ❌"*; label `Stop (until AC) ❌`), and only the buttons act — a click elsewhere on the pill does
+/// Stop ❌"*; label `Stop ❌`), and only the buttons act — a click elsewhere on the pill does
 /// nothing, so a stray one costs no meeting:
 /// - `Snooze 1h ⏱️` (top; also a right-click) hides it for an hour, not for
 ///   good: an hour later, still on battery and still recording, it comes back.
 ///   The snooze lasts until the charger is plugged in — the next unplugging
 ///   shows it again at once.
-/// - `Stop (until AC) ❌` stops the recording until AC, exactly like the menu's `⏹ Stop
+/// - `Stop ❌` stops the recording until AC, exactly like the menu's `⏹ Stop
 ///   recording on battery` (`onStop`); the pill goes with it.
 final class BatteryRecordingNotice {
     static let text = "👂/🔋"
@@ -27,7 +27,7 @@ final class BatteryRecordingNotice {
     private var snoozeTimer: Timer?
     private(set) var snoozedUntil: Date?
     private(set) var recording = false
-    /// The `Stop (until AC) ❌` button: switch the battery recording off (until AC).
+    /// The `Stop ❌` button: switch the battery recording off (until AC).
     var onStop: (() -> Void)?
 
     init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
@@ -70,7 +70,7 @@ final class BatteryRecordingNotice {
         refresh()
     }
 
-    /// The `Stop (until AC) ❌` button. The state change that follows takes the pill down.
+    /// The `Stop ❌` button. The state change that follows takes the pill down.
     func stopNow() {
         overlayInfo("👂/🔋 battery recording stopped until AC")
         onStop?()
