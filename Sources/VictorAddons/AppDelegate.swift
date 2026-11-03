@@ -421,7 +421,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // background, so that first list call answers from cache instead of
         // seeking through a dozen mp4s while the tablet waits.
         VideoLibrary.warmThumbnails()
-        tabletServer?.onVideoPlay = { id, tOverride in
+        tabletServer?.onVideoPlay = { id, tOverride, gain in
             guard let entry = VideoLibrary.entry(id: id) else { return nil }
             let start = tOverride ?? entry.startSeconds
             // The clip brings its own audio: a soundtrack-only play still
@@ -432,7 +432,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // long as the clip is going to be up.
             guard let ms = VideoPlayer.shared.play(
                 id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start,
-                holdEndSeconds: entry.holdEndSeconds ?? 0
+                holdEndSeconds: entry.holdEndSeconds ?? 0,
+                volume: VideoGain.volume(position: gain)
             ) else { return nil }
             VideoPlayLog.append(id: id, title: entry.title, startSeconds: start, kind: "video")
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
@@ -442,16 +443,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // corner of each video tile. `durationMs` is the contract — the tablet
         // keeps its video page up for exactly that long instead of timing out
         // back to the soundboard mid-sound.
-        tabletServer?.onVideoSoundPlay = { id, tOverride in
+        tabletServer?.onVideoSoundPlay = { id, tOverride, gain in
             guard let entry = VideoLibrary.entry(id: id) else { return nil }
             let start = tOverride ?? entry.startSeconds
             guard let ms = VideoSoundtrackPlayer.shared.play(
-                id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start
+                id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start,
+                volume: VideoGain.volume(position: gain)
             ) else { return nil }
             VideoPlayLog.append(id: id, title: entry.title, startSeconds: start, kind: "soundtrack")
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
         }
         tabletServer?.onVideoSoundStop = { VideoSoundtrackPlayer.shared.stop() }
+        // 🔉 The tablet's per-tile bar on a video: whichever of the two players
+        // has that clip follows it live (`VideoGain`).
+        tabletServer?.onVideoGain = { id, pct in
+            let v = VideoGain.volume(position: pct)
+            VideoPlayer.shared.setVolume(v, forId: id)
+            VideoSoundtrackPlayer.shared.setVolume(v, forId: id)
+        }
         tabletServer?.onVideoSoundState = { VideoSoundtrackPlayer.shared.stateJSON() }
         // 📱 One question, two players: the tablet's video page holds itself open
         // on this answer and un-pins on whichever end comes first — the clip

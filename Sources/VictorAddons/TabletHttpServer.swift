@@ -214,14 +214,15 @@ case testTerminalFont
         case intellijFileOpened
         /// Video page (tablet): list downloaded videos.
         case videos
-        /// Play a downloaded video by id, with an optional "?t=" start-second override.
-        case videoPlay(String, Int?)
+        /// Play a downloaded video by id, with an optional "?t=" start-second override
+        /// and an optional "?gain=" — the tablet's 🔉 per-tile bar position (`VideoGain`).
+        case videoPlay(String, Int?, gain: Int? = nil)
         /// Stop / close the video player.
         case videoStop
         /// 🎵 Play a video snippet's SOUND ONLY (no window, nothing on screen),
         /// with an optional "?t=" start-second override. The ♪ button on the
         /// tablet's video tiles.
-        case videoSoundPlay(String, Int?)
+        case videoSoundPlay(String, Int?, gain: Int? = nil)
         /// 🎵 Silence the soundtrack-only playback (the ♪ pressed a second time).
         case videoSoundStop
         /// 🎵 Read-only snapshot of the soundtrack-only player (test hook).
@@ -413,13 +414,17 @@ case testTerminalFont
     var onVideos: (() -> String)?
     /// Play a downloaded video by id (optional start-second override); returns
     /// JSON, or nil if the id is unknown / not downloaded (→ 404).
-    var onVideoPlay: ((String, Int?) -> String?)?
+    var onVideoPlay: ((String, Int?, Int?) -> String?)?
     /// Stop / close the video player.
     var onVideoStop: (() -> Void)?
     /// 🎵 Play a snippet's soundtrack alone by id (optional start-second
     /// override); returns JSON carrying `durationMs` — how long the tablet
     /// should hold its video page open — or nil if the id is unknown (→ 404).
-    var onVideoSoundPlay: ((String, Int?) -> String?)?
+    var onVideoSoundPlay: ((String, Int?, Int?) -> String?)?
+    /// 🔉 The tablet moved a video's own volume bar (`/sound/gain/video:<id>/<pct>`,
+    /// seen on its way to the effects app): apply it to that clip if it is the one
+    /// sounding. Called on the main thread, asynchronously.
+    var onVideoGain: ((String, Int) -> Void)?
     /// 🎵 Silence the soundtrack-only playback.
     var onVideoSoundStop: (() -> Void)?
     /// 🎵 Read-only JSON snapshot of the soundtrack-only player.
@@ -514,6 +519,12 @@ case testTerminalFont
         // This runs on the server queue, which also keeps the tablet's
         // stop-all -> play -> pressed chain in order (one connection at a time).
         if case .proxied(let forwarded) = route {
+            // 🔉 A video's own volume is stored by the effects app with every
+            // other tile's, but the clip plays HERE — so the move is applied on
+            // the way through, without waiting on it, and still forwarded.
+            if let (id, pct) = VideoGain.parseGainPath(forwarded) {
+                DispatchQueue.main.async { [weak self] in self?.onVideoGain?(id, pct) }
+            }
             return EffectsProxy.forward(forwarded, body: requestBody, pingExtras: onPingExtras)
         }
         if case .mirrorProxied(let forwarded) = route {
@@ -770,9 +781,9 @@ case testTerminalFont
             case .videos:
                 contentType = "application/json"
                 body = self.onVideos?() ?? "{\"videos\":[]}"
-            case .videoPlay(let id, let t):
+            case .videoPlay(let id, let t, let gain):
                 contentType = "application/json"
-                if let json = self.onVideoPlay?(id, t) {
+                if let json = self.onVideoPlay?(id, t, gain) {
                     body = json
                 } else {
                     statusCode = 404
@@ -780,9 +791,9 @@ case testTerminalFont
                 }
             case .videoStop:
                 self.onVideoStop?()
-            case .videoSoundPlay(let id, let t):
+            case .videoSoundPlay(let id, let t, let gain):
                 contentType = "application/json"
-                if let json = self.onVideoSoundPlay?(id, t) {
+                if let json = self.onVideoSoundPlay?(id, t, gain) {
                     body = json
                 } else {
                     statusCode = 404
@@ -1204,12 +1215,14 @@ case testTerminalFont
             if pathOnly.hasPrefix("/video/play/") {
                 let id = String(pathOnly.dropFirst("/video/play/".count))
                 let t = queryItems.first(where: { $0.name == "t" })?.value.flatMap(Int.init)
-                if !id.isEmpty { return .videoPlay(id, t) }
+                let gain = queryItems.first(where: { $0.name == "gain" })?.value.flatMap(Int.init)
+                if !id.isEmpty { return .videoPlay(id, t, gain: gain) }
             }
             if pathOnly.hasPrefix("/video/sound/") {
                 let id = String(pathOnly.dropFirst("/video/sound/".count))
                 let t = queryItems.first(where: { $0.name == "t" })?.value.flatMap(Int.init)
-                if !id.isEmpty { return .videoSoundPlay(id, t) }
+                let gain = queryItems.first(where: { $0.name == "gain" })?.value.flatMap(Int.init)
+                if !id.isEmpty { return .videoSoundPlay(id, t, gain: gain) }
             }
             // Checked BEFORE the plain /test/video/ hook below, which would
             // otherwise swallow this as a video id of "sound/<id>".

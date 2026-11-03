@@ -91,7 +91,7 @@ final class VideoPlayer {
     /// Main thread only (AVPlayer + NSWindow); every caller is an HTTP handler,
     /// which `TabletHttpServer` runs inside `DispatchQueue.main.sync`.
     @discardableResult
-    func play(id: String, fileURL: URL, startSeconds: Int, holdEndSeconds: Int = 0) -> Int? {
+    func play(id: String, fileURL: URL, startSeconds: Int, holdEndSeconds: Int = 0, volume: Float = 1) -> Int? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             overlayError("VideoPlayer: file not found: \(fileURL.path)")
             return nil
@@ -106,7 +106,7 @@ final class VideoPlayer {
         let item = AVPlayerItem(url: fileURL)
         let p = AVPlayer(playerItem: item)
         p.actionAtItemEnd = .pause
-        p.volume = 1
+        p.volume = volume   // 🔉 the clip's own bar (`VideoGain`)
 
         let win = VideoWindow(screenFrame: screen.frame, player: p)
         win.onSpace = { [weak self] in self?.togglePause() }
@@ -165,6 +165,13 @@ final class VideoPlayer {
         let remaining = CMTimeGetSeconds(d) - Double(startSeconds)
         guard remaining > 0 else { return cap }
         return min(remaining, cap)
+    }
+
+    /// 🔉 The tablet moved this clip's volume bar while it is up. Another id
+    /// (the bar of a clip already replaced) changes nothing.
+    func setVolume(_ volume: Float, forId id: String) {
+        guard activeId == id, window != nil, let player else { return }
+        player.volume = volume
     }
 
     /// 📱 Is a clip on screen right now? The tablet asks this once a second

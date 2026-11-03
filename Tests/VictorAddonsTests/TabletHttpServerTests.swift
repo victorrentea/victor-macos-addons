@@ -40,6 +40,8 @@ final class TabletHttpServerTests: XCTestCase {
         XCTAssertEqual(TabletHttpServer.route(forPath: "/videos"), .videos)
         XCTAssertEqual(TabletHttpServer.route(forPath: "/video/sound/stop"), .videoSoundStop)
         XCTAssertEqual(TabletHttpServer.route(forPath: "/video/sound/intro"), .videoSoundPlay("intro", nil))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/video/sound/intro?gain=40"), .videoSoundPlay("intro", nil, gain: 40))
+        XCTAssertEqual(TabletHttpServer.route(forPath: "/video/play/intro?t=3&gain=65"), .videoPlay("intro", 3, gain: 65))
         XCTAssertEqual(TabletHttpServer.route(forPath: "/test/video/stop"), .videoStop)
     }
 }

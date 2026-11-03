@@ -82,7 +82,7 @@ final class VideoSoundtrackPlayer {
     /// Main thread only (AVPlayer + the timers below); every caller is an HTTP
     /// handler, which `TabletHttpServer` already runs inside `DispatchQueue.main.sync`.
     @discardableResult
-    func play(id: String, fileURL: URL, startSeconds: Int) -> Int? {
+    func play(id: String, fileURL: URL, startSeconds: Int, volume: Float = 1) -> Int? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             overlayError("VideoSoundtrackPlayer: file not found: \(fileURL.path)")
             return nil
@@ -93,7 +93,7 @@ final class VideoSoundtrackPlayer {
 
         let item = AVPlayerItem(url: fileURL)
         let p = AVPlayer(playerItem: item)
-        p.volume = 1
+        p.volume = volume   // 🔉 the clip's own bar (`VideoGain`)
         p.actionAtItemEnd = .pause
         // A clip whose remaining audio is shorter than the cap ends by itself;
         // no fade there, the material already ran out.
@@ -118,6 +118,13 @@ final class VideoSoundtrackPlayer {
         scheduleCap()
         overlayInfo("VideoSoundtrackPlayer: 🎵 \(fileURL.lastPathComponent) from \(startSeconds)s (max \(Int(Self.maxSeconds))s)")
         return Int(Self.maxSeconds * 1000)
+    }
+
+    /// 🔉 The tablet moved this snippet's volume bar while it sounds. Ignored
+    /// mid-fade-out: the fade is already taking it to silence.
+    func setVolume(_ volume: Float, forId id: String) {
+        guard playingId == id, fadeWork == nil, let player else { return }
+        player.volume = volume
     }
 
     /// Silence it now. `fade` is false only when there is nothing left to soften
