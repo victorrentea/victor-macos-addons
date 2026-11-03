@@ -222,7 +222,7 @@ final class BottomLeftBanner {
     private var panels: [PanelEntry] = []
 
     /// The two buttons of the current presentation (see `show`). `auto` is the
-    /// countdown's own outcome (`onHoverCountdownExpired`), drawn on top with
+    /// countdown's own outcome (`onHoverCountdownExpired`), drawn on top (below `Send` — see `autoOnTop`) with
     /// the countdown filling its background; `click` is `onHover`'s. Nil = no
     /// button for that outcome.
     private var autoAction: BannerAction?
@@ -234,7 +234,9 @@ final class BottomLeftBanner {
     private var visibleActions: [(BannerAction, isAuto: Bool)] {
         guard hoverable else { return [] }
         var out: [(BannerAction, isAuto: Bool)] = []
-        if let a = autoAction, hasCountdown, onHoverCountdownExpired != nil { out.append((a, true)) }
+        // No countdown = a plain top button with nothing filling it (the 👂/🔋
+        // pill: Snooze 1h ⏱️ over Stop ❌).
+        if let a = autoAction, onHoverCountdownExpired != nil { out.append((a, true)) }
         if let c = clickAction, onHover != nil { out.append((c, false)) }
         return out
     }
@@ -455,15 +457,25 @@ final class BottomLeftBanner {
         let shown = [entry.autoButton, entry.clickButton].filter { !$0.isHidden }
         if shown.count == 2 {
             let h = (Style.boxHeight - 3 * Style.buttonGap) / 2
-            entry.autoButton.frame = NSRect(x: x, y: Style.buttonGap * 2 + h, width: w, height: h)
-            entry.clickButton.frame = NSRect(x: x, y: Style.buttonGap, width: w, height: h)
+            let (top, bottom) = Self.autoOnTop(click: entry.clickButton.action)
+                ? (entry.autoButton, entry.clickButton) : (entry.clickButton, entry.autoButton)
+            top.frame = NSRect(x: x, y: Style.buttonGap * 2 + h, width: w, height: h)
+            bottom.frame = NSRect(x: x, y: Style.buttonGap, width: w, height: h)
         } else if let only = shown.first {
             let h = Style.singleButtonHeight
             only.frame = NSRect(x: x, y: (Style.boxHeight - h) / 2, width: w, height: h)
         }
     }
 
-    /// The top button: take the countdown's outcome now.
+    /// Whether the auto button (the one the countdown fills) goes on top.
+    /// Usually yes — but **`Send` is always the upper one** (Victor,
+    /// 2026-11-03: *"butonul de send să fie mereu peste cel de drop, dar să se
+    /// coloreze progress bar cel care se auto-apasă"*): on an offered prompt
+    /// the countdown fills `Drop` underneath, on an auto-sent one it fills
+    /// `Send` on top. The progress follows the action, not the position.
+    static func autoOnTop(click: BannerAction?) -> Bool { click != .send }
+
+    /// The auto button: take the countdown's outcome now.
     private func fireAutoAction() {
         guard hoverable, !hoverFired else { return }
         hoverFired = true
@@ -1141,7 +1153,7 @@ final class BottomLeftBanner {
         let progress = countdownDuration > 0 ? min(1.0, countdownElapsed / countdownDuration) : 1.0
         for entry in panels {
             if hasButtons {
-                // The countdown is the top button's background.
+                // The countdown is the auto button's background (top or bottom).
                 entry.autoButton.setProgress(CGFloat(progress))
             } else {
                 // Both border strokes reach the top-right corner exactly as the

@@ -860,6 +860,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let controller else { return }
             controller.setBatteryRecording(!controller.batteryRecordingEnabled)
         }
+        batteryRecordingNotice.onStop = { [weak controller] in
+            controller?.setBatteryRecording(false)
+        }
         self.transcriptionController = controller
 
         // 🔴 Raw capture. Whisper only reads the flag at launch, so flipping it
@@ -989,6 +992,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 }
                 if let r = q["record"] { controller.setBatteryRecording(r == "1") }
                 if q["snooze"] == "1" { self.batteryRecordingNotice.snoozeNow() }
+                if q["stop"] == "1" { self.batteryRecordingNotice.stopNow() }
                 let mode = controller.runningMode.map { $0 == .full ? "\"full\"" : "\"capture-only\"" } ?? "null"
                 return "{\"on_ac\":\(PowerMonitor.isOnAC()),\"forced\":\(PowerMonitor.testOverride.map { String($0) } ?? "null"),"
                     + "\"mode\":\(mode),\"whisper_running\":\(self.whisperManager?.isRunning == true),"

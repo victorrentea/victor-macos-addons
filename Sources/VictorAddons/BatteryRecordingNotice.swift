@@ -7,11 +7,15 @@ import Cocoa
 /// transcribing is a state worth seeing, so while it lasts the app's own
 /// bottom-left pill says `👂/🔋` (Victor, 2026-11-03).
 ///
-/// **A click snoozes it for an hour**, not for good: an hour later, still on
-/// battery and still recording, it comes back. The snooze lasts until the
-/// charger is plugged in — the next unplugging shows it again at once.
-/// Stopping the recording itself is the menu's job (`⏹ Stop recording on
-/// battery`), not the pill's: a stray click must never cost a meeting.
+/// **Two buttons** (Victor, 2026-11-03: *"să aibă 2 butoane: snooze 1h ⏱️ +
+/// Stop ❌"*; label `Stop ❌ until 🔌`), and only the buttons act — a click elsewhere on the pill does
+/// nothing, so a stray one costs no meeting:
+/// - `Snooze 1h ⏱️` (top; also a right-click) hides it for an hour, not for
+///   good: an hour later, still on battery and still recording, it comes back.
+///   The snooze lasts until the charger is plugged in — the next unplugging
+///   shows it again at once.
+/// - `Stop ❌ until 🔌` stops the recording until AC, exactly like the menu's `⏹ Stop
+///   recording on battery` (`onStop`); the pill goes with it.
 final class BatteryRecordingNotice {
     static let text = "👂/🔋"
     static let snooze: TimeInterval = 3600
@@ -23,6 +27,8 @@ final class BatteryRecordingNotice {
     private var snoozeTimer: Timer?
     private(set) var snoozedUntil: Date?
     private(set) var recording = false
+    /// The `Stop ❌ until 🔌` button: switch the battery recording off (until AC).
+    var onStop: (() -> Void)?
 
     init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
          now: @escaping () -> Date = Date.init) {
@@ -64,14 +70,22 @@ final class BatteryRecordingNotice {
         refresh()
     }
 
+    /// The `Stop ❌ until 🔌` button. The state change that follows takes the pill down.
+    func stopNow() {
+        overlayInfo("👂/🔋 battery recording stopped until AC")
+        onStop?()
+    }
+
     private func refresh() {
         let show = Self.shouldShow(recording: recording, snoozedUntil: snoozedUntil, now: now())
         if show, banner == nil {
             let b = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
             b.clickOnly = true
-            b.onHover = { [weak self] in self?.snoozeNow() }
+            // Top button (and right-click) = snooze; bottom button = stop.
             b.onHoverCountdownExpired = { [weak self] in self?.snoozeNow() }
-            b.show(text: Self.text, backgroundColor: Self.color, clickAction: .snoozeHour)
+            b.onHover = { [weak self] in self?.stopNow() }
+            b.show(text: Self.text, backgroundColor: Self.color,
+                   autoAction: .snoozeHour, clickAction: .stopUntilAC)
             banner = b
         } else if !show, let b = banner {
             b.dismissSinking()
