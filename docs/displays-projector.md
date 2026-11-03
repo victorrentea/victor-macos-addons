@@ -215,8 +215,11 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   now has its own place:
   - **The door.** One per monitor touching the zoomed display (`ShareZoomEdge.doors`, from
     `NSScreen.physical`, so never the invisible 🪞 screen): the middle 10 % of the stretch
-    the two share, a red strip over the zigzag (a sublayer of it, so it comes and goes with
-    the frame; the share carries it). `ZoomPointerSpeed` confines the slowed pointer: a move
+    the two share, its stretch of the zigzag lined in red: a 1.5 pt `systemRed` stroke along
+    the frame's inner edge, like the grey line of before 2026-11-02 (`doorLine`, a sublayer
+    masked to the doors, so it fades with the frame, and `ZigzagFrame` grows its teeth with
+    the frame's; the share carries it). The first build was a solid 15 pt red strip:
+    *"mult prea violentă… o bordură subtilă"*. `ZoomPointerSpeed` confines the slowed pointer: a move
     across a slice edge at the door lands on that monitor at the spot where the drawn cursor
     touched the glass (`ShareZoomEdge.confine`), and the picture stays put.
   - **Anywhere else on any side**, monitor beyond it or not, the pointer runs on past the

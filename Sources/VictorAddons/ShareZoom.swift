@@ -52,6 +52,11 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         static let edgeBand: CGFloat = 3
         /// Where the pointer may leave this display (`ShareZoomEdge`), CG global.
         let doors: [ShareZoomEdge.Door]
+        /// A thin red line along the zigzag's inner edge, only over the doors (Victor,
+        /// 2026-11-04: *"o bordură subtilă, cum era înainte gri la zig-zag, doar că făcută
+        /// cu roșu"*; a solid strip was *"mult prea violentă"*). A sublayer of the frame,
+        /// so it fades with it; its teeth grow with it through `ZigzagFrame`.
+        let doorLine = CAShapeLayer()
         /// The zigzag comes in two beats with the zoom — a flat band fades in, then
         /// its teeth grow — and goes the other way once the zoom is back at 1×
         /// (`ZigzagFrame`, 2026-11-02; a plain 0.18 s fade from 2026-11-01).
@@ -121,13 +126,21 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edge.fillColor = NSColor.black.cgColor
             edge.actions = noAnimation
             edge.opacity = 0
-            // Sublayers of the frame, so they come and go with it.
-            for door in doors {
-                let strip = CALayer()
-                strip.frame = door.strip(on: bounds, depth: Self.edgeBand + Self.edgeDepth)
-                strip.backgroundColor = NSColor.systemRed.cgColor
-                edge.addSublayer(strip)
-            }
+            let openings = CGMutablePath()
+            // A little deeper than the teeth: the stroke rides out past their tips.
+            for door in doors { openings.addRect(door.strip(on: bounds, depth: Self.edgeBand + Self.edgeDepth + 2)) }
+            let mask = CAShapeLayer()
+            mask.frame = view.bounds
+            mask.path = openings
+            doorLine.frame = view.bounds
+            doorLine.path = ring
+            doorLine.fillColor = nil
+            doorLine.strokeColor = NSColor.systemRed.cgColor
+            doorLine.lineWidth = 1.5
+            doorLine.lineJoin = .miter
+            doorLine.actions = noAnimation
+            doorLine.mask = mask
+            edge.addSublayer(doorLine)
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
             view.layer?.addSublayer(cursor)
@@ -151,9 +164,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             guard on != edgeShown else { return }
             edgeShown = on
             if on, animated {
-                ZigzagFrame.appear(edge: edge)
+                ZigzagFrame.appear(edge: edge, line: doorLine)
             } else {
-                ZigzagFrame.set(edge: edge, sharp: true, visible: on)
+                ZigzagFrame.set(edge: edge, line: doorLine, sharp: true, visible: on)
             }
         }
 
@@ -762,7 +775,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
                 publishCursor(nil)
                 restoreCursor()
                 pointerSpeed.restore()
-                leavingUntil = now + ZigzagFrame.disappear(edge: s.edge)
+                leavingUntil = now + ZigzagFrame.disappear(edge: s.edge, line: s.doorLine)
             }
             if let until = leavingUntil, now < until {
                 // Meanwhile the picture keeps easing its last half-percent down to

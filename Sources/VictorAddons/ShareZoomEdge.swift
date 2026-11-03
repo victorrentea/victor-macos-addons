@@ -12,7 +12,7 @@ import Foundation
 /// in) dragged the picture away. Now the two have their own places:
 ///
 /// - **The door lets the pointer out.** The middle 10 % of the stretch a side shares with
-///   a monitor (`doors`), drawn red on the glass. A move across it lands on that monitor
+///   a monitor (`doors`), its stretch of the zigzag lined in red. A move across it lands on that monitor
 ///   at the spot where the drawn cursor touched the glass, and the picture stays put.
 /// - **Everywhere else, pushing pans**, right away, on every side: the pointer runs on
 ///   past the slice's edge (`confine`) and the slice follows it (`ShareZoomPolicy.pan`).
@@ -41,8 +41,9 @@ enum ShareZoomEdge {
             side == crossing && span.contains(isHorizontal ? g.x : g.y)
         }
 
-        /// The red strip that marks it: `depth` deep into the glass, in the display's
-        /// own Cocoa coordinates (origin bottom-left, y up), which is what its layer uses.
+        /// The stretch of frame it occupies, where the red line shows: `depth` deep into
+        /// the glass, in the display's own Cocoa coordinates (origin bottom-left, y up),
+        /// which is what its layer uses.
         func strip(on display: CGRect, depth: CGFloat) -> CGRect {
             let length = span.upperBound - span.lowerBound
             switch side {

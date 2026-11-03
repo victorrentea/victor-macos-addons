@@ -92,7 +92,7 @@ final class ShareZoomEdgeTests: XCTestCase {
         XCTAssertEqual(doors.map(\.side), [.left, .right])
     }
 
-    func testTheRedStripSitsOnTheGlassInLocalCocoaCoordinates() {
+    func testTheDoorsStretchOfFrameIsInLocalCocoaCoordinates() {
         let d = CGRect(x: 100, y: 50, width: 1000, height: 600)
         let right = ShareZoomEdge.Door(side: .right, span: 320...380)
         XCTAssertEqual(right.strip(on: d, depth: 15), CGRect(x: 985, y: 270, width: 15, height: 60))
