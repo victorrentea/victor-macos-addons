@@ -232,8 +232,16 @@ final class VolumeHUDPanel: NSPanel {
         glass.layer?.masksToBounds = true
         contentView = glass
 
-        icon.frame = NSRect(x: 40, y: 72, width: 120, height: 100)
-        icon.imageScaling = .scaleProportionallyUpOrDown
+        // The speaker stays put and keeps one size whatever the level (Victor,
+        // 2026-11-03): every glyph is drawn at its natural size (no scaling) on
+        // one fixed canvas, the speaker body always at the same x — where the
+        // three-wave glyph, centred, puts it, so all three arcs fit and fewer
+        // waves only leave the right empty. See `canvasGlyph`.
+        let c = Self.canvas
+        icon.frame = NSRect(x: ((Self.side - c.size.width) / 2 - c.bodyX / 2).rounded(),
+                            y: (Self.iconCentreY - c.size.height / 2).rounded(),
+                            width: c.size.width, height: c.size.height)
+        icon.imageScaling = .scaleNone
         icon.contentTintColor = NSColor.white.withAlphaComponent(0.8)
         glass.addSubview(icon)
 
@@ -241,10 +249,45 @@ final class VolumeHUDPanel: NSPanel {
         glass.addSubview(blocks)
     }
 
+    /// Centre of the glyph's box: the middle of the area above the blocks.
+    private static let iconCentreY: CGFloat = 122
+
+    private static func glyph(_ name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: "volume")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 80, weight: .medium))
+    }
+
+    /// The shared canvas: as wide as the three-wave glyph plus `bodyX`, the
+    /// room the mute slash needs left of the speaker body (it sticks out on
+    /// both sides; drawn from the left like the others, the body would jump).
+    private static let canvas: (size: NSSize, bodyX: CGFloat) = {
+        let names = ["speaker.fill", "speaker.wave.3.fill", "speaker.slash.fill"]
+        let sizes = names.map { glyph($0)?.size ?? .zero }
+        let bodyX = max(0, ceil((sizes[2].width - sizes[0].width) / 2))
+        let w = ceil(bodyX + max(sizes[1].width, sizes[2].width - bodyX))
+        return (NSSize(width: w, height: ceil(sizes.map(\.height).max() ?? 100)), bodyX)
+    }()
+
+    /// `name` drawn on the canvas: body at `bodyX`, vertically centred; the
+    /// slash centred on the plain speaker's body.
+    private static func canvasGlyph(_ name: String) -> NSImage? {
+        guard let g = glyph(name) else { return nil }
+        let c = canvas
+        var x = c.bodyX
+        if name == "speaker.slash.fill", let plain = glyph("speaker.fill") {
+            x += ((plain.size.width - g.size.width) / 2).rounded()
+        }
+        let out = NSImage(size: c.size, flipped: false) { _ in
+            g.draw(at: NSPoint(x: x, y: ((c.size.height - g.size.height) / 2).rounded()),
+                   from: .zero, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        out.isTemplate = true
+        return out
+    }
+
     func update(level: Float, muted: Bool) {
-        let config = NSImage.SymbolConfiguration(pointSize: 80, weight: .medium)
-        icon.image = NSImage(systemSymbolName: VolumeKeyPolicy.symbol(level: level, muted: muted),
-                             accessibilityDescription: "volume")?.withSymbolConfiguration(config)
+        icon.image = Self.canvasGlyph(VolumeKeyPolicy.symbol(level: level, muted: muted))
         blocks.level = muted ? 0 : CGFloat(level)
     }
 
