@@ -215,3 +215,5 @@ the cursor never left the spot it was parked at, Terminal stayed frontmost throu
 Calculator window sat at coordinates that on screen still showed Terminal. It also draws its own
 indicator ("ChatGPT is using your computer · Esc to cancel", from
 `~/.codex/computer-use/config.json`), so raising ours for it would double up.
+
+- **Ring + halo around each 🔒** (2026-11-03, Victor: *"lacătele să aibă un border/umbră în jurul lor"*): a 2 pt white ring with a dark outer shadow on the takeover disc layer, inside left clear — an edge, not a plate, so the lock still hides nothing; the glyph's own shadow went from 0.55 to 0.8. Check with `GET /test/hands-off/render`.

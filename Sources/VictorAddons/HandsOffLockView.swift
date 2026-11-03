@@ -29,6 +29,17 @@ final class HandsOffLockView: NSView {
         plate.frame = CGRect(x: (frame.width - d) / 2, y: (frame.height - d) / 2, width: d, height: d)
         plate.cornerRadius = d / 2
         plate.backgroundColor = NSColor.clear.cgColor
+        // A ring around the 🔒 with a dark halo outside it (2026-11-03, Victor:
+        // *"lacătele să aibă un border/umbră în jurul lor"*) — an edge, not a
+        // plate: the inside stays clear, so the lock still hides nothing it
+        // lands on, and the ring reads over a white document and a dark IDE.
+        plate.borderColor = NSColor.white.withAlphaComponent(0.85).cgColor
+        plate.borderWidth = 2
+        plate.shadowColor = NSColor.black.cgColor
+        plate.shadowOpacity = 0.7
+        plate.shadowRadius = 5
+        plate.shadowOffset = .zero
+        plate.shadowPath = CGPath(ellipseIn: plate.bounds, transform: nil)
         layer?.addSublayer(plate)
 
         label.font = .systemFont(ofSize: glyphSize)
@@ -45,8 +56,8 @@ final class HandsOffLockView: NSView {
         // in the corner would hide whatever it lands on.
         label.shadow = {
             let s = NSShadow()
-            s.shadowColor = NSColor.black.withAlphaComponent(0.55)
-            s.shadowBlurRadius = 6
+            s.shadowColor = NSColor.black.withAlphaComponent(0.8)
+            s.shadowBlurRadius = 5
             s.shadowOffset = .zero
             return s
         }()
