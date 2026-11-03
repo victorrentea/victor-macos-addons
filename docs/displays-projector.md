@@ -230,6 +230,13 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   - **Coming back moves nothing**, wherever the pointer crosses: off the zoomed display the
     mouse runs at normal speed, and it enters the slice where the hand crosses the glass
     edge (`fromGlass`), so `pan` has nothing to do.
+    The warp there jumps by up to a screen, and for ~15 ms the events on their way still
+    carry locations from before it. Read as positions they looked like someone else's warp
+    (`followsUnscaled`), so the pointer ran at full speed outside the slice and the picture
+    raced after it (*"reintră foarte accelerat uneori"*, the same day; traced at 3× with the
+    picture far from the entry: 434 pt off, 1 return in 3), and on the way out one such event
+    read as coming back. For 80 ms after a warp across the edge `ZoomPointerSpeed` trusts
+    only the delta (`settleUntil`). Reproduce with `/test/zoom-input?do=move&gapMs=4`.
   - **Gone, the 2026-11-02 dwell** (300 ms in the outer 10 % of the glass panned toward a
     side with a monitor, 0.3–1.2 glass widths/s, pointer warped along). It existed so a fast
     trip to the next monitor did not drag the picture, which the door now does; meanwhile it

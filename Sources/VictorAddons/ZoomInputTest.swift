@@ -53,6 +53,7 @@ enum ZoomInputTest {
         case "move":
             let dx = Double(q["dx"] ?? "10") ?? 10
             let n = Int(q["n"] ?? "20") ?? 20
+            let gap = UInt32(q["gapMs"] ?? "30") ?? 30
             let start = CGEvent(source: nil)?.location ?? .zero
             for _ in 0..<n {
                 let at = CGEvent(source: nil)?.location ?? .zero
@@ -62,7 +63,7 @@ enum ZoomInputTest {
                 e.setDoubleValueField(.mouseEventDeltaX, value: dx)
                 e.setDoubleValueField(.mouseEventDeltaY, value: 0)
                 e.post(tap: .cghidEventTap)
-                usleep(30_000)
+                usleep(gap * 1000)
             }
             usleep(100_000)
             let end = CGEvent(source: nil)?.location ?? .zero
