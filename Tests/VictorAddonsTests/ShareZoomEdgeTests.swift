@@ -1,46 +1,52 @@
 import XCTest
 @testable import VictorAddons
 
-/// 🔎 The slice's edge is the screen's edge; resting in the outer 10 % pans (2026-11-02).
+/// 🔎 One red door per neighbouring monitor; everywhere else pushing pans (2026-11-04).
 final class ShareZoomEdgeTests: XCTestCase {
     // A 1000×600 display at the origin, the ASUS to its right; zoomed 4×, slice in the middle.
     let display = CGRect(x: 0, y: 0, width: 1000, height: 600)
     let slice = CGRect(x: 375, y: 225, width: 250, height: 150)
-    func rightOnly(_ p: CGPoint) -> Bool { p.x >= 1000 && p.x < 2000 && p.y >= 0 && p.y < 600 }
+    let rightDoor = [ShareZoomEdge.Door(side: .right, span: 270...330)]
 
-    func testAMoveInsideTheSliceStaysPut() {
-        let p = CGPoint(x: 400, y: 300)
-        XCTAssertEqual(ShareZoomEdge.confine(p, slice: slice, display: display, hasDisplay: rightOnly), p)
+    func confine(_ x: CGFloat, _ y: CGFloat, in s: CGRect? = nil) -> CGPoint {
+        ShareZoomEdge.confine(CGPoint(x: x, y: y), slice: s ?? slice, display: display, doors: rightDoor)
     }
 
-    /// Fast past the right edge: onto the ASUS, at the height the drawn cursor had.
-    func testCrossingTheSliceEdgeLandsOnTheNextDisplayAtTheGlassHeight() {
-        let out = ShareZoomEdge.confine(CGPoint(x: 630, y: 300), slice: slice, display: display, hasDisplay: rightOnly)
+    func testAMoveInsideTheSliceStaysPut() {
+        XCTAssertEqual(confine(400, 300), CGPoint(x: 400, y: 300))
+    }
+
+    /// Through the door: onto the ASUS, at the height the drawn cursor had.
+    func testCrossingAtTheDoorLandsOnTheNextDisplayAtTheGlassHeight() {
+        let out = confine(630, 300)
         XCTAssertEqual(out.x, 1000)
         XCTAssertEqual(out.y, 300, accuracy: 0.01)   // 225 + 75 → glass (75 × 4) = 300
     }
 
-    /// No display on the left: the pointer pushes on past the slice's edge, so the
-    /// slice follows it (`ShareZoomPolicy.pan`) — no dwell on that side.
-    func testNoDisplayBeyondLetsThePointerPushPastTheSlice() {
-        let out = ShareZoomEdge.confine(CGPoint(x: 360, y: 300), slice: slice, display: display, hasDisplay: rightOnly)
-        XCTAssertEqual(out, CGPoint(x: 360, y: 300))
+    /// Same side, a monitor beyond it, but past the door: the pointer pushes on past
+    /// the slice's edge, so the slice follows it (`ShareZoomPolicy.pan`).
+    func testBesideTheDoorPushingPansEvenWithAMonitorBeyond() {
+        // 340 → glass (340 − 225) × 4 = 460, well below the door.
+        XCTAssertEqual(confine(630, 340), CGPoint(x: 630, y: 340))
     }
 
-    /// …but never off the zoomed display itself.
+    /// The side with no door at all pans the same way.
+    func testNoDoorLetsThePointerPushPastTheSlice() {
+        XCTAssertEqual(confine(360, 300), CGPoint(x: 360, y: 300))
+    }
+
+    /// …but never off the zoomed display itself, door-less side or not.
     func testPushingStaysOnTheZoomedDisplay() {
         let s = CGRect(x: 0, y: 225, width: 250, height: 150)
-        let out = ShareZoomEdge.confine(CGPoint(x: -5, y: 300), slice: s, display: display, hasDisplay: rightOnly)
-        XCTAssertEqual(out, CGPoint(x: 0, y: 300))
+        XCTAssertEqual(confine(-5, 300, in: s), CGPoint(x: 0, y: 300))
+        let far = CGRect(x: 750, y: 225, width: 250, height: 150)
+        XCTAssertEqual(confine(1004, 340, in: far), CGPoint(x: 999, y: 340))
     }
 
-    /// The dwell pans only toward a side with a display beyond it (2026-11-02).
-    func testOnlyASideWithANeighbourDwells() {
-        let g = CGPoint(x: 500, y: 300)
-        XCTAssertTrue(ShareZoomEdge.neighbour(.right, glass: g, display: display, hasDisplay: rightOnly))
-        XCTAssertFalse(ShareZoomEdge.neighbour(.left, glass: g, display: display, hasDisplay: rightOnly))
-        XCTAssertFalse(ShareZoomEdge.neighbour(.top, glass: g, display: display, hasDisplay: rightOnly))
-        XCTAssertFalse(ShareZoomEdge.neighbour(.bottom, glass: g, display: display, hasDisplay: rightOnly))
+    /// The pointer past the slice, waiting for the tick to pan: still no way out but the door.
+    func testPastTheSliceTheDoorIsStillTheOnlyWayOut() {
+        XCTAssertEqual(confine(640, 340).x, 640)
+        XCTAssertEqual(confine(640, 300).x, 1000)
     }
 
     func testComingBackEntersWhereTheHandCrossesTheGlass() {
@@ -50,31 +56,51 @@ final class ShareZoomEdgeTests: XCTestCase {
         XCTAssertTrue(slice.contains(entry))
     }
 
-    func testTheBandIsTheOuterTenPercent() {
-        XCTAssertNil(ShareZoomEdge.depth(500, length: 1000))
-        XCTAssertNil(ShareZoomEdge.depth(899, length: 1000))
-        XCTAssertEqual(ShareZoomEdge.depth(950, length: 1000)!, 0.5, accuracy: 0.001)
-        XCTAssertEqual(ShareZoomEdge.depth(1000, length: 1000)!, 1, accuracy: 0.001)
-        XCTAssertEqual(ShareZoomEdge.depth(0, length: 1000)!, -1, accuracy: 0.001)
+    /// Back in far from the door: the entry is in the slice, so the pan has nothing to do.
+    func testComingBackAwayFromTheDoorEntersTheSliceToo() {
+        let entry = ShareZoomEdge.fromGlass(CGPoint(x: 999, y: 20), slice: slice, display: display)
+        XCTAssertTrue(slice.contains(entry))
     }
 
-    func testThePanWaitsThreeHundredMilliseconds() {
-        var d = ShareZoomEdge.Dwell()
-        XCTAssertFalse(d.due(depth: 0.5, now: 10))
-        XCTAssertFalse(d.due(depth: 0.5, now: 10.29))
-        XCTAssertTrue(d.due(depth: 0.5, now: 10.3))
-        // Out of the band and back: the clock starts over.
-        XCTAssertFalse(d.due(depth: nil, now: 10.4))
-        XCTAssertFalse(d.due(depth: 0.5, now: 10.5))
-        // The other side starts over too.
-        XCTAssertTrue(d.due(depth: 0.5, now: 10.8))
-        XCTAssertFalse(d.due(depth: -0.5, now: 10.9))
+    // MARK: - doors
+
+    /// 10 % of the shared stretch, in its middle, with a Retina-sized side.
+    func testTheDoorIsTheMiddleTenPercentOfTheSide() {
+        let doors = ShareZoomEdge.doors(display: display, others: [
+            display, CGRect(x: 1000, y: 0, width: 800, height: 600)])
+        XCTAssertEqual(doors, [ShareZoomEdge.Door(side: .right, span: 270...330)])
     }
 
-    func testDeeperInTheBandPansFaster() {
-        let slow = ShareZoomEdge.step(depth: 0.1, length: 1000, factor: 4, dt: 0.1)
-        let fast = ShareZoomEdge.step(depth: 1, length: 1000, factor: 4, dt: 0.1)
-        XCTAssertGreaterThan(fast, slow)
-        XCTAssertLessThan(ShareZoomEdge.step(depth: -1, length: 1000, factor: 4, dt: 0.1), 0)
+    /// Of the stretch the two *share*: only there is a monitor beyond the door.
+    func testAShorterMonitorGetsTheDoorInTheMiddleOfWhatTheyShare() {
+        let doors = ShareZoomEdge.doors(display: display, others: [CGRect(x: 1000, y: 300, width: 800, height: 800)])
+        XCTAssertEqual(doors, [ShareZoomEdge.Door(side: .right, span: 435...465)])
+    }
+
+    /// A wider monitor on top, centred: the whole top side is shared.
+    func testAMonitorAboveOverhangingTheSide() {
+        let doors = ShareZoomEdge.doors(display: display, others: [CGRect(x: -100, y: -700, width: 1200, height: 700)])
+        XCTAssertEqual(doors, [ShareZoomEdge.Door(side: .top, span: 450...550)])
+    }
+
+    func testEveryNeighbourHasItsDoorAndADistantOneNone() {
+        let doors = ShareZoomEdge.doors(display: display, others: [
+            CGRect(x: -800, y: 0, width: 800, height: 600),
+            CGRect(x: 1000, y: 0, width: 800, height: 600),
+            CGRect(x: 1800, y: 0, width: 800, height: 600),      // past the right one
+            CGRect(x: 1000, y: -500, width: 800, height: 500)])  // only a corner touches
+        XCTAssertEqual(doors.map(\.side), [.left, .right])
+    }
+
+    func testTheRedStripSitsOnTheGlassInLocalCocoaCoordinates() {
+        let d = CGRect(x: 100, y: 50, width: 1000, height: 600)
+        let right = ShareZoomEdge.Door(side: .right, span: 320...380)
+        XCTAssertEqual(right.strip(on: d, depth: 15), CGRect(x: 985, y: 270, width: 15, height: 60))
+        let left = ShareZoomEdge.Door(side: .left, span: 320...380)
+        XCTAssertEqual(left.strip(on: d, depth: 15), CGRect(x: 0, y: 270, width: 15, height: 60))
+        let top = ShareZoomEdge.Door(side: .top, span: 550...650)
+        XCTAssertEqual(top.strip(on: d, depth: 15), CGRect(x: 450, y: 585, width: 100, height: 15))
+        let bottom = ShareZoomEdge.Door(side: .bottom, span: 550...650)
+        XCTAssertEqual(bottom.strip(on: d, depth: 15), CGRect(x: 450, y: 0, width: 100, height: 15))
     }
 }

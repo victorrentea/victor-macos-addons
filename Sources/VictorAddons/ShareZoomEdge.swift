@@ -1,40 +1,79 @@
 import CoreGraphics
 import Foundation
 
-/// 🔎 How `ShareZoom` treats the edges of its slice (Victor, 2026-11-02: *"dacă mut
-/// mouse-ul repede peste edge, să nu facă pan. Dacă-l las în zona magnificată adiacentă
-/// marginii (undeva pe 10 % din suprafață), panul să înceapă după 300 ms"*).
+/// 🔎 How `ShareZoom` treats the edges of its slice: **one door per neighbouring monitor**
+/// (Victor, 2026-11-04: *"dacă trec … prin centrul laturii … un edge roșu. Asta îmi arată
+/// că pe acolo o să iasă"*).
 ///
-/// Until then the slice followed the pointer the moment it pushed an edge
-/// (`ShareZoomPolicy.pan`, macOS's "only when the pointer reaches an edge"), so a quick
-/// trip to the next monitor — to fetch an animation, say — dragged the whole picture to
-/// that side of the desktop on the way out. Now:
+/// Pushing an edge has to do two things: pan the picture, and reach the next monitor.
+/// Until then a side with a monitor beyond it always let the pointer out, and panned
+/// only after 300 ms of rest in the outer 10 % of the glass — so the pan along that side
+/// was a wait, and a cursor resting just inside the edge (on its way out, or just back
+/// in) dragged the picture away. Now the two have their own places:
 ///
-/// - **The edge of the slice is the edge of the screen.** A move that would leave the
-///   slice lands on the adjacent display, at the spot where the drawn cursor touched the
-///   glass, and the picture stays put. Coming back, the pointer enters the slice where
-///   the hand crosses the glass edge (`fromGlass`).
-/// - **Dwelling pans — only toward a display.** The drawn cursor inside the outer `band`
-///   of the glass for `dwell` seconds pans that way, faster the deeper in the band
-///   (`speed`), and the pointer travels with the picture so it stays at the same spot on
-///   the glass. Only on a side with a display beyond it (`neighbour`): the dwell is there
-///   so a fast trip across the edge does not pan, and with nothing to reach on that side
-///   it only stole the pan from the edge (Victor, 2026-11-02: *"fără ecrane laterale,
-///   nu trebuie să se facă pan decât la împingerea în edge, ca până azi"*).
-/// - **With no display on that side, pushing pans** — as before 2026-11-02: the pointer
-///   runs on past the slice's edge (`confine`) and the slice follows it
-///   (`ShareZoomPolicy.pan`), right away, no dwell.
+/// - **The door lets the pointer out.** The middle 10 % of the stretch a side shares with
+///   a monitor (`doors`), drawn red on the glass. A move across it lands on that monitor
+///   at the spot where the drawn cursor touched the glass, and the picture stays put.
+/// - **Everywhere else, pushing pans**, right away, on every side: the pointer runs on
+///   past the slice's edge (`confine`) and the slice follows it (`ShareZoomPolicy.pan`).
+/// - **Coming back never moves the picture**, wherever the pointer crosses: not only
+///   through the door. It enters the slice where the hand crosses the glass edge
+///   (`fromGlass`).
 ///
 /// All rects are CG global (origin top-left, y down) unless said otherwise.
 enum ShareZoomEdge {
-    /// The outer share of the glass, per side, that pans when the cursor rests in it.
-    static let band: CGFloat = 0.10
-    /// How long the cursor must rest in the band before the picture moves.
-    static let dwell: CFTimeInterval = 0.3
-    /// Pan speed in glass widths (or heights) per second: at the band's inner border,
-    /// and against the edge itself.
-    static let innerSpeed: CGFloat = 0.3
-    static let outerSpeed: CGFloat = 1.2
+    /// A side of the zoomed display, in CG terms (top = low y).
+    enum Side: String { case left, right, top, bottom }
+
+    /// The door's share of the stretch of side a monitor sits against.
+    static let doorShare: CGFloat = 0.10
+
+    /// Where the pointer may leave: a stretch of one side, as CG global y for left and
+    /// right, x for top and bottom.
+    struct Door: Equatable {
+        let side: Side
+        let span: ClosedRange<CGFloat>
+
+        var isHorizontal: Bool { side == .top || side == .bottom }
+
+        /// Whether a pointer crossing `crossing` at glass `g` goes through this door.
+        func admits(_ crossing: Side, at g: CGPoint) -> Bool {
+            side == crossing && span.contains(isHorizontal ? g.x : g.y)
+        }
+
+        /// The red strip that marks it: `depth` deep into the glass, in the display's
+        /// own Cocoa coordinates (origin bottom-left, y up), which is what its layer uses.
+        func strip(on display: CGRect, depth: CGFloat) -> CGRect {
+            let length = span.upperBound - span.lowerBound
+            switch side {
+            case .right, .left:
+                let x = side == .right ? display.width - depth : 0
+                return CGRect(x: x, y: display.maxY - span.upperBound, width: depth, height: length)
+            case .top, .bottom:
+                let y = side == .top ? display.height - depth : 0
+                return CGRect(x: span.lowerBound - display.minX, y: y, width: length, height: depth)
+            }
+        }
+    }
+
+    /// One door per monitor touching `display`, in the middle of the stretch they share.
+    static func doors(display: CGRect, others: [CGRect]) -> [Door] {
+        others.compactMap { o in
+            let side: Side
+            if o.minX == display.maxX { side = .right }
+            else if o.maxX == display.minX { side = .left }
+            else if o.minY == display.maxY { side = .bottom }
+            else if o.maxY == display.minY { side = .top }
+            else { return nil }
+            let horizontal = side == .top || side == .bottom
+            let from = horizontal ? max(o.minX, display.minX) : max(o.minY, display.minY)
+            let to = horizontal ? min(o.maxX, display.maxX) : min(o.maxY, display.maxY)
+            guard to > from else { return nil }
+            let half = (to - from) * doorShare / 2
+            let middle = (from + to) / 2
+            return Door(side: side, span: (middle - half)...(middle + half))
+        }
+    }
 
     /// Where desktop point `p` (inside `slice`) is drawn on the screen.
     static func toGlass(_ p: CGPoint, slice: CGRect, display: CGRect) -> CGPoint {
@@ -51,9 +90,6 @@ enum ShareZoomEdge {
         return clampInside(p, slice)
     }
 
-    /// A side of the zoomed display, in CG terms (top = low y).
-    enum Side { case left, right, top, bottom }
-
     /// The point just past the zoomed display's `side` that a drawn cursor at glass `g`
     /// (CG global) crosses onto.
     static func probe(_ side: Side, glass g: CGPoint, display: CGRect) -> CGPoint {
@@ -67,24 +103,11 @@ enum ShareZoomEdge {
         }
     }
 
-    /// Whether crossing `side` at glass `g` would land on another display.
-    static func neighbour(_ side: Side, glass g: CGPoint, display: CGRect,
-                          hasDisplay: (CGPoint) -> Bool) -> Bool {
-        hasDisplay(probe(side, glass: g, display: display))
-    }
-
-    /// Whether some display holds CG global point `p`.
-    static func anyDisplay(at p: CGPoint) -> Bool {
-        var id = CGDirectDisplayID(0), n: UInt32 = 0
-        return CGGetDisplaysWithPoint(p, 1, &id, &n) == .success && n > 0
-    }
-
     /// Where a (slowed) move to `next` ends: `next` itself inside the slice; across a
-    /// slice edge, on the display beyond the zoomed one at the matching glass spot, if
-    /// `hasDisplay` finds one there; otherwise `next`, kept on the zoomed display — past
-    /// the slice's edge, so the slice follows it (`ShareZoomPolicy.pan`).
-    static func confine(_ next: CGPoint, slice: CGRect, display: CGRect,
-                        hasDisplay: (CGPoint) -> Bool) -> CGPoint {
+    /// slice edge through a door, on the monitor beyond it at the matching glass spot;
+    /// otherwise `next`, kept on the zoomed display — past the slice's edge, so the slice
+    /// follows it (`ShareZoomPolicy.pan`).
+    static func confine(_ next: CGPoint, slice: CGRect, display: CGRect, doors: [Door]) -> CGPoint {
         let inside = clampInside(next, slice)
         if inside == next { return next }
         let g = toGlass(next, slice: slice, display: display)
@@ -93,8 +116,8 @@ enum ShareZoomEdge {
         if next.x < inside.x { sides.append(.left) }
         if next.y > inside.y { sides.append(.bottom) }
         if next.y < inside.y { sides.append(.top) }
-        if let p = sides.lazy.map({ probe($0, glass: g, display: display) }).first(where: hasDisplay) {
-            return p
+        if let side = sides.first(where: { side in doors.contains { $0.admits(side, at: g) } }) {
+            return probe(side, glass: g, display: display)
         }
         return CGPoint(x: min(max(next.x, display.minX), display.maxX - 1),
                        y: min(max(next.y, display.minY), display.maxY - 1))
@@ -104,38 +127,5 @@ enum ShareZoomEdge {
         // A hair inside the far edges: `CGRect.contains` excludes maxX/maxY.
         CGPoint(x: min(max(p.x, r.minX), r.maxX - 0.01),
                 y: min(max(p.y, r.minY), r.maxY - 0.01))
-    }
-
-    /// How deep the drawn cursor sits in the band along one axis: nil outside it, else
-    /// a signed depth, −1…0 at the low edge, 0…1 at the high one (0 = band border,
-    /// ±1 = against the screen edge). `g` and `length` are along that axis, display-local.
-    static func depth(_ g: CGFloat, length: CGFloat) -> CGFloat? {
-        let b = length * band
-        guard b > 0 else { return nil }
-        if g >= length - b { return min((g - (length - b)) / b, 1) }
-        if g <= b { return -min((b - g) / b, 1) }
-        return nil
-    }
-
-    /// The pan, in desktop units, for `dt` seconds at signed `depth`, on an axis whose
-    /// glass is `length` long at factor `k`.
-    static func step(depth: CGFloat, length: CGFloat, factor k: CGFloat, dt: CGFloat) -> CGFloat {
-        let v = innerSpeed + (outerSpeed - innerSpeed) * abs(depth)
-        let s: CGFloat = depth < 0 ? -1 : 1
-        return s * v * length / max(k, 1) * dt
-    }
-
-    /// Per axis, when the cursor entered the band and on which side. Main thread.
-    struct Dwell {
-        var side: Int = 0
-        var since: CFTimeInterval = 0
-
-        /// Updates with the current `depth` and answers whether the pan is due.
-        mutating func due(depth: CGFloat?, now: CFTimeInterval) -> Bool {
-            guard let d = depth else { side = 0; return false }
-            let s = d < 0 ? -1 : 1
-            if s != side { side = s; since = now }
-            return now - since >= dwell
-        }
     }
 }

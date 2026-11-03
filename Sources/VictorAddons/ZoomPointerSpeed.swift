@@ -35,17 +35,20 @@ final class ZoomPointerSpeed {
     /// tick (`ShareZoomEdge`). Nil = no edge rules, only the slowdown.
     private var display: CGRect?
     private var slice: CGRect?
+    private var doors: [ShareZoomEdge.Door] = []
 
     init() { createTap() }
 
     /// Main thread, every zoom tick.
-    func follow(factor: CGFloat, display: CGRect? = nil, slice: CGRect? = nil) {
+    func follow(factor: CGFloat, display: CGRect? = nil, slice: CGRect? = nil,
+                doors: [ShareZoomEdge.Door] = []) {
         let k = max(factor, 1)
         lock.lock()
         let was = self.factor
         self.factor = k
         self.display = k > 1 ? display : nil
         self.slice = k > 1 ? slice : nil
+        self.doors = doors
         if k == 1 { pos = nil }
         lock.unlock()
         guard let port = tapPort, (was > 1) != (k > 1) else { return }
@@ -59,17 +62,6 @@ final class ZoomPointerSpeed {
     }
 
     func restore() { follow(factor: 1) }
-
-    /// The edge pan moved the picture by `d` (desktop units, CG): the pointer goes with
-    /// it, so it stays at the same spot on the glass. Main thread.
-    func shift(by d: CGVector) {
-        lock.lock(); defer { lock.unlock() }
-        guard factor > 1, let p = pos ?? CGEvent(source: nil)?.location else { return }
-        let next = CGPoint(x: p.x + d.dx, y: p.y + d.dy)
-        pos = next
-        CGWarpMouseCursorPosition(next)
-        CGAssociateMouseAndMouseCursorPosition(1)
-    }
 
     private func createTap() {
         let mask = [CGEventType.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
@@ -138,12 +130,12 @@ final class ZoomPointerSpeed {
         let dy = rawDY / slow
         let moved = CGPoint(x: last.x + dx, y: last.y + dy)
         let next: CGPoint
-        if let display, let slice, slice.contains(last) {
-            // The slice's edge is the screen's edge: across it, onto the next display
-            // at the matching glass spot, the picture left where it was (`ShareZoomEdge`).
-            // With no display that way, it pushes past the slice and the slice follows.
-            next = ShareZoomEdge.confine(moved, slice: slice, display: display,
-                                         hasDisplay: ShareZoomEdge.anyDisplay(at:))
+        if let display, let slice {
+            // Through a door, onto the next display at the matching glass spot, the
+            // picture left where it was (`ShareZoomEdge`); anywhere else it pushes past
+            // the slice and the slice follows. Also while the pointer is already past
+            // the slice, waiting for the next tick: a push must not slip out there.
+            next = ShareZoomEdge.confine(moved, slice: slice, display: display, doors: doors)
         } else {
             next = Self.clampToDisplay(moved, from: last)
         }

@@ -50,6 +50,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         static let edgeTooth: CGFloat = 28
         static let edgeDepth: CGFloat = 12
         static let edgeBand: CGFloat = 3
+        /// Where the pointer may leave this display (`ShareZoomEdge`), CG global.
+        let doors: [ShareZoomEdge.Door]
         /// The zigzag comes in two beats with the zoom — a flat band fades in, then
         /// its teeth grow — and goes the other way once the zoom is back at 1×
         /// (`ZigzagFrame`, 2026-11-02; a plain 0.18 s fade from 2026-11-01).
@@ -72,6 +74,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             frame = screen.frame
             scale = screen.backingScaleFactor
             name = screen.localizedName
+            // The 🪞 screen is no door: nobody can see the pointer once it is there.
+            let bounds = CGDisplayBounds(displayID)
+            doors = ShareZoomEdge.doors(display: bounds, others: NSScreen.physical.map { CGDisplayBounds($0.displayID) })
             panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
             panel.setFrame(screen.frame, display: false)
@@ -116,6 +121,13 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edge.fillColor = NSColor.black.cgColor
             edge.actions = noAnimation
             edge.opacity = 0
+            // Sublayers of the frame, so they come and go with it.
+            for door in doors {
+                let strip = CALayer()
+                strip.frame = door.strip(on: bounds, depth: Self.edgeBand + Self.edgeDepth)
+                strip.backgroundColor = NSColor.systemRed.cgColor
+                edge.addSublayer(strip)
+            }
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
             view.layer?.addSublayer(cursor)
@@ -386,6 +398,9 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func snapshotJSON() -> String {
         let frame = active?.frame ?? .zero
+        let doorsJSON = (active?.doors ?? [])
+            .map { "{\"side\":\"\($0.side.rawValue)\",\"from\":\(Int($0.span.lowerBound)),\"to\":\(Int($0.span.upperBound))}" }
+            .joined(separator: ",")
         let rect = active?.image.contentsRect ?? .zero
         let prepared = stages.values
             .map { "\"\($0.name)\":\($0.filter != nil && $0.excludesOwnWindow)" }
@@ -402,7 +417,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"rehides":\(rehides),"prepared":{\(prepared)},\
         "effectsExcluded":{\(effectsExcluded)},"filterRefreshes":\(filterRefreshes),\
-        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"edgePans":\(edgePans),"origin":[\(Int(origin.x)),\(Int(origin.y))],"ticks":\(tickCount),"fps":\(captureFPS)}
+        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"doors":[\(doorsJSON)],"origin":[\(Int(origin.x)),\(Int(origin.y))],"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
 
@@ -721,49 +736,6 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Follow the pointer
 
-    /// When the drawn cursor came to rest in the band of each axis (`ShareZoomEdge`).
-    private var dwellX = ShareZoomEdge.Dwell()
-    private var dwellY = ShareZoomEdge.Dwell()
-    private var lastEdgeTick: CFTimeInterval = 0
-
-    /// 🔎 The cursor resting in the outer 10 % of the glass for 300 ms pans that way,
-    /// and the pointer goes with the picture — only toward a side with another display
-    /// beyond it (`ShareZoomEdge.neighbour`); elsewhere the pointer pushing past the
-    /// slice pans it, as it always did. `p` and the answer are display-local, Cocoa
-    /// (y up); `bounds` is the display, CG global. Main thread.
-    private func edgePan(_ p: CGPoint, size: CGSize, bounds: CGRect) -> CGPoint {
-        let now = CFAbsoluteTimeGetCurrent()
-        let dt = CGFloat(min(max(now - lastEdgeTick, 0), 0.05))
-        lastEdgeTick = now
-        let k = max(current, 1)
-        guard k > 1 else { return p }
-        let glass = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: k)
-        var depthX = ShareZoomEdge.depth(glass.x, length: size.width)
-        var depthY = ShareZoomEdge.depth(glass.y, length: size.height)
-        // Cocoa's y grows up, CG's down: depthY > 0 is the top.
-        let g = CGPoint(x: bounds.minX + glass.x, y: bounds.minY + (size.height - glass.y))
-        if let d = depthX, !ShareZoomEdge.neighbour(d > 0 ? .right : .left, glass: g, display: bounds,
-                                                    hasDisplay: ShareZoomEdge.anyDisplay(at:)) { depthX = nil }
-        if let d = depthY, !ShareZoomEdge.neighbour(d > 0 ? .top : .bottom, glass: g, display: bounds,
-                                                    hasDisplay: ShareZoomEdge.anyDisplay(at:)) { depthY = nil }
-        var want = origin
-        if dwellX.due(depth: depthX, now: now), let d = depthX {
-            want.x += ShareZoomEdge.step(depth: d, length: size.width, factor: k, dt: dt)
-        }
-        if dwellY.due(depth: depthY, now: now), let d = depthY {
-            want.y += ShareZoomEdge.step(depth: d, length: size.height, factor: k, dt: dt)
-        }
-        let next = ShareZoomPolicy.clamp(origin: want, factor: k, screenSize: size)
-        let moved = CGVector(dx: next.x - origin.x, dy: next.y - origin.y)
-        guard moved.dx != 0 || moved.dy != 0 else { return p }
-        origin = next
-        edgePans += 1
-        // Cocoa's y grows up, CG's down.
-        pointerSpeed.shift(by: CGVector(dx: moved.dx, dy: -moved.dy))
-        return CGPoint(x: p.x + moved.dx, y: p.y + moved.dy)
-    }
-    private var edgePans = 0
-
     private func startTick() {
         tick?.invalidate()
         let t = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in self?.follow() }
@@ -817,26 +789,23 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         let focus = pinnedFocus ?? NSEvent.mouseLocation
         let inside = NSMouseInRect(focus, s.frame, false)
         let bounds = CGDisplayBounds(s.displayID)
-        var p = CGPoint(x: min(max(focus.x - s.frame.minX, 0), size.width),
+        let p = CGPoint(x: min(max(focus.x - s.frame.minX, 0), size.width),
                         y: min(max(focus.y - s.frame.minY, 0), size.height))
         // Away on another display the picture stays where it was left
         // (`ShareZoomEdge`): until 2026-11-02 the pointer clamped to the edge it left
         // by dragged the slice all the way to that side on the way out.
         if inside {
             origin = ShareZoomPolicy.rezoom(origin: origin, from: previous, to: current, pointer: p, screenSize: size)
-            if pinnedFocus == nil { p = edgePan(p, size: size, bounds: bounds) }
-            // A pointer past the slice's edge on a side with no display beyond (pushed
-            // there by `ShareZoomEdge.confine`), or someone else's warp: the slice follows.
+            // A pointer past the slice's edge anywhere but a door (pushed there by
+            // `ShareZoomEdge.confine`), or someone else's warp: the slice follows.
             origin = ShareZoomPolicy.pan(origin: origin, pointer: p, factor: current, screenSize: size)
-        } else {
-            dwellX = .init(); dwellY = .init()
         }
         // A pinned focus is a test with the real mouse left alone — its speed too.
         let k = max(current, 1)
         let slice = CGRect(x: bounds.minX + origin.x,
                            y: bounds.minY + (size.height - origin.y - size.height / k),
                            width: size.width / k, height: size.height / k)
-        pointerSpeed.follow(factor: pinnedFocus == nil ? current : 1, display: bounds, slice: slice)
+        pointerSpeed.follow(factor: pinnedFocus == nil ? current : 1, display: bounds, slice: slice, doors: s.doors)
 
         // Every layer write is a commit, and every commit makes WindowServer recompose
         // the whole Retina — which the stream then films again (it excludes a window,

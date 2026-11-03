@@ -208,27 +208,31 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   pointer (`ShareZoomPolicy.rezoom`). The first build kept the pointer as the fixed point
   of the magnification instead, so the whole desktop slid under every mouse move — "nu e
   aceeași experiență".
-- **It pans only when the cursor rests at an edge (`ShareZoomEdge`, 2026-11-02)** —
-  Victor: *"dacă mut mouse-ul repede peste edge, să nu facă pan. Dacă-l las în zona
-  magnificată adiacentă marginii (undeva pe 10 % din suprafață), panul să înceapă după
-  300 ms"*; the point is a quick trip to the next monitor (to fetch an animation) that
-  leaves the picture where it was. Until then the slice followed the pointer the moment it
-  pushed an edge (macOS's `closeViewPanningMode = 1`), so the way out dragged the picture
-  all the way to that side. Now:
-  - **The slice's edge is the screen's edge.** `ZoomPointerSpeed` confines the slowed
-    pointer to the slice; a move across a slice edge lands on the adjacent display at the
-    spot where the drawn cursor touched the glass (`ShareZoomEdge.confine`); with no
-    display there it runs on past the slice's edge and the slice follows it at once
-    (`ShareZoomPolicy.pan`) — the push pan of before. Off the zoomed display the mouse runs at normal
-    speed (it was slowed on every display before); coming back, it enters the slice where
-    the hand crosses the glass edge (`fromGlass`). Away, the picture is not touched.
-  - **Resting in the outer 10 % of the glass for 300 ms pans that way — only toward a
-    side with another display beyond it** (`ShareZoomEdge.neighbour`, same day: *"fără
-    ecrane laterale, nu trebuie să se facă pan decât la împingerea în edge, ca până
-    azi"*; the dwell only exists so a fast move onto a neighbour does not pan). Per axis, at
-    0.3 glass widths/s at the band's inner border up to 1.2 against the edge; the pointer
-    is warped along with the picture (`ZoomPointerSpeed.shift`) so it keeps its spot on the
-    glass. On the sides with no display, `ShareZoomPolicy.pan` is the pan. `/test/share-zoom` reports `edgePans` and `origin`.
+- **One red door per neighbouring monitor; everywhere else pushing pans (`ShareZoomEdge`,
+  2026-11-04)** — Victor: *"dacă trec … prin centrul laturii … un edge roșu. Asta îmi arată
+  că pe acolo o să iasă"*, and coming back *"rămâne unde e, indiferent pe [unde] intră în
+  retina"*. Pushing an edge has to do two things, pan and reach the next monitor, and each
+  now has its own place:
+  - **The door.** One per monitor touching the zoomed display (`ShareZoomEdge.doors`, from
+    `NSScreen.physical`, so never the invisible 🪞 screen): the middle 10 % of the stretch
+    the two share, a red strip over the zigzag (a sublayer of it, so it comes and goes with
+    the frame; the share carries it). `ZoomPointerSpeed` confines the slowed pointer: a move
+    across a slice edge at the door lands on that monitor at the spot where the drawn cursor
+    touched the glass (`ShareZoomEdge.confine`), and the picture stays put.
+  - **Anywhere else on any side**, monitor beyond it or not, the pointer runs on past the
+    slice's edge and the slice follows it at once (`ShareZoomPolicy.pan`, macOS's
+    `closeViewPanningMode = 1`), stopping at the desktop's edge. `confine` holds even while
+    the pointer is already past the slice waiting for the next tick; a push must not slip
+    out there.
+  - **Coming back moves nothing**, wherever the pointer crosses: off the zoomed display the
+    mouse runs at normal speed, and it enters the slice where the hand crosses the glass
+    edge (`fromGlass`), so `pan` has nothing to do.
+  - **Gone, the 2026-11-02 dwell** (300 ms in the outer 10 % of the glass panned toward a
+    side with a monitor, 0.3–1.2 glass widths/s, pointer warped along). It existed so a fast
+    trip to the next monitor did not drag the picture, which the door now does; meanwhile it
+    made the pan along that side a wait, and a cursor resting in the band just after coming
+    back dragged the picture away.
+  `/test/share-zoom` reports `doors` (`side`, `from`, `to`, CG global) and `origin`.
 - **The mouse is slowed in proportion to the zoom (`ZoomPointerSpeed`, 2026-10-27, made
   proportional 2026-10-29)** — at 4× the drawn cursor otherwise crosses the glass four
   times as fast, and a small move on the table sent the slice running left and right
