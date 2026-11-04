@@ -12,22 +12,26 @@ final class ShareZoomEdgeTests: XCTestCase {
         ShareZoomEdge.confine(CGPoint(x: x, y: y), slice: s ?? slice, display: display, doors: rightDoor)
     }
 
-    /// The door fills red only with the drawn cursor on its stretch of frame. `under`
-    /// takes Cocoa coordinates: y grows up, so the 270…330 door is at 270…330 of 600 too.
-    func testTheDoorUnderTheDrawnCursorIsTheOneOnItsStretchOfFrame() {
-        func under(_ x: CGFloat, _ y: CGFloat) -> ShareZoomEdge.Door? {
-            ShareZoomEdge.door(under: CGPoint(x: x, y: y), doors: rightDoor, display: display, depth: 17)
+    /// The door fills red with the drawn cursor still `reach` away from its stretch of
+    /// frame, not only on it. `near` takes Cocoa coordinates: y grows up, so the 270…330
+    /// door is at 270…330 of 600 too.
+    func testTheDoorLightsUpWithTheDrawnCursorStillAwayFromIt() {
+        func near(_ x: CGFloat, _ y: CGFloat) -> ShareZoomEdge.Door? {
+            ShareZoomEdge.door(near: CGPoint(x: x, y: y), doors: rightDoor, display: display,
+                               depth: 17, reach: 120)
         }
-        XCTAssertEqual(under(990, 300)?.side, .right)
-        XCTAssertNil(under(980, 300), "further in than the teeth")
-        XCTAssertNil(under(990, 340), "on the frame, past the door")
+        XCTAssertEqual(near(990, 300)?.side, .right, "on it")
+        XCTAssertEqual(near(870, 300)?.side, .right, "120 pt ahead of it, across the side")
+        XCTAssertEqual(near(990, 445)?.side, .right, "120 pt ahead of it, along the side")
+        XCTAssertNil(near(860, 300), "further in than the reach")
+        XCTAssertNil(near(990, 455), "further along than the reach")
     }
 
     /// Far from the bottom-left origin, as the ASUS is, and at the very last pixel.
     func testADoorIsFoundOnADisplayAwayFromTheOriginUpToTheScreensEdge() {
         let asus = CGRect(x: 1728, y: 100, width: 1000, height: 600)
         let top = [ShareZoomEdge.Door(side: .top, span: 2200...2260)]
-        let d = ShareZoomEdge.door(under: CGPoint(x: 500, y: 600), doors: top, display: asus, depth: 17)
+        let d = ShareZoomEdge.door(near: CGPoint(x: 500, y: 600), doors: top, display: asus, depth: 17, reach: 0)
         XCTAssertEqual(d?.side, .top)
     }
 

@@ -60,11 +60,15 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// How deep into the glass a door's stretch of frame reaches: a little past the
         /// teeth, as the stroke rides out past their tips.
         static let doorDepth: CGFloat = edgeBand + edgeDepth + 2
-        /// The door under the drawn cursor turns its black red, teeth included, right out
-        /// to the screen's edge (Victor, 2026-11-04: *"să se umple cu roșu toate
-        /// triunghiurile … ca să îmi atragă atenția că ies din ecran"*): one more push
-        /// and the pointer is on the next monitor. The frame's own shape, masked to
-        /// that door; off the door it is the thin `doorLine` again.
+        /// A door lights up this far ahead of the drawn cursor reaching it, in glass
+        /// points (Victor, 2026-11-04: *"la distanță deja să se aprindă cu roșu, nu chiar
+        /// când calc pe ea"*): stepping on it to find out is too late to steer.
+        static let doorReach: CGFloat = 120
+        /// The door the drawn cursor is near turns its black red, teeth included, right
+        /// out to the screen's edge (Victor, 2026-11-04: *"să se umple cu roșu toate
+        /// triunghiurile … ca să îmi atragă atenția că ies din ecran"*): the pointer is
+        /// about to be on the next monitor. The frame's own shape, masked to that door;
+        /// away from it, it is the thin `doorLine` again.
         let doorFill = CAShapeLayer()
         private let doorFillMask = CAShapeLayer()
         private(set) var filledDoor: ShareZoomEdge.Door?
@@ -871,7 +875,8 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         if inside {
             let drawnAt = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             publishCursor(CGPoint(x: s.frame.minX + drawnAt.x, y: s.frame.minY + drawnAt.y))
-            s.fillDoor(ShareZoomEdge.door(under: drawnAt, doors: s.doors, display: bounds, depth: Stage.doorDepth))
+            s.fillDoor(ShareZoomEdge.door(near: drawnAt, doors: s.doors, display: bounds,
+                                               depth: Stage.doorDepth, reach: Stage.doorReach))
         } else {
             publishCursor(nil)
             s.fillDoor(nil)

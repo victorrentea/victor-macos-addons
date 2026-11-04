@@ -82,11 +82,13 @@ enum ShareZoomEdge {
         }
     }
 
-    /// The door whose stretch of frame (`Door.strip`, `depth` deep) holds the drawn
-    /// cursor, which comes in the display's own Cocoa coordinates.
-    static func door(under at: CGPoint, doors: [Door], display: CGRect, depth: CGFloat) -> Door? {
+    /// The door the drawn cursor is within `reach` of, measured from its stretch of frame
+    /// (`Door.strip`, `depth` deep), along the side as well as across it. The cursor comes
+    /// in the display's own Cocoa coordinates.
+    static func door(near at: CGPoint, doors: [Door], display: CGRect, depth: CGFloat,
+                     reach: CGFloat) -> Door? {
         let p = clampInside(at, CGRect(origin: .zero, size: display.size))
-        return doors.first { $0.strip(on: display, depth: depth).contains(p) }
+        return doors.first { $0.strip(on: display, depth: depth).insetBy(dx: -reach, dy: -reach).contains(p) }
     }
 
     /// Where desktop point `p` (inside `slice`) is drawn on the screen.
