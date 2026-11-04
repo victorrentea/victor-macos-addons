@@ -30,13 +30,22 @@ through it; only *when* Victor decides changes.
   `~/Library/Caches/ro.victorrentea.macos-addons/prompt-capture/`, the same reclaimable
   place the clipboard history uses: nothing here is an archive — the notes file is where
   a prompt is *kept* once it is sent.
-- **The badge says which agent** — 🅒 Claude, 🅖 Copilot, 🤖 unknown. Both capture hooks
+- **The badge says which agent** — 🅒 Claude, 🅖 Copilot, Ⓒ Cursor, 🤖 unknown. Both capture hooks
   (`~/.claude/hooks/capture-prompt.sh`, `~/.copilot/hooks/capture-prompt.sh`) now append
   `?src=` to the same route; a hook that sends none still captures, just unbadged, so the
   parameter can never become a reason a prompt is lost.
+- **Cursor runs the Claude hook, and must not wear Clawd** (2026-11-04, Victor: *"It's
+  misleading. This was actually cursor."*). Cursor loads `~/.claude/settings.json` and maps
+  `UserPromptSubmit` onto its `beforeSubmitPrompt`, so a prompt typed in Cursor reached
+  `~/.claude/hooks/capture-prompt.sh`, which said `src=claude` unconditionally. The hook now
+  sends `src=cursor` when the payload carries `cursor_version`, or when both `CURSOR_VERSION`
+  and `CURSOR_PROJECT_DIR` are in its environment — all three are added by Cursor's hook
+  runner (read from its bundle, version 2026.10.22). The pair is deliberate: **Claude Code
+  started inside Cursor's terminal is still Claude**, so `CURSOR_TRACE_ID`, which that
+  terminal does set, is no evidence. The icon is `Cursor.app`'s own, read at runtime.
 - **The offer pill wears the same face** (2026-10-02): the bottom-left pill puts the
-  agent's icon — Clawd or the Copilot mark, `PromptSource.icon`, read off the VS Code
-  extensions at runtime like the panel's — in front of the prompt, and drops the 🤖
+  agent's icon — Clawd, the Copilot mark or Cursor's, `PromptSource.icon`, read off the
+  Mac at runtime like the panel's — in front of the prompt, and drops the 🤖
   then (the icon already says "an agent prompt", and which one). An unbadged hook, or
   a missing icon file, keeps the 🤖. The banner is shared with the ⌘⌃S undo pill and
   the result flashes, so those set `icon = nil`; and `show()` on an already-visible

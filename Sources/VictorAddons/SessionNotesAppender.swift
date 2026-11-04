@@ -236,7 +236,7 @@ enum SessionNotesAppender {
     ///
     /// With the agent's icon in front (2026-10-02, Victor: *"să afișezi o
     /// iconiță mică în dreptul promptului … a cui a fost acel prompt"*) the 🤖
-    /// steps aside: Clawd or the Copilot face already says "an agent prompt",
+    /// steps aside: Clawd, the Copilot face or Cursor's cube already says "an agent prompt",
     /// and says which one. Only an unbadged hook keeps the 🤖.
     private static func formatPromptLabel(from text: String, hasIcon: Bool) -> String {
         return hasIcon ? singleLine(text) : Marker.agentPrompt.rawValue + " " + singleLine(text)

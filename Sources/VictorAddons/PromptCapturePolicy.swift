@@ -7,9 +7,14 @@ import Foundation
 /// the only thing that tells them apart is the `?src=` they append. An older
 /// hook that doesn't send one still captures — it lands as `.unknown` rather
 /// than being dropped, because a prompt with no badge is still a prompt.
+///
+/// **`.cursor` has no hook of its own**: Cursor loads `~/.claude/settings.json`
+/// and runs the Claude hook, which tells the two apart by what Cursor's hook
+/// runner adds (`cursor_version`) — see `docs/session-notes.md`.
 enum PromptSource: String, Codable {
     case claude
     case copilot
+    case cursor
     case unknown
 
     /// The one glyph the panel shows in front of a prompt. Deliberately a
@@ -19,6 +24,7 @@ enum PromptSource: String, Codable {
         switch self {
         case .claude:  return "🅒"
         case .copilot: return "🅖"
+        case .cursor:  return "Ⓒ"
         case .unknown: return "🤖"
         }
     }
@@ -27,6 +33,7 @@ enum PromptSource: String, Codable {
         switch self {
         case .claude:  return "Claude"
         case .copilot: return "Copilot"
+        case .cursor:  return "Cursor"
         case .unknown: return "agent"
         }
     }

@@ -147,12 +147,13 @@ final class PromptCapturePolicyTests: XCTestCase {
         XCTAssertEqual(PromptSource.parse("Copilot"), .copilot)
         XCTAssertEqual(PromptSource.parse(nil), .unknown)
         XCTAssertEqual(PromptSource.parse(""), .unknown)
-        XCTAssertEqual(PromptSource.parse("cursor"), .unknown)
+        XCTAssertEqual(PromptSource.parse("cursor"), .cursor)
+        XCTAssertEqual(PromptSource.parse("windsurf"), .unknown)
     }
 
     func testEverySourceHasItsOwnBadge() {
-        let badges = Set([PromptSource.claude, .copilot, .unknown].map(\.badge))
-        XCTAssertEqual(badges.count, 3)
+        let badges = Set([PromptSource.claude, .copilot, .cursor, .unknown].map(\.badge))
+        XCTAssertEqual(badges.count, 4)
     }
 
     // MARK: display

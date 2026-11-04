@@ -301,7 +301,7 @@ private final class PromptRowView: NSTableCellView {
     /// to `PromptSource.badge`.
     private static let icons: [PromptSource: NSImage] = {
         var out: [PromptSource: NSImage] = [:]
-        for source in [PromptSource.claude, .copilot] {
+        for source in [PromptSource.claude, .copilot, .cursor] {
             if let image = source.icon(height: 16) { out[source] = image }
         }
         return out
