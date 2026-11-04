@@ -82,6 +82,13 @@ enum ShareZoomEdge {
         }
     }
 
+    /// The door whose stretch of frame (`Door.strip`, `depth` deep) holds the drawn
+    /// cursor, which comes in the display's own Cocoa coordinates.
+    static func door(under at: CGPoint, doors: [Door], display: CGRect, depth: CGFloat) -> Door? {
+        let p = clampInside(at, CGRect(origin: .zero, size: display.size))
+        return doors.first { $0.strip(on: display, depth: depth).contains(p) }
+    }
+
     /// Where desktop point `p` (inside `slice`) is drawn on the screen.
     static func toGlass(_ p: CGPoint, slice: CGRect, display: CGRect) -> CGPoint {
         let k = display.width / max(slice.width, 1)

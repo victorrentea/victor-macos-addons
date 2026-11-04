@@ -12,6 +12,25 @@ final class ShareZoomEdgeTests: XCTestCase {
         ShareZoomEdge.confine(CGPoint(x: x, y: y), slice: s ?? slice, display: display, doors: rightDoor)
     }
 
+    /// The door fills red only with the drawn cursor on its stretch of frame. `under`
+    /// takes Cocoa coordinates: y grows up, so the 270…330 door is at 270…330 of 600 too.
+    func testTheDoorUnderTheDrawnCursorIsTheOneOnItsStretchOfFrame() {
+        func under(_ x: CGFloat, _ y: CGFloat) -> ShareZoomEdge.Door? {
+            ShareZoomEdge.door(under: CGPoint(x: x, y: y), doors: rightDoor, display: display, depth: 17)
+        }
+        XCTAssertEqual(under(990, 300)?.side, .right)
+        XCTAssertNil(under(980, 300), "further in than the teeth")
+        XCTAssertNil(under(990, 340), "on the frame, past the door")
+    }
+
+    /// Far from the bottom-left origin, as the ASUS is, and at the very last pixel.
+    func testADoorIsFoundOnADisplayAwayFromTheOriginUpToTheScreensEdge() {
+        let asus = CGRect(x: 1728, y: 100, width: 1000, height: 600)
+        let top = [ShareZoomEdge.Door(side: .top, span: 2200...2260)]
+        let d = ShareZoomEdge.door(under: CGPoint(x: 500, y: 600), doors: top, display: asus, depth: 17)
+        XCTAssertEqual(d?.side, .top)
+    }
+
     func testAMoveInsideTheSliceStaysPut() {
         XCTAssertEqual(confine(400, 300), CGPoint(x: 400, y: 300))
     }

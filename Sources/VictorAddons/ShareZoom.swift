@@ -57,6 +57,20 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// cu roșu"*; a solid strip was *"mult prea violentă"*). A sublayer of the frame,
         /// so it fades with it; its teeth grow with it through `ZigzagFrame`.
         let doorLine = CAShapeLayer()
+        /// How deep into the glass a door's stretch of frame reaches: a little past the
+        /// teeth, as the stroke rides out past their tips.
+        static let doorDepth: CGFloat = edgeBand + edgeDepth + 2
+        /// The door under the drawn cursor turns its black red, teeth included, right out
+        /// to the screen's edge (Victor, 2026-11-04: *"să se umple cu roșu toate
+        /// triunghiurile … ca să îmi atragă atenția că ies din ecran"*): one more push
+        /// and the pointer is on the next monitor. The frame's own shape, masked to
+        /// that door; off the door it is the thin `doorLine` again.
+        let doorFill = CAShapeLayer()
+        private let doorFillMask = CAShapeLayer()
+        private(set) var filledDoor: ShareZoomEdge.Door?
+        /// When the teeth have finished growing: `doorFill` is always sharp, so until
+        /// then it would stick out of a frame still flat.
+        private var sharpAt: CFTimeInterval = 0
         /// The zigzag comes in two beats with the zoom — a flat band fades in, then
         /// its teeth grow — and goes the other way once the zoom is back at 1×
         /// (`ZigzagFrame`, 2026-11-02; a plain 0.18 s fade from 2026-11-01).
@@ -128,8 +142,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             edge.actions = noAnimation
             edge.opacity = 0
             let openings = CGMutablePath()
-            // A little deeper than the teeth: the stroke rides out past their tips.
-            for door in doors { openings.addRect(door.strip(on: bounds, depth: Self.edgeBand + Self.edgeDepth + 2)) }
+            for door in doors { openings.addRect(door.strip(on: bounds, depth: Self.doorDepth)) }
             let mask = CAShapeLayer()
             mask.frame = view.bounds
             mask.path = openings
@@ -141,6 +154,15 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             doorLine.lineJoin = .miter
             doorLine.actions = noAnimation
             doorLine.mask = mask
+            doorFillMask.frame = view.bounds
+            doorFillMask.actions = ["path": NSNull()]
+            doorFill.frame = view.bounds
+            doorFill.path = outer
+            doorFill.fillRule = .evenOdd
+            doorFill.fillColor = NSColor.systemRed.cgColor
+            doorFill.opacity = 0
+            doorFill.mask = doorFillMask
+            edge.addSublayer(doorFill)
             edge.addSublayer(doorLine)
             view.layer?.addSublayer(image)
             view.layer?.addSublayer(edge)
@@ -165,10 +187,27 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             guard on != edgeShown else { return }
             edgeShown = on
             if on, animated {
-                ZigzagFrame.appear(edge: edge, line: doorLine)
+                sharpAt = CACurrentMediaTime() + ZigzagFrame.appear(edge: edge, line: doorLine)
             } else {
+                fillDoor(nil)
                 ZigzagFrame.set(edge: edge, line: doorLine, sharp: true, visible: on)
             }
+        }
+
+        /// Fills `door` with red, or lets go of the one filled. Writes only on a change:
+        /// `follow` asks 120× a second (every layer write is a commit).
+        func fillDoor(_ door: ShareZoomEdge.Door?) {
+            let door = CACurrentMediaTime() >= sharpAt ? door : nil
+            guard door != filledDoor else { return }
+            filledDoor = door
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(door == nil ? 0.2 : 0.08)
+            if let door {
+                doorFillMask.path = CGPath(rect: door.strip(on: CGDisplayBounds(displayID), depth: Self.doorDepth),
+                                           transform: nil)
+            }
+            doorFill.opacity = door == nil ? 0 : 1
+            CATransaction.commit()
         }
 
         /// The inner outline of the zigzag frame: a closed polygon just inside the
@@ -431,7 +470,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"rehides":\(rehides),"prepared":{\(prepared)},\
         "effectsExcluded":{\(effectsExcluded)},"filterRefreshes":\(filterRefreshes),\
-        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"doors":[\(doorsJSON)],"origin":[\(Int(origin.x)),\(Int(origin.y))],"pointer":\(pointerSpeed.statsJSON()),"ticks":\(tickCount),"fps":\(captureFPS)}
+        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"doors":[\(doorsJSON)],"doorFilled":"\(active?.filledDoor?.side.rawValue ?? "")","origin":[\(Int(origin.x)),\(Int(origin.y))],"pointer":\(pointerSpeed.statsJSON()),"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
 
@@ -773,6 +812,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             if s.edgeShown {
                 s.edgeShown = false
                 s.hideDrawnCursor()
+                s.fillDoor(nil)
                 publishCursor(nil)
                 restoreCursor()
                 pointerSpeed.restore()
@@ -831,8 +871,10 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         if inside {
             let drawnAt = ShareZoomPolicy.cursorPoint(pointer: p, origin: origin, factor: current)
             publishCursor(CGPoint(x: s.frame.minX + drawnAt.x, y: s.frame.minY + drawnAt.y))
+            s.fillDoor(ShareZoomEdge.door(under: drawnAt, doors: s.doors, display: bounds, depth: Stage.doorDepth))
         } else {
             publishCursor(nil)
+            s.fillDoor(nil)
         }
         if inside, pinnedFocus == nil {
             hideCursor()

@@ -220,7 +220,11 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
     the frame's inner edge, like the grey line of before 2026-11-02 (`doorLine`, a sublayer
     masked to the doors, so it fades with the frame, and `ZigzagFrame` grows its teeth with
     the frame's; the share carries it). The first build was a solid 15 pt red strip:
-    *"mult prea violentă… o bordură subtilă"*. `ZoomPointerSpeed` confines the slowed pointer: a move
+    *"mult prea violentă… o bordură subtilă"*. **With the drawn cursor on that stretch, its
+    black turns red** right out to the screen's edge, teeth included (`doorFill`, 2026-11-04:
+    *"să se umple cu roșu toate triunghiurile … ca să îmi atragă atenția că ies din ecran"*),
+    so the violence is there exactly when one more push leaves the screen; 0.08 s in, 0.2 s
+    out. `/test/share-zoom` reports it as `doorFilled`. `ZoomPointerSpeed` confines the slowed pointer: a move
     across a slice edge at the door lands on that monitor at the spot where the drawn cursor
     touched the glass (`ShareZoomEdge.confine`), and the picture stays put.
   - **Anywhere else on any side**, monitor beyond it or not, the pointer runs on past the
