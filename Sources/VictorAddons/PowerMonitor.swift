@@ -45,4 +45,18 @@ class PowerMonitor {
         }
         return true
     }
+
+    /// 0-100, or -1 on a Mac without a battery. The tablet's charge chip.
+    static func chargePct() -> Int {
+        let info = IOPSCopyPowerSourcesInfo().takeRetainedValue()
+        let list = IOPSCopyPowerSourcesList(info).takeRetainedValue() as! [CFTypeRef]
+        for src in list {
+            if let desc = IOPSGetPowerSourceDescription(info, src)?.takeUnretainedValue() as? [String: Any],
+               let level = desc[kIOPSCurrentCapacityKey] as? Int,
+               let max = desc[kIOPSMaxCapacityKey] as? Int, max > 0 {
+                return level * 100 / max
+            }
+        }
+        return -1
+    }
 }
