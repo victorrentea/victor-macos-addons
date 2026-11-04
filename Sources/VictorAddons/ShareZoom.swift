@@ -431,7 +431,7 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         "cursorFrame":[\(Int(active?.cursor.frame.width ?? 0)),\(Int(active?.cursor.frame.height ?? 0))],\
         "streaming":\(stream != nil),"cursorHidden":\(cursorHidden),"hideDepth":\(hideDepth),"rehides":\(rehides),"prepared":{\(prepared)},\
         "effectsExcluded":{\(effectsExcluded)},"filterRefreshes":\(filterRefreshes),\
-        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"doors":[\(doorsJSON)],"origin":[\(Int(origin.x)),\(Int(origin.y))],"ticks":\(tickCount),"fps":\(captureFPS)}
+        "startupMs":\(lastStartupMs),\(echoJSON()),"commits":\(commits),"doors":[\(doorsJSON)],"origin":[\(Int(origin.x)),\(Int(origin.y))],"pointer":\(pointerSpeed.statsJSON()),"ticks":\(tickCount),"fps":\(captureFPS)}
         """
     }
 

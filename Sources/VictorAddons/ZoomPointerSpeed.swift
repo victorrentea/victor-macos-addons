@@ -45,6 +45,13 @@ final class ZoomPointerSpeed {
     private static let settle: CFTimeInterval = 0.08
     /// Closer than this to where we put it, an event's location is not a stale one.
     private static let caughtUp: CGFloat = 40
+    /// What the tap did since the zoom started, for `/test/share-zoom`: does the hand's
+    /// travel really arrive divided, or do moves leak through at full speed?
+    private var stats = Stats()
+    struct Stats {
+        var scaled = 0, followed = 0, held = 0, offDisplay = 0, tapDisabled = 0
+        var rawPoints = 0.0, appliedPoints = 0.0, followedPoints = 0.0
+    }
 
     init() { createTap() }
 
@@ -62,6 +69,7 @@ final class ZoomPointerSpeed {
         lock.unlock()
         guard let port = tapPort, (was > 1) != (k > 1) else { return }
         if k > 1 {
+            lock.lock(); stats = Stats(); lock.unlock()
             let stored = UserDefaults.standard.double(forKey: Self.glassSpeedKey)
             let g = stored > 0 ? CGFloat(stored) : ShareZoomPolicy.defaultGlassSpeed
             lock.lock(); glassSpeed = g; lock.unlock()
@@ -71,6 +79,18 @@ final class ZoomPointerSpeed {
     }
 
     func restore() { follow(factor: 1) }
+
+    /// One JSON object for `/test/share-zoom`.
+    func statsJSON() -> String {
+        lock.lock(); defer { lock.unlock() }
+        let s = stats
+        return """
+        {"glassSpeed":\(glassSpeed),"slowdown":\(String(format: "%.2f", ShareZoomPolicy.pointerSlowdown(factor, glassSpeed: glassSpeed))),\
+        "scaled":\(s.scaled),"rawPoints":\(Int(s.rawPoints)),"appliedPoints":\(Int(s.appliedPoints)),\
+        "followed":\(s.followed),"followedPoints":\(Int(s.followedPoints)),\
+        "held":\(s.held),"offDisplay":\(s.offDisplay),"tapDisabled":\(s.tapDisabled)}
+        """
+    }
 
     private func createTap() {
         let mask = [CGEventType.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
@@ -103,6 +123,7 @@ final class ZoomPointerSpeed {
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         lock.lock(); defer { lock.unlock() }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            stats.tapDisabled += 1
             if factor > 1, let port = tapPort { CGEvent.tapEnable(tap: port, enable: true) }
             return Unmanaged.passUnretained(event)
         }
@@ -125,6 +146,7 @@ final class ZoomPointerSpeed {
         let clock = CFAbsoluteTimeGetCurrent()
         if settling, let last = pos {
             heldEvents += 1
+            stats.held += 1
             heldDelta = max(heldDelta, hypot(rawDX, rawDY))
             let offZoomed = display.map { !$0.contains(last) && !$0.contains(now) } ?? false
             if offZoomed || hypot(now.x - last.x, now.y - last.y) < Self.caughtUp || clock >= settleUntil {
@@ -146,6 +168,7 @@ final class ZoomPointerSpeed {
         // onto it, it enters the slice where the hand crosses the glass edge.
         if let display, let slice, let last = pos, !display.contains(last) {
             guard display.contains(now) else {
+                stats.offDisplay += 1
                 pos = now
                 return Unmanaged.passUnretained(event)
             }
@@ -161,12 +184,17 @@ final class ZoomPointerSpeed {
         // display change): follow it rather than scale it.
         guard let last = pos, !ShareZoomPolicy.followsUnscaled(
             now: now, last: last, delta: CGVector(dx: rawDX, dy: rawDY)) else {
+            stats.followed += 1
+            stats.followedPoints += hypot(rawDX, rawDY)
             pos = now
             return Unmanaged.passUnretained(event)
         }
         let slow = Double(ShareZoomPolicy.pointerSlowdown(factor, glassSpeed: glassSpeed))
         let dx = rawDX / slow
         let dy = rawDY / slow
+        stats.scaled += 1
+        stats.rawPoints += hypot(rawDX, rawDY)
+        stats.appliedPoints += hypot(dx, dy)
         let moved = CGPoint(x: last.x + dx, y: last.y + dy)
         let next: CGPoint
         if let display, let slice {

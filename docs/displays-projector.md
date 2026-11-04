@@ -257,11 +257,16 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   `last + delta / slowdown` (`ShareZoomPolicy.pointerSlowdown`; the event's own delta,
   already accelerated), keeping the fractions in its own `pos` and clamped to the display;
   the event's location and deltas are told the same. So the acceleration curve stays, only
-  scaled. **The rule: `slowdown = min(factor², factor / glassSpeed)`**, `glassSpeed = 0.5`.
-  From 2× up the drawn cursor crosses the *glass* at half the unzoomed speed whatever the
-  factor — the hand covers the same stretch of glass per centimetre, the desktop pointer
-  exactly 1/factor of it; below 2× it eases in from the unzoomed speed (the glass sees
-  1/factor) instead of halving at the first notch. History: the first build divided
+  scaled. **The rule: `slowdown = min(factor⁵, factor / glassSpeed)`**, `glassSpeed = 0.4`.
+  From ~1.26× up the drawn cursor crosses the *glass* at 0.4 of the unzoomed speed whatever
+  the factor — the hand covers the same stretch of glass per centimetre, the desktop pointer
+  exactly 1/factor of it; below that it eases in over five notches instead of dropping at
+  the first one. Until 2026-11-04 the ease was `factor²` and `glassSpeed` 0.5, so all of
+  1–2× ran at 1/factor of the unzoomed speed (0.77 at 1.3×), out of `ZoomPointerGlassSpeed`'s
+  reach, since lowering it only pushed the meeting point further out. `/test/share-zoom`
+  reports `pointer` since the zoom started (`scaled`, `rawPoints` → `appliedPoints`,
+  `followed`, `held`, `offDisplay`, `tapDisabled`): a real hand's moves, unlike the synthetic
+  ones below, so a leak at full speed shows as `followed` or `tapDisabled` above 0. History: the first build divided
   `now − last` by the whole factor: WindowServer rounds the warped position, the rounding
   ate most of every slow move, and the cursor all but froze (*"abia dacă pot să mișc"*) —
   hence the event delta. Then powers of the factor: √ (*"prea rapid"*), ^1 (*"un pic prea
