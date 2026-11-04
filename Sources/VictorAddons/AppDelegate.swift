@@ -642,7 +642,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let ending = ",\"trainingEndArmed\":\(self?.trainingEnd.isArmed == true)"
             // 💻🔌 The tablet blinks a laptop + plug while this Mac runs on
             // battery: its own battery icon sits on the screen being projected.
-            let power = ",\"macOnAC\":\(PowerMonitor.isOnAC()),\"macChargePct\":\(PowerMonitor.chargePct())"
+            let power = ",\"macOnAC\":\(PowerMonitor.isOnAC())"
             return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)\(power)"
         }
         tabletServer?.onPromptCapture = { [weak self] rawPrompt, source, cwd in
