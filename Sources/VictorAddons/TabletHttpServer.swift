@@ -945,7 +945,7 @@ case testTerminalFont
         "/test/claude-peek", "/test/claude-peek/stop",
         "/test/minion", "/test/counter-strike",
         "/test/chainsaw", "/test/chainsaw/stop",
-        "/test/fire", "/test/fire/stop", "/test/microwave",
+        "/test/fire", "/test/fire/stop",
         "/test/whip", "/test/whip/crack",
     ]
 
