@@ -26,8 +26,9 @@
 ///
 /// It is `async` and reports whether anything is actually rolling, because the
 /// background path below has to retry: a tab that was created a moment ago has
-/// no `<video>` in it yet, and `play()` on a page Chrome's autoplay policy has
-/// not yet made up its mind about rejects.
+/// no `<video>` in it yet. It also reports whether Chrome **refused** — a
+/// `NotAllowedError` is the autoplay policy saying no, which no amount of
+/// retrying changes; `tryStart` answers it with `grantActivation`.
 ///
 /// **"Rolling" is `readyState`, not `paused`, and the difference is a whole
 /// silent evening.** In a tab that has never been rendered, YouTube attaches its
@@ -49,20 +50,26 @@
 /// resume for a track that is already playing.
 async function startMedia() {
   const media = [...document.querySelectorAll('video, audio')].filter((el) => !el.ended);
+  let refused = false;
   for (const el of media) {
     delete el.dataset.vaDictationPaused;
     if (!el.paused) continue;
     el.muted = false;
+    delete el.dataset.vaPlayError;
     try {
       await el.play();
     } catch (e) {
       // Autoplay refused, or the player is still wiring itself up. Either way
-      // the caller's next attempt is the answer, not a louder try here.
+      // the caller's next attempt is the answer, not a louder try here. The
+      // reason is left on the element for `diagnose`: a `NotAllowedError` and an
+      // `AbortError` are two different bugs and the log has to tell them apart.
+      el.dataset.vaPlayError = e.name;
+      if (e.name === 'NotAllowedError') refused = true;
     }
   }
   // HAVE_FUTURE_DATA or better: there is decoded audio queued up, which is the
   // only evidence from in here that the room will hear something.
-  return media.some((el) => !el.paused && !el.ended && el.readyState >= 3);
+  return { rolling: media.some((el) => !el.paused && !el.ended && el.readyState >= 3), refused };
 }
 
 /// The first tab matching the request, or `undefined`.
@@ -207,9 +214,9 @@ export async function focusOrOpen(msg) {
  * The retry loop is not defensive padding. A tab created a moment ago has no
  * `<video>` element yet, and YouTube does not start playing on its own in a tab
  * that has never been visible — the injected `play()` is what starts it, and it
- * has to wait for the player to exist. Chrome allows that call without a user
- * gesture because youtube.com has a high media-engagement score here; if it
- * ever stops allowing it, `startMedia` is where it will show.
+ * has to wait for the player to exist. Chrome allows that call only on a page
+ * with a user activation or a high media-engagement score; see `grantActivation`
+ * for what happens without either.
  *
  * **A freshly created tab additionally has to be painted once** — see
  * `renderOnce`. That is the one part of "no window on the screen" that had to
@@ -409,14 +416,54 @@ async function reloadTab(tabId) {
 /// One `startMedia` round trip. False for "not yet", never a throw: a tab that
 /// is still navigating, or a page we may not script, is a reason to try again.
 async function tryStart(tabId) {
+  const start = () => chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: startMedia,
+  });
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      func: startMedia,
-    });
-    return results.some((r) => r && r.result);
+    let results = await start();
+    if (results.some((r) => r && r.result && r.result.refused) && await grantActivation(tabId)) {
+      results = await start();
+    }
+    return results.some((r) => r && r.result && r.result.rolling);
   } catch (e) {
     return false;
+  }
+}
+
+/// Give the page the user gesture the keypress could not: Chrome refused `play()`.
+///
+/// **⌘⌃F used to live off youtube.com's media-engagement score**, the one thing
+/// that lets a page with no gesture start sound. The score is a ratio of visits
+/// to visits with real playback, and it is lost for good on an ordinary week:
+/// 2026-11-05 it read 12 of 49, `hasHighScore: false`, and every press ended in
+/// `NotAllowedError` with the player loaded and ready (`readyState 4`, `t 0`) —
+/// reloads and paints cannot touch that, so the ladder ran out in silence. The
+/// keypress is a real gesture, but it lands in the Mac app and nothing carries
+/// it into the page: `scripting.executeScript` does not, and neither does
+/// anything else short of a real click on a window, which is the one thing this
+/// key must not need.
+///
+/// `Runtime.evaluate` with `userGesture: true` is the exception: it activates the
+/// frame, and a frame's activation is **sticky**, so one evaluate unlocks this
+/// document for good (and it survives the same-origin reloads below). The code it
+/// runs is nothing; the plain `play()` that follows is what starts the music.
+/// The price is Chrome's "started debugging this browser" bar for a moment, so
+/// this runs only after a refusal, never by default, and detaches at once.
+async function grantActivation(tabId) {
+  const target = { tabId };
+  try {
+    await chrome.debugger.attach(target, '1.3');
+  } catch (e) {
+    return false;                              // a tab we may not debug: same error as before
+  }
+  try {
+    await chrome.debugger.sendCommand(target, 'Runtime.evaluate', { expression: '0', userGesture: true });
+    return true;
+  } catch (e) {
+    return false;
+  } finally {
+    await chrome.debugger.detach(target).catch(() => {});
   }
 }
 
@@ -537,6 +584,7 @@ async function diagnose(tab) {
       func: () => [...document.querySelectorAll('video, audio')].map((el) => ({
         p: el.paused, e: el.ended, r: el.readyState, m: el.muted,
         t: Math.round(el.currentTime), d: Math.round(el.duration || 0),
+        err: el.dataset.vaPlayError || null,
       })),
     });
     media = JSON.stringify(r.flatMap((x) => x && x.result ? x.result : []));
