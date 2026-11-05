@@ -115,3 +115,16 @@ file, whole minutes at best. So this app does a real save.
   locked with `chflags uchg` the save fails silently: no dialog, the deck stays unsaved, and
   AppleScript's `save` reports no error, hence the `saved` check after it. `chmod 444` does not
   block a save. A real refusal by Drive itself was not reproduced.
+
+## 💾 Last save in PowerPoint's status bar (`PowerPointSavedBadge`, since 2026-11-05)
+
+`💾 19:21 · 2 min ago`, centered on PowerPoint's status bar, with no pane open. Amber while the
+deck has unsaved changes; only the date and time when the last save is from another day.
+
+- **Why not the add-in:** Office.js can't write to the status bar or the title bar, has no save
+  event, no last-save time (`PowerPoint.DocumentProperties` has `revisionNumber`, not a date), and
+  `Office.ribbon.requestUpdate` changes a button's `enabled`, not its label.
+- **The time is the file's mtime**, read at each 2 s probe, so a manual ⌘S and `PowerPointAutoSave`
+  both count. The same probe gives `saved` (the amber) and the slide show state (hidden).
+- **A click-through panel of ours**, not part of PowerPoint: shown only while PowerPoint is
+  frontmost, and following its main window over Accessibility, 4 times a second.

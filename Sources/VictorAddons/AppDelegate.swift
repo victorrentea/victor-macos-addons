@@ -2208,7 +2208,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 📑 Every slide shown ≥ 7 s → day log + a copy of the deck, for the summaries' PDFs.
         let slidesSeen = SlidesSeenRecorder()
         let autoSave = PowerPointAutoSave()
-        pptMonitor.onSample = { slidesSeen.consume($0); autoSave.consume($0) }
+        let savedBadge = PowerPointSavedBadge()
+        pptMonitor.onSample = { slidesSeen.consume($0); autoSave.consume($0); savedBadge.consume($0) }
         self.slidesSeen = slidesSeen
         pptMonitor.start()
         self.pptMonitor = pptMonitor

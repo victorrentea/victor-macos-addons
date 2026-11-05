@@ -41,6 +41,17 @@ enum AXWindows {
         return (value as! AXUIElement)
     }
 
+    /// The document window of `pid`, unlike `focusedWindow` never a floating dialog.
+    static func mainWindow(pid: pid_t) -> AXUIElement? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app(pid: pid),
+                                            kAXMainWindowAttribute as CFString, &raw) == .success,
+              let value = raw, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
     /// Every window of `pid`, front to back.
     static func windows(pid: pid_t) -> [AXUIElement] {
         var raw: CFTypeRef?
