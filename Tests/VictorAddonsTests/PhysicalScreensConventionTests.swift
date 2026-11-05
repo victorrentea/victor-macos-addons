@@ -18,6 +18,7 @@ final class PhysicalScreensConventionTests: XCTestCase {
         "KnownDisplays.swift",     // names displays by id
         "DisplayNameCache.swift",  // idem
         "MenuBarManager.swift",    // only the screen under the pointer / the primary
+        "LockScreenBreakNotice.swift", // remote participants need the break's end too
     ]
 
     func testOverlaysNeverEnumerateTheVirtualScreen() throws {
@@ -36,6 +37,7 @@ final class PhysicalScreensConventionTests: XCTestCase {
                 offenders.append("\(name):\(i + 1)")
             }
         }
-        XCTAssertEqual(offenders, [], "use NSScreen.physical — NSScreen.screens includes 🪞 VirtualDesktop's shared screen")
+        XCTAssertEqual(offenders, [], "use NSScreen.physical — NSScreen.screens includes 🪞 VirtualDesktop's shared screen."
+                       + " If the room is meant to see it, add the file to `allowed` and say why.")
     }
 }
