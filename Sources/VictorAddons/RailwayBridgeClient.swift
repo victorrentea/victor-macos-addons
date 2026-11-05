@@ -143,6 +143,12 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
         // thread — our own utility queue.
         queue.async { [weak self] in
             guard let self, let server = self.server else { return }
+            // Same rule as a LAN peer: the relay only ever carries the tablet.
+            guard HttpAccessPolicy.tabletMayCall(path) else {
+                self.sendResponse(id: id, status: 403, contentType: "text/plain; charset=utf-8",
+                                  body: "forbidden")
+                return
+            }
             let result = server.respond(path: path, requestBody: body)
             // The relay carries a JSON envelope, so its body has to be text.
             // Nothing binary is expected to reach it: the tablet fetches tile

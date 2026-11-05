@@ -498,6 +498,13 @@ case testTerminalFont
             guard let self else { conn.cancel(); return }
             let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             let path = Self.parsePath(raw)
+            guard HttpAccessPolicy.isLocal(conn.endpoint) || HttpAccessPolicy.tabletMayCall(path) else {
+                overlayInfo("🚫 refused from the network: \(path.prefix { $0 != "?" }.prefix(60))")
+                let refused = Self.httpResponse(statusCode: 403, contentType: "text/plain; charset=utf-8",
+                                                body: Data("forbidden".utf8))
+                conn.send(content: refused, completion: .contentProcessed { _ in conn.cancel() })
+                return
+            }
             let result = self.respond(path: path, requestBody: Self.extractBody(raw))
             let response = Self.httpResponse(statusCode: result.status,
                                              contentType: result.contentType, body: result.body)
@@ -1314,6 +1321,7 @@ case testTerminalFont
         let reason: String
         switch statusCode {
         case 200: reason = "OK"
+        case 403: reason = "Forbidden"
         case 404: reason = "Not Found"
         case 503: reason = "Service Unavailable"
         default: reason = "OK"

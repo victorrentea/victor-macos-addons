@@ -1,6 +1,6 @@
 # Testing & Diagnostics
 
-Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:55123` so tests do not need UI focus or menu clicking.
+Headless local test hooks are exposed through `TabletHttpServer` on `127.0.0.1:55123` so tests do not need UI focus or menu clicking. Only from this Mac: from the network they answer `403` (`HttpAccessPolicy`, see `docs/tablet.md`).
 
 > **Effect hooks answer here, but they run elsewhere.** Every `/test/<effect>` hook, plus `/test/whip*`, `/ping`, `/sound/*`, `/sounds/manifest`, `/bt-compensation*`, `/tiles*` and `/state`, is **proxied verbatim to the `victor-effects` app on 55124** — same spelling, same answer, one extra loopback hop. Curl them on **either** port. What each one draws is documented in `victor-effects/docs/testing.md`; the routing table itself is `docs/overlay-effects.md` and `EffectsProxyRoutingTests`. With the effects app stopped they answer **503** (and `/sound/play/*` answers **404**, which is what sends the tablet back to local playback).
 
