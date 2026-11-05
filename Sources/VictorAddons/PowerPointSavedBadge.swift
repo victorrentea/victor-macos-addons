@@ -5,24 +5,16 @@ enum PowerPointSavedBadgePolicy {
     /// PowerPoint's status bar, measured on 16.114.
     static let statusBarHeight: CGFloat = 26
 
-    static func text(savedAt: Date, now: Date, calendar: Calendar = .current) -> String {
+    /// Answers "is everything saved?" first. The time is only a detail: an age like "35 min ago"
+    /// read as a warning on a deck with nothing left to save.
+    static func text(savedAt: Date, unsaved: Bool, now: Date, calendar: Calendar = .current) -> String {
         let clock = DateFormatter()
         clock.calendar = calendar
         clock.timeZone = calendar.timeZone
         clock.locale = Locale(identifier: "en_GB")
-        guard calendar.isDate(savedAt, inSameDayAs: now) else {
-            clock.dateFormat = "d MMM HH:mm"
-            return "💾 \(clock.string(from: savedAt))"
-        }
-        clock.dateFormat = "HH:mm"
-        let seconds = Int(now.timeIntervalSince(savedAt))
-        let ago: String
-        switch seconds {
-        case ..<60: ago = "just now"
-        case ..<3600: ago = "\(seconds / 60) min ago"
-        default: ago = "\(seconds / 3600) h ago"
-        }
-        return "💾 \(clock.string(from: savedAt)) · \(ago)"
+        clock.dateFormat = calendar.isDate(savedAt, inSameDayAs: now) ? "HH:mm" : "d MMM HH:mm"
+        let time = clock.string(from: savedAt)
+        return unsaved ? "● Unsaved · last save \(time)" : "✓ Saved · \(time)"
     }
 
     /// Bottom-left corner of the badge in Cocoa coordinates, centered on PowerPoint's status bar.
@@ -33,7 +25,7 @@ enum PowerPointSavedBadgePolicy {
     }
 }
 
-/// 💾 When the open deck was last saved, in PowerPoint's own status bar.
+/// 💾 Whether the open deck is saved, in PowerPoint's own status bar.
 ///
 /// An add-in can't do this: Office.js has no save event and no last-save time, and can't write
 /// to the status bar, the title bar or a ribbon label. So this is a click-through panel of ours
@@ -104,7 +96,7 @@ final class PowerPointSavedBadge {
             stopFollowing()
             return
         }
-        label.stringValue = PowerPointSavedBadgePolicy.text(savedAt: reading.savedAt, now: Date())
+        label.stringValue = PowerPointSavedBadgePolicy.text(savedAt: reading.savedAt, unsaved: reading.unsaved, now: Date())
         label.textColor = reading.unsaved ? .systemOrange : .white
         follow(pid)
         place()

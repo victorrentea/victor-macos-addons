@@ -118,8 +118,10 @@ file, whole minutes at best. So this app does a real save.
 
 ## 💾 Last save in PowerPoint's status bar (`PowerPointSavedBadge`, since 2026-11-05)
 
-`💾 19:21 · 2 min ago`, centered on PowerPoint's status bar, with no pane open. Amber while the
-deck has unsaved changes; only the date and time when the last save is from another day.
+White `✓ Saved · 19:21` or amber `● Unsaved · last save 19:21`, centered on PowerPoint's status
+bar, with no pane open; the date appears too when the last save is from another day. It answers
+"is everything saved?" first: an age (`35 min ago`, until 2026-11-05 evening) read as a warning on
+a deck with nothing left to save.
 
 - **Why not the add-in:** Office.js can't write to the status bar or the title bar, has no save
   event, no last-save time (`PowerPoint.DocumentProperties` has `revisionNumber`, not a date), and

@@ -13,28 +13,26 @@ final class PowerPointSavedBadgeTests: XCTestCase {
                                            hour: hour, minute: minute, second: second))!
     }
 
-    private func text(_ saved: Date, now: Date) -> String {
-        PowerPointSavedBadgePolicy.text(savedAt: saved, now: now, calendar: calendar)
+    private func text(_ saved: Date, unsaved: Bool = false, now: Date) -> String {
+        PowerPointSavedBadgePolicy.text(savedAt: saved, unsaved: unsaved, now: now, calendar: calendar)
     }
 
-    func testSavedThisMinute() {
-        XCTAssertEqual(text(date(5, 19, 21, 26), now: date(5, 19, 22, 25)), "💾 19:21 · just now")
+    func testSavedDeckSaysSoAndShowsNoAge() {
+        XCTAssertEqual(text(date(5, 19, 21), now: date(5, 19, 56)), "✓ Saved · 19:21")
     }
 
-    func testSavedMinutesAgo() {
-        XCTAssertEqual(text(date(5, 19, 21), now: date(5, 19, 33)), "💾 19:21 · 12 min ago")
+    func testUnsavedDeckSaysSoAndWhenItLastReachedTheDisk() {
+        XCTAssertEqual(text(date(5, 19, 21), unsaved: true, now: date(5, 19, 56)),
+                       "● Unsaved · last save 19:21")
     }
 
-    func testSavedHoursAgo() {
-        XCTAssertEqual(text(date(5, 9, 5), now: date(5, 12, 4)), "💾 09:05 · 2 h ago")
+    func testSavedOnAnotherDayShowsTheDate() {
+        XCTAssertEqual(text(date(3, 22, 43), now: date(5, 10, 0)), "✓ Saved · 3 Nov 22:43")
     }
 
-    func testAnotherDayShowsTheDateAndNoAge() {
-        XCTAssertEqual(text(date(3, 22, 43), now: date(5, 10, 0)), "💾 3 Nov 22:43")
-    }
-
-    func testAFileStampedInTheFutureIsJustNow() {
-        XCTAssertEqual(text(date(5, 19, 22), now: date(5, 19, 21)), "💾 19:22 · just now")
+    func testUnsavedOnAnotherDayShowsTheDate() {
+        XCTAssertEqual(text(date(3, 22, 43), unsaved: true, now: date(5, 10, 0)),
+                       "● Unsaved · last save 3 Nov 22:43")
     }
 
     func testCenteredOnTheStatusBarOfTheWindow() {
