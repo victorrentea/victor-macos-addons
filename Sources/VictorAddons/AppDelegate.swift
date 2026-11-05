@@ -1157,7 +1157,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // external screens only (never the projected retina). Live break if one runs.
         tabletServer?.onTestBreakLockNotice = { [weak self] seconds in
             guard let self else { return "{\"error\":\"unavailable\"}" }
-            let external = NSScreen.screens.filter { s in
+            let external = NSScreen.physical.filter { s in
                 guard let id = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
                 else { return false }
                 return CGDisplayIsBuiltin(id.uint32Value) == 0
