@@ -9,7 +9,7 @@ import Cocoa
 enum BannerAction: String, CaseIterable {
     case send = "Send"
     case cancel = "Cancel"
-    case drop = "Drop"
+    case discard = "Discard"
     case keep = "Keep"
     case undo = "Undo"
     case start = "Start"
@@ -33,7 +33,7 @@ enum BannerAction: String, CaseIterable {
 
     var glyph: Glyph? {
         switch self {
-        case .drop: return .emoji("🗑️")
+        case .discard: return .emoji("🗑️")
         case .send: return .symbol("paperplane.fill")
         case .snoozeHour: return .emoji("⏱️")
         case .stopUntilAC: return .emoji("❌")

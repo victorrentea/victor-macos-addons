@@ -471,7 +471,7 @@ final class BottomLeftBanner {
     /// Usually yes — but **`Send` is always the upper one** (Victor,
     /// 2026-11-03: *"butonul de send să fie mereu peste cel de drop, dar să se
     /// coloreze progress bar cel care se auto-apasă"*): on an offered prompt
-    /// the countdown fills `Drop` underneath, on an auto-sent one it fills
+    /// the countdown fills `Discard` underneath, on an auto-sent one it fills
     /// `Send` on top. The progress follows the action, not the position.
     static func autoOnTop(click: BannerAction?) -> Bool { click != .send }
 

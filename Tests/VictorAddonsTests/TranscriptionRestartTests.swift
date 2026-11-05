@@ -133,7 +133,7 @@ final class BatteryRecordingNoticeTests: XCTestCase {
 final class BannerButtonOrderTests: XCTestCase {
     /// `Send` is always the upper button; the countdown still fills the auto one.
     func testSendIsAlwaysOnTop() {
-        XCTAssertFalse(BottomLeftBanner.autoOnTop(click: .send), "Drop auto, Send click → Send on top")
+        XCTAssertFalse(BottomLeftBanner.autoOnTop(click: .send), "Discard auto, Send click → Send on top")
         XCTAssertTrue(BottomLeftBanner.autoOnTop(click: .cancel), "Send auto, Cancel click → Send on top")
         XCTAssertTrue(BottomLeftBanner.autoOnTop(click: .stopUntilAC))
     }

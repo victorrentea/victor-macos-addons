@@ -213,7 +213,7 @@ enum SessionNotesAppender {
         }
         banner.show(text: display, font: promptFont,
                     hoverCountdown: hoverActionDuration, hoverNudge: .up,
-                    autoAction: .drop, clickAction: .send)
+                    autoAction: .discard, clickAction: .send)
     }
 
     /// Flatten newlines/tabs to single spaces so a multi-line selection shows
