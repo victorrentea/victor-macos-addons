@@ -128,6 +128,15 @@ final class BatteryRecordingNoticeTests: XCTestCase {
         XCTAssertNil(n.snoozedUntil)
         XCTAssertEqual(BatteryRecordingNotice.snooze, 3600)
     }
+
+    func testOnlyTheDotBlinksAndItBlinksForever() {
+        XCTAssertEqual(BatteryRecordingNotice.text, "🔋", "the 🔴 and the waveform are pictures")
+        let blink = BottomLeftBanner.blinkAnimation()
+        XCTAssertEqual(blink.calculationMode, .discrete, "on battery: no 60 Hz fade")
+        XCTAssertEqual(blink.duration, 2)
+        XCTAssertEqual(blink.repeatCount, .infinity)
+        XCTAssertFalse(blink.isRemovedOnCompletion)
+    }
 }
 
 final class BannerButtonOrderTests: XCTestCase {

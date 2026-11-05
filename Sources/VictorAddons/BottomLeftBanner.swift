@@ -214,6 +214,8 @@ final class BottomLeftBanner {
         /// Built on every panel, hidden while `icon` is nil, so a pill that is
         /// re-shown in place can gain, lose or swap its picture (`applyIcon`).
         let iconView: NSImageView
+        /// Same, for `blinkingMark`, right after `iconView`.
+        let blinkView: NSImageView
         /// Kept so `updateText` can re-measure and resize the box to hug the
         /// new text (still capped at `maxWidthFraction` of this screen).
         let font: NSFont
@@ -234,8 +236,8 @@ final class BottomLeftBanner {
     private var visibleActions: [(BannerAction, isAuto: Bool)] {
         guard hoverable else { return [] }
         var out: [(BannerAction, isAuto: Bool)] = []
-        // No countdown = a plain top button with nothing filling it (the 👂/🔋
-        // pill: Snooze 1h ⏱️ over Stop ❌).
+        // No countdown = a plain top button with nothing filling it (the on-battery
+        // recording pill: Snooze 1h ⏱️ over Stop ❌).
         if let a = autoAction, onHoverCountdownExpired != nil { out.append((a, true)) }
         if let c = clickAction, onHover != nil { out.append((c, false)) }
         return out
@@ -273,7 +275,32 @@ final class BottomLeftBanner {
     /// loud.
     private static let iconSize: CGFloat = 28
     private static let iconGap: CGFloat = 10
-    private var iconInset: CGFloat { icon == nil ? 0 : Self.iconSize + Self.iconGap }
+    private var iconInset: CGFloat {
+        CGFloat([icon, blinkingMark].compactMap { $0 }.count) * (Self.iconSize + Self.iconGap)
+    }
+
+    /// A picture between `icon` and the words that blinks by itself for as long
+    /// as the pill is up — the 🔴 of a recording in progress. Set before `show`,
+    /// like `icon`. Its own view, so only it blinks and the words never shift.
+    var blinkingMark: NSImage?
+    private var blinkMarkX: CGFloat {
+        Style.leftPadding + (icon == nil ? 0 : Self.iconSize + Self.iconGap)
+    }
+
+    /// One second lit, one dark. **Discrete**, not a fade: the pill that uses it
+    /// is up precisely while the Mac is on battery, and two state changes every
+    /// two seconds cost the window server nothing where a fade redraws at 60 Hz.
+    static func blinkAnimation() -> CAKeyframeAnimation {
+        let blink = CAKeyframeAnimation(keyPath: "opacity")
+        blink.values = [1, 0]
+        blink.keyTimes = [0, 0.5, 1]
+        blink.calculationMode = .discrete
+        blink.duration = 2
+        blink.repeatCount = .infinity
+        // Survives the panel leaving the screen (a display sleep, a Space).
+        blink.isRemovedOnCompletion = false
+        return blink
+    }
 
     /// Fires once per `show()` after the cursor has *dwelled* inside the
     /// banner for at least `hoverDwellRequiredSamples × hoverDwellInterval`
@@ -408,6 +435,7 @@ final class BottomLeftBanner {
         applyPalette(palette)
         if isVisible {
             applyIcon()
+            applyBlink()
             applyButtons()
             updateText(text, force: true)
             updateBackgroundColor(backgroundColor)
@@ -426,6 +454,7 @@ final class BottomLeftBanner {
             entry.panel.alphaValue = Self.visibleAlpha
             entry.panel.orderFrontRegardless()
         }
+        applyBlink()
         applyButtons()
         startEntranceWipe()
         applyArrow(hoverNudge)
@@ -537,6 +566,20 @@ final class BottomLeftBanner {
             entry.iconView.isHidden = icon == nil
             entry.label.frame = Self.mainLabelFrame(pillWidth: entry.pill.frame.width,
                                                     font: entry.font, iconInset: iconInset)
+        }
+    }
+
+    /// Put the current `blinkingMark` on the visible panels and (re)start its
+    /// blink. Layer-only, like the arrow's march: no timer of ours keeps it going.
+    private func applyBlink() {
+        for entry in panels {
+            entry.blinkView.image = blinkingMark
+            entry.blinkView.isHidden = blinkingMark == nil
+            entry.blinkView.setFrameOrigin(NSPoint(x: blinkMarkX, y: entry.blinkView.frame.origin.y))
+            entry.blinkView.layer?.removeAnimation(forKey: "blink")
+            if blinkingMark != nil {
+                entry.blinkView.layer?.add(Self.blinkAnimation(), forKey: "blink")
+            }
         }
     }
 
@@ -1363,6 +1406,15 @@ final class BottomLeftBanner {
         iconView.autoresizingMask = [.maxXMargin]
         pill.addSubview(iconView)
 
+        let blinkView = NSImageView(frame: NSRect(x: blinkMarkX, y: iconView.frame.minY,
+                                                  width: Self.iconSize, height: Self.iconSize))
+        blinkView.wantsLayer = true
+        blinkView.isHidden = true
+        blinkView.imageScaling = .scaleProportionallyUpOrDown
+        blinkView.imageAlignment = .alignCenter
+        blinkView.autoresizingMask = [.maxXMargin]
+        pill.addSubview(blinkView)
+
         // Progressive border: a transparent overlay view (topmost in the pill so
         // the strokes sit above the glass/tint/label) hosting the two orange
         // stroke layers. The strokes' `path` is rebuilt on resize; their
@@ -1394,7 +1446,7 @@ final class BottomLeftBanner {
                           arrow: arrow,
                           borderUp: borderUp, borderRight: borderRight,
                           label: label, autoButton: autoButton, clickButton: clickButton, edge: edge,
-                          iconView: iconView,
+                          iconView: iconView, blinkView: blinkView,
                           font: font, screen: screen)
     }
 
