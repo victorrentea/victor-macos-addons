@@ -41,6 +41,46 @@ final class HttpAccessPolicyTests: XCTestCase {
         XCTAssertFalse(HttpAccessPolicy.isLocal(peer("victor-mac.local")))
     }
 
+    func testTheNetworkDecision() {
+        typealias P = HttpAccessPolicy
+        // Until the tablet has shown a token, a tablet route needs none: an older
+        // build would otherwise lose its Wi-Fi link.
+        XCTAssertEqual(P.decide(path: "/ping", local: false, tokenValid: false, armed: false), .serve)
+        XCTAssertEqual(P.decide(path: "/ping", local: false, tokenValid: false, armed: true), .tokenRefused)
+        XCTAssertEqual(P.decide(path: "/ping", local: false, tokenValid: true, armed: true), .serve)
+        // The token never widens the list.
+        XCTAssertEqual(P.decide(path: "/test/email", local: false, tokenValid: true, armed: true), .routeRefused)
+        XCTAssertEqual(P.decide(path: "/test/email", local: false, tokenValid: false, armed: false), .routeRefused)
+        // This Mac, and USB through adb reverse, never need it.
+        XCTAssertEqual(P.decide(path: "/test/email", local: true, tokenValid: false, armed: true), .serve)
+    }
+
+    /// The same value is pinned in the tablet's `LanTokenTest`.
+    func testDerivesWhatTheTabletSends() {
+        XCTAssertEqual(HttpAccessPolicy.lanToken(fromBridgeToken: "test-token"),
+                       "ab42c7d8f2b4831553c735a1d5c054e0b4676e79a32989fc6cf0a450503c4e87")
+    }
+
+    func testNoRelayTokenMeansNoLanTokenAndNothingMatches() {
+        XCTAssertNil(HttpAccessPolicy.lanToken(fromBridgeToken: ""))
+        XCTAssertFalse(HttpAccessPolicy.tokenMatches("", expected: nil))
+        XCTAssertFalse(HttpAccessPolicy.tokenMatches(nil, expected: nil))
+    }
+
+    func testTokenComparison() {
+        XCTAssertTrue(HttpAccessPolicy.tokenMatches("abc", expected: "abc"))
+        XCTAssertFalse(HttpAccessPolicy.tokenMatches("abd", expected: "abc"))
+        XCTAssertFalse(HttpAccessPolicy.tokenMatches("ab", expected: "abc"))
+        XCTAssertFalse(HttpAccessPolicy.tokenMatches(nil, expected: "abc"))
+    }
+
+    func testReadsTheTokenFromTheHeadOnly() {
+        let request = "GET /ping HTTP/1.1\r\nHost: x\r\nX-LAN-Token:  abc \r\n\r\nbody"
+        XCTAssertEqual(HttpAccessPolicy.presentedToken(inRequest: request), "abc")
+        XCTAssertNil(HttpAccessPolicy.presentedToken(inRequest: "GET / HTTP/1.1\r\nHost: x\r\n\r\nX-Lan-Token: abc"))
+        XCTAssertNil(HttpAccessPolicy.presentedToken(inRequest: "X-Lan-Token: abc /ping HTTP/1.1\r\n\r\n"))
+    }
+
     /// A new tablet route would work on the cable and answer 403 on Wi-Fi, which
     /// is exactly the bug nobody finds at the desk.
     func testEveryRouteTheTabletCallsIsOpen() throws {

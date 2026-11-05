@@ -472,6 +472,9 @@ case testTerminalFont
 
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "tablet-http", qos: .utility)
+    /// What the tablet must present from the network. `nil` without a relay token.
+    var lanToken: String?
+    private var tokenArmed = UserDefaults.standard.bool(forKey: HttpAccessPolicy.armedKey)
 
     func start() {
         let tcpParams = NWParameters.tcp
@@ -498,11 +501,8 @@ case testTerminalFont
             guard let self else { conn.cancel(); return }
             let raw = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             let path = Self.parsePath(raw)
-            guard HttpAccessPolicy.isLocal(conn.endpoint) || HttpAccessPolicy.tabletMayCall(path) else {
-                overlayInfo("🚫 refused from the network: \(path.prefix { $0 != "?" }.prefix(60))")
-                let refused = Self.httpResponse(statusCode: 403, contentType: "text/plain; charset=utf-8",
-                                                body: Data("forbidden".utf8))
-                conn.send(content: refused, completion: .contentProcessed { _ in conn.cancel() })
+            if let refusal = self.refusal(of: conn, path: path, raw: raw) {
+                conn.send(content: refusal, completion: .contentProcessed { _ in conn.cancel() })
                 return
             }
             let result = self.respond(path: path, requestBody: Self.extractBody(raw))
@@ -511,6 +511,28 @@ case testTerminalFont
             conn.send(content: response,
                       completion: .contentProcessed { _ in conn.cancel() })
         }
+    }
+
+    /// The answer to send instead of serving this request, if any. See
+    /// `HttpAccessPolicy`. Runs on `queue`, like everything touching `tokenArmed`.
+    private func refusal(of conn: NWConnection, path: String, raw: String) -> Data? {
+        let tokenValid = HttpAccessPolicy.tokenMatches(
+            HttpAccessPolicy.presentedToken(inRequest: raw), expected: lanToken)
+        if tokenValid && !tokenArmed {
+            tokenArmed = true
+            UserDefaults.standard.set(true, forKey: HttpAccessPolicy.armedKey)
+            overlayInfo("🔐 the tablet showed its token: from now on the network needs it")
+        }
+        let status: Int
+        switch HttpAccessPolicy.decide(path: path, local: HttpAccessPolicy.isLocal(conn.endpoint),
+                                       tokenValid: tokenValid, armed: tokenArmed) {
+        case .serve: return nil
+        case .routeRefused: status = 403
+        case .tokenRefused: status = 401
+        }
+        overlayInfo("🚫 refused from the network (\(status)): \(path.prefix { $0 != "?" }.prefix(60))")
+        return Self.httpResponse(statusCode: status, contentType: "text/plain; charset=utf-8",
+                                 body: Data("forbidden".utf8))
     }
 
     /// Pure request handler shared by the TCP listener (LAN/USB) and the Railway
@@ -1321,6 +1343,7 @@ case testTerminalFont
         let reason: String
         switch statusCode {
         case 200: reason = "OK"
+        case 401: reason = "Unauthorized"
         case 403: reason = "Forbidden"
         case 404: reason = "Not Found"
         case 503: reason = "Service Unavailable"

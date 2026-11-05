@@ -688,6 +688,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let env = ProcessInfo.processInfo.environment
             let bridgeToken = env["ADDON_BRIDGE_TOKEN"]
                 ?? SecretsLoader.load()["ADDON_BRIDGE_TOKEN"] ?? ""
+            tabletServer.lanToken = HttpAccessPolicy.lanToken(fromBridgeToken: bridgeToken)
             let bridgeURL = env["ADDON_BRIDGE_URL"] ?? serverURL
             if let bridge = RailwayBridgeClient(baseURL: bridgeURL, token: bridgeToken, server: tabletServer) {
                 bridge.start()

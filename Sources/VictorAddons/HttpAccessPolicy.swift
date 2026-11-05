@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 
@@ -9,7 +10,53 @@ import Network
 /// Default-deny on purpose: a route added tomorrow stays local until someone
 /// decides otherwise. USB is local too (`adb reverse` arrives on loopback).
 /// `HttpAccessPolicyTests` pins this list to the tablet's own source.
+///
+/// **Those routes also need the tablet's `X-Lan-Token`, once it has shown one.** A
+/// tablet on an older build sends none, and it treats a refusal as an answer rather
+/// than falling back to the relay, so enforcing from day one would cut it off. So
+/// the first valid token arms the check for good (`armedKey`), which also proves
+/// the new build works before anything is ever refused.
 enum HttpAccessPolicy {
+    enum Decision: Equatable {
+        case serve
+        case routeRefused   // 403: not a tablet route
+        case tokenRefused   // 401: a tablet route, without the tablet's token
+    }
+
+    static let armedKey = "http.lan.token.armed"
+
+    static func decide(path: String, local: Bool, tokenValid: Bool, armed: Bool) -> Decision {
+        if local { return .serve }
+        if !tabletMayCall(path) { return .routeRefused }
+        return armed && !tokenValid ? .tokenRefused : .serve
+    }
+
+    /// Derived, not the relay's token itself: this crosses a shared Wi-Fi in clear
+    /// HTTP, and a sniffed copy must not open the relay, the door from the internet.
+    /// `lanTokenFrom` on the tablet computes the same value.
+    static func lanToken(fromBridgeToken token: String) -> String? {
+        guard !token.isEmpty else { return nil }
+        return SHA256.hash(data: Data("victor-lan-v1:\(token)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func presentedToken(inRequest raw: String) -> String? {
+        let head = raw.components(separatedBy: "\r\n\r\n").first ?? raw
+        for line in head.components(separatedBy: "\r\n").dropFirst() {
+            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2, parts[0].lowercased() == "x-lan-token" {
+                return parts[1].trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    /// Takes the same time wherever the two differ.
+    static func tokenMatches(_ presented: String?, expected: String?) -> Bool {
+        guard let presented, let expected, presented.utf8.count == expected.utf8.count else { return false }
+        return zip(presented.utf8, expected.utf8).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+    }
+
     private static let exact: Set<String> = ["/ping", "/tiles", "/usage", "/videos",
                                              "/alarm", "/bt-compensation"]
     private static let prefixes = ["/sound/", "/sounds/", "/tiles/", "/usage/", "/video/",
