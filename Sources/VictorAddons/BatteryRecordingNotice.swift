@@ -10,7 +10,8 @@ import Cocoa
 /// **What it shows** (2026-11-05, Victor: *"waveform (luată din badge walkie
 /// talkie, dar ne-animat/strălucit), un 🔴 care clipește lent, apoi emoji baterie
 /// ca acum"*; it said `👂/🔋` until then): the sound, the red light of a take in
-/// progress, why there is no text. The menu-bar icon stays 👂.
+/// progress, why there is no text. The gaps either side of the 🔴 match by eye,
+/// between the inks (*"distanța … egală"*). The menu-bar icon stays 👂.
 ///
 /// **Two buttons** (Victor, 2026-11-03: *"să aibă 2 butoane: snooze 1h ⏱️ +
 /// Stop ❌"*; label `Stop ❌`), and only the buttons act — a click elsewhere on the pill does
@@ -23,6 +24,10 @@ import Cocoa
 ///   recording on battery` (`onStop`); the pill goes with it.
 final class BatteryRecordingNotice {
     static let text = "🔋"
+    /// 🔋 stands narrow in a wide emoji cell: this much empty cell, plus the
+    /// label's own inset, comes before its ink at the banner's 38 pt. Measured
+    /// off the screen; it is what makes the 🔴's two gaps equal.
+    static let batteryLeadTrim: CGFloat = 11.5
     static let snooze: TimeInterval = 3600
     static let color = NSColor.systemOrange.withAlphaComponent(0.85)
 
@@ -86,8 +91,9 @@ final class BatteryRecordingNotice {
         if show, banner == nil {
             let b = BottomLeftBanner(screensProvider: screensProvider, hoverable: true)
             b.clickOnly = true
-            b.icon = Self.waveform(size: 28, colour: .white)
+            b.icon = Self.waveform(height: 28, colour: .white)
             b.blinkingMark = Self.recordingDot(size: 28)
+            b.textLeadTrim = Self.batteryLeadTrim
             // Top button (and right-click) = snooze; bottom button = stop.
             b.onHoverCountdownExpired = { [weak self] in self?.snoozeNow() }
             b.onHover = { [weak self] in self?.stopNow() }
@@ -100,31 +106,33 @@ final class BatteryRecordingNotice {
         }
     }
 
-    /// Wispr Flow's five bars, as Walkie Talkie's chip wears them on its
-    /// `Prompting` / `Transcribing` rows (`Glyphs.wisprBars`, traced off the app's
-    /// own icon), drawn plain: the chip's ramp and glow are that row's, not the
-    /// mark's. `v` counts down from the top of the box.
-    private static let waveformBars: [(u: CGFloat, top: CGFloat, bottom: CGFloat)] = [
-        (0.000, 0.000, 1.000),
-        (0.209, 0.461, 0.891),
-        (0.426, 0.164, 0.820),
-        (0.643, 0.461, 0.898),
-        (0.860, 0.000, 1.000),
+    /// The sound wave Walkie Talkie's launch tab draws between the microphone and
+    /// the engine (`WaveGlyph`), same corners, proportions and wire, without the
+    /// light that travels along it. Copied because that app must not depend on
+    /// this one. −1…1 about the flat line, up positive.
+    private static let waveCorners: [CGPoint] = [
+        CGPoint(x: 0, y: 0), CGPoint(x: 0.086, y: 0), CGPoint(x: 0.136, y: 0.248),
+        CGPoint(x: 0.164, y: -0.24), CGPoint(x: 0.240, y: 0.56), CGPoint(x: 0.286, y: -0.62),
+        CGPoint(x: 0.371, y: 1.0), CGPoint(x: 0.460, y: -0.992), CGPoint(x: 0.546, y: 0.44),
+        CGPoint(x: 0.621, y: -0.488), CGPoint(x: 0.707, y: 0.82), CGPoint(x: 0.800, y: -0.808),
+        CGPoint(x: 0.857, y: 0.328), CGPoint(x: 0.893, y: 0), CGPoint(x: 1, y: 0),
     ]
-    private static let waveformBarWidth: CGFloat = 0.140
+    static let waveAspect: CGFloat = 1.4
 
-    static func waveform(size: CGFloat, colour: NSColor) -> NSImage {
-        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+    static func waveform(height h: CGFloat, colour: NSColor) -> NSImage {
+        let w = (h * waveAspect).rounded()
+        return NSImage(size: NSSize(width: w, height: h), flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            ctx.setFillColor(colour.cgColor)
-            let w = size * waveformBarWidth
-            for bar in waveformBars {
-                let top = rect.maxY - bar.top * size
-                let bottom = rect.maxY - bar.bottom * size
-                let box = CGRect(x: rect.minX + bar.u * size, y: bottom, width: w, height: top - bottom)
-                ctx.addPath(CGPath(roundedRect: box, cornerWidth: w / 2, cornerHeight: w / 2, transform: nil))
-            }
-            ctx.fillPath()
+            let wire = max(1.5, (h * 0.085).rounded())
+            let half = (h - wire) / 2
+            ctx.setStrokeColor(colour.cgColor)
+            ctx.setLineWidth(wire)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            ctx.addLines(between: waveCorners.map {
+                CGPoint(x: wire / 2 + $0.x * (w - wire), y: h / 2 + $0.y * half)
+            })
+            ctx.strokePath()
             return true
         }
     }

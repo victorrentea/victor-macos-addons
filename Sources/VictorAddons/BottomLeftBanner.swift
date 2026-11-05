@@ -276,15 +276,25 @@ final class BottomLeftBanner {
     private static let iconSize: CGFloat = 28
     private static let iconGap: CGFloat = 10
     private var iconInset: CGFloat {
-        CGFloat([icon, blinkingMark].compactMap { $0 }.count) * (Self.iconSize + Self.iconGap)
+        (icon == nil ? 0 : iconWidth + Self.iconGap)
+            + (blinkingMark == nil ? 0 : Self.iconSize + Self.iconGap) - textLeadTrim
     }
+    /// A landscape picture keeps its proportions at the icon's height; anything
+    /// squarer fills the usual box.
+    private var iconWidth: CGFloat {
+        guard let size = icon?.size, size.height > 0 else { return Self.iconSize }
+        return Self.iconSize * max(1, size.width / size.height)
+    }
+    /// How far the words start left of where they would: an emoji stands inside
+    /// a wider cell, so the gap in front of it looks bigger than `iconGap`.
+    var textLeadTrim: CGFloat = 0
 
     /// A picture between `icon` and the words that blinks by itself for as long
     /// as the pill is up — the 🔴 of a recording in progress. Set before `show`,
     /// like `icon`. Its own view, so only it blinks and the words never shift.
     var blinkingMark: NSImage?
     private var blinkMarkX: CGFloat {
-        Style.leftPadding + (icon == nil ? 0 : Self.iconSize + Self.iconGap)
+        Style.leftPadding + (icon == nil ? 0 : iconWidth + Self.iconGap)
     }
 
     /// One second lit, one dark. **Discrete**, not a fade: the pill that uses it
@@ -564,6 +574,7 @@ final class BottomLeftBanner {
         for entry in panels {
             entry.iconView.image = icon
             entry.iconView.isHidden = icon == nil
+            entry.iconView.frame.size.width = iconWidth
             entry.label.frame = Self.mainLabelFrame(pillWidth: entry.pill.frame.width,
                                                     font: entry.font, iconInset: iconInset)
         }
@@ -1398,7 +1409,7 @@ final class BottomLeftBanner {
         // sentence.
         let iconView = NSImageView(frame: NSRect(x: Style.leftPadding,
                                                  y: (Style.boxHeight - Self.iconSize) / 2,
-                                                 width: Self.iconSize, height: Self.iconSize))
+                                                 width: iconWidth, height: Self.iconSize))
         iconView.image = icon
         iconView.isHidden = icon == nil
         iconView.imageScaling = .scaleProportionallyUpOrDown

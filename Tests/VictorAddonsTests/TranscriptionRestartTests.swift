@@ -137,6 +137,11 @@ final class BatteryRecordingNoticeTests: XCTestCase {
         XCTAssertEqual(blink.repeatCount, .infinity)
         XCTAssertFalse(blink.isRemovedOnCompletion)
     }
+
+    func testTheWaveKeepsWalkiesProportions() {
+        let wave = BatteryRecordingNotice.waveform(height: 28, colour: .white)
+        XCTAssertEqual(wave.size, NSSize(width: 39, height: 28))
+    }
 }
 
 final class BannerButtonOrderTests: XCTestCase {
