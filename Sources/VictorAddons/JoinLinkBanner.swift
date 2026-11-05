@@ -6,6 +6,7 @@ import Foundation
 /// A clipboard link stays visible while the mouse hovers and starts a 30s
 /// countdown on mouse-out, then a 3s fade. The session's Interact link is
 /// `persistent`: no countdown, no progress bar — it stays until toggled off.
+/// Either one can be closed with one click on the red ✕ in the bottom-right corner.
 class JoinLinkBanner: NSPanel {
     private let urlLabel: NSTextField
     private var fadeTimer: Timer?
@@ -33,6 +34,9 @@ class JoinLinkBanner: NSPanel {
     private let progressBarHeight: CGFloat = 5.0
     private var progressExpiresAt: Date?
     private var progressTickTimer: Timer?
+
+    // The red ✕. Its own panel because the banner itself is click-through.
+    private var closePanel: BannerClosePanel?
 
     init(screen: NSScreen) {
         self.targetScreen = screen
@@ -64,6 +68,13 @@ class JoinLinkBanner: NSPanel {
 
         setupQRPanel()
         setupProgressPanel()
+        setupClosePanel()
+    }
+
+    private func setupClosePanel() {
+        let panel = BannerClosePanel()
+        panel.onClick = { [weak self] in self?.hide() }
+        closePanel = panel
     }
 
     private func setupProgressPanel() {
@@ -164,6 +175,11 @@ class JoinLinkBanner: NSPanel {
         // Show QR code
         showQR(for: trimmedUrl)
 
+        // After the banner, so the ✕ sits on top of it.
+        closePanel?.setFrame(BannerClosePanel.frame(inBanner: frame), display: false)
+        closePanel?.alphaValue = 1.0
+        closePanel?.orderFrontRegardless()
+
         if persistent {
             progressPanel?.orderOut(nil)
             return
@@ -202,9 +218,13 @@ class JoinLinkBanner: NSPanel {
         hideQR()
         progressPanel?.alphaValue = 0.0
         progressPanel?.orderOut(nil)
+        closePanel?.orderOut(nil)
     }
 
     var bannerIsVisible: Bool { bannerShowing }
+
+    /// Where the ✕ is on screen, in Cocoa points; nil while the banner is down.
+    var closeButtonFrame: NSRect? { bannerShowing ? closePanel?.frame : nil }
 
     // MARK: - QR code generation and display
 
@@ -332,11 +352,13 @@ class JoinLinkBanner: NSPanel {
             self.animator().alphaValue = 0.0
             self.qrPanel?.animator().alphaValue = 0.0
             self.progressPanel?.animator().alphaValue = 0.0
+            self.closePanel?.animator().alphaValue = 0.0
         }, completionHandler: { [weak self] in
             self?.bannerShowing = false
             self?.orderOut(nil)
             self?.qrPanel?.orderOut(nil)
             self?.progressPanel?.orderOut(nil)
+            self?.closePanel?.orderOut(nil)
         })
     }
 
@@ -387,6 +409,66 @@ class JoinLinkBanner: NSPanel {
             ))
         }
         return result
+    }
+}
+
+/// The red ✕ in the banner's bottom-right corner. A panel of its own, because the
+/// banner is click-through on purpose: the room's screen stays usable under it.
+final class BannerClosePanel: NSPanel {
+    static let size: CGFloat = 30
+    static let inset: CGFloat = 6
+
+    var onClick: (() -> Void)?
+
+    static func frame(inBanner banner: NSRect) -> NSRect {
+        NSRect(x: banner.maxX - size - inset, y: banner.minY + inset, width: size, height: size)
+    }
+
+    init() {
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: Self.size, height: Self.size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        level = .statusBar
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        let button = BannerCloseButton(frame: NSRect(x: 0, y: 0, width: Self.size, height: Self.size))
+        button.onClick = { [weak self] in self?.onClick?() }
+        contentView = button
+    }
+}
+
+private final class BannerCloseButton: NSView {
+    var onClick: (() -> Void)?
+
+    // Takes the first click: the panel never becomes key, so without this the
+    // click would only ever activate it.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+
+        let arm = bounds.insetBy(dx: bounds.width * 0.32, dy: bounds.height * 0.32)
+        let cross = NSBezierPath()
+        cross.move(to: NSPoint(x: arm.minX, y: arm.minY))
+        cross.line(to: NSPoint(x: arm.maxX, y: arm.maxY))
+        cross.move(to: NSPoint(x: arm.minX, y: arm.maxY))
+        cross.line(to: NSPoint(x: arm.maxX, y: arm.minY))
+        cross.lineWidth = 3
+        cross.lineCapStyle = .round
+        NSColor.white.setStroke()
+        cross.stroke()
+    }
+
+    // Overridden so that the matching mouseUp comes here.
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
     }
 }
 

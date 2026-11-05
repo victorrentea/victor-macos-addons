@@ -19,6 +19,10 @@ between this app and **Victor Effects**.
   Interact link** is `persistent` (2026-09-24, Victor's call) — no countdown, no
   bar, and opening the menu no longer hides it. It goes away only when the
   🟢 row is clicked again, the session ends, or `/link/hide` is called.
+  **Both modes close with one click on the red ✕** in the banner's bottom-right
+  corner (2026-11-05): `BannerClosePanel` is its own panel, because the banner
+  itself stays click-through, and it takes the first click without activating
+  the app. Unlike the 🟢 row, the ✕ leaves the clipboard alone.
   **The text fills the screen width** (2026-10-01): the font is scaled up *or*
   down until the URL spans the screen minus a 16 pt gutter, the banner is
   full-width and its height follows the text. Monospaced text scales linearly,

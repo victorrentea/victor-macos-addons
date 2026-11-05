@@ -1403,6 +1403,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return "{\"state\":\"\(state)\",\"preferred\":\"\(AsusSide.preferred.rawValue)\""
                 + (banner.map { ",\"banner\":\"\($0)\"" } ?? "") + "}"
         }
+        // /test/join-banner[?show=1] — the Interact banner on the rightmost screen, off
+        // the projected retina and with no clipboard write; no `show` only reads.
+        // `close` is the ✕'s centre in global display coordinates, to aim a real click.
+        tabletServer?.onTestJoinBanner = { [weak self] show in
+            guard let banner = self?.joinLinkBanner else { return "{\"error\":\"no banner\"}" }
+            if show, let screen = NSScreen.physical.max(by: { $0.frame.maxX < $1.frame.maxX }) {
+                banner.setTargetScreen(screen)
+                banner.show(url: self?.participantUrl ?? "interact.victorrentea.ro/TEST42",
+                            uppercaseLastSegment: true, persistent: true)
+            }
+            var json = "{\"visible\":\(banner.bannerIsVisible)"
+            if let close = banner.closeButtonFrame {
+                let top = CGDisplayBounds(CGMainDisplayID()).height
+                json += ",\"close\":[\(Int(close.midX)),\(Int(top - close.midY))]"
+            }
+            return json + "}"
+        }
         // /test/presentation — JSON snapshot of the presenting state + detection.
         // /test/zoom-share — what the Zoom share-picker scanner sees right now,
         // and a forced re-prepare of an open picker.

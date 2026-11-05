@@ -126,6 +126,7 @@ case testTerminalFont
         case testProjector
         /// 🖥️ Put the ASUS left/right of the Retina (nil = just read), JSON back.
         case testAsusSide(AsusSide?)
+        case testJoinBanner(show: Bool)
         /// JSON snapshot of the presenting state (meeting / unknown display).
         case testPresentation
         /// JSON snapshot of Zoom's share picker + a forced re-prepare of it.
@@ -358,6 +359,8 @@ case testTerminalFont
     /// Force-apply the display arrangement now; returns a JSON snapshot.
     var onTestProjector: (() -> String)?
     var onTestAsusSide: ((AsusSide?) -> String)?
+    /// Raises the join banner on the rightmost screen (`show`) and reports it.
+    var onTestJoinBanner: ((Bool) -> String)?
     /// JSON snapshot of the presenting state + display classification.
     var onTestPresentation: (() -> String)?
     /// JSON snapshot of Zoom's share picker; also re-arms and re-runs the prep.
@@ -676,6 +679,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestAsusSide?(side) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestAsusSide == nil { statusCode = 503 }
+            case .testJoinBanner(let show):
+                contentType = "application/json"
+                body = self.onTestJoinBanner?(show) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestJoinBanner == nil { statusCode = 503 }
             case .testPresentation:
                 contentType = "application/json"
                 body = self.onTestPresentation?() ?? "{\"error\":\"unavailable\"}"
@@ -1088,6 +1095,8 @@ case testTerminalFont
             return .testLiveCaptions(raw != "0" && raw.lowercased() != "false")
         case "/test/projector":
             return .testProjector
+        case "/test/join-banner":
+            return .testJoinBanner(show: queryItems.first(where: { $0.name == "show" })?.value == "1")
         case "/test/asus-side":
             return .testAsusSide(queryItems.first(where: { $0.name == "side" })?.value.flatMap(AsusSide.init))
         case "/test/presentation":
