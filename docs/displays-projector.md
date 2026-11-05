@@ -278,7 +278,7 @@ capture path carries. Same trade as the 🔍 Pink Panther glass (tile #6 in
   repede"*), ^1.25 (*"prea rapid"*), ^1.5. **A power is never proportional**: on the glass
   ^1.5 is 1/√factor — 0.82 at 1.5×, 0.5 at 4×, 0.35 at 8× — which is exactly 2026-10-29's
   *"la un zoom mic mouse-ul se mișcă foarte rapid, la un zoom adânc abia se mișcă"*. 0.5 is
-  what ^1.5 gave at 4×. The glass speed is read at each zoom start from `UserDefaults`
+  what ^1.5 gave at 4×, 0.4 since 2026-11-04. **No ramp at the bottom of the dial since 2026-11-05**: `factor²`, then `factor⁵`, eased the slowdown in so the speed would not drop at the first notch, and that was the bug — at one gradation (×1.01) a hand's move reached the glass at 0.97 against 0.40 from 1.3× up, on 869 real moves, the same in the middle and along the edges (*"dacă fac zoom doar un pic … rămâne mouse super accelerat"*). It only showed at the edges because that is where a hand went, expecting a pan, and ×1.01 has 19 pt of pan to give. The glass speed is read at each zoom start from `UserDefaults`
   (`defaults write ro.victorrentea.macos-addons ZoomPointerGlassSpeed -float 0.6`; higher
   = faster), so it can be tuned without a redeploy. Measured with
   `/test/zoom-input?do=move&dx=10&n=20` (synthetic HID moves; desktop distance × factor =

@@ -150,19 +150,19 @@ enum ShareZoomPolicy {
     static let defaultGlassSpeed: CGFloat = 0.4
 
     /// How many times slower the mouse goes at `factor`: `factor / glassSpeed`, so the
-    /// glass sees `glassSpeed` at every factor — except at the very bottom of the dial,
-    /// where that would jump from 1 to 2.5 the instant the zoom starts. There it is
-    /// `factor⁵`, which starts from 1 at 1× and meets `factor / glassSpeed` at ~1.26×,
-    /// five notches in; the smaller of the two is always the one.
+    /// glass sees `glassSpeed` at every factor, from the first notch.
     ///
-    /// Was `factor²` until 2026-11-04, meeting it only at 2×: the whole 1–2× stretch,
-    /// where a slide is usually read, ran at 0.77 of the unzoomed speed at 1.3× and 0.67
-    /// at 1.5×, and `ZoomPointerGlassSpeed` could not reach it: lowering it only moved
-    /// the meeting point further out.
+    /// Until 2026-11-05 the very bottom of the dial eased in (`factor²`, then `factor⁵`)
+    /// so the speed would not jump from 1 to 0.4 as the zoom starts. That ramp was the
+    /// bug: one gradation of the wheel is ×1.01, and at that factor a hand's move reached
+    /// the glass at 0.97 against 0.40 from 1.3× up (measured on 869 real moves, the same
+    /// in the middle and along the edges), while the pan there has only 19 pt of travel
+    /// to soak anything up (Victor: *"dacă fac zoom doar un pic … rămâne mouse super
+    /// accelerat"*).
     static func pointerSlowdown(_ factor: CGFloat, glassSpeed: CGFloat = defaultGlassSpeed) -> CGFloat {
         let k = max(factor, 1)
-        let s = min(max(glassSpeed, 0.05), 1)
-        return min(pow(k, 5), k / s)
+        guard k > 1 else { return 1 }
+        return k / min(max(glassSpeed, 0.05), 1)
     }
 
     /// Is this move one `ZoomPointerSpeed` should follow rather than slow down — the
