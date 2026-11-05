@@ -82,13 +82,19 @@ enum FluxMailPolicy {
     /// from one the sender pasted into their message. This gate is therefore
     /// defence-in-depth, not proof — the load-bearing protection is that nothing
     /// downstream ever *acts* on message content.
+    ///
+    /// Read clause by clause, with whole tokens: the verdict must sit next to its
+    /// own domain, so neither `header.i=@gmail.com.evil.com` nor a `dkim=pass` from
+    /// another signature counts. `flux-agent.sh` has the same gate in jq.
     static func isAuthenticated(_ results: String?) -> Bool {
         guard let results = results?.lowercased() else { return false }
-        let normalized = results.replacingOccurrences(of: " ", with: "")
-        return normalized.contains("dkim=pass")
-            && normalized.contains("header.i=@\(trustedDomain)")
-            && normalized.contains("dmarc=pass")
-            && normalized.contains("header.from=\(trustedDomain)")
+        let clauses = results.split(separator: ";")
+            .map { $0.split(whereSeparator: \.isWhitespace) }
+        func verified(_ verdict: String, _ domain: String) -> Bool {
+            clauses.contains { $0.contains { $0 == verdict } && $0.contains { $0 == domain } }
+        }
+        return verified("dkim=pass", "header.i=@\(trustedDomain)")
+            && verified("dmarc=pass", "header.from=\(trustedDomain)")
     }
 
     /// Both gates.

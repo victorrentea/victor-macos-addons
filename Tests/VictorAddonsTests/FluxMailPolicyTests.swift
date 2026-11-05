@@ -104,6 +104,44 @@ final class FluxMailPolicyTests: XCTestCase {
     }
 
     /// DKIM signed by some other domain must not satisfy the gmail.com gate.
+    /// What `authStamp` renders from the live `authentication_results` of a real
+    /// mail from Victor (5 Nov 2026).
+    func testAcceptsTheStampOfARealMail() {
+        let stamp = FluxInboxPoller.authStamp([
+            "spf": "pass", "dkim": "pass", "dmarc": "pass",
+            "dkim_domain": "gmail.com", "dmarc_domain": "gmail.com",
+        ])
+        XCTAssertEqual(stamp, "agentmail; dkim=pass header.i=@gmail.com; dmarc=pass header.from=gmail.com")
+        XCTAssertTrue(FluxMailPolicy.isAuthenticated(stamp))
+    }
+
+    func testALookalikeDomainIsNotGmail() {
+        XCTAssertFalse(FluxMailPolicy.isAuthenticated(
+            "x; dkim=pass header.i=@gmail.com.evil.com; dmarc=pass header.from=gmail.com.evil.com"))
+        XCTAssertFalse(FluxMailPolicy.isAuthenticated(
+            "x; dkim=pass header.i=@gmail.com.evil.com; dmarc=pass header.from=gmail.com"))
+    }
+
+    func testAPassFromAnotherSignatureDoesNotCount() {
+        XCTAssertFalse(FluxMailPolicy.isAuthenticated(
+            "x; dkim=fail header.i=@gmail.com; dkim=pass header.i=@evil.com; dmarc=pass header.from=gmail.com"))
+    }
+
+    func testAGoodSignatureAmongOthersStillCounts() {
+        XCTAssertTrue(FluxMailPolicy.isAuthenticated(
+            "x; dkim=fail header.i=@evil.com; DKIM=pass (2048-bit) header.i=@gmail.com header.s=2023;"
+            + " dmarc=pass header.from=gmail.com;"))
+    }
+
+    /// The agent's follow-up gate is a second copy of the check, in jq.
+    func testTheAgentScriptKeepsTheStrictGate() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let script = try String(contentsOf: root.appendingPathComponent("flux-agent.sh"), encoding: .utf8)
+        XCTAssertTrue(script.contains(#"verified("dkim=pass"; "header.i=@gmail.com")"#))
+        XCTAssertFalse(script.contains(#"contains("header.i=@"#))
+    }
+
     func testForeignSigningDomainIsRejected() {
         let auth = "amazonses.com; dkim=pass header.i=@evil.com; dmarc=pass header.from=evil.com;"
         XCTAssertFalse(FluxMailPolicy.isAuthenticated(auth))

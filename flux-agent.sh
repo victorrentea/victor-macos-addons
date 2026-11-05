@@ -579,14 +579,18 @@ new_followups() {
          (.headers // {}) | to_entries
          | map(select(.key | ascii_downcase == "authentication-results"))
          | (.[0].value // "")
-       end) | ascii_downcase | gsub("\\s"; "");
+       end) | ascii_downcase;
+    # Clause by clause, whole tokens, like FluxMailPolicy.isAuthenticated: the
+    # verdict must sit next to its own domain.
+    def verified($verdict; $domain):
+      split(";") | any(.[]; [splits("\\s+")] | any(.[]; . == $verdict) and any(.[]; . == $domain));
     ($absorbed | split("\n")) as $done
     | [ .messages[]?
         | select((.labels // []) | index("unread"))
         | select((.from | addr) == "victorrentea@gmail.com")
         | select(authstamp
-                 | contains("dkim=pass") and contains("header.i=@gmail.com")
-                   and contains("dmarc=pass") and contains("header.from=gmail.com"))
+                 | verified("dkim=pass"; "header.i=@gmail.com")
+                   and verified("dmarc=pass"; "header.from=gmail.com"))
         # $done is the input inside `index(...)`, so the id has to be bound
         # first — `$done | index(.message_id)` would index the array with
         # itself and jq stops the whole filter with a type error.
