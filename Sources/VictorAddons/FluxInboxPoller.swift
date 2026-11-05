@@ -240,8 +240,9 @@ enum FluxInboxMenu {
 
 // MARK: - Poller
 
-/// Polls the Flux AgentMail inbox for new mail from Victor every 10 minutes,
-/// **only while the Mac is on battery**.
+/// Polls the Flux AgentMail inbox for new mail from Victor when
+/// `FluxInboxDoorbell` rings, and every 10 minutes as a safety net, **only while
+/// the Mac is on AC**.
 ///
 /// ## Security posture
 ///
@@ -252,8 +253,10 @@ enum FluxInboxMenu {
 /// - **This poller notifies. It never acts.** It shows a banner and writes a log
 ///   line. It does not run shell commands, does not launch agents, and does not
 ///   pass any message-derived string to an LLM, an interpreter, or a file path.
-/// - **Bodies are never fetched.** Only metadata (sender, subject, timestamp) is
-///   requested, so message content cannot reach the process at all.
+/// - **Bodies are never fetched or read.** REST requests only metadata (sender,
+///   subject, timestamp). The doorbell's socket frames do contain the body, since
+///   AgentMail offers no way to leave it out, but only `type` and `event_type` are
+///   read from them before they are dropped (`FluxDoorbellPolicy.classify`).
 /// - **Two independent sender gates** (exact address + DKIM/DMARC) — see
 ///   `FluxMailPolicy`.
 /// - **Subjects are truncated** before display, so a pathological subject cannot
@@ -286,6 +289,10 @@ final class FluxInboxPoller {
     /// How soon to look again after leaving mail to a running agent — long
     /// enough for that agent to absorb it, short enough not to look broken.
     static let deferredRecheckDelay: TimeInterval = 90
+    /// A beat between the doorbell's event and the REST read of the same mail.
+    static let doorbellSettleDelay: TimeInterval = 1
+    /// However fast mail lands, a ringing doorbell polls at most this often.
+    static let doorbellMinGap: TimeInterval = 10
 
     /// How many recent messages each poll inspects. Comfortably more than a
     /// 10-minute window can hold, so nothing is missed between ticks.
@@ -315,6 +322,11 @@ final class FluxInboxPoller {
     /// Whether a post-deferral re-check is already armed. On `queue`.
     private var deferredRecheckScheduled = false
 
+    private let doorbell: FluxInboxDoorbell
+    /// A ring's poll is waiting for its turn; later rings ride on it. On `queue`.
+    private var doorbellPollPending = false
+    private var lastDoorbellPollAt: Date?
+
     // Diagnostics for the /test/email snapshot and the 📬 menu item.
     //
     // These are read from three threads that are none of them `queue` — the
@@ -340,6 +352,7 @@ final class FluxInboxPoller {
         self.apiKey = apiKey
         self.session = session
         self.isOnAC = isOnAC
+        self.doorbell = FluxInboxDoorbell(apiKey: apiKey, inboxId: Self.inboxId, isOnAC: isOnAC)
         if let stored = UserDefaults.standard.object(forKey: Self.watermarkKey) as? Date {
             self.watermark = stored
         } else {
@@ -348,6 +361,7 @@ final class FluxInboxPoller {
             self.watermark = Date()
             UserDefaults.standard.set(self.watermark, forKey: Self.watermarkKey)
         }
+        doorbell.onRing = { [weak self] reason in self?.ring(reason: reason) }
     }
 
     /// Arm the 10-minute timer, and look at the inbox **right away**.
@@ -367,11 +381,46 @@ final class FluxInboxPoller {
         timer = t
         overlayInfo("FluxInboxPoller armed: every \(Int(Self.interval))s, AC-only"
                     + " (first check in \(Int(Self.startupDelay))s)")
+        queue.asyncAfter(deadline: .now() + Self.startupDelay) { [weak self] in
+            self?.doorbell.reevaluate()
+        }
     }
 
     func stop() {
         timer?.cancel()
         timer = nil
+        doorbell.stop()
+    }
+
+    /// The doorbell only lives on AC.
+    func powerDidChange() {
+        doorbell.reevaluate()
+    }
+
+    /// The socket does not survive sleep, and usually does not say so. Waits for
+    /// the Wi-Fi like `pollOnArrival`, which handles the inbox itself.
+    func didWake() {
+        queue.asyncAfter(deadline: .now() + Self.arrivalSettleDelay) { [weak self] in
+            self?.doorbell.reconnect()
+        }
+    }
+
+    /// Bursts collapse into one poll, see `FluxDoorbellPolicy.pollDelay`.
+    private func ring(reason: String) {
+        queue.async { [weak self] in
+            guard let self, !self.doorbellPollPending else { return }
+            self.doorbellPollPending = true
+            let delay = FluxDoorbellPolicy.pollDelay(
+                lastPoll: self.lastDoorbellPollAt, now: Date(),
+                settle: Self.doorbellSettleDelay, minGap: Self.doorbellMinGap)
+            self.queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                self.doorbellPollPending = false
+                self.lastDoorbellPollAt = Date()
+                overlayInfo("📬 inbox check on \(reason)")
+                self.poll(force: false, completion: nil)
+            }
+        }
     }
 
     /// Scheduled tick — skipped entirely while on battery (see
@@ -759,6 +808,8 @@ final class FluxInboxPoller {
             "match": "exact-address + dkim/dmarc pass",
             "interval_seconds": Int(Self.interval),
             "polls_only_on_ac": true,
+            "doorbell_state": doorbell.snapshot.state,
+            "doorbell_rings": doorbell.snapshot.rings,
             "on_ac_now": isOnAC(),
             "status": settled ? "settled" : "pending",
             "last_outcome": status.outcome,

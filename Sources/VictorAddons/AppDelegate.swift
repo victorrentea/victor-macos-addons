@@ -117,7 +117,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 🔒 Mac screen locked → the tablet goes into standby (dim, no thumbnails).
     private var screenLock: ScreenLockMonitor?
     private let lockScreenBreakNotice = LockScreenBreakNotice()
-    /// Watches the Flux inbox for mail from Victor, every 10 min, AC-only.
+    /// Watches the Flux inbox for mail from Victor, AC-only: on the doorbell's
+    /// WebSocket, with a 10-minute poll as the safety net.
     /// Notification only — it never acts on message content (see the class docs).
     private var fluxInboxPoller: FluxInboxPoller?
     /// ⌘⌃P — mails the clipboard to Victor. Nil when the AgentMail key is
@@ -962,9 +963,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.refreshVoiceCorpusTitle = refreshVoiceCorpusTitle
 
         let pm = PowerMonitor()
-        pm.onSwitchToBattery = { [weak controller] in
+        pm.onSwitchToBattery = { [weak self, weak controller] in
             // No banner: the 👂/🔋 pill that the controller raises says it.
             controller?.powerDidChange()
+            self?.fluxInboxPoller?.powerDidChange()
         }
         pm.onSwitchToAC = { [weak self, weak controller] in
             controller?.powerDidChange()
@@ -973,6 +975,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // rather than at the end of the 10-minute tick. Coalesced with the
             // wake trigger below — the two orders (plug then open the lid, open
             // then plug) are one arrival.
+            self?.fluxInboxPoller?.powerDidChange()
             self?.fluxInboxPoller?.pollOnArrival(reason: "AC connected")
         }
         pm.start()
@@ -1870,10 +1873,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         self.transcriptPasteController = transcriptPaste
 
-        // Flux inbox poller: every 10 min, but only while on battery. It is a
-        // notifier, not an actor — a banner and a log line, nothing more. The
-        // inbox is a public address, so message text is untrusted input and is
-        // never handed to a shell, an agent, or an LLM. See FluxInboxPoller.
+        // Flux inbox poller, AC-only: on a WebSocket doorbell, with a 10-minute
+        // poll as the safety net. The inbox is a public address, so message text
+        // is untrusted input. See FluxInboxPoller.
         if let fluxKey = secrets["AGENTMAIL_API_KEY"], !fluxKey.isEmpty {
             let poller = FluxInboxPoller(apiKey: fluxKey)
             poller.onTrustedMail = { [weak self] message in
@@ -2556,6 +2558,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // raises no notification we're awake to hear). Checked before the whisper
         // guard below, which returns early on a Mac that wasn't transcribing.
         fluxInboxPoller?.pollOnArrival(reason: "wake on AC")
+        fluxInboxPoller?.didWake()
 
         guard wasTranscribingBeforeSleep else { return }
         wasTranscribingBeforeSleep = false
