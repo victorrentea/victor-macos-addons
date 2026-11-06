@@ -108,6 +108,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var wirelessTabletLink: WirelessTabletLink?
     /// 🔋 The phone's charge, from Victor Net: the tablet's top bar, and its low-battery blink.
     private let phoneCharge = PhoneCharge()
+    private let phoneLowBatteryAlarm = PhoneLowBatteryAlarm()
+    private var phoneLowBatteryTimer: Timer?
     /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
     private var checkInWatch: CheckInMailWatch?
     private var memoryPressure: MemoryPressureMonitor?
@@ -1058,6 +1060,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // while the tablet is always in eye-line. The Mac only carries the state, in `/ping`;
         // the blinking lives on the tablet.
         phoneCharge.start()
+        phoneLowBatteryTimer = Timer.scheduledTimer(withTimeInterval: PhoneCharge.pollInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.phoneLowBatteryAlarm.update(self.phoneCharge.reading, now: Date())
+        }
         tabletServer?.onTestPhoneBattery = { [weak self] in
             self?.phoneCharge.diagnosticsJSON ?? "{\"error\":\"phone charge unavailable\"}"
         }
