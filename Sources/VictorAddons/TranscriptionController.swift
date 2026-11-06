@@ -11,7 +11,8 @@ import Foundation
 /// (`whisper-transcribe/battery_audio.py`).
 ///
 /// The battery recording can be switched off from the menu. That choice lasts
-/// until the charger is next plugged in — the next unplugging records again.
+/// until the charger is next plugged in — the next unplugging records again —
+/// and it survives a restart of this app, which would otherwise record again.
 ///
 /// A 60s heartbeat restarts Whisper, in whichever mode the power source asks
 /// for, if it died (crash, OOM, the capture-stall watchdog's exit).
@@ -47,6 +48,8 @@ final class TranscriptionController {
     private let isOnAC: () -> Bool
     private let isWhisperRunning: () -> Bool
     private let switchDelay: TimeInterval
+    private let store: UserDefaults
+    private static let stoppedKey = "TranscriptionController.batteryRecordingStopped"
     private var heartbeat: DispatchSourceTimer?
     private let queue = DispatchQueue(
         label: "ro.victorrentea.macos-addons.transcription-controller", qos: .utility)
@@ -54,15 +57,22 @@ final class TranscriptionController {
     /// Main-queue state.
     private(set) var runningMode: Mode?
     /// The menu's "stop recording on battery". Reset by the charger.
-    private(set) var batteryRecordingEnabled = true
+    private(set) var batteryRecordingEnabled: Bool {
+        didSet { store.set(!batteryRecordingEnabled, forKey: Self.stoppedKey) }
+    }
     private var lastReportedState: State?
 
     init(isOnAC: @escaping () -> Bool = { PowerMonitor.isOnAC() },
          isWhisperRunning: @escaping () -> Bool,
-         switchDelay: TimeInterval = 1.5) {
+         switchDelay: TimeInterval = 1.5,
+         store: UserDefaults = .standard) {
         self.isOnAC = isOnAC
         self.isWhisperRunning = isWhisperRunning
         self.switchDelay = switchDelay
+        self.store = store
+        let stopped = store.bool(forKey: Self.stoppedKey) && !isOnAC()
+        batteryRecordingEnabled = !stopped
+        if !stopped { store.removeObject(forKey: Self.stoppedKey) }
     }
 
     /// What should be running right now, if anything.

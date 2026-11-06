@@ -16,10 +16,18 @@ final class TranscriptionRestartTests: XCTestCase {
         init(onAC: Bool) { self.onAC = onAC }
     }
 
+    private let store = UserDefaults(suiteName: "TranscriptionRestartTests")!
+
+    override func setUp() {
+        super.setUp()
+        store.removePersistentDomain(forName: "TranscriptionRestartTests")
+    }
+
     private func make(_ fake: Fake) -> TranscriptionController {
         let c = TranscriptionController(isOnAC: { fake.onAC },
                                         isWhisperRunning: { fake.running },
-                                        switchDelay: 0.01)
+                                        switchDelay: 0.01,
+                                        store: store)
         c.onStart = { mode in
             fake.events.append(mode == .full ? "start full" : "start capture")
             fake.running = true
@@ -31,6 +39,27 @@ final class TranscriptionRestartTests: XCTestCase {
     private func spin(_ seconds: TimeInterval = 0.15) {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    }
+
+    func testARestartOnBatteryKeepsTheRecordingStopped() {
+        let fake = Fake(onAC: false)
+        let before = make(fake)
+        before.setBatteryRecording(false)
+        spin()
+        XCTAssertFalse(before.batteryRecordingEnabled)
+        XCTAssertFalse(make(fake).batteryRecordingEnabled)
+    }
+
+    func testARestartOnTheChargerForgetsTheStop() {
+        let fake = Fake(onAC: false)
+        let before = make(fake)
+        before.setBatteryRecording(false)
+        spin()
+        XCTAssertFalse(before.batteryRecordingEnabled)
+        fake.onAC = true
+        XCTAssertTrue(make(fake).batteryRecordingEnabled)
+        fake.onAC = false
+        XCTAssertTrue(make(fake).batteryRecordingEnabled)
     }
 
     func testTheRuleItself() {
