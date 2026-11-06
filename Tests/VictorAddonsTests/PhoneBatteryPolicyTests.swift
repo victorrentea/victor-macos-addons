@@ -7,9 +7,9 @@ final class PhoneBatteryPolicyTests: XCTestCase {
         PhoneCharge.Reading(pct: pct, charging: charging, ageS: ageS, fetchedAt: now.addingTimeInterval(-fetchedAgo))
     }
 
-    func testWarnsBelowThirty() {
-        XCTAssertTrue(PhoneBatteryPolicy.shouldWarn(reading(29), now: now))
-        XCTAssertFalse(PhoneBatteryPolicy.shouldWarn(reading(30), now: now))
+    func testWarnsAtThirtyOrLess() {
+        XCTAssertTrue(PhoneBatteryPolicy.shouldWarn(reading(30), now: now))
+        XCTAssertFalse(PhoneBatteryPolicy.shouldWarn(reading(31), now: now))
     }
 
     func testAChargingPhoneIsFine() {

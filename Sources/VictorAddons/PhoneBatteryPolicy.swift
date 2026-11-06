@@ -8,9 +8,9 @@ import Foundation
 /// Access any more (2026-11-06).
 enum PhoneBatteryPolicy {
 
-    /// Only a phone under this charge is worth blinking a tablet about. The tablet applies
-    /// the same floor on its side, so an old build of either half is harmless on its own.
-    static let warnBelowPct = 30
+    /// At this charge or less a phone is worth blinking a tablet about, same as the menu bar
+    /// in Victor Net. The tablet applies the same limit on its side.
+    static let warnAtPct = 30
 
     /// A phone that went flat stops reporting, and its last reading must not blink the
     /// tablet all night.
@@ -18,7 +18,7 @@ enum PhoneBatteryPolicy {
 
     /// Whether the tablet should be blinking right now.
     static func shouldWarn(_ reading: PhoneCharge.Reading?, now: Date) -> Bool {
-        guard let reading, !reading.charging, (0..<warnBelowPct).contains(reading.pct) else { return false }
+        guard let reading, !reading.charging, (0...warnAtPct).contains(reading.pct) else { return false }
         let age = TimeInterval(reading.ageS) + max(0, now.timeIntervalSince(reading.fetchedAt))
         return age <= staleAfter
     }
