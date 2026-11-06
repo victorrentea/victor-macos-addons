@@ -187,7 +187,7 @@ case testTerminalFont
         case testAndroidDeploy
         /// JSON snapshot of the 📱 phone low-battery mirror (read-only): whether
         /// the tablet is being told to blink, at what charge, and how fresh the
-        /// underlying Soduto notification is (test hook).
+        /// reading from Victor Net is (test hook).
         case testPhoneBattery
         /// Pretend the phone is at N% for a couple of minutes, so the tablet's
         /// blink can be previewed without waiting for a genuinely flat phone.

@@ -106,10 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var usbTunnelKeeper: UsbTunnelKeeper?
     private var androidDeployer: AndroidAppDeployer?
     private var wirelessTabletLink: WirelessTabletLink?
-    /// 📱 Watches Soduto's low-battery notification for the paired Android and
-    /// feeds it into `/ping` so the tablet can blink about it.
-    private var phoneBattery: PhoneBatteryMonitor?
-    /// 🔋 The phone's charge at any level, from Victor Net, for the tablet's top bar.
+    /// 🔋 The phone's charge, from Victor Net: the tablet's top bar, and its low-battery blink.
     private let phoneCharge = PhoneCharge()
     /// ✈️ Airline "check-in is open" mails → a click-to-open pill (docs/checkin-alarm.md).
     private var checkInWatch: CheckInMailWatch?
@@ -625,11 +622,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // lower-latency local path, keeping the internet relay a last resort.
             let macLanIps = NetworkInfo.lanIPv4Addresses()
                 .map { "\"\($0)\"" }.joined(separator: ",")
-            // 📱 Mirror the phone's low battery to the tablet. macOS already
-            // notifies about it (Soduto does), but a notification on the Mac is
-            // exactly what gets missed while presenting — the tablet is the
-            // screen that's always in view.
-            let phone = PhoneBatteryPolicy.pingFields(for: self?.phoneBattery?.reading, now: Date())
+            // 📱 Mirror the phone's low battery to the tablet: a notification on the Mac
+            // is exactly what gets missed while presenting, and the tablet is the screen
+            // that's always in view.
+            let phone = PhoneBatteryPolicy.pingFields(for: self?.phoneCharge.reading, now: Date())
                 + PhoneCharge.pingFields(self?.phoneCharge.reading, now: Date())
             // 🔒 A locked Mac screen means nobody is looking at either screen —
             // the tablet dims itself to a sketch instead of lighting the room all
@@ -1058,35 +1054,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         wirelessTablet.start()
         self.wirelessTabletLink = wirelessTablet
 
-        // 📱 Phone low-battery → tablet. Soduto already raises a macOS
-        // notification when the paired Android drops below its threshold, but
-        // that banner is the one thing that reliably gets missed: it lands on
-        // the screen that is being projected (or behind PowerPoint) while the
-        // tablet is the surface always in eye-line. The Mac only carries the
-        // state; the blinking lives on the tablet, driven off `/ping`.
-        let phoneBatteryMonitor = PhoneBatteryMonitor()
-        phoneBatteryMonitor.onChange = { reading in
-            if let reading {
-                overlayInfo("📱 phone battery low: \(reading.chargePct)%")
-            } else {
-                overlayInfo("📱 phone battery warning cleared")
-            }
-        }
-        // Reading Notification Center's store needs Full Disk Access, which this
-        // app is not granted by default. Say so once — a feature that silently
-        // never fires is indistinguishable from a phone that never runs low.
-        phoneBatteryMonitor.onPermissionDenied = { [weak self] in
-            self?.postAndroidDeployNotification(
-                title: "📱 Phone battery mirror is off",
-                body: "Grant Victor Addons Full Disk Access (System Settings → Privacy & Security) so it can read Soduto's low-battery notification.",
-                identifier: "phone-battery-permission")
-        }
-        phoneBatteryMonitor.start()
-        self.phoneBattery = phoneBatteryMonitor
+        // 📱 Phone low-battery → tablet: a macOS banner lands on the screen being projected,
+        // while the tablet is always in eye-line. The Mac only carries the state, in `/ping`;
+        // the blinking lives on the tablet.
         phoneCharge.start()
-        tabletServer?.onTestPhoneBattery = { [weak phoneBatteryMonitor] in
-            phoneBatteryMonitor?.pollNow()
-            return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        tabletServer?.onTestPhoneBattery = { [weak self] in
+            self?.phoneCharge.diagnosticsJSON ?? "{\"error\":\"phone charge unavailable\"}"
         }
         // 📶 The phone's hotspot, the roaming allowance and its warning moved to
         // Victor Net (`victor-net`) on 2026-10-20.
@@ -1174,9 +1147,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             screenLockMonitor?.simulate(locked: locked)
             return screenLockMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
         }
-        tabletServer?.onTestPhoneBatterySimulate = { [weak phoneBatteryMonitor] pct in
-            phoneBatteryMonitor?.simulate(chargePct: pct)
-            return phoneBatteryMonitor?.diagnosticsJSON ?? "{\"error\":\"monitor unavailable\"}"
+        tabletServer?.onTestPhoneBatterySimulate = { [weak self] pct in
+            self?.phoneCharge.simulate(pct: pct)
+            return self?.phoneCharge.diagnosticsJSON ?? "{\"error\":\"phone charge unavailable\"}"
         }
         // /test/group-photo — show the overlay now, bypassing the break + daemon gates.
         tabletServer?.onTestGroupPhoto = { [weak self] in

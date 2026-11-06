@@ -3,7 +3,6 @@ import Foundation
 /// 🔋 The phone's charge for the tablet's top bar, which shows it instead of the
 /// tablet's own (Victor, 2026-10-29: "the tablet's battery is stupid").
 ///
-/// Not from Soduto: `PhoneBatteryMonitor` only ever learns about a *low* phone.
 /// The number comes from **Victor Net** (`GET /phone/battery`), which keeps it from
 /// the phone's `/status` answers it already gets — every 5 s on the hotspot, every
 /// 20 min over Bluetooth elsewhere — so it carries its age, and the tablet dims an
@@ -47,9 +46,28 @@ final class PhoneCharge {
     private var _reading: Reading?
     private var timer: DispatchSourceTimer?
 
+    private var simulated: (Reading, until: Date)?
+
     var reading: Reading? {
         lock.lock(); defer { lock.unlock() }
+        if let simulated, Date() < simulated.until { return simulated.0 }
         return _reading
+    }
+
+    /// `GET /test/phone-battery/simulate/<pct>`: this charge, unplugged, for two minutes.
+    /// It shadows the real reading, so one arriving meanwhile is not lost.
+    func simulate(pct: Int) {
+        let now = Date()
+        lock.lock(); defer { lock.unlock() }
+        simulated = (Reading(pct: pct, charging: false, ageS: 0, fetchedAt: now), now.addingTimeInterval(120))
+    }
+
+    /// `GET /test/phone-battery`: what `/ping` tells the tablet right now.
+    var diagnosticsJSON: String {
+        let now = Date()
+        let r = reading
+        let age = r.map { $0.ageS + max(0, Int(now.timeIntervalSince($0.fetchedAt))) } ?? -1
+        return "{\"warning\":\(PhoneBatteryPolicy.shouldWarn(r, now: now)),\"pct\":\(r?.pct ?? -1),\"charging\":\(r?.charging ?? false),\"age_s\":\(age)}"
     }
 
     func start() {
