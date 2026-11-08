@@ -85,6 +85,12 @@ final class UsbTunnelKeeper {
     /// handshaking). Called on `queue`.
     var onTunnelArmed: (() -> Void)?
 
+    /// Fired on every ADB interface that enumerates (and once at launch for one
+    /// already attached), *whatever* the device — the tablet or the phone. The
+    /// phone never arms the tunnel, so this raw edge is what `PhoneAppDeployer`
+    /// hangs off. Called on `queue`.
+    var onUsbAttach: (() -> Void)?
+
     /// First adb binary that exists among the known install locations. Prefers
     /// the Android SDK copy `start.sh` uses, so the app and its own startup
     /// script share one adb server (no version thrash). Shared with
@@ -262,6 +268,7 @@ final class UsbTunnelKeeper {
             service = IOIteratorNext(iterator)
         }
         guard appeared else { return }
+        onUsbAttach?()
         forceReconnect()
     }
 

@@ -360,9 +360,9 @@ final class AndroidAppDeployer {
         return AndroidDeployPolicy.pickTablet(attachedDevices())
     }
 
-    static func readDeviceStamp(serial: String) -> String? {
+    static func readDeviceStamp(serial: String, path: String = deviceStampPath) -> String? {
         guard let adb = UsbTunnelKeeper.adbPath else { return nil }
-        let r = run(adb, ["-s", serial, "shell", "cat", deviceStampPath], timeout: 60)
+        let r = run(adb, ["-s", serial, "shell", "cat", path], timeout: 60)
         guard r.status == 0 else { return nil }
         let s = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
         // A missing file answers on stdout/stderr, not with a non-zero status.
@@ -372,13 +372,13 @@ final class AndroidAppDeployer {
 
     /// Written via `adb push` rather than `adb shell echo >`, so the stamp never
     /// has to survive a round trip through the device's shell quoting.
-    private static func writeDeviceStamp(_ stamp: String, serial: String) -> Bool {
+    static func writeDeviceStamp(_ stamp: String, serial: String, path: String = deviceStampPath) -> Bool {
         guard let adb = UsbTunnelKeeper.adbPath else { return false }
         let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("victor-launchbreak-deploy.stamp")
+            .appendingPathComponent((path as NSString).lastPathComponent)
         do { try stamp.write(to: tmp, atomically: true, encoding: .utf8) } catch { return false }
         defer { try? FileManager.default.removeItem(at: tmp) }
-        return run(adb, ["-s", serial, "push", tmp.path, deviceStampPath], timeout: 120).status == 0
+        return run(adb, ["-s", serial, "push", tmp.path, path], timeout: 120).status == 0
     }
 
     // MARK: - Process plumbing
@@ -386,7 +386,7 @@ final class AndroidAppDeployer {
     /// The environment a gradle build needs when we are the parent — a
     /// LaunchAgent-started app inherits almost nothing, so `JAVA_HOME` in
     /// particular has to be resolved rather than assumed.
-    private static func buildEnvironment() -> [String: String] {
+    static func buildEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         if let java = javaHome() { env["JAVA_HOME"] = java }
         let sdk = "\(NSHomeDirectory())/Library/Android/sdk"
@@ -426,7 +426,7 @@ final class AndroidAppDeployer {
 
     /// Last few lines of a failed command's output — enough to name the cause in
     /// a notification body without pasting a gradle log into it.
-    private static func lastLines(_ output: String, count: Int = 3) -> String {
+    static func lastLines(_ output: String, count: Int = 3) -> String {
         let lines = output
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -435,7 +435,7 @@ final class AndroidAppDeployer {
     }
 
     @discardableResult
-    private static func run(
+    static func run(
         _ path: String,
         _ args: [String],
         cwd: String? = nil,
@@ -487,7 +487,7 @@ final class AndroidAppDeployer {
         return (p.terminationStatus, out)
     }
 
-    private static func jsonString(_ s: String) -> String {
+    static func jsonString(_ s: String) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data()
         let arr = String(data: data, encoding: .utf8) ?? "[\"\"]"
         return String(arr.dropFirst().dropLast())

@@ -185,6 +185,7 @@ case testTerminalFont
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
+        case testPhoneDeploy
         /// JSON snapshot of the 📱 phone low-battery mirror (read-only): whether
         /// the tablet is being told to blink, at what charge, and how fresh the
         /// reading from Victor Net is (test hook).
@@ -398,6 +399,8 @@ case testTerminalFont
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
+    /// Force a phone app (re)deploy now — same semantics: every call deploys.
+    var onTestPhoneDeploy: (() -> String)?
     /// Read-only JSON snapshot of the 📱 phone low-battery mirror.
     var onTestPhoneBattery: (() -> String)?
     /// Force a synthetic phone charge for a short while; returns the snapshot.
@@ -778,6 +781,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
                 if self.onTestAndroidDeploy == nil { statusCode = 503 }
+            case .testPhoneDeploy:
+                contentType = "application/json"
+                body = self.onTestPhoneDeploy?() ?? "{\"error\":\"phone deployer unavailable\"}"
+                if self.onTestPhoneDeploy == nil { statusCode = 503 }
             case .testDictation(let active):
                 contentType = "application/json"
                 body = self.onTestDictation?(active) ?? "{\"error\":\"dictation bridge unavailable\"}"
@@ -1192,6 +1199,8 @@ case testTerminalFont
             return .testReminderMail
         case "/test/android-deploy":
             return .testAndroidDeploy
+        case "/test/phone-deploy":
+            return .testPhoneDeploy
         case "/test/phone-battery":
             return .testPhoneBattery
         case "/test/screen-lock":

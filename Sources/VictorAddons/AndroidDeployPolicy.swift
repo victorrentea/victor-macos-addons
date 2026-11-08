@@ -101,6 +101,27 @@ enum AndroidDeployPolicy {
         return tabletModels.contains { model.contains($0) }
     }
 
+    /// The phone (`victor-phone-addons`), by model: `SM_S928B` is the S24 Ultra. Like the
+    /// tablet it is a **positive** match — the Mac must never install the phone's app on
+    /// a device it merely failed to recognise as the tablet.
+    static let phoneModels = ["SM_S928", "SM-S928"]
+
+    static func isPhone(_ d: Device) -> Bool {
+        guard !isTablet(d) else { return false }
+        let model = d.model.uppercased()
+        return phoneModels.contains { model.contains($0) }
+    }
+
+    /// The phone **on the cable**, or nil. Only USB counts: the trigger is "the cable just
+    /// went in" (Victor, 8 nov 2026), while the phone also sits on wireless adb all day,
+    /// and a deploy over WiFi would restart its services at a moment nobody chose.
+    static func pickPhone(_ devices: [Device]) -> Device? {
+        devices.first { isPhone($0) && !$0.isWireless }
+    }
+
+    static let phoneSuccessTitle = "Phone app updated to version"
+    static let phoneFailureTitle = "Phone app update FAILED"
+
     /// The tablet is behind whenever its marker doesn't match the source stamp.
     /// **A missing marker deploys**: it means either we have never installed
     /// this app from here or the marker was wiped, and in both cases what is on

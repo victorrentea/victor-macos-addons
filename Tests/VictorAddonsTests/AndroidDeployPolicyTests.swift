@@ -116,6 +116,33 @@ final class AndroidDeployPolicyTests: XCTestCase {
         XCTAssertTrue(why.contains("SM_S928B"), "the reason should name what was seen: \(why)")
     }
 
+    // MARK: - the phone (PhoneAppDeployer)
+
+    func testPhoneOnTheCableIsPicked() {
+        let phone = dev("RZCX50DX0GM", "SM_S928B", "phone")
+        XCTAssertEqual(AndroidDeployPolicy.pickPhone([phone]), phone)
+    }
+
+    func testPhoneIsPickedOutOfAMixedSetAndTheTabletNever() {
+        let phone = dev("RZCX50DX0GM", "SM_S928B", "phone")
+        let tablet = dev("HVA5HP4L", "TB350FU", "tablet")
+        XCTAssertEqual(AndroidDeployPolicy.pickPhone([tablet, phone]), phone)
+        XCTAssertNil(AndroidDeployPolicy.pickPhone([tablet]))
+    }
+
+    /// The phone sits on wireless adb all day; only the cable going in deploys.
+    func testPhoneOverWirelessIsNotPicked() {
+        let ip = dev("192.168.1.20:5555", "SM_S928B", "phone")
+        let mdns = dev("adb-RZCX50DX0GM-x._adb-tls-connect._tcp", "SM_S928B", "phone")
+        XCTAssertNil(AndroidDeployPolicy.pickPhone([ip, mdns]))
+        let usb = dev("RZCX50DX0GM", "SM_S928B", "phone")
+        XCTAssertEqual(AndroidDeployPolicy.pickPhone([ip, usb]), usb)
+    }
+
+    func testAnUnknownPhoneIsNotPicked() {
+        XCTAssertNil(AndroidDeployPolicy.pickPhone([dev("X1", "Pixel_8", "phone")]))
+    }
+
     func testTabletIsPickedByItsOwnCharacteristics() {
         let tablet = dev("HA1ABCDE", "TB350FU", "tablet,nosdcard")
         XCTAssertEqual(AndroidDeployPolicy.pickTablet([tablet]), .tablet(tablet))

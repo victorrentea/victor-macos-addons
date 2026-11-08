@@ -105,6 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// the Mac at `localhost:55123` when there's no shared WiFi.
     private var usbTunnelKeeper: UsbTunnelKeeper?
     private var androidDeployer: AndroidAppDeployer?
+    private var phoneDeployer: PhoneAppDeployer?
     private var wirelessTabletLink: WirelessTabletLink?
     /// 🔋 The phone's charge, from Victor Net: the tablet's top bar, and its low-battery blink.
     private let phoneCharge = PhoneCharge()
@@ -1043,6 +1044,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         usbTunnel.onTunnelArmed = { [weak androidDeploy] in androidDeploy?.tabletConnected() }
         tabletServer?.onTestAndroidDeploy = { [weak androidDeploy] in
             androidDeploy?.forceDeployJSON() ?? "{\"error\":\"deployer unavailable\"}"
+        }
+
+        // 📱 The phone's app gets the same treatment, on the raw USB edge (the phone never
+        // arms the tablet's tunnel) and only over the cable (see PhoneAppDeployer).
+        let phoneDeploy = PhoneAppDeployer()
+        phoneDeploy.onNotify = { [weak self] title, body in
+            self?.postAndroidDeployNotification(title: title, body: body, identifier: "phone-deploy")
+        }
+        self.phoneDeployer = phoneDeploy
+        usbTunnel.onUsbAttach = { [weak phoneDeploy] in phoneDeploy?.usbAttached() }
+        tabletServer?.onTestPhoneDeploy = { [weak phoneDeploy] in
+            phoneDeploy?.forceDeployJSON() ?? "{\"error\":\"deployer unavailable\"}"
         }
 
         // The same deploy, reached the other way. The cable is an IOKit event the
