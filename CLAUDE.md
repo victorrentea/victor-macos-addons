@@ -94,6 +94,7 @@ load-bearing, not commentary.
 | [docs/testing.md](docs/testing.md) | all headless `GET /test/*` hooks on `127.0.0.1:55123` (`TabletHttpServer`) + `./test-transcription-control.sh` — check here before testing anything by clicking. The effect hooks still answer on 55123, **through the proxy**; their documentation is in `victor-effects/docs/testing.md` |
 | [docs/conversations-backup.md](docs/conversations-backup.md) | 🗄️ daily merge of every local AI conversation (Claude Code/desktop, Copilot CLI/JetBrains/VS Code, Codex) onto the "Vic" drive when it is plugged in — `conversations-backup.sh` + its own LaunchAgent, no Swift; never deletes, keeps shrunk files aside |
 | [docs/sidebar-icons.md](docs/sidebar-icons.md) | 🗂️ Finder sidebar symbols on the Drive folders that wipe them: `SidebarIconsRestamp` watches My Drive / Conta / Acte / ###sesiuni and re-inserts the coded rows (took over the `ro.victorrentea.sidebar-icons.restamp` LaunchAgent on 2026-10-25); the helper app, artwork and `sidebar-icon` CLI stay in `~/Library/Application Support/VictorSidebarIcons` |
+| [docs/walkie-dict-sync.md](docs/walkie-dict-sync.md) | 📖 Walkie Talkie's `vocabulary.txt` ⇄ Wispr Flow's Dictionary every 10 min (`WalkieDictSync` runs `walkie-talkie/helpers/walkie-dict sync`) |
 | [docs/deployment.md](docs/deployment.md) | `build-app.sh`, LaunchAgent install (**two** of them since the split), stable code-signing identity, Accessibility grants, single-instance lock, reopen-replaces-it (`AppRelaunch`), `TerminalTiler` AX note |
 
 ## Rules that apply everywhere

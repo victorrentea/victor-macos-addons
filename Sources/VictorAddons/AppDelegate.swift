@@ -85,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var powerMonitor: PowerMonitor?
     private var homeAwake: HomeAwake?
     private var fromWalkieWatchdog: FromWalkieWatchdog?
+    private var walkieDictSync: WalkieDictSync?
     private var tartVMIndicator: TartVMIndicator?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
@@ -1708,6 +1709,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let fromWalkieWatchdog = FromWalkieWatchdog()
         fromWalkieWatchdog.start()
         self.fromWalkieWatchdog = fromWalkieWatchdog
+
+        // 📖 Walkie's vocabulary.txt ⇄ Wispr Flow's Dictionary, every 10 min.
+        let walkieDictSync = WalkieDictSync()
+        walkieDictSync.start()
+        self.walkieDictSync = walkieDictSync
 
         // 🖥️ Its own menu bar item, only while a tart VM is running, with a Stop row.
         let tartVMIndicator = TartVMIndicator()
