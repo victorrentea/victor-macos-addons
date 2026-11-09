@@ -1015,6 +1015,8 @@ final class BreakTimerView: NSView {
     private var scrollAccum: CGFloat = 0      // precise-scroll accumulator while grabbing
     private var scrollTap: CFMachPort?        // consumes the wheel while pressed
     private var scrollTapSource: CFRunLoopSource?
+    /// "▲ +1 min / ▼ −1 min" beside the watch while it is held (`BreakTimerScrollHint`).
+    private let scrollHint = BreakTimerScrollHint()
 
     // Red LED look — colors sampled from the reference: a deep red for lit
     // segments and a solid very-dark red for the unlit (ghost) segments.
@@ -1703,6 +1705,11 @@ final class BreakTimerView: NSView {
         // While held, capture the wheel globally so minute-adjust keeps working
         // even if the cursor leaves the view during a drag.
         startScrollMonitor()
+        // …and say so, beside the watch, once the press is clearly a hold.
+        // Not for a button press: that is a click, not a grab.
+        if case .button = dragMode {} else if let window {
+            scrollHint.schedule(beside: window, color: lit)
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1715,6 +1722,7 @@ final class BreakTimerView: NSView {
         case .resize(let corner):
             Self.cursor(forCorner: corner).set()
             performResize(corner)
+            if let window { scrollHint.follow(window) }
         case .button, .none:
             break
         }
@@ -1787,6 +1795,9 @@ final class BreakTimerView: NSView {
     /// another tap ate the release too; `maxSeconds` shortens the hard limit.
     func leakScrollCaptureForTest(buttonStuck: Bool, maxSeconds: TimeInterval?) {
         startScrollMonitor()
+        // The hint shows with the capture, as on a real hold — the one headless
+        // way to see it (released with the capture).
+        if let window { scrollHint.show(beside: window, color: lit) }
         scrollCaptureButtonStuckForTest = buttonStuck
         scrollCaptureMaxSeconds = maxSeconds ?? 30
     }
@@ -1831,6 +1842,7 @@ final class BreakTimerView: NSView {
     }
 
     private func stopScrollMonitor() {
+        scrollHint.cancel()
         scrollCaptureButtonStuckForTest = false
         scrollCaptureMaxSeconds = 30
         scrollCaptureCheck?.invalidate()
