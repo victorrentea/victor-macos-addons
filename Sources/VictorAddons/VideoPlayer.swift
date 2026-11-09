@@ -103,7 +103,8 @@ final class VideoPlayer {
         self.startSeconds = start
         self.holdEndSeconds = max(0, holdEndSeconds)
         let screen = Self.targetScreen()
-        let item = AVPlayerItem(url: fileURL)
+        // ＋ The original, or its picture under the louder audio (`VideoBoostAudio`).
+        let item = VideoBoostAudio.playerItem(id: id, fileURL: fileURL)
         let p = AVPlayer(playerItem: item)
         p.actionAtItemEnd = .pause
         p.volume = volume   // 🔉 the clip's own bar (`VideoGain`)

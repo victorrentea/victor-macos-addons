@@ -16,10 +16,12 @@ import Foundation
 /// - **live**, by noticing `/sound/gain/video:<id>/<pct>` on its way through
 ///   the proxy (`parseGainPath`), while the clip is still playing.
 ///
-/// Same curve as the tiles: slider position 0…100, x², pinned at 80 → ×1.0
-/// (40 → ×0.25). Above 80 a tile is boosted by a pre-amplified copy; an
-/// `AVPlayer` has no such copy and its volume stops at 1.0, so for a video the
-/// top of the bar is simply full volume.
+/// Same curve as the tiles: slider position 0…80, x², 80 → ×1.0 = the clip
+/// as stored, shown on the tablet as "100%" (40 → ×0.25). **Down only since
+/// 2026-11-09**, like every tile: nothing plays above ×1 at runtime. A quiet
+/// snippet is made louder ON DISK by the ＋ beside the bar instead — Effects
+/// renders its played window's audio louder and `VideoBoostAudio` lays it over
+/// the untouched mp4.
 enum VideoGain {
     static let defaultPct = 80
     static let keyPrefix = "video:"
@@ -27,7 +29,7 @@ enum VideoGain {
     /// Bar position → `AVPlayer.volume`. Nil (no `?gain=`) = the old fixed 1.0.
     static func volume(position: Int?) -> Float {
         guard let position else { return 1 }
-        let p = Float(max(0, min(100, position))) / Float(defaultPct)
+        let p = Float(max(0, min(defaultPct, position))) / Float(defaultPct)
         return min(1, p * p)
     }
 

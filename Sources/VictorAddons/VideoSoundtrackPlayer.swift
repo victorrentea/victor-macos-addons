@@ -91,7 +91,8 @@ final class VideoSoundtrackPlayer {
         // noise, not a callback.
         stop(fade: false)
 
-        let item = AVPlayerItem(url: fileURL)
+        // ＋ The same louder audio the clip plays with (`VideoBoostAudio`).
+        let item = VideoBoostAudio.playerItem(id: id, fileURL: fileURL)
         let p = AVPlayer(playerItem: item)
         p.volume = volume   // 🔉 the clip's own bar (`VideoGain`)
         p.actionAtItemEnd = .pause

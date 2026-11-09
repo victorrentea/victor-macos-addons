@@ -138,6 +138,14 @@ enum EffectsProxy {
 
     // MARK: - Plumbing
 
+    /// ＋ A short read of one effects route, for a caller that needs the answer
+    /// before it can act (a video's play asks `/sound/boost/video:<id>`). The
+    /// body on a 200, nil otherwise — the caller then plays the file as it is.
+    static func fetch(_ path: String, timeout: TimeInterval) -> Data? {
+        guard let r = get(path, body: "", timeout: timeout), r.status == 200 else { return nil }
+        return r.body
+    }
+
     /// One synchronous GET against the effects app. `nil` on any transport
     /// failure (not running, port closed, timed out) — an HTTP error status is
     /// NOT a failure here: it is the effects app's own answer and is passed
