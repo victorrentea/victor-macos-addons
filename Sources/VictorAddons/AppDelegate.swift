@@ -1757,6 +1757,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let zoomPrep = ZoomSharePrep()
         zoomPrep.onResult = { [weak self] result in
             guard let self else { return }
+            if result.layoutMissing {
+                // No "As background" on offer → the picker was left open, Share
+                // not pressed. Say why, so the open picker doesn't read as a bug.
+                // One pill, not two: a second showNow would replace this one.
+                self.statusBanner?.showNow(text: result.soundOnNow ? "⛶❌" : "⛶❌ 🔊❌",
+                                           sound: result.soundOnNow ? nil : NSSound(named: NSSound.Name("Basso")),
+                                           visibleDuration: result.soundOnNow ? 4 : 8)
+                return
+            }
             if result.soundOnNow {
                 // Nothing to announce when it was already ticked — a pill for a
                 // no-op is just noise on a screen that may be mirrored to the room.

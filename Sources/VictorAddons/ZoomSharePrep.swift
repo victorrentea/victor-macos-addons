@@ -135,6 +135,9 @@ final class ZoomSharePrep {
         let soundWasAlreadyOn: Bool
         let soundOnNow: Bool
         let layoutApplied: PresenterLayout?
+        /// A layout was wanted but Zoom offered no layout list — Share was
+        /// therefore not pressed.
+        let layoutMissing: Bool
         /// nil when placement wasn't attempted; false when it was and missed.
         let cutoutPlaced: Bool?
         let sharePressed: Bool
@@ -286,7 +289,12 @@ final class ZoomSharePrep {
         // ⌥ held while opening the picker = "let me choose what to share".
         let mods = KeySimulator.heldModifiers()
         let optionHeld = mods.contains(.maskAlternate)
-        let takingOver = autoPressShare && !optionHeld
+        // A layout was wanted and isn't there (Zoom sometimes offers no
+        // "Choose a layout" list at all, only a bare "Presenter layout"
+        // preview): sharing now would put the screen out *without* Victor cut
+        // out over it. Leave the picker open for him to sort out by hand.
+        let layoutMissing = presenterLayout != nil && appliedLayout == nil
+        let takingOver = autoPressShare && !optionHeld && !layoutMissing
 
         // Pick the screen *before* placing the cut-out: switching tiles re-renders
         // the presenter-layout preview, and a placement done first would be
@@ -294,7 +302,7 @@ final class ZoomSharePrep {
         if takingOver { Self.selectBuiltInDesktop(in: dialog) }
 
         var placed: Bool?
-        if wantsPlacement {
+        if wantsPlacement && !layoutMissing {
             placementAttempts += 1
             placed = Self.placeCutout(in: dialog, widthFraction: cutoutWidthFraction!)
             placementDone = placed == true
@@ -307,10 +315,11 @@ final class ZoomSharePrep {
         }
 
         let result = Result(soundWasAlreadyOn: wasOn, soundOnNow: onNow,
-                            layoutApplied: appliedLayout, cutoutPlaced: placed,
-                            sharePressed: pressedShare)
+                            layoutApplied: appliedLayout, layoutMissing: layoutMissing,
+                            cutoutPlaced: placed, sharePressed: pressedShare)
         overlayInfo("ZoomSharePrep: share sound \(wasOn ? "already on" : (onNow ? "ticked" : "FAILED to tick"))"
                     + (appliedLayout.map { ", layout → \($0.rawValue)" } ?? "")
+                    + (layoutMissing ? ", layout list NOT FOUND → Share not pressed" : "")
                     + (placed.map { ", cut-out \($0 ? "placed" : "NOT placed")" } ?? "")
                     + (mods.isEmpty ? "" : " [mods=\(mods.rawValue)]")
                     + (optionHeld ? ", ⌥ held → left the picker open"
