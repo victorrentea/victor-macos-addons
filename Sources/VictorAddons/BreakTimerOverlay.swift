@@ -1855,15 +1855,17 @@ final class BreakTimerView: NSView {
     }
 
     func handleTapScroll(_ event: CGEvent) {
-        // Scroll UP adds time, scroll DOWN subtracts.
+        // A positive delta adds time, a negative one subtracts. Flipped on
+        // 2026-11-09: the other way round, ±1 ran against the wheel's rotation
+        // (and the ▲ +1 / ▼ −1 hint beside the watch).
         if event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0 {
             let dy = CGFloat(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1))
             scrollAccum += dy
-            while scrollAccum >= 20 { onAdd?(-1); scrollAccum -= 20 }
-            while scrollAccum <= -20 { onAdd?(1); scrollAccum += 20 }
+            while scrollAccum >= 20 { onAdd?(1); scrollAccum -= 20 }
+            while scrollAccum <= -20 { onAdd?(-1); scrollAccum += 20 }
         } else {
             let dy = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)   // line units
-            if dy != 0 { onAdd?(dy > 0 ? -1 : 1) }
+            if dy != 0 { onAdd?(dy > 0 ? 1 : -1) }
         }
     }
 
@@ -1936,15 +1938,16 @@ final class BreakTimerView: NSView {
             let factor = CGFloat(exp(Double(-dy) * 0.0035))
             zoomWindow(by: factor, around: NSEvent.mouseLocation)
         } else {
-            // Dragging → adjust minutes (up adds, down subtracts; up is a negative
-            // delta). Accumulate precise deltas so a trackpad isn't hyper-sensitive.
+            // Dragging → adjust minutes; same sign as `handleTapScroll` (positive
+            // delta adds, flipped 2026-11-09). Accumulate precise deltas so a
+            // trackpad isn't hyper-sensitive.
             if event.hasPreciseScrollingDeltas {
                 scrollAccum += event.scrollingDeltaY
-                while scrollAccum <= -20 { onAdd?(1);  scrollAccum += 20 }
-                while scrollAccum >=  20 { onAdd?(-1); scrollAccum -= 20 }
+                while scrollAccum <= -20 { onAdd?(-1); scrollAccum += 20 }
+                while scrollAccum >=  20 { onAdd?(1);  scrollAccum -= 20 }
             } else {
                 let dy = event.deltaY
-                if dy != 0 { onAdd?(dy < 0 ? 1 : -1) }
+                if dy != 0 { onAdd?(dy < 0 ? -1 : 1) }
             }
         }
     }
