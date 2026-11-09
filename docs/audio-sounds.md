@@ -107,3 +107,66 @@ Wispr Flow listens to; Walkie turns it on at launch and off at quit, and this co
 `kill -9` path so Wispr falls back to its next microphone instead of sitting on a silent one.
 **One-way** (`FromWalkieWatchdogPolicy`, tested): it never turns the device on. The switch is the
 driver's `kAudioBoxPropertyAcquired` — no GUI, no sudo. Without the driver installed, a no-op.
+
+## 🎙️ Voice meter while screen-sharing (`MeetingShareWatch`, `VoiceMeter`, 2026-11-09)
+
+Why: on 2026-11-09 a Zoom share with **Share sound** sent the soundboard to the room far
+louder than Victor's voice. The effects app now holds every effect under his voice during a
+share (victor-effects `VoiceCeiling`, `docs/sound-routing.md` there); this app measures the
+voice, because it holds the microphone grant and the effects app has none.
+
+**📡 Sharing = a screen share in Zoom OR Teams** (`MeetingShare.swift`), polled every 1 s:
+- Zoom: `CptHost` is running (as `OutputRouter` already relies on) or a Zoom share window
+  is on screen (`ZoomShareWindows`: `Annotation - Zoom`, `zoom share toolbar/statusbar window`).
+- Teams: the **sharing control bar** is in the window list (`TeamsShareWindows`). New
+  Teams opens a window tagged `Presenter` for exactly the length of a share — read off its
+  own logs (`~/Library/Group Containers/UBF8T346G9.com.microsoft.teams/…/Logs/MSTeams_*.log`,
+  shares of 26–28 Oct): **790 × 55 pt centred at the top of the shared display**, collapsing
+  to **297 × 35** when the pointer leaves it, hidden now and then mid-share (18 s at 08:30 on
+  the 26th). So it is matched by shape and place, off-screen windows included
+  (`.optionAll`); the meeting window and the 192 × 497 `CallMonitor` compact view never
+  match. Its CG **title** was not in the logs: plausible titles also match, and every Teams
+  window is logged (`📡 teams window '…'`) on a Teams edge so the first real share pins it.
+- Debounced (`ShareDebouncer`): on after 2 s of yes, off after 6 s of no.
+- `GET /test/sharing/force/on|off|auto` overrides it, at once.
+
+**🎙️ The meter** (`VoiceMeter.swift`, math in `VoiceLoudness.swift`), only while sharing,
+on battery too:
+- **Which input**: the one the meeting captures, never what merely is open (Krisp holds
+  the Elgato open, so does Whisper). CoreAudio's process objects: a Zoom/Teams process with
+  `kAudioProcessPropertyIsRunningInput`, its `kAudioProcessPropertyDevices` (input scope).
+  `krisp microphone` wins when the meeting captures it; the share-sound loopbacks
+  (`ZoomAudioDevice`, `Microsoft Teams Audio`) never count — that is the effects coming
+  back; no meeting capture → the default input. Re-checked every 2 s; `GET
+  /test/voice/device?name=From%20Walkie` overrides it (the proofs).
+- **How**: one extra `AudioDeviceCreateIOProcIDWithBlock` on that device — a reader beside
+  the meeting, Krisp and Whisper, never a new default, never hog mode, no format or rate
+  change. The IO block only K-weights and sums 50 ms blocks.
+- **What**, every 250 ms: **momentary loudness** (BS.1770 K-weighting, 400 ms; a mono mic
+  counted as dual-mono, a stereo device as its first two channels summed — the effects
+  side counts clips the same way). Checked against `ffmpeg -af ebur128=dualmono=true` on a
+  speech fixture jumping −31 → −6 LUFS: worst 0.05 LU over 96 points
+  (`VoiceLoudnessTests`); fed live through From Walkie at −30/−20 dBFS speech, its median
+  read −26.8/−16.9 against ffmpeg's −26.8/−16.8.
+- **Speech gate** over the last 2 min of momentary values: with pauses in the window
+  (p90 − p10 ≥ 10 dB) the gate is max(−55, min(p10 + 8, p90 − 10)); without (two minutes of
+  talking with no gap, or of room alone) it is all voice above −40 LUFS (gate = median −
+  12) and all room below.
+- **normal** = median of speech over ~10 min, **top** = its 95th percentile (one cough
+  does not squash the scale), **peakHold** = max of the last 2 s, then falling 10 dB/s.
+- **voiceRef** (the effects' ceiling) = median of speech over the last 30 s (≥ 2 s of it).
+  After a pause the last value is held — silence is not a quieter voice. **Before any
+  speech in this share**: the last reference of the past 2 h (persisted in UserDefaults,
+  same mic and room most likely), else **−23 LUFS**, EBU R128's programme level — a voice
+  that is not quiet, so until he has spoken for two seconds the first effects may come out
+  a little louder than intended, never silenced.
+
+**Out**: `GET /voice/level` (small JSON: `sharing, speaking, momentary, peakHold, normal,
+top, gate, voiceRef, voiceRefSource, device, deviceWhy, ageMs`), answered on the server
+queue without touching the main thread; the flat `voiceSharing` key in `/ping` (flat,
+because `/ping` is two halves spliced as strings); and the push to the effects app,
+`GET 127.0.0.1:55124/voice/ref?sharing=1&ref=…` once a second during a share and
+`sharing=0` at its end (fire-and-forget, like every call there). A video played here asks
+the effects app for the same cap at play time (`VideoCeiling`, in `VideoGain.swift`).
+**The relay never carries `/voice/`** (`HttpAccessPolicy.relayMayCall`, counted in
+`/test/voice/state` as `relayRefused`): the tablet polls it over USB/LAN only.

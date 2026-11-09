@@ -144,7 +144,11 @@ final class RailwayBridgeClient: NSObject, URLSessionWebSocketDelegate {
         queue.async { [weak self] in
             guard let self, let server = self.server else { return }
             // Same rule as a LAN peer: the relay only ever carries the tablet.
-            guard HttpAccessPolicy.tabletMayCall(path) else {
+            guard HttpAccessPolicy.relayMayCall(path) else {
+                if path.hasPrefix("/voice/") {
+                    VoiceRoutes.relayRefused += 1
+                    overlayInfo("🎙️ /voice/ over the relay refused (#\(VoiceRoutes.relayRefused)) — it is USB/LAN only")
+                }
                 self.sendResponse(id: id, status: 403, contentType: "text/plain; charset=utf-8",
                                   body: "forbidden")
                 return

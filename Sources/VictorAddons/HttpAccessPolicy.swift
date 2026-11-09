@@ -58,7 +58,7 @@ enum HttpAccessPolicy {
     }
 
     private static let exact: Set<String> = ["/ping", "/tiles", "/usage", "/videos",
-                                             "/alarm", "/bt-compensation"]
+                                             "/alarm", "/bt-compensation", "/voice/level"]
     private static let prefixes = ["/sound/", "/sounds/", "/tiles/", "/usage/", "/video/",
                                    "/effect/", "/alarm/", "/bt-compensation/"]
 
@@ -73,6 +73,17 @@ enum HttpAccessPolicy {
 
     /// Fails closed: whatever is not provably loopback counts as the network. The
     /// listener is dual-stack, so an IPv4 peer can show up as a mapped IPv6 address.
+    /// 🎙️ What the Railway relay may carry: every tablet route **but the voice
+    /// meter's**. `/voice/level` is polled four times a second during a share;
+    /// over the internet that is a stream of the room's loudness through a
+    /// third-party host, and its latency would make the strip lie anyway. The
+    /// tablet never sends it there (`MacLink.getBodyFast`); this refuses it if
+    /// a build ever did.
+    static func relayMayCall(_ path: String) -> Bool {
+        guard tabletMayCall(path), let pathOnly = URLComponents(string: "http://x" + path)?.path else { return false }
+        return !pathOnly.hasPrefix("/voice/")
+    }
+
     static func isLocal(_ peer: NWEndpoint) -> Bool {
         guard case .hostPort(let host, _) = peer else { return false }
         switch host {

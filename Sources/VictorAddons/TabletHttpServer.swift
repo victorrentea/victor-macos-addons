@@ -299,6 +299,9 @@ case testTerminalFont
     /// effects app's own ping object by `EffectsProxy.mergedPing`. Collected
     /// inside a `main.sync` because every field it reads is main-thread state.
     var onPingExtras: (() -> String)?
+    /// 🎙️ `/voice/level`, `/test/sharing/*`, `/test/voice/*` — nil for any
+    /// other path. Called on the server queue, never on main (`VoiceRoutes`).
+    var onVoiceRoute: ((String) -> (status: Int, body: String)?)?
     /// Open a URL in a fullscreen Chrome window on the primary display.
     var onOpenUrl: ((String) -> Void)?
     /// Open a URL the way the ⌘⌃ openers do — official Chrome, on the screen
@@ -552,6 +555,12 @@ case testTerminalFont
     /// Must NOT be called on the main thread (it does `DispatchQueue.main.sync`);
     /// both callers invoke it from a background queue.
     func respond(path: String, requestBody: String) -> (status: Int, contentType: String, body: Data) {
+        // 🎙️ The voice meter's routes answer off the main thread: the tablet
+        // polls `/voice/level` four times a second during a share, and a
+        // `main.sync` per poll would put a busy menu bar in its way.
+        if let voice = onVoiceRoute?(path) {
+            return (voice.status, "application/json", Data(voice.body.utf8))
+        }
         let route = Self.route(forPath: path)
 
         // Proxied routes never touch the main thread: the effects app may be

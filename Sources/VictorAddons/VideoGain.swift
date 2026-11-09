@@ -47,3 +47,43 @@ enum VideoGain {
         return id.isEmpty ? nil : (id, pct)
     }
 }
+
+/// 🎚️ A video played here is held under Victor's voice during a screen share,
+/// exactly like an effect: the effects app owns the formula and the clip's
+/// measured loudness (`video:<id>` in its loudness table), so this asks it —
+/// `GET /voice/ceiling?key=video:<id>&volume=<v>` — at play time, with a short
+/// timeout. No answer (effects down, slow) = the clip plays at its own level,
+/// logged. The cap is remembered per clip, so a live move of its bar stays under it.
+enum VideoCeiling {
+    static let timeout: TimeInterval = 0.4
+    private static var maxVolume: [String: Float] = [:]
+
+    /// The parsed answer: the volume to play at, the ceiling, the dB taken off.
+    static func parse(_ json: Data) -> (volume: Float, maxVolume: Float?, takenDb: Double)? {
+        guard let o = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
+              let v = (o["volume"] as? NSNumber)?.floatValue else { return nil }
+        return (v, (o["maxVolume"] as? NSNumber)?.floatValue, (o["takenDb"] as? NSNumber)?.doubleValue ?? 0)
+    }
+
+    /// `asked`, or less while sharing. Main thread (the play handlers).
+    static func volume(id: String, asked: Float, sharing: Bool) -> Float {
+        maxVolume[id] = nil
+        guard sharing else { return asked }
+        let key = "video:\(id)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "video:\(id)"
+        guard let data = EffectsProxy.fetch("/voice/ceiling?key=\(key)&volume=\(asked)", timeout: timeout),
+              let r = parse(data) else {
+            overlayInfo("🎚️ video \(id): no answer from the effects app — played at its own level \(asked)")
+            return asked
+        }
+        maxVolume[id] = r.maxVolume
+        let out = min(asked, r.volume)
+        overlayInfo(String(format: "🎚️ video %@: vol %.2f → %.2f%@", id, asked, out,
+                           r.takenDb > 0 ? String(format: " (capped −%.1f dB under the voice)", r.takenDb) : " (under the voice)"))
+        return out
+    }
+
+    /// A live move of the clip's bar, kept under the cap it started with.
+    static func live(id: String, asked: Float) -> Float {
+        maxVolume[id].map { min(asked, $0) } ?? asked
+    }
+}

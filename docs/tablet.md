@@ -14,6 +14,8 @@ built from is in its `http-api.md`. Everything Bluetooth-*speaker*/audio that
 stayed on this side is in `audio-sounds.md`.
 
 ## Tablet ↔ Mac transport (local Wi-Fi preferred, internet last resort)
+
+> **🎙️ `/voice/level` is USB/LAN only.** While `/ping` says `voiceSharing:true` the tablet polls it every 250 ms for the red voice strip under its volume wedge (`MacLink.getVoiceLevelLocal`, never the relay), and the Mac refuses `/voice/` from the relay anyway (`HttpAccessPolicy.relayMayCall`, 403, counted as `relayRefused` in `/test/voice/state`). If only the relay is up, the strip simply is not shown. → [audio-sounds.md](audio-sounds.md)
 The tablet reaches the Mac over four transports, first that answers wins (`MacLink.reach`,
 tablet side): USB (`localhost:55123` via `adb reverse`) → **the Mac's raw LAN IP `http://<ip>:55123`**
 → mDNS (`Victor-Mac.local:55123`) → the **Railway relay** (`RailwayBridgeClient` ⇄ tablet's

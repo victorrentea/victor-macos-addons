@@ -154,6 +154,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// someone holding the secret FX link presses it (via `wsServer.onFxFired`).
     private var fxCard: FxCard?
     private var meetingDetector: MeetingDetector?
+    /// 📡 Zoom or Teams screen share, debounced — switches the 🎙️ voice meter.
+    private let shareWatch = MeetingShareWatch()
     /// 🔊 Ticks "Share sound" (+ picks the presenter layout) in Zoom's share picker.
     private var zoomSharePrep: ZoomSharePrep?
     /// 🎞️ The Retina at 60 Hz while Zoom or Teams runs.
@@ -439,7 +441,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let ms = VideoPlayer.shared.play(
                 id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start,
                 holdEndSeconds: entry.holdEndSeconds ?? 0,
-                volume: VideoGain.volume(position: gain)
+                volume: VideoCeiling.volume(id: id, asked: VideoGain.volume(position: gain),
+                                            sharing: self.shareWatch.isSharing)
             ) else { return nil }
             VideoPlayLog.append(id: id, title: entry.title, startSeconds: start, kind: "video")
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
@@ -454,7 +457,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let start = tOverride ?? entry.startSeconds
             guard let ms = VideoSoundtrackPlayer.shared.play(
                 id: id, fileURL: VideoLibrary.fileURL(for: entry), startSeconds: start,
-                volume: VideoGain.volume(position: gain)
+                volume: VideoCeiling.volume(id: id, asked: VideoGain.volume(position: gain),
+                                            sharing: self.shareWatch.isSharing)
             ) else { return nil }
             VideoPlayLog.append(id: id, title: entry.title, startSeconds: start, kind: "soundtrack")
             return "{\"ok\":true,\"id\":\"\(id)\",\"startSeconds\":\(start),\"durationMs\":\(ms)}"
@@ -463,7 +467,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 🔉 The tablet's per-tile bar on a video: whichever of the two players
         // has that clip follows it live (`VideoGain`).
         tabletServer?.onVideoGain = { id, pct in
-            let v = VideoGain.volume(position: pct)
+            let v = VideoCeiling.live(id: id, asked: VideoGain.volume(position: pct))
             VideoPlayer.shared.setVolume(v, forId: id)
             VideoSoundtrackPlayer.shared.setVolume(v, forId: id)
         }
@@ -644,8 +648,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // 💻🔌 The tablet blinks a laptop + plug while this Mac runs on
             // battery: its own battery icon sits on the screen being projected.
             let power = ",\"macOnAC\":\(PowerMonitor.isOnAC())"
-            return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)\(power)"
+            // 🎙️ Flat, like every key here: the tablet starts its fast
+            // `/voice/level` poll (USB/LAN only) while this is true.
+            let voice = ",\"voiceSharing\":\(self?.shareWatch.isSharing == true)"
+            return ",\"macTimeMs\":\(macMs),\"macTz\":\"\(macTz)\",\"macLanIps\":[\(macLanIps)]\(phone)\(locked)\(ending)\(power)\(voice)"
         }
+        tabletServer?.onVoiceRoute = { VoiceRoutes.handle($0) }
         tabletServer?.onPromptCapture = { [weak self] rawPrompt, source, cwd in
             let prompt = PromptCapturePolicy.stripWalkieMarkers(
                 PromptCapturePolicy.unwrapSkillInvocation(PromptCapturePolicy.unwrapPastes(rawPrompt)))
@@ -1825,6 +1833,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         meetingDetector = detector
         detector.checkInitialState()
+
+        // 📡🎙️ While Victor screen-shares in Zoom or Teams, measure his voice on
+        // the mic the meeting uses; the effects app holds every effect under it.
+        shareWatch.onChange = { sharing in VoiceMeter.shared.setSharing(sharing) }
+        VoiceRoutes.share = shareWatch
+        shareWatch.start()
 
         // The "Resumed Xm ago" menu clock now tracks OUR break timer — the ✕ button
         // or the countdown expiring — not the external Timer RH app. breakEndedAt is

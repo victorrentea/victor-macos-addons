@@ -1,0 +1,22 @@
+{
+  "_source": "Reconstructed from Microsoft Teams' own logs (~/Library/Group Containers/UBF8T346G9.com.microsoft.teams/Library/Application Support/Logs/MSTeams_2026-10-2*.log): WebViewWindow tags + NativeWindowMac bounds of the shares of 26-28 Oct 2026. The window TITLES are not in those logs; names here are what CGWindowList showed for Teams windows with no share title (empty or the meeting title).",
+  "displays": [[0, 0, 1728, 1117], [3648, 0, 1728, 1117], [1728, -1080, 1920, 1080]],
+  "teamsPID": 4242,
+  "cases": [
+    {"label": "presenter bar expanded on the Retina (26 Oct 07:29:44)", "sharing": true,
+     "windows": [{"name": "Weekly sync | Org | Microsoft Teams", "bounds": [0, 33, 1728, 1050], "onScreen": true},
+                 {"name": "", "bounds": [469, 8, 790, 55], "onScreen": true}]},
+    {"label": "presenter bar collapsed on the second display (27 Oct 07:33:55)", "sharing": true,
+     "windows": [{"name": "", "bounds": [4364, 30, 297, 35], "onScreen": true}]},
+    {"label": "presenter bar hidden mid-share (26 Oct 08:30:15, 18 s)", "sharing": true,
+     "windows": [{"name": "", "bounds": [469, 33, 790, 55], "onScreen": false}]},
+    {"label": "meeting + CallMonitor compact view, no share", "sharing": false,
+     "windows": [{"name": "Weekly sync | Org | Microsoft Teams", "bounds": [0, 33, 1728, 1050], "onScreen": true},
+                 {"name": "", "bounds": [1614, -649, 192, 649], "onScreen": true},
+                 {"name": "", "bounds": [0, 0, 192, 497], "onScreen": false}]},
+    {"label": "a toast in the top-right corner is not the bar", "sharing": false,
+     "windows": [{"name": "", "bounds": [1320, 40, 400, 90], "onScreen": true}]},
+    {"label": "a 790x55 window owned by another app is not Teams", "sharing": false, "otherOwner": true,
+     "windows": [{"name": "", "bounds": [469, 8, 790, 55], "onScreen": true}]}
+  ]
+}
