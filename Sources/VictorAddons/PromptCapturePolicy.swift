@@ -129,6 +129,40 @@ enum PromptCapturePolicy {
         return typed + text[whole.upperBound...]
     }
 
+    /// Walkie Talkie dresses a dictated prompt for the *agent*: a picture token
+    /// where each screenshot was taken (`[📸1✂️]`, `[📸2✂️712,445→1488,485]`,
+    /// `[📸0 auto]`, `[🎦1]`), a footer line saying how it was heard
+    /// (`🎤 · ☁️ · 📸 ×2`), and — when the `walkie-inbox` mod is not there to
+    /// hide them — whole lines of instructions (`[Transcribed in RO or EN by …]`,
+    /// `[If I asked you a question …]`, `[📁=…]`, `[[📸1✂️] in the words is …]`).
+    /// The room reads none of it as a prompt: the picture is not in the notes,
+    /// so `[📸1✂️]` is a hole, and a sentence said *while pointing* reads
+    /// stranger still with a token where the pointing was (2026-11-09, Victor:
+    /// *"dacă fac poze, tind să nu mai vorbesc toate detaliile … ar trebui
+    /// filtrate"*). Drop all of it; keep the words exactly as dictated.
+    static func stripWalkieMarkers(_ text: String) -> String {
+        let instructionPrefixes = ["[Transcribed in RO or EN", "[If I asked you a question",
+                                   "[📁=", "[[📸", "[📸n", "[📸0 auto at"]
+        // A picture/film token: `[📸` or `[🎦`, its number, whatever tag follows,
+        // up to its `]` on the same line.
+        let token = #"\[(?:📸|🎦)\d+[^\]\n]*\]"#
+        let lines = text.components(separatedBy: "\n").compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if instructionPrefixes.contains(where: { trimmed.hasPrefix($0) }) { return nil }
+            // The footer: separators and counts round a few glyphs, no letters.
+            if (trimmed.contains("·") || trimmed.contains("×")),
+               !trimmed.contains(where: { $0.isLetter }) {
+                return nil
+            }
+            // A token opening a line takes the space after it; anywhere else,
+            // the space before it — so "aici. [📸1✂️] Și" reads "aici. Și".
+            return line
+                .replacingOccurrences(of: #"^[ \t]*"# + token + #"[ \t]*"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"[ \t]*"# + token, with: "", options: .regularExpression)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Agent sessions whose prompts go to the notes **on their own**: the pill
     /// still shows, but its countdown running out sends instead of dropping,
     /// and a click (or a 2 s hover) is what holds a prompt back. These are the

@@ -64,6 +64,13 @@ through it; only *when* Victor decides changes.
   page. `PromptCapturePolicy.unwrapPastes` strips the tags (and the newline each owns) at the
   top of `onPromptCapture`, before either consumer, so both see the text as Victor pasted it.
   Fixed in the app rather than in the hook so a Copilot hook that ever does the same is covered too.
+- **Walkie Talkie's markers never reach the room** (2026-11-09). A dictated prompt carries
+  picture tokens (`[📸1✂️]`, `[📸2✂️712,445→1488,485]`, `[🎦1]`), a footer line
+  (`🎤 · ☁️ · 📸 ×2`) and sometimes whole `[Transcribed in RO or EN …]` / `[📁=…]` lines —
+  all of it for the agent. In the notes the picture is absent, so the token is a hole in a
+  sentence Victor said *while pointing* instead of spelling out. `PromptCapturePolicy.stripWalkieMarkers`
+  runs right after the unwraps, so the store, the pill and the auto-send in `petclinic` all get
+  the words alone; a prompt that was only a screenshot becomes empty and is not offered at all.
 - **Sending writes into *today's* notes**, because `writeNotes` only ever knows the current
   session folder. That is deliberate: a prompt from Monday sent on Wednesday is Wednesday's
   contribution to the room. With no session running there is no notes file at all, and the

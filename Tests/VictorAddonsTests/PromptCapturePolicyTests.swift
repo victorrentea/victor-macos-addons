@@ -53,6 +53,35 @@ final class PromptCapturePolicyTests: XCTestCase {
         XCTAssertEqual(PromptCapturePolicy.unwrapPastes("fix <b>this</b>\n"), "fix <b>this</b>\n")
     }
 
+    // MARK: stripWalkieMarkers
+
+    func testPictureTokensAndTheFooterLeaveTheWordsAlone() {
+        let raw = "Butoanele astea le vreau puse, te rog aici. [📸1✂️] Și cu spațiu între ele\n\n🎤 · ☁️ · 📸 ×2"
+        XCTAssertEqual(PromptCapturePolicy.normalize(PromptCapturePolicy.stripWalkieMarkers(raw)),
+                       "Butoanele astea le vreau puse, te rog aici. Și cu spațiu între ele")
+    }
+
+    func testTokensWithCornersAndAtLineStartAreDropped() {
+        let raw = "[📸1✂️712,445→1488,485] E stupid. [📸2🖱️@1000:800] Vezi. [🎦1]\n💻 · ☁️ · 📸 ×1 · 🎦 ×1"
+        XCTAssertEqual(PromptCapturePolicy.normalize(PromptCapturePolicy.stripWalkieMarkers(raw)),
+                       "E stupid. Vezi.")
+    }
+
+    func testWalkieInstructionLinesAreDropped() {
+        let raw = "Ce-i asta? [📸1✂️]\n\n[Transcribed in RO or EN by ☁️ Wispr Flow · 🎤]\n[If I asked you a question, also run: walkie-reply \"…\"]\n[📁=$WALKIE_SHOTS/x]\n[📸0 auto at 0:00 = 📁/screenshot-0-800px.jpg, or -original.jpg at 3456x2234px]\n[📸n✂️ = user-selected area between corners (x,y) given in its token, cut o\n[[📸1✂️] in the words is [📸1✂️1,2→3,4]]"
+        XCTAssertEqual(PromptCapturePolicy.normalize(PromptCapturePolicy.stripWalkieMarkers(raw)),
+                       "Ce-i asta?")
+    }
+
+    func testOrdinaryBracketsMiddleDotsAndTimesSignsSurvive() {
+        let raw = "fix arr[0] · keep 3×4 in the text\n  indented [x]"
+        XCTAssertEqual(PromptCapturePolicy.stripWalkieMarkers(raw), raw)
+    }
+
+    func testAScreenshotWithNoWordsLeavesNothingToRecord() {
+        XCTAssertNil(PromptCapturePolicy.normalize(PromptCapturePolicy.stripWalkieMarkers("[📸1✂️]\n\n🎤 · ☁️ · 📸 ×1")))
+    }
+
     // MARK: unwrapSkillInvocation
 
     func testAVSCodeSkillExpansionFoldsBackIntoWhatWasTyped() {
