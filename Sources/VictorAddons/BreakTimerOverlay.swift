@@ -34,6 +34,21 @@ final class BreakTimerController {
     /// a full second early).
     private static let gongStrikePeak: Double = 1.02
 
+    /// 🥁 Tablet tile #50. Each strike IS that tile, played by the effects app:
+    /// the man striking the gong on screen, the tile's own bar, the blue wedge,
+    /// the ＋ and the 🎚️ voice ceiling during a share — one place for the volume.
+    /// The gong man is ≤4 s and the strikes are ~8.6 s apart, so strike 2 never
+    /// lands on a gong still up (which would toggle it off).
+    static let gongTile = "50_gong.mp3"
+
+    /// One strike, through the effects app; here, unadorned, only when it does not answer.
+    private var gongStruck = false
+
+    private func strikeGong() {
+        gongStruck = true
+        EffectTile.play(Self.gongTile, effect: "gong") { AddonSounds.shared.playOverlapping(Self.gongTile) }
+    }
+
     /// `.countdown` is the ☕️ Break watch. `.stopwatch` is the ⏱️ Timer from the
     /// same submenu: the same panel, digits, ⏸/✕, drag, corner-resize and
     /// wheel-zoom, but counting UP from zero — and with none of a break's
@@ -403,7 +418,10 @@ final class BreakTimerController {
         // countdown is excluded: it measures the time TO the pause, so its close
         // must leave "Resumed Xm ago" anchored on the last actual break.
         if wasShowing && !isStopwatch && BreakTimerModel.endsABreak(title: titleText) { onEnded?() }
-        AddonSounds.shared.stopOverlapping("50_gong.mp3")  // interrupt a gong in progress
+        if gongStruck {                                  // interrupt a gong in progress —
+            gongStruck = false                           // only ours: a #50 pressed on the tablet is not
+            EffectTile.stop(Self.gongTile) { AddonSounds.shared.stopOverlapping(Self.gongTile) }
+        }
         timer?.invalidate(); timer = nil
         blinkTimer?.invalidate(); blinkTimer = nil
         shakeTimer?.invalidate(); shakeTimer = nil
@@ -853,11 +871,10 @@ final class BreakTimerController {
             skipBlackoutOnClose = true
             onUntilBreakExpired?()
         }
-        // Play the FULL gong (exact same mp3 as tablet effect #50 — not a clip),
-        // then the second strike after the first finishes.
-        let gong = AddonSounds.shared.soundDuration("50_gong.mp3") ?? 8.6
+        // Play the FULL gong, then the second strike after the first finishes.
+        let gong = AddonSounds.shared.soundDuration(Self.gongTile) ?? 8.6
 
-        AddonSounds.shared.playOverlapping("50_gong.mp3")   // strike 1 (full)
+        strikeGong()   // strike 1 (full)
         // One continuous chaotic shake spanning both strikes. Each strike's audible
         // "BONG" lands `gongStrikePeak` (~1.02s) into its clip, so peak the shake
         // there — not at t=0 / t=gong (the silent lead-in), which desynced the
@@ -866,7 +883,7 @@ final class BreakTimerController {
         startExpiryShake(totalDuration: 2 * gong, strikeAt: [peak, gong + peak])
         DispatchQueue.main.asyncAfter(deadline: .now() + gong) { [weak self] in
             guard let self, self.epoch == myEpoch else { return }
-            AddonSounds.shared.playOverlapping("50_gong.mp3")   // strike 2 (full)
+            self.strikeGong()   // strike 2 (full)
             // Auto-close only after this FINAL strike has fully rung out, then
             // close()'s stopOverlapping is a clean no-op instead of hard-cutting
             // the decaying tail ("truncated at the end"). `playOverlapping` shifts

@@ -34,48 +34,6 @@ final class AddonSounds {
     /// AVAudioPlayer stops dead, which is the hard cut the fade exists to avoid.
     private var fadingOut: [AVAudioPlayer] = []
 
-    // MARK: - 🎚️ Under Victor's voice while he screen-shares
-
-    /// Whether Victor is screen-sharing in Zoom/Teams right now (`MeetingShareWatch`),
-    /// wired by the app delegate. Read on the main thread.
-    var isSharing: () -> Bool = { false }
-    /// How long a play waits for the effects app's answer before ringing at its own level.
-    static let ceilingTimeout: TimeInterval = 0.4
-    /// Bumped by every `stopOverlapping`: a strike still waiting for the effects
-    /// app's answer when the watch is closed must not ring after the close.
-    private var stopGeneration = 0
-
-    /// `GET /voice/ceiling?file=<name>&volume=<v>` — the same cap the soundboard's
-    /// players get (`VoiceCeiling` in Victor Effects), asked for a file by name:
-    /// the gong is the very `50_gong.mp3` tile #50 plays, so effects has it measured.
-    static func ceilingPath(file: String, asked: Float) -> String {
-        let f = file.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? file
-        return "/voice/ceiling?file=\(f)&volume=\(asked)"
-    }
-
-    /// Hands `then` (on the main thread) the volume to play `filename` at: `asked`
-    /// when not sharing, otherwise `asked` capped under the voice. Only ever lowers.
-    /// The effects app is asked OFF the main thread, and no answer within
-    /// `ceilingTimeout` means the gong rings at its own level — "the break is over"
-    /// must stay audible whatever the effects app is doing.
-    private func ceilingVolume(_ filename: String, asked: Float, then: @escaping (Float) -> Void) {
-        guard isSharing() else { return then(asked) }
-        DispatchQueue.global(qos: .userInteractive).async {
-            let r = EffectsProxy.fetch(Self.ceilingPath(file: filename, asked: asked), timeout: Self.ceilingTimeout)
-                .flatMap(VideoCeiling.parse)
-            DispatchQueue.main.async {
-                guard let r else {
-                    overlayInfo("🎚️ \(filename): no answer from the effects app — played at its own level \(asked)")
-                    return then(asked)
-                }
-                let out = min(asked, r.volume)
-                overlayInfo(String(format: "🎚️ %@: vol %.2f → %.2f%@", filename, asked, out,
-                                   r.takenDb > 0 ? String(format: " (capped −%.1f dB under the voice)", r.takenDb) : " (under the voice)"))
-                then(out)
-            }
-        }
-    }
-
     // MARK: - Where the files are
 
     /// The shared tablet-sounds folder (the Android app's assets, reached
@@ -194,24 +152,19 @@ final class AddonSounds {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if let existing = self.players[filename], existing.isPlaying { return }
-            self.ceilingVolume(filename, asked: max(0, min(1, volume))) { volume in self.startOnce(filename, volume: volume) }
-        }
-    }
-
-    private func startOnce(_ filename: String, volume: Float) {
-        if let existing = self.players[filename], existing.isPlaying { return }
-        guard let url = self.soundURL(for: filename) else {
-            overlayError("Sound file not found: \(filename)")
-            return
-        }
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            player.volume = volume
-            player.prepareToPlay()
-            self.players[filename] = player
-            self.startCompensated(player)
-        } catch {
-            overlayError("Sound play failed \(filename): \(error)")
+            guard let url = self.soundURL(for: filename) else {
+                overlayError("Sound file not found: \(filename)")
+                return
+            }
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.volume = max(0, min(1, volume))
+                player.prepareToPlay()
+                self.players[filename] = player
+                self.startCompensated(player)
+            } catch {
+                overlayError("Sound play failed \(filename): \(error)")
+            }
         }
     }
 
@@ -220,30 +173,22 @@ final class AddonSounds {
     func playOverlapping(_ filename: String, volume: Float = 1.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let generation = self.stopGeneration
-            self.ceilingVolume(filename, asked: max(0, min(1, volume))) { volume in
-                guard generation == self.stopGeneration else { return }   // stopped while asking
-                self.startOverlapping(filename, volume: volume)
+            guard let url = self.soundURL(for: filename) else {
+                overlayError("Sound file not found: \(filename)")
+                return
             }
-        }
-    }
-
-    private func startOverlapping(_ filename: String, volume: Float) {
-        guard let url = self.soundURL(for: filename) else {
-            overlayError("Sound file not found: \(filename)")
-            return
-        }
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            player.volume = volume
-            player.prepareToPlay()
-            self.overlapping.append(player)
-            let comp = self.startCompensated(player)
-            DispatchQueue.main.asyncAfter(deadline: .now() + comp + player.duration + 0.1) { [weak self] in
-                self?.overlapping.removeAll { !$0.isPlaying }
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.volume = max(0, min(1, volume))
+                player.prepareToPlay()
+                self.overlapping.append(player)
+                let comp = self.startCompensated(player)
+                DispatchQueue.main.asyncAfter(deadline: .now() + comp + player.duration + 0.1) { [weak self] in
+                    self?.overlapping.removeAll { !$0.isPlaying }
+                }
+            } catch {
+                overlayError("Sound play failed \(filename): \(error)")
             }
-        } catch {
-            overlayError("Sound play failed \(filename): \(error)")
         }
     }
 
@@ -252,9 +197,7 @@ final class AddonSounds {
     /// cut of a decaying gong is a hard edge the whole room hears.
     func stopOverlapping(_ filename: String, fade: TimeInterval = 0) {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.stopGeneration += 1
-            guard let url = self.soundURL(for: filename) else { return }
+            guard let self, let url = self.soundURL(for: filename) else { return }
             let matching = self.overlapping.filter { $0.url == url }
             // Dropped from the pool FIRST, then faded: `fadeOutAndStop` is what
             // keeps them alive now, and leaving them in the pool as well would

@@ -283,10 +283,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         trainingEnd.onAbortCountdown = {
             EffectsProxy.fire("/effect/progress-bar/stop")
         }
-        // Played here, not over HTTP: "over and out" is the last thing the room
-        // hears and it must not depend on a second process being up.
+        // Played as the effects app's tile (its volume, the voice ceiling), and
+        // here only when that app does not answer: "over and out" is the last
+        // thing the room hears and it must not depend on a second process being up.
         trainingEnd.onFinish = {
-            AddonSounds.shared.play("82_over_and_out.mp3")
+            EffectTile.play("82_over_and_out.mp3") { AddonSounds.shared.play("82_over_and_out.mp3") }
         }
 
         setupSignalHandler()
@@ -1838,8 +1839,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // the mic the meeting uses; the effects app holds every effect under it.
         shareWatch.onChange = { sharing in VoiceMeter.shared.setSharing(sharing) }
         VoiceRoutes.share = shareWatch
-        // 🎚️ …and the break gong / "over and out", which this app plays itself, the same way.
-        AddonSounds.shared.isSharing = { [weak self] in self?.shareWatch.isSharing == true }
         shareWatch.start()
 
         // The "Resumed Xm ago" menu clock now tracks OUR break timer — the ✕ button
