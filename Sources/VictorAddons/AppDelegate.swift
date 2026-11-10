@@ -1225,7 +1225,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestBannerButtons = { [weak self] q in
             let work: () -> String = {
                 guard let self else { return "{}" }
-                if q["hide"] == "1" { self.testButtonsBanner?.dismiss(animated: false); return "{\"hidden\":true}" }
+                if q["hide"] == "1" {
+                    self.testButtonsBanner?.dismiss(animated: false)
+                    self.testStackBanners.forEach { $0.dismiss(animated: false) }   // incl. pinned test alarms
+                    self.testStackBanners.removeAll()
+                    return "{\"hidden\":true}"
+                }
                 if q["stack"] == "1" {
                     let data = (try? JSONSerialization.data(withJSONObject: BottomLeftStack.snapshot())) ?? Data()
                     return String(data: data, encoding: .utf8) ?? "[]"

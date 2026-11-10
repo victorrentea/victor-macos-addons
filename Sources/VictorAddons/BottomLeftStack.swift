@@ -23,10 +23,23 @@ enum BottomLeftStackPolicy {
     static let gap: CGFloat = 6
 
     /// `new` arrives at the bottom; returns the new order (bottom first) and the
-    /// pills pushed out of the top, oldest last.
-    static func arrive<T: Equatable>(_ new: T, into order: [T]) -> (order: [T], evicted: [T]) {
-        let all = [new] + order.filter { $0 != new }
-        return (Array(all.prefix(maxVisible)), Array(all.dropFirst(maxVisible)))
+    /// pills pushed out, oldest first.
+    ///
+    /// A **pinned** pill — an alarm with no countdown — never leaves on its own,
+    /// pushed or not (Victor, 2026-11-10): the overflow takes the oldest pills
+    /// that are NOT pinned instead, and when there are not enough of those the
+    /// stack simply grows past two rather than lose an alarm. The newcomer is
+    /// never the one pushed out.
+    static func arrive<T: Equatable>(_ new: T, into order: [T],
+                                     pinned: (T) -> Bool = { _ in false }) -> (order: [T], evicted: [T]) {
+        var all = [new] + order.filter { $0 != new }
+        var evicted: [T] = []
+        var i = all.count - 1
+        while all.count > maxVisible, i > 0 {
+            if !pinned(all[i]) { evicted.append(all.remove(at: i)) }
+            i -= 1
+        }
+        return (all, evicted)
     }
 
     /// `gone` left; the ones above it drop one slot.
@@ -57,8 +70,9 @@ enum BottomLeftStack {
     static func arrive(_ banner: BottomLeftBanner) {
         prune()
         let ids = order.map(\.id)
-        let (newIds, evictedIds) = BottomLeftStackPolicy.arrive(ObjectIdentifier(banner), into: ids)
         var byId = Dictionary(uniqueKeysWithValues: order.map { ($0.id, $0) })
+        let (newIds, evictedIds) = BottomLeftStackPolicy.arrive(ObjectIdentifier(banner), into: ids,
+                                                                pinned: { byId[$0]?.banner?.isPinnedInStack == true })
         byId[ObjectIdentifier(banner)] = byId[ObjectIdentifier(banner)] ?? Weak(banner)
         let evicted = evictedIds.compactMap { byId[$0]?.banner }
         order = newIds.compactMap { byId[$0] }

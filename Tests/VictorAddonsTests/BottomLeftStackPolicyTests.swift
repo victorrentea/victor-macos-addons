@@ -28,6 +28,23 @@ final class BottomLeftStackPolicyTests: XCTestCase {
         XCTAssertEqual(r.evicted, [])
     }
 
+    func testAPinnedAlarmOnTopStaysAndTheOldestUnpinnedLeavesInstead() {
+        let r = P.arrive("c", into: ["b", "alarm"], pinned: { $0 == "alarm" })
+        XCTAssertEqual(r.order, ["c", "alarm"])
+        XCTAssertEqual(r.evicted, ["b"])
+    }
+
+    func testTwoPinnedAlarmsLetTheStackGrowRatherThanLoseOne() {
+        let r = P.arrive("c", into: ["a1", "a2"], pinned: { $0.hasPrefix("a") })
+        XCTAssertEqual(r.order, ["c", "a1", "a2"])
+        XCTAssertEqual(r.evicted, [])
+    }
+
+    func testThePinnedNewcomerIsNeverTheOnePushedOut() {
+        let r = P.arrive("new", into: ["b", "a"], pinned: { _ in true })
+        XCTAssertEqual(r.order, ["new", "b", "a"])
+    }
+
     func testLeavingTheBottomLetsTheTopDrop() {
         XCTAssertEqual(P.leave("b", from: ["b", "a"]), ["a"])
         XCTAssertEqual(P.leave("x", from: ["b", "a"]), ["b", "a"])

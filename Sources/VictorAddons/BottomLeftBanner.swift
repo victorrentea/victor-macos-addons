@@ -984,6 +984,11 @@ final class BottomLeftBanner {
 
     // MARK: - 🥞 The stack (BottomLeftStack)
 
+    /// An alarm: something to act on (hoverable) with no countdown running. It
+    /// stays until Victor answers it, so the stack never pushes it out.
+    /// Status flashes (not hoverable) and countdown pills leave on their own anyway.
+    var isPinnedInStack: Bool { hoverable && countdownTimer == nil }
+
     var stackDebug: [String: Any] {
         let e = panels.first
         return ["text": e?.label.stringValue ?? "",
