@@ -223,6 +223,18 @@ final class BottomLeftBanner {
     }
     private var panels: [PanelEntry] = []
 
+    /// 🥞 How far above the screen's bottom edge this pill rests: 0 in the stack's
+    /// bottom slot, one pill + gap higher in the top one (`BottomLeftStack`). Every
+    /// "back to rest" — the hover nudge springing back, a resize — returns HERE.
+    private var lift: CGFloat = 0
+    /// Drives a climb/drop between stack slots, one imperative 60 Hz writer like
+    /// the exits, so it never fights an animator.
+    private var liftTimer: Timer?
+    /// Set while the stack pushes this pill out of the top: whatever exit its owner
+    /// picks, it leaves UPWARD (a sink would cross the pill below it).
+    private var evicting = false
+    private static let liftDuration: TimeInterval = 0.3
+
     /// The two buttons of the current presentation (see `show`). `auto` is the
     /// countdown's own outcome (`onHoverCountdownExpired`), drawn on top (below `Send` — see `autoOnTop`) with
     /// the countdown filling its background; `click` is `onHover`'s. Nil = no
@@ -453,6 +465,10 @@ final class BottomLeftBanner {
             applyHoverCountdown(hoverCountdown)
             return
         }
+        // A pill that APPEARS enters at the bottom of the stack; the ones already
+        // up climb a slot and a third is pushed out of the top. Re-shown in place
+        // (above) keeps its slot. Sets `lift` to slot 0's before the build.
+        BottomLeftStack.arrive(self)
         for screen in screensProvider() {
             panels.append(buildPanel(on: screen,
                                      text: text,
@@ -635,11 +651,13 @@ final class BottomLeftBanner {
         let panelWidth = pillWidth + (arrowVisible ? Style.arrowGutter : 0)
         guard force || abs(entry.panel.frame.width - panelWidth) > 0.5 else { return }
         let f = entry.screen.frame
-        entry.panel.setFrame(NSRect(x: f.minX, y: f.minY, width: panelWidth, height: Style.boxHeight),
+        // Width only: the height above the edge is the stack slot's (and any climb
+        // in flight), not the corner's.
+        entry.panel.setFrame(NSRect(x: f.minX, y: entry.panel.frame.minY, width: panelWidth, height: Style.boxHeight),
                              display: true)
         entry.panel.invalidateShadow()
         // The glass pill occupies the left region; its subviews autoresize with it.
-        entry.pill.frame = NSRect(x: 0, y: 0, width: pillWidth, height: Style.boxHeight)
+        entry.pill.frame = NSRect(x: 0, y: entry.pill.frame.minY, width: pillWidth, height: Style.boxHeight)
         entry.label.frame = Self.mainLabelFrame(pillWidth: pillWidth, font: entry.font,
                                                 iconInset: iconInset, trailingInset: buttonInset)
         layoutButtons(entry)
@@ -735,7 +753,7 @@ final class BottomLeftBanner {
         cancelHoverDwell()
         clearHoverCountdown()
         let toRemove = panels
-        panels.removeAll()
+        leaveStack()
         if animated {
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.3
@@ -778,7 +796,7 @@ final class BottomLeftBanner {
         cancelHoverDwell(resetNudge: false)   // keep the raised y the hover-slide reached
         clearHoverCountdown()
         let toRemove = panels
-        panels.removeAll()
+        leaveStack()
         let rise: CGFloat = 140
         let duration: TimeInterval = 1.0
         // Take the frame back from any in-flight nudge animation BEFORE reading the
@@ -819,11 +837,14 @@ final class BottomLeftBanner {
     /// being pulled back down), then the off-screen panels are torn down.
     func dismissSinking() {
         guard isVisible else { return }
+        // Pushed out of the top of the stack: it leaves upward, whatever the
+        // outcome — sinking would drag it down across the pill below.
+        if evicting { return dismissRisingFade() }
         finishWipe()
         cancelHoverDwell(resetNudge: false)   // keep the lowered y the hover-slide reached
         clearHoverCountdown()
         let toRemove = panels
-        panels.removeAll()
+        leaveStack()
         // The pill is anchored at the screen's bottom edge, so one drop distance —
         // a bit past the pill's height — carries it (and its in-pill band) fully
         // off-screen.
@@ -955,9 +976,71 @@ final class BottomLeftBanner {
         guard hoverNudge != .none else { return }
         let dir: CGFloat = hoverNudge == .up ? 1 : -1
         let dy = dir * Style.hoverNudgeDistance * progress
+        guard liftTimer == nil else { return }   // mid-climb: the climb owns the frame
         for entry in panels {
-            Self.place(entry, offset: dy, duration: Self.hoverDwellInterval)
+            Self.place(entry, offset: lift + dy, duration: Self.hoverDwellInterval)
         }
+    }
+
+    // MARK: - 🥞 The stack (BottomLeftStack)
+
+    var stackDebug: [String: Any] {
+        let e = panels.first
+        return ["text": e?.label.stringValue ?? "",
+                "lift": Double(lift),
+                "offset": e.map { Double(Self.currentOffset($0)) } ?? -1,
+                "alpha": e.map { Double($0.panel.alphaValue) } ?? 0]
+    }
+
+    /// Drop out of the stack as the panels go: the pills above slide down.
+    private func leaveStack() {
+        panels.removeAll()
+        liftTimer?.invalidate(); liftTimer = nil
+        BottomLeftStack.leave(self)
+    }
+
+    /// Climb (or drop) to a new resting height in the stack, 0.3 s ease-out.
+    /// Before any panel exists it only records the height the build will use.
+    func moveToStackLift(_ target: CGFloat) {
+        guard target != lift else { return }
+        lift = target
+        liftTimer?.invalidate(); liftTimer = nil
+        guard !panels.isEmpty else { return }
+        let entries = panels
+        for entry in entries { Self.stopInFlightMotion(entry) }
+        let from = entries.map { Self.currentOffset($0) }
+        let start = Date()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
+            let p = min(1.0, Date().timeIntervalSince(start) / Self.liftDuration)
+            let eased = CGFloat(1 - (1 - p) * (1 - p))          // easeOut: it is pushed, then settles
+            for (i, entry) in entries.enumerated() {
+                Self.place(entry, offset: from[i] + (target - from[i]) * eased)
+            }
+            if p >= 1.0 {
+                tm.invalidate()
+                if self?.liftTimer === tm { self?.liftTimer = nil }
+            }
+        }
+        liftTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// Pushed out of the top by a newer pill. If it was still counting down, its
+    /// time is simply up early: the owner gets the very outcome an un-touched
+    /// countdown gives (a paste stands, an auto-sent prompt goes, an offer drops),
+    /// so nothing is decided differently — only sooner. Either way it leaves
+    /// rising and fading.
+    func evictFromStack() {
+        guard isVisible else { return }
+        evicting = true
+        defer { evicting = false }
+        overlayInfo("🥞 bottom-left: a third pill arrived — '\(panels.first?.label.stringValue.prefix(40) ?? "")' rises out")
+        if countdownTimer != nil, let expired = onHoverCountdownExpired {
+            countdownTimer?.invalidate(); countdownTimer = nil
+            if hasButtons { hoverFired = true }
+            expired()
+        }
+        if isVisible { dismissRisingFade() }
     }
 
     // MARK: - Placement
@@ -1308,7 +1391,7 @@ final class BottomLeftBanner {
         // arrow shows), so the arrow can float in the transparent space to the
         // pill's right. The glass/tint/border/label live in the `pill` subview.
         let panelWidthTotal = pillWidth + (arrowVisible ? Style.arrowGutter : 0)
-        let rect = NSRect(x: frame.minX, y: frame.minY, width: panelWidthTotal, height: Style.boxHeight)
+        let rect = NSRect(x: frame.minX, y: frame.minY + lift, width: panelWidthTotal, height: Style.boxHeight)
         let panel = NSPanel(
             contentRect: rect,
             styleMask: [.borderless, .nonactivatingPanel],

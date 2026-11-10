@@ -93,6 +93,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 👂/🔋 while the microphones are recorded on battery.
     private let batteryRecordingNotice = BatteryRecordingNotice()
     private var testButtonsBanner: BottomLeftBanner?
+    /// `/test/banner/buttons?fresh=1` pills, kept alive while they are up.
+    private var testStackBanners: [BottomLeftBanner] = []
     private var testButtonsOutcome = "none"
     /// Re-reads the 🔴 raw-capture flag for the menu row. Stored because the
     /// flag is a *file* — armable from outside this process — so the row cannot
@@ -1224,12 +1226,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let work: () -> String = {
                 guard let self else { return "{}" }
                 if q["hide"] == "1" { self.testButtonsBanner?.dismiss(animated: false); return "{\"hidden\":true}" }
+                if q["stack"] == "1" {
+                    let data = (try? JSONSerialization.data(withJSONObject: BottomLeftStack.snapshot())) ?? Data()
+                    return String(data: data, encoding: .utf8) ?? "[]"
+                }
                 if q["text"] == nil {
                     let hand = NSCursor.current == NSCursor.pointingHand
                     return "{\"last\":\"\(self.testButtonsOutcome)\",\"cursor_hand\":\(hand)}"
                 }
-                let banner = self.testButtonsBanner ?? BottomLeftBanner(screensProvider: { NSScreen.physical }, hoverable: true)
-                self.testButtonsBanner = banner
+                // `screen=right`: only on the rightmost physical screen — the
+                // retina is projected. `fresh=1`: a NEW pill each call (the 🥞
+                // stack is about several pills, not one re-shown in place).
+                let screens: () -> [NSScreen] = q["screen"] == "right"
+                    ? { NSScreen.physical.max(by: { $0.frame.maxX < $1.frame.maxX }).map { [$0] } ?? [] }
+                    : { NSScreen.physical }
+                let banner = q["fresh"] == "1" ? BottomLeftBanner(screensProvider: screens, hoverable: true)
+                    : self.testButtonsBanner ?? BottomLeftBanner(screensProvider: screens, hoverable: true)
+                if q["fresh"] == "1" {
+                    self.testStackBanners.removeAll { !$0.isVisible }
+                    self.testStackBanners.append(banner)
+                } else {
+                    self.testButtonsBanner = banner
+                }
                 self.testButtonsOutcome = "none"
                 banner.onHover = { [weak self, weak banner] in
                     self?.testButtonsOutcome = "click"; banner?.dismissSinking() }

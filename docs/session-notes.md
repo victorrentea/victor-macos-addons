@@ -113,6 +113,16 @@ answer carries `"autoSend":true|false`.
 - **A parked cursor is not a decision (`HoverMotionGate`).** The 2 s hold that fires `onHover` used to require only that the cursor be *inside* the pill — and the pill sits in the bottom-left corner, exactly where a hand naturally leaves the mouse, so a prompt sent itself to the notes (or a paste undid itself) with nobody touching anything. The dwell now also requires the cursor to keep **moving**: in every **0.5 s slice** it must travel at least **4 pt** (rolling anchor, so a slow continuous drag counts as well as a jiggle; 1 px trackpad jitter does not). A slice with no movement **zeroes the dwell progress** — the whitening/nudge visibly falls back to rest — and the gate re-arms, so moving again rebuilds it from zero. Motionless = never fires, however long the cursor stays. The rule is pure + unit-tested in `HoverMotionGate`; `BottomLeftBanner.tickHoverDwell` is the only caller.
 
 
+## 🥞 At most two pills, stacked (2026-11-10)
+
+Every bottom-left pill is its own `BottomLeftBanner` (status flashes, the prompt offer, the paste undo, the alarms, the reminders), and each used to rest flush in the corner — so two up at once were drawn **one over the other** and only the last could be read. Victor: *"a stack of at most two; the new one comes in at the bottom, the old one climbs, and when a third arrives the top one, if its time is not up yet, rises and fades."*
+
+- **`BottomLeftStack`** keeps who is up, bottom first. A pill that *appears* (`show` on a hidden banner) takes slot 0 — flush in the corner, where it always entered — and every pill already up climbs one slot (0.3 s ease-out, `moveToStackLift`); a pill that *leaves* (any exit) lets the ones above it drop. A pill re-shown **in place** keeps its slot: it did not arrive. The pure part — order, eviction, slot heights (one pill + 6 pt) — is `BottomLeftStackPolicy`, unit-tested.
+- **The third pushes the top one out** (`evictFromStack`). If it still had a countdown running, its time is simply up early: the owner gets the very outcome an un-touched countdown gives (a paste stands, an auto-sent prompt goes, an offered one is dropped) — nothing is decided differently, only sooner. Whatever exit the owner then picks, an evicted pill **rises and fades**: a sink would drag it down across the pill below (`evicting` turns `dismissSinking` into `dismissRisingFade`).
+- **Pills with no countdown** (the ✈️ / 🎙️ / 📱 alarms, the 😶 warning) are evicted the same way: visually gone, while their owner still holds them as "shown" until it re-shows them.
+- Every "back to rest" — the hover nudge springing back, a resize — now returns to the slot's `lift`, not to the screen's bottom edge. `PillPlacement` is unchanged: offsets are measured from the edge, so a pill in the top slot that sinks still never leaves its screen.
+- Test: `GET /test/banner/buttons?fresh=1&screen=right&countdown=20&auto=keep&click=undo&text=…` puts a **new** pill on the rightmost screen only (never the projected retina) each call; `?stack=1` answers the stack bottom first: `text`, `lift`, `offset` (where the window really is now), `alpha`.
+
 ## 🔘 The pill's buttons (2026-11-03)
 
 Every interactive bottom-left pill (`BottomLeftBanner`) now carries **one or two buttons** in a column at its right edge instead of the marching chevron + progressive orange border:
