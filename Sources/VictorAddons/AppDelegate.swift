@@ -1838,6 +1838,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // the mic the meeting uses; the effects app holds every effect under it.
         shareWatch.onChange = { sharing in VoiceMeter.shared.setSharing(sharing) }
         VoiceRoutes.share = shareWatch
+        // 🎚️ …and the break gong / "over and out", which this app plays itself, the same way.
+        AddonSounds.shared.isSharing = { [weak self] in self?.shareWatch.isSharing == true }
         shareWatch.start()
 
         // The "Resumed Xm ago" menu clock now tracks OUR break timer — the ✕ button
