@@ -225,6 +225,14 @@ save) are swept on every capture; nothing else would ever reclaim them.
   already uses. Everywhere else ⌃V is readline's `quoted-insert`, which eats the
   next keystroke; Copilot CLI has no clipboard-image path at all (checked
   2026-09-22), so it keeps ⌘V and the no-op.
+- **A hand-pressed ⌘V gets the same swap** (2026-11-11, `EventTapManager`, V
+  section). Victor kept pressing ⌘V on a screenshot and got older text instead
+  of the picture. Same scope as the bezel, plus one more condition: the
+  pasteboard holds `png`/`tiff` **and no `.string`** (`isImageOnly`) — a clip
+  carrying both, like spreadsheet cells, keeps ⌘V. The type list is read first,
+  so a text ⌘V never pays for the AX title read (which runs with a 0.2 s
+  messaging timeout, inside the tap). The rewrite does **not** advance the ⌃V
+  image stack: two ⌘V paste the same picture twice.
 
 ## Files
 

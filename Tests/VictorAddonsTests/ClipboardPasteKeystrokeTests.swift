@@ -57,6 +57,20 @@ final class ClipboardPasteKeystrokeTests: XCTestCase {
         }
     }
 
+    /// ⌘V in Terminal is rewritten to ⌃V only for a picture with no text.
+    func testAPictureAloneCountsAsImageOnly() {
+        XCTAssertTrue(ClipboardPasteKeystroke.isImageOnly(types: [.png, .tiff]))
+        XCTAssertTrue(ClipboardPasteKeystroke.isImageOnly(types: [.tiff]))
+    }
+
+    /// Spreadsheet cells, web selections: text and a picture together — the text
+    /// is what was meant, so ⌘V stays ⌘V.
+    func testTextAlongsideAPictureIsNotImageOnly() {
+        XCTAssertFalse(ClipboardPasteKeystroke.isImageOnly(types: [.string, .png]))
+        XCTAssertFalse(ClipboardPasteKeystroke.isImageOnly(types: [.string]))
+        XCTAssertFalse(ClipboardPasteKeystroke.isImageOnly(types: []))
+    }
+
     /// The marker is animated — the asterisks became moons once already — so the
     /// bezel has to recognise a session by the same shape test `⌘⌃A` uses, not
     /// by a list of glyphs.

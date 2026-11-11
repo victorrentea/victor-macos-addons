@@ -51,6 +51,17 @@ enum ClipboardPasteKeystroke: Equatable {
         return .control
     }
 
+    /// Whether the pasteboard holds a picture **and no text** — the case where
+    /// Terminal's ⌘V has nothing of its own to write (Victor, 2026-11-11: *"cmd-v
+    /// with a picture in the clipboard brings in the previous text, not the
+    /// picture"*). A clip that carries both (cells copied from a spreadsheet,
+    /// a selection from a web page) keeps ⌘V: the text is what was meant there.
+    static func isImageOnly(types: [NSPasteboard.PasteboardType]) -> Bool {
+        let set = Set(types)
+        guard !set.contains(.string) else { return false }
+        return set.contains(.png) || set.contains(.tiff)
+    }
+
     /// Post it. Both halves wait for the hand to come off the hotkey first — see
     /// `KeySimulator.waitForModifiersReleased`.
     func post() {

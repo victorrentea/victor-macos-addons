@@ -1469,6 +1469,29 @@ private let VK_I: CGKeyCode = 0x22
             return nil
         }
 
+        // ⌘V with only a picture on the clipboard, in a Claude Code session in
+        // Terminal → ⌃V (`chat:imagePaste`). Terminal's ⌘V writes the clipboard's
+        // *text* to the pty, and a picture has none, so the image never arrived.
+        // Same rule as the ⌘⇧V bezel (`ClipboardPasteKeystroke.choose`): a bare
+        // shell keeps ⌘V, because ⌃V there is `quoted-insert`.
+        //
+        // Rewritten in place (see the emoji layer above for why not re-posted).
+        // The pasteboard is read before any AX round trip, so a text ⌘V — the
+        // everyday one — costs one type list and nothing else. It deliberately
+        // does NOT advance the ⌃V image stack below: ⌘V pressed twice pastes
+        // the same picture twice, like every other ⌘V.
+        if hasCmd && !hasCtrl && !hasOpt && !hasShift,
+           let front = currentFrontmost(),
+           ClipboardPasteKeystroke.scopeBundleIds.contains(front.bundleId),
+           ClipboardPasteKeystroke.isImageOnly(types: PasteboardGate.sync { $0.types ?? [] }),
+           ClipboardPasteKeystroke.choose(isImage: true, frontmostBundleID: front.bundleId,
+                                          focusedWindowTitle: Self.focusedWindowTitle(pid: front.pid)) == .control {
+            let ctrlV: [UniChar] = [0x16]
+            event.flags = flags.subtracting(.maskCommand).union(.maskControl)
+            event.keyboardSetUnicodeString(stringLength: ctrlV.count, unicodeString: ctrlV)
+            return Unmanaged.passUnretained(event)
+        }
+
         // Cmd+Shift+V → the clipboard history bezel (suppress). Flycut's own
         // shortcut, taken over deliberately: this app remembers **images** too,
         // which is the one thing Flycut cannot do and the thing a workshop
@@ -1534,6 +1557,20 @@ private let VK_I: CGKeyCode = 0x22
         frontmostBundleId = app?.bundleIdentifier
         frontmostPid = app?.processIdentifier
         frontmostLock.unlock()
+    }
+
+    /// The focused window's title, read from inside the tap. The short messaging
+    /// timeout matters here: a hung Terminal must not stall the tap long enough
+    /// for macOS to disable it — a missed image paste is the cheaper failure.
+    private static func focusedWindowTitle(pid: pid_t) -> String? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.2)
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &raw) == .success,
+              let value = raw, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        let window = value as! AXUIElement
+        AXUIElementSetMessagingTimeout(window, 0.2)
+        return AXWindows.title(of: window)
     }
 
     private func currentFrontmost() -> (bundleId: String, pid: pid_t)? {
