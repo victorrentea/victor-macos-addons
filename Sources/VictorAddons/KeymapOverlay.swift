@@ -61,6 +61,10 @@ enum CommandControlShortcuts {
                          // and cut out again after a few seconds (2026-10-15).
                          // O for Opus: the one key here where the letter and the
                          // picture agree, which is why it took O from the elephant.
+        29: "fable",     // 0 — ✨ a figure of light descends down the middle of the
+                         // screen and bursts, on a transparent background
+                         // (2026-11-12, Victor's Gemini clip). The digit row was
+                         // empty on this board; the word names the model it stands for.
         34: "xi",        // I — 🐼 the panda, the elephant's twin from the right
                          // half of the screen, on the key next to it. Named
                          // after the man like "trump", for the same reason.
