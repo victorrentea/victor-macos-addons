@@ -215,9 +215,16 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         }
 
         /// The inner outline of the zigzag frame: a closed polygon just inside the
-        /// screen's edge, `edgeBand` deep at each tooth's root and `edgeBand +
-        /// edgeDepth` at its tip. Filled even-odd against the screen's rectangle, the
-        /// black is everything between the screen edge and this line: teeth pointing in.
+        /// screen's edge, `edgeBand` deep at its shallowest and `edgeBand + edgeDepth`
+        /// at its deepest. Filled even-odd against the screen's rectangle, the black is
+        /// everything between the screen edge and this line: teeth pointing in.
+        ///
+        /// Irregular since 2026-11-11 (Victor: *"mai neregulat, tot cumva cu linii (nu
+        /// ondulat)"*): straight segments still, but every vertex has its own spacing
+        /// and depth, and now and then a tooth gets a shoulder half-way down its flank
+        /// — a rock edge, not a saw. The randomness is seeded per side, so the frame is
+        /// the same shape every time and on every redraw, and it never goes deeper than
+        /// `edgeDepth`, which `doorDepth` relies on.
         ///
         /// `sharpness` 0…1 scales the teeth: at 0 every tooth lies flat on the band,
         /// a straight black strip along the edge; at 1 it is the frame above.
@@ -225,16 +232,15 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
         /// sharpnesses moves each tooth straight in or out (`ZoomSwitchEffect`).
         static func zigzagRing(size: CGSize, sharpness: CGFloat = 1) -> CGPath {
             let k = min(max(sharpness, 0), 1)
-            let w = size.width, h = size.height, band = edgeBand, deep = edgeBand + edgeDepth * k
+            let w = size.width, h = size.height, band = edgeBand, depth = edgeDepth * k
             let path = CGMutablePath()
             // One edge from corner `a` to corner `b`, the teeth on the side `inward`
             // points to; both corners sit at the shallow inset, so the edges meet there.
-            func edge(_ a: CGPoint, _ b: CGPoint, inward: CGVector, first: Bool) {
+            func edge(_ a: CGPoint, _ b: CGPoint, inward: CGVector, seed: UInt64, first: Bool) {
                 let length = hypot(b.x - a.x, b.y - a.y)
-                let steps = max(2, 2 * Int((length / edgeTooth).rounded()))
-                for i in 0...steps where !(i == 0 && !first) {
-                    let t = CGFloat(i) / CGFloat(steps)
-                    let inset = i % 2 == 1 ? deep - band : 0
+                let shape = jaggedProfile(length: length, seed: seed)
+                for (i, v) in shape.enumerated() where !(i == 0 && !first) {
+                    let t = v.along / length, inset = v.depth * depth
                     let p = CGPoint(x: a.x + (b.x - a.x) * t + inward.dx * inset,
                                     y: a.y + (b.y - a.y) * t + inward.dy * inset)
                     if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
@@ -242,12 +248,57 @@ final class ShareZoom: NSObject, SCStreamOutput, SCStreamDelegate {
             }
             let tl = CGPoint(x: band, y: h - band), tr = CGPoint(x: w - band, y: h - band)
             let br = CGPoint(x: w - band, y: band), bl = CGPoint(x: band, y: band)
-            edge(tl, tr, inward: CGVector(dx: 0, dy: -1), first: true)
-            edge(tr, br, inward: CGVector(dx: -1, dy: 0), first: false)
-            edge(br, bl, inward: CGVector(dx: 0, dy: 1), first: false)
-            edge(bl, tl, inward: CGVector(dx: 1, dy: 0), first: false)
+            edge(tl, tr, inward: CGVector(dx: 0, dy: -1), seed: 0x7A11, first: true)
+            edge(tr, br, inward: CGVector(dx: -1, dy: 0), seed: 0x51DE, first: false)
+            edge(br, bl, inward: CGVector(dx: 0, dy: 1), seed: 0xB077, first: false)
+            edge(bl, tl, inward: CGVector(dx: 1, dy: 0), seed: 0x1EF7, first: false)
             path.closeSubpath()
             return path
+        }
+
+        /// The vertices of one side of the frame: `along` in points from its start
+        /// corner (0 … `length`, both ends included), `depth` 0…1 of `edgeDepth`. Tips
+        /// and roots alternate so it still reads as teeth, but each spacing is 0.35–1.65
+        /// of a regular half-tooth, tips land at 45–100 % depth, roots at 0–30 %, and
+        /// about one tooth in four gets an extra vertex on a flank. Ends at depth 0.
+        static func jaggedProfile(length: CGFloat, seed: UInt64) -> [(along: CGFloat, depth: CGFloat)] {
+            var rng = SplitMix64(seed: seed)
+            let half = edgeTooth / 2
+            var raw: [(along: CGFloat, depth: CGFloat)] = [(0, 0)]
+            var x: CGFloat = 0, tip = true
+            while true {
+                let step = half * rng.between(0.35, 1.65)
+                if x + step > length - half * 0.35 { break }
+                let depth = tip ? rng.between(0.45, 1) : rng.between(0, 0.3)
+                if rng.between(0, 1) < 0.25, let last = raw.last {
+                    // A shoulder: a kink part-way along the flank, off the straight line.
+                    let f = rng.between(0.3, 0.7)
+                    let d = last.depth + (depth - last.depth) * f + rng.between(-0.2, 0.2)
+                    raw.append((x + step * f, min(max(d, 0), 1)))
+                }
+                x += step
+                raw.append((x, depth))
+                tip.toggle()
+            }
+            // Stretch the run to end exactly on the far corner, flat.
+            let scale = x > 0 ? length / (x + half) : 1
+            return raw.map { ($0.along * scale, $0.depth) } + [(length, 0)]
+        }
+    }
+
+    /// A tiny deterministic generator, so the jagged frame is the same every time.
+    struct SplitMix64 {
+        private var state: UInt64
+        init(seed: UInt64) { state = seed }
+        mutating func next() -> UInt64 {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+        mutating func between(_ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+            lo + (hi - lo) * CGFloat(next() >> 11) / CGFloat(1 << 53)
         }
     }
 
