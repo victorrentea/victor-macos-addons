@@ -140,3 +140,72 @@ final class DjiBatteryNotice {
         show(text)
     }
 }
+
+/// 🎤 **The receiver is plugged in and no transmitter is on** (2026-11-12,
+/// Victor: *"There should be some warning, right? When just the receiver is
+/// connected with no transmitter"*). Since the same day the DJI is not used as
+/// the microphone in that state (`DjiSourceGate`), so the transcription is
+/// quietly on the next mic down the ladder — worth a look before he starts
+/// talking with the lavalier on his collar and the TX still off.
+///
+/// **Only for a TX that was never there**, i.e. the gate going to `no-tx`
+/// from anything but `linked`: the receiver appearing (or the app starting)
+/// with nothing linked. A linked TX that goes away is `MicDeadAlarm`'s red
+/// case, which already fires at the same 5 s; showing both would say one
+/// thing twice, and a TX put back in its case on purpose deserves neither.
+///
+/// Orange, not red — nothing is lost yet, it is a reminder. Click-only like
+/// the red one, and it leaves by itself the moment the gate says anything else
+/// (a TX linked, the receiver unplugged).
+final class DjiNoTxWarning {
+    static let color = NSColor.systemOrange.withAlphaComponent(0.9)
+    static let text = "🎤 DJI receiver on, no TX — not used as the mic"
+
+    private let screensProvider: () -> [NSScreen]
+    private let sound: () -> Void
+    private var banner: BottomLeftBanner?
+    private var previous: DjiSourceGate.State?
+    private(set) var isShown = false
+
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
+         sound: @escaping () -> Void = { NSSound(named: NSSound.Name("Funk"))?.play() }) {
+        self.screensProvider = screensProvider
+        self.sound = sound
+    }
+
+    static func shouldWarn(from previous: DjiSourceGate.State?, to state: DjiSourceGate.State) -> Bool {
+        state == .noTx && previous != .linked && previous != .noTx
+    }
+
+    /// Feed every gate change (`DjiReceiverMonitor.onSourceGate`).
+    func gateChanged(_ state: DjiSourceGate.State, screens: (() -> [NSScreen])? = nil) {
+        defer { previous = state }
+        if state != .noTx { hide(by: "gate \(state.rawValue)"); return }
+        guard Self.shouldWarn(from: previous, to: state), !isShown else { return }
+        show(screens: screens)
+    }
+
+    func show(screens: (() -> [NSScreen])? = nil) {
+        guard !isShown else { return }
+        isShown = true
+        overlayError("🎤⚠️ \(Self.text)")
+        let b = BottomLeftBanner(screensProvider: screens ?? screensProvider, hoverable: true)
+        banner = b
+        b.clickOnly = true
+        b.onHover = { [weak self] in self?.hide(by: "click") }
+        b.onHoverCountdownExpired = { [weak self] in self?.hide(by: "right-click") }
+        b.show(text: Self.text,
+               backgroundColor: Self.color,
+               font: NSFont.boldSystemFont(ofSize: MicDeadAlarm.fontSize),
+               clickAction: .dismiss)
+        sound()
+    }
+
+    func hide(by how: String) {
+        guard isShown else { return }
+        isShown = false
+        overlayInfo("🎤 no-TX warning down (\(how))")
+        banner?.dismissSinking()
+        banner = nil
+    }
+}

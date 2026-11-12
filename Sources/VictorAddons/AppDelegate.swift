@@ -45,6 +45,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var micSourceAnnouncer: MicSourceAnnouncer?
     /// 🎤 red sticky tab when the DJI receiver delivers only zeros (dead TX).
     private let micDeadAlarm = MicDeadAlarm()
+    private let djiNoTxWarning = DjiNoTxWarning()
     /// 🎤 the receiver's own status over USB: TX linked + battery gauge.
     private let djiReceiver = DjiReceiverMonitor()
     private lazy var djiBatteryNotice = DjiBatteryNotice(show: { [weak self] text in
@@ -787,7 +788,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self?.handleDjiReceiverEvent(event)
         }
         // The DJI is a source only while a transmitter is on (`DjiSourceGate`).
-        djiReceiver.onSourceGate = { [weak self] state in self?.writeDjiGate(state) }
+        djiReceiver.onSourceGate = { [weak self] state in
+            self?.writeDjiGate(state)
+            self?.djiNoTxWarning.gateChanged(state)
+        }
         djiReceiver.start()
         menuBarManager.djiMenuSuffix = { [weak self] in self?.djiReceiver.menuSuffix() }
         tabletServer?.onTestMenuOpen = { [weak self] secs, appearance in
@@ -823,8 +827,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             case "link-back":
                 overlayInfo("🎤 test hook: simulating the transmitter linking again")
                 self.handleDjiReceiverEvent(.linkBack)
+            case "no-tx":
+                // The warning only — the gate file and the mic stay as they are.
+                overlayInfo("🎤 test hook: showing the receiver-without-TX warning")
+                self.djiNoTxWarning.show(screens: provider)
+            case "no-tx-off":
+                self.djiNoTxWarning.hide(by: "test hook")
             default:
-                return "{\"error\":\"kind is battery, link-lost or link-back\"}"
+                return "{\"error\":\"kind is battery, link-lost, link-back, no-tx or no-tx-off\"}"
             }
             return self.djiReceiver.stateJSON()
         }
