@@ -45,7 +45,8 @@ final class BrainEnergyTests: XCTestCase {
 
     func testDescriptions() {
         XCTAssertEqual(BrainEnergy.describe(.draining(level: 0.62, remaining: 28 * 60)), "62% · about 28m left")
-        XCTAssertEqual(BrainEnergy.describe(.depleted(overdue: 12 * 60)), "Empty for 12m — break now")
+        XCTAssertEqual(BrainEnergy.describe(.depleted(overdue: 12 * 60)), "Depleted 12 min ago — break now")
+        XCTAssertEqual(BrainEnergy.describe(.depleted(overdue: 43 * 60 + 20)), "Depleted 43 min ago — break now")
         XCTAssertEqual(BrainEnergy.minutes(75 * 60), "1h 15m")
     }
 

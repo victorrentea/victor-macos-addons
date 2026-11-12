@@ -50,7 +50,9 @@ enum BrainEnergy {
         case let .draining(level, remaining):
             return "\(Int((level * 100).rounded()))% · about \(minutes(remaining)) left"
         case let .depleted(overdue):
-            return overdue < 60 ? "Empty — break now" : "Empty for \(minutes(overdue)) — break now"
+            if overdue < 60 { return "Depleted — break now" }
+            let m = Int(overdue / 60)
+            return "Depleted \(m < 60 ? "\(m) min" : minutes(overdue)) ago — break now"
         }
     }
 
