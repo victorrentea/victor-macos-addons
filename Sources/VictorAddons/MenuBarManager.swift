@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 10, 20:42"
+    static let BUILD_TIME = "Nov 12, 13:12"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -99,6 +99,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// repainted by `setLiveCaptions` on every state change and once a second
     /// while the menu is open.
     private var liveCaptionsItem: NSMenuItem!
+    private var voiceRecordItem: NSMenuItem!
     private var wsConnected: Bool = false
     private var sessionActive: Bool = false
     private(set) var tailItem: NSMenuItem!
@@ -380,6 +381,12 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // their reason: the eye looking for anything to do with the room's
         // speech should find all three together.
         liveCaptionsItem = addItem("🎬 Live Captions", action: #selector(toggleLiveCaptionsAction))
+
+        // ⏺️ Record voice — the room's voices into an .m4a in ~/Downloads, from
+        // the mic transcription hears (`VoiceRecorder`). Same group, same reason:
+        // it acts on the room's speech. While it runs, a red ⏹ + clock stands in
+        // the menu bar and is the stop button; this row says so too.
+        voiceRecordItem = addItem(VoiceRecordMenu.start, action: #selector(toggleVoiceRecordingAction))
 
         // 📬 Check task inbox — the manual override for the poller's power
         // gate. Scheduled polls only run on AC, so while unplugged this item is
@@ -906,6 +913,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // USB monitor's last status — the row is only ever seen with the menu
         // open, so this is the one moment it has to be right.
         updateTranscribeTitle()
+        refreshVoiceRecordItem()
         refreshWsItem()
         refreshAsusSideItem()
         refreshLayoutZoomItem()
@@ -1069,6 +1077,21 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     @objc private func monitorAction() {
         onMonitor?()
     }
+
+    @objc private func toggleVoiceRecordingAction() { VoiceRecorder.shared.toggle() }
+
+    func refreshVoiceRecordItem() {
+        guard let voiceRecordItem else { return }
+        let on = VoiceRecorder.shared.isRecording
+        voiceRecordItem.title = on ? VoiceRecordMenu.stop : VoiceRecordMenu.start
+        voiceRecordItem.toolTip = on
+            ? "Stop, save the .m4a and show it in Finder (the red ⏹ in the menu bar does the same)."
+            : "Record the mic transcription hears (DJI when connected) into ~/Downloads; a red ⏹ appears in the menu bar to stop it."
+    }
+
+    /// The `MicRoster` pattern of the mic transcription last reported, for
+    /// `VoiceRecorder` to record the same one.
+    func currentTranscribePattern() -> String? { MicRoster.byGlyph(transcribeSource)?.pattern }
 
     @objc private func toggleLiveCaptionsAction() {
         onToggleLiveCaptions?()
@@ -2110,4 +2133,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private func loadPortHistory() {
         portHistory = PortKiller.loadHistory(from: portHistoryURL)
     }
+}
+
+enum VoiceRecordMenu {
+    static let start = "⏺️ Record voice"
+    static let stop = "⏹️ Stop recording"
 }

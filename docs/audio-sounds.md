@@ -170,3 +170,27 @@ because `/ping` is two halves spliced as strings); and the push to the effects a
 the effects app for the same cap at play time (`VideoCeiling`, in `VideoGain.swift`).
 **The relay never carries `/voice/`** (`HttpAccessPolicy.relayMayCall`, counted in
 `/test/voice/state` as `relayRefused`): the tablet polls it over USB/LAN only.
+
+## ⏺️ Record voice (`VoiceRecorder`, 2026-11-12)
+
+A top-level row under 🎬 Live Captions: **⏺️ Record voice** writes what the room
+says into `~/Downloads/<yyyy-MM-dd_HH-mm-ss>.m4a` (AAC mono, 48 kHz, 128 kbps —
+`DownloadsFolder`, the screenshots' naming rule). It lived in `victor-effects` for
+ten minutes the same day and was moved here: it is the room's speech, not an effect.
+
+- **The mic**: the one transcription hears (`transcribeSource` → `MicRoster`
+  pattern), else the first of the roster that is present (`XLR ▸ DJI ▸ Stage ▸
+  Bose ▸ Mac`), never a `neverRecord` headset, and only then the system default.
+  **Not the default input on purpose**: at the moment it was written, the default
+  input was `MacBook Pro Microphone` with the DJI (`Wireless Mic Rx`) plugged in.
+  Recorded through `AVCaptureSession` + `AVCaptureAudioFileOutput`, because
+  `AVAudioRecorder` cannot be told which device. Whisper keeps hearing the same
+  input — macOS lets two processes read one mic.
+- **The stop button is a second status item**, red ⏹ + elapsed clock, up only
+  while recording (the shape of `TartVMIndicator`). One click stops, finalises the
+  file and reveals it in Finder; the menu row reads `⏹️ Stop recording` meanwhile.
+  Not an overlay: the Retina is projected.
+- **No time limit** — a recording is stopped by Victor. A quit waits up to 2 s
+  for the file to be finalised (`stopAndWait` in `applicationWillTerminate`);
+  an unplugged mic ends the take with an error but keeps the file.
+- Tests: `VoiceRecorderTests` (the device choice against the 2026-11-12 desk).

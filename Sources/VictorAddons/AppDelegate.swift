@@ -932,6 +932,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         MirrorProxy.fetchExclusions { ids in DispatchQueue.main.async { [weak self] in self?.setMirrorExcluded(ids) } }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in MainActor.assumeIsolated { self?.sidebarIcons.start() } }
         menuBarManager.onToggleLiveCaptions = { [weak self] in self?.liveCaptions.toggle() }
+        VoiceRecorder.shared.currentTranscribePattern = { [weak self] in self?.menuBarManager.currentTranscribePattern() }
+        VoiceRecorder.shared.onChange = { [weak self] in self?.menuBarManager.refreshVoiceRecordItem() }
         menuBarManager.onMenuTick = { [weak self] in
             guard let self, self.liveCaptions.isOn else { return }
             self.menuBarManager.setLiveCaptions(on: true, title: self.liveCaptions.menuTitle)
@@ -2952,6 +2954,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// subtitles are the one feature here that does both, and quitting
     /// mid-sentence is exactly when nobody would think to turn them off.
     func applicationWillTerminate(_ notification: Notification) {
+        // A take cut by a quit must still be a playable file.
+        VoiceRecorder.shared.stopAndWait()
         liveCaptions.shutdown()
         retinaCap.restore()
         // Without this app nobody takes ⌥+scroll: give it back to the magnifier.
