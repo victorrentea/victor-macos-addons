@@ -9,12 +9,13 @@ import Foundation
 /// how long the room has been running on nothing — that is when it blinks red.
 enum BrainEnergy {
     static let defaultSpan: TimeInterval = 75 * 60
-    /// A reference older than this belongs to another day: the battery goes idle
-    /// instead of blinking red all morning over yesterday's last break.
-    static let staleAfter: TimeInterval = 12 * 3600
+    /// Three hours after the last break the battery is no longer telling anyone
+    /// anything — the day is over, or lunch ran long — so it goes idle, which
+    /// **hides** the item, until the next break ends (Victor, 2026-11-12).
+    static let staleAfter: TimeInterval = 3 * 3600
 
     enum State: Equatable {
-        /// No break today and no manual refill: nothing to measure yet.
+        /// No break in the last 3 h and no refill: the item is hidden.
         case idle
         /// `level` in 0...1, `remaining` seconds until empty.
         case draining(level: Double, remaining: TimeInterval)
@@ -82,12 +83,13 @@ enum BrainBatterySettings {
 /// The picture: drawn to read as **the macOS battery** sitting next to it — a
 /// thin translucent rounded outline, a faint nub, a rounded fill inset from it —
 /// except the fill is the pink of the 🧠 emoji, with a small 🧠 on top: vivid
-/// over the charge left, faded over the part spent. Empty, it alternates
-/// between a solid red battery and a red outline (`blinkOn`, toggled by the caller).
+/// over the charge left, faded over the part spent. The outline never changes
+/// colour, like the system's; empty, only a thin red sliver at the left blinks
+/// — the way macOS shows a battery about to die (`blinkOn`, toggled by the caller).
 enum BrainBatteryIcon {
     static let brainPink = NSColor(srgbRed: 0.97, green: 0.62, blue: 0.71, alpha: 1)
     static let alarmRed = NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1)
-    static let size = NSSize(width: 30, height: 16)
+    static let size = NSSize(width: 28, height: 16)
 
     static func image(for state: BrainEnergy.State, blinkOn: Bool) -> NSImage {
         let image = NSImage(size: size, flipped: false) { _ in
@@ -100,9 +102,10 @@ enum BrainBatteryIcon {
     }
 
     static func draw(state: BrainEnergy.State, blinkOn: Bool) {
-        // Proportions of the system battery: ~25×12 pt body, 1 pt hairline, the
-        // fill inset 2 pt with its own rounding, a nub a third of the height.
-        let body = NSRect(x: 1, y: 2, width: 25, height: 12)
+        // Measured off the system battery on the 2× menu bar (2026-11-12): a
+        // 23×12 pt body, a 1 pt outline of white (black in light mode) at 45%,
+        // a 1 pt gap, then the fill — inset 2 pt, so 8 pt tall.
+        let body = NSRect(x: 1, y: 2, width: 23, height: 12)
         let nub = NSRect(x: body.maxX + 1, y: body.midY - 2, width: 1.5, height: 4)
         let outline = NSBezierPath(roundedRect: body.insetBy(dx: 0.5, dy: 0.5), xRadius: 3.5, yRadius: 3.5)
         let inner = body.insetBy(dx: 2, dy: 2)
@@ -115,14 +118,15 @@ enum BrainBatteryIcon {
         case .depleted: depleted = true
         }
 
-        let stroke: NSColor = depleted ? alarmRed : NSColor.labelColor.withAlphaComponent(0.4)
-        stroke.setStroke()
+        let frame = NSColor.labelColor.withAlphaComponent(0.45)
+        frame.setStroke()
         outline.lineWidth = 1
         outline.stroke()
-        (depleted ? alarmRed : NSColor.labelColor.withAlphaComponent(0.4)).setFill()
+        frame.setFill()
         NSBezierPath(roundedRect: nub, xRadius: 0.75, yRadius: 0.75).fill()
 
-        let fillWidth: CGFloat = depleted ? (blinkOn ? inner.width : 0) : max(level > 0 ? 2 : 0, inner.width * level)
+        let sliver: CGFloat = 2.5
+        let fillWidth: CGFloat = depleted ? (blinkOn ? sliver : 0) : max(level > 0 ? 2 : 0, inner.width * level)
         if fillWidth > 0 {
             (depleted ? alarmRed : brainPink).setFill()
             NSBezierPath(roundedRect: NSRect(x: inner.minX, y: inner.minY, width: fillWidth, height: inner.height),
@@ -132,7 +136,8 @@ enum BrainBatteryIcon {
         let emoji = NSAttributedString(string: "🧠", attributes: [.font: NSFont.systemFont(ofSize: 8.5)])
         let es = emoji.size()
         let origin = NSPoint(x: body.midX - es.width / 2, y: body.midY - es.height / 2 + 0.3)
-        let splitX = inner.minX + fillWidth
+        // Empty, the 🧠 is all "spent" — the red sliver is the only thing lit.
+        let splitX = depleted ? inner.minX : inner.minX + fillWidth
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.saveGState()
         ctx.clip(to: NSRect(x: 0, y: 0, width: splitX, height: size.height))
@@ -140,7 +145,7 @@ enum BrainBatteryIcon {
         ctx.restoreGState()
         ctx.saveGState()
         ctx.clip(to: NSRect(x: splitX, y: 0, width: size.width - splitX, height: size.height))
-        ctx.setAlpha(depleted ? 0.9 : 0.3)
+        ctx.setAlpha(0.3)
         emoji.draw(at: origin)
         ctx.restoreGState()
     }
@@ -152,7 +157,9 @@ enum BrainBatteryIcon {
 /// Refills by itself when a ☕ break ends (`breakEndedAt`, the same instant
 /// ⏱️ Resumed counts from); **Refill now** in its menu covers the start of the
 /// day or a break taken without the timer. Shown while 👩🏻‍💻 Extras ›
-/// 🧠 Show Brain Battery is ticked (default on).
+/// 🧠 Show Brain Battery is ticked (default on) — and even then only from the
+/// end of a break until 3 h after it (`BrainEnergy.staleAfter`); the next
+/// break's end brings it back.
 final class BrainBatteryIndicator: NSObject, NSMenuDelegate {
     private let breakEndedAt: () -> Date?
     private var statusItem: NSStatusItem?
@@ -215,6 +222,7 @@ final class BrainBatteryIndicator: NSObject, NSMenuDelegate {
             blinkOn = true
         }
         statusRow.title = "🧠 " + BrainEnergy.describe(state)
+        statusItem?.isVisible = state != .idle
         draw()
     }
 

@@ -26,9 +26,11 @@ final class BrainEnergyTests: XCTestCase {
         XCTAssertEqual(BrainEnergy.state(reference: nil, now: t0), .idle)
     }
 
-    /// Yesterday's last break must not leave the battery blinking red all morning.
-    func testYesterdaysBreakIsStale() {
-        XCTAssertNil(BrainEnergy.reference(breakEndedAt: t0 - 13 * 3600, refilledAt: nil, now: t0))
+    /// Three hours after the last break the battery hides, until the next one ends.
+    func testThreeHoursAfterTheBreakItGoesIdle() {
+        XCTAssertNotNil(BrainEnergy.reference(breakEndedAt: t0 - 3 * 3600 + 60, refilledAt: nil, now: t0))
+        XCTAssertNil(BrainEnergy.reference(breakEndedAt: t0 - 3 * 3600 - 60, refilledAt: nil, now: t0))
+        XCTAssertEqual(BrainEnergy.state(reference: nil, now: t0), .idle)
     }
 
     /// A manual refill and a break end: whichever happened last filled the battery.
