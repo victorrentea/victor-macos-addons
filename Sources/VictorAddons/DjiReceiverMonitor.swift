@@ -27,6 +27,9 @@ final class DjiReceiverMonitor {
 
     /// Called on the main thread with each policy event.
     var onEvent: ((DjiReceiverPolicy.Event) -> Void)?
+    /// Called on the main thread whenever `DjiSourceGate` changes its answer —
+    /// may the DJI be the transcription microphone. Fires once at start.
+    var onSourceGate: ((DjiSourceGate.State) -> Void)?
 
     private let lock = NSLock()
     private var _status: DjiReceiverProtocol.Status?
@@ -34,6 +37,8 @@ final class DjiReceiverMonitor {
     private var _present = false
     private var _openError: String?
     private var policy = DjiReceiverPolicy()   // reader thread only
+    private var gate = DjiSourceGate()         // reader thread only
+    private var _gateState: DjiSourceGate.State?
     private var thread: Thread?
 
     func start() {
@@ -74,7 +79,8 @@ final class DjiReceiverMonitor {
         }
         let mask = _status.map { String($0.linkedMask) } ?? "null"
         let err = _openError.map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" } ?? "null"
-        return "{\"present\":\(_present),\"live\":\(live),\"linked_mask\":\(mask),\"transmitters\":\(tx),\"open_error\":\(err)}"
+        let g = _gateState.map { "\"\($0.rawValue)\"" } ?? "null"
+        return "{\"present\":\(_present),\"live\":\(live),\"linked_mask\":\(mask),\"transmitters\":\(tx),\"source_gate\":\(g),\"open_error\":\(err)}"
     }
 
     // MARK: - Reader thread
@@ -84,6 +90,12 @@ final class DjiReceiverMonitor {
         while true {
             let service = Self.findInterface()
             setPresent(service != 0)
+            // No receiver is `absent`. A receiver just found keeps whatever was
+            // said last — `blind` must not flicker to `absent` on every 5 s
+            // retry, nor `linked` on a reopen of a stalled stream, or Python
+            // would hop off the DJI and back. Only the very first look, with
+            // nothing said yet, starts it at `absent` until a push arrives.
+            if service == 0 || gateState == nil { publishGate(.absent) }
             guard service != 0 else {
                 Thread.sleep(forTimeInterval: Self.searchInterval)
                 continue
@@ -93,29 +105,37 @@ final class DjiReceiverMonitor {
                 loggedOpenError = nil
                 setOpenError(nil)
                 overlayInfo("🎤 DJI receiver: reading its status on USB interface 6")
-                readLoop(intf)
+                if !readLoop(intf) {
+                    // Opened, but never a status push: as good as unreadable.
+                    publishGate(.blind)
+                }
                 intf.destroy()
                 overlayInfo("🎤 DJI receiver: status stream ended (unplugged?)")
             } catch {
                 IOObjectRelease(service)
                 let msg = "\(error)"
                 setOpenError(msg)
+                publishGate(.blind)
                 if loggedOpenError != msg {
                     overlayError("🎤 DJI receiver present but its status interface would not open (another app holding it?): \(msg)")
                     loggedOpenError = msg
                 }
             }
             policy.receiverGone()
+            gate.reset()
             lock.lock(); _status = nil; _lastStatusAt = nil; lock.unlock()
             Thread.sleep(forTimeInterval: Self.searchInterval)
         }
     }
 
-    private func readLoop(_ intf: IOUSBHostInterface) {
+    /// Returns whether a status push ever arrived.
+    @discardableResult
+    private func readLoop(_ intf: IOUSBHostInterface) -> Bool {
         guard let pipe = try? intf.copyPipe(withAddress: 0x86) else {
             overlayError("🎤 DJI receiver: no bulk IN endpoint 0x86 on interface 6")
-            return
+            return false
         }
+        var gotStatus = false
         var buffer: [UInt8] = []
         var lastPush = Date()
         let data = NSMutableData(length: 512)!
@@ -127,21 +147,23 @@ final class DjiReceiverMonitor {
             } catch {
                 // A timeout on a live device is just a quiet moment; a gone
                 // device errors every time, and the staleness check ends it.
-                if Date().timeIntervalSince(lastPush) > Self.staleAfter { return }
+                if Date().timeIntervalSince(lastPush) > Self.staleAfter { return gotStatus }
                 continue
             }
             buffer.append(contentsOf: UnsafeRawBufferPointer(start: data.bytes, count: got))
             for frame in DjiReceiverProtocol.takeFrames(&buffer) {
                 if let status = DjiReceiverProtocol.decodeStatus(frame) {
                     lastPush = Date()
+                    gotStatus = true
                     handle(status, at: lastPush)
                 } else if !loggedV1, DjiReceiverProtocol.isV1Heartbeat(frame) {
                     loggedV1 = true
                     lastPush = Date()
                     overlayError("🎤 DJI receiver speaks the v1 protocol — no battery on that firmware; update it in DJI Mimo")
+                    publishGate(.blind)
                 }
             }
-            if Date().timeIntervalSince(lastPush) > Self.staleAfter { return }
+            if Date().timeIntervalSince(lastPush) > Self.staleAfter { return gotStatus }
         }
     }
 
@@ -154,6 +176,7 @@ final class DjiReceiverMonitor {
         // The policy has to see every push (the link-loss grace is a clock),
         // but a push identical to the last one can only matter to that clock.
         let events = policy.feed(status, now: now)
+        publishGate(gate.feed(status, now: now))
         if changed {
             let txs = status.transmitters.map { "TX\($0.unit) level \($0.level)\($0.charging ? " charging" : "")" }
             overlayInfo("🎤 DJI status: linked=0x\(String(status.linkedMask, radix: 16)) \(txs.joined(separator: ", "))")
@@ -162,6 +185,22 @@ final class DjiReceiverMonitor {
         DispatchQueue.main.async { [weak self] in
             events.forEach { self?.onEvent?($0) }
         }
+    }
+
+    private var gateState: DjiSourceGate.State? {
+        lock.lock(); defer { lock.unlock() }
+        return _gateState
+    }
+
+    /// Main-thread callback on change only — `handle` runs ~10 times a second.
+    private func publishGate(_ state: DjiSourceGate.State) {
+        lock.lock()
+        let changed = state != _gateState
+        _gateState = state
+        lock.unlock()
+        guard changed else { return }
+        overlayInfo("🎤 DJI as a source: \(state.rawValue)")
+        DispatchQueue.main.async { [weak self] in self?.onSourceGate?(state) }
     }
 
     private func setPresent(_ p: Bool) {

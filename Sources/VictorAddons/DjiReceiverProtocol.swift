@@ -193,3 +193,55 @@ struct DjiReceiverPolicy {
         self = DjiReceiverPolicy()
     }
 }
+
+/// **May the DJI be the microphone right now?** (2026-11-12, Victor: *"if only
+/// DJI RX is connected but no TX, source should not switch to DJI"* — *"DJI
+/// should only be used as a source if both RX and TX are active"*.)
+///
+/// The receiver alone is a USB audio device like any other, so CoreAudio lists
+/// `Wireless Mic Rx` the moment it is plugged in and the ladder (XLR ▸ DJI ▸ …)
+/// used to take it — then transcribed digital silence until a transmitter was
+/// switched on. The receiver's own link byte says whether anything is talking
+/// to it, so this app publishes that to `whisper_runner.py` as one word in a
+/// file (`AppDelegate.writeDjiGate`), and Python skips the DJI unless it reads
+/// `linked` or `blind`:
+///
+/// * `linked` — status is streaming and a transmitter is on.
+/// * `no-tx` — status is streaming and none is.
+/// * `absent` — no receiver, or found and not yet heard from. Blocking in that
+///   gap is what keeps a plug-in from switching to the DJI for the few seconds
+///   before its first status push and straight back off it.
+/// * `blind` — the receiver is there but its status cannot be read (interface
+///   held by another app, v1 firmware). Nothing knows, so the DJI is allowed as
+///   it was before; `dead_input.py`'s digital-silence watch still raises 🎤.
+///
+/// A transmitter that was linked keeps `linked` for `linkLossGrace` after it
+/// drops, the same grace as the red alarm: a radio hiccup re-links in a second
+/// or two, and bouncing the transcription to another mic and back for it would
+/// cost more than the second of silence. Put back in its case (last push said
+/// charging), it goes at once.
+struct DjiSourceGate {
+    enum State: String { case linked, noTx = "no-tx", absent, blind }
+
+    private var unlinkedSince: Date?
+    private var wasLinked = false
+    private var lastCharging = false
+
+    mutating func feed(_ s: DjiReceiverProtocol.Status, now: Date) -> State {
+        if s.anyLinked {
+            wasLinked = true
+            unlinkedSince = nil
+            if let tx = s.transmitters.last { lastCharging = tx.charging }
+            return .linked
+        }
+        guard wasLinked, !lastCharging else { wasLinked = false; return .noTx }
+        let since = unlinkedSince ?? now
+        unlinkedSince = since
+        if now.timeIntervalSince(since) < DjiReceiverPolicy.linkLossGrace { return .linked }
+        wasLinked = false
+        unlinkedSince = nil
+        return .noTx
+    }
+
+    mutating func reset() { self = DjiSourceGate() }
+}

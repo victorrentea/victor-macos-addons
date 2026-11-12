@@ -786,6 +786,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         djiReceiver.onEvent = { [weak self] event in
             self?.handleDjiReceiverEvent(event)
         }
+        // The DJI is a source only while a transmitter is on (`DjiSourceGate`).
+        djiReceiver.onSourceGate = { [weak self] state in self?.writeDjiGate(state) }
         djiReceiver.start()
         menuBarManager.djiMenuSuffix = { [weak self] in self?.djiReceiver.menuSuffix() }
         tabletServer?.onTestMenuOpen = { [weak self] secs, appearance in
@@ -834,6 +836,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if let folder = self?.transcriptionFolder {
                 env["TRANSCRIPTION_FOLDER"] = folder.path
                 env["WHISPER_PREFERRED_SOURCE_FILE"] = folder.appendingPathComponent(".preferred-me-source").path
+                env["WHISPER_DJI_GATE_FILE"] = folder.appendingPathComponent(Self.djiGateFileName).path
                 // Read at every launch. Note what that does NOT mean: the
                 // 60 s heartbeat only revives a whisper that has died or gone
                 // mute for five minutes, so a flag armed while a healthy
@@ -2629,6 +2632,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let env: [String: String] = [
                 "TRANSCRIPTION_FOLDER": self.transcriptionFolder.path,
                 "WHISPER_PREFERRED_SOURCE_FILE": self.transcriptionFolder.appendingPathComponent(".preferred-me-source").path,
+                "WHISPER_DJI_GATE_FILE": self.transcriptionFolder.appendingPathComponent(Self.djiGateFileName).path,
             ]
             self.pendingAutoRestartBanner = true
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -2775,6 +2779,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             overlayInfo("Preferred source: \(pattern.isEmpty ? "automatic" : pattern)")
         } catch {
             overlayError("Failed to write preferred source: \(error)")
+        }
+    }
+
+    static let djiGateFileName = ".dji-source-gate"
+
+    /// One word from `DjiSourceGate.State` for `whisper_runner.py`, which polls
+    /// the file's mtime like `.preferred-me-source` and re-runs its device
+    /// check: the DJI is skipped — on the ladder *and* when picked by hand —
+    /// unless the word is `linked` or `blind`.
+    private func writeDjiGate(_ state: DjiSourceGate.State) {
+        let file = transcriptionFolder.appendingPathComponent(Self.djiGateFileName)
+        do {
+            try FileManager.default.createDirectory(at: transcriptionFolder, withIntermediateDirectories: true)
+            try state.rawValue.write(to: file, atomically: true, encoding: .utf8)
+        } catch {
+            overlayError("🎤 Could not write the DJI source gate: \(error)")
         }
     }
 

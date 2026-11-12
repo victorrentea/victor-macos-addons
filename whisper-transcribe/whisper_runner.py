@@ -309,6 +309,39 @@ _NEVER_RECORD = ["WH-1000"]
 def _is_never_record(name: str) -> bool:
     lower = name.lower()
     return any(p.lower() in lower for p in _NEVER_RECORD)
+
+
+# The DJI receiver is a source only while a transmitter is linked to it
+# (2026-11-12, Victor: "DJI should only be used as a source if both RX and TX
+# are active"). The receiver alone is a perfectly alive USB input that streams
+# digital zeros, so CoreAudio cannot tell; the app reads the receiver's own
+# link byte over USB (`DjiReceiverMonitor`) and writes one word here —
+# `linked` / `no-tx` / `absent` / `blind` (see `DjiSourceGate` in Swift).
+# Only `linked` and `blind` (status unreadable: nobody knows, behave as before)
+# let the DJI in. No env var or no file yet = no gate, the old behaviour.
+_DJI_GATE_FILE = os.environ.get("WHISPER_DJI_GATE_FILE", "").strip()
+_DJI_PATTERN = "Wireless Mic"
+_DJI_ALLOWED = ("linked", "blind")
+
+
+def _dji_gate() -> str:
+    if not _DJI_GATE_FILE:
+        return ""
+    try:
+        with open(_DJI_GATE_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+def _is_unusable(name: str) -> bool:
+    """Never record through it right now: banned for good, or a DJI with no TX."""
+    if _is_never_record(name):
+        return True
+    if _DJI_PATTERN.lower() in name.lower():
+        gate = _dji_gate()
+        return bool(gate) and gate not in _DJI_ALLOWED
+    return False
 _AUD_PATTERNS = ["From Zoom"]
 
 _HALLUCINATIONS = {
@@ -478,6 +511,15 @@ def _read_preferred_source() -> str:
         return ""
 
 
+def _mtime_or_zero(path: str) -> float:
+    if not path:
+        return 0.0
+    try:
+        return os.path.getmtime(path)
+    except (FileNotFoundError, OSError):
+        return 0.0
+
+
 def _preferred_source_mtime() -> float:
     """Current mtime of the preference file, or 0.0 when there isn't one."""
     if not _PREFERRED_SOURCE_FILE:
@@ -502,7 +544,7 @@ def _available_me_short_names() -> list[str]:
             if d["max_input_channels"] <= 0:
                 continue
             sd_name = d["name"]
-            if plower not in sd_name.lower() or _is_never_record(sd_name):
+            if plower not in sd_name.lower() or _is_unusable(sd_name):
                 continue
             if any(_names_equivalent(sd_name, ca_name) for ca_name in alive_ca_names):
                 short = _short_device_name(sd_name)
@@ -546,14 +588,14 @@ def _resolve_device_coreaudio(patterns: list[str]) -> tuple[int, str] | None:
             if d["max_input_channels"] <= 0:
                 continue
             sd_name = d["name"]
-            if plower not in sd_name.lower() or _is_never_record(sd_name):
+            if plower not in sd_name.lower() or _is_unusable(sd_name):
                 continue
             if any(_names_equivalent(sd_name, ca_name) for ca_name in alive_ca_names):
                 return i, d["name"]
 
         # Fallback: match against CoreAudio names first, then map back to sounddevice.
         for ca_name in alive_ca_names:
-            if plower not in ca_name.lower() or _is_never_record(ca_name):
+            if plower not in ca_name.lower() or _is_unusable(ca_name):
                 continue
             for i, d in enumerate(sd.query_devices()):
                 if d["max_input_channels"] <= 0:
@@ -1476,6 +1518,7 @@ class WhisperTranscriptionRunner:
         # line is what produced the paired `Invalid stream pointer [-9988]`
         # errors on every start, and the double-frees that crashed Python.
         self._pref_watch_mtime: float = _preferred_source_mtime()
+        self._dji_gate_mtime: float = _mtime_or_zero(_DJI_GATE_FILE)
         self._device_check_event = threading.Event()
         # The glyph last sent on VICTOR_SOURCE, so each device the Victor
         # channel lands on is announced once, whichever path landed it there.
@@ -1649,7 +1692,7 @@ class WhisperTranscriptionRunner:
         self._emit_available()
 
         # Poll preference file for menu-driven source switches.
-        if _PREFERRED_SOURCE_FILE:
+        if _PREFERRED_SOURCE_FILE or _DJI_GATE_FILE:
             threading.Thread(
                 target=self._watch_preference_file, daemon=True
             ).start()
@@ -1749,22 +1792,31 @@ class WhisperTranscriptionRunner:
             log.error("transcript", f"🎙️ availability emit failed: {exc}")
 
     def _watch_preference_file(self):
-        # Polls _PREFERRED_SOURCE_FILE for menu-driven source switches.
-        # Whenever its mtime changes, re-run device resolution so the new
-        # preferred pattern is applied without restarting whisper.
+        # Polls _PREFERRED_SOURCE_FILE for menu-driven source switches, and
+        # _DJI_GATE_FILE for a DJI transmitter coming on or going away.
+        # Whenever either mtime changes, re-run device resolution so the change
+        # is applied without restarting whisper.
         while True:
             try:
                 time.sleep(1)
-                try:
-                    mtime = os.path.getmtime(_PREFERRED_SOURCE_FILE)
-                except (FileNotFoundError, OSError):
-                    continue
-                if mtime != self._pref_watch_mtime:
-                    self._pref_watch_mtime = mtime
-                    log.info(
-                        "transcript",
-                        f"🎙️ preferred source changed → {_read_preferred_source()!r}",
-                    )
+                changed = []
+                for path, attr, describe in (
+                    (_PREFERRED_SOURCE_FILE, "_pref_watch_mtime",
+                     lambda: f"preferred source changed → {_read_preferred_source()!r}"),
+                    (_DJI_GATE_FILE, "_dji_gate_mtime",
+                     lambda: f"DJI source gate → {_dji_gate()!r}"),
+                ):
+                    if not path:
+                        continue
+                    try:
+                        mtime = os.path.getmtime(path)
+                    except (FileNotFoundError, OSError):
+                        continue
+                    if mtime != getattr(self, attr):
+                        setattr(self, attr, mtime)
+                        changed.append(describe())
+                if changed:
+                    log.info("transcript", "🎙️ " + "; ".join(changed))
                     self._check_best_device()
             except Exception as exc:
                 log.error("transcript", f"🎙️ preference watcher error: {exc}")
