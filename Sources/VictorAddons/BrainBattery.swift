@@ -33,6 +33,15 @@ enum BrainEnergy {
         }.max()
     }
 
+    /// Whether the item is on the menu bar: not when idle, and not after **Hide**
+    /// until something refills it again — the next break's end or a refill
+    /// (Victor, 2026-11-12: *"besides Refill now, another option to hide"*).
+    static func isShown(_ state: State, reference: Date?, hiddenAt: Date?) -> Bool {
+        if state == .idle { return false }
+        guard let hiddenAt, let reference else { return true }
+        return reference > hiddenAt
+    }
+
     static func state(reference: Date?, now: Date, span: TimeInterval = defaultSpan) -> State {
         guard let reference, span > 0 else { return .idle }
         let elapsed = max(0, now.timeIntervalSince(reference))
@@ -66,11 +75,21 @@ enum BrainEnergy {
 enum BrainBatterySettings {
     static let enabledKey = "BrainBattery.enabled"
     static let refilledAtKey = "BrainBattery.refilledAt"
+    static let hiddenAtKey = "BrainBattery.hiddenAt"
 
     /// 👩🏻‍💻 Extras › 🧠 Show Brain Battery — on by default.
     static var isEnabled: Bool {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+
+    /// When **Hide** was clicked; the item stays off until a later refill.
+    static var hiddenAt: Date? {
+        get {
+            let t = UserDefaults.standard.double(forKey: hiddenAtKey)
+            return t > 0 ? Date(timeIntervalSince1970: t) : nil
+        }
+        set { UserDefaults.standard.set(newValue?.timeIntervalSince1970 ?? 0, forKey: hiddenAtKey) }
     }
 
     static var refilledAt: Date? {
@@ -181,6 +200,9 @@ final class BrainBatteryIndicator: NSObject, NSMenuDelegate {
         let refill = NSMenuItem(title: "Refill now", action: #selector(refillNow), keyEquivalent: "")
         refill.target = self
         menu.addItem(refill)
+        let hide = NSMenuItem(title: "Hide until the next break", action: #selector(hideNow), keyEquivalent: "")
+        hide.target = self
+        menu.addItem(hide)
         menu.delegate = self
     }
 
@@ -224,7 +246,8 @@ final class BrainBatteryIndicator: NSObject, NSMenuDelegate {
             blinkOn = true
         }
         statusRow.title = "🧠 " + BrainEnergy.describe(state)
-        statusItem?.isVisible = state != .idle
+        statusItem?.isVisible = BrainEnergy.isShown(state, reference: reference,
+                                                    hiddenAt: BrainBatterySettings.hiddenAt)
         draw()
     }
 
@@ -235,6 +258,12 @@ final class BrainBatteryIndicator: NSObject, NSMenuDelegate {
 
     @objc private func refillNow() {
         BrainBatterySettings.refilledAt = Date()
+        refresh()
+    }
+
+    /// Off the menu bar until the next break ends; the Extras tick stays on.
+    @objc private func hideNow() {
+        BrainBatterySettings.hiddenAt = Date()
         refresh()
     }
 }

@@ -43,6 +43,15 @@ final class BrainEnergyTests: XCTestCase {
         XCTAssertNil(BrainEnergy.reference(breakEndedAt: t0 + 600, refilledAt: nil, now: t0))
     }
 
+    /// Hide holds until something newer than the click refills the battery.
+    func testHideLastsUntilTheNextBreak() {
+        let draining = BrainEnergy.State.draining(level: 0.5, remaining: 1800)
+        XCTAssertTrue(BrainEnergy.isShown(draining, reference: t0, hiddenAt: nil))
+        XCTAssertFalse(BrainEnergy.isShown(draining, reference: t0, hiddenAt: t0 + 60))
+        XCTAssertTrue(BrainEnergy.isShown(draining, reference: t0 + 120, hiddenAt: t0 + 60))
+        XCTAssertFalse(BrainEnergy.isShown(.idle, reference: nil, hiddenAt: nil))
+    }
+
     func testDescriptions() {
         XCTAssertEqual(BrainEnergy.describe(.draining(level: 0.62, remaining: 28 * 60)), "62% · about 28m left")
         XCTAssertEqual(BrainEnergy.describe(.depleted(overdue: 12 * 60)), "Depleted 12 min ago — break now")
