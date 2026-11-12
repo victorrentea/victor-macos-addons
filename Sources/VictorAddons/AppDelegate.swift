@@ -130,6 +130,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// missing, which is also why the shortcut then does nothing rather than
     /// failing loudly on every press.
     private var reminderMailer: ReminderMailer?
+    /// 🎙️ ⌘⌃M's box for a reminder dictated from scratch (nothing selected,
+    /// stale clipboard). Main-thread only; created on first use.
+    @MainActor private lazy var reminderDictationBox = ReminderDictationBox()
     /// True while the training-assistant daemon is connected to our local WS
     /// server (≥1 client). Gates the Group Photo prompt so it only fires when
     /// there's an audience to photograph.
@@ -1536,6 +1539,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tabletServer?.onTestReminderMail = { [weak self] in
             DispatchQueue.global(qos: .userInitiated).async { self?.sendClipboardReminder() }
         }
+        // /test/reminder-dictation — open the 🎙️ ⌘⌃M dictation box directly,
+        // whatever the clipboard holds. Opening sends nothing; only ⏎ does.
+        tabletServer?.onTestReminderDictation = { [weak self] text in
+            DispatchQueue.main.async { self?.openReminderDictation(prefill: text) }
+        }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
                 return "{\"error\":\"coreAudioManager unavailable\"}"
@@ -2467,9 +2475,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
         if selectionFirst {
-            mailer.sendSelectionOrClipboard(completion: completion)
+            mailer.sendSelectionOrClipboard(
+                lastClipboardChange: ClipboardStackManager.shared.lastClipboardChange,
+                askForText: { [weak self] in
+                    DispatchQueue.main.async { self?.openReminderDictation() }
+                },
+                completion: completion)
         } else {
             mailer.sendClipboard(completion: completion)
+        }
+    }
+
+    /// 🎙️ ⌘⌃M with nothing selected and a stale clipboard: a big centred box
+    /// to dictate the reminder into (Walkie Talkie pastes there like anywhere
+    /// else); ⏎ mails it through the same AgentMail path as the key.
+    @MainActor
+    func openReminderDictation(prefill: String = "") {
+        reminderDictationBox.show(prefill: prefill) { [weak self] text in
+            guard let mailer = self?.reminderMailer else { return }
+            let clip = ReminderMail.Clipping(text: text, image: nil)
+            // `send` only builds a small JSON body here (no image) and the
+            // request itself is async, so it is fine to start on main.
+            mailer.send(clip) { result in
+                let banner: String
+                switch result {
+                case .success:
+                    banner = ReminderMail.confirmation(for: clip)
+                    overlayInfo("Dictated reminder mailed to \(ReminderMail.recipient)")
+                case .failure(let error):
+                    // Unlike the clipboard path, the words exist nowhere
+                    // else now — put them on the clipboard so ⌘V saves them.
+                    PasteboardGate.sync { pb in
+                        pb.clearContents()
+                        pb.setString(text, forType: .string)
+                    }
+                    banner = "⚠️ Reminder netrimis (textul e în clipboard): \(error.localizedDescription)"
+                    overlayError("Dictated reminder failed: \(error.localizedDescription)")
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.statusBanner?.showNow(text: banner, sound: nil, visibleDuration: 6.0)
+                }
+            }
         }
     }
 

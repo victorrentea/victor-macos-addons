@@ -26,6 +26,14 @@ final class ClipboardStackManager {
     /// the clipboard while replaying.
     private var stack: [Data] = []
     private var lastChangeCount: Int = 0
+    /// When the poller last saw the pasteboard change — what ⌘⌃M reads to tell
+    /// a clipboard *just* copied from one left over from an hour ago
+    /// (`ReminderMail.clipboardFreshness`). `distantPast` until the first change
+    /// after launch: a clipboard the app never saw being written is not "recent".
+    private var lastChangeAt: Date = .distantPast
+
+    /// Thread-safe read of `lastChangeAt` (it is written on the poller's queue).
+    var lastClipboardChange: Date { queue.sync { lastChangeAt } }
 
     private let pollInterval: TimeInterval = 0.3
     /// Delay after ⌃V before swapping to the next image, so the paste target has
@@ -70,6 +78,7 @@ final class ClipboardStackManager {
             let cc = pb.changeCount
             guard cc != lastChangeCount else { return .none }   // no change (also skips our own writes)
             lastChangeCount = cc
+            lastChangeAt = Date()
             // A clip the history itself just put back on the pasteboard: not a
             // new copy, and re-capturing it would rewrite its PNG one tick later.
             guard !ClipboardHistoryStore.shared.shouldIgnore(changeCount: cc) else { return .none }

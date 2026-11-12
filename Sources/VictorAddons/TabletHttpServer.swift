@@ -182,6 +182,7 @@ case testTerminalFont
         case testEmailPoll
         /// ⌘⌃P without the keyboard — mail the current clipboard to Victor.
         case testReminderMail
+        case testReminderDictation(String)
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
@@ -399,6 +400,9 @@ case testTerminalFont
     /// the key is pressed — a hook that waited for it would be testing a
     /// different code path from the one in production.
     var onTestReminderMail: (() -> Void)?
+    /// Open the 🎙️ ⌘⌃M dictation box (`ReminderDictationBox`); sends nothing.
+    /// `?text=` prefills it, to check how the box grows without a keyboard.
+    var onTestReminderDictation: ((String) -> Void)?
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
@@ -786,6 +790,8 @@ case testTerminalFont
                 if self.onTestEmailPoll == nil { statusCode = 503 }
             case .testReminderMail:
                 self.onTestReminderMail?()
+            case .testReminderDictation(let text):
+                self.onTestReminderDictation?(text)
             case .testAndroidDeploy:
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
@@ -1206,6 +1212,8 @@ case testTerminalFont
             return .testEmailPoll
         case "/test/reminder":
             return .testReminderMail
+        case "/test/reminder-dictation":
+            return .testReminderDictation(queryItems.first(where: { $0.name == "text" })?.value ?? "")
         case "/test/android-deploy":
             return .testAndroidDeploy
         case "/test/phone-deploy":

@@ -67,6 +67,18 @@ enum ReminderMail {
     /// blank reminder is indistinguishable from a bug.
     static let imageOnlyBody = "(imagine din clipboard)"
 
+    /// How old the clipboard may be and still count as "what I meant".
+    /// Past this, with nothing selected, ⌘⌃M stops guessing: mailing an hour-old
+    /// clipboard is the silent mistake this key exists to avoid, so it opens
+    /// the 🎙️ dictation box (`ReminderDictationBox`) instead.
+    static let clipboardFreshness: TimeInterval = 120
+
+    /// ⌘⌃M's last branch: nothing selected (the ⌘C fallback copied nothing)
+    /// and a clipboard nobody touched recently ⇒ ask for the words.
+    static func shouldAskForDictation(copied: Bool, clipboardAge: TimeInterval) -> Bool {
+        !copied && clipboardAge > clipboardFreshness
+    }
+
     // MARK: What the clipboard turned out to hold
 
     /// The clipboard, resolved into the two things a mail can carry. Both may
@@ -312,7 +324,13 @@ final class ReminderMailer {
     ///
     /// Call off the main thread: the AX read, the ⌘C wait and the image
     /// re-encode all block.
-    func sendSelectionOrClipboard(completion: @escaping (Result<ReminderMail.Clipping, Error>) -> Void) {
+    ///
+    /// With nothing selected **and** a clipboard older than
+    /// `ReminderMail.clipboardFreshness`, nothing is mailed: `askForText` is
+    /// called instead (the 🎙️ dictation box), and `completion` is not.
+    func sendSelectionOrClipboard(lastClipboardChange: Date,
+                                  askForText: @escaping () -> Void,
+                                  completion: @escaping (Result<ReminderMail.Clipping, Error>) -> Void) {
         if let selection = SelectionReader.focusedSelection() {
             overlayInfo("⌘⌃M: AX selection (\(selection.count) chars)")
             let clip = ReminderMail.clipping(from: .init(text: selection))
@@ -320,7 +338,12 @@ final class ReminderMailer {
             return
         }
         let copy = SelectionReader.copyWithSimulatedCmdC()
-        overlayInfo("⌘⌃M: no AX selection; " + copy.summary)
+        let age = Date().timeIntervalSince(lastClipboardChange)
+        overlayInfo("⌘⌃M: no AX selection; " + copy.summary + "; clipboard age \(Int(min(age, 99_999)))s")
+        if ReminderMail.shouldAskForDictation(copied: copy.copied, clipboardAge: age) {
+            askForText()
+            return
+        }
         sendClipboard(completion: completion)
     }
 

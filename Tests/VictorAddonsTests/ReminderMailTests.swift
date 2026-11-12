@@ -4,6 +4,28 @@ import XCTest
 
 final class ReminderMailTests: XCTestCase {
 
+    // MARK: Nothing selected, stale clipboard → dictation box
+
+    func testFreshClipboardIsMailedWithoutAsking() {
+        XCTAssertFalse(ReminderMail.shouldAskForDictation(copied: false, clipboardAge: 5))
+        XCTAssertFalse(ReminderMail.shouldAskForDictation(copied: false,
+                                                          clipboardAge: ReminderMail.clipboardFreshness))
+    }
+
+    func testStaleClipboardWithNothingSelectedAsksForDictation() {
+        XCTAssertTrue(ReminderMail.shouldAskForDictation(copied: false,
+                                                         clipboardAge: ReminderMail.clipboardFreshness + 1))
+        // Never seen changing since launch = Date.distantPast.
+        XCTAssertTrue(ReminderMail.shouldAskForDictation(
+            copied: false, clipboardAge: Date().timeIntervalSince(.distantPast)))
+    }
+
+    func testASelectionCopiedByTheFallbackIsAlwaysMailed() {
+        // The ⌘C landed: the clipboard *is* the selection, however old the
+        // previous one was.
+        XCTAssertFalse(ReminderMail.shouldAskForDictation(copied: true, clipboardAge: 99_999))
+    }
+
     // MARK: Subject
 
     func testSubjectAlwaysStartsWithTheBell() {
