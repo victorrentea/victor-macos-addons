@@ -186,7 +186,7 @@ ten minutes the same day and was moved here: it is the room's speech, not an eff
   Recorded through `AVCaptureSession` + `AVCaptureAudioFileOutput`, because
   `AVAudioRecorder` cannot be told which device. Whisper keeps hearing the same
   input — macOS lets two processes read one mic.
-- **The stop button is a second status item**, red ⏹ + elapsed clock, up only
+- **The stop button is a second status item**, a big red dot (16 pt, drawn — the SF ⏹ was too easy to miss) + elapsed clock, up only
   while recording (the shape of `TartVMIndicator`). One click stops, finalises the
   file and reveals it in Finder; the menu row reads `⏹️ Stop recording` meanwhile.
   Not an overlay: the Retina is projected.

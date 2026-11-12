@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 12, 13:12"
+    static let BUILD_TIME = "Nov 12, 18:14"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -384,7 +384,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
         // ⏺️ Record voice — the room's voices into an .m4a in ~/Downloads, from
         // the mic transcription hears (`VoiceRecorder`). Same group, same reason:
-        // it acts on the room's speech. While it runs, a red ⏹ + clock stands in
+        // it acts on the room's speech. While it runs, a big red dot + clock stands in
         // the menu bar and is the stop button; this row says so too.
         voiceRecordItem = addItem(VoiceRecordMenu.start, action: #selector(toggleVoiceRecordingAction))
 
@@ -1085,8 +1085,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let on = VoiceRecorder.shared.isRecording
         voiceRecordItem.title = on ? VoiceRecordMenu.stop : VoiceRecordMenu.start
         voiceRecordItem.toolTip = on
-            ? "Stop, save the .m4a and show it in Finder (the red ⏹ in the menu bar does the same)."
-            : "Record the mic transcription hears (DJI when connected) into ~/Downloads; a red ⏹ appears in the menu bar to stop it."
+            ? "Stop, save the .m4a and show it in Finder (the red dot in the menu bar does the same)."
+            : "Record the mic transcription hears (DJI when connected) into ~/Downloads; a big red dot appears in the menu bar — click it to stop."
     }
 
     /// The `MicRoster` pattern of the mic transcription last reported, for

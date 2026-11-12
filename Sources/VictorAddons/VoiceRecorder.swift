@@ -15,7 +15,7 @@ import Foundation
 /// input `MacBook Pro Microphone`, DJI `Wireless Mic Rx` connected).
 /// A second reader of the same input is fine on macOS — whisper keeps hearing it.
 ///
-/// **The stop button is its own status item**, a red ⏹ and the elapsed time,
+/// **The stop button is its own status item**, a big red dot and the elapsed time,
 /// up only while recording — the shape `TartVMIndicator` uses for a running VM.
 /// One click stops, finalises the file and shows it in Finder. Not an overlay:
 /// the built-in screen is the projected one.
@@ -183,11 +183,11 @@ final class VoiceRecorder: NSObject, AVCaptureFileOutputRecordingDelegate {
     private func showStopItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-                .applying(.init(paletteColors: [.white, .systemRed]))
-            button.image = NSImage(systemSymbolName: "stop.circle.fill",
-                                   accessibilityDescription: "Stop recording")?
-                .withSymbolConfiguration(config)
+            // A big red dot, not a ⏹ (2026-11-12, Victor: *"un punct roșu mare
+            // … să fie mai vizibil"*): the SF ⏹ was a small grey-and-red glyph
+            // among a dozen others; a full-height red disc is the one thing in
+            // the bar the eye finds without looking for it.
+            button.image = Self.redDot()
             button.imagePosition = .imageLeading
             button.toolTip = "Recording \(deviceName) — click to stop and show the file"
             button.target = self
@@ -198,6 +198,22 @@ final class VoiceRecorder: NSObject, AVCaptureFileOutputRecordingDelegate {
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refreshClock() }
         RunLoop.main.add(t, forMode: .common)   // keeps counting while a menu is open
         tick = t
+    }
+
+    /// A red disc as tall as the menu bar's icons allow, with a thin darker rim
+    /// so it still reads against a red-ish wallpaper tint.
+    static func redDot(diameter: CGFloat = 16) -> NSImage {
+        let img = NSImage(size: NSSize(width: diameter, height: diameter), flipped: false) { rect in
+            let disc = NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
+            NSColor(srgbRed: 1, green: 0.13, blue: 0.13, alpha: 1).setFill()
+            disc.fill()
+            NSColor(srgbRed: 0.6, green: 0, blue: 0, alpha: 1).setStroke()
+            disc.lineWidth = 1
+            disc.stroke()
+            return true
+        }
+        img.isTemplate = false
+        return img
     }
 
     private func refreshClock() {
