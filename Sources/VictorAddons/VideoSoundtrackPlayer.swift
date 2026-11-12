@@ -26,6 +26,13 @@ import Foundation
 /// 3. **It fades, never cuts.** Same reasoning as `SoundManager.interruptFade`:
 ///    in a quiet room an abrupt `pause()` is a hard edge everybody hears, and
 ///    the silence lands harder than the sound did.
+///
+/// 💬 **Its `.srt` lines, karaoke-style, when ✓ Subtitles is on** (Victor,
+/// 2026-11-12). There is no window here to burn them into, so the cues of the
+/// play window go to Victor Effects (`/caption/video/<id>?cues=…`), whose
+/// caption overlay sings them at the bottom of the glass like a soundboard
+/// press. Fire-and-forget: the effects app down means no subtitle, never a
+/// later or quieter soundtrack.
 final class VideoSoundtrackPlayer {
     static let shared = VideoSoundtrackPlayer()
 
@@ -57,6 +64,9 @@ final class VideoSoundtrackPlayer {
     /// When the cap will have silenced it. The tablet drains the ring on the
     /// tile over this, and `GET /video/state` reports what is left of it.
     private(set) var deadline: Date?
+    /// The snippet whose words were sent to Victor Effects, so a stop from
+    /// outside can take them down with the sound.
+    private var captionedId: String?
 
     private init() {}
 
@@ -88,8 +98,9 @@ final class VideoSoundtrackPlayer {
             return nil
         }
         // Replace, don't layer: a second snippet's soundtrack over the first is
-        // noise, not a callback.
-        stop(fade: false)
+        // noise, not a callback. Its words are replaced by the new track (or
+        // end themselves), and a stop racing the new track could take that down.
+        end(fade: false)
 
         // ＋ The same louder audio the clip plays with (`VideoBoostAudio`).
         let item = VideoBoostAudio.playerItem(id: id, fileURL: fileURL)
@@ -101,8 +112,17 @@ final class VideoSoundtrackPlayer {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
         ) { [weak self] _ in
-            self?.stop(fade: false)
+            self?.end(fade: false)
         }
+        // The words, sent the moment the audio starts so their clock is the
+        // room's. Built now, on the main thread; the seek lands elsewhere.
+        let wordsPath = VideoPlayer.subtitlesOn
+            ? VideoPlayer.sidecarSubtitle(for: fileURL).flatMap {
+                Self.captionPath(id: id, cues: SRTSubtitles.parse(file: $0), startSeconds: Double(max(0, startSeconds)))
+            }
+            : nil
+        captionedId = wordsPath == nil ? nil : id
+
         // Exact seek (zero tolerance) for the same reason the tile thumbnail is
         // cut exactly: the manifest's start second IS the joke, and a keyframe
         // snap can land a scene away from it. Play only once the seek lands, so
@@ -111,7 +131,9 @@ final class VideoSoundtrackPlayer {
             to: CMTime(seconds: Double(max(0, startSeconds)), preferredTimescale: 600),
             toleranceBefore: .zero, toleranceAfter: .zero
         ) { [weak p] _ in
-            p?.play()
+            guard let p else { return }   // replaced before the seek landed
+            p.play()
+            if let wordsPath { EffectsProxy.fire(wordsPath) }
         }
 
         player = p
@@ -132,7 +154,20 @@ final class VideoSoundtrackPlayer {
     /// Silence it now. `fade` is false only when there is nothing left to soften
     /// — the clip ended on its own, or we are being replaced by a play that is
     /// about to start half a millisecond later.
+    ///
+    /// A stop from outside (a second press, stop-all, a real clip starting)
+    /// takes its words down too; an end of its own (the cap, the clip running
+    /// out) leaves the last line its second to be read — every line ends itself.
     func stop(fade: Bool = true) {
+        if let id = captionedId {
+            EffectsProxy.fire("/caption/video/\(Self.pathSafe(id))/stop")
+        }
+        end(fade: fade)
+    }
+
+    /// Silence it, the words left to end themselves.
+    private func end(fade: Bool) {
+        captionedId = nil
         fadeWork?.cancel(); fadeWork = nil
         stopWork?.cancel(); stopWork = nil
         if let endObserver {
@@ -158,12 +193,46 @@ final class VideoSoundtrackPlayer {
             guard let self, let p = self.player else { return }
             self.fadeOutAndPause(p)
         }
-        let end = DispatchWorkItem { [weak self] in self?.stop(fade: false) }
+        let atCap = DispatchWorkItem { [weak self] in self?.end(fade: false) }
         fadeWork = fade
-        stopWork = end
+        stopWork = atCap
         deadline = Date().addingTimeInterval(Self.maxSeconds)
         DispatchQueue.main.asyncAfter(deadline: .now() + fadeAt, execute: fade)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxSeconds, execute: end)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxSeconds, execute: atCap)
+    }
+
+    // MARK: - 💬 Subtitles
+
+    /// The cues heard in the play window, `startSeconds` to the cap, on the
+    /// clock of the soundtrack (0 = its first sound): a line already under way
+    /// at the start is cut to what is left of it; one starting past the cap,
+    /// or so close to it that its fill would race the fade, is not sent.
+    static func window(_ cues: [SRTSubtitles.Cue], startSeconds: Double,
+                       maxSeconds: TimeInterval = maxSeconds) -> [(at: Double, end: Double, text: String)] {
+        cues.compactMap { cue in
+            let at = cue.start - startSeconds, end = cue.end - startSeconds
+            guard end > 0.2, at < maxSeconds - fadeSeconds else { return nil }
+            return (at: max(0, at), end: min(end, maxSeconds), text: cue.text)
+        }
+    }
+
+    /// `/caption/video/<id>?cues=<json>` for Victor Effects, or nil when the
+    /// window has no words.
+    static func captionPath(id: String, cues: [SRTSubtitles.Cue], startSeconds: Double) -> String? {
+        let heard = window(cues, startSeconds: startSeconds)
+        guard !heard.isEmpty else { return nil }
+        let rows = heard.map { ["at": ($0.at * 1000).rounded() / 1000, "end": ($0.end * 1000).rounded() / 1000, "text": $0.text] as [String: Any] }
+        guard let data = try? JSONSerialization.data(withJSONObject: rows),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=?#")
+        guard let encoded = json.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return "/caption/video/\(pathSafe(id))?cues=\(encoded)"
+    }
+
+    /// A YouTube id is already URL-safe; this only guards a hand-made one.
+    static func pathSafe(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? id
     }
 
     /// Ramp `player`'s volume to zero and pause it. AVPlayer has no `setVolume(_:fadeDuration:)`
