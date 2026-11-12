@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 12, 14:12"
+    static let BUILD_TIME = "Nov 12, 13:12"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -1437,16 +1437,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// The empty `do script ""` opens the window and runs NOTHING: ~/.zshrc
     /// already cds a shell that started in $HOME to ~/workspace, so an explicit
     /// `cd` would only print a redundant command line into a fresh window.
-    ///
-    /// It opens in **ClaudeKeys-Big** — ClaudeKeys with the font doubled (36 pt):
-    /// a bare shell is for reading/showing, the agent windows stay at 18 pt. A
-    /// profile of its own, because `font size` on a tab writes through to the
-    /// tab's settings set and would grow every ClaudeKeys window. If `claude` is
-    /// started in it, close-sentinel.sh swaps the window to ClaudeKeys-Ask/Quiet,
-    /// i.e. back to 18 pt. The profile is `~/bin/ClaudeKeys-Big.terminal`
-    /// (imported with `open`); if it is missing the window opens as before.
     @objc func openPlainTerminalWorkspace() {
-        openWorkspaceTerminal(command: nil, profile: "ClaudeKeys-Big")
+        openWorkspaceTerminal(command: nil)
     }
 
     /// The screen a point is on — for the cursor, that is the screen Victor is
@@ -1500,7 +1492,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     /// **interactive** login shell, so ~/.zshrc loads — which is what cds a window
     /// started in $HOME to ~/workspace (no explicit `cd` to print) and what makes
     /// aliases exist again.
-    private func openWorkspaceTerminal(command: String?, profile: String? = nil) {
+    private func openWorkspaceTerminal(command: String?) {
         // `do script` / `open` already spawn a NEW window (not a tab), but
         // without an explicit `set bounds` Terminal reopens it on whichever
         // display it last had a window on. Both the screen AND the quarter come
@@ -1519,15 +1511,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // window-count polling loop, which is what the script-file version needed
         // because `open` is asynchronous and would otherwise resize the *previous*
         // window. An empty command (⌘⌃T) opens the window and runs nothing.
-        // The profile goes on BEFORE `set bounds`: a new font re-flows the window,
-        // and set after, it would undo the quarter just set.
-        let profileLine = profile.map {
-            "try\n        set current settings of newTab to settings set \"\(Self.escapeForAppleScript($0))\"\n    end try"
-        } ?? ""
         let script = """
         tell application "Terminal"
-            set newTab to do script "\(Self.escapeForAppleScript(command ?? ""))"
-            \(profileLine)
+            do script "\(Self.escapeForAppleScript(command ?? ""))"
             activate
             set bounds of front window to {\(l), \(t), \(r), \(b)}
         end tell
