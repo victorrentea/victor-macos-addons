@@ -478,12 +478,17 @@ final class DisplayArrangementManager {
     }
 
     private func verifyAndRetry(scene: Scene, displays: DisplaySet, banner: String) {
-        // Hardware moved on: a fresh evaluation is already queued, don't fight it.
+        // Hardware moved on while we were applying. Its reconfiguration callback
+        // was most likely swallowed by the `isApplying` guard, so no evaluation
+        // is queued — evaluate now. 2026-11-12: the room TV flapped off and back
+        // on within the 1.6 s apply window; the layout stayed "Retina main" with
+        // the TV plugged in until Victor pressed 🖥️ Arrange Monitors 2 min later.
         let live = resolveDisplays()
         guard live.retina == displays.retina,
               live.asus == displays.asus,
               live.projector == displays.projector else {
-            overlayInfo("Arrangement verification skipped — displays changed since applying")
+            overlayInfo("Displays changed while applying — re-evaluating")
+            evaluateAndApply(force: false)
             return
         }
 
