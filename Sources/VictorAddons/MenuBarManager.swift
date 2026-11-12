@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 12, 18:14"
+    static let BUILD_TIME = "Nov 12, 18:16"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -37,6 +37,9 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var darkModeItem: NSMenuItem!
     private(set) var emojiOverlayItem: NSMenuItem!
     private(set) var scrollReversalItem: NSMenuItem!
+    private(set) var brainBatteryItem: NSMenuItem!
+    /// 🧠 Show Brain Battery was ticked/unticked; the new state.
+    var onToggleBrainBattery: ((Bool) -> Void)?
     private(set) var pptPresenterItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var retinaCapItem: NSMenuItem!
@@ -567,6 +570,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         scrollReversalItem.isEnabled = true
         scrollReversalItem.state = ScrollReversalSettings.isEnabled ? .on : .off
 
+        // 🧠 Show Brain Battery (`BrainBatteryIndicator`) — the room's attention
+        // as its own menu bar battery. Default on, like the wheel above: a tick
+        // is the only way to make an item that is always there go away.
+        brainBatteryItem = NSMenuItem(title: "🧠 Show Brain Battery", action: #selector(toggleBrainBatteryAction), keyEquivalent: "")
+        brainBatteryItem.target = self
+        brainBatteryItem.isEnabled = true
+        brainBatteryItem.state = BrainBatterySettings.isEnabled ? .on : .off
+
         // 🖥️ PowerPoint Presenter View → left screen (`PowerPointPresenterPlacement`).
         // A row for the same reason as Auto Share Faceover: it acts on its own,
         // whenever a slide show starts, so it needs a visible way to be told to stop.
@@ -673,7 +684,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let extraGroups: [[NSMenuItem]] = [
             [historyItem, reminderMailItem, screenshotItem, appendNotesItem, appendPromptItem],
             [emojiOverlayItem, commandOverlayItem],
-            [darkModeItem, scrollReversalItem],
+            [darkModeItem, scrollReversalItem, brainBatteryItem],
             [windowHalfItem, windowScreenItem, windowFillItem],
         ]
         for (i, group) in extraGroups.enumerated() {
@@ -1224,6 +1235,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let enabled = !ScrollReversalSettings.isEnabled
         ScrollReversalSettings.isEnabled = enabled
         scrollReversalItem.state = enabled ? .on : .off
+    }
+
+    /// 🧠 Show Brain Battery: the setting, then the item appears or goes.
+    @objc private func toggleBrainBatteryAction() {
+        let enabled = !BrainBatterySettings.isEnabled
+        BrainBatterySettings.isEnabled = enabled
+        brainBatteryItem.state = enabled ? .on : .off
+        onToggleBrainBattery?(enabled)
     }
 
     /// 🖥️ PowerPoint Presenter View. Notifies nobody: `PowerPointPresenterPlacement`

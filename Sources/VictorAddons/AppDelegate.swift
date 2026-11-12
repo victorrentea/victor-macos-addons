@@ -88,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var fromWalkieWatchdog: FromWalkieWatchdog?
     private var walkieDictSync: WalkieDictSync?
     private var tartVMIndicator: TartVMIndicator?
+    private var brainBattery: BrainBatteryIndicator?
     /// Drives Whisper purely off the power source: on AC → transcribe, on
     /// battery → pause. No schedule, no manual start/stop.
     private var transcriptionController: TranscriptionController?
@@ -1767,6 +1768,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         tartVMIndicator.start()
         self.tartVMIndicator = tartVMIndicator
 
+        // 🧠 The room's attention, full at the end of each ☕ break, empty 75 min later.
+        let brainBattery = BrainBatteryIndicator(breakEndedAt: { [weak self] in self?.menuBarManager.breakEndedAt })
+        brainBattery.setVisible(BrainBatterySettings.isEnabled)
+        menuBarManager.onToggleBrainBattery = { [weak brainBattery] on in brainBattery?.setVisible(on) }
+        self.brainBattery = brainBattery
+
         let portKiller = PortKiller()
         self.portKiller = portKiller
         menuBarManager.onKillPort = { port in
@@ -1900,6 +1907,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.menuBarManager.breakEndedAt = Date()
+                self.brainBattery?.refresh()
                 self.scheduleBreakReminder()
                 self.promptGroupPhotoAtBreakEndIfDue()
             }
