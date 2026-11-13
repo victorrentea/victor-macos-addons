@@ -133,6 +133,8 @@ case testTerminalFont
         case testZoomShare
         /// 🎞️ `RetinaRefreshCap`: pretend a meeting (`meeting=`), move the tick (`on=`).
         case testRetinaCap([String: String])
+        /// 🔻 `RetinaShareResolution`: pretend a share (`sharing=`), move the tick (`on=`).
+        case testRetinaShareRes([String: String])
         /// JSON snapshot of Zoom's join-preview dialog + a forced re-press of it.
         case testZoomJoin
         /// 🎥 Layout Zoom: start a run (unless `run=0`) and return the last report.
@@ -372,6 +374,8 @@ case testTerminalFont
     var onTestZoomShare: (() -> String)?
     /// 🎞️ `RetinaRefreshCap` — the query, as given.
     var onTestRetinaCap: (([String: String]) -> String)?
+    /// 🔻 `RetinaShareResolution` — the query, as given.
+    var onTestRetinaShareRes: (([String: String]) -> String)?
     var onTestZoomJoin: (() -> String)?
     /// 🎥 Layout Zoom — starts a run in the background when the flag is true,
     /// and answers the *previous* run's report right away (the run itself waits
@@ -746,6 +750,10 @@ case testTerminalFont
                 contentType = "application/json"
                 body = self.onTestRetinaCap?(query) ?? "{\"error\":\"unavailable\"}"
                 if self.onTestRetinaCap == nil { statusCode = 503 }
+            case .testRetinaShareRes(let query):
+                contentType = "application/json"
+                body = self.onTestRetinaShareRes?(query) ?? "{\"error\":\"unavailable\"}"
+                if self.onTestRetinaShareRes == nil { statusCode = 503 }
             case .testZoomJoin:
                 contentType = "application/json"
                 body = self.onTestZoomJoin?() ?? "{\"error\":\"unavailable\"}"
@@ -1163,6 +1171,9 @@ case testTerminalFont
         case "/test/retina-cap":
             return .testRetinaCap(Dictionary(queryItems.compactMap { i in i.value.map { (i.name, $0) } },
                                              uniquingKeysWith: { _, last in last }))
+        case "/test/retina-share-res":
+            return .testRetinaShareRes(Dictionary(queryItems.compactMap { i in i.value.map { (i.name, $0) } },
+                                                  uniquingKeysWith: { _, last in last }))
         case "/test/virtual-desktop":
             return .mirrorProxied(path)
         case "/mirror/exclusions":

@@ -167,6 +167,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var zoomSharePrep: ZoomSharePrep?
     /// 🎞️ The Retina at 60 Hz while Zoom or Teams runs.
     private let retinaCap = RetinaRefreshCap()
+    /// 🔻 The Retina at 1× while Zoom or Teams shares.
+    private let retinaShareRes = RetinaShareResolution()
     /// 🔊 The old volume HUD, bottom centre, instead of Tahoe's corner pill.
     private let volumeHUD = VolumeHUD()
     /// 🎥 Layout Zoom/Teams runs here: it waits on the app opening panels, and a second
@@ -1487,6 +1489,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if let m = query["meeting"] { self.retinaCap.meeting = m == "1" }
             return self.retinaCap.snapshotJSON()
         }
+        // /test/retina-share-res?sharing=1|0&on=1|0 — 🔻 pretend a share started or
+        // ended (until the next real edge); `on` is the menu tick.
+        tabletServer?.onTestRetinaShareRes = { [weak self] query in
+            guard let self else { return "{\"error\":\"unavailable\"}" }
+            if let on = query["on"] {
+                RetinaShareResolutionSettings.isEnabled = on == "1"
+                self.menuBarManager.retinaShareResItem?.title = MenuBarManager.ticked(MenuBarManager.retinaShareResTitle, on == "1")
+                self.retinaShareRes.apply()
+            }
+            if let s = query["sharing"] { self.retinaShareRes.sharing = s == "1" }
+            return self.retinaShareRes.snapshotJSON()
+        }
         tabletServer?.onTestPresentation = { [weak self] in
             self?.presentationSnapshotJSON() ?? "{\"error\":\"unavailable\"}"
         }
@@ -1890,7 +1904,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // 📡🎙️ While Victor screen-shares in Zoom or Teams, measure his voice on
         // the mic the meeting uses; the effects app holds every effect under it.
-        shareWatch.onChange = { sharing in VoiceMeter.shared.setSharing(sharing) }
+        // 🔻 …and the Retina drops to 1× for the share's duration (a mode left over
+        // from a crash mid-share is given back by the first apply()).
+        menuBarManager.onToggleRetinaShareRes = { [weak self] in self?.retinaShareRes.apply() }
+        retinaShareRes.apply()
+        shareWatch.onChange = { [weak self] sharing in
+            VoiceMeter.shared.setSharing(sharing)
+            self?.retinaShareRes.sharing = sharing
+        }
         VoiceRoutes.share = shareWatch
         shareWatch.start()
 
@@ -3012,6 +3033,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         VoiceRecorder.shared.stopAndWait()
         liveCaptions.shutdown()
         retinaCap.restore()
+        retinaShareRes.restore()
         // Without this app nobody takes ⌥+scroll: give it back to the magnifier.
         ZoomEngine.system.applyToScrollGesture()
     }

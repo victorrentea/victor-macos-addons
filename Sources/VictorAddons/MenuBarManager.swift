@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 12, 18:20"
+    static let BUILD_TIME = "Nov 13, 02:19"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -43,6 +43,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     private(set) var pptPresenterItem: NSMenuItem!
     private(set) var zoomSharePrepItem: NSMenuItem!
     private(set) var retinaCapItem: NSMenuItem!
+    private(set) var retinaShareResItem: NSMenuItem!
     private(set) var teamsShareSoundItem: NSMenuItem!
     /// One row per mode, kept so the tick can move without rebuilding the menu.
     /// "Sleep under 20%" — the battery floor's own checkbox, under the modes.
@@ -138,6 +139,8 @@ class MenuBarManager: NSObject, NSMenuDelegate {
     var onToggleLiveCaptions: (() -> Void)?
     /// 🎞️ Retina 60 Hz ticked/unticked: cap or give the refresh back now.
     var onToggleRetinaCap: (() -> Void)?
+    /// 🔻 Retina 1× while sharing ticked/unticked: drop or give the resolution back now.
+    var onToggleRetinaShareRes: (() -> Void)?
 
     /// Once a second while the menu is open — for rows whose title is a clock.
     var onMenuTick: (() -> Void)?
@@ -611,6 +614,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         retinaCapItem.isEnabled = true
         retinaCapItem.toolTip = "While Zoom or Teams runs, the Retina refreshes at 60 Hz at most (120 Hz ProMotion otherwise). The share and the projector never get more than 60. Given back when the last of them quits."
 
+        // 🔻 Retina at 1× (same points, 4.4× fewer pixels) while Zoom/Teams shares
+        // (`RetinaShareResolution`), ticked by default (2026-11-13).
+        retinaShareResItem = NSMenuItem(title: Self.ticked(Self.retinaShareResTitle, RetinaShareResolutionSettings.isEnabled), action: #selector(toggleRetinaShareResAction), keyEquivalent: "")
+        retinaShareResItem.image = Self.emojiIcon("🔻")
+        retinaShareResItem.target = self
+        retinaShareResItem.isEnabled = true
+        retinaShareResItem.toolTip = "While Zoom or Teams shares, the Retina runs at 1× (1728×1118 px instead of 3456×2234) — same layout, nothing moves, but WindowServer captures 4.4× fewer pixels per frame, so the cursor stops lagging. The panel looks softer meanwhile; the Retina mode comes back when the share ends."
+
         // 🔊 Teams' "Include sound" ticked when its Share flyout opens (`TeamsShareSound`),
         // ticked by default (2026-10-27).
         teamsShareSoundItem = NSMenuItem(title: Self.ticked(Self.teamsShareSoundTitle, TeamsShareSoundSettings.isEnabled), action: #selector(toggleTeamsShareSoundAction), keyEquivalent: "")
@@ -748,6 +759,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         menu.addItem(pptPresenterItem)
         menu.addItem(zoomSharePrepItem)
         menu.addItem(retinaCapItem)
+        menu.addItem(retinaShareResItem)
         menu.addItem(teamsShareSoundItem)
 
         // 📕 Catalog has no row: ⌘⌃K opens it from the event tap and the ⌘⌃
@@ -823,6 +835,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
 
     static let faceoverTitle = "Auto Share Faceover"
     static let retinaCapTitle = "Retina 60 Hz in Zoom/Teams"
+    static let retinaShareResTitle = "Retina 1× while sharing"
     static let teamsShareSoundTitle = "Teams Share with Sound"
     static let pptPresenterTitle = "PowerPoint Presenter View → left screen"
     static let homeAwakeTitle = "🏠 Home Wi-Fi keeps the screen on"
@@ -1268,6 +1281,13 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         RetinaRefreshCapSettings.isEnabled.toggle()
         retinaCapItem.title = Self.ticked(Self.retinaCapTitle, RetinaRefreshCapSettings.isEnabled)
         onToggleRetinaCap?()
+    }
+
+    /// 🔻 Acts on the tick, like 🎞️: a dropped Retina is given back now.
+    @objc private func toggleRetinaShareResAction() {
+        RetinaShareResolutionSettings.isEnabled.toggle()
+        retinaShareResItem.title = Self.ticked(Self.retinaShareResTitle, RetinaShareResolutionSettings.isEnabled)
+        onToggleRetinaShareRes?()
     }
 
     @objc private func toggleTeamsShareSoundAction() {
