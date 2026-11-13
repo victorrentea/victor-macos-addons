@@ -51,13 +51,10 @@ final class ChromeBridge {
 
     private func startListener() {
         guard listener == nil else { return }
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-        let ws = NWProtocolWebSocket.Options()
-        ws.autoReplyPing = true
-        params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
+        // Loopback only; of browsers, only an extension may connect.
+        let params = HttpAccessPolicy.loopbackWebSocketParameters(port: Self.port, extensionsAllowed: true)
 
-        guard let l = try? NWListener(using: params, on: NWEndpoint.Port(rawValue: Self.port)!) else {
+        guard let l = try? NWListener(using: params) else {
             overlayError("ChromeBridge: failed to bind port \(Self.port)")
             return
         }

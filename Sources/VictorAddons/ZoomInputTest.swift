@@ -70,7 +70,9 @@ enum ZoomInputTest {
             return "{\"start\":[\(start.x),\(start.y)],\"end\":[\(end.x),\(end.y)],\"posted\":\(Double(n) * dx)}"
         case "shot":
             let part = q["display"] ?? "DELL"
-            let path = q["path"] ?? "/tmp/zoom-shot.png"
+            guard let path = HttpAccessPolicy.scratchPath(q["path"] ?? "/tmp/zoom-shot.png") else {
+                return "{\"error\":\"path must be under /tmp\"}"
+            }
             guard #available(macOS 14.0, *) else { return "{\"error\":\"macOS 14+\"}" }
             Task { await shot(displayNamed: part, to: path) }
             return "{\"shooting\":\"\(path)\"}"

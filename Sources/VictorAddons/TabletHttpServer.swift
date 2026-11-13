@@ -533,8 +533,14 @@ case testTerminalFont
             UserDefaults.standard.set(true, forKey: HttpAccessPolicy.armedKey)
             overlayInfo("🔐 the tablet showed its token: from now on the network needs it")
         }
+        let local = HttpAccessPolicy.isLocal(conn.endpoint)
+        if local && HttpAccessPolicy.looksLikeAWebPage(request: raw, port: Self.port) {
+            overlayInfo("🚫 refused a browser page on loopback: \(path.prefix { $0 != "?" }.prefix(60))")
+            return Self.httpResponse(statusCode: 403, contentType: "text/plain; charset=utf-8",
+                                     body: Data("forbidden".utf8))
+        }
         let status: Int
-        switch HttpAccessPolicy.decide(path: path, local: HttpAccessPolicy.isLocal(conn.endpoint),
+        switch HttpAccessPolicy.decide(path: path, local: local,
                                        tokenValid: tokenValid, armed: tokenArmed) {
         case .serve: return nil
         case .routeRefused: status = 403
@@ -1246,12 +1252,16 @@ case testTerminalFont
             }
             return .handsOffAttach(holder: holder, child: child)
         case "/test/hands-off/takeover":
-            return .testHandsOffTakeover(marker: queryItems.first(where: { $0.name == "marker" })?.value,
+            let asked = queryItems.first(where: { $0.name == "marker" })?.value
+            let marker = HttpAccessPolicy.scratchPath(asked)
+            if asked != nil && marker == nil { return .unknown }
+            return .testHandsOffTakeover(marker: marker,
                                          holder: queryItems.first(where: { $0.name == "holder" })?.value.flatMap { Int32($0) })
         case "/test/hands-off/render":
             let appearance = queryItems.first(where: { $0.name == "appearance" })?.value ?? "light"
-            let out = queryItems.first(where: { $0.name == "out" })?.value
+            let asked = queryItems.first(where: { $0.name == "out" })?.value
                 ?? "/tmp/hands-off-takeover-\(appearance).png"
+            guard let out = HttpAccessPolicy.scratchPath(asked) else { return .unknown }
             return .testHandsOffRender(dark: appearance == "dark", out: out)
         case "/test/hands-off/hover":
             return .testHandsOffHover(corner: queryItems.first(where: { $0.name == "corner" })?.value,
@@ -1259,9 +1269,12 @@ case testTerminalFont
                                       leave: queryItems.first(where: { $0.name == "leave" })?.value == "1")
         case "/test/hands-off/click":
             guard let corner = queryItems.first(where: { $0.name == "corner" })?.value else { return .unknown }
+            let askedMarker = queryItems.first(where: { $0.name == "marker" })?.value
+            let clickMarker = HttpAccessPolicy.scratchPath(askedMarker)
+            if askedMarker != nil && clickMarker == nil { return .unknown }
             return .testHandsOffClick(corner: corner,
                                       screen: queryItems.first(where: { $0.name == "screen" })?.value.flatMap { Int($0) } ?? 0,
-                                      marker: queryItems.first(where: { $0.name == "marker" })?.value,
+                                      marker: clickMarker,
                                       holder: queryItems.first(where: { $0.name == "holder" })?.value.flatMap { Int32($0) })
         case "/hands-off/end":
             return .handsOffEnd
@@ -1283,7 +1296,7 @@ case testTerminalFont
             // hidden until a session is really running.
             return .feedbackForm(queryItems.first(where: { $0.name == "session" })?.value)
         case "/open":
-            if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
+            if let url = HttpAccessPolicy.webURL(queryItems.first(where: { $0.name == "url" })?.value) {
                 return .openUrl(url)
             }
             return .unknown
@@ -1292,7 +1305,7 @@ case testTerminalFont
         case "/chrome/extension/reload":
             return .chromeExtensionReload
         case "/test/open-mouse":
-            if let url = queryItems.first(where: { $0.name == "url" })?.value, !url.isEmpty {
+            if let url = HttpAccessPolicy.webURL(queryItems.first(where: { $0.name == "url" })?.value) {
                 return .testOpenOnMouseScreen(url)
             }
             return .unknown

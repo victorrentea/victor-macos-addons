@@ -112,6 +112,9 @@ enum OfficialChrome {
     /// the running browser and exits within a few hundred milliseconds, and
     /// when there is no running browser it *becomes* one.
     static func open(_ url: String, newWindow: Bool = false) {
+        // The URL is an argv of the browser: one that starts with a dash would be
+        // read as a switch (`--remote-debugging-port=…`, `--gpu-launcher=…`).
+        guard !url.hasPrefix("-") else { return }
         var args = ["--profile-directory=\(profileDirectory)"]
         if newWindow { args.append("--new-window") }
         args.append(url)

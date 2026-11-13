@@ -42,17 +42,12 @@ class LocalWebSocketServer {
         stopped = false
         guard listener == nil else { return }   // already listening or a retry pending
 
-        let params = NWParameters.tcp
-        // SO_REUSEADDR: rebind across a lingering TIME_WAIT socket. Without this a
-        // quick app restart — or restarting right after a port squatter was killed —
-        // fails with EADDRINUSE and leaves the daemon link dead until the *next*
-        // manual restart.
-        params.allowLocalEndpointReuse = true
-        let wsOptions = NWProtocolWebSocket.Options()
-        wsOptions.autoReplyPing = true
-        params.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)
+        // Loopback only, and no web page: the daemon runs on this Mac. On every
+        // interface (until 2026-11-13) anyone in the room could replace the
+        // projected join link or end the session.
+        let params = HttpAccessPolicy.loopbackWebSocketParameters(port: Self.port, extensionsAllowed: false)
 
-        guard let listener = try? NWListener(using: params, on: NWEndpoint.Port(rawValue: Self.port)!) else {
+        guard let listener = try? NWListener(using: params) else {
             overlayInfo("Failed to create WS listener — retrying")
             scheduleRetry()
             return
