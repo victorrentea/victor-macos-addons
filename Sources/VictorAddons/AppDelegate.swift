@@ -1489,8 +1489,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if let m = query["meeting"] { self.retinaCap.meeting = m == "1" }
             return self.retinaCap.snapshotJSON()
         }
-        // /test/retina-share-res?sharing=1|0&on=1|0 — 🔻 pretend a share started or
-        // ended (until the next real edge); `on` is the menu tick.
+        // /test/retina-share-res?sharing=1|0|auto&on=1|0 — 🔻 pretend a share started or
+        // ended (until the next real edge, or `auto`); `on` is the menu tick.
         tabletServer?.onTestRetinaShareRes = { [weak self] query in
             guard let self else { return "{\"error\":\"unavailable\"}" }
             if let on = query["on"] {
@@ -1498,7 +1498,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 self.menuBarManager.retinaShareResItem?.title = MenuBarManager.ticked(MenuBarManager.retinaShareResTitle, on == "1")
                 self.retinaShareRes.apply()
             }
-            if let s = query["sharing"] { self.retinaShareRes.sharing = s == "1" }
+            // `auto` hands back to the real share watch: a pretend otherwise lasts until the next real edge.
+            if let s = query["sharing"] { self.retinaShareRes.sharing = s == "auto" ? self.shareWatch.isSharing : s == "1" }
             return self.retinaShareRes.snapshotJSON()
         }
         tabletServer?.onTestPresentation = { [weak self] in
