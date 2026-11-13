@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 13, 02:19"
+    static let BUILD_TIME = "Nov 13, 18:35"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -222,7 +222,14 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             button.image = image
         }
         statusItem.menu = menu
+        // The microphone is drawn in the menu bar's own ink (`makeMicIcon`), baked
+        // into a bitmap beside a colour badge — so a bar that turns light or dark
+        // (wallpaper, appearance) needs the picture drawn again.
+        appearanceObservation = button.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.refreshMenuIcon() }
+        }
     }
+    private var appearanceObservation: NSKeyValueObservation?
 
     // MARK: - Menu Building
 
@@ -1748,7 +1755,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         if isRecordingOnBattery {
             // 👂 whatever the process is doing this second: on battery the ear
             // is the state, and a starting-up gap is not an error worth a red stop.
-            button.image = makeEmojiIcon("👂", badge: badge) ?? makePngIcon("icon_leaf", badge: badge)
+            button.image = makeMicIcon("👂", badge: badge) ?? makeEmojiIcon("👂", badge: badge) ?? makePngIcon("icon_leaf", badge: badge)
         } else if !isTranscribing && isTranscriptionPausedByBattery {
             button.image = makePngIcon("icon_leaf", badge: badge)
         } else if !isTranscribing {
@@ -1756,7 +1763,7 @@ class MenuBarManager: NSObject, NSMenuDelegate {
             button.image = makePngIcon(asset, badge: badge)
         } else if isTranscriptionStale {
             button.image = makeEmojiIcon("🤐", badge: badge)
-        } else if !transcribeSource.isEmpty, let icon = makeEmojiIcon(transcribeSource, badge: badge) {
+        } else if !transcribeSource.isEmpty, let icon = makeMicIcon(transcribeSource, badge: badge) ?? makeEmojiIcon(transcribeSource, badge: badge) {
             button.image = icon
         } else {
             button.image = makeChatBubbleIcon(badge: badge)
@@ -1890,6 +1897,43 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         let origin = NSPoint(x: (size.width - strSize.width) / 2,
                              y: (size.height - strSize.height) / 2)
         str.draw(at: origin, withAttributes: attrs)
+        if let badge = badge, !badge.isEmpty {
+            drawBadge(badge, canvas: size)
+        }
+        composite.unlockFocus()
+        composite.isTemplate = false
+        return composite
+    }
+
+    /// **The microphone as a line drawing in the menu bar's ink** (2026-11-13,
+    /// Victor: *"the microphone symbol should be black and white sketched, just
+    /// like Walkie Talkie is … the red dot or the square red still is there, but
+    /// otherwise the icon is white, not full color"*). An SF Symbol per roster
+    /// microphone, drawn white on a dark bar and black on a light one; the badge
+    /// stays a colour emoji, which is why this cannot be a template image — the
+    /// ink is baked, and `appearanceObservation` re-bakes it when the bar flips.
+    /// The menu's rows keep the colour emoji (`MicRoster.glyph`, shared with
+    /// Walkie Talkie's menu). A glyph with no symbol here → nil, and the caller
+    /// falls back to the emoji. Reverses 2026-09-28 (the colour 💻 back).
+    static let micSymbols: [String: String] = [
+        "xlr": "mic", "rx": "music.mic", "stage": "building.columns",
+        "bose": "headphones", "mac": "laptopcomputer", "👂": "ear",
+    ]
+
+    private func makeMicIcon(_ glyph: String, badge: String? = nil) -> NSImage? {
+        guard let name = Self.micSymbols[MicRoster.byGlyph(glyph)?.id ?? glyph] else { return nil }
+        let dark = statusItem?.button?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) != .aqua
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [dark ? .white : .black]))
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        let size = NSSize(width: 18, height: 18)
+        let composite = NSImage(size: size)
+        composite.lockFocus()
+        let fit = min(1, 17 / max(symbol.size.width, symbol.size.height))
+        let drawn = NSSize(width: symbol.size.width * fit, height: symbol.size.height * fit)
+        symbol.draw(in: NSRect(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2,
+                               width: drawn.width, height: drawn.height))
         if let badge = badge, !badge.isEmpty {
             drawBadge(badge, canvas: size)
         }
