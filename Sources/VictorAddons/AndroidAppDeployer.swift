@@ -279,7 +279,9 @@ final class AndroidAppDeployer {
 
     static func readSourceState(repo: String) -> AndroidDeployPolicy.SourceState {
         let commit = git(repo, ["rev-parse", "--short", "HEAD"]) ?? ""
-        let dirty = !(git(repo, ["status", "--porcelain"]) ?? "").isEmpty
+        // Tracked files only: an untracked stray (ui-preview.png) must not read as "uncommitted
+        // code" now that the phone's automatic deploy skips dirty trees (re-review, 13 Nov 2026).
+        let dirty = !(git(repo, ["status", "--porcelain", "--untracked-files=no"]) ?? "").isEmpty
         let changedAt: Date
         if dirty {
             changedAt = newestSourceMtime(repo: repo) ?? Date()

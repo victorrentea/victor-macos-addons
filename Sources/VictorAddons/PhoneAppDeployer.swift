@@ -57,6 +57,11 @@ final class PhoneAppDeployer {
         return snapshot
     }
 
+    static func pinnedSerial() -> String? {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".victor-phone-serial")
+        return (try? String(contentsOf: url, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
     private func statusJSON() -> String {
         let j = AndroidAppDeployer.jsonString
         let repo = Self.repoDir()
@@ -90,7 +95,22 @@ final class PhoneAppDeployer {
             return
         }
         let serial = phone.serial
+        // Only the phone this Mac knows (`~/.victor-phone-serial`), not any S24 Ultra on the
+        // cable: the deploy hands it the clipboard key and the relay token (security review,
+        // 13 Nov 2026). No file = by model, as before.
+        if let pinned = Self.pinnedSerial(), pinned != serial {
+            lastOutcome = "not Victor's phone (\(serial))"
+            NSLog("[PhoneDeploy] \(serial) is not the pinned phone — not deploying")
+            return
+        }
         let source = AndroidAppDeployer.readSourceState(repo: repo)
+        // Automatically, only committed code: a half-written edit from any session used to go
+        // onto the phone, with its accessibility and SMS rights, at the next plug-in.
+        if !force, source.dirty {
+            lastOutcome = "uncommitted changes — not deployed automatically (\(source.stamp))"
+            NSLog("[PhoneDeploy] victor-phone-addons has uncommitted changes — skipping the automatic deploy")
+            return
+        }
         if !force {
             let onDevice = AndroidAppDeployer.readDeviceStamp(serial: serial, path: Self.deviceStampPath)
             guard AndroidDeployPolicy.shouldDeploy(source: source, deviceStamp: onDevice) else {
@@ -153,4 +173,8 @@ final class PhoneAppDeployer {
             .map { URL(fileURLWithPath: $0).standardized.path }
             .first { FileManager.default.fileExists(atPath: "\($0)/deploy.sh") }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
