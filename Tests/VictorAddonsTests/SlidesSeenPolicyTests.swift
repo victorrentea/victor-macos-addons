@@ -98,7 +98,7 @@ final class SlidesSeenPolicyTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("decks.noindex/abc.pptx").path))
     }
 
-    func testDeckCopiesLiveOneDaySinceLastShownAndDayLogsThirty() throws {
+    func testDeckCopiesLiveFiveDaysSinceLastShownAndDayLogsThirty() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("slides-seen-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: root) }
@@ -112,8 +112,8 @@ final class SlidesSeenPolicyTests: XCTestCase {
             SlidesSeenRecorder.markShown(u, at: now.addingTimeInterval(-hoursAgo * 3600))
             return u
         }
-        let shownToday = try file(decks, "today.pptx", hoursAgo: 20)
-        let shownTwoDaysAgo = try file(decks, "old.pptx", hoursAgo: 49)
+        let shownToday = try file(decks, "today.pptx", hoursAgo: 24 * 4 + 20)
+        let shownTwoDaysAgo = try file(decks, "old.pptx", hoursAgo: 24 * 5 + 1)
         // An untouched deck: the copy carries a months-old mtime until it is marked as shown.
         let oldDeckShownNow = try file(decks, "untouched.pptx", hoursAgo: 24 * 90)
         SlidesSeenRecorder.markShown(oldDeckShownNow, at: now)

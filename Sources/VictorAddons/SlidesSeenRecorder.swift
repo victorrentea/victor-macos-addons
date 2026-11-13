@@ -102,10 +102,10 @@ final class SlidesSeenRecorder {
     /// The day logs are tiny and are the record of what was shown: 30 days.
     static let retentionDays = 30
     /// A deck copy is ~16 MB and only serves the summary of the day it was shown
-    /// (350 copies, 5.2 GB after two weeks at 30 days): 1 day since it was **last shown**
-    /// (Victor, 2026-11-14). Counted from the copy's own mtime, which `snapshot` sets to now —
+    /// (350 copies, 5.2 GB after two weeks at 30 days): 5 days since it was **last shown**
+    /// (Victor, 2026-11-14 — a summary is sometimes written a few days late). Counted from the copy's own mtime, which `snapshot` sets to now —
     /// a copy inherits the deck's mtime, so an untouched deck would be pruned the day it was shown.
-    static let copyRetentionDays = 1
+    static let copyRetentionDays = 5
 
     private var policy = SlidesSeenPolicy()
     private let queue = DispatchQueue(label: "ro.victorrentea.slides-seen", qos: .utility)
