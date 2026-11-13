@@ -67,6 +67,24 @@ struct SlidesSeenPolicy {
     }
 }
 
+/// 🔎 Which deck to hand back to Spotlight: one seen for the first time, and one that
+/// just went from unsaved to saved. On 2026-11-13 Spotlight stopped picking up saves
+/// under `~/My Drive` for ~11 h (cause not found) and ⌘Space no longer found the decks
+/// saved that day; `mdimport <file>` brought each back in 2 s. Pure, so it is unit-tested.
+struct SpotlightReindexPolicy {
+    private var saved: [String: Bool] = [:]
+
+    mutating func consume(_ s: PowerPointSample) -> String? {
+        guard let path = s.path, !path.isEmpty else { return nil }
+        let before = saved.updateValue(s.saved, forKey: path)
+        switch before {
+        case nil: return s.saved ? path : nil
+        case false?: return s.saved ? path : nil
+        default: return nil
+        }
+    }
+}
+
 /// 📑 Slides seen: every slide shown ≥ 7 s goes into a day log, with a copy of the
 /// deck as it was on disk when shown, so a summary can later export exactly that
 /// slide (by `slide ID`, not position) as a PDF page with its links.
@@ -77,6 +95,10 @@ struct SlidesSeenPolicy {
 final class SlidesSeenRecorder {
     static let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Containers/com.microsoft.Powerpoint/Data/Documents/slides-seen")
+    /// `.noindex` keeps Spotlight out by name alone. Indexed, the ~350 copies crowded every
+    /// real deck out of the ⌘Space results (2026-11-13) — and a Search Privacy entry is a
+    /// setting an OS update can reset, a folder name is not.
+    static let decksDirName = "decks.noindex"
     static let retentionDays = 30
 
     private var policy = SlidesSeenPolicy()
@@ -85,13 +107,38 @@ final class SlidesSeenRecorder {
     private var lastSnapshot: [String: (Int, Date, String)] = [:]
     /// The snapshot taken when the current span qualified, written with it on close.
     private var pendingSnapshot: String?
+    private var reindex = SpotlightReindexPolicy()
 
     init() {
-        queue.async { Self.prune() }
+        queue.async {
+            Self.migrateDecksDir()
+            Self.prune()
+        }
+    }
+
+    /// The copies lived in `decks/` until 2026-11-13: move the folder once, whole.
+    static func migrateDecksDir(root: URL = SlidesSeenRecorder.root) {
+        let fm = FileManager.default
+        let old = root.appendingPathComponent("decks")
+        let new = root.appendingPathComponent(decksDirName)
+        guard fm.fileExists(atPath: old.path), !fm.fileExists(atPath: new.path) else { return }
+        do { try fm.moveItem(at: old, to: new) } catch {
+            overlayError("SlidesSeen: could not rename decks → \(decksDirName): \(error.localizedDescription)")
+        }
+    }
+
+    private static func spotlightImport(_ path: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
+        p.arguments = [path]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
     }
 
     func consume(_ sample: PowerPointSample) {
         queue.async { [self] in
+            if let path = reindex.consume(sample) { Self.spotlightImport(path) }
             for action in policy.consume(sample) {
                 switch action {
                 case .qualified(let span):
@@ -120,7 +167,7 @@ final class SlidesSeenRecorder {
         guard let sha = Self.sha256(path) else { return nil }
         let ext = URL(fileURLWithPath: path).pathExtension.isEmpty ? "pptx" : URL(fileURLWithPath: path).pathExtension
         let name = "\(sha.prefix(16)).\(ext)"
-        let decks = Self.root.appendingPathComponent("decks")
+        let decks = Self.root.appendingPathComponent(Self.decksDirName)
         let dest = decks.appendingPathComponent(name)
         do {
             try fm.createDirectory(at: decks, withIntermediateDirectories: true)
@@ -176,7 +223,7 @@ final class SlidesSeenRecorder {
     private static func prune() {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-Double(retentionDays) * 86400)
-        for sub in ["log", "decks", "work"] {
+        for sub in ["log", decksDirName, "work"] {
             let dir = root.appendingPathComponent(sub)
             for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
                 let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate

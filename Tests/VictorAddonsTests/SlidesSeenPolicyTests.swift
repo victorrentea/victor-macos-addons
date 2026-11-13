@@ -52,4 +52,49 @@ final class SlidesSeenPolicyTests: XCTestCase {
         let a = run([s(0, id: 256), s(7, id: 256), .gone(at: t0.addingTimeInterval(9))])
         XCTAssertEqual(a.count, 2)
     }
+
+    // MARK: - 🔎 Spotlight re-import
+
+    private func p(_ path: String?, saved: Bool) -> PowerPointSample {
+        PowerPointSample(at: t0, deck: "a.pptx", path: path, slide: 1, slideID: 256,
+                         presenting: false, frontmost: true, saved: saved)
+    }
+
+    func testADeckIsHandedToSpotlightWhenFirstSeenAndAfterEachSave() {
+        var r = SpotlightReindexPolicy()
+        XCTAssertEqual(r.consume(p("/d/a.pptx", saved: true)), "/d/a.pptx")   // first sight
+        XCTAssertNil(r.consume(p("/d/a.pptx", saved: true)))                  // nothing changed
+        XCTAssertNil(r.consume(p("/d/a.pptx", saved: false)))                 // being edited
+        XCTAssertNil(r.consume(p("/d/a.pptx", saved: false)))
+        XCTAssertEqual(r.consume(p("/d/a.pptx", saved: true)), "/d/a.pptx")   // just saved
+        XCTAssertNil(r.consume(p("/d/a.pptx", saved: true)))
+    }
+
+    func testADeckFirstSeenUnsavedWaitsForItsSave() {
+        var r = SpotlightReindexPolicy()
+        XCTAssertNil(r.consume(p("/d/b.pptx", saved: false)))
+        XCTAssertEqual(r.consume(p("/d/b.pptx", saved: true)), "/d/b.pptx")
+    }
+
+    func testDecksAreTrackedSeparatelyAndAPathlessDeckIsIgnored() {
+        var r = SpotlightReindexPolicy()
+        XCTAssertNil(r.consume(p(nil, saved: true)))
+        XCTAssertNil(r.consume(p("/d/a.pptx", saved: false)))
+        XCTAssertEqual(r.consume(p("/d/b.pptx", saved: true)), "/d/b.pptx")
+        XCTAssertEqual(r.consume(p("/d/a.pptx", saved: true)), "/d/a.pptx")
+    }
+
+    func testTheDeckCopiesMoveOnceIntoAFolderSpotlightSkips() throws {
+        XCTAssertTrue(SlidesSeenRecorder.decksDirName.hasSuffix(".noindex"))
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("slides-seen-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root.appendingPathComponent("decks"), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: root.appendingPathComponent("decks/abc.pptx"))
+        SlidesSeenRecorder.migrateDecksDir(root: root)
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("decks").path))
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("decks.noindex/abc.pptx").path))
+        SlidesSeenRecorder.migrateDecksDir(root: root)   // second run: nothing left to move
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("decks.noindex/abc.pptx").path))
+    }
 }

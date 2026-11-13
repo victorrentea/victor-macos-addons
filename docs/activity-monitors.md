@@ -70,7 +70,7 @@ as PDF pages **exported by PowerPoint itself, links clickable** (`slides_seen.py
   summary once embedded the wrong slide. The `<p:sldId id>` survives insert/reorder.
 - **At 7 s:** if the presentation has unsaved edits → `save` (Victor asked for it,
   knowing Google Drive sometimes refuses a save); then a content-addressed copy of the
-  deck (`decks/<sha256[:16]>.pptx`; unchanged size+mtime → no re-hash). **On close:** one
+  deck (`decks.noindex/<sha256[:16]>.pptx`; unchanged size+mtime → no re-hash). **On close:** one
   JSON line in `log/<day>.jsonl` — start, end, seconds, deck, path, slide, slide_id,
   snapshot, presenting.
 - **Where:** `~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/slides-seen/`,
@@ -78,6 +78,14 @@ as PDF pages **exported by PowerPoint itself, links clickable** (`slides_seen.py
   driven by AppleScript **without "Grant File Access"** (it asks per file anywhere else,
   Full Disk Access does not lift it; measured 2026-10-29). Writing there needs this app's
   "access data from other apps" (App Data) grant once. 30-day retention, pruned at launch.
+- **Spotlight (2026-11-13):** the copies folder is `decks.noindex` (was `decks`, renamed once
+  at launch by `migrateDecksDir`). Indexed, ~350 hash-named copies kept every real deck out
+  of the ⌘Space results, though `mdfind` still found them; a Search Privacy entry fixed it,
+  but that is a setting an OS update resets — the folder name is not. `.metadata_never_index`
+  does **not** drop entries already indexed. `training-summarizer/slides_seen.py` reads the
+  same folder. The recorder also runs `mdimport <deck>` when it first sees a deck and each
+  time it goes unsaved → saved (`SpotlightReindexPolicy`): that day Spotlight missed every
+  save under `~/My Drive` for ~11 h, cause not found, and the import brought each back in 2 s.
 - **Measured export (2026-10-29):** 5 slides by ID out of 182 → 7 s; a 117-slide deck → 8 s,
   277 distinct URLs in the PDF vs 275 in the deck. LibreOffice dropped some links.
 - **The export runs in the tart VM `wt-lab` since 2026-11-04**, never on this Mac: it used to
