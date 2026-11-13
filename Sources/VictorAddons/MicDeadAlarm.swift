@@ -33,7 +33,7 @@ final class MicDeadAlarm {
     private(set) var silentSince: Date?
     private var shownText: String?
 
-    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.pillScreens },
          sound: @escaping () -> Void = { NSSound(named: NSSound.Name("Basso"))?.play() }) {
         self.screensProvider = screensProvider
         self.sound = sound
@@ -167,7 +167,7 @@ final class DjiNoTxWarning {
     private var previous: DjiSourceGate.State?
     private(set) var isShown = false
 
-    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.pillScreens },
          sound: @escaping () -> Void = { NSSound(named: NSSound.Name("Funk"))?.play() }) {
         self.screensProvider = screensProvider
         self.sound = sound

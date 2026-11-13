@@ -16,6 +16,20 @@ extension NSScreen {
             return !VirtualDesktop.isVirtual(id.uint32Value)
         }
     }
+
+    /// Where the bottom-left pills (`BottomLeftBanner`) go: the built-in Retina
+    /// alone. They used to be drawn on every screen; Victor, 2026-11-13: *"only on
+    /// Retina from now on"*. With the lid closed there is no Retina, and a pill
+    /// nobody sees is worse than one on every screen, so then it is all of them.
+    static var pillScreens: [NSScreen] {
+        let all = physical
+        let builtIn = all.filter { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+            else { return false }
+            return CGDisplayIsBuiltin(id.uint32Value) != 0
+        }
+        return builtIn.isEmpty ? all : builtIn
+    }
 }
 
 /// Same filter for the CoreGraphics display lists.

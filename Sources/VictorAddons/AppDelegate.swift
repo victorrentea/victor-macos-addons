@@ -1265,7 +1265,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 // stack is about several pills, not one re-shown in place).
                 let screens: () -> [NSScreen] = q["screen"] == "right"
                     ? { NSScreen.physical.max(by: { $0.frame.maxX < $1.frame.maxX }).map { [$0] } ?? [] }
-                    : { NSScreen.physical }
+                    : { NSScreen.pillScreens }
                 let banner = q["fresh"] == "1" ? BottomLeftBanner(screensProvider: screens, hoverable: true)
                     : self.testButtonsBanner ?? BottomLeftBanner(screensProvider: screens, hoverable: true)
                 if q["fresh"] == "1" {
@@ -1680,16 +1680,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // Initialize join link banner
         joinLinkBanner = JoinLinkBanner(screen: AppDelegate.findRetinaScreen())
-        statusBanner = StatusBanner(screensProvider: { NSScreen.physical })
-        silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.physical })
+        statusBanner = StatusBanner(screensProvider: { NSScreen.pillScreens })
+        silentTranscriptionWarning = SilentTranscriptionWarning(screensProvider: { NSScreen.pillScreens })
         bellCard = BellCard(screensProvider: { NSScreen.physical })
         fxCard = FxCard(screensProvider: { NSScreen.physical })
-        promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.physical }, hoverable: true)
+        promptCaptureBanner = BottomLeftBanner(screensProvider: { NSScreen.pillScreens }, hoverable: true)
         SessionNotesAppender.promptBanner = promptCaptureBanner
-        summaryReminder = SummaryReminder(screensProvider: { NSScreen.physical })
+        summaryReminder = SummaryReminder(screensProvider: { NSScreen.pillScreens })
         summaryReminder?.start()
         feedbackFormReminder = FeedbackFormReminder(
-            screensProvider: { NSScreen.physical },
+            screensProvider: { NSScreen.pillScreens },
             isSessionActive: { [weak self] in self?.isSessionActive ?? false },
             isLastDayOfSet: { [weak self] in
                 FeedbackFormPolicy.mayOffer(lastDay: self?.sessionLastDay,

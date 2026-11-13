@@ -37,7 +37,7 @@ final class PhoneLowBatteryAlarm {
     private var banner: BottomLeftBanner?
     private var shownText: String?
 
-    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical }, defaults: UserDefaults = .standard) {
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.pillScreens }, defaults: UserDefaults = .standard) {
         self.screensProvider = screensProvider
         self.defaults = defaults
     }

@@ -3,7 +3,8 @@ import Cocoa
 /// Unified bottom-left "pill" used by every banner in the addon
 /// (status, silent-mic warning, transcription countdown, prompt-capture).
 ///
-/// Renders a floating NSPanel on every connected screen, flush to the
+/// Renders a floating NSPanel on each screen its `screensProvider` names — the
+/// built-in Retina alone since 2026-11-13 (`NSScreen.pillScreens`) — flush to the
 /// bottom-left corner. The background is an NSVisualEffectView (glass)
 /// with a configurable color tint on top — defaults to translucent gray;
 /// callers can pass any NSColor (e.g. red for an urgent countdown).

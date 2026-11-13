@@ -31,7 +31,7 @@ final class CheckInAlarm {
     /// projected retina); nil is every screen. Cleared once the queue drains.
     private var screensOverride: (() -> [NSScreen])?
 
-    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.pillScreens },
          sound: @escaping () -> Void = { NSSound(named: NSSound.Name("Glass"))?.play() },
          openURL: @escaping (String) -> Void = { OfficialChrome.open($0) },
          defaults: UserDefaults = .standard) {

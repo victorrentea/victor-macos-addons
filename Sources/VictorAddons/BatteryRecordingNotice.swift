@@ -40,7 +40,7 @@ final class BatteryRecordingNotice {
     /// The `Stop ❌` button: switch the battery recording off (until AC).
     var onStop: (() -> Void)?
 
-    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.physical },
+    init(screensProvider: @escaping () -> [NSScreen] = { NSScreen.pillScreens },
          now: @escaping () -> Date = Date.init) {
         self.screensProvider = screensProvider
         self.now = now
