@@ -168,6 +168,8 @@ class EventTapManager {
     /// ⌘⌃M — send the selection, or else the clipboard (picture and/or text),
     /// to Victor by mail, subject "🔔 …". Nothing to confirm: it is already gone.
     var onSendSelectionReminder: (() -> Void)?
+    /// ⌘⌃M **held**: the screen under the pointer + a box for the words.
+    var onReminderWithScreenshot: (() -> Void)?
     /// ⌘⌃P — take the selected text (or the clipboard) as an agent prompt and
     /// append it to the session notes, stamped 🤖, so it shows up in the room's
     /// Prompts tab.
@@ -517,6 +519,13 @@ private let VK_I: CGKeyCode = 0x22
     /// idempotent — whichever arrives first wins, one crop per press.
     private var screenshotKeyDownAt: CFAbsoluteTime?
     private var screenshotCropFired = false
+
+    /// ⌘⌃M press tracking — the same tap-vs-hold split as ⌃P, on the same
+    /// thread: a tap mails the selection/clipboard, a hold asks for the words
+    /// and attaches the screen. Decided on the release (or on the first
+    /// autorepeat), so a hold never mails the clipboard it did not mean.
+    private var reminderKeyDownAt: CFAbsoluteTime?
+    private var reminderHoldFired = false
 
     /// Walkie Talkie is recording a prompt: `~/.walkie-talkie/prompting` names a
     /// live pid. Its ⌃P is the shutter then (2026-10-20).
@@ -984,6 +993,19 @@ private let VK_I: CGKeyCode = 0x22
                     DispatchQueue.global().async { [weak self] in self?.onScreenshot?() }
                 }
             }
+            // ⌘⌃M, same split. The modifiers may already be up by now, so only
+            // the key and the pending press are checked.
+            if CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == VK_M,
+               let pressedAt = reminderKeyDownAt {
+                reminderKeyDownAt = nil
+                if reminderHoldFired {
+                    reminderHoldFired = false   // autorepeat already opened the box
+                } else if ScreenshotHoldPolicy.isHold(pressDuration: CFAbsoluteTimeGetCurrent() - pressedAt) {
+                    DispatchQueue.global().async { [weak self] in self?.onReminderWithScreenshot?() }
+                } else {
+                    DispatchQueue.global().async { [weak self] in self?.onSendSelectionReminder?() }
+                }
+            }
             return Unmanaged.passUnretained(event)
         }
 
@@ -1417,13 +1439,21 @@ private let VK_I: CGKeyCode = 0x22
         // and it took the letter from the old Gmail "TO DO" draft, which asked
         // for a browser window and a human before anything left the Mac.
         //
-        // **Autorepeat is excluded because this one SENDS.** Every other key on
-        // this board is idempotent-ish — a second Terminal, a second paste — but
-        // a held ⌘⌃M would mail the same clipboard once per repeat, and those
-        // arrive in a real inbox.
+        // **Nothing is sent on the keyDown, and never once per repeat** — this
+        // key SENDS, into a real inbox. The keyDown only starts the clock
+        // (2026-11-13): released as a tap it mails the selection/clipboard
+        // (in the keyUp branch above); **held**, the first autorepeat — or the
+        // release, where key repeat is off — opens the box for the words with
+        // the screen under the pointer attached. One of the two per press.
         if keyCode == VK_M && hasCmd && hasCtrl && !hasOpt {
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.global().async { [weak self] in self?.onSendSelectionReminder?() }
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+                if reminderKeyDownAt != nil, !reminderHoldFired {
+                    reminderHoldFired = true
+                    DispatchQueue.global().async { [weak self] in self?.onReminderWithScreenshot?() }
+                }
+            } else {
+                reminderKeyDownAt = CFAbsoluteTimeGetCurrent()
+                reminderHoldFired = false
             }
             return nil
         }

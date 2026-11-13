@@ -15,6 +15,10 @@ import AppKit
 /// dictation overlay that takes the key window for a moment would otherwise
 /// throw away a sentence half spoken. Only ⏎ and Esc end it.
 ///
+/// **Held ⌘⌃M (2026-11-13)** opens the same box on purpose, whatever the
+/// clipboard holds, with the screen under the pointer already captured (before
+/// the box existed, so the box is not in it) and mailed inline under the words.
+///
 /// Opens on the screen the pointer is on, never pinned to the Retina — that one
 /// is what the room's projector shows.
 @MainActor
@@ -38,13 +42,20 @@ final class ReminderDictationBox: NSObject, NSTextViewDelegate {
     private var scroll: NSScrollView?
     private var hint: NSTextField?
     private var screen: NSScreen?
-    private var onSend: ((String) -> Void)?
+    private var onSend: ((String, ReminderMail.Clipping.Image?) -> Void)?
+    /// The screen captured by a **held** ⌘⌃M, mailed with the words. With one
+    /// attached, ⏎ on an empty box sends the picture alone.
+    private var image: ReminderMail.Clipping.Image?
 
     var isShowing: Bool { panel != nil }
 
     /// Open the box (or bring it back to the front if it is already open — a
     /// second ⌘⌃M must not throw away what was dictated so far).
-    func show(prefill: String = "", onSend: @escaping (String) -> Void) {
+    ///
+    /// An open box keeps the screenshot it already has: a second capture would
+    /// be a picture of the box itself.
+    func show(prefill: String = "", image: ReminderMail.Clipping.Image? = nil,
+              onSend: @escaping (String, ReminderMail.Clipping.Image?) -> Void) {
         self.onSend = onSend
         if let panel {
             if !prefill.isEmpty { textView?.string = prefill; relayout() }
@@ -53,6 +64,7 @@ final class ReminderDictationBox: NSObject, NSTextViewDelegate {
             panel.makeFirstResponder(textView)
             return
         }
+        self.image = image
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.physical.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         self.screen = screen
@@ -89,7 +101,9 @@ final class ReminderDictationBox: NSObject, NSTextViewDelegate {
         scroll.hasVerticalScroller = false
         scroll.documentView = textView
 
-        let hint = NSTextField(labelWithString: "🔔 dictează · ⏎ trimite · ⇧⏎ rând nou · esc renunță")
+        let hint = NSTextField(labelWithString: image == nil
+            ? "🔔 dictează · ⏎ trimite · ⇧⏎ rând nou · esc renunță"
+            : "🔔 + 📸 ecranul · ⏎ trimite · ⇧⏎ rând nou · esc renunță")
         hint.font = hintFont
         hint.textColor = NSColor(white: 0.6, alpha: 1)
         hint.alignment = .center
@@ -127,6 +141,7 @@ final class ReminderDictationBox: NSObject, NSTextViewDelegate {
         scroll = nil
         hint = nil
         onSend = nil
+        image = nil
         // Hand the focus back to whatever app was in front before ⌘⌃M.
         NSApp.deactivate()
     }
@@ -152,12 +167,13 @@ final class ReminderDictationBox: NSObject, NSTextViewDelegate {
 
     func textDidChange(_ notification: Notification) { relayout() }
 
-    private func submit() {
+    /// ⏎ — also reachable from `GET /test/reminder-dictation/submit`.
+    func submit() {
         let text = textView?.string.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !text.isEmpty else { NSSound.beep(); return }
-        let send = onSend
+        guard !text.isEmpty || image != nil else { NSSound.beep(); return }
+        let send = onSend, image = image
         close()
-        send?(text)
+        send?(text, image)
     }
 
     // MARK: Layout

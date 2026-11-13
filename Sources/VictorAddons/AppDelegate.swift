@@ -1556,8 +1556,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         // /test/reminder-dictation — open the 🎙️ ⌘⌃M dictation box directly,
         // whatever the clipboard holds. Opening sends nothing; only ⏎ does.
-        tabletServer?.onTestReminderDictation = { [weak self] text in
-            DispatchQueue.main.async { self?.openReminderDictation(prefill: text) }
+        tabletServer?.onTestReminderDictationSubmit = { [weak self] in
+            DispatchQueue.main.async { self?.reminderDictationBox.submit() }
+        }
+        tabletServer?.onTestReminderDictation = { [weak self] text, shot in
+            if shot {
+                DispatchQueue.global(qos: .userInitiated).async { self?.openReminderWithScreenshot(prefill: text) }
+            } else {
+                DispatchQueue.main.async { self?.openReminderDictation(prefill: text) }
+            }
         }
         tabletServer?.onTestAudioPlaying = { [weak self] in
             guard let manager = self?.coreAudioManager else {
@@ -2226,6 +2233,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             eventTap.onSendSelectionReminder = { [weak self] in
                 self?.sendClipboardReminder(selectionFirst: true)
             }
+            eventTap.onReminderWithScreenshot = { [weak self] in
+                self?.openReminderWithScreenshot()
+            }
         } else {
             overlayError("⌘⌃M reminder mail disabled: AGENTMAIL_API_KEY missing from secrets")
         }
@@ -2512,13 +2522,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// to dictate the reminder into (Walkie Talkie pastes there like anywhere
     /// else); ⏎ mails it through the same AgentMail path as the key.
     @MainActor
-    func openReminderDictation(prefill: String = "") {
-        reminderDictationBox.show(prefill: prefill) { [weak self] text in
+    func openReminderDictation(prefill: String = "", image: ReminderMail.Clipping.Image? = nil) {
+        reminderDictationBox.show(prefill: prefill, image: image) { [weak self] text, image in
             guard let mailer = self?.reminderMailer else { return }
-            let clip = ReminderMail.Clipping(text: text, image: nil)
-            // `send` only builds a small JSON body here (no image) and the
-            // request itself is async, so it is fine to start on main.
-            mailer.send(clip) { result in
+            let clip = ReminderMail.Clipping(text: text.isEmpty ? nil : text, image: image)
+            // Off main: with a screenshot the body is megabytes of base64.
+            DispatchQueue.global(qos: .userInitiated).async {
+              mailer.send(clip) { result in
                 let banner: String
                 switch result {
                 case .success:
@@ -2527,17 +2537,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 case .failure(let error):
                     // Unlike the clipboard path, the words exist nowhere
                     // else now — put them on the clipboard so ⌘V saves them.
-                    PasteboardGate.sync { pb in
-                        pb.clearContents()
-                        pb.setString(text, forType: .string)
+                    if !text.isEmpty {
+                        PasteboardGate.sync { pb in
+                            pb.clearContents()
+                            pb.setString(text, forType: .string)
+                        }
                     }
-                    banner = "⚠️ Reminder netrimis (textul e în clipboard): \(error.localizedDescription)"
+                    banner = text.isEmpty
+                        ? "⚠️ Reminder netrimis: \(error.localizedDescription)"
+                        : "⚠️ Reminder netrimis (textul e în clipboard): \(error.localizedDescription)"
                     overlayError("Dictated reminder failed: \(error.localizedDescription)")
                 }
                 DispatchQueue.main.async { [weak self] in
                     self?.statusBanner?.showNow(text: banner, sound: nil, visibleDuration: 6.0)
                 }
+              }
             }
+        }
+    }
+
+    /// 📸 ⌘⌃M **held** (and `GET /test/reminder-dictation?shot=1`): capture the
+    /// screen under the pointer, *then* open the box — in that order, so the
+    /// box is not in the picture. With the box already open nothing is captured
+    /// (it would be a picture of the box); it just comes back to the front.
+    /// Call off the main thread: `screencapture` blocks.
+    func openReminderWithScreenshot(prefill: String = "") {
+        guard reminderMailer != nil else {
+            overlayError("⌘⌃M: no AgentMail key — nothing sent")
+            return
+        }
+        let alreadyOpen = DispatchQueue.main.sync { MainActor.assumeIsolated { reminderDictationBox.isShowing } }
+        var image: ReminderMail.Clipping.Image?
+        if !alreadyOpen {
+            image = ScreenshotManager.captureScreenUnderPointer().map {
+                ReminderMail.fit(.init(data: $0, filename: "screen.jpg", contentType: "image/jpeg"))
+            }
+            overlayInfo("⌘⌃M held: screen captured (\(image?.data.count ?? 0) bytes)")
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.openReminderDictation(prefill: prefill, image: image)
         }
     }
 

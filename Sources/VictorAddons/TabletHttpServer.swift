@@ -184,7 +184,8 @@ case testTerminalFont
         case testEmailPoll
         /// ⌘⌃P without the keyboard — mail the current clipboard to Victor.
         case testReminderMail
-        case testReminderDictation(String)
+        case testReminderDictation(String, Bool)
+        case testReminderDictationSubmit
         /// Force a tablet app (re)deploy now, bypassing the source-stamp check
         /// and the failure cooldown; returns a JSON snapshot (test hook).
         case testAndroidDeploy
@@ -406,7 +407,9 @@ case testTerminalFont
     var onTestReminderMail: (() -> Void)?
     /// Open the 🎙️ ⌘⌃M dictation box (`ReminderDictationBox`); sends nothing.
     /// `?text=` prefills it, to check how the box grows without a keyboard.
-    var onTestReminderDictation: ((String) -> Void)?
+    var onTestReminderDictation: ((String, Bool) -> Void)?
+    /// Press ⏎ in the open box without the keyboard — this one really mails.
+    var onTestReminderDictationSubmit: (() -> Void)?
     /// Force a tablet app (re)deploy now; returns a JSON snapshot of the
     /// deployer's state (the deploy itself continues in the background).
     var onTestAndroidDeploy: (() -> String)?
@@ -804,8 +807,10 @@ case testTerminalFont
                 if self.onTestEmailPoll == nil { statusCode = 503 }
             case .testReminderMail:
                 self.onTestReminderMail?()
-            case .testReminderDictation(let text):
-                self.onTestReminderDictation?(text)
+            case .testReminderDictation(let text, let shot):
+                self.onTestReminderDictation?(text, shot)
+            case .testReminderDictationSubmit:
+                self.onTestReminderDictationSubmit?()
             case .testAndroidDeploy:
                 contentType = "application/json"
                 body = self.onTestAndroidDeploy?() ?? "{\"error\":\"android deployer unavailable\"}"
@@ -1229,8 +1234,11 @@ case testTerminalFont
             return .testEmailPoll
         case "/test/reminder":
             return .testReminderMail
+        case "/test/reminder-dictation/submit":
+            return .testReminderDictationSubmit
         case "/test/reminder-dictation":
-            return .testReminderDictation(queryItems.first(where: { $0.name == "text" })?.value ?? "")
+            return .testReminderDictation(queryItems.first(where: { $0.name == "text" })?.value ?? "",
+                                          queryItems.contains { $0.name == "shot" && $0.value == "1" })
         case "/test/android-deploy":
             return .testAndroidDeploy
         case "/test/phone-deploy":

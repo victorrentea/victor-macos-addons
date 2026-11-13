@@ -88,6 +88,26 @@ enum ScreenshotManager {
         return saved ? filepath : nil
     }
 
+    /// ⌘⌃M held: the screen under the pointer as JPEG bytes, for the 🔔 mail.
+    /// **Neither destination of ⌃P** — not the clipboard (the reminder must not
+    /// replace what he is about to paste) and not the screenshots folder (the
+    /// mail is where this one lives). No flash either: the box that opens next
+    /// is the receipt. Blocks on `screencapture`; call off the main thread.
+    static func captureScreenUnderPointer() -> Data? {
+        guard let screen = activeDisplay().screen else { return nil }
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("victor-reminder-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-C", "-t", "jpg",
+                             "-D", String(CropCapture.displayNumber(for: screen)), temp.path]
+        do { try process.run() } catch { return nil }
+        process.waitUntilExit()
+        guard let data = try? Data(contentsOf: temp), !data.isEmpty else { return nil }
+        return data
+    }
+
     /// The words on the crosshair — **English since 2026-09-16**, i.e. the
     /// shared overlay's own defaults. They used to be a Romanian override here,
     /// on the grounds that only Walkie Talkie's copy of this gesture goes on a
