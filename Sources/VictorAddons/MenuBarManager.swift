@@ -3,7 +3,7 @@ import Foundation
 import UserNotifications
 
 class MenuBarManager: NSObject, NSMenuDelegate {
-    static let BUILD_TIME = "Nov 13, 18:35"
+    static let BUILD_TIME = "Nov 13, 19:33"
 
     struct TranscriptionDebugState {
         let isTranscribing: Bool
@@ -225,11 +225,20 @@ class MenuBarManager: NSObject, NSMenuDelegate {
         // The microphone is drawn in the menu bar's own ink (`makeMicIcon`), baked
         // into a bitmap beside a colour badge — so a bar that turns light or dark
         // (wallpaper, appearance) needs the picture drawn again.
-        appearanceObservation = button.observe(\.effectiveAppearance) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.refreshMenuIcon() }
+        // Only when light↔dark really flips: KVO also fires when the button's image is
+        // set, and `refreshMenuIcon` sets it — unguarded, that was an endless loop
+        // (100 % of a core and the menu bar redrawn non-stop, 2026-11-13).
+        appearanceObservation = button.observe(\.effectiveAppearance) { [weak self] button, _ in
+            let name = button.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+            DispatchQueue.main.async {
+                guard let self, name != self.lastBarAppearance else { return }
+                self.lastBarAppearance = name
+                self.refreshMenuIcon()
+            }
         }
     }
     private var appearanceObservation: NSKeyValueObservation?
+    private var lastBarAppearance: NSAppearance.Name?
 
     // MARK: - Menu Building
 
