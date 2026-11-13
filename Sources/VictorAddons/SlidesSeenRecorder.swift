@@ -99,7 +99,13 @@ final class SlidesSeenRecorder {
     /// real deck out of the ⌘Space results (2026-11-13) — and a Search Privacy entry is a
     /// setting an OS update can reset, a folder name is not.
     static let decksDirName = "decks.noindex"
+    /// The day logs are tiny and are the record of what was shown: 30 days.
     static let retentionDays = 30
+    /// A deck copy is ~16 MB and only serves the summary of the day it was shown
+    /// (350 copies, 5.2 GB after two weeks at 30 days): 1 day since it was **last shown**
+    /// (Victor, 2026-11-14). Counted from the copy's own mtime, which `snapshot` sets to now —
+    /// a copy inherits the deck's mtime, so an untouched deck would be pruned the day it was shown.
+    static let copyRetentionDays = 1
 
     private var policy = SlidesSeenPolicy()
     private let queue = DispatchQueue(label: "ro.victorrentea.slides-seen", qos: .utility)
@@ -108,6 +114,7 @@ final class SlidesSeenRecorder {
     /// The snapshot taken when the current span qualified, written with it on close.
     private var pendingSnapshot: String?
     private var reindex = SpotlightReindexPolicy()
+    private var lastPrune = Date()
 
     init() {
         queue.async {
@@ -163,15 +170,22 @@ final class SlidesSeenRecorder {
         guard let attrs = try? fm.attributesOfItem(atPath: path),
               let size = (attrs[.size] as? NSNumber)?.intValue,
               let mtime = attrs[.modificationDate] as? Date else { return nil }
-        if let last = lastSnapshot[path], last.0 == size, last.1 == mtime { return last.2 }
+        // The app runs for days: prune here too, not only at launch.
+        if Date().timeIntervalSince(lastPrune) > 3600 { Self.prune(); lastPrune = Date() }
+        let decks = Self.root.appendingPathComponent(Self.decksDirName)
+        if let last = lastSnapshot[path], last.0 == size, last.1 == mtime,
+           fm.fileExists(atPath: decks.appendingPathComponent(last.2).path) {
+            Self.markShown(decks.appendingPathComponent(last.2))
+            return last.2
+        }
         guard let sha = Self.sha256(path) else { return nil }
         let ext = URL(fileURLWithPath: path).pathExtension.isEmpty ? "pptx" : URL(fileURLWithPath: path).pathExtension
         let name = "\(sha.prefix(16)).\(ext)"
-        let decks = Self.root.appendingPathComponent(Self.decksDirName)
         let dest = decks.appendingPathComponent(name)
         do {
             try fm.createDirectory(at: decks, withIntermediateDirectories: true)
             if !fm.fileExists(atPath: dest.path) { try fm.copyItem(atPath: path, toPath: dest.path) }
+            Self.markShown(dest)
         } catch {
             overlayError("SlidesSeen: snapshot of \(path) failed: \(error.localizedDescription)")
             return nil
@@ -219,11 +233,16 @@ final class SlidesSeenRecorder {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Logs and deck copies older than the retention window go; a training lasts days, not months.
-    private static func prune() {
+    /// Retention counts from when a copy was last shown, not from when the deck was last edited.
+    static func markShown(_ copy: URL, at now: Date = Date()) {
+        try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: copy.path)
+    }
+
+    /// Day logs older than `retentionDays` go; deck copies and export scratch after `copyRetentionDays`.
+    static func prune(root: URL = SlidesSeenRecorder.root, now: Date = Date()) {
         let fm = FileManager.default
-        let cutoff = Date().addingTimeInterval(-Double(retentionDays) * 86400)
-        for sub in ["log", decksDirName, "work"] {
+        for (sub, days) in [("log", retentionDays), (decksDirName, copyRetentionDays), ("work", copyRetentionDays)] {
+            let cutoff = now.addingTimeInterval(-Double(days) * 86400)
             let dir = root.appendingPathComponent(sub)
             for f in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
                 let m = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate

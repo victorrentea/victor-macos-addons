@@ -97,4 +97,35 @@ final class SlidesSeenPolicyTests: XCTestCase {
         SlidesSeenRecorder.migrateDecksDir(root: root)   // second run: nothing left to move
         XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("decks.noindex/abc.pptx").path))
     }
+
+    func testDeckCopiesLiveOneDaySinceLastShownAndDayLogsThirty() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("slides-seen-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let decks = root.appendingPathComponent(SlidesSeenRecorder.decksDirName)
+        let log = root.appendingPathComponent("log")
+        for d in [decks, log] { try fm.createDirectory(at: d, withIntermediateDirectories: true) }
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        func file(_ dir: URL, _ name: String, hoursAgo: Double) throws -> URL {
+            let u = dir.appendingPathComponent(name)
+            try Data("x".utf8).write(to: u)
+            SlidesSeenRecorder.markShown(u, at: now.addingTimeInterval(-hoursAgo * 3600))
+            return u
+        }
+        let shownToday = try file(decks, "today.pptx", hoursAgo: 20)
+        let shownTwoDaysAgo = try file(decks, "old.pptx", hoursAgo: 49)
+        // An untouched deck: the copy carries a months-old mtime until it is marked as shown.
+        let oldDeckShownNow = try file(decks, "untouched.pptx", hoursAgo: 24 * 90)
+        SlidesSeenRecorder.markShown(oldDeckShownNow, at: now)
+        let logLastWeek = try file(log, "week.jsonl", hoursAgo: 24 * 7)
+        let logLastQuarter = try file(log, "quarter.jsonl", hoursAgo: 24 * 31)
+
+        SlidesSeenRecorder.prune(root: root, now: now)
+
+        XCTAssertTrue(fm.fileExists(atPath: shownToday.path))
+        XCTAssertFalse(fm.fileExists(atPath: shownTwoDaysAgo.path))
+        XCTAssertTrue(fm.fileExists(atPath: oldDeckShownNow.path))
+        XCTAssertTrue(fm.fileExists(atPath: logLastWeek.path))
+        XCTAssertFalse(fm.fileExists(atPath: logLastQuarter.path))
+    }
 }

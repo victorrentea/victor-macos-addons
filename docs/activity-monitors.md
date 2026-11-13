@@ -77,7 +77,11 @@ as PDF pages **exported by PowerPoint itself, links clickable** (`slides_seen.py
   PowerPoint's own sandbox container — the only place PowerPoint opens and writes files
   driven by AppleScript **without "Grant File Access"** (it asks per file anywhere else,
   Full Disk Access does not lift it; measured 2026-10-29). Writing there needs this app's
-  "access data from other apps" (App Data) grant once. 30-day retention, pruned at launch.
+  "access data from other apps" (App Data) grant once. **Retention:** day logs 30 days; deck
+  copies and `work/` **1 day since last shown** (Victor, 2026-11-14 — at 30 days they were 350
+  copies, 5.2 GB in two weeks, and a copy only serves that day's summary). Each showing sets
+  the copy's mtime to now, because a copy inherits the deck's mtime and an untouched deck would
+  otherwise go the day it was shown. Pruned at launch and at most hourly while recording.
 - **Spotlight (2026-11-13):** the copies folder is `decks.noindex` (was `decks`, renamed once
   at launch by `migrateDecksDir`). Indexed, ~350 hash-named copies kept every real deck out
   of the ⌘Space results, though `mdfind` still found them; a Search Privacy entry fixed it,
