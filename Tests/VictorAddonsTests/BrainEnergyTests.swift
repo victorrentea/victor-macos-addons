@@ -59,6 +59,19 @@ final class BrainEnergyTests: XCTestCase {
         XCTAssertEqual(BrainEnergy.minutes(75 * 60), "1h 15m")
     }
 
+    /// Green down to half, yellow down to 15%, red below, blinking at 5% or less.
+    func testChargeColourByLevel() {
+        func charge(_ level: Double) -> BrainEnergy.Charge { BrainEnergy.charge(.draining(level: level, remaining: 60)) }
+        XCTAssertEqual(charge(1), .green)
+        XCTAssertEqual(charge(0.5), .green)
+        XCTAssertEqual(charge(0.49), .yellow)
+        XCTAssertEqual(charge(0.16), .yellow)
+        XCTAssertEqual(charge(0.15), .red)
+        XCTAssertEqual(charge(0.06), .red)
+        XCTAssertEqual(charge(0.05), .blinkingRed)
+        XCTAssertEqual(BrainEnergy.charge(.depleted(overdue: 0)), .blinkingRed)
+    }
+
     func testShowBrainBatteryIsOnByDefault() {
         let saved = UserDefaults.standard.object(forKey: BrainBatterySettings.enabledKey)
         defer { UserDefaults.standard.set(saved, forKey: BrainBatterySettings.enabledKey) }
@@ -73,7 +86,10 @@ final class BrainEnergyTests: XCTestCase {
         let samples: [(String, BrainEnergy.State, Bool)] = [
             ("100", .draining(level: 1, remaining: 4500), true),
             ("62", .draining(level: 0.62, remaining: 1700), true),
-            ("15", .draining(level: 0.15, remaining: 700), true),
+            ("40", .draining(level: 0.40, remaining: 1800), true),
+            ("12", .draining(level: 0.12, remaining: 540), true),
+            ("04-on", .draining(level: 0.04, remaining: 180), true),
+            ("04-off", .draining(level: 0.04, remaining: 180), false),
             ("empty-on", .depleted(overdue: 120), true),
             ("empty-off", .depleted(overdue: 120), false),
             ("idle", .idle, true),

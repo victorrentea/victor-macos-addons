@@ -50,6 +50,22 @@ enum BrainEnergy {
         return .draining(level: remaining / span, remaining: remaining)
     }
 
+    /// The fill's colour, the way a phone reads its own battery (Victor,
+    /// 2026-11-13): green down to half, yellow down to 15%, then red — and at 5%
+    /// or less, empty included, the red blinks.
+    enum Charge: Equatable { case green, yellow, red, blinkingRed }
+
+    static func charge(_ state: State) -> Charge {
+        switch state {
+        case .idle: return .green
+        case .depleted: return .blinkingRed
+        case let .draining(level, _):
+            if level >= 0.5 { return .green }
+            if level > 0.15 { return .yellow }
+            return level > 0.05 ? .red : .blinkingRed
+        }
+    }
+
     /// The minutes are a guess about a room, not a measurement — hence "about"
     /// (Victor, 2026-11-12: *"înainte de timpul rămas spune aproximativ"*).
     static func describe(_ state: State) -> String {
@@ -103,14 +119,24 @@ enum BrainBatterySettings {
 
 /// The picture: drawn to read as **the macOS battery** sitting next to it — a
 /// thin translucent rounded outline, a faint nub, a rounded fill inset from it —
-/// except the fill is the pink of the 🧠 emoji, with a small 🧠 on top: vivid
-/// over the charge left, faded over the part spent. The outline never changes
-/// colour, like the system's; empty, only a thin red sliver at the left blinks
-/// — the way macOS shows a battery about to die (`blinkOn`, toggled by the caller).
+/// with the fill in the system battery's own colours (`BrainEnergy.charge`:
+/// green, yellow, red) and a **line-drawn brain** on the body: white over the
+/// charge left, grey over the part spent. The outline never changes colour, like
+/// the system's; at 5% or less only a thin red sliver at the left blinks — the
+/// way macOS shows a battery about to die (`blinkOn`, toggled by the caller).
 enum BrainBatteryIcon {
-    static let brainPink = NSColor(srgbRed: 0.97, green: 0.62, blue: 0.71, alpha: 1)
+    static let green = NSColor(srgbRed: 0.20, green: 0.78, blue: 0.35, alpha: 1)
+    static let yellow = NSColor(srgbRed: 1.0, green: 0.80, blue: 0.0, alpha: 1)
     static let alarmRed = NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1)
     static let size = NSSize(width: 28, height: 16)
+
+    static func fillColor(_ charge: BrainEnergy.Charge) -> NSColor {
+        switch charge {
+        case .green: return green
+        case .yellow: return yellow
+        case .red, .blinkingRed: return alarmRed
+        }
+    }
 
     static func image(for state: BrainEnergy.State, blinkOn: Bool) -> NSImage {
         let image = NSImage(size: size, flipped: false) { _ in
@@ -120,6 +146,14 @@ enum BrainBatteryIcon {
         image.isTemplate = false
         image.accessibilityDescription = "Brain battery: " + BrainEnergy.describe(state)
         return image
+    }
+
+    /// The SF Symbol `brain` — a line drawing, not the emoji — in one flat colour.
+    static func brain(_ color: NSColor) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 8.5, weight: .semibold)
+            .applying(.init(paletteColors: [color]))
+        return NSImage(systemSymbolName: "brain", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
     }
 
     static func draw(state: BrainEnergy.State, blinkOn: Bool) {
@@ -132,12 +166,8 @@ enum BrainBatteryIcon {
         let inner = body.insetBy(dx: 2, dy: 2)
 
         var level = 0.0
-        var depleted = false
-        switch state {
-        case .idle: break
-        case let .draining(l, _): level = l
-        case .depleted: depleted = true
-        }
+        if case let .draining(l, _) = state { level = l }
+        let charge = BrainEnergy.charge(state)
 
         let frame = NSColor.labelColor.withAlphaComponent(0.45)
         frame.setStroke()
@@ -146,28 +176,32 @@ enum BrainBatteryIcon {
         frame.setFill()
         NSBezierPath(roundedRect: nub, xRadius: 0.75, yRadius: 0.75).fill()
 
+        // Never thinner than the sliver, so the last red minutes stay visible;
+        // blinking, the sliver is the whole fill and goes fully dark between beats.
         let sliver: CGFloat = 2.5
-        let fillWidth: CGFloat = depleted ? (blinkOn ? sliver : 0) : max(level > 0 ? 2 : 0, inner.width * level)
+        var fillWidth: CGFloat = state == .idle ? 0 : max(sliver, inner.width * level)
+        if charge == .blinkingRed { fillWidth = blinkOn ? sliver : 0 }
         if fillWidth > 0 {
-            (depleted ? alarmRed : brainPink).setFill()
+            fillColor(charge).setFill()
             NSBezierPath(roundedRect: NSRect(x: inner.minX, y: inner.minY, width: fillWidth, height: inner.height),
                          xRadius: 1.75, yRadius: 1.75).fill()
         }
 
-        let emoji = NSAttributedString(string: "🧠", attributes: [.font: NSFont.systemFont(ofSize: 8.5)])
-        let es = emoji.size()
-        let origin = NSPoint(x: body.midX - es.width / 2, y: body.midY - es.height / 2 + 0.3)
-        // Empty, the 🧠 is all "spent" — the red sliver is the only thing lit.
-        let splitX = depleted ? inner.minX : inner.minX + fillWidth
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        guard let ctx = NSGraphicsContext.current?.cgContext,
+              let lit = brain(.white), let spent = brain(NSColor.labelColor.withAlphaComponent(0.55)) else { return }
+        // Scaled to sit inside the outline: 9 pt tall in the 12 pt body.
+        let h: CGFloat = 9, w = lit.size.width * h / lit.size.height
+        let rect = NSRect(x: body.midX - w / 2, y: body.midY - h / 2, width: w, height: h)
+        let splitX = inner.minX + fillWidth
         ctx.saveGState()
         ctx.clip(to: NSRect(x: 0, y: 0, width: splitX, height: size.height))
-        emoji.draw(at: origin)
+        // A hair of shadow keeps the white line readable on the yellow fill.
+        ctx.setShadow(offset: .zero, blur: 0.75, color: NSColor.black.withAlphaComponent(0.6).cgColor)
+        lit.draw(in: rect)
         ctx.restoreGState()
         ctx.saveGState()
         ctx.clip(to: NSRect(x: splitX, y: 0, width: size.width - splitX, height: size.height))
-        ctx.setAlpha(0.3)
-        emoji.draw(at: origin)
+        spent.draw(in: rect)
         ctx.restoreGState()
     }
 }
@@ -232,7 +266,7 @@ final class BrainBatteryIndicator: NSObject, NSMenuDelegate {
         let reference = BrainEnergy.reference(breakEndedAt: breakEndedAt(),
                                               refilledAt: BrainBatterySettings.refilledAt, now: now)
         state = BrainEnergy.state(reference: reference, now: now)
-        if case .depleted = state {
+        if BrainEnergy.charge(state) == .blinkingRed {
             if blinkTimer == nil {
                 blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
                     guard let self else { return }
