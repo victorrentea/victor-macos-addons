@@ -2890,6 +2890,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let id = MicPreference.read()
         menuBarManager.setChosenMic(id)
         writePreferredSource(MicRoster.byId(id)?.pattern ?? "")
+        // The system's own default input follows the same pick (`SystemMicKeeper`).
+        DispatchQueue.global(qos: .utility).async { SystemMicKeeper.enforce(why: "the pick changed") }
     }
 
     /// Persist the preferred ME-source pattern to disk so whisper picks it up

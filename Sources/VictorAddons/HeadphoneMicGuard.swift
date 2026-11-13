@@ -66,7 +66,7 @@ enum HeadphoneMicGuard {
 
     // MARK: - CoreAudio
 
-    private static func inputDevices() -> [(id: AudioDeviceID, name: String)] {
+    static func inputDevices() -> [(id: AudioDeviceID, name: String)] {
         let sys = AudioObjectID(kAudioObjectSystemObject)
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
                                               mScope: kAudioObjectPropertyScopeGlobal,
@@ -94,7 +94,7 @@ enum HeadphoneMicGuard {
         return list.contains { $0.mNumberChannels > 0 }
     }
 
-    private static func setDefaultInput(_ id: AudioDeviceID) -> Bool {
+    static func setDefaultInput(_ id: AudioDeviceID) -> Bool {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
                                               mScope: kAudioObjectPropertyScopeGlobal,
                                               mElement: kAudioObjectPropertyElementMain)

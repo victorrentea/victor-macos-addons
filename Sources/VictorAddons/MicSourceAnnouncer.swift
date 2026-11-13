@@ -92,6 +92,9 @@ final class MicSourceAnnouncer {
             // A headset already sitting on the default input at launch is moved
             // now. The move is not announced: it is not what Whisper records.
             HeadphoneMicGuard.enforce()
+            // …and the default is put on the microphone this app listens on
+            // (`SystemMicKeeper`, 2026-11-13).
+            SystemMicKeeper.enforce(why: "at launch")
             for selector in [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDevices] {
                 var addr = AudioObjectPropertyAddress(mSelector: selector,
                                                       mScope: kAudioObjectPropertyScopeGlobal,
@@ -119,6 +122,8 @@ final class MicSourceAnnouncer {
     private func settled() {
         // Moved off a banned headset → the move re-fires the listener.
         if HeadphoneMicGuard.enforce() { return }
+        // Moved back onto the roster's microphone → that move re-fires too.
+        if SystemMicKeeper.enforce(why: "the default or the device list changed") { return }
         let id = Self.defaultInputId()
         guard id != 0, id != lastId else { return }
         lastId = id
